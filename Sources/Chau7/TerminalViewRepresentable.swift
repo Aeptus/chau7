@@ -40,6 +40,13 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         highlightView.frame = view.bounds
         model.attachHighlightView(highlightView)
 
+        // Give instant feedback while the shell is starting.
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "EEE MMM d HH:mm:ss"
+        let timestamp = formatter.string(from: Date())
+        view.feed(text: "Last login: \(timestamp)\r\n")
+
         let shell = model.defaultShell()
         let execName = "-" + URL(fileURLWithPath: shell).lastPathComponent
         let env = model.buildEnvironment()
