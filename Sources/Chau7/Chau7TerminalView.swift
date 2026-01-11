@@ -29,6 +29,7 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     private var mouseMoveMonitor: Any?
     private var keyDownMonitor: Any?
     private var focusObservers: [NSObjectProtocol] = []
+    private var appliedColorSchemeSignature: String?
 
     // MARK: - Color Configuration
 
@@ -62,6 +63,48 @@ final class Chau7TerminalView: LocalProcessTerminalView {
             Color(red: 0xFF << 8, green: 0xFF << 8, blue: 0xFF << 8), // 15: Bright White
         ]
         getTerminal().installPalette(colors: palette)
+    }
+
+    func applyColorScheme(_ scheme: TerminalColorScheme) {
+        let signature = scheme.signature
+        if appliedColorSchemeSignature == signature {
+            return
+        }
+        appliedColorSchemeSignature = signature
+
+        nativeBackgroundColor = scheme.nsColor(for: scheme.background)
+        nativeForegroundColor = scheme.nsColor(for: scheme.foreground)
+        caretColor = scheme.nsColor(for: scheme.cursor)
+        selectedTextBackgroundColor = scheme.nsColor(for: scheme.selection)
+
+        let palette: [Color] = [
+            terminalColor(from: scheme.black),
+            terminalColor(from: scheme.red),
+            terminalColor(from: scheme.green),
+            terminalColor(from: scheme.yellow),
+            terminalColor(from: scheme.blue),
+            terminalColor(from: scheme.magenta),
+            terminalColor(from: scheme.cyan),
+            terminalColor(from: scheme.white),
+            terminalColor(from: scheme.brightBlack),
+            terminalColor(from: scheme.brightRed),
+            terminalColor(from: scheme.brightGreen),
+            terminalColor(from: scheme.brightYellow),
+            terminalColor(from: scheme.brightBlue),
+            terminalColor(from: scheme.brightMagenta),
+            terminalColor(from: scheme.brightCyan),
+            terminalColor(from: scheme.brightWhite)
+        ]
+        getTerminal().installPalette(colors: palette)
+    }
+
+    private func terminalColor(from hex: String) -> Color {
+        let nsColor = TerminalColorScheme.default.nsColor(for: hex)
+        let rgb = nsColor.usingColorSpace(.deviceRGB) ?? nsColor
+        let red = UInt16(rgb.redComponent * 65535)
+        let green = UInt16(rgb.greenComponent * 65535)
+        let blue = UInt16(rgb.blueComponent * 65535)
+        return Color(red: red, green: green, blue: blue)
     }
 
     // MARK: - View Setup
@@ -516,6 +559,23 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         super.scrolled(source: source, position: position)
         onBufferChanged?()
         updateCursorLineHighlight()
+    }
+
+    func scrollToTop() {
+        // Scroll to the beginning of the buffer (position 0)
+        scroll(toPosition: 0)
+    }
+
+    func scrollToBottom() {
+        // Scroll to the end of the buffer (position 1)
+        scroll(toPosition: 1)
+    }
+
+    func getSelectedText() -> String? {
+        guard let selection = getSelection(), !selection.isEmpty else {
+            return nil
+        }
+        return selection
     }
 
     func attachCursorLineView(_ view: TerminalCursorLineView) {

@@ -22,6 +22,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     private weak var appModel: AppModel?
     private weak var terminalView: Chau7TerminalView?
+    private var settingsObservers: [NSObjectProtocol] = []
     private var idleTimer: DispatchSourceTimer?
     private var lastInputAt = Date.distantPast
     private var lastOutputAt = Date.distantPast
@@ -68,7 +69,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     /// Output patterns that indicate a specific AI CLI is running
     /// These catch cases where command detection fails (e.g., first tab, piped commands)
-    private static let outputDetectionPatterns: [(pattern: String, appName: String)] = [
+    private static let defaultOutputDetectionPatterns: [(pattern: String, appName: String)] = [
         // Claude Code banners
         ("╭─ Claude", "Claude"),
         ("claude.ai", "Claude"),
@@ -118,6 +119,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     init(appModel: AppModel) {
         self.appModel = appModel
         super.init()
+        applyDefaultFontSize()
+        installSettingsObservers()
         refreshGitStatus(path: currentDirectory)
         SnippetManager.shared.updateContextPath(currentDirectory)
         startIdleTimer()
@@ -125,6 +128,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     deinit {
         // Clean up resources
+        for observer in settingsObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
         stopIdleTimer()
         gitCheckWorkItem?.cancel()
         searchUpdateWorkItem?.cancel()
@@ -193,7 +199,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         let checkData = data.prefix(500)
         guard let outputString = String(data: checkData, encoding: .utf8) else { return }
 
-        for (pattern, appName) in Self.outputDetectionPatterns {
+        for (pattern, appName) in outputDetectionPatterns() {
             if outputString.contains(pattern) {
                 DispatchQueue.main.async { [weak self] in
                     self?.activeAppName = appName
@@ -202,6 +208,17 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
                 return
             }
         }
+    }
+
+    private func outputDetectionPatterns() -> [(pattern: String, appName: String)] {
+        let custom = FeatureSettings.shared.customAIDetectionRules.compactMap { rule -> (String, String)? in
+            let trimmedPattern = rule.pattern.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedName = rule.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmedPattern.isEmpty else { return nil }
+            let name = trimmedName.isEmpty ? "Custom AI" : trimmedName
+            return (trimmedPattern, name)
+        }
+        return Self.defaultOutputDetectionPatterns + custom
     }
 
     private func markRunning() {
@@ -299,6 +316,18 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         if normalized == "npx" || normalized == "bunx" || normalized == "pnpm" {
             if let aiApp = findSubcommand(tokens: tokens, after: normalized, looking: Array(appNameMap.keys)) {
                 activeAppName = appNameMap[aiApp]
+                return
+            }
+        }
+
+        // Custom detection rules (substring match on command line)
+        let lowercasedLine = commandLine.lowercased()
+        for rule in FeatureSettings.shared.customAIDetectionRules {
+            let pattern = rule.pattern.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if pattern.isEmpty { continue }
+            if lowercasedLine.contains(pattern) {
+                let name = rule.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
+                activeAppName = name.isEmpty ? "Custom AI" : name
                 return
             }
         }
@@ -507,14 +536,14 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         return dir.path
     }()
 
-    private static var didWriteZdotdir = false
+    private static var didWriteShellIntegration = false
 
-    /// Call this at app launch to create ZDOTDIR with custom .zshrc
+    /// Call this at app launch to create shell integration files for all supported shells
     /// This runs shell integration at startup (not as a command) so it won't be in history
     static func preInitialize() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
 
-        // Create .zshrc that sources user's real config then runs our integration
+        // Create .zshrc for zsh
         let zshrc = """
         # Chau7 wrapper - source user's real .zshrc first
         export ZDOTDIR="\(home)"
@@ -523,6 +552,11 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         # Chau7 default start directory
         if [ -n "$CHAU7_START_DIR" ] && [ -d "$CHAU7_START_DIR" ]; then
           cd "$CHAU7_START_DIR"
+        fi
+
+        # Chau7 startup command
+        if [ -n "$CHAU7_STARTUP_CMD" ]; then
+          eval "$CHAU7_STARTUP_CMD"
         fi
 
         # Chau7 shell integration (runs at startup, not in history)
@@ -536,24 +570,82 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         smartoverlay_precmd
         """
 
-        let zshrcPath = zdotdirPath + "/.zshrc"
+        // Create .bashrc for bash
+        let bashrc = """
+        # Chau7 wrapper - source user's real .bashrc first
+        [ -f "\(home)/.bashrc" ] && source "\(home)/.bashrc"
+        [ -f "\(home)/.bash_profile" ] && source "\(home)/.bash_profile"
+
+        # Chau7 default start directory
+        if [ -n "$CHAU7_START_DIR" ] && [ -d "$CHAU7_START_DIR" ]; then
+          cd "$CHAU7_START_DIR"
+        fi
+
+        # Chau7 startup command
+        if [ -n "$CHAU7_STARTUP_CMD" ]; then
+          eval "$CHAU7_STARTUP_CMD"
+        fi
+
+        # Chau7 shell integration
+        smartoverlay_precmd() {
+          printf '\\e]7;file://%s%s\\a' "$HOSTNAME" "$PWD"
+        }
+        PROMPT_COMMAND="smartoverlay_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+        """
+
+        // Create config.fish for fish
+        let fishConfig = """
+        # Chau7 wrapper - source user's real config.fish first
+        if test -f "\(home)/.config/fish/config.fish"
+          source "\(home)/.config/fish/config.fish"
+        end
+
+        # Chau7 default start directory
+        if test -n "$CHAU7_START_DIR"; and test -d "$CHAU7_START_DIR"
+          cd "$CHAU7_START_DIR"
+        end
+
+        # Chau7 startup command
+        if test -n "$CHAU7_STARTUP_CMD"
+          eval "$CHAU7_STARTUP_CMD"
+        end
+
+        # Chau7 shell integration
+        function smartoverlay_precmd --on-event fish_prompt
+          printf '\\e]7;file://%s%s\\a' (hostname) (pwd)
+        end
+        """
+
+        // Write all integration files
         do {
-            try zshrc.write(toFile: zshrcPath, atomically: true, encoding: .utf8)
-            didWriteZdotdir = true
-            Log.info("Created ZDOTDIR at \(zdotdirPath)")
+            try zshrc.write(toFile: zdotdirPath + "/.zshrc", atomically: true, encoding: .utf8)
+            try bashrc.write(toFile: zdotdirPath + "/.bashrc", atomically: true, encoding: .utf8)
+
+            // Create fish config directory
+            let fishDir = zdotdirPath + "/.config/fish"
+            try FileManager.default.createDirectory(atPath: fishDir, withIntermediateDirectories: true)
+            try fishConfig.write(toFile: fishDir + "/config.fish", atomically: true, encoding: .utf8)
+
+            didWriteShellIntegration = true
+            Log.info("Created shell integration files at \(zdotdirPath)")
         } catch {
-            Log.error("Failed to create ZDOTDIR: \(error)")
+            Log.error("Failed to create shell integration files: \(error)")
         }
     }
 
-    /// Returns ZDOTDIR path for shell environment
+    /// Returns the shell integration directory path
+    static func getShellIntegrationDir() -> String? {
+        return didWriteShellIntegration ? zdotdirPath : nil
+    }
+
+    /// Returns ZDOTDIR path for zsh environment (legacy compatibility)
     static func getZdotdir() -> String? {
-        return didWriteZdotdir ? zdotdirPath : nil
+        return didWriteShellIntegration ? zdotdirPath : nil
     }
 
     func applyShellIntegration(to view: TerminalView) {
-        // No-op: integration now happens via ZDOTDIR at shell startup
-        Log.info("Shell integration applied via ZDOTDIR.")
+        // No-op: integration now happens via shell rc files at startup
+        Log.info("Shell integration applied via shell config files.")
     }
 
     func maybeClearOnLaunch() {
@@ -658,15 +750,40 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     func zoomReset() {
-        updateFontSize(13)
+        applyDefaultFontSize()
     }
 
     private func updateFontSize(_ newValue: CGFloat) {
-        let clamped = max(9, min(newValue, 22))
+        let clamped = max(8, min(newValue, 72))
         guard fontSize != clamped else { return }
         fontSize = clamped
         // Note: Font is now applied by TerminalViewRepresentable.updateNSView
         // to avoid race conditions with SwiftUI's update cycle.
+    }
+
+    private func applyDefaultFontSize() {
+        let settings = FeatureSettings.shared
+        let zoom = max(50, min(settings.defaultZoomPercent, 200))
+        let scaled = CGFloat(settings.fontSize) * CGFloat(zoom) / 100.0
+        updateFontSize(scaled)
+    }
+
+    private func installSettingsObservers() {
+        let center = NotificationCenter.default
+        settingsObservers.append(center.addObserver(
+            forName: .terminalFontChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyDefaultFontSize()
+        })
+        settingsObservers.append(center.addObserver(
+            forName: .terminalZoomChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyDefaultFontSize()
+        })
     }
 
     /// Called by TerminalViewRepresentable to apply font when SwiftUI updates.
@@ -705,6 +822,43 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     func defaultShell() -> String {
+        let settings = FeatureSettings.shared
+
+        switch settings.shellType {
+        case .system:
+            // Use system default shell (from user's passwd entry)
+            return systemDefaultShell()
+        case .zsh:
+            return "/bin/zsh"
+        case .bash:
+            return "/bin/bash"
+        case .fish:
+            // Apple Silicon path
+            if FileManager.default.fileExists(atPath: "/opt/homebrew/bin/fish") {
+                return "/opt/homebrew/bin/fish"
+            }
+            // Intel path fallback
+            if FileManager.default.fileExists(atPath: "/usr/local/bin/fish") {
+                return "/usr/local/bin/fish"
+            }
+            // Fallback to zsh if fish not found
+            return "/bin/zsh"
+        case .fishIntel:
+            if FileManager.default.fileExists(atPath: "/usr/local/bin/fish") {
+                return "/usr/local/bin/fish"
+            }
+            return "/bin/zsh"
+        case .custom:
+            let customPath = settings.customShellPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !customPath.isEmpty && FileManager.default.fileExists(atPath: customPath) {
+                return customPath
+            }
+            return systemDefaultShell()
+        }
+    }
+
+    /// Returns the system's default shell from the user's passwd entry
+    private func systemDefaultShell() -> String {
         let bufsize = sysconf(_SC_GETPW_R_SIZE_MAX)
         guard bufsize != -1 else {
             return "/bin/zsh"
@@ -736,19 +890,56 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             dict["HOME"] = home
         }
         dict["CHAU7_START_DIR"] = Self.defaultStartDirectory()
+
+        // Set startup command if configured
+        let startupCmd = FeatureSettings.shared.startupCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !startupCmd.isEmpty {
+            dict["CHAU7_STARTUP_CMD"] = startupCmd
+        }
+
         // Present as Terminal.app for better CLI theming parity.
         dict["TERM_PROGRAM"] = "Apple_Terminal"
         if let version = Self.terminalAppVersion {
             dict["TERM_PROGRAM_VERSION"] = version
         }
         dict["TERM_SESSION_ID"] = UUID().uuidString
+        dict["SHELL"] = defaultShell()
 
-        // Set ZDOTDIR so zsh uses our custom .zshrc with shell integration
-        if let zdotdir = Self.getZdotdir() {
-            dict["ZDOTDIR"] = zdotdir
+        // Set shell-specific environment variables based on configured shell
+        if let integrationDir = Self.getShellIntegrationDir() {
+            let shellPath = defaultShell()
+            let shellName = (shellPath as NSString).lastPathComponent.lowercased()
+
+            if shellName == "zsh" {
+                // ZDOTDIR tells zsh where to look for .zshrc
+                dict["ZDOTDIR"] = integrationDir
+            } else if shellName == "bash" {
+                // BASH_ENV is sourced for non-interactive shells
+                // For interactive shells, we use --rcfile in arguments
+                dict["BASH_ENV"] = integrationDir + "/.bashrc"
+            } else if shellName == "fish" {
+                // XDG_CONFIG_HOME tells fish where to find config.fish
+                dict["XDG_CONFIG_HOME"] = integrationDir + "/.config"
+            }
         }
 
         return dict.map { "\($0.key)=\($0.value)" }
+    }
+
+    /// Returns shell arguments for the selected shell type
+    func shellArguments() -> [String] {
+        let shellPath = defaultShell()
+        let shellName = (shellPath as NSString).lastPathComponent.lowercased()
+
+        if shellName == "bash" {
+            // Use --rcfile to specify our custom bashrc for interactive shells
+            if let integrationDir = Self.getShellIntegrationDir() {
+                return ["--rcfile", integrationDir + "/.bashrc"]
+            }
+        }
+
+        // Default: no extra arguments (zsh uses ZDOTDIR, fish uses XDG_CONFIG_HOME)
+        return []
     }
 
     private static let terminalAppVersion: String? = {
@@ -779,6 +970,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     struct SearchSummary {
         let count: Int
         let previewLines: [String]
+        let error: String?
     }
 
     weak var highlightView: TerminalHighlightView?
@@ -791,6 +983,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     // MARK: - Search (Issue #6, #13, #23 fixes - thread-safe buffer access, case sensitivity)
 
     private var searchCaseSensitive: Bool = false
+    private var searchRegexEnabled: Bool = false
 
     /// Returns cached buffer data or fetches fresh data if needed (memory optimization)
     private func getBufferData() -> Data? {
@@ -803,36 +996,55 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         return cachedBufferData
     }
 
-    func updateSearch(query: String, maxMatches: Int, maxPreviewLines: Int, caseSensitive: Bool = false) -> SearchSummary {
+    func updateSearch(query: String, maxMatches: Int, maxPreviewLines: Int, caseSensitive: Bool = false, regexEnabled: Bool = false) -> SearchSummary {
         let previousQuery = searchQuery
         let previousCaseSensitive = searchCaseSensitive
+        let previousRegex = searchRegexEnabled
         searchQuery = query
         searchCaseSensitive = caseSensitive
+        searchRegexEnabled = regexEnabled
 
         guard let bufferData = getBufferData() else {
             searchMatches = []
             activeSearchIndex = 0
-            return SearchSummary(count: 0, previewLines: [])
+            return SearchSummary(count: 0, previewLines: [], error: nil)
         }
 
         // Use cached buffer data (refreshed only when new output arrives)
-
-        let computed = computeSearchMatches(
-            query: query,
-            maxMatches: maxMatches,
-            maxPreviewLines: maxPreviewLines,
-            bufferData: bufferData,
-            caseSensitive: caseSensitive
-        )
+        let computed: (matches: [SearchMatch], previewLines: [String], error: String?)
+        if regexEnabled {
+            let options: NSRegularExpression.Options = caseSensitive ? [] : [.caseInsensitive]
+            guard let regex = try? NSRegularExpression(pattern: query, options: options) else {
+                searchMatches = []
+                activeSearchIndex = 0
+                return SearchSummary(count: 0, previewLines: [], error: "Invalid regex")
+            }
+            let result = computeRegexMatches(
+                regex: regex,
+                maxMatches: maxMatches,
+                maxPreviewLines: maxPreviewLines,
+                bufferData: bufferData
+            )
+            computed = (result.matches, result.previewLines, nil)
+        } else {
+            let result = computeSearchMatches(
+                query: query,
+                maxMatches: maxMatches,
+                maxPreviewLines: maxPreviewLines,
+                bufferData: bufferData,
+                caseSensitive: caseSensitive
+            )
+            computed = (result.matches, result.previewLines, nil)
+        }
 
         searchMatches = computed.matches
-        if previousQuery != query || previousCaseSensitive != caseSensitive {
+        if previousQuery != query || previousCaseSensitive != caseSensitive || previousRegex != regexEnabled {
             activeSearchIndex = 0
         } else if activeSearchIndex >= computed.matches.count {
             activeSearchIndex = max(0, computed.matches.count - 1)
         }
         highlightView?.needsDisplay = true
-        return SearchSummary(count: computed.matches.count, previewLines: computed.previewLines)
+        return SearchSummary(count: computed.matches.count, previewLines: computed.previewLines, error: computed.error)
     }
 
     func scheduleSearchRefresh() {
@@ -842,18 +1054,32 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         guard let bufferData = getBufferData() else { return }
         let query = searchQuery
         let caseSensitive = searchCaseSensitive
+        let regexEnabled = searchRegexEnabled
 
         searchUpdateWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-
-            let computed = self.computeSearchMatches(
-                query: query,
-                maxMatches: 400,
-                maxPreviewLines: 12,
-                bufferData: bufferData,
-                caseSensitive: caseSensitive
-            )
+            let computed: (matches: [SearchMatch], previewLines: [String])
+            if regexEnabled {
+                let options: NSRegularExpression.Options = caseSensitive ? [] : [.caseInsensitive]
+                guard let regex = try? NSRegularExpression(pattern: query, options: options) else {
+                    return
+                }
+                computed = self.computeRegexMatches(
+                    regex: regex,
+                    maxMatches: 400,
+                    maxPreviewLines: 12,
+                    bufferData: bufferData
+                )
+            } else {
+                computed = self.computeSearchMatches(
+                    query: query,
+                    maxMatches: 400,
+                    maxPreviewLines: 12,
+                    bufferData: bufferData,
+                    caseSensitive: caseSensitive
+                )
+            }
 
             DispatchQueue.main.async {
                 guard self.searchQuery == query else { return }
@@ -948,6 +1174,53 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             }
 
             // Move to next line
+            lineStart = lineEnd < text.endIndex ? text.index(after: lineEnd) : text.endIndex
+            row += 1
+        }
+
+        return (matches, previews)
+    }
+
+    private func computeRegexMatches(
+        regex: NSRegularExpression,
+        maxMatches: Int,
+        maxPreviewLines: Int,
+        bufferData: Data
+    ) -> (matches: [SearchMatch], previewLines: [String]) {
+        // Decode buffer data to string
+        let text = String(decoding: bufferData, as: UTF8.self)
+
+        var matches: [SearchMatch] = []
+        matches.reserveCapacity(min(maxMatches, 100))
+        var previews: [String] = []
+        previews.reserveCapacity(maxPreviewLines)
+
+        var lineStart = text.startIndex
+        var row = 0
+
+        while lineStart < text.endIndex && matches.count < maxMatches {
+            let lineEnd = text[lineStart...].firstIndex(of: "\n") ?? text.endIndex
+            let lineSlice = text[lineStart..<lineEnd]
+
+            if !lineSlice.isEmpty {
+                let lineString = String(lineSlice)
+                let nsLine = lineString as NSString
+                let range = NSRange(location: 0, length: nsLine.length)
+                regex.enumerateMatches(in: lineString, options: [], range: range) { match, _, stop in
+                    guard let match = match else { return }
+                    let col = match.range.location
+                    let length = match.range.length
+                    matches.append(SearchMatch(row: row, col: col, length: length))
+                    if matches.count >= maxMatches {
+                        stop.pointee = true
+                    }
+                }
+
+                if !matches.isEmpty && matches.last?.row == row && previews.count < maxPreviewLines {
+                    previews.append(lineString)
+                }
+            }
+
             lineStart = lineEnd < text.endIndex ? text.index(after: lineEnd) : text.endIndex
             row += 1
         }

@@ -10,6 +10,10 @@ final class NotificationManager {
             Log.info("Skipping notification (not running as bundle): type=\(event.type) tool=\(event.tool)")
             return
         }
+        if !shouldNotify(event) {
+            Log.trace("Notification filtered: type=\(event.type) tool=\(event.tool)")
+            return
+        }
 
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
@@ -44,6 +48,28 @@ final class NotificationManager {
                     Log.info("Notification scheduled successfully.")
                 }
             }
+        }
+    }
+
+    private func shouldNotify(_ event: AIEvent) -> Bool {
+        let filters = FeatureSettings.shared.notificationFilters
+        switch event.type.lowercased() {
+        case "finished":
+            return filters.taskFinished
+        case "failed":
+            return filters.taskFailed
+        case "needs_validation":
+            return filters.needsValidation
+        case "permission":
+            return filters.permissionRequest
+        case "tool_complete":
+            return filters.toolComplete
+        case "session_end":
+            return filters.sessionEnd
+        case "idle":
+            return filters.commandIdle
+        default:
+            return true
         }
     }
 }

@@ -5,12 +5,13 @@ import SwiftTerm
 struct TerminalViewRepresentable: NSViewRepresentable {
     @ObservedObject var model: TerminalSessionModel
     var isSuspended: Bool
+    @ObservedObject private var settings = FeatureSettings.shared
 
     func makeNSView(context: Context) -> Chau7TerminalView {
         let view = Chau7TerminalView(frame: .zero)
         view.processDelegate = model
-        view.font = NSFont.monospacedSystemFont(ofSize: model.fontSize, weight: .regular)
-        view.configureNativeColors()
+        view.font = terminalFont()
+        view.applyColorScheme(settings.currentColorScheme)
         view.notifyUpdateChanges = !isSuspended
         view.isHidden = isSuspended
         view.allowMouseReporting = false
@@ -52,7 +53,8 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         let env = model.buildEnvironment()
         // Note: Do NOT change process-wide CWD here - it affects all tabs.
         // The shell process starts with its own CWD from the environment.
-        view.startProcess(executable: shell, args: [], environment: env, execName: execName)
+        let args = model.shellArguments()
+        view.startProcess(executable: shell, args: args, environment: env, execName: execName)
 
         model.attachTerminal(view)
         model.applyFontSize()
@@ -77,8 +79,17 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         nsView.setCursorLineHighlightEnabled(isCodex)
         nsView.configureCursorLineHighlight(contextLines: isCodex, inputHistory: isCodex)
 
-        if nsView.font.pointSize != model.fontSize {
-            nsView.font = NSFont.monospacedSystemFont(ofSize: model.fontSize, weight: .regular)
+        let desiredFont = terminalFont()
+        if nsView.font.fontName != desiredFont.fontName || nsView.font.pointSize != desiredFont.pointSize {
+            nsView.font = desiredFont
         }
+        nsView.applyColorScheme(settings.currentColorScheme)
+    }
+
+    private func terminalFont() -> NSFont {
+        if let font = NSFont(name: settings.fontFamily, size: model.fontSize) {
+            return font
+        }
+        return NSFont.monospacedSystemFont(ofSize: model.fontSize, weight: .regular)
     }
 }

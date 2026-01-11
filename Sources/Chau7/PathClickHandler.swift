@@ -109,7 +109,17 @@ struct PathClickHandler {
 
     static func openURL(_ urlString: String) {
         guard let url = URL(string: urlString) else { return }
-        NSWorkspace.shared.open(url)
+        let handler = FeatureSettings.shared.urlHandler
+        guard let bundleID = handler.bundleIdentifier else {
+            NSWorkspace.shared.open(url)
+            return
+        }
+        if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            let config = NSWorkspace.OpenConfiguration()
+            NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: config, completionHandler: nil)
+        } else {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private static func findExecutable(_ name: String) -> String? {

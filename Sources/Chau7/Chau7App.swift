@@ -24,12 +24,11 @@ struct Chau7App: App {
 
     var body: some Scene {
         // Status bar is handled by StatusBarController for multi-monitor support
-        // This empty Settings scene is required to attach commands
         Settings {
             EmptyView()
         }
         .commands {
-            // Settings in app menu with Cmd+,
+            // MARK: - App Menu
             CommandGroup(replacing: .appSettings) {
                 Button("Settings...") {
                     appDelegate.showSettings()
@@ -37,20 +36,8 @@ struct Chau7App: App {
                 .keyboardShortcut(",")
             }
 
-            // Hide the default File menu by replacing all its groups with empty content
-            CommandGroup(replacing: .newItem) { }
-            CommandGroup(replacing: .saveItem) { }
-            CommandGroup(replacing: .importExport) { }
-            CommandGroup(replacing: .printItem) { }
-
-            // Custom "Shell" menu (like Terminal.app)
-            CommandMenu("Shell") {
-                Button("Settings...") {
-                    appDelegate.showSettings()
-                }
-
-                Divider()
-
+            // MARK: - File Menu
+            CommandGroup(replacing: .newItem) {
                 Button("New Window") {
                     appDelegate.newOverlayWindow()
                 }
@@ -73,16 +60,36 @@ struct Chau7App: App {
                 }
                 .keyboardShortcut("w", modifiers: [.command, .shift])
 
+                Button("Close Other Tabs") {
+                    appDelegate.closeOtherTabs()
+                }
+                .keyboardShortcut("w", modifiers: [.command, .option])
+
                 Divider()
 
+                Button("Export Text...") {
+                    appDelegate.exportText()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+            }
+
+            CommandGroup(replacing: .saveItem) { }
+            CommandGroup(replacing: .importExport) { }
+
+            CommandGroup(replacing: .printItem) {
                 Button("Print...") {
                     appDelegate.printTerminal()
                 }
                 .keyboardShortcut("p")
             }
 
+            // MARK: - Edit Menu
+            CommandGroup(replacing: .pasteboard) {
+                Button("Cut") {
+                    appDelegate.cut()
+                }
+                .keyboardShortcut("x")
 
-            CommandGroup(after: .pasteboard) {
                 Button("Copy") {
                     appDelegate.copyOrInterrupt()
                 }
@@ -92,46 +99,64 @@ struct Chau7App: App {
                     appDelegate.paste()
                 }
                 .keyboardShortcut("v")
+
+                Button("Paste Escaped") {
+                    appDelegate.pasteEscaped()
+                }
+                .keyboardShortcut("v", modifiers: [.command, .option])
+
+                Button("Select All") {
+                    appDelegate.selectAll()
+                }
+                .keyboardShortcut("a")
             }
 
-            CommandGroup(after: .textEditing) {
-                Button("Find") {
-                    appDelegate.toggleSearch()
+            CommandGroup(replacing: .textEditing) {
+                Menu("Find") {
+                    Button("Find...") {
+                        appDelegate.toggleSearch()
+                    }
+                    .keyboardShortcut("f")
+
+                    Button("Find Next") {
+                        appDelegate.nextSearchMatch()
+                    }
+                    .keyboardShortcut("g")
+
+                    Button("Find Previous") {
+                        appDelegate.previousSearchMatch()
+                    }
+                    .keyboardShortcut("g", modifiers: [.command, .shift])
+
+                    Divider()
+
+                    Button("Use Selection for Find") {
+                        appDelegate.useSelectionForFind()
+                    }
+                    .keyboardShortcut("e")
                 }
-                .keyboardShortcut("f")
+
+                Divider()
 
                 Button("Snippets...") {
                     appDelegate.toggleSnippets()
                 }
-                .keyboardShortcut("s", modifiers: [.command, .shift])
-
-                Button("Rename Tab") {
-                    appDelegate.beginRenameTab()
-                }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
-
-                Button("Find Next") {
-                    appDelegate.nextSearchMatch()
-                }
-                .keyboardShortcut("g")
-
-                Button("Find Previous") {
-                    appDelegate.previousSearchMatch()
-                }
-                .keyboardShortcut("g", modifiers: [.command, .shift])
+                .keyboardShortcut(";", modifiers: [.command])
             }
 
+            // MARK: - View Menu
             CommandGroup(after: .toolbar) {
+                Button("Enter Full Screen") {
+                    appDelegate.toggleFullScreen()
+                }
+                .keyboardShortcut("f", modifiers: [.command, .control])
+
+                Divider()
+
                 Button("Zoom In") {
                     appDelegate.zoomIn()
                 }
                 .keyboardShortcut("=")
-
-                // Alternative zoom in shortcut (Cmd+Shift+= which is Cmd++) - Issue #22 fix
-                Button("Zoom In (+)") {
-                    appDelegate.zoomIn()
-                }
-                .keyboardShortcut("+", modifiers: [.command, .shift])
 
                 Button("Zoom Out") {
                     appDelegate.zoomOut()
@@ -145,36 +170,80 @@ struct Chau7App: App {
 
                 Divider()
 
+                Button("Clear Screen") {
+                    appDelegate.clearScreen()
+                }
+                .keyboardShortcut("k")
+
                 Button("Clear Scrollback") {
                     appDelegate.clearScrollback()
                 }
-                .keyboardShortcut("k")
+                .keyboardShortcut("k", modifiers: [.command, .shift])
             }
 
+            // MARK: - Window Menu
             CommandGroup(after: .windowSize) {
-                Button("Next Tab") {
+                Divider()
+
+                Button("Rename Tab...") {
+                    appDelegate.beginRenameTab()
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Show Next Tab") {
                     appDelegate.nextTab()
                 }
                 .keyboardShortcut("]", modifiers: [.command, .shift])
 
-                Button("Previous Tab") {
+                Button("Show Previous Tab") {
                     appDelegate.previousTab()
                 }
                 .keyboardShortcut("[", modifiers: [.command, .shift])
 
+                Button("Move Tab Right") {
+                    appDelegate.moveTabRight()
+                }
+                .keyboardShortcut("]", modifiers: [.command, .option, .shift])
+
+                Button("Move Tab Left") {
+                    appDelegate.moveTabLeft()
+                }
+                .keyboardShortcut("[", modifiers: [.command, .option, .shift])
+
                 Divider()
 
                 Group {
-                    Button("Tab 1") { appDelegate.selectTab(number: 1) }.keyboardShortcut("1")
-                    Button("Tab 2") { appDelegate.selectTab(number: 2) }.keyboardShortcut("2")
-                    Button("Tab 3") { appDelegate.selectTab(number: 3) }.keyboardShortcut("3")
-                    Button("Tab 4") { appDelegate.selectTab(number: 4) }.keyboardShortcut("4")
-                    Button("Tab 5") { appDelegate.selectTab(number: 5) }.keyboardShortcut("5")
-                    Button("Tab 6") { appDelegate.selectTab(number: 6) }.keyboardShortcut("6")
-                    Button("Tab 7") { appDelegate.selectTab(number: 7) }.keyboardShortcut("7")
-                    Button("Tab 8") { appDelegate.selectTab(number: 8) }.keyboardShortcut("8")
-                    Button("Tab 9") { appDelegate.selectTab(number: 9) }.keyboardShortcut("9")
+                    Button("Select Tab 1") { appDelegate.selectTab(number: 1) }
+                        .keyboardShortcut("1")
+                    Button("Select Tab 2") { appDelegate.selectTab(number: 2) }
+                        .keyboardShortcut("2")
+                    Button("Select Tab 3") { appDelegate.selectTab(number: 3) }
+                        .keyboardShortcut("3")
+                    Button("Select Tab 4") { appDelegate.selectTab(number: 4) }
+                        .keyboardShortcut("4")
+                    Button("Select Tab 5") { appDelegate.selectTab(number: 5) }
+                        .keyboardShortcut("5")
                 }
+
+                Group {
+                    Button("Select Tab 6") { appDelegate.selectTab(number: 6) }
+                        .keyboardShortcut("6")
+                    Button("Select Tab 7") { appDelegate.selectTab(number: 7) }
+                        .keyboardShortcut("7")
+                    Button("Select Tab 8") { appDelegate.selectTab(number: 8) }
+                        .keyboardShortcut("8")
+                    Button("Select Tab 9") { appDelegate.selectTab(number: 9) }
+                        .keyboardShortcut("9")
+                }
+
+                Divider()
+
+                Button("Debug Console") {
+                    DebugConsoleController.shared.toggle()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
             }
         }
     }

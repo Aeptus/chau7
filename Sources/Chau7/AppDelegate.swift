@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var overlayHosts: [OverlayHost] = []
     private weak var activeOverlayModel: OverlayTabsModel?
     private var keyMonitor: Any?
+    private var opacityObserver: Any?
     private var splashController: SplashWindowController?
     private var settingsWindow: NSWindow?
     private var isClosingTab: Bool = false  // Flag to prevent windowShouldClose from hiding window during tab close
@@ -20,6 +21,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.info("AppDelegate did finish launching.")
         NSApp.activate(ignoringOtherApps: true)
+
+        opacityObserver = NotificationCenter.default.addObserver(
+            forName: .terminalOpacityChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyWindowOpacity()
+        }
 
         // Show splash screen while initializing
         splashController = SplashWindowController()
@@ -78,6 +87,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let keyMonitor {
             NSEvent.removeMonitor(keyMonitor)
             self.keyMonitor = nil
+        }
+        if let opacityObserver {
+            NotificationCenter.default.removeObserver(opacityObserver)
+            self.opacityObserver = nil
         }
         // Cleanup status bar controller
         StatusBarController.shared.cleanup()
@@ -274,10 +287,225 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             Log.trace("Clear scrollback: no active terminal found.")
             return
         }
-        // Just send Ctrl+L to the shell - it will clear screen and redraw prompt
+        // Clear scrollback buffer and screen
+        terminalView.getTerminal().resetToInitialState()
+        terminalView.clearSelection()
+        Log.info("Scrollback cleared.")
+    }
+
+    func clearScreen() {
+        guard let window = NSApp.keyWindow,
+              overlayHosts.contains(where: { $0.window == window }),
+              let terminalView = window.firstResponder as? Chau7TerminalView
+        else {
+            Log.trace("Clear screen: no active terminal found.")
+            return
+        }
+        // Send Ctrl+L to the shell - it will clear screen and redraw prompt
         terminalView.send(data: [0x0c])
         terminalView.clearSelection()
-        Log.info("Sent Ctrl+L to shell for clear.")
+        Log.info("Sent Ctrl+L to shell for clear screen.")
+    }
+
+    // MARK: - App Menu Actions
+
+    func showAbout() {
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationName: "Chau7",
+            .applicationVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0",
+            .version: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1",
+            .credits: NSAttributedString(string: "A modern terminal for AI-assisted development.\n\nCopyright \u{00a9} 2024\nhttps://github.com/yourrepo/chau7")
+        ])
+    }
+
+    // MARK: - File Menu Actions
+
+    func openLocation() {
+        let alert = NSAlert()
+        alert.messageText = "Open Location"
+        alert.informativeText = "Enter a directory path to open in a new tab:"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Open")
+        alert.addButton(withTitle: "Cancel")
+
+        let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        textField.stringValue = FileManager.default.homeDirectoryForCurrentUser.path
+        alert.accessoryView = textField
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            let path = textField.stringValue
+            if FileManager.default.fileExists(atPath: path) {
+                if let tabsModel = ensureActiveOverlayModel() {
+                    tabsModel.newTab(at: path)
+                }
+            }
+        }
+    }
+
+    func exportText() {
+        guard let window = NSApp.keyWindow,
+              overlayHosts.contains(where: { $0.window == window }),
+              let terminalView = window.firstResponder as? Chau7TerminalView
+        else {
+            Log.trace("Export text: no active terminal found.")
+            return
+        }
+
+        let savePanel = NSSavePanel()
+        savePanel.allowedContentTypes = [.plainText]
+        savePanel.nameFieldStringValue = "terminal-output.txt"
+        savePanel.title = "Export Terminal Text"
+
+        if savePanel.runModal() == .OK, let url = savePanel.url {
+            // Select all text and get it
+            terminalView.selectAll(nil)
+            let text = terminalView.getSelectedText() ?? ""
+            terminalView.clearSelection()
+            do {
+                try text.write(to: url, atomically: true, encoding: .utf8)
+                Log.info("Terminal text exported to \(url.path)")
+            } catch {
+                Log.error("Failed to export terminal text: \(error)")
+            }
+        }
+    }
+
+    func closeOtherTabs() {
+        ensureActiveOverlayModel()?.closeOtherTabs()
+    }
+
+    // MARK: - Edit Menu Actions
+
+    func cut() {
+        // In terminal, cut = copy (we can't cut from terminal output)
+        copyOrInterrupt()
+    }
+
+    func pasteEscaped() {
+        guard let string = NSPasteboard.general.string(forType: .string) else { return }
+        // Escape special shell characters
+        let escaped = string
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "$", with: "\\$")
+            .replacingOccurrences(of: "`", with: "\\`")
+            .replacingOccurrences(of: "!", with: "\\!")
+
+        guard let window = NSApp.keyWindow,
+              overlayHosts.contains(where: { $0.window == window }),
+              let terminalView = window.firstResponder as? Chau7TerminalView
+        else { return }
+
+        terminalView.insertText(escaped, replacementRange: NSRange(location: NSNotFound, length: 0))
+        Log.info("Pasted escaped text.")
+    }
+
+    func selectAll() {
+        guard let window = NSApp.keyWindow,
+              overlayHosts.contains(where: { $0.window == window }),
+              let terminalView = window.firstResponder as? Chau7TerminalView
+        else { return }
+
+        terminalView.selectAll(nil)
+        Log.info("Selected all text.")
+    }
+
+    func clearToPreviousMark() {
+        // This is like Cmd+L in iTerm - clears screen but keeps scrollback
+        clearScreen()
+    }
+
+    func useSelectionForFind() {
+        guard let window = NSApp.keyWindow,
+              overlayHosts.contains(where: { $0.window == window }),
+              let terminalView = window.firstResponder as? Chau7TerminalView
+        else { return }
+
+        if let selection = terminalView.getSelectedText() {
+            if let tabsModel = activeOverlayModel {
+                tabsModel.searchQuery = selection
+                if !tabsModel.isSearchVisible {
+                    tabsModel.toggleSearch()
+                }
+            }
+        }
+    }
+
+    func showCharacterPalette() {
+        NSApp.orderFrontCharacterPalette(nil)
+    }
+
+    // MARK: - View Menu Actions
+
+    func toggleTabBar() {
+        // Tab bar is always shown in Chau7, but this could toggle compact mode
+        Log.info("Toggle tab bar - not implemented (always visible)")
+    }
+
+    func toggleFullScreen() {
+        guard let window = NSApp.keyWindow else { return }
+        window.toggleFullScreen(nil)
+    }
+
+    func scrollToTop() {
+        guard let window = NSApp.keyWindow,
+              overlayHosts.contains(where: { $0.window == window }),
+              let terminalView = window.firstResponder as? Chau7TerminalView
+        else { return }
+
+        terminalView.scrollToTop()
+        Log.info("Scrolled to top.")
+    }
+
+    func scrollToBottom() {
+        guard let window = NSApp.keyWindow,
+              overlayHosts.contains(where: { $0.window == window }),
+              let terminalView = window.firstResponder as? Chau7TerminalView
+        else { return }
+
+        terminalView.scrollToBottom()
+        Log.info("Scrolled to bottom.")
+    }
+
+    // MARK: - Window Menu Actions
+
+    func showTabColorPicker() {
+        ensureActiveOverlayModel()?.showTabColorPicker()
+    }
+
+    func moveTabRight() {
+        ensureActiveOverlayModel()?.moveCurrentTabRight()
+    }
+
+    func moveTabLeft() {
+        ensureActiveOverlayModel()?.moveCurrentTabLeft()
+    }
+
+    // MARK: - Help Menu Actions
+
+    func showHelp() {
+        if let url = URL(string: "https://github.com/yourrepo/chau7#readme") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func showKeyboardShortcuts() {
+        // Show settings window focused on keyboard shortcuts section
+        showSettings()
+        // TODO: Navigate to keyboard shortcuts section
+    }
+
+    func showReleaseNotes() {
+        if let url = URL(string: "https://github.com/yourrepo/chau7/releases") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func reportIssue() {
+        if let url = URL(string: "https://github.com/yourrepo/chau7/issues/new") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func setupOverlayWindow() {
@@ -381,6 +609,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = true
+        window.alphaValue = FeatureSettings.shared.windowOpacity
         window.level = .normal
         window.collectionBehavior = [.managed]
         window.isMovableByWindowBackground = false
@@ -397,6 +626,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         tabsModel.focusSelected()
         Log.info("Overlay window created and shown.")
         return window
+    }
+
+    private func applyWindowOpacity() {
+        let opacity = FeatureSettings.shared.windowOpacity
+        for host in overlayHosts {
+            host.window.alphaValue = opacity
+        }
+        DropdownController.shared.applyOpacity(opacity)
     }
 
     private func installKeyMonitor() {

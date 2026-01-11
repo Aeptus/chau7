@@ -389,6 +389,17 @@ struct SearchOverlayView: View {
                         model.refreshSearch()
                     }
 
+                    Toggle(isOn: $model.isRegexSearch) {
+                        Text(".*")
+                            .font(.custom("Avenir Next", size: 11).weight(.semibold))
+                    }
+                    .toggleStyle(.button)
+                    .controlSize(.small)
+                    .help("Regex search")
+                    .onChange(of: model.isRegexSearch) { _ in
+                        model.refreshSearch()
+                    }
+
                     Button("Close") {
                         model.toggleSearch()
                     }
@@ -396,14 +407,23 @@ struct SearchOverlayView: View {
                     // Note: Escape is handled by AppDelegate.handleKeyEvent()
                 }
 
-                if model.searchResults.isEmpty && !model.searchQuery.isEmpty {
+                if let error = model.searchError {
+                    Text(error)
+                        .font(.custom("Avenir Next", size: 11))
+                        .foregroundStyle(.orange)
+                } else if model.searchResults.isEmpty && !model.searchQuery.isEmpty {
                     Text("No results")
                         .font(.custom("Avenir Next", size: 11))
                         .foregroundStyle(.secondary)
                 } else if !model.searchResults.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(model.searchResults, id: \.self) { line in
-                            SearchResultRow(line: line, query: model.searchQuery, caseSensitive: model.isCaseSensitive)
+                            SearchResultRow(
+                                line: line,
+                                query: model.searchQuery,
+                                caseSensitive: model.isCaseSensitive,
+                                useRegex: model.isRegexSearch
+                            )
                         }
                     }
                     .frame(maxHeight: 120)
@@ -431,9 +451,10 @@ struct SearchResultRow: View {
     let line: String
     let query: String
     var caseSensitive: Bool = false
+    var useRegex: Bool = false
 
     var body: some View {
-        if query.isEmpty {
+        if query.isEmpty || useRegex {
             Text(line)
                 .font(.custom("Avenir Next", size: 11))
                 .foregroundStyle(.secondary)

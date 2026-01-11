@@ -13,6 +13,7 @@ final class DropdownController {
     private weak var appModel: AppModel?
     private var globalHotkeyMonitor: Any?
     private var isVisible: Bool = false
+    private var targetOpacity: Double = FeatureSettings.shared.windowOpacity
     private var hotkeyEventHandler: EventHandlerRef?
 
     private init() {}
@@ -228,7 +229,7 @@ final class DropdownController {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            window.animator().alphaValue = 1
+            window.animator().alphaValue = targetOpacity
         }
 
         tabsModel?.focusSelected()
@@ -291,6 +292,7 @@ final class DropdownController {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = true
+        window.alphaValue = targetOpacity
         window.level = .floating
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.isMovableByWindowBackground = false
@@ -300,6 +302,16 @@ final class DropdownController {
         self.dropdownWindow = window
 
         Log.info("F04: Dropdown window created.")
+    }
+
+    func applyOpacity(_ opacity: Double) {
+        targetOpacity = opacity
+        guard let window = dropdownWindow else { return }
+        if isVisible {
+            window.animator().alphaValue = opacity
+        } else {
+            window.alphaValue = opacity
+        }
     }
 
     private func positionDropdownWindow(_ window: NSWindow) {

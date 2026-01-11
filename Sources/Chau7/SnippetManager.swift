@@ -585,7 +585,37 @@ final class SnippetManager: ObservableObject {
         }
     }
 
+    /// Directories where we skip git repo detection to avoid permission prompts
+    private static let protectedDirectories: Set<String> = {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return [
+            "\(home)/Downloads",
+            "\(home)/Desktop",
+            "\(home)/Documents",
+            "\(home)/Library",
+            "/Applications",
+            "/System",
+            "/Library"
+        ]
+    }()
+
+    /// Cache of paths we've already checked and found to not be git repos
+    private var nonGitPathCache: Set<String> = []
+
     private func resolveRepoRoot(path: String) -> String? {
+        // Skip protected directories to avoid repeated permission prompts
+        for protected in Self.protectedDirectories {
+            if path == protected || path.hasPrefix(protected + "/") {
+                Log.trace("Skipping git check for protected directory: \(path)")
+                return nil
+            }
+        }
+
+        // Check if we've already determined this path isn't in a git repo
+        if nonGitPathCache.contains(path) {
+            return nil
+        }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["-C", path, "rev-parse", "--show-toplevel"]
@@ -596,9 +626,13 @@ final class SnippetManager: ObservableObject {
             try process.run()
             process.waitUntilExit()
         } catch {
+            nonGitPathCache.insert(path)
             return nil
         }
-        guard process.terminationStatus == 0 else { return nil }
+        guard process.terminationStatus == 0 else {
+            nonGitPathCache.insert(path)
+            return nil
+        }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         let output = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         return output.isEmpty ? nil : output

@@ -250,25 +250,88 @@ struct StatusBarPanelView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    // MARK: - Quick Actions
+    // MARK: - Quick Settings
 
     private var quickActionsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Quick Actions", systemImage: "bolt")
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Quick Settings", systemImage: "slider.horizontal.3")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 8) {
-                Toggle(isOn: $model.isMonitoring) {
-                    Label("Monitor", systemImage: "antenna.radiowaves.left.and.right")
-                }
-                .toggleStyle(.button)
-                .controlSize(.small)
+            // Row 1: Monitoring and Broadcast
+            HStack(spacing: 12) {
+                QuickSettingToggle(
+                    icon: "antenna.radiowaves.left.and.right",
+                    label: "Monitoring",
+                    isOn: $model.isMonitoring
+                )
                 .onChange(of: model.isMonitoring) { _ in
                     model.applyMonitoringState()
                     NotificationCenter.default.post(name: NSNotification.Name("MonitoringStateChanged"), object: nil)
                 }
 
+                QuickSettingToggle(
+                    icon: "dot.radiowaves.left.and.right",
+                    label: "Broadcast",
+                    isOn: Binding(
+                        get: { FeatureSettings.shared.isBroadcastEnabled },
+                        set: { FeatureSettings.shared.isBroadcastEnabled = $0 }
+                    )
+                )
+            }
+
+            // Row 2: Auto Theme and Syntax Highlight
+            HStack(spacing: 12) {
+                QuickSettingToggle(
+                    icon: "sparkles",
+                    label: "AI Themes",
+                    isOn: Binding(
+                        get: { FeatureSettings.shared.isAutoTabThemeEnabled },
+                        set: { FeatureSettings.shared.isAutoTabThemeEnabled = $0 }
+                    )
+                )
+
+                QuickSettingToggle(
+                    icon: "textformat",
+                    label: "Syntax",
+                    isOn: Binding(
+                        get: { FeatureSettings.shared.isSyntaxHighlightEnabled },
+                        set: { FeatureSettings.shared.isSyntaxHighlightEnabled = $0 }
+                    )
+                )
+            }
+
+            // Row 3: Window Opacity Slider
+            HStack(spacing: 8) {
+                Image(systemName: "square.dashed")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20)
+
+                Text("Opacity")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+
+                Slider(
+                    value: Binding(
+                        get: { FeatureSettings.shared.windowOpacity },
+                        set: { FeatureSettings.shared.windowOpacity = $0 }
+                    ),
+                    in: 0.3...1.0,
+                    step: 0.1
+                )
+                .controlSize(.small)
+
+                Text("\(Int(FeatureSettings.shared.windowOpacity * 100))%")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 32)
+            }
+
+            Divider()
+
+            // Row 4: Action Buttons
+            HStack(spacing: 8) {
                 Button {
                     model.sendTestNotification()
                 } label: {
@@ -276,11 +339,13 @@ struct StatusBarPanelView: View {
                 }
                 .controlSize(.small)
 
+                Spacer()
+
                 Button {
                     (NSApp.delegate as? AppDelegate)?.showSettings()
                     onClose()
                 } label: {
-                    Label("Settings", systemImage: "gearshape")
+                    Label("All Settings", systemImage: "gearshape")
                 }
                 .controlSize(.small)
             }
@@ -547,5 +612,44 @@ private struct EventRow: View {
 
     private var timeString: String {
         Self.timeFormatter.string(from: event.timestamp)
+    }
+}
+
+// MARK: - Quick Setting Toggle
+
+private struct QuickSettingToggle: View {
+    let icon: String
+    let label: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Button {
+            isOn.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11))
+                    .foregroundStyle(isOn ? .primary : .secondary)
+                    .frame(width: 16)
+
+                Text(label)
+                    .font(.system(size: 11))
+                    .foregroundStyle(isOn ? .primary : .secondary)
+
+                Spacer()
+
+                Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 12))
+                    .foregroundColor(isOn ? .green : .gray)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isOn ? Color.accentColor.opacity(0.1) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }

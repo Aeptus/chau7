@@ -58,6 +58,8 @@ final class OverlayTabsModel: ObservableObject {
     @Published var searchResults: [String] = []
     @Published var searchMatchCount: Int = 0
     @Published var isCaseSensitive: Bool = false  // Issue #23 fix
+    @Published var isRegexSearch: Bool = false
+    @Published var searchError: String? = nil
     @Published var isRenameVisible: Bool = false
     @Published var renameText: String = ""
     @Published var renameColor: TabColor = .blue
@@ -82,6 +84,7 @@ final class OverlayTabsModel: ObservableObject {
     private var suspendWorkItems: [UUID: DispatchWorkItem] = [:]
     private var isRenderSuspensionEnabled = false
     private var renderSuspensionDelay: TimeInterval = 5.0
+    private var needsFreshTabOnShow: Bool = false
 
     weak var overlayWindow: NSWindow?
     var onCloseLastTab: (() -> Void)?
@@ -138,12 +141,49 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     func newTab() {
+        needsFreshTabOnShow = false
         var tab = OverlayTab(appModel: appModel)
         let colors = TabColor.allCases
         if !colors.isEmpty {
             tab.color = colors[tabs.count % colors.count]
         }
-        tabs.append(tab)
+
+        // Insert based on settings
+        let position = FeatureSettings.shared.newTabPosition
+        if position == "after", let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) {
+            tabs.insert(tab, at: currentIndex + 1)
+        } else {
+            tabs.append(tab)
+        }
+
+        selectedTabID = tab.id
+        focusSelected()
+        updateSuspensionState()
+        updateSnippetContextForSelection()
+        if isSearchVisible {
+            refreshSearch()
+        }
+    }
+
+    func newTab(at directory: String) {
+        needsFreshTabOnShow = false
+        var tab = OverlayTab(appModel: appModel)
+        let colors = TabColor.allCases
+        if !colors.isEmpty {
+            tab.color = colors[tabs.count % colors.count]
+        }
+
+        // Set the starting directory for the new tab
+        tab.session.currentDirectory = directory
+
+        // Insert based on settings
+        let position = FeatureSettings.shared.newTabPosition
+        if position == "after", let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) {
+            tabs.insert(tab, at: currentIndex + 1)
+        } else {
+            tabs.append(tab)
+        }
+
         selectedTabID = tab.id
         focusSelected()
         updateSuspensionState()
@@ -173,6 +213,13 @@ final class OverlayTabsModel: ObservableObject {
         tabs[index].session.closeSession()
 
         if tabs.count == 1 {
+            let behavior = FeatureSettings.shared.lastTabCloseBehavior
+            if behavior == .closeWindow {
+                Log.info("closeTab: last tab - closing window per settings")
+                needsFreshTabOnShow = true
+                onCloseLastTab?()
+                return
+            }
             // Last tab - create a fresh one instead of closing window
             Log.info("closeTab: last tab - creating fresh tab")
             var newTab = OverlayTab(appModel: appModel)
@@ -204,6 +251,19 @@ final class OverlayTabsModel: ObservableObject {
         Log.info("closeTab completed. tabs.count=\(tabs.count)")
     }
 
+    func closeOtherTabs() {
+        guard tabs.count > 1 else { return }
+        let currentID = selectedTabID
+
+        // Close all tabs except current one
+        for tab in tabs where tab.id != currentID {
+            tab.session.closeSession()
+        }
+
+        tabs = tabs.filter { $0.id == currentID }
+        Log.info("Closed all other tabs, keeping \(currentID)")
+    }
+
     func selectNextTab() {
         guard tabs.count > 1, let index = tabs.firstIndex(where: { $0.id == selectedTabID }) else { return }
         let nextIndex = (index + 1) % tabs.count
@@ -229,8 +289,23 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     func focusSelected() {
+        ensureFreshTabIfNeeded()
         guard let window = overlayWindow else { return }
         selectedTab?.session.focusTerminal(in: window)
+    }
+
+    private func ensureFreshTabIfNeeded() {
+        guard needsFreshTabOnShow else { return }
+        needsFreshTabOnShow = false
+        guard let index = tabs.firstIndex(where: { $0.id == selectedTabID }) else { return }
+
+        var newTab = OverlayTab(appModel: appModel)
+        if let firstColor = TabColor.allCases.first {
+            newTab.color = firstColor
+        }
+        tabs[index] = newTab
+        selectedTabID = newTab.id
+        updateSnippetContextForSelection()
     }
 
     func selectTab(number: Int) {
@@ -243,6 +318,27 @@ final class OverlayTabsModel: ObservableObject {
         if isSearchVisible {
             refreshSearch()
         }
+    }
+
+    // MARK: - Tab Reordering
+
+    func moveCurrentTabRight() {
+        guard let index = tabs.firstIndex(where: { $0.id == selectedTabID }),
+              index < tabs.count - 1 else { return }
+        tabs.swapAt(index, index + 1)
+        Log.info("Moved tab right to index \(index + 1)")
+    }
+
+    func moveCurrentTabLeft() {
+        guard let index = tabs.firstIndex(where: { $0.id == selectedTabID }),
+              index > 0 else { return }
+        tabs.swapAt(index, index - 1)
+        Log.info("Moved tab left to index \(index - 1)")
+    }
+
+    func showTabColorPicker() {
+        // Open rename dialog which includes color picker
+        beginRenameSelected()
     }
 
     func copyOrInterrupt() {
@@ -270,11 +366,16 @@ final class OverlayTabsModel: ObservableObject {
         if isSearchVisible {
             isRenameVisible = false
             isSnippetManagerVisible = false
+            let defaults = FeatureSettings.shared
+            isCaseSensitive = defaults.findCaseSensitiveDefault
+            isRegexSearch = defaults.findRegexDefault
+            searchError = nil
             refreshSearch()
         } else {
             searchQuery = ""
             searchResults = []
             searchMatchCount = 0
+            searchError = nil
             // Only clear search for current tab, not all tabs (Issue #7 fix)
             selectedTab?.session.clearSearch()
             focusSelected()
@@ -285,6 +386,7 @@ final class OverlayTabsModel: ObservableObject {
         guard !searchQuery.isEmpty else {
             searchResults = []
             searchMatchCount = 0
+            searchError = nil
             selectedTab?.session.clearSearch()
             return
         }
@@ -294,10 +396,12 @@ final class OverlayTabsModel: ObservableObject {
             query: searchQuery,
             maxMatches: 400,
             maxPreviewLines: 12,
-            caseSensitive: isCaseSensitive
+            caseSensitive: isCaseSensitive,
+            regexEnabled: isRegexSearch
         )
         searchResults = result.previewLines
         searchMatchCount = result.count
+        searchError = result.error
     }
 
     func nextMatch() {
@@ -435,12 +539,23 @@ final class OverlayTabsModel: ObservableObject {
 
         // Extract first word (command name)
         let firstWord = command.split(separator: " ").first?.lowercased() ?? ""
+        let commandLowercased = command.lowercased()
 
         // Check against AI model mappings
         for (pattern, color) in FeatureSettings.aiModelColors {
             if firstWord.contains(pattern) {
                 tabs[index].autoColor = color
                 Log.trace("F05: Auto-colored tab for \(pattern) -> \(color)")
+                return
+            }
+        }
+
+        for rule in FeatureSettings.shared.customAIDetectionRules {
+            let pattern = rule.pattern.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard !pattern.isEmpty else { continue }
+            if commandLowercased.contains(pattern) || firstWord.contains(pattern) {
+                tabs[index].autoColor = rule.tabColor
+                Log.trace("F05: Auto-colored tab for custom pattern \(pattern) -> \(rule.tabColor)")
                 return
             }
         }
