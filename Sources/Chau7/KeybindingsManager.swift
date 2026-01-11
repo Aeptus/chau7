@@ -345,15 +345,15 @@ final class KeybindingsManager: ObservableObject {
 
         // Terminal signals - send control codes to the terminal
         case .interrupt:
-            overlayModel?.selectedTab?.session.sendInput("\u{03}")  // Ctrl+C
+            overlayModel?.selectedTab?.session?.sendInput("\u{03}")  // Ctrl+C
         case .eof:
-            overlayModel?.selectedTab?.session.sendInput("\u{04}")  // Ctrl+D
+            overlayModel?.selectedTab?.session?.sendInput("\u{04}")  // Ctrl+D
         case .suspend:
-            overlayModel?.selectedTab?.session.sendInput("\u{1A}")  // Ctrl+Z
+            overlayModel?.selectedTab?.session?.sendInput("\u{1A}")  // Ctrl+Z
         case .clearLine:
-            overlayModel?.selectedTab?.session.sendInput("\u{15}")  // Ctrl+U
+            overlayModel?.selectedTab?.session?.sendInput("\u{15}")  // Ctrl+U
         case .clearWord:
-            overlayModel?.selectedTab?.session.sendInput("\u{17}")  // Ctrl+W
+            overlayModel?.selectedTab?.session?.sendInput("\u{17}")  // Ctrl+W
 
         // Features
         case .toggleDropdown:

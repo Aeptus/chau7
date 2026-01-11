@@ -125,17 +125,17 @@ struct DebugConsoleView: View {
                                 .foregroundStyle(.green)
                         }
                         Spacer()
-                        Text(tab.session.status.rawValue)
+                        Text(tab.session?.status.rawValue ?? "no session")
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
 
                     Group {
-                        stateRow("Title", value: tab.customTitle ?? tab.session.title)
-                        stateRow("App", value: tab.session.activeAppName ?? "none")
-                        stateRow("Directory", value: tab.session.currentDirectory)
-                        if tab.session.isGitRepo {
-                            stateRow("Git Branch", value: tab.session.gitBranch ?? "unknown")
+                        stateRow("Title", value: tab.customTitle ?? tab.session?.title ?? "(no terminal)")
+                        stateRow("App", value: tab.session?.activeAppName ?? "none")
+                        stateRow("Directory", value: tab.session?.currentDirectory ?? "")
+                        if tab.session?.isGitRepo == true {
+                            stateRow("Git Branch", value: tab.session?.gitBranch ?? "unknown")
                         }
                     }
                     .padding(.leading, 8)

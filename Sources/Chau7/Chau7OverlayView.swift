@@ -43,18 +43,32 @@ struct Chau7OverlayView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(overlayModel.tabs) { tab in
-                        TabButton(
-                            customTitle: tab.customTitle,
-                            session: tab.session,
-                            isSelected: tab.id == overlayModel.selectedTabID,
-                            isSuspended: overlayModel.isTabSuspended(tab.id),
-                            tabColor: tab.effectiveColor,  // F05: Use effective color (auto or manual)
-                            commandBadge: tab.commandBadge,  // F20: Last command badge
-                            isBroadcastIncluded: overlayModel.isBroadcastMode && !overlayModel.broadcastExcludedTabIDs.contains(tab.id),  // F13
-                            onSelect: { overlayModel.selectTab(id: tab.id) },
-                            onRename: { overlayModel.beginRename(tabID: tab.id) },
-                            onClose: { overlayModel.closeTab(id: tab.id) }
-                        )
+                        if let session = tab.session {
+                            TabButton(
+                                customTitle: tab.customTitle,
+                                session: session,
+                                isSelected: tab.id == overlayModel.selectedTabID,
+                                isSuspended: overlayModel.isTabSuspended(tab.id),
+                                tabColor: tab.effectiveColor,  // F05: Use effective color (auto or manual)
+                                commandBadge: tab.commandBadge,  // F20: Last command badge
+                                isBroadcastIncluded: overlayModel.isBroadcastMode && !overlayModel.broadcastExcludedTabIDs.contains(tab.id),  // F13
+                                onSelect: { overlayModel.selectTab(id: tab.id) },
+                                onRename: { overlayModel.beginRename(tabID: tab.id) },
+                                onClose: { overlayModel.closeTab(id: tab.id) }
+                            )
+                        } else {
+                            TabButtonFallback(
+                                title: tab.displayTitle,
+                                isSelected: tab.id == overlayModel.selectedTabID,
+                                isSuspended: overlayModel.isTabSuspended(tab.id),
+                                tabColor: tab.effectiveColor,
+                                commandBadge: tab.commandBadge,
+                                isBroadcastIncluded: overlayModel.isBroadcastMode && !overlayModel.broadcastExcludedTabIDs.contains(tab.id),
+                                onSelect: { overlayModel.selectTab(id: tab.id) },
+                                onRename: { overlayModel.beginRename(tabID: tab.id) },
+                                onClose: { overlayModel.closeTab(id: tab.id) }
+                            )
+                        }
                     }
 
                     Button {
@@ -105,7 +119,7 @@ struct Chau7OverlayView: View {
             ForEach(overlayModel.tabs) { tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
                 let isSuspended = overlayModel.isTabSuspended(tab.id)
-                TerminalViewRepresentable(model: tab.session, isSuspended: isSuspended)
+                SplitPaneView(controller: tab.splitController, isSuspended: isSuspended)
                     .opacity(isSelected ? 1 : 0)
                     .allowsHitTesting(isSelected)
                     .accessibilityHidden(!isSelected)
@@ -208,6 +222,10 @@ struct TabButton: View {
             return "bubble.left.and.bubble.right.fill"  // Chat/conversation icon
         case "Copilot":
             return "airplane"  // Copilot aviation metaphor
+        case "Aider":
+            return "wrench.and.screwdriver"  // Tool/assistant
+        case "Cursor":
+            return "cursorarrow"  // Cursor icon
         default:
             return nil
         }
@@ -227,6 +245,10 @@ struct TabButton: View {
             return Color(red: 0.0, green: 0.65, blue: 0.52)   // OpenAI green
         case "Copilot":
             return Color(red: 0.15, green: 0.15, blue: 0.15)  // GitHub dark
+        case "Aider":
+            return Color(red: 0.93, green: 0.46, blue: 0.6)   // Pink
+        case "Cursor":
+            return Color(red: 0.2, green: 0.68, blue: 0.66)   // Teal
         default:
             return .primary
         }
@@ -286,6 +308,73 @@ struct TabButton: View {
             if session.isGitRepo {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 11, weight: .semibold))
+            }
+
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            isSelected
+                ? tabColor.color.opacity(0.25)
+                : Color.black.opacity(0.18)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .contentShape(Rectangle())
+        .highPriorityGesture(
+            TapGesture(count: 2).onEnded {
+                onRename()
+            }
+        )
+        .onTapGesture {
+            onSelect()
+        }
+    }
+}
+
+struct TabButtonFallback: View {
+    let title: String
+    let isSelected: Bool
+    let isSuspended: Bool
+    let tabColor: TabColor
+    let commandBadge: String?
+    let isBroadcastIncluded: Bool
+    let onSelect: () -> Void
+    let onRename: () -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        let indicatorColor = isSuspended
+            ? Color.gray.opacity(0.6)
+            : (isSelected ? tabColor.color : tabColor.color.opacity(0.6))
+
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.custom("Avenir Next", size: 12).weight(.semibold))
+                .lineLimit(1)
+
+            Circle()
+                .fill(indicatorColor)
+                .frame(width: 8, height: 8)
+
+            if let badge = commandBadge {
+                Text(badge)
+                    .font(.custom("Avenir Next", size: 10).weight(.medium))
+                    .foregroundStyle(badge.contains("✗") ? .red : .green)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color.black.opacity(0.2))
+                    .clipShape(Capsule())
+            }
+
+            if isBroadcastIncluded {
+                Image(systemName: "dot.radiowaves.left.and.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.orange)
             }
 
             Button(action: onClose) {

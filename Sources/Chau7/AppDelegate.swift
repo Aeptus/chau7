@@ -518,6 +518,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ensureActiveOverlayModel()?.moveCurrentTabLeft()
     }
 
+    // MARK: - Pane Actions
+
+    func splitHorizontally() {
+        ensureActiveOverlayModel()?.splitCurrentTabHorizontally()
+    }
+
+    func splitVertically() {
+        ensureActiveOverlayModel()?.splitCurrentTabVertically()
+    }
+
+    func openTextEditorPane() {
+        ensureActiveOverlayModel()?.openTextEditorInCurrentTab()
+    }
+
+    func closeCurrentPane() {
+        ensureActiveOverlayModel()?.closeFocusedPaneInCurrentTab()
+    }
+
+    func focusNextPane() {
+        ensureActiveOverlayModel()?.focusNextPaneInCurrentTab()
+    }
+
+    func focusPreviousPane() {
+        ensureActiveOverlayModel()?.focusPreviousPaneInCurrentTab()
+    }
+
+    func appendSelectionToEditor() {
+        ensureActiveOverlayModel()?.appendSelectionToEditorInCurrentTab()
+    }
+
     // MARK: - Help Menu Actions
 
     func showHelp() {

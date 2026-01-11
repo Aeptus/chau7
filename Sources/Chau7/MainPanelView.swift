@@ -1028,13 +1028,28 @@ struct GeneralSettingsView: View {
             )
 
             SettingsTextField(
-                label: "Default Directory",
-                help: "Starting directory for new terminal tabs",
+                label: L("settings.general.defaultDirectory"),
+                help: L("settings.general.defaultDirectory.help"),
                 placeholder: "~",
                 text: $settings.defaultStartDirectory,
                 width: 280,
                 monospaced: true
             )
+
+            Divider()
+                .padding(.vertical, 8)
+
+            // Language
+            SettingsSectionHeader(L("settings.general.language"), icon: "globe")
+
+            SettingsPicker(
+                label: L("settings.general.language.label"),
+                help: L("settings.general.language.help"),
+                selection: $settings.appLanguage,
+                options: AppLanguage.allCases.map { (value: $0, label: $0.displayName) }
+            )
+
+            SettingsDescription(text: L("settings.general.language.note"))
 
             Divider()
                 .padding(.vertical, 8)
@@ -2534,11 +2549,11 @@ struct AIIntegrationSettingsView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 SettingsDetectionRow(name: "Claude Code", commands: "claude, claude-code", color: .purple)
-                SettingsDetectionRow(name: "OpenAI Codex", commands: "codex", color: .green)
+                SettingsDetectionRow(name: "OpenAI Codex", commands: "codex, codex-cli", color: .green)
                 SettingsDetectionRow(name: "Gemini", commands: "gemini", color: .blue)
-                SettingsDetectionRow(name: "ChatGPT", commands: "chatgpt", color: .green)
-                SettingsDetectionRow(name: "GitHub Copilot", commands: "gh copilot", color: .orange)
-                SettingsDetectionRow(name: "Aider", commands: "aider", color: .pink)
+                SettingsDetectionRow(name: "ChatGPT", commands: "chatgpt, gpt", color: .green)
+                SettingsDetectionRow(name: "GitHub Copilot", commands: "gh copilot, copilot", color: .orange)
+                SettingsDetectionRow(name: "Aider", commands: "aider, aider-chat", color: .pink)
                 SettingsDetectionRow(name: "Cursor", commands: "cursor", color: .teal)
             }
             .padding(8)

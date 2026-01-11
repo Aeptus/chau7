@@ -4,6 +4,16 @@ import UserNotifications
 final class NotificationManager {
     static let shared = NotificationManager()
 
+    /// Tracks whether UNUserNotificationCenter is available and authorized
+    /// Access must be synchronized via the serial queue
+    private var _useNativeNotifications = true
+    private let queue = DispatchQueue(label: "com.chau7.notificationManager")
+
+    private var useNativeNotifications: Bool {
+        get { queue.sync { _useNativeNotifications } }
+        set { queue.sync { _useNativeNotifications = newValue } }
+    }
+
     func notify(for event: AIEvent) {
         // Skip notifications when not running as a proper app bundle
         guard Bundle.main.bundleIdentifier != nil else {
@@ -15,38 +25,92 @@ final class NotificationManager {
             return
         }
 
+        // Try native notifications first, fall back to AppleScript if needed
+        if useNativeNotifications {
+            tryNativeNotification(for: event)
+        } else {
+            sendAppleScriptNotification(title: event.notificationTitle, body: event.notificationBody)
+        }
+    }
+
+    private func tryNativeNotification(for event: AIEvent) {
         let center = UNUserNotificationCenter.current()
-        center.getNotificationSettings { settings in
+        center.getNotificationSettings { [weak self] settings in
             switch settings.authorizationStatus {
             case .authorized, .provisional, .ephemeral:
-                break
-            case .denied, .notDetermined:
-                Log.warn("Skipping notification (not authorized): status=\(settings.authorizationStatus.rawValue)")
-                return
+                self?.scheduleNativeNotification(for: event)
+            case .denied:
+                Log.info("Native notifications denied, using AppleScript fallback")
+                self?.useNativeNotifications = false
+                self?.sendAppleScriptNotification(title: event.notificationTitle, body: event.notificationBody)
+            case .notDetermined:
+                // Try to schedule anyway - if it fails, we'll fall back to AppleScript
+                self?.scheduleNativeNotification(for: event)
             @unknown default:
-                Log.warn("Skipping notification (unknown authorization status).")
-                return
+                Log.warn("Unknown notification authorization status, trying AppleScript")
+                self?.sendAppleScriptNotification(title: event.notificationTitle, body: event.notificationBody)
             }
+        }
+    }
 
-            Log.info("Scheduling notification: type=\(event.type) tool=\(event.tool)")
+    private func scheduleNativeNotification(for event: AIEvent) {
+        Log.info("Scheduling notification: type=\(event.type) tool=\(event.tool)")
 
-            let content = UNMutableNotificationContent()
-            content.title = event.notificationTitle
-            content.body = event.notificationBody
-            content.sound = .default
+        let content = UNMutableNotificationContent()
+        content.title = event.notificationTitle
+        content.body = event.notificationBody
+        content.sound = .default
 
-            let request = UNNotificationRequest(
-                identifier: UUID().uuidString,
-                content: content,
-                trigger: nil
-            )
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil
+        )
 
-            center.add(request) { error in
-                if let error {
-                    Log.error("Notification error: \(error.localizedDescription)")
+        let center = UNUserNotificationCenter.current()
+        center.add(request) { [weak self] error in
+            if let error {
+                Log.error("Native notification error: \(error.localizedDescription)")
+                // Fall back to AppleScript for future notifications
+                self?.useNativeNotifications = false
+                // Try AppleScript for this notification
+                self?.sendAppleScriptNotification(title: event.notificationTitle, body: event.notificationBody)
+            } else {
+                Log.info("Native notification scheduled successfully.")
+            }
+        }
+    }
+
+    /// Send notification via AppleScript (works without code signing)
+    private func sendAppleScriptNotification(title: String, body: String) {
+        // Escape special characters for AppleScript string literals
+        // Order matters: escape backslashes first, then quotes
+        let escapedTitle = title
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: "")
+        let escapedBody = body
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: "")
+
+        let script = """
+        display notification "\(escapedBody)" with title "\(escapedTitle)" sound name "default"
+        """
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            var error: NSDictionary?
+            if let appleScript = NSAppleScript(source: script) {
+                appleScript.executeAndReturnError(&error)
+                if let error = error {
+                    Log.error("AppleScript notification error: \(error)")
                 } else {
-                    Log.info("Notification scheduled successfully.")
+                    Log.info("AppleScript notification sent: \(title)")
                 }
+            } else {
+                Log.error("Failed to create AppleScript for notification")
             }
         }
     }

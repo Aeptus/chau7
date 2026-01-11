@@ -3,7 +3,7 @@ import AppKit
 
 struct OverlayTab: Identifiable, Equatable {
     let id: UUID
-    let session: TerminalSessionModel
+    let splitController: SplitPaneController
     let createdAt: Date
     var customTitle: String? = nil
     var color: TabColor = .blue
@@ -12,9 +12,14 @@ struct OverlayTab: Identifiable, Equatable {
     var lastCommand: LastCommandInfo? = nil  // F20: Last command tracking
     var bookmarks: [BookmarkManager.Bookmark] = []  // F17: Bookmarks
 
+    /// The primary terminal session (first terminal in split tree)
+    var session: TerminalSessionModel? {
+        splitController.primarySession
+    }
+
     init(appModel: AppModel) {
         self.id = UUID()
-        self.session = TerminalSessionModel(appModel: appModel)
+        self.splitController = SplitPaneController(appModel: appModel)
         self.createdAt = Date()
     }
 
@@ -22,7 +27,7 @@ struct OverlayTab: Identifiable, Equatable {
         if let customTitle, !customTitle.isEmpty {
             return customTitle
         }
-        if let activeName = session.activeAppName, !activeName.isEmpty {
+        if let activeName = session?.activeAppName, !activeName.isEmpty {
             return activeName
         }
         return "Shell"
@@ -47,6 +52,36 @@ struct OverlayTab: Identifiable, Equatable {
 
     static func == (lhs: OverlayTab, rhs: OverlayTab) -> Bool {
         lhs.id == rhs.id
+    }
+
+    // MARK: - Split Pane Operations
+
+    func splitHorizontally() {
+        splitController.splitWithTerminal(direction: .horizontal)
+    }
+
+    func splitVertically() {
+        splitController.splitWithTerminal(direction: .vertical)
+    }
+
+    func openTextEditor(filePath: String? = nil) {
+        splitController.splitWithTextEditor(direction: .horizontal, filePath: filePath)
+    }
+
+    func closeFocusedPane() {
+        splitController.closeFocusedPane()
+    }
+
+    func focusNextPane() {
+        splitController.focusNextPane()
+    }
+
+    func focusPreviousPane() {
+        splitController.focusPreviousPane()
+    }
+
+    func appendSelectionToEditor(_ text: String) {
+        splitController.appendSelectionToEditor(text)
     }
 }
 
@@ -109,7 +144,7 @@ final class OverlayTabsModel: ObservableObject {
         if let repoRoot = SnippetManager.shared.repoRoot {
             return repoRoot
         }
-        return selectedTab?.session.currentDirectory
+        return selectedTab?.session?.currentDirectory
     }
 
     var hasActiveOverlay: Bool {
@@ -121,8 +156,8 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     private func updateSnippetContextForSelection() {
-        if let tab = selectedTab {
-            SnippetManager.shared.updateContextPath(tab.session.currentDirectory)
+        if let tab = selectedTab, let session = tab.session {
+            SnippetManager.shared.updateContextPath(session.currentDirectory)
         }
     }
 
@@ -174,7 +209,7 @@ final class OverlayTabsModel: ObservableObject {
         }
 
         // Set the starting directory for the new tab
-        tab.session.currentDirectory = directory
+        tab.session?.currentDirectory = directory
 
         // Insert based on settings
         let position = FeatureSettings.shared.newTabPosition
@@ -209,8 +244,8 @@ final class OverlayTabsModel: ObservableObject {
             clearRenameState(shouldFocus: false)
         }
 
-        // Close the session
-        tabs[index].session.closeSession()
+        // Close all sessions in the split pane tree
+        tabs[index].session?.closeSession()
 
         if tabs.count == 1 {
             let behavior = FeatureSettings.shared.lastTabCloseBehavior
@@ -257,7 +292,7 @@ final class OverlayTabsModel: ObservableObject {
 
         // Close all tabs except current one
         for tab in tabs where tab.id != currentID {
-            tab.session.closeSession()
+            tab.session?.closeSession()
         }
 
         tabs = tabs.filter { $0.id == currentID }
@@ -291,7 +326,7 @@ final class OverlayTabsModel: ObservableObject {
     func focusSelected() {
         ensureFreshTabIfNeeded()
         guard let window = overlayWindow else { return }
-        selectedTab?.session.focusTerminal(in: window)
+        selectedTab?.session?.focusTerminal(in: window)
     }
 
     private func ensureFreshTabIfNeeded() {
@@ -342,23 +377,23 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     func copyOrInterrupt() {
-        selectedTab?.session.copyOrInterrupt()
+        selectedTab?.session?.copyOrInterrupt()
     }
 
     func paste() {
-        selectedTab?.session.paste()
+        selectedTab?.session?.paste()
     }
 
     func zoomIn() {
-        selectedTab?.session.zoomIn()
+        selectedTab?.session?.zoomIn()
     }
 
     func zoomOut() {
-        selectedTab?.session.zoomOut()
+        selectedTab?.session?.zoomOut()
     }
 
     func zoomReset() {
-        selectedTab?.session.zoomReset()
+        selectedTab?.session?.zoomReset()
     }
 
     func toggleSearch() {
@@ -377,7 +412,7 @@ final class OverlayTabsModel: ObservableObject {
             searchMatchCount = 0
             searchError = nil
             // Only clear search for current tab, not all tabs (Issue #7 fix)
-            selectedTab?.session.clearSearch()
+            selectedTab?.session?.clearSearch()
             focusSelected()
         }
     }
@@ -387,7 +422,7 @@ final class OverlayTabsModel: ObservableObject {
             searchResults = []
             searchMatchCount = 0
             searchError = nil
-            selectedTab?.session.clearSearch()
+            selectedTab?.session?.clearSearch()
             return
         }
         guard let session = selectedTab?.session else { return }
@@ -405,15 +440,13 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     func nextMatch() {
-        guard let session = selectedTab?.session else { return }
-        session.nextMatch()
+        selectedTab?.session?.nextMatch()
         // Note: Don't call refreshSearch() here - it recomputes all matches
         // which is wasteful when just moving to the next match (Issue #12 fix)
     }
 
     func previousMatch() {
-        guard let session = selectedTab?.session else { return }
-        session.previousMatch()
+        selectedTab?.session?.previousMatch()
         // Note: Don't call refreshSearch() here (Issue #12 fix)
     }
 
@@ -589,7 +622,7 @@ final class OverlayTabsModel: ObservableObject {
             guard tab.id != selectedTabID else { continue }
 
             // Send input to the tab's terminal session
-            tab.session.sendInput(text)
+            tab.session?.sendInput(text)
         }
     }
 
@@ -655,8 +688,8 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     func insertSnippet(_ entry: SnippetEntry) {
-        guard let tab = selectedTab else { return }
-        tab.session.insertSnippet(entry)
+        guard let session = selectedTab?.session else { return }
+        session.insertSnippet(entry)
         isSnippetManagerVisible = false
     }
 
@@ -692,6 +725,43 @@ final class OverlayTabsModel: ObservableObject {
 
     func getBookmarksForCurrentTab() -> [BookmarkManager.Bookmark] {
         return BookmarkManager.shared.getBookmarks(for: selectedTabID)
+    }
+
+    // MARK: - F02: Split Panes
+
+    func splitCurrentTabHorizontally() {
+        selectedTab?.splitHorizontally()
+    }
+
+    func splitCurrentTabVertically() {
+        selectedTab?.splitVertically()
+    }
+
+    func openTextEditorInCurrentTab(filePath: String? = nil) {
+        selectedTab?.openTextEditor(filePath: filePath)
+    }
+
+    func closeFocusedPaneInCurrentTab() {
+        selectedTab?.closeFocusedPane()
+    }
+
+    func focusNextPaneInCurrentTab() {
+        selectedTab?.focusNextPane()
+    }
+
+    func focusPreviousPaneInCurrentTab() {
+        selectedTab?.focusPreviousPane()
+    }
+
+    func appendSelectionToEditorInCurrentTab() {
+        guard let tab = selectedTab,
+              let session = tab.session,
+              let selection = session.getSelectedText(),
+              !selection.isEmpty else {
+            Log.warn("No text selected to append")
+            return
+        }
+        tab.appendSelectionToEditor(selection)
     }
 
     // MARK: - F20: Last Command Tracking

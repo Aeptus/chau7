@@ -189,6 +189,52 @@ struct Chau7App: App {
                     appDelegate.clearScrollback()
                 }
                 .keyboardShortcut("k", modifiers: [.command, .shift])
+
+                Divider()
+
+                // MARK: - Panes
+                Menu("Panes") {
+                    Button("Split Horizontally") {
+                        appDelegate.splitHorizontally()
+                    }
+                    .keyboardShortcut("d")
+
+                    Button("Split Vertically") {
+                        appDelegate.splitVertically()
+                    }
+                    .keyboardShortcut("d", modifiers: [.command, .shift])
+
+                    Divider()
+
+                    Button("Open Text Editor") {
+                        appDelegate.openTextEditorPane()
+                    }
+                    .keyboardShortcut("e", modifiers: [.command, .option])
+
+                    Button("Append Selection to Editor") {
+                        appDelegate.appendSelectionToEditor()
+                    }
+                    .keyboardShortcut("e", modifiers: [.command, .shift])
+
+                    Divider()
+
+                    Button("Close Pane") {
+                        appDelegate.closeCurrentPane()
+                    }
+                    .keyboardShortcut("w", modifiers: [.command, .control])
+
+                    Divider()
+
+                    Button("Focus Next Pane") {
+                        appDelegate.focusNextPane()
+                    }
+                    .keyboardShortcut("]", modifiers: [.command, .option])
+
+                    Button("Focus Previous Pane") {
+                        appDelegate.focusPreviousPane()
+                    }
+                    .keyboardShortcut("[", modifiers: [.command, .option])
+                }
             }
 
             // MARK: - Window Menu

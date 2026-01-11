@@ -12,7 +12,8 @@ final class StatusBarController: NSObject {
 
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
-    private var eventMonitor: Any?
+    private var globalEventMonitor: Any?
+    private var localEventMonitor: Any?
     private weak var model: AppModel?
 
     private override init() {
@@ -37,7 +38,8 @@ final class StatusBarController: NSObject {
         // Create popover
         popover = NSPopover()
         popover?.contentSize = NSSize(width: 400, height: 520)
-        popover?.behavior = .transient
+        // Use applicationDefined for full control - we handle closing via toggle and global monitor
+        popover?.behavior = .applicationDefined
         popover?.animates = true
         popover?.contentViewController = NSHostingController(
             rootView: StatusBarPanelView(model: model, onClose: { [weak self] in
@@ -45,11 +47,32 @@ final class StatusBarController: NSObject {
             })
         )
 
-        // Monitor for clicks outside to close popover
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            if self?.popover?.isShown == true {
-                self?.closePopover()
+        // Monitor for clicks outside to close popover (global events = clicks in other apps)
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            self?.closePopover()
+        }
+
+        // Local monitor for clicks within the app but outside the popover
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let self = self,
+                  let popover = self.popover,
+                  popover.isShown,
+                  let popoverWindow = popover.contentViewController?.view.window else {
+                return event
             }
+
+            // If click is not in the popover window and not on the status bar button, close
+            if event.window != popoverWindow {
+                // Check if click is on the status bar button - if so, let togglePopover handle it
+                if let button = self.statusItem?.button,
+                   let buttonWindow = button.window,
+                   event.window == buttonWindow {
+                    // Click is on the status bar button, let togglePopover handle it
+                    return event
+                }
+                self.closePopover()
+            }
+            return event
         }
 
         // Observe monitoring state changes to update icon
@@ -66,10 +89,14 @@ final class StatusBarController: NSObject {
         // Remove notification observer to prevent crashes
         NotificationCenter.default.removeObserver(self)
 
-        // Remove event monitor to prevent memory leak
-        if let eventMonitor {
-            NSEvent.removeMonitor(eventMonitor)
-            self.eventMonitor = nil
+        // Remove event monitors to prevent memory leak
+        if let globalEventMonitor {
+            NSEvent.removeMonitor(globalEventMonitor)
+            self.globalEventMonitor = nil
+        }
+        if let localEventMonitor {
+            NSEvent.removeMonitor(localEventMonitor)
+            self.localEventMonitor = nil
         }
 
         statusItem = nil

@@ -208,13 +208,13 @@ struct StateSnapshot: Codable {
             for (_, tab) in overlay.tabs.enumerated() {
                 tabStates.append(TabState(
                     id: tab.id.uuidString,
-                    title: tab.session.title,
+                    title: tab.session?.title ?? "(no terminal)",
                     customTitle: tab.customTitle,
-                    activeAppName: tab.session.activeAppName,
-                    status: tab.session.status.rawValue,
-                    currentDirectory: tab.session.currentDirectory,
-                    isGitRepo: tab.session.isGitRepo,
-                    gitBranch: tab.session.gitBranch
+                    activeAppName: tab.session?.activeAppName ?? "",
+                    status: tab.session?.status.rawValue ?? "unknown",
+                    currentDirectory: tab.session?.currentDirectory ?? "",
+                    isGitRepo: tab.session?.isGitRepo ?? false,
+                    gitBranch: tab.session?.gitBranch
                 ))
             }
         }

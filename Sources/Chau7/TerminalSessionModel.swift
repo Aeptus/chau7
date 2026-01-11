@@ -65,7 +65,12 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         // GitHub Copilot
         "copilot": "Copilot",
         "copilot-cli": "Copilot",
-        "github-copilot": "Copilot"
+        "github-copilot": "Copilot",
+        // Aider
+        "aider": "Aider",
+        "aider-chat": "Aider",
+        // Cursor
+        "cursor": "Cursor"
     ]
 
     /// Output patterns that indicate a specific AI CLI is running
@@ -86,7 +91,17 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         ("GitHub Copilot", "Copilot"),
         ("Copilot CLI", "Copilot"),
         // Codex patterns
-        ("OpenAI Codex", "Codex")
+        ("OpenAI Codex", "Codex"),
+        ("codex-cli", "Codex"),
+        ("Codex CLI", "Codex"),
+        ("╭─ Codex", "Codex"),  // Similar banner style to Claude
+        ("codex.openai", "Codex"),
+        // Aider patterns
+        ("Aider", "Aider"),
+        ("aider.chat", "Aider"),
+        // Cursor patterns
+        ("Cursor", "Cursor"),
+        ("cursor.sh", "Cursor")
     ]
 
     private static let wrapperCommands: Set<String> = [
@@ -307,12 +322,17 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     private func updateActiveAppName(from commandLine: String) {
         let tokens = tokenizeCommandLine(commandLine)
-        guard let token = extractCommandToken(from: commandLine) else { return }
+        guard let token = extractCommandToken(from: commandLine) else {
+            Log.trace("AI detection: no command token in '\(commandLine.prefix(50))'")
+            return
+        }
         let normalized = normalizeCommandToken(token)
+        Log.trace("AI detection: command='\(normalized)' from '\(commandLine.prefix(50))'")
 
         // Check for direct match
         if let match = appNameMap[normalized] {
             activeAppName = match
+            Log.info("AI detected: \(match) from command '\(normalized)'")
             return
         }
 
@@ -722,6 +742,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         terminalView.window?.makeFirstResponder(terminalView)
         Log.trace("Copy/interrupt requested from session model.")
         terminalView.copy(terminalView)
+    }
+
+    func getSelectedText() -> String? {
+        terminalView?.getSelectedText()
     }
 
     // MARK: - Paste (Issue #10 fix - delegate to terminal view)

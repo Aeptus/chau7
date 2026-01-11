@@ -2,6 +2,9 @@ import Foundation
 import AppKit
 import SwiftUI
 
+// Import Localization for AppLanguage
+// Note: AppLanguage is defined in Localization.swift
+
 // MARK: - Color Scheme Presets
 
 struct TerminalColorScheme: Codable, Identifiable, Equatable {
@@ -486,6 +489,15 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
+    // MARK: - Language Setting
+
+    @Published var appLanguage: AppLanguage {
+        didSet {
+            UserDefaults.standard.set(appLanguage.rawValue, forKey: Keys.appLanguage)
+            LocalizationManager.shared.currentLanguage = appLanguage
+        }
+    }
+
     // MARK: - iCloud Sync (NEW)
 
     @Published var iCloudSyncEnabled: Bool {
@@ -771,6 +783,8 @@ final class FeatureSettings: ObservableObject {
         static let newTabPosition = "tabs.newTabPosition"
         // Window Opacity
         static let windowOpacity = "window.opacity"
+        // Language
+        static let appLanguage = "app.language"
         // iCloud Sync (NEW)
         static let iCloudSyncEnabled = "sync.iCloudEnabled"
         // F05
@@ -888,6 +902,14 @@ final class FeatureSettings: ObservableObject {
 
         // Window Opacity
         self.windowOpacity = defaults.object(forKey: Keys.windowOpacity) as? Double ?? 1.0
+
+        // Language
+        if let langRaw = defaults.string(forKey: Keys.appLanguage),
+           let lang = AppLanguage(rawValue: langRaw) {
+            self.appLanguage = lang
+        } else {
+            self.appLanguage = .system
+        }
 
         // iCloud Sync (NEW)
         self.iCloudSyncEnabled = defaults.object(forKey: Keys.iCloudSyncEnabled) as? Bool ?? false
@@ -1045,6 +1067,7 @@ final class FeatureSettings: ObservableObject {
         var findCaseSensitiveDefault: Bool?
         var findRegexDefault: Bool?
         var lastTabCloseBehavior: String?
+        var appLanguage: String?
         var windowOpacity: Double
         var cursorStyle: String
         var cursorBlink: Bool
@@ -1100,6 +1123,7 @@ final class FeatureSettings: ObservableObject {
             findCaseSensitiveDefault: findCaseSensitiveDefault,
             findRegexDefault: findRegexDefault,
             lastTabCloseBehavior: lastTabCloseBehavior.rawValue,
+            appLanguage: appLanguage.rawValue,
             windowOpacity: windowOpacity,
             cursorStyle: cursorStyle,
             cursorBlink: cursorBlink,
@@ -1167,6 +1191,12 @@ final class FeatureSettings: ObservableObject {
             lastTabCloseBehavior = behavior
         } else {
             lastTabCloseBehavior = .keepWindow
+        }
+        if let langRaw = imported.appLanguage,
+           let lang = AppLanguage(rawValue: langRaw) {
+            appLanguage = lang
+        } else {
+            appLanguage = .system
         }
         windowOpacity = imported.windowOpacity
         cursorStyle = imported.cursorStyle
@@ -1242,6 +1272,9 @@ final class FeatureSettings: ObservableObject {
         findRegexDefault = false
         lastTabCloseBehavior = .keepWindow
         newTabPosition = "end"
+
+        // Language
+        appLanguage = .system
 
         // Window
         windowOpacity = 1.0
@@ -1436,6 +1469,7 @@ extension FeatureSettings {
             findCaseSensitiveDefault: false,
             findRegexDefault: false,
             lastTabCloseBehavior: "keepWindow",
+            appLanguage: "system",
             windowOpacity: 1.0,
             cursorStyle: "block",
             cursorBlink: true,
@@ -1636,6 +1670,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 extension FeatureSettings {
     static let searchableSettings: [SearchableSetting] = [
         // General
+        SearchableSetting(id: "language", section: .general, title: "Language",
+                         keywords: ["langue", "français", "english", "i18n", "localization", "translation"],
+                         description: "Application display language"),
         SearchableSetting(id: "launch", section: .general, title: "Launch at Login",
                          keywords: ["startup", "login", "autostart", "boot"],
                          description: "Automatically start Chau7 when you log in"),

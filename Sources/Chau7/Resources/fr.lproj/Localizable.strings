@@ -1,0 +1,585 @@
+/* Chau7 Localizable Strings - French */
+
+// MARK: - General
+"app.name" = "Chau7";
+"app.tagline" = "Compagnon Terminal pour CLI IA";
+"app.copyright" = "Copyright © 2024-2025. Tous droits réservés.";
+
+// MARK: - Common Actions
+"action.ok" = "OK";
+"action.cancel" = "Annuler";
+"action.save" = "Enregistrer";
+"action.delete" = "Supprimer";
+"action.edit" = "Modifier";
+"action.add" = "Ajouter";
+"action.remove" = "Retirer";
+"action.close" = "Fermer";
+"action.done" = "Terminé";
+"action.reset" = "Réinitialiser";
+"action.apply" = "Appliquer";
+"action.copy" = "Copier";
+"action.paste" = "Coller";
+"action.cut" = "Couper";
+"action.select.all" = "Tout sélectionner";
+"action.clear" = "Effacer";
+"action.search" = "Rechercher";
+"action.refresh" = "Actualiser";
+"action.import" = "Importer";
+"action.export" = "Exporter";
+
+// MARK: - Language Settings
+"language.title" = "Langue";
+"language.system" = "Langue du système";
+"language.restart.hint" = "Certains changements peuvent nécessiter un redémarrage";
+"settings.general.language" = "Langue";
+"settings.general.language.label" = "Langue d'affichage";
+"settings.general.language.help" = "Choisissez la langue de l'interface de l'application";
+"settings.general.language.note" = "Le changement de langue mettra immédiatement à jour l'interface. Certains éléments système peuvent nécessiter un redémarrage de l'application.";
+"settings.general.defaultDirectory" = "Répertoire par défaut";
+"settings.general.defaultDirectory.help" = "Répertoire de démarrage pour les nouveaux onglets";
+
+// MARK: - Settings Sections
+"settings.title" = "Réglages";
+"settings.general" = "Général";
+"settings.general.description" = "Préférences et comportement de l'application";
+"settings.appearance" = "Apparence";
+"settings.appearance.description" = "Personnalisation visuelle et thèmes";
+"settings.terminal" = "Terminal";
+"settings.terminal.description" = "Paramètres du shell et de l'émulateur";
+"settings.tabs" = "Onglets";
+"settings.tabs.description" = "Comportement et navigation des onglets";
+"settings.input" = "Saisie";
+"settings.input.description" = "Paramètres clavier et souris";
+"settings.productivity" = "Productivité";
+"settings.productivity.description" = "Fonctionnalités d'efficacité";
+"settings.windows" = "Fenêtres";
+"settings.windows.description" = "Gestion et disposition des fenêtres";
+"settings.ai" = "Intégration IA";
+"settings.ai.description" = "Détection des CLI IA et notifications";
+"settings.logs" = "Journaux";
+"settings.logs.description" = "Surveillance des journaux et historique";
+"settings.about" = "À propos";
+"settings.about.description" = "Informations de version et remerciements";
+
+// MARK: - General Settings
+"general.startup" = "Démarrage";
+"general.launch.login" = "Lancer à l'ouverture de session";
+"general.launch.login.help" = "Démarrer automatiquement Chau7 lors de la connexion à votre Mac";
+"general.show.menubar" = "Afficher dans la barre de menus";
+"general.show.menubar.help" = "Afficher l'icône Chau7 dans la barre de menus pour un accès rapide";
+"general.show.dock" = "Afficher dans le Dock";
+"general.show.dock.help" = "Afficher l'icône Chau7 dans le Dock";
+"general.show.overlay.launch" = "Afficher l'overlay au démarrage";
+"general.show.overlay.launch.help" = "Afficher automatiquement l'overlay du terminal au démarrage de Chau7";
+"general.restore.tabs" = "Restaurer les onglets au démarrage";
+"general.restore.tabs.help" = "Mémoriser et restaurer les onglets ouverts au redémarrage";
+
+"general.updates" = "Mises à jour";
+"general.check.updates" = "Vérifier automatiquement les mises à jour";
+"general.check.updates.help" = "Vérifier périodiquement les nouvelles versions de Chau7";
+
+"general.import.export" = "Importer / Exporter les réglages";
+"general.import" = "Importer les réglages";
+"general.export" = "Exporter les réglages";
+
+"general.status" = "État";
+"general.status.notifications" = "Notifications";
+"general.status.event.monitoring" = "Surveillance des événements";
+"general.status.history.monitoring" = "Surveillance de l'historique";
+"general.status.terminal.monitoring" = "Surveillance du terminal";
+"general.status.active" = "Actif";
+"general.status.paused" = "En pause";
+
+"general.actions" = "Actions";
+"general.show.overlay" = "Afficher l'overlay";
+"general.reset.positions" = "Réinitialiser les positions";
+"general.debug.console" = "Console de débogage";
+
+"general.reset" = "Réinitialisation";
+"general.reset.all" = "Réinitialiser tous les réglages";
+"general.reset.confirm.title" = "Réinitialiser tous les réglages ?";
+"general.reset.confirm.message" = "Cette action réinitialisera toutes les préférences à leurs valeurs par défaut. Cette action est irréversible.";
+
+// MARK: - Appearance Settings
+"appearance.theme" = "Thème";
+"appearance.theme.light" = "Clair";
+"appearance.theme.dark" = "Sombre";
+"appearance.theme.system" = "Système";
+"appearance.theme.help" = "Choisir le thème visuel de l'application";
+
+"appearance.font" = "Police";
+"appearance.font.family" = "Famille de police";
+"appearance.font.family.help" = "Choisir la police du terminal";
+"appearance.font.size" = "Taille de police";
+"appearance.font.size.help" = "Taille du texte du terminal en points";
+"appearance.font.ligatures" = "Ligatures";
+"appearance.font.ligatures.help" = "Activer les ligatures pour les polices compatibles (ex: Fira Code)";
+
+"appearance.cursor" = "Curseur";
+"appearance.cursor.style" = "Style du curseur";
+"appearance.cursor.style.block" = "Bloc";
+"appearance.cursor.style.underline" = "Souligné";
+"appearance.cursor.style.bar" = "Barre";
+"appearance.cursor.style.help" = "Forme du curseur du terminal";
+"appearance.cursor.blink" = "Clignotement";
+"appearance.cursor.blink.help" = "Animer le curseur avec un effet de clignotement";
+
+"appearance.colors" = "Couleurs";
+"appearance.color.scheme" = "Palette de couleurs";
+"appearance.color.scheme.help" = "Palette de couleurs du terminal";
+"appearance.background.opacity" = "Opacité de l'arrière-plan";
+"appearance.background.opacity.help" = "Transparence de l'arrière-plan du terminal (0-100%)";
+"appearance.blur.background" = "Flou d'arrière-plan";
+"appearance.blur.background.help" = "Appliquer un effet de flou au contenu derrière le terminal";
+
+"appearance.window" = "Fenêtre";
+"appearance.titlebar.style" = "Style de la barre de titre";
+"appearance.titlebar.native" = "Natif";
+"appearance.titlebar.minimal" = "Minimal";
+"appearance.titlebar.hidden" = "Masqué";
+"appearance.titlebar.help" = "Apparence de la barre de titre";
+"appearance.vibrancy" = "Effet de vibrance";
+"appearance.vibrancy.help" = "Activer l'effet de vibrance système sur la fenêtre";
+
+"appearance.reset" = "Réinitialiser l'apparence";
+
+// MARK: - Terminal Settings
+"terminal.shell" = "Shell";
+"terminal.shell.default" = "Shell par défaut";
+"terminal.shell.default.help" = "Utiliser le shell système par défaut (depuis /etc/passwd)";
+"terminal.shell.custom" = "Shell personnalisé";
+"terminal.shell.custom.help" = "Spécifier un chemin de shell personnalisé";
+"terminal.shell.path" = "Chemin du shell";
+"terminal.shell.path.help" = "Chemin complet vers l'exécutable du shell";
+"terminal.current.shell" = "Shell actuel";
+"terminal.startup.command" = "Commande de démarrage";
+"terminal.startup.command.help" = "Commande à exécuter automatiquement au démarrage d'une nouvelle session";
+
+"terminal.scrollback" = "Historique de défilement";
+"terminal.scrollback.lines" = "Lignes d'historique";
+"terminal.scrollback.lines.help" = "Nombre maximum de lignes à conserver dans l'historique";
+"terminal.unlimited.scrollback" = "Historique illimité";
+"terminal.unlimited.scrollback.help" = "Conserver toute la sortie du terminal (peut utiliser plus de mémoire)";
+
+"terminal.behavior" = "Comportement";
+"terminal.bell" = "Signal sonore";
+"terminal.bell.help" = "Jouer un son lors de la réception du caractère de signal";
+"terminal.visual.bell" = "Signal visuel";
+"terminal.visual.bell.help" = "Faire clignoter l'écran au lieu de jouer un son";
+"terminal.focus.follows.mouse" = "Focus suit la souris";
+"terminal.focus.follows.mouse.help" = "Activer automatiquement le focus des panneaux au survol";
+
+"terminal.encoding" = "Encodage";
+"terminal.encoding.utf8" = "Encodage UTF-8";
+"terminal.encoding.utf8.help" = "Utiliser l'encodage UTF-8 pour les entrées/sorties du terminal";
+
+"terminal.reset" = "Réinitialiser le terminal";
+
+// MARK: - Tabs Settings
+"tabs.behavior" = "Comportement";
+"tabs.new.position" = "Position des nouveaux onglets";
+"tabs.new.position.help" = "Où insérer les onglets nouvellement créés";
+"tabs.new.position.end" = "À la fin";
+"tabs.new.position.after" = "Après l'onglet actuel";
+"tabs.last.close" = "Fermeture du dernier onglet";
+"tabs.last.close.help" = "Choisir le comportement lors de la fermeture du dernier onglet";
+"tabs.last.close.window" = "Fermer la fenêtre";
+"tabs.last.close.new" = "Ouvrir un nouvel onglet";
+"tabs.last.close.nothing" = "Ne rien faire";
+"tabs.always.show" = "Toujours afficher la barre d'onglets";
+"tabs.always.show.help" = "Afficher la barre d'onglets même avec un seul onglet ouvert";
+
+"tabs.appearance" = "Apparence";
+"tabs.command.badge" = "Badge de dernière commande";
+"tabs.command.badge.help" = "Afficher la dernière commande dans la zone d'état de l'onglet";
+"tabs.ai.icons" = "Icônes des produits IA";
+"tabs.ai.icons.help" = "Afficher les icônes SF Symbol pour les CLI IA détectés";
+
+"tabs.keyboard" = "Navigation clavier";
+"tabs.shortcut.new" = "Nouvel onglet";
+"tabs.shortcut.close" = "Fermer l'onglet";
+"tabs.shortcut.next" = "Onglet suivant";
+"tabs.shortcut.prev" = "Onglet précédent";
+"tabs.shortcut.switch" = "Aller à l'onglet 1-9";
+"tabs.shortcut.rename" = "Renommer l'onglet";
+
+// MARK: - Input Settings
+"input.keyboard" = "Clavier";
+"input.keybinding.preset" = "Préréglage des raccourcis";
+"input.keybinding.preset.help" = "Choisir un préréglage de raccourcis clavier adapté à votre workflow";
+"input.keybinding.default" = "Par défaut";
+"input.keybinding.vim" = "Vim";
+"input.keybinding.emacs" = "Emacs";
+
+"input.shortcuts" = "Raccourcis clavier";
+"input.shortcuts.hint" = "Cliquez sur un raccourci pour le personnaliser. Les conflits seront mis en évidence.";
+"input.shortcuts.reset" = "Réinitialiser les raccourcis";
+
+"input.mouse" = "Souris";
+"input.copy.select" = "Copier à la sélection";
+"input.copy.select.help" = "Copier automatiquement le texte dans le presse-papiers lors de la sélection";
+"input.cmd.click" = "Cmd+clic sur les chemins";
+"input.cmd.click.help" = "Ouvrir les chemins de fichiers dans votre éditeur avec Cmd+clic";
+"input.url.handler" = "Gestionnaire d'URL";
+"input.url.handler.help" = "Choisir le navigateur à ouvrir lors d'un Cmd+clic sur une URL";
+"input.default.editor" = "Éditeur par défaut";
+"input.default.editor.help" = "Éditeur pour ouvrir les fichiers (laisser vide pour le système ou $EDITOR)";
+"input.option.click" = "Option+clic curseur";
+"input.option.click.help" = "Déplacer le curseur à la position cliquée avec Option+clic (comme iTerm2)";
+
+"input.broadcast" = "Diffusion";
+"input.broadcast.enable" = "Diffuser la saisie";
+"input.broadcast.enable.help" = "Envoyer la saisie clavier à tous les onglets simultanément";
+
+"input.reset" = "Réinitialiser la saisie";
+
+// MARK: - Productivity Settings
+"productivity.completions" = "Complétions";
+"productivity.autocomplete" = "Afficher l'autocomplétion";
+"productivity.autocomplete.help" = "Afficher les suggestions de complétion pendant la saisie";
+"productivity.inline.suggestions" = "Suggestions en ligne";
+"productivity.inline.suggestions.help" = "Afficher les indices de complétion directement dans la ligne de commande";
+
+"productivity.history" = "Historique";
+"productivity.history.search" = "Recherche dans l'historique";
+"productivity.history.search.help" = "Activer la recherche inversée Ctrl+R dans l'historique des commandes";
+"productivity.history.suggestions" = "Suggestions d'historique";
+"productivity.history.suggestions.help" = "Suggérer des commandes de l'historique pendant la saisie";
+
+"productivity.clipboard" = "Presse-papiers";
+"productivity.clipboard.history" = "Historique du presse-papiers";
+"productivity.clipboard.history.help" = "Mémoriser le texte copié et permettre de coller depuis l'historique";
+"productivity.clipboard.access" = "Accéder avec";
+"productivity.clipboard.max" = "Entrées maximum";
+"productivity.clipboard.max.help" = "Nombre maximum d'entrées de presse-papiers à mémoriser";
+
+"productivity.snippets" = "Extraits";
+"productivity.snippets.description" = "Extraits de texte rapides avec expansion de tokens";
+"productivity.snippets.count" = "%d extraits disponibles";
+"productivity.snippets.invoke" = "Invoquer avec";
+"productivity.snippets.manage" = "Gérer les extraits";
+
+"productivity.search" = "Recherche";
+"productivity.semantic.search" = "Recherche sémantique";
+"productivity.semantic.search.help" = "Activer la recherche intelligente dans l'historique du terminal";
+"productivity.case.sensitive" = "Sensible à la casse par défaut";
+"productivity.case.sensitive.help" = "Démarrer les nouvelles recherches avec la sensibilité à la casse";
+"productivity.regex.default" = "Regex par défaut";
+"productivity.regex.default.help" = "Démarrer les nouvelles recherches avec les expressions régulières activées";
+"productivity.shortcut.find" = "Rechercher";
+"productivity.shortcut.find.next" = "Occurrence suivante";
+"productivity.shortcut.find.prev" = "Occurrence précédente";
+
+"productivity.reset" = "Réinitialiser la productivité";
+
+// MARK: - Windows Settings
+"windows.overlay" = "Fenêtre d'overlay";
+"windows.overlay.show" = "Afficher l'overlay";
+"windows.overlay.reset" = "Réinitialiser la position";
+"windows.overlay.hint" = "La fenêtre d'overlay mémorise sa position par espace de travail et la restaure automatiquement.";
+
+"windows.dropdown" = "Terminal déroulant";
+"windows.dropdown.enable" = "Activer le terminal déroulant";
+"windows.dropdown.enable.help" = "Afficher un terminal style Quake avec un raccourci global";
+"windows.dropdown.hotkey" = "Raccourci";
+"windows.dropdown.hotkey.help" = "Raccourci clavier global pour basculer le terminal déroulant";
+"windows.dropdown.height" = "Hauteur";
+"windows.dropdown.height.help" = "Hauteur du terminal en pourcentage de l'écran (10-100%)";
+
+"windows.split" = "Panneaux divisés";
+"windows.split.enable" = "Activer les panneaux divisés";
+"windows.split.enable.help" = "Permettre de diviser le terminal en plusieurs panneaux dans un onglet";
+"windows.split.horizontal" = "Division horizontale";
+"windows.split.vertical" = "Division verticale";
+"windows.split.navigate" = "Naviguer entre les panneaux";
+
+// MARK: - AI Integration Settings
+"ai.detection" = "Détection des CLI IA";
+"ai.detection.hint" = "Chau7 détecte automatiquement ces CLI IA et applique le thème approprié :";
+"ai.detection.claude" = "Claude Code";
+"ai.detection.codex" = "OpenAI Codex";
+"ai.detection.gemini" = "Gemini";
+"ai.detection.chatgpt" = "ChatGPT";
+"ai.detection.copilot" = "GitHub Copilot";
+"ai.detection.aider" = "Aider";
+"ai.detection.cursor" = "Cursor";
+
+"ai.custom" = "Règles de détection personnalisées";
+"ai.custom.hint" = "Ajouter des motifs de commande ou de sortie pour identifier des CLI IA personnalisés.";
+"ai.custom.pattern" = "Motif";
+"ai.custom.pattern.placeholder" = "moncli, /opt/ai/bin";
+"ai.custom.name" = "Nom affiché";
+"ai.custom.name.placeholder" = "Mon IA";
+"ai.custom.color" = "Couleur";
+"ai.custom.enabled" = "Activé";
+"ai.custom.add" = "Ajouter une règle";
+"ai.custom.remove" = "Supprimer";
+
+"ai.tab.theming" = "Thème des onglets";
+"ai.auto.theme" = "Couleurs d'onglets automatiques";
+"ai.auto.theme.help" = "Colorer automatiquement les onglets selon le CLI IA détecté";
+
+"ai.notifications" = "Notifications";
+"ai.notifications.status" = "État";
+"ai.notifications.request" = "Demander la permission";
+"ai.notifications.system" = "Réglages système";
+"ai.notifications.test" = "Envoyer un test";
+
+"ai.filters" = "Filtres de notifications";
+"ai.filters.hint" = "Choisir les événements déclenchant des notifications :";
+"ai.filter.task.finished" = "Tâche terminée";
+"ai.filter.task.finished.help" = "Notifier quand une tâche IA se termine avec succès";
+"ai.filter.task.failed" = "Tâche échouée";
+"ai.filter.task.failed.help" = "Notifier quand une tâche IA échoue ou rencontre une erreur";
+"ai.filter.needs.validation" = "Validation requise";
+"ai.filter.needs.validation.help" = "Notifier quand une tâche IA nécessite une révision humaine";
+"ai.filter.permission" = "Demande de permission";
+"ai.filter.permission.help" = "Notifier quand un outil demande une permission";
+"ai.filter.tool.complete" = "Outil terminé";
+"ai.filter.tool.complete.help" = "Notifier quand un outil termine son exécution";
+"ai.filter.session.end" = "Fin de session";
+"ai.filter.session.end.help" = "Notifier quand une session IA se termine";
+"ai.filter.command.idle" = "Commande inactive";
+"ai.filter.command.idle.help" = "Notifier quand le terminal devient inactif après une commande";
+
+"ai.monitoring" = "Surveillance des événements";
+"ai.monitoring.enable" = "Surveiller les événements IA";
+"ai.monitoring.enable.help" = "Surveiller les événements des CLI IA comme les fins de tâches et les erreurs";
+"ai.monitoring.log.path" = "Chemin du journal";
+"ai.monitoring.log.path.help" = "Chemin vers le fichier de journal des événements IA";
+"ai.monitoring.restart" = "Redémarrer la surveillance";
+"ai.monitoring.reveal" = "Afficher dans le Finder";
+
+// MARK: - Logs Settings
+"logs.history" = "Journaux d'historique";
+"logs.history.enable" = "Surveiller les journaux d'historique";
+"logs.history.enable.help" = "Surveiller les fichiers d'historique des CLI IA pour la détection d'inactivité";
+"logs.idle.seconds" = "Secondes d'inactivité";
+"logs.idle.seconds.help" = "Secondes d'inactivité avant d'envoyer une notification";
+"logs.stale.seconds" = "Secondes d'obsolescence";
+"logs.stale.seconds.help" = "Secondes avant de marquer une session comme fermée";
+"logs.codex.history" = "Chemin historique Codex";
+"logs.claude.history" = "Chemin historique Claude";
+"logs.restart.monitors" = "Redémarrer les surveillances";
+"logs.clear.history" = "Effacer l'historique";
+
+"logs.terminal" = "Journaux du terminal";
+"logs.terminal.enable" = "Surveiller les journaux du terminal";
+"logs.terminal.enable.help" = "Surveiller les fichiers de sortie PTY pour l'activité du terminal";
+"logs.terminal.normalize" = "Normaliser la sortie";
+"logs.terminal.normalize.help" = "Retirer les codes ANSI et caractères de contrôle de l'affichage";
+"logs.terminal.ansi" = "Afficher le style ANSI";
+"logs.terminal.ansi.help" = "Afficher les couleurs et le formatage ANSI dans la visionneuse";
+"logs.codex.terminal" = "Journal terminal Codex";
+"logs.claude.terminal" = "Journal terminal Claude";
+"logs.reload.lines" = "Recharger les dernières lignes";
+"logs.clear.logs" = "Effacer les journaux";
+
+"logs.sessions" = "Sessions actives";
+"logs.sessions.empty" = "Aucune session suivie pour le moment.";
+
+// MARK: - About Settings
+"about.version" = "Informations de version";
+"about.application" = "Application";
+"about.bundle.id" = "ID du bundle";
+"about.version.label" = "Version";
+"about.not.bundled" = "Non empaqueté";
+"about.dev.build" = "Version de développement";
+
+"about.system" = "Informations système";
+"about.macos" = "macOS";
+"about.architecture" = "Architecture";
+"about.shell" = "Shell";
+"about.arch.apple" = "Apple Silicon (arm64)";
+"about.arch.intel" = "Intel (x86_64)";
+"about.arch.unknown" = "Inconnue";
+
+"about.links" = "Liens";
+"about.github" = "GitHub";
+"about.report.issue" = "Signaler un problème";
+"about.documentation" = "Documentation";
+
+"about.log" = "Journal de l'application";
+"about.log.path" = "Chemin du journal";
+"about.reveal.finder" = "Afficher dans le Finder";
+"about.open.debug" = "Console de débogage";
+
+"about.acknowledgments" = "Remerciements";
+"about.swiftterm" = "Chau7 est construit avec SwiftTerm pour l'émulation de terminal.";
+
+// MARK: - Command Palette
+"palette.title" = "Palette de commandes";
+"palette.search.placeholder" = "Tapez une commande...";
+"palette.commands.count" = "%d commandes";
+"palette.navigate" = "naviguer";
+"palette.select" = "sélectionner";
+"palette.close" = "fermer";
+
+// Command Categories
+"palette.category.file" = "Fichier";
+"palette.category.edit" = "Édition";
+"palette.category.view" = "Affichage";
+"palette.category.terminal" = "Terminal";
+"palette.category.tabs" = "Onglets";
+"palette.category.window" = "Fenêtre";
+"palette.category.help" = "Aide";
+
+// Commands
+"palette.cmd.new.window" = "Nouvelle fenêtre";
+"palette.cmd.new.tab" = "Nouvel onglet";
+"palette.cmd.close.tab" = "Fermer l'onglet";
+"palette.cmd.close.window" = "Fermer la fenêtre";
+"palette.cmd.close.other" = "Fermer les autres onglets";
+"palette.cmd.export" = "Exporter le texte...";
+"palette.cmd.print" = "Imprimer...";
+"palette.cmd.cut" = "Couper";
+"palette.cmd.copy" = "Copier";
+"palette.cmd.paste" = "Coller";
+"palette.cmd.paste.escaped" = "Coller avec échappement";
+"palette.cmd.select.all" = "Tout sélectionner";
+"palette.cmd.find" = "Rechercher...";
+"palette.cmd.find.next" = "Occurrence suivante";
+"palette.cmd.find.prev" = "Occurrence précédente";
+"palette.cmd.snippets" = "Extraits...";
+"palette.cmd.manage.snippets" = "Gérer les extraits...";
+"palette.cmd.fullscreen" = "Basculer en plein écran";
+"palette.cmd.zoom.in" = "Agrandir";
+"palette.cmd.zoom.out" = "Réduire";
+"palette.cmd.zoom.reset" = "Taille réelle";
+"palette.cmd.clear.screen" = "Effacer l'écran";
+"palette.cmd.clear.scrollback" = "Effacer l'historique";
+"palette.cmd.scroll.top" = "Défiler vers le haut";
+"palette.cmd.scroll.bottom" = "Défiler vers le bas";
+"palette.cmd.next.tab" = "Onglet suivant";
+"palette.cmd.prev.tab" = "Onglet précédent";
+"palette.cmd.move.right" = "Déplacer l'onglet à droite";
+"palette.cmd.move.left" = "Déplacer l'onglet à gauche";
+"palette.cmd.rename.tab" = "Renommer l'onglet...";
+"palette.cmd.settings" = "Réglages...";
+"palette.cmd.debug" = "Console de débogage";
+"palette.cmd.ssh" = "Connexions SSH...";
+"palette.cmd.shortcuts" = "Raccourcis clavier...";
+"palette.cmd.about" = "À propos de Chau7";
+"palette.cmd.docs" = "Documentation";
+"palette.cmd.report" = "Signaler un problème";
+
+// MARK: - Snippets
+"snippets.title" = "Extraits";
+"snippets.search.placeholder" = "Rechercher des extraits...";
+"snippets.source.all" = "Toutes les sources";
+"snippets.source.user" = "Utilisateur";
+"snippets.source.profile" = "Profil";
+"snippets.source.repo" = "Dépôt";
+"snippets.count" = "%d extraits";
+"snippets.empty" = "Aucun extrait trouvé";
+"snippets.empty.hint" = "Créez votre premier extrait avec le bouton + ci-dessus, ou importez des extraits depuis un fichier JSON.";
+"snippets.delete.title" = "Supprimer l'extrait ?";
+"snippets.new" = "Nouvel extrait";
+"snippets.edit" = "Modifier l'extrait";
+"snippets.title.label" = "Titre";
+"snippets.body.label" = "Contenu";
+"snippets.tags.label" = "Tags";
+"snippets.tags.placeholder" = "Tags séparés par des virgules";
+"snippets.source.label" = "Source";
+"snippets.available.tokens" = "Tokens disponibles";
+
+"snippets.import" = "Importer";
+"snippets.export" = "Exporter";
+"snippets.import.success" = "%d extraits importés";
+"snippets.export.success" = "%d extraits exportés";
+
+// MARK: - SSH Manager
+"ssh.title" = "Connexions SSH";
+"ssh.search.placeholder" = "Rechercher des connexions...";
+"ssh.new" = "Nouvelle connexion";
+"ssh.edit" = "Modifier la connexion";
+"ssh.connect" = "Se connecter";
+"ssh.delete.title" = "Supprimer la connexion ?";
+"ssh.empty" = "Aucune connexion SSH";
+"ssh.empty.hint" = "Ajoutez votre première connexion SSH avec le bouton +.";
+
+"ssh.name" = "Nom";
+"ssh.name.placeholder" = "Mon serveur";
+"ssh.host" = "Hôte";
+"ssh.host.placeholder" = "nom d'hôte ou IP";
+"ssh.port" = "Port";
+"ssh.user" = "Utilisateur";
+"ssh.user.placeholder" = "nom d'utilisateur";
+"ssh.key" = "Fichier d'identité";
+"ssh.key.placeholder" = "~/.ssh/id_rsa";
+"ssh.key.browse" = "Parcourir";
+"ssh.options" = "Options supplémentaires";
+"ssh.options.placeholder" = "-o StrictHostKeyChecking=no";
+"ssh.color" = "Couleur de l'onglet";
+
+// MARK: - Help
+"help.title" = "Aide";
+"help.search.placeholder" = "Rechercher dans l'aide...";
+"help.getting.started" = "Premiers pas";
+"help.command.palette" = "Palette de commandes";
+"help.tabs.windows" = "Onglets et fenêtres";
+"help.keyboard.shortcuts" = "Raccourcis clavier";
+"help.ssh.connections" = "Connexions SSH";
+"help.terminal.output" = "Sortie du terminal";
+"help.snippets" = "Extraits";
+"help.ai.integration" = "Intégration IA";
+"help.settings" = "Réglages";
+"help.troubleshooting" = "Dépannage";
+"help.related.topics" = "Sujets connexes";
+
+// MARK: - Notifications
+"notification.task.finished" = "Tâche terminée";
+"notification.task.failed" = "Tâche échouée";
+"notification.needs.validation" = "Validation requise";
+"notification.permission.request" = "Demande de permission";
+"notification.command.idle" = "Commande inactive";
+"notification.session.end" = "Session terminée";
+
+// MARK: - Errors
+"error.generic" = "Une erreur s'est produite";
+"error.file.not.found" = "Fichier introuvable";
+"error.permission.denied" = "Permission refusée";
+"error.import.failed" = "Échec de l'importation";
+"error.export.failed" = "Échec de l'exportation";
+"error.connection.failed" = "Échec de la connexion";
+
+// MARK: - Tab States
+"tab.shell" = "Shell";
+"tab.suspended" = "Suspendu";
+"tab.rename.placeholder" = "Entrez le nom de l'onglet";
+
+// MARK: - Menu Items
+"menu.file" = "Fichier";
+"menu.edit" = "Édition";
+"menu.view" = "Affichage";
+"menu.terminal" = "Terminal";
+"menu.window" = "Fenêtre";
+"menu.help" = "Aide";
+
+// MARK: - Debug Console
+"debug.title" = "Console de débogage";
+"debug.clear" = "Effacer";
+"debug.copy.all" = "Tout copier";
+"debug.filter" = "Filtrer";
+"debug.level.all" = "Tout";
+"debug.level.info" = "Info";
+"debug.level.warning" = "Avertissement";
+"debug.level.error" = "Erreur";
+
+// MARK: - Time
+"time.now" = "maintenant";
+"time.seconds.ago" = "il y a %d secondes";
+"time.minute.ago" = "il y a 1 minute";
+"time.minutes.ago" = "il y a %d minutes";
+"time.hour.ago" = "il y a 1 heure";
+"time.hours.ago" = "il y a %d heures";
+
+// MARK: - Miscellaneous
+"misc.enabled" = "Activé";
+"misc.disabled" = "Désactivé";
+"misc.default" = "Par défaut";
+"misc.custom" = "Personnalisé";
+"misc.none" = "Aucun";
+"misc.unknown" = "Inconnu";
+"misc.loading" = "Chargement...";
+"misc.empty" = "Vide";

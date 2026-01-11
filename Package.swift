@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Chau7",
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v13)
     ],
@@ -27,7 +28,10 @@ let package = Package(
                 "Chau7Core",
                 .product(name: "SwiftTerm", package: "chau7-swiftterm")
             ],
-            path: "Sources/Chau7"
+            path: "Sources/Chau7",
+            resources: [
+                .process("Resources")
+            ]
         ),
         // Test target
         .testTarget(
