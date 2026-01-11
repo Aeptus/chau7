@@ -30,6 +30,10 @@ struct OverlayTab: Identifiable, Equatable {
         if let activeName = session?.activeAppName, !activeName.isEmpty {
             return activeName
         }
+        // If no terminals exist, show "Editor" instead of "Shell"
+        if splitController.root.allTerminalIDs.isEmpty {
+            return "Editor"
+        }
         return "Shell"
     }
 
@@ -244,8 +248,8 @@ final class OverlayTabsModel: ObservableObject {
             clearRenameState(shouldFocus: false)
         }
 
-        // Close all sessions in the split pane tree
-        tabs[index].session?.closeSession()
+        // Close all sessions in the split pane tree (not just primary)
+        tabs[index].splitController.root.closeAllSessions()
 
         if tabs.count == 1 {
             let behavior = FeatureSettings.shared.lastTabCloseBehavior
@@ -290,9 +294,9 @@ final class OverlayTabsModel: ObservableObject {
         guard tabs.count > 1 else { return }
         let currentID = selectedTabID
 
-        // Close all tabs except current one
+        // Close all sessions in all tabs except current one
         for tab in tabs where tab.id != currentID {
-            tab.session?.closeSession()
+            tab.splitController.root.closeAllSessions()
         }
 
         tabs = tabs.filter { $0.id == currentID }

@@ -56,6 +56,31 @@ indirect enum SplitNode: Identifiable {
         }
     }
 
+    /// Gets all terminal sessions in this subtree
+    var allSessions: [TerminalSessionModel] {
+        switch self {
+        case .terminal(_, let session):
+            return [session]
+        case .textEditor:
+            return []
+        case .split(_, _, let first, let second, _):
+            return first.allSessions + second.allSessions
+        }
+    }
+
+    /// Closes all terminal sessions in this subtree
+    func closeAllSessions() {
+        switch self {
+        case .terminal(_, let session):
+            session.closeSession()
+        case .textEditor:
+            break
+        case .split(_, _, let first, let second, _):
+            first.closeAllSessions()
+            second.closeAllSessions()
+        }
+    }
+
     /// Finds a terminal session by ID
     func findSession(id: UUID) -> TerminalSessionModel? {
         switch self {
@@ -127,6 +152,10 @@ final class TextEditorModel: ObservableObject, Identifiable {
     @Published var filePath: String?
     @Published var isDirty: Bool = false
     @Published var isLoading: Bool = false
+    @Published var lastError: String?
+
+    /// Token to track current loading operation (prevents race conditions)
+    private var loadingToken: UUID?
 
     /// The file name for display
     var fileName: String {
@@ -138,11 +167,21 @@ final class TextEditorModel: ObservableObject, Identifiable {
 
     /// Load content from a file
     func loadFile(at path: String) {
+        // Create a unique token for this load operation
+        let token = UUID()
+        loadingToken = token
         isLoading = true
+        lastError = nil
+
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
                 let contents = try String(contentsOfFile: path, encoding: .utf8)
                 DispatchQueue.main.async {
+                    // Only apply if this is still the current load operation
+                    guard self?.loadingToken == token else {
+                        Log.info("Ignoring stale file load result for: \(path)")
+                        return
+                    }
                     self?.content = contents
                     self?.filePath = path
                     self?.isDirty = false
@@ -151,7 +190,9 @@ final class TextEditorModel: ObservableObject, Identifiable {
                 }
             } catch {
                 DispatchQueue.main.async {
+                    guard self?.loadingToken == token else { return }
                     self?.isLoading = false
+                    self?.lastError = "Failed to load file: \(error.localizedDescription)"
                     Log.error("Failed to load file: \(error.localizedDescription)")
                 }
             }
@@ -168,14 +209,20 @@ final class TextEditorModel: ObservableObject, Identifiable {
     }
 
     /// Save content to a specific path
-    func saveAs(to path: String) {
+    /// Returns true on success, false on failure
+    @discardableResult
+    func saveAs(to path: String) -> Bool {
+        lastError = nil
         do {
             try content.write(toFile: path, atomically: true, encoding: .utf8)
             filePath = path
             isDirty = false
             Log.info("Saved file: \(path)")
+            return true
         } catch {
+            lastError = "Failed to save file: \(error.localizedDescription)"
             Log.error("Failed to save file: \(error.localizedDescription)")
+            return false
         }
     }
 
@@ -338,36 +385,25 @@ final class SplitPaneController: ObservableObject {
             return (node, nil)
 
         case .split(let id, let dir, let first, let second, let ratio):
-            // Check if first child is the target
-            if first.id == targetID {
-                let result = removeNode(first, targetID: targetID)
-                if result.node == nil {
-                    return (second, second.allPaneIDs.first)
-                }
-            }
-
-            // Check if second child is the target
-            if second.id == targetID {
-                let result = removeNode(second, targetID: targetID)
-                if result.node == nil {
-                    return (first, first.allPaneIDs.first)
-                }
-            }
-
-            // Recurse into children
+            // Recurse into both children
             let firstResult = removeNode(first, targetID: targetID)
             let secondResult = removeNode(second, targetID: targetID)
 
+            // Both children still exist - rebuild the split
             if let newFirst = firstResult.node, let newSecond = secondResult.node {
                 return (.split(id: id, direction: dir, first: newFirst, second: newSecond, ratio: ratio),
                         firstResult.siblingID ?? secondResult.siblingID)
-            } else if let newFirst = firstResult.node {
-                return (newFirst, firstResult.siblingID)
-            } else if let newSecond = secondResult.node {
-                return (newSecond, secondResult.siblingID)
-            } else {
-                return (nil, nil)
             }
+            // First child was removed - promote second child, return first pane of second as sibling
+            if firstResult.node == nil, let newSecond = secondResult.node {
+                return (newSecond, newSecond.allPaneIDs.first)
+            }
+            // Second child was removed - promote first child, return first pane of first as sibling
+            if let newFirst = firstResult.node, secondResult.node == nil {
+                return (newFirst, newFirst.allPaneIDs.first)
+            }
+            // Both removed (shouldn't happen normally)
+            return (nil, nil)
         }
     }
 
@@ -495,7 +531,6 @@ struct SplitNodeView: View {
             TerminalPaneView(
                 id: id,
                 session: session,
-                isFocused: id == focusedID,
                 isSuspended: isSuspended,
                 onFocus: { onFocus(id) }
             )
@@ -504,7 +539,6 @@ struct SplitNodeView: View {
             TextEditorPaneView(
                 id: id,
                 editor: editor,
-                isFocused: id == focusedID,
                 onFocus: { onFocus(id) }
             )
 
@@ -535,17 +569,11 @@ struct SplitNodeView: View {
 struct TerminalPaneView: View {
     let id: UUID
     let session: TerminalSessionModel
-    let isFocused: Bool
     let isSuspended: Bool
     let onFocus: () -> Void
 
     var body: some View {
         TerminalViewRepresentable(model: session, isSuspended: isSuspended)
-            .overlay(
-                RoundedRectangle(cornerRadius: 2)
-                    .stroke(isFocused ? Color.accentColor : Color.clear, lineWidth: 2)
-                    .padding(1)
-            )
             .contentShape(Rectangle())
             .onTapGesture {
                 onFocus()
@@ -558,7 +586,6 @@ struct TerminalPaneView: View {
 struct TextEditorPaneView: View {
     let id: UUID
     @ObservedObject var editor: TextEditorModel
-    let isFocused: Bool
     let onFocus: () -> Void
 
     @State private var showFilePicker = false
@@ -626,11 +653,6 @@ struct TextEditorPaneView: View {
                 .font(.system(size: 12, design: .monospaced))
             }
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: 2)
-                .stroke(isFocused ? Color.accentColor : Color.clear, lineWidth: 2)
-                .padding(1)
-        )
         .contentShape(Rectangle())
         .onTapGesture {
             onFocus()
@@ -672,7 +694,10 @@ struct TextEditorContent: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSTextView.scrollableTextView()
-        let textView = scrollView.documentView as! NSTextView
+        guard let textView = scrollView.documentView as? NSTextView else {
+            Log.error("TextEditorContent: documentView is not NSTextView")
+            return scrollView
+        }
 
         textView.isEditable = true
         textView.isSelectable = true
@@ -689,11 +714,14 @@ struct TextEditorContent: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        let textView = scrollView.documentView as! NSTextView
+        guard let textView = scrollView.documentView as? NSTextView else { return }
         if textView.string != text {
+            // Preserve selection and scroll position
             let selectedRanges = textView.selectedRanges
+            let visibleRect = textView.visibleRect
             textView.string = text
             textView.selectedRanges = selectedRanges
+            textView.scrollToVisible(visibleRect)
         }
     }
 

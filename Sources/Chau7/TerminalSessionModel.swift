@@ -156,6 +156,11 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         terminalView = view
         view.currentDirectory = currentDirectory
 
+        // Configure scrollback buffer size from settings
+        let scrollbackLines = FeatureSettings.shared.scrollbackLines
+        view.getTerminal().changeHistorySize(scrollbackLines)
+        Log.info("Configured terminal scrollback: \(scrollbackLines) lines")
+
         // Auto-focus on attach for newly created tabs
         if shouldAutoFocusOnAttach {
             shouldAutoFocusOnAttach = false
