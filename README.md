@@ -1,22 +1,30 @@
 # Chau7 (macOS)
 
-A small macOS menu bar helper that watches a local event log (newline-delimited JSON)
-and shows native notifications when:
-- a CLI task finishes
-- a CLI task fails
-- a CLI needs human validation
+Chau7 is a macOS menu bar helper and floating terminal overlay built for AI-assisted CLI work. It tails local JSONL logs and CLI history to send notifications and keep a live multi-tab terminal in view.
 
-## What you get
+## Feature Highlights
 
-- Menu bar icon (bell)
-- Native notifications (banner or alert)
-- Event log tailing from `~/.ai-events.log` by default
-- Helper scripts you can call from Codex or Claude wrappers
-- Chau7 terminal window (SwiftTerm) with live shell, status badge, and command-idle notifications
+- Menu bar status item with quick toggles, recent activity, and session status.
+- Native notifications for AI events and command idle detection.
+- Multi-tab SwiftTerm overlay with rename, colors, last-command badges, and git branch indicator.
+- Command palette, search overlay (regex + case sensitivity), snippets, clipboard history, bookmarks, and broadcast input.
+- AI CLI detection with auto tab theming and custom detection rules.
+- Claude Code hook monitoring with permission and response-complete alerts.
+- SSH connection manager with jump hosts and import from `~/.ssh/config`.
+
+For a complete feature inventory, see `FEATURES.md`:
+- [Overview](FEATURES.md#overview)
+- [Terminal Overlay and Emulator](FEATURES.md#terminal-overlay-and-emulator)
+- [AI Integration and Monitoring](FEATURES.md#ai-integration-and-monitoring)
+- [Productivity Tools](FEATURES.md#productivity-tools)
+- [Settings and Customization](FEATURES.md#settings-and-customization)
+- [Debugging and Diagnostics](FEATURES.md#debugging-and-diagnostics)
+- [Keyboard Shortcuts](FEATURES.md#keyboard-shortcuts)
+- [Environment Variables](FEATURES.md#environment-variables)
 
 ## Requirements
 
-- macOS 13+ (Ventura) for MenuBarExtra
+- macOS 13+ (Ventura)
 - Xcode 15+ or Swift 5.9+ to build
 - Network access the first time to fetch SwiftTerm via Swift Package Manager
 
@@ -53,6 +61,12 @@ swift build -c release
 open ./build/Chau7.app
 ```
 
+Quick install one-liner:
+
+```bash
+swift build -c release && ./Scripts/build-app.sh && open ./build/Chau7.app
+```
+
 Dock icon is enabled by default for the app bundle; to hide it:
 
 ```bash
@@ -83,19 +97,32 @@ Logs are written to:
 ~/Library/Logs/Chau7.log
 ```
 
+## Getting Started Cheatsheet
+
+- Open overlay: menu bar icon → "Open Terminal"
+- New tab: Cmd+T
+- Command palette: Cmd+Shift+P
+- Find: Cmd+F (regex and case toggles)
+- Snippets: Cmd+;
+- Next/prev tab: Cmd+Shift+] / Cmd+Shift+[
+- Toggle dropdown: Ctrl+` (if enabled)
+- Debug console: Cmd+Shift+D
+
 ## Chau7 terminal window
 
 The app now ships with a floating terminal overlay powered by SwiftTerm.
 It starts automatically and provides:
-- A shell running your default login shell
-- A top bar showing title, directory, and a status badge
-- Notifications when a command becomes idle (heuristic based on input/output)
-- Tabs with standard shortcuts (Cmd+T new tab, Cmd+W close tab, Cmd+Shift+[ / ] or Ctrl+Tab to switch)
-- Window shortcuts (Cmd+N new overlay window, Cmd+[1-9] jump to tab)
-- Find bar (Cmd+F) with in-terminal highlights and match list; Next/Prev with Cmd+G / Cmd+Shift+G
-- Tab rename + color (Cmd+Shift+R)
+- A shell running your default login shell (configurable)
+- Tabs with standard shortcuts (Cmd+T, Cmd+W, Cmd+Shift+[ / ], Ctrl+Tab)
+- Multi-window support (Cmd+N) and tab jump (Cmd+1-9)
+- Search overlay with regex/case-sensitive options (Cmd+F)
+- Command palette (Cmd+Shift+P) and snippets (Cmd+;)
+- Clipboard history, bookmarks, and broadcast input
+- AI CLI detection with auto tab colors and product icons
+- Command idle notifications based on input/output activity
+- Optional dropdown terminal (Ctrl+`) when enabled in Settings
 
-Use the "Show Overlay" button in the Control Center if the window is hidden.
+Use the menu bar icon to reopen the overlay if the window is hidden.
 
 Idle behavior:
 - "Idle seconds" triggers a notification.
@@ -157,8 +184,8 @@ Input lines are tagged as:
 
 TTY readability:
 - "Normalize terminal output" strips ANSI codes, handles backspaces, and removes control chars.
-- You can disable it in the UI or set `AI_TTY_NORMALIZE=0`.
-- "Render ANSI styling" keeps ANSI colors/styles in the terminal stream (set `AI_TTY_ANSI=0` to force plain).
+- You can disable it in the UI or set `CHAU7_TERMINAL_NORMALIZE=0` (legacy `AI_TTY_NORMALIZE=0`).
+- "Render ANSI styling" keeps ANSI colors/styles in the terminal stream (set `CHAU7_TERMINAL_ANSI=0` or legacy `AI_TTY_ANSI=0`).
 
 ## Start at login (optional)
 
@@ -198,6 +225,38 @@ Unload:
 ```bash
 launchctl unload -w ~/Library/LaunchAgents/com.chau7.plist
 ```
+
+## Troubleshooting
+
+- Notifications do not appear: run the app bundle (`./Scripts/build-app.sh`), and verify notifications are allowed in System Settings.
+- Menu bar icon is missing: quit and relaunch, or check `~/Library/Logs/Chau7.log` for launch errors.
+- No AI events: confirm `~/.ai-events.log` is being written and `CHAU7_EVENTS_LOG` is not pointing elsewhere.
+- PTY logs are empty: use `./Scripts/codex-pty.sh` or `./Scripts/claude-pty.sh` and verify `CHAU7_CODEX_TERMINAL_LOG`/`CHAU7_CLAUDE_TERMINAL_LOG`.
+- Overlay is hidden or off-screen: use Settings -> Actions -> Reset Window Positions, then reopen via the menu bar icon.
+
+## FAQ
+
+Q: What does an AI event line look like?
+A: Each line is JSON with at least `type` and `tool`. Example:
+```json
+{"type":"finished","tool":"Codex","message":"Bulk upload complete","ts":"2026-01-09T12:00:00+01:00"}
+```
+
+Q: How do I emit events from my own CLI?
+A: Use the helper script or inline it in your wrappers:
+```bash
+./Scripts/ai-event.sh needs_validation "Claude" "Please review the plan"
+./Scripts/ai-event.sh finished "Codex" "All done"
+./Scripts/ai-event.sh failed "Codex" "Tests failed"
+```
+
+Q: How do I capture live terminal output (PTY)?
+A: Run the PTY wrappers instead of calling the CLI directly:
+```bash
+./Scripts/codex-pty.sh
+./Scripts/claude-pty.sh
+```
+Logs default to `~/Library/Logs/Chau7/codex-pty.log` and `~/Library/Logs/Chau7/claude-pty.log`.
 
 ## Testing
 

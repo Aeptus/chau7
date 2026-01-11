@@ -55,6 +55,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             DebugConsoleController.shared.configure(appModel: model, overlayModel: overlayModel)
         }
 
+        // Initialize command palette controller
+        CommandPaletteController.shared.setup(appDelegate: self)
+
+        // Initialize SSH connection manager
+        SSHConnectionWindowController.shared.appDelegate = self
+
         // Keep overlay hidden initially
         for host in overlayHosts {
             host.window.orderOut(nil)
@@ -174,6 +180,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ensureActiveOverlayModel()?.newTab()
     }
 
+    func showSSHManager() {
+        SSHConnectionWindowController.shared.showConnectionManager()
+    }
+
     func closeTab() {
         ensureActiveOverlayModel()?.closeCurrentTab()
     }
@@ -263,6 +273,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ensureActiveOverlayModel()?.toggleSearch()
     }
 
+    func toggleCommandPalette() {
+        CommandPaletteController.shared.toggle()
+    }
+
     func toggleSnippets() {
         ensureActiveOverlayModel()?.toggleSnippetManager()
     }
@@ -310,11 +324,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: - App Menu Actions
 
     func showAbout() {
+        let credits = """
+        A modern terminal emulator designed for AI-assisted development.
+
+        Features:
+        - AI CLI Detection (Claude, Codex, Gemini)
+        - Command Palette
+        - SSH Connection Manager
+        - Inline Images
+        - Split Panes
+        - Snippets & More
+
+        Built with SwiftUI and SwiftTerm.
+
+        Copyright \u{00a9} 2024-2025
+        """
+
+        let attributedCredits = NSMutableAttributedString(string: credits)
+        attributedCredits.addAttributes(
+            [.font: NSFont.systemFont(ofSize: 11)],
+            range: NSRange(location: 0, length: credits.count)
+        )
+
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "Chau7",
             .applicationVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0",
             .version: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1",
-            .credits: NSAttributedString(string: "A modern terminal for AI-assisted development.\n\nCopyright \u{00a9} 2024\nhttps://github.com/yourrepo/chau7")
+            .credits: attributedCredits
         ])
     }
 
@@ -485,26 +521,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: - Help Menu Actions
 
     func showHelp() {
-        if let url = URL(string: "https://github.com/yourrepo/chau7#readme") {
-            NSWorkspace.shared.open(url)
-        }
+        HelpWindowController.shared.show()
     }
 
     func showKeyboardShortcuts() {
-        // Show settings window focused on keyboard shortcuts section
-        showSettings()
-        // TODO: Navigate to keyboard shortcuts section
+        KeyboardShortcutsWindowController.shared.show()
+    }
+
+    func showSnippetsSettings() {
+        SnippetsSettingsWindowController.shared.show()
+    }
+
+    @objc func insertSnippetByID(_ sender: Any?) {
+        guard let snippetID = sender as? String else { return }
+        guard let entry = SnippetManager.shared.entries.first(where: { $0.snippet.id == snippetID }) else { return }
+        ensureActiveOverlayModel()?.insertSnippet(entry)
     }
 
     func showReleaseNotes() {
-        if let url = URL(string: "https://github.com/yourrepo/chau7/releases") {
-            NSWorkspace.shared.open(url)
-        }
+        let alert = NSAlert()
+        alert.messageText = "What's New in Chau7"
+        alert.informativeText = """
+        Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
+
+        Recent Updates:
+        - Command Palette (⇧⌘P)
+        - SSH Connection Manager
+        - Inline Image Support (imgcat)
+        - Keyboard Shortcuts Editor
+        - Built-in Help Documentation
+        - Option+Click cursor positioning
+        - Auto-focus on new tabs
+        - Improved menu bar organization
+        """
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     func reportIssue() {
-        if let url = URL(string: "https://github.com/yourrepo/chau7/issues/new") {
-            NSWorkspace.shared.open(url)
+        let alert = NSAlert()
+        alert.messageText = "Report an Issue"
+        alert.informativeText = """
+        To report a bug or request a feature:
+
+        1. Open Debug Console (⇧⌘D) to capture logs
+        2. Note the steps to reproduce the issue
+        3. Include your macOS version and Chau7 version
+
+        You can export logs from Debug Console → Export Logs.
+        """
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Open Debug Console")
+        alert.addButton(withTitle: "Cancel")
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            DebugConsoleController.shared.toggle()
         }
     }
 
@@ -690,12 +762,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return event
         }
 
-        // Handle Cmd+Shift+D to toggle debug console (works globally)
-        if chars == "d", flags == [.command, .shift] {
-            Log.info("Cmd+Shift+D: toggling debug console.")
-            DebugConsoleController.shared.toggle()
-            return nil
-        }
+        // NOTE: Cmd+Shift+D (debug console) and Cmd+Shift+P (command palette)
+        // are handled by SwiftUI menu shortcuts in Chau7App.swift.
+        // Do NOT duplicate them here or they will fire twice.
 
         // Check if we're in an overlay window with terminal as first responder
         guard let window = NSApp.keyWindow,
@@ -704,24 +773,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return event
         }
 
-        // Handle Cmd+K to clear terminal screen
-        if chars == "k", flags == .command {
-            if let terminalView = window.firstResponder as? Chau7TerminalView {
-                Log.info("Cmd+K: sending Ctrl+L to shell.")
-                terminalView.send(data: [0x0c])
-                terminalView.clearSelection()
-                return nil
-            }
-        }
-
-        // Handle Cmd+Shift+W to close window
-        if chars == "w", flags == [.command, .shift] {
-            Log.info("Cmd+Shift+W: closing window.")
-            closeWindow()
-            return nil
-        }
+        // NOTE: Cmd+K (clear screen) and Cmd+Shift+W (close window) are handled
+        // by SwiftUI menu shortcuts. Do NOT duplicate them here.
 
         // Handle Cmd+W to close tab (not window)
+        // This MUST be handled here because we need to set isClosingTab flag
+        // BEFORE the event reaches the window system.
         if chars == "w", flags == .command {
             Log.info("Cmd+W: closing current tab.")
             isClosingTab = true

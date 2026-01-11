@@ -38,6 +38,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private var didClearOnLaunch = false
     private var didApplyShellIntegration = false
     private var shellIntegrationOutputCount = 0
+    private var shouldAutoFocusOnAttach = true  // Auto-focus when terminal view is attached
 
     private let appNameMap: [String: String] = [
         // OpenAI Codex
@@ -139,6 +140,17 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     func attachTerminal(_ view: Chau7TerminalView) {
         terminalView = view
         view.currentDirectory = currentDirectory
+
+        // Auto-focus on attach for newly created tabs
+        if shouldAutoFocusOnAttach {
+            shouldAutoFocusOnAttach = false
+            // Brief delay to ensure view is fully integrated into window hierarchy
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak view] in
+                guard let view = view, let window = view.window else { return }
+                window.makeFirstResponder(view)
+                Log.trace("Auto-focused terminal view on attach")
+            }
+        }
     }
 
     func focusTerminal(in window: NSWindow?) {

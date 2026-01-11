@@ -135,7 +135,7 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     private func setupEventMonitors() {
         removeEventMonitors()
 
-        // F03: Cmd+Click for paths/URLs - monitor mouse down
+        // F03: Cmd+Click for paths/URLs, Option+Click for cursor positioning - monitor mouse down
         mouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self = self else { return event }
 
@@ -147,6 +147,13 @@ final class Chau7TerminalView: LocalProcessTerminalView {
             // Check for Cmd+click on paths
             if event.modifierFlags.contains(.command) && FeatureSettings.shared.isCmdClickPathsEnabled {
                 if self.handleCmdClick(at: location) {
+                    return nil  // Consume the event
+                }
+            }
+
+            // Option+click to position cursor (like iTerm2)
+            if event.modifierFlags.contains(.option) && FeatureSettings.shared.isOptionClickCursorEnabled {
+                if self.handleOptionClick(at: location) {
                     return nil  // Consume the event
                 }
             }
@@ -305,6 +312,58 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         if let firstPath = pathMatches.first {
             PathClickHandler.openPath(firstPath, relativeTo: currentDirectory)
             Log.info("Cmd+click: opened path \(firstPath.path)")
+            return true
+        }
+
+        return false
+    }
+
+    // MARK: - Option+Click Cursor Positioning
+
+    /// Handle Option+click to move cursor to clicked position
+    /// This sends arrow key sequences to move the cursor, similar to iTerm2
+    private func handleOptionClick(at point: NSPoint) -> Bool {
+        let terminal = getTerminal()
+        guard terminal.rows > 0, terminal.cols > 0 else { return false }
+        guard bounds.height > 0, bounds.width > 0 else { return false }
+
+        // Calculate cell dimensions
+        let cellHeight = bounds.height / CGFloat(terminal.rows)
+        let cellWidth = bounds.width / CGFloat(terminal.cols)
+
+        // Calculate clicked row and column
+        let clickedRow = Int((bounds.height - point.y) / cellHeight)
+        let clickedCol = Int(point.x / cellWidth)
+
+        // Get current cursor position
+        let cursorRow = terminal.buffer.y
+        let cursorCol = terminal.buffer.x
+
+        // Only move cursor if click is on the same row as cursor (for command line editing)
+        // or within a reasonable range
+        let rowDiff = clickedRow - cursorRow
+        let colDiff = clickedCol - cursorCol
+
+        // Build escape sequences for cursor movement
+        var sequences = ""
+
+        // Move vertically if needed (up/down arrows)
+        if rowDiff > 0 {
+            sequences += String(repeating: "\u{1b}[B", count: rowDiff)  // Down arrow
+        } else if rowDiff < 0 {
+            sequences += String(repeating: "\u{1b}[A", count: -rowDiff)  // Up arrow
+        }
+
+        // Move horizontally (left/right arrows)
+        if colDiff > 0 {
+            sequences += String(repeating: "\u{1b}[C", count: colDiff)  // Right arrow
+        } else if colDiff < 0 {
+            sequences += String(repeating: "\u{1b}[D", count: -colDiff)  // Left arrow
+        }
+
+        if !sequences.isEmpty {
+            send(txt: sequences)
+            Log.trace("Option+click: moved cursor by row=\(rowDiff), col=\(colDiff)")
             return true
         }
 

@@ -2,7 +2,7 @@ import Foundation
 import AppKit
 
 enum SnippetSource: String, Codable, CaseIterable, Identifiable {
-    case global
+    case global  // Stored as "global" for backwards compatibility
     case profile
     case repo
 
@@ -11,11 +11,33 @@ enum SnippetSource: String, Codable, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .global:
-            return "Global"
+            return "User"  // User-friendly name (stored as "global")
         case .profile:
             return "Profile"
         case .repo:
             return "Repo"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .global:
+            return "Available everywhere"
+        case .profile:
+            return "Profile-specific"
+        case .repo:
+            return "Repository-specific"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .global:
+            return "person.fill"
+        case .profile:
+            return "person.crop.circle"
+        case .repo:
+            return "folder.fill"
         }
     }
 }

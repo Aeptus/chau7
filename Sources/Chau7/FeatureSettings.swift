@@ -547,6 +547,11 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(isCmdClickPathsEnabled, forKey: Keys.cmdClickPaths) }
     }
 
+    /// Option+click to position cursor in the command line (like iTerm2)
+    @Published var isOptionClickCursorEnabled: Bool {
+        didSet { UserDefaults.standard.set(isOptionClickCursorEnabled, forKey: Keys.optionClickCursor) }
+    }
+
     @Published var defaultEditor: String {
         didSet { UserDefaults.standard.set(defaultEditor, forKey: Keys.defaultEditor) }
     }
@@ -665,6 +670,12 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(isClickableURLsEnabled, forKey: Keys.clickableURLs) }
     }
 
+    // MARK: - Inline Images (iTerm2 imgcat protocol)
+
+    @Published var isInlineImagesEnabled: Bool {
+        didSet { UserDefaults.standard.set(isInlineImagesEnabled, forKey: Keys.inlineImages) }
+    }
+
     @Published var isJSONPrettyPrintEnabled: Bool {
         didSet { UserDefaults.standard.set(isJSONPrettyPrintEnabled, forKey: Keys.jsonPrettyPrint) }
     }
@@ -773,6 +784,7 @@ final class FeatureSettings: ObservableObject {
         static let lastCommandBadge = "feature.lastCommandBadge"
         // F03
         static let cmdClickPaths = "feature.cmdClickPaths"
+        static let optionClickCursor = "feature.optionClickCursor"
         static let defaultEditor = "feature.defaultEditor"
         static let urlHandler = "feature.urlHandler"
         static let customAIDetectionRules = "ai.customDetectionRules"
@@ -797,6 +809,7 @@ final class FeatureSettings: ObservableObject {
         // F08
         static let syntaxHighlight = "feature.syntaxHighlight"
         static let clickableURLs = "feature.clickableURLs"
+        static let inlineImages = "feature.inlineImages"
         static let jsonPrettyPrint = "feature.jsonPrettyPrint"
         // F07
         static let semanticSearch = "feature.semanticSearch"
@@ -894,6 +907,7 @@ final class FeatureSettings: ObservableObject {
 
         // F03: Cmd+Click Paths (default: enabled)
         self.isCmdClickPathsEnabled = defaults.object(forKey: Keys.cmdClickPaths) as? Bool ?? true
+        self.isOptionClickCursorEnabled = defaults.object(forKey: Keys.optionClickCursor) as? Bool ?? true
         self.defaultEditor = defaults.string(forKey: Keys.defaultEditor) ?? ""  // Empty = use $EDITOR or system default
         if let handlerRaw = defaults.string(forKey: Keys.urlHandler),
            let handler = URLHandler(rawValue: handlerRaw) {
@@ -936,6 +950,7 @@ final class FeatureSettings: ObservableObject {
         // F08: Syntax Highlighting (default: enabled)
         self.isSyntaxHighlightEnabled = defaults.object(forKey: Keys.syntaxHighlight) as? Bool ?? true
         self.isClickableURLsEnabled = defaults.object(forKey: Keys.clickableURLs) as? Bool ?? true
+        self.isInlineImagesEnabled = defaults.object(forKey: Keys.inlineImages) as? Bool ?? true
         self.isJSONPrettyPrintEnabled = defaults.object(forKey: Keys.jsonPrettyPrint) as? Bool ?? false
 
         // F07: Semantic Search (default: disabled - requires shell integration)
@@ -1043,6 +1058,7 @@ final class FeatureSettings: ObservableObject {
         var timestampFormat: String
         var isLastCommandBadgeEnabled: Bool
         var isCmdClickPathsEnabled: Bool
+        var isOptionClickCursorEnabled: Bool
         var defaultEditor: String
         var urlHandler: String?
         var customAIDetectionRules: [CustomAIDetectionRule]?
@@ -1061,6 +1077,7 @@ final class FeatureSettings: ObservableObject {
         var snippetPlaceholdersEnabled: Bool
         var isSyntaxHighlightEnabled: Bool
         var isClickableURLsEnabled: Bool
+        var isInlineImagesEnabled: Bool
         var isJSONPrettyPrintEnabled: Bool
         var isSemanticSearchEnabled: Bool
         var isSplitPanesEnabled: Bool
@@ -1096,6 +1113,7 @@ final class FeatureSettings: ObservableObject {
             timestampFormat: timestampFormat,
             isLastCommandBadgeEnabled: isLastCommandBadgeEnabled,
             isCmdClickPathsEnabled: isCmdClickPathsEnabled,
+            isOptionClickCursorEnabled: isOptionClickCursorEnabled,
             defaultEditor: defaultEditor,
             urlHandler: urlHandler.rawValue,
             customAIDetectionRules: customAIDetectionRules,
@@ -1114,6 +1132,7 @@ final class FeatureSettings: ObservableObject {
             snippetPlaceholdersEnabled: snippetPlaceholdersEnabled,
             isSyntaxHighlightEnabled: isSyntaxHighlightEnabled,
             isClickableURLsEnabled: isClickableURLsEnabled,
+            isInlineImagesEnabled: isInlineImagesEnabled,
             isJSONPrettyPrintEnabled: isJSONPrettyPrintEnabled,
             isSemanticSearchEnabled: isSemanticSearchEnabled,
             isSplitPanesEnabled: isSplitPanesEnabled,
@@ -1162,6 +1181,7 @@ final class FeatureSettings: ObservableObject {
         timestampFormat = imported.timestampFormat
         isLastCommandBadgeEnabled = imported.isLastCommandBadgeEnabled
         isCmdClickPathsEnabled = imported.isCmdClickPathsEnabled
+        isOptionClickCursorEnabled = imported.isOptionClickCursorEnabled
         defaultEditor = imported.defaultEditor
         if let handlerRaw = imported.urlHandler,
            let handler = URLHandler(rawValue: handlerRaw) {
@@ -1185,6 +1205,7 @@ final class FeatureSettings: ObservableObject {
         snippetPlaceholdersEnabled = imported.snippetPlaceholdersEnabled
         isSyntaxHighlightEnabled = imported.isSyntaxHighlightEnabled
         isClickableURLsEnabled = imported.isClickableURLsEnabled
+        isInlineImagesEnabled = imported.isInlineImagesEnabled
         isJSONPrettyPrintEnabled = imported.isJSONPrettyPrintEnabled
         isSemanticSearchEnabled = imported.isSemanticSearchEnabled
         isSplitPanesEnabled = imported.isSplitPanesEnabled
@@ -1240,6 +1261,7 @@ final class FeatureSettings: ObservableObject {
         timestampFormat = "HH:mm:ss"
         isLastCommandBadgeEnabled = true
         isCmdClickPathsEnabled = true
+        isOptionClickCursorEnabled = true
         defaultEditor = ""
         urlHandler = .system
         customAIDetectionRules = []
@@ -1258,6 +1280,7 @@ final class FeatureSettings: ObservableObject {
         snippetPlaceholdersEnabled = true
         isSyntaxHighlightEnabled = true
         isClickableURLsEnabled = true
+        isInlineImagesEnabled = true
         isJSONPrettyPrintEnabled = false
         isSemanticSearchEnabled = false
         isSplitPanesEnabled = true
@@ -1426,6 +1449,7 @@ extension FeatureSettings {
             timestampFormat: "HH:mm:ss",
             isLastCommandBadgeEnabled: true,
             isCmdClickPathsEnabled: true,
+            isOptionClickCursorEnabled: true,
             defaultEditor: "",
             urlHandler: "system",
             customAIDetectionRules: [],
@@ -1444,6 +1468,7 @@ extension FeatureSettings {
             snippetPlaceholdersEnabled: true,
             isSyntaxHighlightEnabled: true,
             isClickableURLsEnabled: true,
+            isInlineImagesEnabled: true,
             isJSONPrettyPrintEnabled: false,
             isSemanticSearchEnabled: false,
             isSplitPanesEnabled: true,

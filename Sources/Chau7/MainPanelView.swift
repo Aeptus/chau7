@@ -550,6 +550,15 @@ struct SettingsSectionHeader: View {
     }
 }
 
+// MARK: - Settings Layout Constants
+
+private enum SettingsLayout {
+    static let labelWidth: CGFloat = 220
+    static let controlSpacing: CGFloat = 16
+}
+
+// MARK: - Generic Settings Row (for custom controls)
+
 struct SettingsRow<Content: View>: View {
     let label: String
     let help: String?
@@ -562,7 +571,7 @@ struct SettingsRow<Content: View>: View {
     }
 
     var body: some View {
-        HStack(alignment: .center) {
+        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
                 if let help {
@@ -571,10 +580,288 @@ struct SettingsRow<Content: View>: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Spacer()
+            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
+
             content()
+
+            Spacer()
         }
         .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Settings Slider
+
+struct SettingsSlider: View {
+    let label: String
+    let help: String?
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var step: Double = 1
+    var format: String = "%.0f"
+    var suffix: String = ""
+    var width: CGFloat = 150
+    var disabled: Bool = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                if let help {
+                    Text(help)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
+
+            HStack(spacing: 8) {
+                Slider(value: $value, in: range, step: step)
+                    .frame(width: width)
+                    .disabled(disabled)
+                Text(String(format: format, value) + suffix)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(width: 50, alignment: .trailing)
+                    .foregroundStyle(disabled ? .secondary : .primary)
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Settings Stepper
+
+struct SettingsStepper: View {
+    let label: String
+    let help: String?
+    @Binding var value: Int
+    let range: ClosedRange<Int>
+    var suffix: String = ""
+    var disabled: Bool = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                if let help {
+                    Text(help)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
+
+            Stepper(value: $value, in: range) {
+                Text("\(value)\(suffix)")
+                    .font(.system(.body, design: .monospaced))
+                    .frame(width: 60, alignment: .trailing)
+            }
+            .disabled(disabled)
+
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Settings Info Row (read-only display)
+
+struct SettingsInfoRow: View {
+    let label: String
+    let value: String
+    var valueColor: Color = .primary
+    var monospaced: Bool = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
+            Text(label)
+                .frame(width: SettingsLayout.labelWidth, alignment: .leading)
+
+            Text(value)
+                .font(monospaced ? .system(.body, design: .monospaced) : .body)
+                .foregroundStyle(valueColor)
+
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Settings Button Row
+
+struct SettingsButtonRow: View {
+    let buttons: [SettingsButton]
+    var alignment: HorizontalAlignment = .leading
+
+    struct SettingsButton: Identifiable {
+        let id = UUID()
+        let title: String
+        var icon: String? = nil
+        var style: ButtonType = .bordered
+        var action: () -> Void
+
+        enum ButtonType {
+            case bordered, borderedProminent, plain
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if alignment == .trailing {
+                Spacer()
+            }
+
+            ForEach(buttons) { button in
+                makeButton(button)
+            }
+
+            if alignment == .leading {
+                Spacer()
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private func makeButton(_ button: SettingsButton) -> some View {
+        let label: some View = {
+            if let icon = button.icon {
+                return AnyView(Label(button.title, systemImage: icon))
+            } else {
+                return AnyView(Text(button.title))
+            }
+        }()
+
+        switch button.style {
+        case .bordered:
+            Button(action: button.action) { label }
+                .buttonStyle(.bordered)
+        case .borderedProminent:
+            Button(action: button.action) { label }
+                .buttonStyle(.borderedProminent)
+        case .plain:
+            Button(action: button.action) { label }
+                .buttonStyle(.plain)
+                .foregroundColor(.accentColor)
+        }
+    }
+}
+
+// MARK: - Settings Card (featured section with action)
+
+struct SettingsCard<Content: View>: View {
+    let content: () -> Content
+    var action: (() -> Void)? = nil
+    var actionLabel: String? = nil
+    var actionIcon: String? = nil
+
+    init(@ViewBuilder content: @escaping () -> Content, action: (() -> Void)? = nil, actionLabel: String? = nil, actionIcon: String? = nil) {
+        self.content = content
+        self.action = action
+        self.actionLabel = actionLabel
+        self.actionIcon = actionIcon
+    }
+
+    var body: some View {
+        HStack {
+            content()
+
+            Spacer()
+
+            if let action = action, let label = actionLabel {
+                Button(action: action) {
+                    if let icon = actionIcon {
+                        Label(label, systemImage: icon)
+                    } else {
+                        Text(label)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+        }
+        .padding(12)
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(8)
+    }
+}
+
+// MARK: - Settings Hint (keyboard shortcut or tip)
+
+struct SettingsHint: View {
+    let icon: String
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+            Text(text)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Settings Description Text
+
+struct SettingsDescription: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Settings Shortcut Row (keyboard shortcut display)
+
+struct SettingsShortcutRow: View {
+    let label: String
+    let shortcut: String
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(shortcut)
+                .font(.system(.caption, design: .monospaced))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.secondary.opacity(0.1))
+                .cornerRadius(4)
+        }
+        .padding(.vertical, 2)
+    }
+}
+
+// MARK: - Settings Detection Row (AI detection display)
+
+struct SettingsDetectionRow: View {
+    let name: String
+    let commands: String
+    let color: Color
+
+    var body: some View {
+        HStack {
+            Circle()
+                .fill(color)
+                .frame(width: 10, height: 10)
+            Text(name)
+                .fontWeight(.medium)
+            Spacer()
+            Text(commands)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 2)
     }
 }
 
@@ -585,17 +872,25 @@ struct SettingsToggle: View {
     var disabled: Bool = false
 
     var body: some View {
-        Toggle(isOn: $isOn) {
+        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
+            // Fixed-width label column
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
                 Text(help)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
+
+            // Control aligned left
+            Toggle("", isOn: $isOn)
+                .toggleStyle(.switch)
+                .labelsHidden()
+                .disabled(disabled)
+
+            Spacer()
         }
-        .toggleStyle(.switch)
-        .disabled(disabled)
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 }
 
@@ -610,7 +905,8 @@ struct SettingsTextField: View {
     var onSubmit: (() -> Void)?
 
     var body: some View {
-        HStack(alignment: .center) {
+        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
+            // Fixed-width label column
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
                 if let help {
@@ -619,15 +915,19 @@ struct SettingsTextField: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Spacer()
+            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
+
+            // Control aligned left
             TextField(placeholder, text: $text)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: width)
                 .font(monospaced ? .system(size: 12, design: .monospaced) : .body)
                 .disabled(disabled)
                 .onSubmit { onSubmit?() }
+
+            Spacer()
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 }
 
@@ -640,7 +940,8 @@ struct SettingsNumberField: View {
     var onSubmit: (() -> Void)?
 
     var body: some View {
-        HStack(alignment: .center) {
+        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
+            // Fixed-width label column
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
                 if let help {
@@ -649,14 +950,18 @@ struct SettingsNumberField: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Spacer()
+            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
+
+            // Control aligned left
             TextField("", value: $value, format: .number)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: width)
                 .disabled(disabled)
                 .onSubmit { onSubmit?() }
+
+            Spacer()
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 }
 
@@ -665,10 +970,12 @@ struct SettingsPicker<T: Hashable>: View {
     let help: String?
     @Binding var selection: T
     let options: [(value: T, label: String)]
+    var width: CGFloat = 150
     var disabled: Bool = false
 
     var body: some View {
-        HStack(alignment: .center) {
+        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
+            // Fixed-width label column
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
                 if let help {
@@ -677,16 +984,21 @@ struct SettingsPicker<T: Hashable>: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Spacer()
+            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
+
+            // Control aligned left
             Picker("", selection: $selection) {
                 ForEach(options, id: \.value) { option in
                     Text(option.label).tag(option.value)
                 }
             }
-            .frame(width: 150)
+            .labelsHidden()
+            .frame(width: width)
             .disabled(disabled)
+
+            Spacer()
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 }
 
@@ -832,10 +1144,25 @@ struct GeneralSettingsView: View {
             // Status
             SettingsSectionHeader("Status", icon: "info.circle")
 
-            statusRow("Notifications", value: model.notificationStatus)
-            statusRow("Event Monitoring", value: model.isMonitoring ? "Active" : "Paused")
-            statusRow("History Monitoring", value: model.isIdleMonitoring ? "Active" : "Paused")
-            statusRow("Terminal Monitoring", value: model.isTerminalMonitoring ? "Active" : "Paused")
+            SettingsInfoRow(label: "Notifications", value: model.notificationStatus, monospaced: true)
+            SettingsInfoRow(
+                label: "Event Monitoring",
+                value: model.isMonitoring ? "Active" : "Paused",
+                valueColor: model.isMonitoring ? .green : .secondary,
+                monospaced: true
+            )
+            SettingsInfoRow(
+                label: "History Monitoring",
+                value: model.isIdleMonitoring ? "Active" : "Paused",
+                valueColor: model.isIdleMonitoring ? .green : .secondary,
+                monospaced: true
+            )
+            SettingsInfoRow(
+                label: "Terminal Monitoring",
+                value: model.isTerminalMonitoring ? "Active" : "Paused",
+                valueColor: model.isTerminalMonitoring ? .green : .secondary,
+                monospaced: true
+            )
 
             Divider()
                 .padding(.vertical, 8)
@@ -843,33 +1170,29 @@ struct GeneralSettingsView: View {
             // Actions
             SettingsSectionHeader("Actions", icon: "hand.tap")
 
-            HStack(spacing: 12) {
-                Button("Show Overlay") {
+            SettingsButtonRow(buttons: [
+                .init(title: "Show Overlay", icon: "rectangle.inset.filled") {
                     (NSApp.delegate as? AppDelegate)?.showOverlay()
-                }
-
-                Button("Reset Window Positions") {
+                },
+                .init(title: "Reset Window Positions", icon: "arrow.counterclockwise") {
                     FeatureSettings.shared.resetOverlayOffsets()
-                }
-
-                Button("Open Debug Console") {
+                },
+                .init(title: "Debug Console", icon: "terminal") {
                     DebugConsoleController.shared.show()
                 }
-            }
+            ])
 
             Divider()
                 .padding(.vertical, 8)
 
-            // Reset (NEW)
+            // Reset
             SettingsSectionHeader("Reset", icon: "arrow.counterclockwise")
 
-            HStack {
-                Spacer()
-                Button("Reset All Settings to Defaults") {
+            SettingsButtonRow(buttons: [
+                .init(title: "Reset All Settings to Defaults", style: .plain) {
                     showResetConfirmation = true
                 }
-                .foregroundColor(.red)
-            }
+            ], alignment: .trailing)
         }
         .fileImporter(
             isPresented: $showImportSheet,
@@ -902,17 +1225,6 @@ struct GeneralSettingsView: View {
                 Text("Are you sure you want to delete the profile \"\(profile.name)\"? This action cannot be undone.")
             }
         }
-    }
-
-    private func statusRow(_ label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .font(.system(.body, design: .monospaced))
-        }
-        .padding(.vertical, 2)
     }
 
     private func exportSettings() {
@@ -1206,6 +1518,12 @@ struct AppearanceSettingsView: View {
             )
 
             SettingsToggle(
+                label: "Inline Images",
+                help: "Display images inline using iTerm2's imgcat protocol (use imgcat command)",
+                isOn: $settings.isInlineImagesEnabled
+            )
+
+            SettingsToggle(
                 label: "Pretty Print JSON",
                 help: "Automatically format JSON output with indentation and colors",
                 isOn: $settings.isJSONPrettyPrintEnabled
@@ -1451,14 +1769,7 @@ struct TerminalSettingsView: View {
             }
 
             // Shell info
-            HStack {
-                Text("Current Shell")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(currentShellDisplay)
-                    .font(.system(.body, design: .monospaced))
-            }
-            .padding(.vertical, 2)
+            SettingsInfoRow(label: "Current Shell", value: currentShellDisplay, monospaced: true)
 
             SettingsTextField(
                 label: "Startup Command",
@@ -1638,29 +1949,17 @@ struct TabsSettingsView: View {
             // Keyboard
             SettingsSectionHeader("Keyboard Navigation", icon: "keyboard")
 
-            VStack(alignment: .leading, spacing: 8) {
-                shortcutRow("New Tab", shortcut: "Cmd+T")
-                shortcutRow("Close Tab", shortcut: "Cmd+W")
-                shortcutRow("Next Tab", shortcut: "Cmd+Shift+] or Ctrl+Tab")
-                shortcutRow("Previous Tab", shortcut: "Cmd+Shift+[ or Ctrl+Shift+Tab")
-                shortcutRow("Switch to Tab 1-9", shortcut: "Cmd+1-9")
-                shortcutRow("Rename Tab", shortcut: "Cmd+Shift+R")
+            VStack(alignment: .leading, spacing: 4) {
+                SettingsShortcutRow(label: "New Tab", shortcut: "⌘T")
+                SettingsShortcutRow(label: "Close Tab", shortcut: "⌘W")
+                SettingsShortcutRow(label: "Next Tab", shortcut: "⌘⇧] or ⌃Tab")
+                SettingsShortcutRow(label: "Previous Tab", shortcut: "⌘⇧[ or ⌃⇧Tab")
+                SettingsShortcutRow(label: "Switch to Tab 1-9", shortcut: "⌘1-9")
+                SettingsShortcutRow(label: "Rename Tab", shortcut: "⌘⇧R")
             }
-            .padding(.leading, 4)
-        }
-    }
-
-    private func shortcutRow(_ label: String, shortcut: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(shortcut)
-                .font(.system(.caption, design: .monospaced))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.secondary.opacity(0.1))
-                .cornerRadius(4)
+            .padding(8)
+            .background(Color.secondary.opacity(0.05))
+            .cornerRadius(8)
         }
     }
 }
@@ -1757,6 +2056,12 @@ struct InputSettingsView: View {
                     monospaced: true
                 )
             }
+
+            SettingsToggle(
+                label: "Option+Click Cursor",
+                help: "Move cursor to clicked position by pressing Option and clicking (like iTerm2)",
+                isOn: $settings.isOptionClickCursorEnabled
+            )
 
             Divider()
                 .padding(.vertical, 8)
@@ -1957,9 +2262,53 @@ struct ProductivitySettingsView: View {
             // Snippets
             SettingsSectionHeader("Snippets", icon: "text.badge.plus")
 
+            // Quick summary and manage button
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Reusable text snippets with placeholders")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    HStack(spacing: 12) {
+                        Label("\(SnippetManager.shared.entries.filter { $0.source == .global }.count) User", systemImage: "person.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                        if SnippetManager.shared.repoRoot != nil {
+                            Label("\(SnippetManager.shared.entries.filter { $0.source == .repo }.count) Repo", systemImage: "folder.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+
+                Spacer()
+
+                Button {
+                    if let appDelegate = NSApp.delegate as? AppDelegate {
+                        appDelegate.showSnippetsSettings()
+                    }
+                } label: {
+                    Label("Manage Snippets", systemImage: "text.badge.plus")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+            .padding(12)
+            .background(Color(NSColor.controlBackgroundColor))
+            .cornerRadius(8)
+
+            // Shortcut hint
+            HStack(spacing: 4) {
+                Image(systemName: "keyboard")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                Text("Press ⌘; to open snippet picker in terminal")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+
             SettingsToggle(
                 label: "Enable Snippets",
-                help: "Use reusable text snippets with placeholders (Cmd+Shift+S)",
+                help: "Use reusable text snippets with placeholders",
                 isOn: $settings.isSnippetsEnabled
             )
             .onChange(of: settings.isSnippetsEnabled) { _ in
@@ -1968,24 +2317,13 @@ struct ProductivitySettingsView: View {
 
             SettingsToggle(
                 label: "Repository Snippets",
-                help: "Load snippets from the current git repository",
+                help: "Load snippets from the current git repository (.chau7/snippets.json)",
                 isOn: $settings.isRepoSnippetsEnabled,
                 disabled: !settings.isSnippetsEnabled
             )
             .onChange(of: settings.isRepoSnippetsEnabled) { _ in
                 SnippetManager.shared.refreshConfiguration()
             }
-
-            SettingsTextField(
-                label: "Repository Snippet Path",
-                help: "Path to snippet file relative to repository root",
-                placeholder: ".chau7/snippets.json",
-                text: $settings.repoSnippetPath,
-                width: 220,
-                monospaced: true,
-                disabled: !settings.isSnippetsEnabled || !settings.isRepoSnippetsEnabled,
-                onSubmit: { SnippetManager.shared.refreshConfiguration() }
-            )
 
             SettingsPicker(
                 label: "Insert Mode",
@@ -2074,39 +2412,24 @@ struct ProductivitySettingsView: View {
             .background(Color.secondary.opacity(0.05))
             .cornerRadius(8)
 
-            VStack(alignment: .leading, spacing: 8) {
-                shortcutRow("Find", shortcut: "Cmd+F")
-                shortcutRow("Find Next", shortcut: "Cmd+G")
-                shortcutRow("Find Previous", shortcut: "Cmd+Shift+G")
+            VStack(alignment: .leading, spacing: 4) {
+                SettingsShortcutRow(label: "Find", shortcut: "⌘F")
+                SettingsShortcutRow(label: "Find Next", shortcut: "⌘G")
+                SettingsShortcutRow(label: "Find Previous", shortcut: "⌘⇧G")
             }
-            .padding(.leading, 4)
-            .padding(.top, 8)
+            .padding(8)
+            .background(Color.secondary.opacity(0.05))
+            .cornerRadius(8)
 
             Divider()
                 .padding(.vertical, 8)
 
             // Reset Button
-            HStack {
-                Spacer()
-                Button("Reset Productivity to Defaults") {
+            SettingsButtonRow(buttons: [
+                .init(title: "Reset Productivity to Defaults", style: .plain) {
                     settings.resetProductivityToDefaults()
                 }
-                .foregroundColor(.red)
-            }
-        }
-    }
-
-    private func shortcutRow(_ label: String, shortcut: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(shortcut)
-                .font(.system(.caption, design: .monospaced))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.secondary.opacity(0.1))
-                .cornerRadius(4)
+            ], alignment: .trailing)
         }
     }
 }
@@ -2121,20 +2444,16 @@ struct WindowsSettingsView: View {
             // Overlay
             SettingsSectionHeader("Overlay Window", icon: "macwindow")
 
-            HStack(spacing: 12) {
-                Button("Show Overlay") {
+            SettingsButtonRow(buttons: [
+                .init(title: "Show Overlay", icon: "rectangle.inset.filled") {
                     (NSApp.delegate as? AppDelegate)?.showOverlay()
-                }
-
-                Button("Reset Position") {
+                },
+                .init(title: "Reset Position", icon: "arrow.counterclockwise") {
                     FeatureSettings.shared.resetOverlayOffsets()
                 }
-            }
+            ])
 
-            Text("The overlay window remembers its position per workspace and restores it automatically.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.top, 4)
+            SettingsDescription(text: "The overlay window remembers its position per workspace and restores it automatically.")
 
             Divider()
                 .padding(.vertical, 8)
@@ -2151,7 +2470,7 @@ struct WindowsSettingsView: View {
             if settings.isDropdownEnabled {
                 SettingsTextField(
                     label: "Hotkey",
-                    help: "Global keyboard shortcut to toggle dropdown (e.g., ctrl+`, cmd+space)",
+                    help: "Global keyboard shortcut to toggle dropdown (e.g., ⌃`, ⌘Space)",
                     placeholder: "ctrl+`",
                     text: $settings.dropdownHotkey,
                     width: 120,
@@ -2159,12 +2478,12 @@ struct WindowsSettingsView: View {
                 )
 
                 SettingsRow("Height", help: "Dropdown height as percentage of screen (10-100%)") {
-                    HStack {
+                    HStack(spacing: 8) {
                         Slider(value: $settings.dropdownHeight, in: 0.1...1.0, step: 0.05)
                             .frame(width: 150)
                         Text("\(Int(settings.dropdownHeight * 100))%")
                             .font(.system(.body, design: .monospaced))
-                            .frame(width: 45, alignment: .trailing)
+                            .frame(width: 50, alignment: .trailing)
                     }
                 }
             }
@@ -2182,28 +2501,15 @@ struct WindowsSettingsView: View {
             )
 
             if settings.isSplitPanesEnabled {
-                VStack(alignment: .leading, spacing: 8) {
-                    shortcutRow("Split Horizontal", shortcut: "Cmd+D")
-                    shortcutRow("Split Vertical", shortcut: "Cmd+Shift+D")
-                    shortcutRow("Navigate Panes", shortcut: "Cmd+Option+Arrow")
+                VStack(alignment: .leading, spacing: 4) {
+                    SettingsShortcutRow(label: "Split Horizontal", shortcut: "⌘D")
+                    SettingsShortcutRow(label: "Split Vertical", shortcut: "⌘⇧D")
+                    SettingsShortcutRow(label: "Navigate Panes", shortcut: "⌘⌥Arrow")
                 }
-                .padding(.leading, 4)
-                .padding(.top, 8)
+                .padding(8)
+                .background(Color.secondary.opacity(0.05))
+                .cornerRadius(8)
             }
-        }
-    }
-
-    private func shortcutRow(_ label: String, shortcut: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(shortcut)
-                .font(.system(.caption, design: .monospaced))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.secondary.opacity(0.1))
-                .cornerRadius(4)
         }
     }
 }
@@ -2226,16 +2532,18 @@ struct AIIntegrationSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            VStack(alignment: .leading, spacing: 6) {
-                detectionRow("Claude Code", commands: "claude, claude-code", color: .purple)
-                detectionRow("OpenAI Codex", commands: "codex", color: .green)
-                detectionRow("Gemini", commands: "gemini", color: .blue)
-                detectionRow("ChatGPT", commands: "chatgpt", color: .green)
-                detectionRow("GitHub Copilot", commands: "gh copilot", color: .orange)
-                detectionRow("Aider", commands: "aider", color: .pink)
-                detectionRow("Cursor", commands: "cursor", color: .teal)
+            VStack(alignment: .leading, spacing: 4) {
+                SettingsDetectionRow(name: "Claude Code", commands: "claude, claude-code", color: .purple)
+                SettingsDetectionRow(name: "OpenAI Codex", commands: "codex", color: .green)
+                SettingsDetectionRow(name: "Gemini", commands: "gemini", color: .blue)
+                SettingsDetectionRow(name: "ChatGPT", commands: "chatgpt", color: .green)
+                SettingsDetectionRow(name: "GitHub Copilot", commands: "gh copilot", color: .orange)
+                SettingsDetectionRow(name: "Aider", commands: "aider", color: .pink)
+                SettingsDetectionRow(name: "Cursor", commands: "cursor", color: .teal)
             }
-            .padding(.vertical, 8)
+            .padding(8)
+            .background(Color.secondary.opacity(0.05))
+            .cornerRadius(8)
 
             Divider()
                 .padding(.vertical, 8)
@@ -2347,36 +2655,30 @@ struct AIIntegrationSettingsView: View {
             // Notifications
             SettingsSectionHeader("Notifications", icon: "bell")
 
-            HStack {
-                Text("Status")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text(model.notificationStatus)
-                    .font(.system(.body, design: .monospaced))
-            }
-            .padding(.vertical, 2)
+            SettingsInfoRow(label: "Status", value: model.notificationStatus, monospaced: true)
 
             if let warning = model.notificationWarning {
-                Text(warning)
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .padding(.vertical, 4)
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                    Text(warning)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                .padding(.vertical, 4)
             }
 
-            HStack(spacing: 12) {
-                Button("Request Permission") {
+            SettingsButtonRow(buttons: [
+                .init(title: "Request Permission", icon: "bell.badge") {
                     model.requestNotificationPermission()
-                }
-
-                Button("Open System Settings") {
+                },
+                .init(title: "System Settings", icon: "gear") {
                     model.openNotificationSettings()
-                }
-
-                Button("Send Test") {
+                },
+                .init(title: "Send Test", icon: "paperplane") {
                     model.sendTestNotification()
                 }
-            }
-            .disabled(Bundle.main.bundleIdentifier == nil)
+            ])
 
             Divider()
                 .padding(.vertical, 8)
@@ -2460,31 +2762,15 @@ struct AIIntegrationSettingsView: View {
                 onSubmit: { model.restartTailer() }
             )
 
-            HStack(spacing: 12) {
-                Button("Restart Monitor") {
+            SettingsButtonRow(buttons: [
+                .init(title: "Restart Monitor", icon: "arrow.clockwise") {
                     model.restartTailer()
-                }
-
-                Button("Reveal in Finder") {
+                },
+                .init(title: "Reveal in Finder", icon: "folder") {
                     model.revealLogInFinder()
                 }
-            }
+            ])
         }
-    }
-
-    private func detectionRow(_ name: String, commands: String, color: Color) -> some View {
-        HStack {
-            Circle()
-                .fill(color)
-                .frame(width: 10, height: 10)
-            Text(name)
-                .fontWeight(.medium)
-            Spacer()
-            Text(commands)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 2)
     }
 }
 
@@ -2567,10 +2853,14 @@ struct LogsSettingsView: View {
                 onSubmit: { model.restartIdleMonitors() }
             )
 
-            HStack(spacing: 12) {
-                Button("Restart Monitors") { model.restartIdleMonitors() }
-                Button("Clear History") { model.clearHistory() }
-            }
+            SettingsButtonRow(buttons: [
+                .init(title: "Restart Monitors", icon: "arrow.clockwise") {
+                    model.restartIdleMonitors()
+                },
+                .init(title: "Clear History", icon: "trash") {
+                    model.clearHistory()
+                }
+            ])
 
             Divider()
                 .padding(.vertical, 8)
@@ -2622,11 +2912,17 @@ struct LogsSettingsView: View {
                 onSubmit: { model.restartTerminalMonitors() }
             )
 
-            HStack(spacing: 12) {
-                Button("Restart Monitors") { model.restartTerminalMonitors() }
-                Button("Reload Last Lines") { model.reloadTerminalPrefill() }
-                Button("Clear Logs") { model.clearTerminalLogs() }
-            }
+            SettingsButtonRow(buttons: [
+                .init(title: "Restart Monitors", icon: "arrow.clockwise") {
+                    model.restartTerminalMonitors()
+                },
+                .init(title: "Reload Last Lines", icon: "arrow.clockwise.circle") {
+                    model.reloadTerminalPrefill()
+                },
+                .init(title: "Clear Logs", icon: "trash") {
+                    model.clearTerminalLogs()
+                }
+            ])
 
             Divider()
                 .padding(.vertical, 8)
@@ -2695,9 +2991,14 @@ struct AboutSettingsView: View {
             // Version Details
             SettingsSectionHeader("Version Information", icon: "info.circle")
 
-            infoRow("Application", value: ProcessInfo.processInfo.processName)
-            infoRow("Bundle ID", value: Bundle.main.bundleIdentifier ?? "Not bundled")
-            infoRow("Version", value: bundleVersion)
+            VStack(alignment: .leading, spacing: 4) {
+                SettingsInfoRow(label: "Application", value: ProcessInfo.processInfo.processName, monospaced: true)
+                SettingsInfoRow(label: "Bundle ID", value: Bundle.main.bundleIdentifier ?? "Not bundled", monospaced: true)
+                SettingsInfoRow(label: "Version", value: bundleVersion, monospaced: true)
+            }
+            .padding(8)
+            .background(Color.secondary.opacity(0.05))
+            .cornerRadius(8)
 
             Divider()
                 .padding(.vertical, 8)
@@ -2705,9 +3006,14 @@ struct AboutSettingsView: View {
             // System Info
             SettingsSectionHeader("System Information", icon: "desktopcomputer")
 
-            infoRow("macOS", value: ProcessInfo.processInfo.operatingSystemVersionString)
-            infoRow("Architecture", value: machineArchitecture)
-            infoRow("Shell", value: ProcessInfo.processInfo.environment["SHELL"] ?? "Unknown")
+            VStack(alignment: .leading, spacing: 4) {
+                SettingsInfoRow(label: "macOS", value: ProcessInfo.processInfo.operatingSystemVersionString, monospaced: true)
+                SettingsInfoRow(label: "Architecture", value: machineArchitecture, monospaced: true)
+                SettingsInfoRow(label: "Shell", value: ProcessInfo.processInfo.environment["SHELL"] ?? "Unknown", monospaced: true)
+            }
+            .padding(8)
+            .background(Color.secondary.opacity(0.05))
+            .cornerRadius(8)
 
             Divider()
                 .padding(.vertical, 8)
@@ -2736,20 +3042,16 @@ struct AboutSettingsView: View {
             // Logs
             SettingsSectionHeader("Application Log", icon: "doc.text")
 
-            Text(model.logFilePath)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
+            SettingsInfoRow(label: "Log Path", value: model.logFilePath, monospaced: true)
 
-            HStack(spacing: 12) {
-                Button("Reveal in Finder") {
+            SettingsButtonRow(buttons: [
+                .init(title: "Reveal in Finder", icon: "folder") {
                     model.revealLogFile()
-                }
-
-                Button("Open Debug Console") {
+                },
+                .init(title: "Debug Console", icon: "terminal") {
                     DebugConsoleController.shared.show()
                 }
-            }
+            ])
 
             Divider()
                 .padding(.vertical, 8)
@@ -2757,27 +3059,9 @@ struct AboutSettingsView: View {
             // Acknowledgments
             SettingsSectionHeader("Acknowledgments", icon: "heart")
 
-            Text("Chau7 is built with SwiftTerm for terminal emulation.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Text("Copyright © 2024-2025. All rights reserved.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.top, 8)
+            SettingsDescription(text: "Chau7 is built with SwiftTerm for terminal emulation.")
+            SettingsDescription(text: "Copyright © 2024-2025. All rights reserved.")
         }
-    }
-
-    private func infoRow(_ label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .font(.system(.body, design: .monospaced))
-                .textSelection(.enabled)
-        }
-        .padding(.vertical, 2)
     }
 
     private var bundleVersion: String {

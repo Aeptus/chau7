@@ -48,6 +48,11 @@ struct Chau7App: App {
                 }
                 .keyboardShortcut("t")
 
+                Button("SSH Connections...") {
+                    appDelegate.showSSHManager()
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+
                 Divider()
 
                 Button("Close Tab") {
@@ -142,6 +147,11 @@ struct Chau7App: App {
                     appDelegate.toggleSnippets()
                 }
                 .keyboardShortcut(";", modifiers: [.command])
+
+                Button("Command Palette...") {
+                    appDelegate.toggleCommandPalette()
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
             }
 
             // MARK: - View Menu

@@ -1050,10 +1050,10 @@ struct SnippetEditorView: View {
                     .font(.system(size: 10))
 
                 Picker("Location", selection: $draft.source) {
-                    Text("Global").tag(SnippetSource.global)
-                    Text("Profile").tag(SnippetSource.profile)
+                    Text(SnippetSource.global.displayName).tag(SnippetSource.global)
+                    Text(SnippetSource.profile.displayName).tag(SnippetSource.profile)
                     if repoAvailable {
-                        Text("Repo").tag(SnippetSource.repo)
+                        Text(SnippetSource.repo.displayName).tag(SnippetSource.repo)
                     }
                 }
                 .frame(maxWidth: 140)
