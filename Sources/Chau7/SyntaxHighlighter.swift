@@ -1,0 +1,238 @@
+import Foundation
+import AppKit
+
+// MARK: - F08: Smart Syntax Highlighting
+
+/// Provides syntax highlighting for terminal output
+final class SyntaxHighlighter {
+    static let shared = SyntaxHighlighter()
+
+    // MARK: - Pattern Definitions
+
+    /// URL pattern for clickable links
+    private static let urlPattern = try! NSRegularExpression(
+        pattern: #"https?://[^\s<>\[\]{}|\\^`"']+"#,
+        options: [.caseInsensitive]
+    )
+
+    /// File path pattern (Unix-style)
+    private static let pathPattern = try! NSRegularExpression(
+        pattern: #"(?:^|[\s])([/~][\w./-]+)"#,
+        options: []
+    )
+
+    /// Error keywords pattern
+    private static let errorPattern = try! NSRegularExpression(
+        pattern: #"\b(error|failed|failure|exception|fatal|critical|panic)\b"#,
+        options: [.caseInsensitive]
+    )
+
+    /// Warning keywords pattern
+    private static let warningPattern = try! NSRegularExpression(
+        pattern: #"\b(warning|warn|deprecated|caution)\b"#,
+        options: [.caseInsensitive]
+    )
+
+    /// Success keywords pattern
+    private static let successPattern = try! NSRegularExpression(
+        pattern: #"\b(success|passed|ok|done|complete|completed)\b"#,
+        options: [.caseInsensitive]
+    )
+
+    /// Number pattern (integers, floats, hex)
+    private static let numberPattern = try! NSRegularExpression(
+        pattern: #"\b(0x[0-9a-fA-F]+|\d+\.?\d*)\b"#,
+        options: []
+    )
+
+    /// Quoted string pattern
+    private static let stringPattern = try! NSRegularExpression(
+        pattern: #"([\"'])(?:(?!\1)[^\\]|\\.)*\1"#,
+        options: []
+    )
+
+    /// JSON key pattern
+    private static let jsonKeyPattern = try! NSRegularExpression(
+        pattern: #"\"(\w+)\"\s*:"#,
+        options: []
+    )
+
+    /// Git branch/commit pattern
+    private static let gitPattern = try! NSRegularExpression(
+        pattern: #"\b([a-f0-9]{7,40})\b|(?:origin/|HEAD\s*->?\s*)(\S+)"#,
+        options: []
+    )
+
+    /// Command prompt pattern
+    private static let promptPattern = try! NSRegularExpression(
+        pattern: #"^[\w@.-]+[:#$%>]\s"#,
+        options: [.anchorsMatchLines]
+    )
+
+    // MARK: - Highlight Colors
+
+    private struct Colors {
+        static let url = NSColor.systemBlue
+        static let path = NSColor.systemCyan
+        static let error = NSColor.systemRed
+        static let warning = NSColor.systemOrange
+        static let success = NSColor.systemGreen
+        static let number = NSColor.systemPurple
+        static let string = NSColor.systemYellow
+        static let jsonKey = NSColor.systemTeal
+        static let git = NSColor.systemPink
+        static let prompt = NSColor.systemGray
+    }
+
+    private init() {}
+
+    // MARK: - Highlighting
+
+    /// Highlights a line of text and returns an attributed string
+    func highlight(_ text: String) -> NSAttributedString {
+        guard FeatureSettings.shared.isSyntaxHighlightEnabled else {
+            return NSAttributedString(string: text)
+        }
+
+        let attributed = NSMutableAttributedString(string: text)
+        let range = NSRange(location: 0, length: text.utf16.count)
+
+        // Apply highlights in order (later patterns can override earlier ones)
+        applyPattern(Self.numberPattern, to: attributed, in: range, color: Colors.number)
+        applyPattern(Self.stringPattern, to: attributed, in: range, color: Colors.string)
+        applyPattern(Self.pathPattern, to: attributed, in: range, color: Colors.path)
+
+        if FeatureSettings.shared.isClickableURLsEnabled {
+            applyURLPattern(to: attributed, in: range)
+        }
+
+        applyPattern(Self.jsonKeyPattern, to: attributed, in: range, color: Colors.jsonKey)
+        applyPattern(Self.gitPattern, to: attributed, in: range, color: Colors.git)
+        applyPattern(Self.promptPattern, to: attributed, in: range, color: Colors.prompt)
+
+        // Status patterns last (most important)
+        applyPattern(Self.successPattern, to: attributed, in: range, color: Colors.success)
+        applyPattern(Self.warningPattern, to: attributed, in: range, color: Colors.warning)
+        applyPattern(Self.errorPattern, to: attributed, in: range, color: Colors.error)
+
+        return attributed
+    }
+
+    /// Highlights multiple lines efficiently
+    func highlightLines(_ lines: [String]) -> [NSAttributedString] {
+        guard FeatureSettings.shared.isSyntaxHighlightEnabled else {
+            return lines.map { NSAttributedString(string: $0) }
+        }
+
+        return lines.map { highlight($0) }
+    }
+
+    // MARK: - Pattern Application
+
+    private func applyPattern(
+        _ pattern: NSRegularExpression,
+        to attributed: NSMutableAttributedString,
+        in range: NSRange,
+        color: NSColor
+    ) {
+        pattern.enumerateMatches(in: attributed.string, options: [], range: range) { match, _, _ in
+            guard let match = match else { return }
+            attributed.addAttribute(.foregroundColor, value: color, range: match.range)
+        }
+    }
+
+    private func applyURLPattern(to attributed: NSMutableAttributedString, in range: NSRange) {
+        Self.urlPattern.enumerateMatches(in: attributed.string, options: [], range: range) { match, _, _ in
+            guard let match = match else { return }
+            let urlString = (attributed.string as NSString).substring(with: match.range)
+            if let url = URL(string: urlString) {
+                attributed.addAttributes([
+                    .foregroundColor: Colors.url,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                    .link: url
+                ], range: match.range)
+            }
+        }
+    }
+
+}
+
+// MARK: - Semantic Output Detector (F07 support)
+
+/// Detects semantic meaning in terminal output for F07 search
+final class SemanticOutputDetector: ObservableObject {
+    static let shared = SemanticOutputDetector()
+
+    /// Represents a detected command block
+    struct CommandBlock: Identifiable {
+        let id = UUID()
+        let command: String
+        let startRow: Int
+        let endRow: Int
+        let timestamp: Date
+        var exitCode: Int32?
+        var isError: Bool { exitCode != nil && exitCode != 0 }
+    }
+
+    /// Detected command blocks
+    @Published private(set) var blocks: [CommandBlock] = []
+
+    /// Current block being built
+    private var currentBlock: (command: String, startRow: Int, timestamp: Date)?
+
+    private init() {}
+
+    // MARK: - Detection
+
+    /// Called when a command is entered
+    func commandStarted(_ command: String, atRow row: Int) {
+        guard FeatureSettings.shared.isSemanticSearchEnabled else { return }
+
+        // Close any previous block
+        if let current = currentBlock {
+            blocks.append(CommandBlock(
+                command: current.command,
+                startRow: current.startRow,
+                endRow: row - 1,
+                timestamp: current.timestamp
+            ))
+        }
+
+        currentBlock = (command, row, Date())
+    }
+
+    /// Called when a command finishes
+    func commandFinished(atRow row: Int, exitCode: Int32) {
+        guard FeatureSettings.shared.isSemanticSearchEnabled else { return }
+        guard let current = currentBlock else { return }
+
+        var block = CommandBlock(
+            command: current.command,
+            startRow: current.startRow,
+            endRow: row,
+            timestamp: current.timestamp
+        )
+        block.exitCode = exitCode
+        blocks.append(block)
+        currentBlock = nil
+    }
+
+    /// Finds blocks matching a query
+    func search(query: String) -> [CommandBlock] {
+        let lowercased = query.lowercased()
+        return blocks.filter { block in
+            block.command.lowercased().contains(lowercased)
+        }
+    }
+
+    /// Finds error blocks
+    func findErrors() -> [CommandBlock] {
+        return blocks.filter { $0.isError }
+    }
+
+    /// Clears all tracked blocks
+    func reset() {
+        blocks.removeAll()
+        currentBlock = nil
+    }
+}

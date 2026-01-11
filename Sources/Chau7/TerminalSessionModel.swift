@@ -1,0 +1,711 @@
+import Foundation
+import AppKit
+import SwiftTerm
+import Darwin
+
+enum CommandStatus: String {
+    case idle
+    case running
+    case exited
+}
+
+final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTerminalViewDelegate {
+    @Published var title: String = "Shell"
+    @Published var currentDirectory: String = FileManager.default.homeDirectoryForCurrentUser.path
+    @Published var status: CommandStatus = .idle
+    @Published var isGitRepo: Bool = false
+    @Published var gitBranch: String? = nil
+    @Published var activeAppName: String? = nil
+    @Published var fontSize: CGFloat = 13
+    @Published var searchMatches: [SearchMatch] = []
+    @Published var activeSearchIndex: Int = 0
+
+    private weak var appModel: AppModel?
+    private weak var terminalView: Chau7TerminalView?
+    private var idleTimer: DispatchSourceTimer?
+    private var lastInputAt = Date.distantPast
+    private var lastOutputAt = Date.distantPast
+    private var hasPendingCommand = false
+    private var inputBuffer = ""
+    private var gitCheckWorkItem: DispatchWorkItem?
+    private let gitQueue = DispatchQueue(label: "com.chau7.git", qos: .utility)
+    private var searchUpdateWorkItem: DispatchWorkItem?
+    private let searchQueue = DispatchQueue(label: "com.chau7.search", qos: .utility)
+    private var searchQuery: String = ""
+    private var cachedBufferData: Data?  // Cached buffer data for search
+    private var bufferNeedsRefresh: Bool = true  // Flag to invalidate cache on output
+    private var didClearOnLaunch = false
+    private var didApplyShellIntegration = false
+    private var shellIntegrationOutputCount = 0
+
+    private let appNameMap: [String: String] = [
+        "codex": "Codex",
+        "claude": "Claude",
+        "claude-code": "Claude",
+        "claude-cli": "Claude"
+    ]
+
+    /// Idle timeout in seconds. Configurable via environment variable.
+    private var idleSeconds: TimeInterval {
+        if let envValue = EnvVars.get(EnvVars.idleSeconds, legacy: EnvVars.legacyIdleSeconds),
+           let seconds = Double(envValue), seconds > 0 {
+            return seconds
+        }
+        return 3.0
+    }
+
+    init(appModel: AppModel) {
+        self.appModel = appModel
+        super.init()
+        refreshGitStatus(path: currentDirectory)
+        startIdleTimer()
+    }
+
+    deinit {
+        // Clean up resources
+        stopIdleTimer()
+        gitCheckWorkItem?.cancel()
+        searchUpdateWorkItem?.cancel()
+    }
+
+    func attachTerminal(_ view: Chau7TerminalView) {
+        terminalView = view
+    }
+
+    func focusTerminal(in window: NSWindow?) {
+        guard let view = terminalView, let window else { return }
+        window.makeFirstResponder(view)
+    }
+
+    // MARK: - Shell Integration (Issue #8 fix)
+
+    /// Schedules shell integration script to run after shell is ready.
+    /// Instead of an arbitrary delay, we wait for initial output (prompt).
+    func scheduleShellIntegration(for view: TerminalView) {
+        // The shell integration will be applied when we detect the first few outputs,
+        // indicating the shell has started and is ready for input.
+        didApplyShellIntegration = false
+        shellIntegrationOutputCount = 0
+    }
+
+    private func maybeApplyShellIntegration() {
+        guard !didApplyShellIntegration else { return }
+        guard let terminalView else { return }
+
+        // Wait for a few output events to ensure shell is ready
+        shellIntegrationOutputCount += 1
+        if shellIntegrationOutputCount >= 2 {
+            didApplyShellIntegration = true
+            applyShellIntegration(to: terminalView)
+        }
+    }
+
+    func handleInput(_ text: String) {
+        lastInputAt = Date()
+        inputBuffer.append(text)
+        if text.contains("\n") || text.contains("\r") {
+            processInputBuffer()
+        }
+        if text.contains("\n") || text.contains("\r") {
+            markRunning()
+        }
+    }
+
+    func handleOutput(_ data: Data) {
+        lastOutputAt = Date()
+        bufferNeedsRefresh = true  // Invalidate buffer cache on new output
+        TerminalOutputCapture.shared.record(data: data, source: activeAppName ?? title)
+        // Check if we should apply shell integration
+        maybeApplyShellIntegration()
+    }
+
+    private func markRunning() {
+        if status != .running {
+            status = .running
+        }
+        hasPendingCommand = true
+    }
+
+    private func processInputBuffer() {
+        let normalized = inputBuffer.replacingOccurrences(of: "\r", with: "\n")
+        let parts = normalized.components(separatedBy: "\n")
+        if parts.count <= 1 {
+            return
+        }
+        for line in parts.dropLast() {
+            handleInputLine(line)
+        }
+        inputBuffer = parts.last ?? ""
+    }
+
+    private func handleInputLine(_ line: String) {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        updateActiveAppName(from: trimmed)
+        recordInputLineIfNeeded()
+        guard trimmed.hasPrefix("cd") else { return }
+
+        let remainder = trimmed.dropFirst(2).trimmingCharacters(in: .whitespaces)
+        var target: String
+        if remainder.isEmpty {
+            target = FileManager.default.homeDirectoryForCurrentUser.path
+        } else if remainder == "-" {
+            return
+        } else {
+            target = remainder
+        }
+
+        if target.hasPrefix("~") {
+            let home = FileManager.default.homeDirectoryForCurrentUser.path
+            target = home + target.dropFirst()
+        }
+
+        let resolved: String
+        if target.hasPrefix("/") {
+            resolved = String(target)
+        } else {
+            let base = URL(fileURLWithPath: currentDirectory)
+            resolved = base.appendingPathComponent(String(target)).standardized.path
+        }
+
+        updateCurrentDirectory(resolved)
+    }
+
+    private func markIdleIfNeeded() {
+        guard status == .running, hasPendingCommand else { return }
+        let lastActivity = max(lastInputAt, lastOutputAt)
+        let idleFor = Date().timeIntervalSince(lastActivity)
+        if idleFor < idleSeconds {
+            return
+        }
+
+        status = .idle
+        hasPendingCommand = false
+
+        let message = "Command idle for \(Int(idleFor))s"
+        appModel?.recordEvent(
+            type: "finished",
+            tool: "Chau7",
+            message: message,
+            notify: true
+        )
+    }
+
+    private func updateActiveAppName(from commandLine: String) {
+        guard let token = commandLine.split(separator: " ").first else { return }
+        let lower = token.lowercased()
+        if lower == "exit" || lower == "logout" {
+            activeAppName = nil
+            return
+        }
+        if let mapped = appNameMap[lower] {
+            activeAppName = mapped
+        }
+    }
+
+    private func recordInputLineIfNeeded() {
+        guard let app = activeAppName, app == "Codex" || app == "Claude" else { return }
+        terminalView?.recordInputLine()
+    }
+
+    // MARK: - Idle Timer (Issue #5 fix)
+
+    private func startIdleTimer() {
+        stopIdleTimer() // Ensure no duplicate timers
+
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+        timer.schedule(deadline: .now() + 1.0, repeating: 1.0)
+        timer.setEventHandler { [weak self] in
+            self?.markIdleIfNeeded()
+        }
+        timer.resume()
+        idleTimer = timer
+    }
+
+    private func stopIdleTimer() {
+        idleTimer?.cancel()
+        idleTimer = nil
+    }
+
+    private static let zdotdirPath: String = {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("smartoverlay")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.path
+    }()
+
+    private static var didWriteZdotdir = false
+
+    /// Call this at app launch to create ZDOTDIR with custom .zshrc
+    /// This runs shell integration at startup (not as a command) so it won't be in history
+    static func preInitialize() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+
+        // Create .zshrc that sources user's real config then runs our integration
+        let zshrc = """
+        # Chau7 wrapper - source user's real .zshrc first
+        export ZDOTDIR="\(home)"
+        [ -f "\(home)/.zshrc" ] && source "\(home)/.zshrc"
+
+        # Chau7 shell integration (runs at startup, not in history)
+        smartoverlay_precmd() { print -Pn "\\e]7;file://$HOSTNAME$PWD\\a"; }
+        autoload -Uz add-zsh-hook 2>/dev/null
+        if command -v add-zsh-hook >/dev/null 2>&1; then
+          add-zsh-hook precmd smartoverlay_precmd
+        else
+          precmd_functions+=smartoverlay_precmd
+        fi
+        smartoverlay_precmd
+        """
+
+        let zshrcPath = zdotdirPath + "/.zshrc"
+        do {
+            try zshrc.write(toFile: zshrcPath, atomically: true, encoding: .utf8)
+            didWriteZdotdir = true
+            Log.info("Created ZDOTDIR at \(zdotdirPath)")
+        } catch {
+            Log.error("Failed to create ZDOTDIR: \(error)")
+        }
+    }
+
+    /// Returns ZDOTDIR path for shell environment
+    static func getZdotdir() -> String? {
+        return didWriteZdotdir ? zdotdirPath : nil
+    }
+
+    func applyShellIntegration(to view: TerminalView) {
+        // No-op: integration now happens via ZDOTDIR at shell startup
+        Log.info("Shell integration applied via ZDOTDIR.")
+    }
+
+    func maybeClearOnLaunch() {
+        guard !didClearOnLaunch else { return }
+        didClearOnLaunch = true
+        let raw = EnvVars.get(EnvVars.clearOnLaunch, legacy: EnvVars.legacyClearOnLaunch)?.lowercased()
+        if let raw, ["0", "false", "no"].contains(raw) {
+            Log.info("Clear-on-launch disabled via CHAU7_CLEAR_ON_LAUNCH.")
+            return
+        }
+        guard let terminalView else { return }
+        terminalView.send(txt: "\u{0C}")
+        Log.info("Cleared terminal on launch.")
+    }
+
+    // MARK: - LocalProcessTerminalViewDelegate
+
+    func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {
+        // No-op: window controls layout.
+    }
+
+    func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
+        DispatchQueue.main.async {
+            self.title = title.isEmpty ? "Shell" : title
+        }
+    }
+
+    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {
+        DispatchQueue.main.async {
+            if let directory, let url = URL(string: directory) {
+                self.updateCurrentDirectory(url.path)
+            } else if let directory {
+                self.updateCurrentDirectory(directory)
+            }
+        }
+    }
+
+    func processTerminated(source: TerminalView, exitCode: Int32?) {
+        DispatchQueue.main.async {
+            self.status = .exited
+        }
+        let message = exitCode == nil ? "Shell exited." : "Shell exited with code \(exitCode!)."
+        appModel?.recordEvent(type: "failed", tool: "Chau7", message: message, notify: true)
+    }
+
+    // MARK: - Session Control (Issue #5, #15 fixes)
+
+    /// Closes the session by sending exit command and cleaning up resources.
+    func closeSession() {
+        // Stop all background work
+        stopIdleTimer()
+        gitCheckWorkItem?.cancel()
+        searchUpdateWorkItem?.cancel()
+
+        // Send exit to the shell
+        terminalView?.send(txt: "exit\n")
+        Log.info("Sent exit command to shell session.")
+    }
+
+    func copyOrInterrupt() {
+        guard let terminalView else { return }
+        terminalView.window?.makeFirstResponder(terminalView)
+        Log.trace("Copy/interrupt requested from session model.")
+        terminalView.copy(terminalView)
+    }
+
+    // MARK: - Paste (Issue #10 fix - delegate to terminal view)
+
+    func paste() {
+        guard let terminalView else { return }
+        terminalView.window?.makeFirstResponder(terminalView)
+        terminalView.paste(terminalView)
+    }
+
+    // MARK: - F13: Broadcast Input Support
+
+    /// Sends text input to the terminal (used for broadcast mode)
+    func sendInput(_ text: String) {
+        guard let terminalView else { return }
+        terminalView.send(txt: text)
+    }
+
+    // MARK: - Zoom (Issue #11 fix - only update @Published, let SwiftUI sync)
+
+    func zoomIn() {
+        updateFontSize(fontSize + 1)
+    }
+
+    func zoomOut() {
+        updateFontSize(fontSize - 1)
+    }
+
+    func zoomReset() {
+        updateFontSize(13)
+    }
+
+    private func updateFontSize(_ newValue: CGFloat) {
+        let clamped = max(9, min(newValue, 22))
+        guard fontSize != clamped else { return }
+        fontSize = clamped
+        // Note: Font is now applied by TerminalViewRepresentable.updateNSView
+        // to avoid race conditions with SwiftUI's update cycle.
+    }
+
+    /// Called by TerminalViewRepresentable to apply font when SwiftUI updates.
+    func applyFontSize() {
+        // This is now handled by TerminalViewRepresentable.updateNSView
+        // to avoid double-setting the font.
+    }
+
+    func clearSearch() {
+        searchQuery = ""
+        searchMatches = []
+        activeSearchIndex = 0
+        highlightView?.needsDisplay = true
+    }
+
+    // MARK: - Shell helpers
+
+    func defaultShell() -> String {
+        let bufsize = sysconf(_SC_GETPW_R_SIZE_MAX)
+        guard bufsize != -1 else {
+            return "/bin/zsh"
+        }
+        let buffer = UnsafeMutablePointer<Int8>.allocate(capacity: bufsize)
+        defer { buffer.deallocate() }
+        var pwd = passwd()
+        var result: UnsafeMutablePointer<passwd>? = UnsafeMutablePointer<passwd>.allocate(capacity: 1)
+        if getpwuid_r(getuid(), &pwd, buffer, bufsize, &result) != 0 {
+            return "/bin/zsh"
+        }
+        return String(cString: pwd.pw_shell)
+    }
+
+    func buildEnvironment() -> [String] {
+        let env = Terminal.getEnvironmentVariables(termName: "xterm-256color", trueColor: true)
+        var dict: [String: String] = [:]
+        for entry in env {
+            if let idx = entry.firstIndex(of: "=") {
+                dict[String(entry[..<idx])] = String(entry[entry.index(after: idx)...])
+            }
+        }
+
+        let current = ProcessInfo.processInfo.environment
+        if let path = current["PATH"] {
+            dict["PATH"] = path
+        }
+        if let home = current["HOME"] {
+            dict["HOME"] = home
+        }
+        // Present as Terminal.app for better CLI theming parity.
+        dict["TERM_PROGRAM"] = "Apple_Terminal"
+        if let version = Self.terminalAppVersion {
+            dict["TERM_PROGRAM_VERSION"] = version
+        }
+        dict["TERM_SESSION_ID"] = UUID().uuidString
+
+        // Set ZDOTDIR so zsh uses our custom .zshrc with shell integration
+        if let zdotdir = Self.getZdotdir() {
+            dict["ZDOTDIR"] = zdotdir
+        }
+
+        return dict.map { "\($0.key)=\($0.value)" }
+    }
+
+    private static let terminalAppVersion: String? = {
+        let candidates = [
+            "/System/Applications/Utilities/Terminal.app",
+            "/Applications/Utilities/Terminal.app"
+        ]
+
+        for path in candidates {
+            let url = URL(fileURLWithPath: path)
+            if let bundle = Bundle(url: url),
+               let info = bundle.infoDictionary,
+               let version = info["CFBundleShortVersionString"] as? String {
+                return version
+            }
+        }
+        return nil
+    }()
+
+    struct SearchMatch: Equatable, Identifiable {
+        let id = UUID()
+        let row: Int
+        let col: Int
+        let length: Int
+        // Note: line text removed to save memory - previews are stored separately
+    }
+
+    struct SearchSummary {
+        let count: Int
+        let previewLines: [String]
+    }
+
+    weak var highlightView: TerminalHighlightView?
+
+    func attachHighlightView(_ view: TerminalHighlightView) {
+        highlightView = view
+        highlightView?.needsDisplay = true
+    }
+
+    // MARK: - Search (Issue #6, #13, #23 fixes - thread-safe buffer access, case sensitivity)
+
+    private var searchCaseSensitive: Bool = false
+
+    /// Returns cached buffer data or fetches fresh data if needed (memory optimization)
+    private func getBufferData() -> Data? {
+        guard let terminalView else { return nil }
+
+        if bufferNeedsRefresh || cachedBufferData == nil {
+            cachedBufferData = terminalView.getTerminal().getBufferAsData()
+            bufferNeedsRefresh = false
+        }
+        return cachedBufferData
+    }
+
+    func updateSearch(query: String, maxMatches: Int, maxPreviewLines: Int, caseSensitive: Bool = false) -> SearchSummary {
+        let previousQuery = searchQuery
+        let previousCaseSensitive = searchCaseSensitive
+        searchQuery = query
+        searchCaseSensitive = caseSensitive
+
+        guard let bufferData = getBufferData() else {
+            searchMatches = []
+            activeSearchIndex = 0
+            return SearchSummary(count: 0, previewLines: [])
+        }
+
+        // Use cached buffer data (refreshed only when new output arrives)
+
+        let computed = computeSearchMatches(
+            query: query,
+            maxMatches: maxMatches,
+            maxPreviewLines: maxPreviewLines,
+            bufferData: bufferData,
+            caseSensitive: caseSensitive
+        )
+
+        searchMatches = computed.matches
+        if previousQuery != query || previousCaseSensitive != caseSensitive {
+            activeSearchIndex = 0
+        } else if activeSearchIndex >= computed.matches.count {
+            activeSearchIndex = max(0, computed.matches.count - 1)
+        }
+        highlightView?.needsDisplay = true
+        return SearchSummary(count: computed.matches.count, previewLines: computed.previewLines)
+    }
+
+    func scheduleSearchRefresh() {
+        guard !searchQuery.isEmpty else { return }
+
+        // Use cached buffer data (refreshed only when new output arrives)
+        guard let bufferData = getBufferData() else { return }
+        let query = searchQuery
+        let caseSensitive = searchCaseSensitive
+
+        searchUpdateWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+
+            let computed = self.computeSearchMatches(
+                query: query,
+                maxMatches: 400,
+                maxPreviewLines: 12,
+                bufferData: bufferData,
+                caseSensitive: caseSensitive
+            )
+
+            DispatchQueue.main.async {
+                guard self.searchQuery == query else { return }
+                self.searchMatches = computed.matches
+                if self.activeSearchIndex >= computed.matches.count {
+                    self.activeSearchIndex = max(0, computed.matches.count - 1)
+                }
+                self.highlightView?.needsDisplay = true
+            }
+        }
+        searchUpdateWorkItem = work
+        searchQueue.asyncAfter(deadline: .now() + 0.2, execute: work)
+    }
+
+    func nextMatch() {
+        guard !searchMatches.isEmpty else { return }
+        activeSearchIndex = (activeSearchIndex + 1) % searchMatches.count
+        highlightView?.needsDisplay = true
+    }
+
+    func previousMatch() {
+        guard !searchMatches.isEmpty else { return }
+        activeSearchIndex = (activeSearchIndex - 1 + searchMatches.count) % searchMatches.count
+        highlightView?.needsDisplay = true
+    }
+
+    func currentMatch() -> SearchMatch? {
+        guard !searchMatches.isEmpty else { return nil }
+        let index = max(0, min(activeSearchIndex, searchMatches.count - 1))
+        return searchMatches[index]
+    }
+
+    /// Computes search matches from pre-captured buffer data (thread-safe).
+    /// Supports case-sensitive and case-insensitive search (Issue #23).
+    /// Memory-optimized: uses Substring to avoid copies, case-insensitive option instead of lowercased()
+    private func computeSearchMatches(
+        query: String,
+        maxMatches: Int,
+        maxPreviewLines: Int,
+        bufferData: Data,
+        caseSensitive: Bool = false
+    ) -> (matches: [SearchMatch], previewLines: [String]) {
+        guard !query.isEmpty else {
+            return ([], [])
+        }
+
+        // Decode buffer data to string
+        let text = String(decoding: bufferData, as: UTF8.self)
+
+        // Pre-allocate with reasonable capacity
+        var matches: [SearchMatch] = []
+        matches.reserveCapacity(min(maxMatches, 100))
+        var previews: [String] = []
+        previews.reserveCapacity(maxPreviewLines)
+
+        // Search options - use case insensitive option instead of creating lowercased copies
+        let searchOptions: String.CompareOptions = caseSensitive ? [] : .caseInsensitive
+
+        // Process line by line using Substring (no copy) instead of String
+        var lineStart = text.startIndex
+        var row = 0
+
+        while lineStart < text.endIndex && matches.count < maxMatches {
+            // Find end of current line
+            let lineEnd = text[lineStart...].firstIndex(of: "\n") ?? text.endIndex
+
+            // Use Substring directly - no memory copy
+            let lineSlice = text[lineStart..<lineEnd]
+
+            if !lineSlice.isEmpty {
+                var searchStart = lineSlice.startIndex
+
+                // Search within the slice without creating copies
+                while searchStart < lineSlice.endIndex {
+                    guard let range = lineSlice.range(
+                        of: query,
+                        options: searchOptions,
+                        range: searchStart..<lineSlice.endIndex
+                    ) else { break }
+
+                    let col = lineSlice.distance(from: lineSlice.startIndex, to: range.lowerBound)
+                    matches.append(SearchMatch(row: row, col: col, length: query.count))
+
+                    if matches.count >= maxMatches { break }
+                    searchStart = range.upperBound
+                }
+
+                // Only create String copy for preview lines
+                if !matches.isEmpty && matches.last?.row == row && previews.count < maxPreviewLines {
+                    previews.append(String(lineSlice))
+                }
+            }
+
+            // Move to next line
+            lineStart = lineEnd < text.endIndex ? text.index(after: lineEnd) : text.endIndex
+            row += 1
+        }
+
+        return (matches, previews)
+    }
+
+    func displayPath() -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        if currentDirectory == home {
+            return "~"
+        }
+        if currentDirectory.hasPrefix(home + "/") {
+            return "~" + String(currentDirectory.dropFirst(home.count))
+        }
+        return currentDirectory
+    }
+
+    private func updateCurrentDirectory(_ path: String) {
+        let normalized = URL(fileURLWithPath: path).standardized.path
+        guard currentDirectory != normalized else { return }
+        currentDirectory = normalized
+        if title == "Shell" {
+            title = URL(fileURLWithPath: normalized).lastPathComponent
+        }
+        refreshGitStatus(path: normalized)
+    }
+
+    private func refreshGitStatus(path: String) {
+        gitCheckWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let result = self.queryGitStatus(path: path)
+            DispatchQueue.main.async {
+                self.isGitRepo = result.isRepo
+                self.gitBranch = result.branch
+            }
+        }
+        gitCheckWorkItem = work
+        gitQueue.async(execute: work)
+    }
+
+    private func queryGitStatus(path: String) -> (isRepo: Bool, branch: String?) {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else {
+            return (false, nil)
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", path, "rev-parse", "--abbrev-ref", "HEAD"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return (false, nil)
+        }
+
+        guard process.terminationStatus == 0 else {
+            return (false, nil)
+        }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        let branch = output.isEmpty ? nil : output
+        return (true, branch)
+    }
+}

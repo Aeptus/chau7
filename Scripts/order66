@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+BUILD_MODE="release"
+DO_CLEAN=1
+DO_BUNDLE=1
+RUN_BIN=0
+BIN_PATH=""
+
+for arg in "$@"; do
+  case "$arg" in
+    --fast)
+      BUILD_MODE="debug"
+      DO_CLEAN=0
+      ;;
+    --no-bundle)
+      DO_BUNDLE=0
+      ;;
+    --run-bin)
+      DO_BUNDLE=0
+      RUN_BIN=1
+      ;;
+  esac
+done
+
+export CHAU7_LOG_ROOT="$ROOT_DIR"
+CHAU7_LOG_NAME="order66"
+export CHAU7_LOG_NAME
+
+source "${ROOT_DIR}/Scripts/logging.sh"
+
+cd "${ROOT_DIR}"
+
+log_init "Order66"
+
+finish() {
+  local code=$?
+  log_finish "$code"
+}
+
+trap finish EXIT
+
+if [[ "$DO_CLEAN" == "1" ]]; then
+  run_cmd swift package clean
+else
+  log_info "Fast mode: skipping clean."
+fi
+
+run_cmd swift build -c "$BUILD_MODE"
+
+BIN_PATH="${ROOT_DIR}/.build/${BUILD_MODE}/Chau7"
+if [[ ! -f "$BIN_PATH" ]]; then
+  log_error "Binary not found at $BIN_PATH"
+  exit 1
+fi
+
+if [[ "$DO_BUNDLE" == "1" ]]; then
+  CHAU7_LOG_FILE="$LOG_FILE" CHAU7_LOG_SUMMARY=0 CHAU7_LOG_SUPPRESS_HEADER=1 \
+    "${SCRIPT_DIR}/build-app.sh" "${ROOT_DIR}/.build/${BUILD_MODE}" "${ROOT_DIR}/build"
+fi
+
+if [[ "$RUN_BIN" == "1" ]]; then
+  run_cmd env \
+    CHAU7_VERBOSE="${CHAU7_RUN_BIN_VERBOSE:-1}" \
+    CHAU7_TRACE="${CHAU7_RUN_BIN_TRACE:-0}" \
+    "$BIN_PATH"
+else
+  run_cmd open "${ROOT_DIR}/build/Chau7.app"
+fi
+
+log_ok "Done."
