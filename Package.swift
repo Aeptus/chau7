@@ -10,7 +10,7 @@ let package = Package(
         .executable(name: "Chau7", targets: ["Chau7"])
     ],
     dependencies: [
-        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.0.0")
+        .package(url: "https://github.com/schiste/Chau7-SwiftTerm.git", from: "1.0.0")
     ],
     targets: [
         .executableTarget(
