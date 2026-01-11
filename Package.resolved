@@ -1,6 +1,15 @@
 {
   "pins" : [
     {
+      "identity" : "chau7-swiftterm",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/schiste/Chau7-SwiftTerm.git",
+      "state" : {
+        "branch" : "main",
+        "revision" : "7a6f4acd84c152170336832db4b2fda87722f3ef"
+      }
+    },
+    {
       "identity" : "swift-argument-parser",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-argument-parser",
@@ -10,12 +19,21 @@
       }
     },
     {
-      "identity" : "swiftterm",
+      "identity" : "swift-subprocess",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/migueldeicaza/SwiftTerm.git",
+      "location" : "https://github.com/swiftlang/swift-subprocess",
       "state" : {
-        "revision" : "0b8d99bd19b694df44e1ccaa3891309719d34330",
-        "version" : "1.5.1"
+        "branch" : "main",
+        "revision" : "426790f3f24afa60b418450da0afaa20a8b3bdd4"
+      }
+    },
+    {
+      "identity" : "swift-system",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-system",
+      "state" : {
+        "revision" : "395a77f0aa927f0ff73941d7ac35f2b46d47c9db",
+        "version" : "1.6.3"
       }
     }
   ],

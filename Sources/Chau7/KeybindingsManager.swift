@@ -109,6 +109,7 @@ enum KeyAction: String, CaseIterable {
     case showClipboardHistory
     case showBookmarks
     case addBookmark
+    case showSnippets
     case renameTab
 
     // Window
@@ -151,6 +152,7 @@ enum KeyAction: String, CaseIterable {
         case .showClipboardHistory: return "Clipboard History"
         case .showBookmarks: return "Bookmarks"
         case .addBookmark: return "Add Bookmark"
+        case .showSnippets: return "Snippets"
         case .renameTab: return "Rename Tab"
         case .closeWindow: return "Close Window"
         case .newWindow: return "New Window"
@@ -210,6 +212,7 @@ final class KeybindingsManager: ObservableObject {
         ("cmd+shift+v", .showClipboardHistory),
         ("cmd+b", .showBookmarks),
         ("cmd+shift+a", .addBookmark),
+        ("cmd+shift+s", .showSnippets),
         ("cmd+shift+r", .renameTab),
 
         // Window
@@ -363,6 +366,8 @@ final class KeybindingsManager: ObservableObject {
             overlayModel?.toggleBookmarkList()
         case .addBookmark:
             overlayModel?.addBookmark()
+        case .showSnippets:
+            overlayModel?.toggleSnippetManager()
         case .renameTab:
             delegate?.beginRenameTab()
 

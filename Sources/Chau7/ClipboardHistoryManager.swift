@@ -63,14 +63,15 @@ final class ClipboardHistoryManager: ObservableObject {
         let currentCount = pasteboard.changeCount
 
         // Thread-safe check and update of lastChangeCount
+        // Keep lock held during comparison to prevent TOCTOU race condition
         lock.lock()
-        let lastCount = lastChangeCount
-        if currentCount != lastCount {
-            lastChangeCount = currentCount
+        guard currentCount != lastChangeCount else {
+            lock.unlock()
+            return
         }
+        lastChangeCount = currentCount
         lock.unlock()
 
-        guard currentCount != lastCount else { return }
         guard let text = pasteboard.string(forType: .string), !text.isEmpty else { return }
 
         DispatchQueue.main.async { [weak self] in

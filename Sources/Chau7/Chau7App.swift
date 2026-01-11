@@ -15,6 +15,7 @@ struct Chau7App: App {
         _model = StateObject(wrappedValue: model)
         let overlayModel = OverlayTabsModel(appModel: model)
         _overlayModel = StateObject(wrappedValue: overlayModel)
+        _ = SnippetManager.shared
         AppIcon.apply()
         NSApplication.shared.setActivationPolicy(.regular)
         appDelegate.model = model
@@ -22,13 +23,10 @@ struct Chau7App: App {
     }
 
     var body: some Scene {
-        // No Settings scene - settings are presented via a custom window (Cmd+,)
-        MenuBarExtra(
-            "Chau7",
-            systemImage: model.isMonitoring ? "bell.badge.fill" : "bell"
-        ) {
-            MenuBarPanelView(model: model)
-                .frame(width: 420)
+        // Status bar is handled by StatusBarController for multi-monitor support
+        // This empty Settings scene is required to attach commands
+        Settings {
+            EmptyView()
         }
         .commands {
             // Settings in app menu with Cmd+,
@@ -101,6 +99,11 @@ struct Chau7App: App {
                     appDelegate.toggleSearch()
                 }
                 .keyboardShortcut("f")
+
+                Button("Snippets...") {
+                    appDelegate.toggleSnippets()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
 
                 Button("Rename Tab") {
                     appDelegate.beginRenameTab()

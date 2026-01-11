@@ -11,7 +11,7 @@ enum CommandStatus: String {
 
 final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTerminalViewDelegate {
     @Published var title: String = "Shell"
-    @Published var currentDirectory: String = FileManager.default.homeDirectoryForCurrentUser.path
+    @Published var currentDirectory: String = TerminalSessionModel.defaultStartDirectory()
     @Published var status: CommandStatus = .idle
     @Published var isGitRepo: Bool = false
     @Published var gitBranch: String? = nil
@@ -39,10 +39,71 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private var shellIntegrationOutputCount = 0
 
     private let appNameMap: [String: String] = [
+        // OpenAI Codex
         "codex": "Codex",
+        "codex-cli": "Codex",
+        "codex-pty": "Codex",
+        "codex-wrapper": "Codex",
+        // Anthropic Claude
         "claude": "Claude",
         "claude-code": "Claude",
-        "claude-cli": "Claude"
+        "claude-cli": "Claude",
+        "claude-pty": "Claude",
+        "claude-wrapper": "Claude",
+        // Google Gemini
+        "gemini": "Gemini",
+        "gemini-cli": "Gemini",
+        "gemini-pty": "Gemini",
+        // OpenAI ChatGPT
+        "chatgpt": "ChatGPT",
+        "chatgpt-cli": "ChatGPT",
+        "gpt": "ChatGPT",
+        "gpt-cli": "ChatGPT",
+        "openai": "ChatGPT",
+        // GitHub Copilot
+        "copilot": "Copilot",
+        "copilot-cli": "Copilot",
+        "github-copilot": "Copilot"
+    ]
+
+    /// Output patterns that indicate a specific AI CLI is running
+    /// These catch cases where command detection fails (e.g., first tab, piped commands)
+    private static let outputDetectionPatterns: [(pattern: String, appName: String)] = [
+        // Claude Code banners
+        ("╭─ Claude", "Claude"),
+        ("claude.ai", "Claude"),
+        ("Anthropic", "Claude"),
+        // Gemini patterns
+        ("Google AI", "Gemini"),
+        ("Gemini Pro", "Gemini"),
+        ("gemini.google", "Gemini"),
+        // ChatGPT patterns
+        ("ChatGPT", "ChatGPT"),
+        ("openai.com", "ChatGPT"),
+        // Copilot patterns
+        ("GitHub Copilot", "Copilot"),
+        ("Copilot CLI", "Copilot"),
+        // Codex patterns
+        ("OpenAI Codex", "Codex")
+    ]
+
+    private static let wrapperCommands: Set<String> = [
+        "command",
+        "builtin",
+        "exec",
+        "noglob",
+        "time"
+    ]
+
+    private static let sudoOptionsWithValue: Set<String> = [
+        "-u",
+        "-g",
+        "-h",
+        "-p",
+        "-a",
+        "-c",
+        "-t",
+        "-r"
     ]
 
     /// Idle timeout in seconds. Configurable via environment variable.
@@ -58,6 +119,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         self.appModel = appModel
         super.init()
         refreshGitStatus(path: currentDirectory)
+        SnippetManager.shared.updateContextPath(currentDirectory)
         startIdleTimer()
     }
 
@@ -70,6 +132,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     func attachTerminal(_ view: Chau7TerminalView) {
         terminalView = view
+        view.currentDirectory = currentDirectory
     }
 
     func focusTerminal(in window: NSWindow?) {
@@ -117,6 +180,28 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         TerminalOutputCapture.shared.record(data: data, source: activeAppName ?? title)
         // Check if we should apply shell integration
         maybeApplyShellIntegration()
+        // Try to detect AI app from output if not already detected
+        maybeDetectAppFromOutput(data)
+    }
+
+    /// Attempts to detect AI CLI from output patterns when command detection missed it
+    private func maybeDetectAppFromOutput(_ data: Data) {
+        // Skip if we already detected an app
+        guard activeAppName == nil else { return }
+
+        // Convert to string for pattern matching (limit to first 500 bytes for performance)
+        let checkData = data.prefix(500)
+        guard let outputString = String(data: checkData, encoding: .utf8) else { return }
+
+        for (pattern, appName) in Self.outputDetectionPatterns {
+            if outputString.contains(pattern) {
+                DispatchQueue.main.async { [weak self] in
+                    self?.activeAppName = appName
+                    Log.info("Detected \(appName) from output pattern: \(pattern)")
+                }
+                return
+            }
+        }
     }
 
     private func markRunning() {
@@ -192,19 +277,208 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     private func updateActiveAppName(from commandLine: String) {
-        guard let token = commandLine.split(separator: " ").first else { return }
-        let lower = token.lowercased()
-        if lower == "exit" || lower == "logout" {
-            activeAppName = nil
+        let tokens = tokenizeCommandLine(commandLine)
+        guard let token = extractCommandToken(from: commandLine) else { return }
+        let normalized = normalizeCommandToken(token)
+
+        // Check for direct match
+        if let match = appNameMap[normalized] {
+            activeAppName = match
             return
         }
-        if let mapped = appNameMap[lower] {
-            activeAppName = mapped
+
+        // Special case: gh copilot (GitHub CLI with copilot subcommand)
+        if normalized == "gh" {
+            if findSubcommand(tokens: tokens, after: "gh", looking: ["copilot"]) != nil {
+                activeAppName = "Copilot"
+                return
+            }
         }
+
+        // Special case: npx/bunx with AI CLI packages
+        if normalized == "npx" || normalized == "bunx" || normalized == "pnpm" {
+            if let aiApp = findSubcommand(tokens: tokens, after: normalized, looking: Array(appNameMap.keys)) {
+                activeAppName = appNameMap[aiApp]
+                return
+            }
+        }
+
+        activeAppName = nil
+    }
+
+    /// Finds a subcommand after a given command, skipping options
+    private func findSubcommand(tokens: [String], after command: String, looking targets: [String]) -> String? {
+        guard let cmdIndex = tokens.firstIndex(where: { normalizeCommandToken($0) == command }) else { return nil }
+        for i in (cmdIndex + 1)..<tokens.count {
+            let token = tokens[i]
+            if token.hasPrefix("-") { continue }  // Skip options
+            let normalized = normalizeCommandToken(token)
+            if targets.contains(normalized) {
+                return normalized
+            }
+            // First non-option argument after command
+            break
+        }
+        return nil
+    }
+
+    private func extractCommandToken(from commandLine: String) -> String? {
+        let tokens = tokenizeCommandLine(commandLine)
+        guard !tokens.isEmpty else { return nil }
+
+        var index = 0
+        while index < tokens.count {
+            let token = tokens[index]
+            if token.isEmpty {
+                index += 1
+                continue
+            }
+
+            if isEnvAssignment(token) {
+                index += 1
+                continue
+            }
+
+            let lower = token.lowercased()
+            if lower == "env" {
+                index = consumeEnv(tokens: tokens, start: index + 1)
+                continue
+            }
+
+            if lower == "sudo" {
+                index = consumeSudo(tokens: tokens, start: index + 1)
+                continue
+            }
+
+            if Self.wrapperCommands.contains(lower) {
+                index += 1
+                continue
+            }
+
+            if lower.hasPrefix("-") {
+                index += 1
+                continue
+            }
+
+            return token
+        }
+
+        return nil
+    }
+
+    private func consumeEnv(tokens: [String], start: Int) -> Int {
+        var index = start
+        while index < tokens.count {
+            let token = tokens[index]
+            if token == "--" {
+                return index + 1
+            }
+            if token.hasPrefix("-") || isEnvAssignment(token) {
+                index += 1
+                continue
+            }
+            break
+        }
+        return index
+    }
+
+    private func consumeSudo(tokens: [String], start: Int) -> Int {
+        var index = start
+        while index < tokens.count {
+            let token = tokens[index]
+            if token == "--" {
+                return index + 1
+            }
+            if token.hasPrefix("-") {
+                if Self.sudoOptionsWithValue.contains(token), index + 1 < tokens.count {
+                    index += 2
+                    continue
+                }
+                index += 1
+                continue
+            }
+            break
+        }
+        return index
+    }
+
+    private func tokenizeCommandLine(_ line: String) -> [String] {
+        var tokens: [String] = []
+        var current = ""
+        var inSingleQuote = false
+        var inDoubleQuote = false
+        var isEscaped = false
+
+        func flushCurrent() {
+            if !current.isEmpty {
+                tokens.append(current)
+                current = ""
+            }
+        }
+
+        for char in line {
+            if isEscaped {
+                current.append(char)
+                isEscaped = false
+                continue
+            }
+
+            if char == "\\" && !inSingleQuote {
+                isEscaped = true
+                continue
+            }
+
+            if char == "'" && !inDoubleQuote {
+                inSingleQuote.toggle()
+                continue
+            }
+
+            if char == "\"" && !inSingleQuote {
+                inDoubleQuote.toggle()
+                continue
+            }
+
+            if !inSingleQuote && !inDoubleQuote {
+                if char == "#" {
+                    break
+                }
+                if char == "|" || char == ";" || char == "&" {
+                    break
+                }
+                if char.isWhitespace {
+                    flushCurrent()
+                    continue
+                }
+            }
+
+            current.append(char)
+        }
+
+        flushCurrent()
+        return tokens
+    }
+
+    private func normalizeCommandToken(_ token: String) -> String {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pathComponent = (trimmed as NSString).lastPathComponent
+        let baseName = (pathComponent as NSString).deletingPathExtension
+        return baseName.lowercased()
+    }
+
+    private func isEnvAssignment(_ token: String) -> Bool {
+        guard let eqIndex = token.firstIndex(of: "=") else { return false }
+        let name = token[..<eqIndex]
+        guard let first = name.first, first == "_" || first.isLetter else { return false }
+        for ch in name.dropFirst() {
+            if ch != "_" && !ch.isLetter && !ch.isNumber {
+                return false
+            }
+        }
+        return true
     }
 
     private func recordInputLineIfNeeded() {
-        guard let app = activeAppName, app == "Codex" || app == "Claude" else { return }
+        guard let app = activeAppName, app == "Codex" else { return }
         terminalView?.recordInputLine()
     }
 
@@ -245,6 +519,11 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         # Chau7 wrapper - source user's real .zshrc first
         export ZDOTDIR="\(home)"
         [ -f "\(home)/.zshrc" ] && source "\(home)/.zshrc"
+
+        # Chau7 default start directory
+        if [ -n "$CHAU7_START_DIR" ] && [ -d "$CHAU7_START_DIR" ]; then
+          cd "$CHAU7_START_DIR"
+        fi
 
         # Chau7 shell integration (runs at startup, not in history)
         smartoverlay_precmd() { print -Pn "\\e]7;file://$HOSTNAME$PWD\\a"; }
@@ -357,6 +636,17 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         terminalView.send(txt: text)
     }
 
+    // MARK: - F21: Snippet Insertion
+
+    func insertSnippet(_ entry: SnippetEntry) {
+        guard FeatureSettings.shared.isSnippetsEnabled else { return }
+        let insertion = SnippetManager.shared.prepareInsertion(
+            snippet: entry.snippet,
+            currentDirectory: currentDirectory
+        )
+        terminalView?.insertSnippet(insertion)
+    }
+
     // MARK: - Zoom (Issue #11 fix - only update @Published, let SwiftUI sync)
 
     func zoomIn() {
@@ -394,6 +684,26 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     // MARK: - Shell helpers
 
+    static func resolveStartDirectory(_ rawValue: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return home }
+
+        let expanded = (trimmed as NSString).expandingTildeInPath
+        let resolved: String
+        if expanded.hasPrefix("/") {
+            resolved = expanded
+        } else {
+            resolved = (home as NSString).appendingPathComponent(expanded)
+        }
+
+        return URL(fileURLWithPath: resolved).standardized.path
+    }
+
+    static func defaultStartDirectory() -> String {
+        resolveStartDirectory(FeatureSettings.shared.defaultStartDirectory)
+    }
+
     func defaultShell() -> String {
         let bufsize = sysconf(_SC_GETPW_R_SIZE_MAX)
         guard bufsize != -1 else {
@@ -425,6 +735,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         if let home = current["HOME"] {
             dict["HOME"] = home
         }
+        dict["CHAU7_START_DIR"] = Self.defaultStartDirectory()
         // Present as Terminal.app for better CLI theming parity.
         dict["TERM_PROGRAM"] = "Apple_Terminal"
         if let version = Self.terminalAppVersion {
@@ -659,10 +970,12 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         let normalized = URL(fileURLWithPath: path).standardized.path
         guard currentDirectory != normalized else { return }
         currentDirectory = normalized
+        terminalView?.currentDirectory = normalized
         if title == "Shell" {
             title = URL(fileURLWithPath: normalized).lastPathComponent
         }
         refreshGitStatus(path: normalized)
+        SnippetManager.shared.updateContextPath(normalized)
     }
 
     private func refreshGitStatus(path: String) {

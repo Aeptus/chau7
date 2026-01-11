@@ -436,6 +436,12 @@ struct GeneralSettingsView: View {
                 Button("Show Overlay") { (NSApp.delegate as? AppDelegate)?.showOverlay() }
             }
 
+            Section("Overlays") {
+                Button("Restore default overlay positions") {
+                    FeatureSettings.shared.resetOverlayOffsets()
+                }
+            }
+
             Section("Status") {
                 LabeledContent("Notifications", value: model.notificationStatus)
                 LabeledContent("Event monitoring", value: model.isMonitoring ? "On" : "Off")
@@ -592,6 +598,36 @@ struct HistoryBookmarksSettingsView: View {
                 TextField("Max per tab", value: $settings.maxBookmarksPerTab, format: .number)
                     .frame(width: 120)
                     .disabled(!settings.isBookmarksEnabled)
+            }
+
+            Section("Snippets") {
+                Toggle("Enabled", isOn: $settings.isSnippetsEnabled)
+                    .onChange(of: settings.isSnippetsEnabled) { _ in
+                        SnippetManager.shared.refreshConfiguration()
+                    }
+
+                Toggle("Repo snippets", isOn: $settings.isRepoSnippetsEnabled)
+                    .disabled(!settings.isSnippetsEnabled)
+                    .onChange(of: settings.isRepoSnippetsEnabled) { _ in
+                        SnippetManager.shared.refreshConfiguration()
+                    }
+
+                TextField("Repo path", text: $settings.repoSnippetPath)
+                    .font(.system(size: 11, design: .monospaced))
+                    .disabled(!settings.isSnippetsEnabled || !settings.isRepoSnippetsEnabled)
+                    .onSubmit { SnippetManager.shared.refreshConfiguration() }
+                    .onChange(of: settings.repoSnippetPath) { _ in
+                        SnippetManager.shared.refreshConfiguration()
+                    }
+
+                Picker("Insert mode", selection: $settings.snippetInsertMode) {
+                    Text("Expand").tag("expand")
+                    Text("Paste").tag("paste")
+                }
+                .disabled(!settings.isSnippetsEnabled)
+
+                Toggle("Expand placeholders", isOn: $settings.snippetPlaceholdersEnabled)
+                    .disabled(!settings.isSnippetsEnabled || settings.snippetInsertMode == "paste")
             }
         }
         .padding()

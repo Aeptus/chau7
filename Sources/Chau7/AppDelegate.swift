@@ -28,6 +28,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         model?.bootstrap()
         installKeyMonitor()
 
+        // Initialize status bar controller (replaces MenuBarExtra for multi-monitor support)
+        if let model {
+            StatusBarController.shared.setup(model: model)
+        }
+
         // F04: Initialize dropdown terminal controller
         if let model {
             DropdownController.shared.setup(appModel: model)
@@ -35,6 +40,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         // Create overlay window hidden behind splash - this starts the shell
         setupOverlayWindow()
+
+        // Initialize debug console controller
+        if let model, let overlayModel {
+            DebugConsoleController.shared.configure(appModel: model, overlayModel: overlayModel)
+        }
 
         // Keep overlay hidden initially
         for host in overlayHosts {
@@ -69,6 +79,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             NSEvent.removeMonitor(keyMonitor)
             self.keyMonitor = nil
         }
+        // Cleanup status bar controller
+        StatusBarController.shared.cleanup()
         // F04: Cleanup dropdown controller
         DropdownController.shared.cleanup()
     }
@@ -236,6 +248,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func toggleSearch() {
         ensureActiveOverlayModel()?.toggleSearch()
+    }
+
+    func toggleSnippets() {
+        ensureActiveOverlayModel()?.toggleSnippetManager()
     }
 
     func beginRenameTab() {
@@ -435,6 +451,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
               let chars = event.charactersIgnoringModifiers?.lowercased()
         else {
             return event
+        }
+
+        // Handle Cmd+Shift+D to toggle debug console (works globally)
+        if chars == "d", flags == [.command, .shift] {
+            Log.info("Cmd+Shift+D: toggling debug console.")
+            DebugConsoleController.shared.toggle()
+            return nil
         }
 
         // Check if we're in an overlay window with terminal as first responder

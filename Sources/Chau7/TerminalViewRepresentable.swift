@@ -66,8 +66,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         if nsView.notifyUpdateChanges == isSuspended {
             nsView.notifyUpdateChanges = !isSuspended
         }
-        let isAIApp = model.activeAppName == "Codex" || model.activeAppName == "Claude"
-        nsView.configureCursorLineHighlight(contextLines: isAIApp, inputHistory: isAIApp)
+        let isCodex = model.activeAppName == "Codex"
+        nsView.setCursorLineHighlightEnabled(isCodex)
+        nsView.configureCursorLineHighlight(contextLines: isCodex, inputHistory: isCodex)
 
         if nsView.font.pointSize != model.fontSize {
             nsView.font = NSFont.monospacedSystemFont(ofSize: model.fontSize, weight: .regular)

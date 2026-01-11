@@ -199,6 +199,70 @@ Unload:
 launchctl unload -w ~/Library/LaunchAgents/com.chau7.plist
 ```
 
+## Testing
+
+Chau7 includes a comprehensive test suite for core functionality.
+
+### Running Tests
+
+```bash
+# Ensure Xcode is set as the developer directory
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+# Run all tests
+swift test
+```
+
+### Test Coverage
+
+- **CommandDetectionTests** (40 tests): AI CLI detection, tokenization, environment parsing
+- **EventParsingTests** (6 tests): Hook event parsing, session ID extraction
+
+### Adding New Tests
+
+Tests live in `Tests/Chau7Tests/`. The testable logic is in `Sources/Chau7Core/`:
+
+- `CommandDetection.swift` - Pure functions for detecting AI CLIs
+- Add new pure functions here for testability
+
+## Debugging
+
+### Debug Console (Cmd+Shift+D)
+
+Press **Cmd+Shift+D** anywhere in the app to open the Debug Console:
+
+- **State**: Real-time app state, tabs, Claude sessions
+- **Contexts**: Active debug operations with correlation IDs
+- **Events**: Claude Code event stream
+- **Logs**: Live log viewer with filtering
+- **Report**: Generate bug reports and state snapshots
+
+### Structured Logging
+
+All operations use correlation IDs for tracing:
+
+```
+[ABC123] START command-detection {input=claude --help}
+[ABC123] Found token {token=claude}
+[ABC123] END command-detection SUCCESS (2ms) {result=Claude}
+```
+
+Logs are written to `~/Library/Logs/Chau7.log`
+
+### Bug Reports
+
+Generate detailed bug reports from the Debug Console or programmatically:
+
+```swift
+let path = BugReporter.shared.generateReport(userDescription: "Describe the issue")
+```
+
+Reports are saved to `~/.chau7/reports/` and include:
+- Full app state snapshot
+- Recent events
+- Last 50 log lines
+- Feature flag states
+
 ## Notes
 
 - Notifications are delivered via UserNotifications (native).

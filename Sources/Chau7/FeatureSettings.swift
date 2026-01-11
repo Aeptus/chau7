@@ -123,6 +123,35 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
+    // MARK: - F21: Snippets
+
+    @Published var isSnippetsEnabled: Bool {
+        didSet { UserDefaults.standard.set(isSnippetsEnabled, forKey: Keys.snippetsEnabled) }
+    }
+
+    @Published var isRepoSnippetsEnabled: Bool {
+        didSet { UserDefaults.standard.set(isRepoSnippetsEnabled, forKey: Keys.repoSnippetsEnabled) }
+    }
+
+    @Published var repoSnippetPath: String {
+        didSet {
+            let trimmed = repoSnippetPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            if repoSnippetPath != trimmed {
+                repoSnippetPath = trimmed
+                return
+            }
+            UserDefaults.standard.set(repoSnippetPath, forKey: Keys.repoSnippetPath)
+        }
+    }
+
+    @Published var snippetInsertMode: String {
+        didSet { UserDefaults.standard.set(snippetInsertMode, forKey: Keys.snippetInsertMode) }
+    }
+
+    @Published var snippetPlaceholdersEnabled: Bool {
+        didSet { UserDefaults.standard.set(snippetPlaceholdersEnabled, forKey: Keys.snippetPlaceholders) }
+    }
+
     // MARK: - F08: Smart Syntax Highlighting
 
     @Published var isSyntaxHighlightEnabled: Bool {
@@ -155,6 +184,10 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(keybindingPreset, forKey: Keys.keybindingPreset) }
     }
 
+    // MARK: - Overlay Positions
+
+    @Published var overlayPositionsVersion: Int = 0
+
     // MARK: - General Terminal Settings
 
     @Published var cursorStyle: String {
@@ -184,6 +217,20 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(bellSound, forKey: Keys.bellSound) }
     }
 
+    @Published var defaultStartDirectory: String {
+        didSet {
+            let trimmed = defaultStartDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+            let normalized = trimmed.isEmpty
+                ? FileManager.default.homeDirectoryForCurrentUser.path
+                : trimmed
+            if defaultStartDirectory != normalized {
+                defaultStartDirectory = normalized
+                return
+            }
+            UserDefaults.standard.set(defaultStartDirectory, forKey: Keys.defaultStartDirectory)
+        }
+    }
+
     // MARK: - Keys
 
     private enum Keys {
@@ -211,6 +258,12 @@ final class FeatureSettings: ObservableObject {
         // F17
         static let bookmarksEnabled = "feature.bookmarksEnabled"
         static let maxBookmarks = "feature.maxBookmarks"
+        // F21
+        static let snippetsEnabled = "feature.snippetsEnabled"
+        static let repoSnippetsEnabled = "feature.repoSnippetsEnabled"
+        static let repoSnippetPath = "feature.repoSnippetPath"
+        static let snippetInsertMode = "feature.snippetInsertMode"
+        static let snippetPlaceholders = "feature.snippetPlaceholders"
         // F08
         static let syntaxHighlight = "feature.syntaxHighlight"
         static let clickableURLs = "feature.clickableURLs"
@@ -227,12 +280,15 @@ final class FeatureSettings: ObservableObject {
         static let scrollbackLines = "terminal.scrollbackLines"
         static let bellEnabled = "terminal.bellEnabled"
         static let bellSound = "terminal.bellSound"
+        static let defaultStartDirectory = "terminal.defaultStartDirectory"
+        static let overlayPositionsMap = "overlay.positions.map"
     }
 
     // MARK: - Init
 
     private init() {
         let defaults = UserDefaults.standard
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
 
         // F05: Auto Tab Theme (default: enabled)
         self.isAutoTabThemeEnabled = defaults.object(forKey: Keys.autoTabTheme) as? Bool ?? true
@@ -267,6 +323,13 @@ final class FeatureSettings: ObservableObject {
         self.isBookmarksEnabled = defaults.object(forKey: Keys.bookmarksEnabled) as? Bool ?? true
         self.maxBookmarksPerTab = defaults.object(forKey: Keys.maxBookmarks) as? Int ?? 20
 
+        // F21: Snippets (default: enabled)
+        self.isSnippetsEnabled = defaults.object(forKey: Keys.snippetsEnabled) as? Bool ?? true
+        self.isRepoSnippetsEnabled = defaults.object(forKey: Keys.repoSnippetsEnabled) as? Bool ?? true
+        self.repoSnippetPath = defaults.string(forKey: Keys.repoSnippetPath) ?? ".chau7/snippets.json"
+        self.snippetInsertMode = defaults.string(forKey: Keys.snippetInsertMode) ?? "expand"
+        self.snippetPlaceholdersEnabled = defaults.object(forKey: Keys.snippetPlaceholders) as? Bool ?? true
+
         // F08: Syntax Highlighting (default: enabled)
         self.isSyntaxHighlightEnabled = defaults.object(forKey: Keys.syntaxHighlight) as? Bool ?? true
         self.isClickableURLsEnabled = defaults.object(forKey: Keys.clickableURLs) as? Bool ?? true
@@ -287,5 +350,64 @@ final class FeatureSettings: ObservableObject {
         self.scrollbackLines = defaults.object(forKey: Keys.scrollbackLines) as? Int ?? 10000
         self.bellEnabled = defaults.object(forKey: Keys.bellEnabled) as? Bool ?? true
         self.bellSound = defaults.string(forKey: Keys.bellSound) ?? "default"
+        self.defaultStartDirectory = defaults.string(forKey: Keys.defaultStartDirectory) ?? home
+    }
+
+    func overlayOffset(for id: String, workspace: String?) -> CGSize {
+        let key = overlayWorkspaceKey(workspace)
+        let store = overlayPositionsStore()
+        guard let workspaceStore = store[key],
+              let entry = workspaceStore[id],
+              let x = entry["x"],
+              let y = entry["y"] else {
+            return .zero
+        }
+        return CGSize(width: x, height: y)
+    }
+
+    func setOverlayOffset(_ offset: CGSize, for id: String, workspace: String?) {
+        let key = overlayWorkspaceKey(workspace)
+        var store = overlayPositionsStore()
+        var workspaceStore = store[key] ?? [:]
+        workspaceStore[id] = ["x": offset.width, "y": offset.height]
+        store[key] = workspaceStore
+        saveOverlayPositionsStore(store)
+    }
+
+    func resetOverlayOffsets(workspace: String? = nil) {
+        var store = overlayPositionsStore()
+        if let workspace {
+            store.removeValue(forKey: overlayWorkspaceKey(workspace))
+        } else {
+            store.removeAll()
+        }
+        saveOverlayPositionsStore(store)
+    }
+
+    private func overlayPositionsStore() -> [String: [String: [String: Double]]] {
+        let defaults = UserDefaults.standard
+        guard let stored = defaults.dictionary(forKey: Keys.overlayPositionsMap) else { return [:] }
+        var result: [String: [String: [String: Double]]] = [:]
+        for (workspaceKey, value) in stored {
+            guard let overlayDict = value as? [String: Any] else { continue }
+            var overlayStore: [String: [String: Double]] = [:]
+            for (overlayID, coordsValue) in overlayDict {
+                if let coords = coordsValue as? [String: Double] {
+                    overlayStore[overlayID] = coords
+                }
+            }
+            result[workspaceKey] = overlayStore
+        }
+        return result
+    }
+
+    private func saveOverlayPositionsStore(_ store: [String: [String: [String: Double]]]) {
+        UserDefaults.standard.set(store, forKey: Keys.overlayPositionsMap)
+        overlayPositionsVersion += 1
+    }
+
+    private func overlayWorkspaceKey(_ workspace: String?) -> String {
+        let base = workspace?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return base?.isEmpty == false ? base! : "global"
     }
 }

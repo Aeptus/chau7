@@ -73,6 +73,9 @@ final class OverlayTabsModel: ObservableObject {
     // F17: Bookmarks
     @Published var isBookmarkListVisible: Bool = false
 
+    // F21: Snippets
+    @Published var isSnippetManagerVisible: Bool = false
+
     private var renameTabID: UUID? = nil
     private var renameOriginalTitle: String = ""
     private var renameOriginalColor: TabColor = .blue
@@ -99,6 +102,27 @@ final class OverlayTabsModel: ObservableObject {
         tabs.first { $0.id == selectedTabID }
     }
 
+    var overlayWorkspaceIdentifier: String? {
+        if let repoRoot = SnippetManager.shared.repoRoot {
+            return repoRoot
+        }
+        return selectedTab?.session.currentDirectory
+    }
+
+    var hasActiveOverlay: Bool {
+        isSearchVisible
+            || isRenameVisible
+            || isClipboardHistoryVisible
+            || isBookmarkListVisible
+            || isSnippetManagerVisible
+    }
+
+    private func updateSnippetContextForSelection() {
+        if let tab = selectedTab {
+            SnippetManager.shared.updateContextPath(tab.session.currentDirectory)
+        }
+    }
+
     func selectTab(id: UUID) {
         guard selectedTabID != id else { return }
         if isRenameVisible {
@@ -107,6 +131,7 @@ final class OverlayTabsModel: ObservableObject {
         selectedTabID = id
         focusSelected()
         updateSuspensionState()
+        updateSnippetContextForSelection()
         if isSearchVisible {
             refreshSearch()
         }
@@ -122,6 +147,7 @@ final class OverlayTabsModel: ObservableObject {
         selectedTabID = tab.id
         focusSelected()
         updateSuspensionState()
+        updateSnippetContextForSelection()
         if isSearchVisible {
             refreshSearch()
         }
@@ -171,6 +197,7 @@ final class OverlayTabsModel: ObservableObject {
 
         focusSelected()
         updateSuspensionState()
+        updateSnippetContextForSelection()
         if isSearchVisible {
             refreshSearch()
         }
@@ -183,6 +210,7 @@ final class OverlayTabsModel: ObservableObject {
         selectedTabID = tabs[nextIndex].id
         focusSelected()
         updateSuspensionState()
+        updateSnippetContextForSelection()
         if isSearchVisible {
             refreshSearch()
         }
@@ -194,6 +222,7 @@ final class OverlayTabsModel: ObservableObject {
         selectedTabID = tabs[prevIndex].id
         focusSelected()
         updateSuspensionState()
+        updateSnippetContextForSelection()
         if isSearchVisible {
             refreshSearch()
         }
@@ -210,6 +239,7 @@ final class OverlayTabsModel: ObservableObject {
         selectedTabID = tabs[index].id
         focusSelected()
         updateSuspensionState()
+        updateSnippetContextForSelection()
         if isSearchVisible {
             refreshSearch()
         }
@@ -239,6 +269,7 @@ final class OverlayTabsModel: ObservableObject {
         isSearchVisible.toggle()
         if isSearchVisible {
             isRenameVisible = false
+            isSnippetManagerVisible = false
             refreshSearch()
         } else {
             searchQuery = ""
@@ -455,6 +486,7 @@ final class OverlayTabsModel: ObservableObject {
             isSearchVisible = false
             isRenameVisible = false
             isBookmarkListVisible = false
+            isSnippetManagerVisible = false
         }
     }
 
@@ -472,7 +504,45 @@ final class OverlayTabsModel: ObservableObject {
             isSearchVisible = false
             isRenameVisible = false
             isClipboardHistoryVisible = false
+            isSnippetManagerVisible = false
         }
+    }
+
+    // MARK: - F21: Snippets
+
+    func toggleSnippetManager() {
+        guard FeatureSettings.shared.isSnippetsEnabled else { return }
+        isSnippetManagerVisible.toggle()
+        if isSnippetManagerVisible {
+            isSearchVisible = false
+            isRenameVisible = false
+            isClipboardHistoryVisible = false
+            isBookmarkListVisible = false
+        }
+    }
+
+    func dismissOverlays() {
+        if isRenameVisible {
+            cancelRename()
+        }
+        if isSearchVisible {
+            toggleSearch()
+        }
+        if isClipboardHistoryVisible {
+            toggleClipboardHistory()
+        }
+        if isBookmarkListVisible {
+            toggleBookmarkList()
+        }
+        if isSnippetManagerVisible {
+            toggleSnippetManager()
+        }
+    }
+
+    func insertSnippet(_ entry: SnippetEntry) {
+        guard let tab = selectedTab else { return }
+        tab.session.insertSnippet(entry)
+        isSnippetManagerVisible = false
     }
 
     func addBookmark(label: String? = nil) {

@@ -4,11 +4,13 @@ import Foundation
 
 /// Event types from Claude Code hooks
 enum ClaudeEventType: String, Codable {
-    case responseComplete = "response_complete"
-    case toolComplete = "tool_complete"
-    case toolStart = "tool_start"
-    case notification = "notification"
-    case sessionEnd = "session_end"
+    case userPrompt = "user_prompt"           // User submitted a prompt
+    case toolStart = "tool_start"             // Tool about to execute
+    case toolComplete = "tool_complete"       // Tool execution completed
+    case permissionRequest = "permission_request"  // Claude waiting for permission
+    case responseComplete = "response_complete"    // Claude finished responding
+    case notification = "notification"        // Custom notification
+    case sessionEnd = "session_end"           // Session terminated
     case unknown = "unknown"
 }
 

@@ -20,12 +20,15 @@ final class ClaudeCodeMonitor: ObservableObject {
         let transcriptPath: String
         var lastActivity: Date
         var state: SessionState
+        var lastToolName: String?  // Most recent tool being used
 
         enum SessionState: String {
-            case active
-            case idle
-            case responding
-            case closed
+            case active           // User just submitted prompt, Claude starting
+            case responding       // Claude is executing tools
+            case waitingPermission // Claude waiting for user permission
+            case waitingInput     // Claude finished, waiting for user input
+            case idle             // No activity for a while
+            case closed           // Session ended
         }
     }
 
@@ -128,6 +131,8 @@ final class ClaudeCodeMonitor: ObservableObject {
             case .responseComplete:
                 self.onResponseComplete?(event)
                 self.notifyResponseComplete(event)
+            case .permissionRequest:
+                self.notifyPermissionRequest(event)
             case .sessionEnd:
                 self.markSessionClosed(event.sessionId)
             default:
@@ -141,18 +146,24 @@ final class ClaudeCodeMonitor: ObservableObject {
         guard !sessionId.isEmpty else { return }
 
         DispatchQueue.main.async {
+            let toolName = event.toolName.isEmpty ? nil : event.toolName
+
             if var session = self.activeSessions[sessionId] {
                 session.lastActivity = event.timestamp
                 session.state = self.stateForEvent(event.type)
+                if let tool = toolName {
+                    session.lastToolName = tool
+                }
                 self.activeSessions[sessionId] = session
             } else {
-                let session = ClaudeSessionInfo(
+                var session = ClaudeSessionInfo(
                     id: sessionId,
                     projectName: event.projectName,
                     transcriptPath: event.transcriptPath,
                     lastActivity: event.timestamp,
                     state: self.stateForEvent(event.type)
                 )
+                session.lastToolName = toolName
                 self.activeSessions[sessionId] = session
             }
         }
@@ -160,15 +171,19 @@ final class ClaudeCodeMonitor: ObservableObject {
 
     private func stateForEvent(_ type: ClaudeEventType) -> ClaudeSessionInfo.SessionState {
         switch type {
+        case .userPrompt:
+            return .active           // User just sent input, Claude starting
         case .toolStart:
-            return .responding
+            return .responding       // Claude is working
         case .toolComplete:
-            return .responding
+            return .responding       // Still working (might do more tools)
+        case .permissionRequest:
+            return .waitingPermission // Needs user permission
         case .responseComplete:
-            return .active
+            return .waitingInput     // Claude done, waiting for next user input
         case .sessionEnd:
             return .closed
-        default:
+        case .notification, .unknown:
             return .active
         }
     }
@@ -197,6 +212,8 @@ final class ClaudeCodeMonitor: ObservableObject {
 
         DispatchQueue.main.async {
             for (sessionId, session) in self.activeSessions {
+                // Only check active/responding sessions for idle
+                // waitingInput/waitingPermission already indicate waiting state
                 guard session.state == .active || session.state == .responding else { continue }
 
                 let idleFor = now.timeIntervalSince(session.lastActivity)
@@ -218,6 +235,17 @@ final class ClaudeCodeMonitor: ObservableObject {
             type: "finished",
             tool: "Claude",
             message: "Response complete in \(event.projectName)",
+            ts: DateFormatters.nowISO8601()
+        )
+        NotificationManager.shared.notify(for: aiEvent)
+    }
+
+    private func notifyPermissionRequest(_ event: ClaudeCodeEvent) {
+        let toolDesc = event.toolName.isEmpty ? "action" : event.toolName
+        let aiEvent = AIEvent(
+            type: "permission",
+            tool: "Claude",
+            message: "Needs permission for \(toolDesc) in \(event.projectName)",
             ts: DateFormatters.nowISO8601()
         )
         NotificationManager.shared.notify(for: aiEvent)

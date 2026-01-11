@@ -25,6 +25,7 @@ import AppKit
 /// - Cmd+F: Find
 /// - Cmd+G: Find Next
 /// - Cmd+Shift+G: Find Previous
+/// - Cmd+Shift+S: Snippets
 /// - Cmd+Shift+R: Rename Tab
 /// - Escape: Close search/rename overlay
 ///
@@ -62,6 +63,7 @@ enum KeyboardShortcuts {
         static let clearScrollback = "k"
         static let settings = ","
         static let renameTab = "r"
+        static let snippets = "s"
         static let nextTab = "]"
         static let previousTab = "["
     }

@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Carbon
 import SwiftTerm
 
 final class Chau7TerminalView: LocalProcessTerminalView {
@@ -11,6 +12,8 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     private let inputLineTracker = InputLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
     private var highlightContextLines = false
     private var highlightInputHistory = false
+    private var isCursorLineHighlightEnabled = false
+    private var snippetState: SnippetNavigationState?
     private var dimPatchRemainderBytes: [UInt8] = []
     private let dimSequence: [UInt8] = [0x1b, 0x5b, 0x32, 0x6d] // ESC [ 2 m
     private let dimResetSequence: [UInt8] = [0x1b, 0x5b, 0x32, 0x32, 0x6d] // ESC [ 22 m
@@ -20,10 +23,11 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     // F18: Copy-on-select tracking
     private var lastSelectionText: String?
 
-    // Event monitors for F03/F18 (since SwiftTerm's mouse methods aren't open for override)
+    // Event monitors for F03/F18/F21 (since SwiftTerm's input methods aren't open for override)
     private var mouseDownMonitor: Any?
     private var mouseUpMonitor: Any?
     private var mouseMoveMonitor: Any?
+    private var keyDownMonitor: Any?
     private var focusObservers: [NSObjectProtocol] = []
 
     // MARK: - Color Configuration
@@ -135,6 +139,18 @@ final class Chau7TerminalView: LocalProcessTerminalView {
             self.updateCursorLineHighlight()
             return event
         }
+
+        // F21: Snippet placeholder navigation
+        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return event }
+            guard event.window === self.window else { return event }
+            guard self.window?.firstResponder === self else { return event }
+
+            if self.handleSnippetKeyDown(event) {
+                return nil
+            }
+            return event
+        }
     }
 
     private func removeEventMonitors() {
@@ -149,6 +165,10 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         if let monitor = mouseMoveMonitor {
             NSEvent.removeMonitor(monitor)
             mouseMoveMonitor = nil
+        }
+        if let monitor = keyDownMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyDownMonitor = nil
         }
     }
 
@@ -208,6 +228,19 @@ final class Chau7TerminalView: LocalProcessTerminalView {
                 }
             }
         }
+    }
+
+    private func handleSnippetKeyDown(_ event: NSEvent) -> Bool {
+        guard let state = snippetState else { return false }
+        let isTab = event.keyCode == UInt16(kVK_Tab)
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let hasCommandModifiers = modifiers.contains(.command) || modifiers.contains(.control) || modifiers.contains(.option)
+        if isTab && !hasCommandModifiers {
+            let isBackward = modifiers.contains(.shift)
+            return advanceSnippetPlaceholder(state: state, backward: isBackward)
+        }
+        snippetState = nil
+        return false
     }
 
     // MARK: - F03: Cmd+Click Paths
@@ -411,7 +444,7 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     }
 
     private func patchDimSequences(_ incoming: [UInt8]) -> [UInt8] {
-        var buffer: [UInt8] = dimPatchRemainderBytes + incoming
+        let buffer: [UInt8] = dimPatchRemainderBytes + incoming
         dimPatchRemainderBytes = []
 
         var output: [UInt8] = []
@@ -498,6 +531,13 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         }
     }
 
+    func setCursorLineHighlightEnabled(_ enabled: Bool) {
+        if isCursorLineHighlightEnabled != enabled {
+            isCursorLineHighlightEnabled = enabled
+            updateCursorLineHighlight()
+        }
+    }
+
     func recordInputLine() {
         let terminal = getTerminal()
         let cursor = terminal.getCursorLocation()
@@ -506,7 +546,39 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         updateCursorLineHighlight()
     }
 
+    func insertSnippet(_ insertion: SnippetInsertion) {
+        let text = insertion.text
+        let terminal = getTerminal()
+        if terminal.bracketedPasteMode {
+            send(txt: "\u{1B}[200~")
+            send(txt: text)
+            send(txt: "\u{1B}[201~")
+        } else {
+            send(txt: text)
+        }
+        guard !insertion.placeholders.isEmpty else {
+            snippetState = nil
+            return
+        }
+        guard !isUnsafeForPlaceholderNavigation(text) else {
+            snippetState = nil
+            return
+        }
+        var state = SnippetNavigationState(
+            placeholders: insertion.placeholders,
+            currentIndex: 0,
+            cursorOffset: text.count,
+            finalCursorOffset: insertion.finalCursorOffset
+        )
+        moveSnippetCursor(from: &state, to: insertion.placeholders[0].start)
+        snippetState = state
+    }
+
     private func updateCursorLineHighlight() {
+        guard isCursorLineHighlightEnabled else {
+            cursorLineView?.isHidden = true
+            return
+        }
         cursorLineView?.update(
             with: self,
             isFocused: hasFocus,
@@ -515,4 +587,58 @@ final class Chau7TerminalView: LocalProcessTerminalView {
             inputLineTracker: inputLineTracker
         )
     }
+
+    private func advanceSnippetPlaceholder(state: SnippetNavigationState, backward: Bool) -> Bool {
+        var updated = state
+        if backward {
+            if updated.currentIndex > 0 {
+                updated.currentIndex -= 1
+                let target = updated.placeholders[updated.currentIndex].start
+                moveSnippetCursor(from: &updated, to: target)
+                snippetState = updated
+                return true
+            }
+            moveSnippetCursor(from: &updated, to: updated.finalCursorOffset)
+            snippetState = nil
+            return true
+        }
+
+        if updated.currentIndex + 1 < updated.placeholders.count {
+            updated.currentIndex += 1
+            let target = updated.placeholders[updated.currentIndex].start
+            moveSnippetCursor(from: &updated, to: target)
+            snippetState = updated
+            return true
+        }
+
+        moveSnippetCursor(from: &updated, to: updated.finalCursorOffset)
+        snippetState = nil
+        return true
+    }
+
+    private func moveSnippetCursor(from state: inout SnippetNavigationState, to targetOffset: Int) {
+        let delta = state.cursorOffset - targetOffset
+        if delta > 0 {
+            send(txt: "\u{1B}[\(delta)D")
+        } else if delta < 0 {
+            send(txt: "\u{1B}[\(-delta)C")
+        }
+        state.cursorOffset = targetOffset
+    }
+
+    private func isUnsafeForPlaceholderNavigation(_ text: String) -> Bool {
+        for scalar in text.unicodeScalars {
+            if !scalar.isASCII {
+                return true
+            }
+        }
+        return false
+    }
+}
+
+private struct SnippetNavigationState {
+    var placeholders: [SnippetPlaceholder]
+    var currentIndex: Int
+    var cursorOffset: Int
+    var finalCursorOffset: Int
 }

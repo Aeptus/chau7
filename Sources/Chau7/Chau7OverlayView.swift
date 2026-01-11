@@ -1,6 +1,10 @@
 import SwiftUI
 import AppKit
 
+private let overlayPanelBackground = Color(red: 0.10, green: 0.10, blue: 0.10)
+private let overlayRowBackground = Color(red: 0.16, green: 0.16, blue: 0.16)
+private let overlayChipBackground = Color(red: 0.22, green: 0.22, blue: 0.22)
+
 struct Chau7OverlayView: View {
     @ObservedObject var overlayModel: OverlayTabsModel
     @ObservedObject var appModel: AppModel
@@ -40,8 +44,7 @@ struct Chau7OverlayView: View {
                 HStack(spacing: 8) {
                     ForEach(overlayModel.tabs) { tab in
                         TabButton(
-                            title: tab.displayTitle,
-                            path: tab.session.displayPath(),
+                            customTitle: tab.customTitle,
                             session: tab.session,
                             isSelected: tab.id == overlayModel.selectedTabID,
                             isSuspended: overlayModel.isTabSuspended(tab.id),
@@ -109,16 +112,28 @@ struct Chau7OverlayView: View {
                     .zIndex(isSelected ? 1 : 0)
             }
 
+            if overlayModel.hasActiveOverlay {
+                Color.black.opacity(0.001)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        overlayModel.dismissOverlays()
+                    }
+                    .zIndex(5)
+            }
+
             if overlayModel.isSearchVisible {
                 SearchOverlayView(model: overlayModel)
                     .padding(.top, 12)
                     .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(10)
             }
 
             if overlayModel.isRenameVisible {
                 RenameOverlayView(model: overlayModel)
                     .padding(.top, 12)
                     .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(10)
             }
 
             // F16: Clipboard History
@@ -126,6 +141,7 @@ struct Chau7OverlayView: View {
                 ClipboardHistoryOverlayView(model: overlayModel)
                     .padding(.top, 12)
                     .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(10)
             }
 
             // F17: Bookmarks
@@ -133,14 +149,27 @@ struct Chau7OverlayView: View {
                 BookmarkListOverlayView(model: overlayModel)
                     .padding(.top, 12)
                     .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(10)
+            }
+
+            // F21: Snippets
+            if overlayModel.isSnippetManagerVisible {
+                SnippetManagerOverlayView(model: overlayModel)
+                    .padding(.top, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(10)
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: overlayModel.isSearchVisible)
+        .animation(.easeInOut(duration: 0.2), value: overlayModel.isRenameVisible)
+        .animation(.easeInOut(duration: 0.2), value: overlayModel.isClipboardHistoryVisible)
+        .animation(.easeInOut(duration: 0.2), value: overlayModel.isBookmarkListVisible)
+        .animation(.easeInOut(duration: 0.2), value: overlayModel.isSnippetManagerVisible)
     }
 }
 
 struct TabButton: View {
-    let title: String
-    let path: String
+    let customTitle: String?
     @ObservedObject var session: TerminalSessionModel
     let isSelected: Bool
     let isSuspended: Bool
@@ -151,16 +180,75 @@ struct TabButton: View {
     let onRename: () -> Void
     let onClose: () -> Void
 
+    private var resolvedTitle: String {
+        if let customTitle, !customTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return customTitle
+        }
+        if let activeName = session.activeAppName, !activeName.isEmpty {
+            return activeName
+        }
+        return "Shell"
+    }
+
+    private var resolvedPath: String {
+        session.displayPath()
+    }
+
+    /// Returns SF Symbol name for the detected AI product, or nil for regular shell
+    private var aiProductIcon: String? {
+        guard let appName = session.activeAppName else { return nil }
+        switch appName {
+        case "Claude":
+            return "brain.head.profile"  // Claude's AI assistant branding
+        case "Gemini":
+            return "sparkles"  // Gemini's star-like logo
+        case "Codex":
+            return "chevron.left.forwardslash.chevron.right"  // Code/developer branding
+        case "ChatGPT":
+            return "bubble.left.and.bubble.right.fill"  // Chat/conversation icon
+        case "Copilot":
+            return "airplane"  // Copilot aviation metaphor
+        default:
+            return nil
+        }
+    }
+
+    /// Returns brand color for the detected AI product
+    private var aiProductColor: Color {
+        guard let appName = session.activeAppName else { return .primary }
+        switch appName {
+        case "Claude":
+            return Color(red: 0.85, green: 0.55, blue: 0.35)  // Claude's orange/tan
+        case "Gemini":
+            return Color(red: 0.27, green: 0.53, blue: 0.93)  // Google blue
+        case "Codex":
+            return Color(red: 0.0, green: 0.65, blue: 0.52)   // OpenAI green
+        case "ChatGPT":
+            return Color(red: 0.0, green: 0.65, blue: 0.52)   // OpenAI green
+        case "Copilot":
+            return Color(red: 0.15, green: 0.15, blue: 0.15)  // GitHub dark
+        default:
+            return .primary
+        }
+    }
+
     var body: some View {
         let indicatorColor = isSuspended
             ? Color.gray.opacity(0.6)
             : (isSelected ? tabColor.color : tabColor.color.opacity(0.6))
 
         HStack(spacing: 8) {
-            Text(title.isEmpty ? "Shell" : title)
+            // AI product logo (persists even when tab is renamed)
+            if let icon = aiProductIcon {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(aiProductColor)
+            }
+
+            Text(resolvedTitle)
                 .font(.custom("Avenir Next", size: 12).weight(.semibold))
                 .lineLimit(1)
-            Text("- \(path)")
+            Text("- \(resolvedPath)")
                 .font(.custom("Avenir Next", size: 11))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -226,73 +314,116 @@ struct TabButton: View {
     }
 }
 
+struct DraggableOverlay<Content: View>: View {
+    let id: String
+    let workspace: String?
+    @ViewBuilder let content: Content
+    @ObservedObject private var settings = FeatureSettings.shared
+    @State private var dragOffset: CGSize = .zero
+    @GestureState private var dragTranslation: CGSize = .zero
+
+    init(id: String, workspace: String?, @ViewBuilder content: () -> Content) {
+        self.id = id
+        self.workspace = workspace
+        self.content = content()
+    }
+
+    var body: some View {
+        let workspaceKey = workspace ?? "global"
+        content
+            .offset(x: dragOffset.width + dragTranslation.width, y: dragOffset.height + dragTranslation.height)
+            .gesture(
+                DragGesture()
+                    .updating($dragTranslation) { value, state, _ in
+                        state = value.translation
+                    }
+                    .onEnded { value in
+                        dragOffset.width += value.translation.width
+                        dragOffset.height += value.translation.height
+                        settings.setOverlayOffset(dragOffset, for: id, workspace: workspace)
+                    }
+            )
+            .onAppear {
+                dragOffset = settings.overlayOffset(for: id, workspace: workspace)
+            }
+            .onChange(of: settings.overlayPositionsVersion) { _ in
+                dragOffset = settings.overlayOffset(for: id, workspace: workspace)
+            }
+            .onChange(of: workspaceKey) { _ in
+                dragOffset = settings.overlayOffset(for: id, workspace: workspace)
+            }
+    }
+}
+
 struct SearchOverlayView: View {
     @ObservedObject var model: OverlayTabsModel
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                TextField("Search terminal", text: $model.searchQuery)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($isFocused)
-                    .onChange(of: model.searchQuery) { _ in
+        DraggableOverlay(id: "search", workspace: model.overlayWorkspaceIdentifier) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    TextField("Search terminal", text: $model.searchQuery)
+                        .textFieldStyle(.roundedBorder)
+                        .focused($isFocused)
+                        .onChange(of: model.searchQuery) { _ in
+                            model.refreshSearch()
+                        }
+                        .onSubmit {
+                            model.nextMatch()
+                        }
+
+                    Text("\(model.searchMatchCount) matches")
+                        .font(.custom("Avenir Next", size: 11))
+                        .foregroundStyle(.secondary)
+
+                    // Case sensitivity toggle (Issue #23 fix)
+                    Toggle(isOn: $model.isCaseSensitive) {
+                        Text("Aa")
+                            .font(.custom("Avenir Next", size: 11).weight(.semibold))
+                    }
+                    .toggleStyle(.button)
+                    .controlSize(.small)
+                    .help("Case sensitive search")
+                    .onChange(of: model.isCaseSensitive) { _ in
                         model.refreshSearch()
                     }
-                    .onSubmit {
-                        model.nextMatch()
+
+                    Button("Close") {
+                        model.toggleSearch()
                     }
-
-                Text("\(model.searchMatchCount) matches")
-                    .font(.custom("Avenir Next", size: 11))
-                    .foregroundStyle(.secondary)
-
-                // Case sensitivity toggle (Issue #23 fix)
-                Toggle(isOn: $model.isCaseSensitive) {
-                    Text("Aa")
-                        .font(.custom("Avenir Next", size: 11).weight(.semibold))
-                }
-                .toggleStyle(.button)
-                .controlSize(.small)
-                .help("Case sensitive search")
-                .onChange(of: model.isCaseSensitive) { _ in
-                    model.refreshSearch()
+                    .controlSize(.small)
+                    // Note: Escape is handled by AppDelegate.handleKeyEvent()
                 }
 
-                Button("Close") {
-                    model.toggleSearch()
-                }
-                .controlSize(.small)
-                // Note: Escape is handled by AppDelegate.handleKeyEvent()
-            }
-
-            if model.searchResults.isEmpty && !model.searchQuery.isEmpty {
-                Text("No results")
-                    .font(.custom("Avenir Next", size: 11))
-                    .foregroundStyle(.secondary)
-            } else if !model.searchResults.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(model.searchResults, id: \.self) { line in
-                        SearchResultRow(line: line, query: model.searchQuery, caseSensitive: model.isCaseSensitive)
+                if model.searchResults.isEmpty && !model.searchQuery.isEmpty {
+                    Text("No results")
+                        .font(.custom("Avenir Next", size: 11))
+                        .foregroundStyle(.secondary)
+                } else if !model.searchResults.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(model.searchResults, id: \.self) { line in
+                            SearchResultRow(line: line, query: model.searchQuery, caseSensitive: model.isCaseSensitive)
+                        }
                     }
+                    .frame(maxHeight: 120)
                 }
-                .frame(maxHeight: 120)
-            }
 
-            HStack(spacing: 8) {
-                Button("Prev") { model.previousMatch() }
-                    .controlSize(.small)
-                    // Note: Cmd+Shift+G is in menu commands
-                Button("Next") { model.nextMatch() }
-                    .controlSize(.small)
-                    // Note: Cmd+G is in menu commands
+                HStack(spacing: 8) {
+                    Button("Prev") { model.previousMatch() }
+                        .controlSize(.small)
+                        // Note: Cmd+Shift+G is in menu commands
+                    Button("Next") { model.nextMatch() }
+                        .controlSize(.small)
+                        // Note: Cmd+G is in menu commands
+                }
             }
+            .padding(10)
+            .background(overlayPanelBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.horizontal, 16)
+            .onAppear { isFocused = true }
         }
-        .padding(10)
-        .background(Color.black.opacity(0.65))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .padding(.horizontal, 16)
-        .onAppear { isFocused = true }
     }
 }
 
@@ -336,46 +467,58 @@ struct RenameOverlayView: View {
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                TextField("Tab name", text: $model.renameText)
-                    .textFieldStyle(.roundedBorder)
-                    .focused($isFocused)
-                    // Issue #18 fix: Allow Enter key to confirm rename
-                    .onSubmit {
-                        model.commitRename()
-                    }
+        DraggableOverlay(id: "rename", workspace: model.overlayWorkspaceIdentifier) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    TextField("Tab name", text: $model.renameText)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(minWidth: 200)
+                        .focused($isFocused)
+                        // Issue #18 fix: Allow Enter key to confirm rename
+                        .onSubmit {
+                            model.commitRename()
+                        }
 
-                Button("Cancel") { model.cancelRename() }
-                    .controlSize(.small)
-                    // Note: Escape is handled by AppDelegate.handleKeyEvent()
-                Button("Save") { model.commitRename() }
-                    .controlSize(.small)
-                    // Note: Enter triggers onSubmit on the TextField
-            }
+                    Button("Cancel") { model.cancelRename() }
+                        .controlSize(.small)
+                        // Note: Escape is handled by AppDelegate.handleKeyEvent()
+                    Button("Save") { model.commitRename() }
+                        .controlSize(.small)
+                        // Note: Enter triggers onSubmit on the TextField
+                }
 
-            HStack(spacing: 8) {
-                ForEach(TabColor.allCases) { color in
-                    Button {
-                        model.renameColor = color
-                    } label: {
-                        Circle()
-                            .fill(color.color)
-                            .frame(width: 16, height: 16)
-                            .overlay(
-                                Circle()
-                                    .stroke(Color.white.opacity(model.renameColor == color ? 0.9 : 0.2), lineWidth: 2)
-                            )
+                HStack(spacing: 8) {
+                    Text("Color:")
+                        .font(.custom("Avenir Next", size: 11))
+                        .foregroundStyle(.secondary)
+                    ForEach(TabColor.allCases) { color in
+                        Button {
+                            model.renameColor = color
+                        } label: {
+                            Circle()
+                                .fill(color.color)
+                                .frame(width: 20, height: 20)
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.white.opacity(model.renameColor == color ? 1.0 : 0.3), lineWidth: model.renameColor == color ? 2.5 : 1.5)
+                                )
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
             }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(overlayPanelBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
+            )
+            .padding(.horizontal, 16)
+            .onAppear { isFocused = true }
         }
-        .padding(10)
-        .background(Color.black.opacity(0.70))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .padding(.horizontal, 16)
-        .onAppear { isFocused = true }
     }
 }
 
@@ -388,52 +531,54 @@ struct ClipboardHistoryOverlayView: View {
     @ObservedObject private var clipboardManager = ClipboardHistoryManager.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Clipboard History")
-                    .font(.custom("Avenir Next", size: 12).weight(.semibold))
-                Spacer()
-                Button("Clear") {
-                    clipboardManager.clear()
+        DraggableOverlay(id: "clipboard", workspace: model.overlayWorkspaceIdentifier) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Clipboard History")
+                        .font(.custom("Avenir Next", size: 12).weight(.semibold))
+                    Spacer()
+                    Button("Clear") {
+                        clipboardManager.clear()
+                    }
+                    .controlSize(.small)
+                    Button("Close") {
+                        model.toggleClipboardHistory()
+                    }
+                    .controlSize(.small)
                 }
-                .controlSize(.small)
-                Button("Close") {
-                    model.toggleClipboardHistory()
-                }
-                .controlSize(.small)
-            }
 
-            if clipboardManager.items.isEmpty {
-                Text("No clipboard history yet.")
-                    .font(.custom("Avenir Next", size: 11))
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 8)
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(clipboardManager.items) { item in
-                            ClipboardItemRow(item: item, onPaste: {
-                                model.pasteFromClipboardHistory(item)
-                            }, onPin: {
-                                clipboardManager.togglePin(item)
-                            }, onRemove: {
-                                clipboardManager.remove(item)
-                            })
+                if clipboardManager.items.isEmpty {
+                    Text("No clipboard history yet.")
+                        .font(.custom("Avenir Next", size: 11))
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 8)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(clipboardManager.items) { item in
+                                ClipboardItemRow(item: item, onPaste: {
+                                    model.pasteFromClipboardHistory(item)
+                                }, onPin: {
+                                    clipboardManager.togglePin(item)
+                                }, onRemove: {
+                                    clipboardManager.remove(item)
+                                })
+                            }
                         }
                     }
+                    .frame(maxHeight: 200)
                 }
-                .frame(maxHeight: 200)
-            }
 
-            Text("Click to paste • ⌘V to paste selected")
-                .font(.custom("Avenir Next", size: 10))
-                .foregroundStyle(.tertiary)
+                Text("Click to paste • ⌘V to paste selected")
+                    .font(.custom("Avenir Next", size: 10))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(10)
+            .background(overlayPanelBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.horizontal, 16)
+            .frame(maxWidth: 400)
         }
-        .padding(10)
-        .background(Color.black.opacity(0.75))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .padding(.horizontal, 16)
-        .frame(maxWidth: 400)
     }
 }
 
@@ -487,7 +632,7 @@ struct ClipboardItemRow: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(Color.white.opacity(0.05))
+        .background(overlayRowBackground)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture {
@@ -504,58 +649,60 @@ struct BookmarkListOverlayView: View {
     @State private var newBookmarkLabel: String = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Bookmarks")
-                    .font(.custom("Avenir Next", size: 12).weight(.semibold))
-                Spacer()
-                Button("Add") {
-                    model.addBookmark(label: newBookmarkLabel.isEmpty ? nil : newBookmarkLabel)
-                    newBookmarkLabel = ""
+        DraggableOverlay(id: "bookmarks", workspace: model.overlayWorkspaceIdentifier) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Bookmarks")
+                        .font(.custom("Avenir Next", size: 12).weight(.semibold))
+                    Spacer()
+                    Button("Add") {
+                        model.addBookmark(label: newBookmarkLabel.isEmpty ? nil : newBookmarkLabel)
+                        newBookmarkLabel = ""
+                    }
+                    .controlSize(.small)
+                    Button("Close") {
+                        model.toggleBookmarkList()
+                    }
+                    .controlSize(.small)
                 }
-                .controlSize(.small)
-                Button("Close") {
-                    model.toggleBookmarkList()
+
+                HStack(spacing: 8) {
+                    TextField("Bookmark label (optional)", text: $newBookmarkLabel)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11))
                 }
-                .controlSize(.small)
-            }
 
-            HStack(spacing: 8) {
-                TextField("Bookmark label (optional)", text: $newBookmarkLabel)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11))
-            }
-
-            let bookmarks = model.getBookmarksForCurrentTab()
-            if bookmarks.isEmpty {
-                Text("No bookmarks for this tab.")
-                    .font(.custom("Avenir Next", size: 11))
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 8)
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(bookmarks) { bookmark in
-                            BookmarkRow(bookmark: bookmark, onJump: {
-                                model.jumpToBookmark(bookmark)
-                            }, onRemove: {
-                                bookmarkManager.removeBookmark(bookmark)
-                            })
+                let bookmarks = model.getBookmarksForCurrentTab()
+                if bookmarks.isEmpty {
+                    Text("No bookmarks for this tab.")
+                        .font(.custom("Avenir Next", size: 11))
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 8)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(bookmarks) { bookmark in
+                                BookmarkRow(bookmark: bookmark, onJump: {
+                                    model.jumpToBookmark(bookmark)
+                                }, onRemove: {
+                                    bookmarkManager.removeBookmark(bookmark)
+                                })
+                            }
                         }
                     }
+                    .frame(maxHeight: 180)
                 }
-                .frame(maxHeight: 180)
-            }
 
-            Text("⌘B to add bookmark • Click to jump")
-                .font(.custom("Avenir Next", size: 10))
-                .foregroundStyle(.tertiary)
+                Text("⌘B to add bookmark • Click to jump")
+                    .font(.custom("Avenir Next", size: 10))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(10)
+            .background(overlayPanelBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.horizontal, 16)
+            .frame(maxWidth: 400)
         }
-        .padding(10)
-        .background(Color.black.opacity(0.75))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .padding(.horizontal, 16)
-        .frame(maxWidth: 400)
     }
 }
 
@@ -604,11 +751,303 @@ struct BookmarkRow: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(Color.white.opacity(0.05))
+        .background(overlayRowBackground)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture {
             onJump()
         }
+    }
+}
+
+// MARK: - F21: Snippets Overlay
+
+struct SnippetManagerOverlayView: View {
+    @ObservedObject var model: OverlayTabsModel
+    @ObservedObject private var manager = SnippetManager.shared
+    @ObservedObject private var settings = FeatureSettings.shared
+    @State private var query: String = ""
+    @State private var draft = SnippetDraft()
+    @State private var editingEntry: SnippetEntry?
+    @State private var isEditorVisible = false
+    @State private var deleteTarget: SnippetEntry?
+    @FocusState private var isFocused: Bool
+
+    private var repoAvailable: Bool {
+        FeatureSettings.shared.isRepoSnippetsEnabled && manager.repoRoot != nil
+    }
+
+    private var preferredSource: SnippetSource {
+        repoAvailable ? .repo : .global
+    }
+
+    var body: some View {
+        DraggableOverlay(id: "snippets", workspace: model.overlayWorkspaceIdentifier) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Snippets")
+                        .font(.custom("Avenir Next", size: 12).weight(.semibold))
+                    Spacer()
+                    Button("New") {
+                        startCreate()
+                    }
+                    .controlSize(.small)
+                    .disabled(!settings.isSnippetsEnabled)
+                    Button("Close") {
+                        model.toggleSnippetManager()
+                    }
+                    .controlSize(.small)
+                }
+
+                if !settings.isSnippetsEnabled {
+                    Text("Snippets are disabled in Settings.")
+                        .font(.custom("Avenir Next", size: 11))
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 8)
+                } else {
+                    TextField("Search snippets", text: $query)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11))
+                        .focused($isFocused)
+
+                    if isEditorVisible {
+                        SnippetEditorView(
+                            draft: $draft,
+                            isNew: editingEntry == nil,
+                            repoAvailable: repoAvailable,
+                            onCancel: cancelEdit,
+                            onSave: saveEdit
+                        )
+                    } else {
+                        let filtered = manager.filteredEntries(query: query)
+                        if filtered.isEmpty {
+                            Text("No snippets found.")
+                                .font(.custom("Avenir Next", size: 11))
+                                .foregroundStyle(.secondary)
+                                .padding(.vertical, 8)
+                        } else {
+                            ScrollView {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    ForEach(filtered) { entry in
+                                        SnippetRowView(
+                                            entry: entry,
+                                            onInsert: { model.insertSnippet(entry) },
+                                            onEdit: { startEdit(entry) },
+                                            onDelete: { deleteTarget = entry }
+                                        )
+                                    }
+                                }
+                            }
+                            .frame(maxHeight: 260)
+                        }
+                    }
+                }
+
+                if let root = manager.repoRoot, settings.isRepoSnippetsEnabled {
+                    Text("Repo: \(root)")
+                        .font(.custom("Avenir Next", size: 9))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .padding(10)
+            .background(overlayPanelBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .padding(.horizontal, 16)
+            .frame(maxWidth: 520)
+            .onAppear { isFocused = true }
+            .alert(item: $deleteTarget) { entry in
+                Alert(
+                    title: Text("Delete snippet?"),
+                    message: Text(entry.snippet.title),
+                    primaryButton: .destructive(Text("Delete")) {
+                        manager.deleteSnippet(entry)
+                    },
+                    secondaryButton: .cancel()
+                )
+            }
+        }
+    }
+
+    private func startCreate() {
+        draft = SnippetDraft(source: preferredSource)
+        editingEntry = nil
+        isEditorVisible = true
+    }
+
+    private func startEdit(_ entry: SnippetEntry) {
+        draft = SnippetDraft(
+            id: entry.snippet.id,
+            title: entry.snippet.title,
+            body: entry.snippet.body,
+            tagsText: entry.snippet.tags.joined(separator: ", "),
+            folder: entry.snippet.folder ?? "",
+            shellsText: entry.snippet.shells?.joined(separator: ", ") ?? "",
+            source: entry.source
+        )
+        editingEntry = entry
+        isEditorVisible = true
+    }
+
+    private func cancelEdit() {
+        isEditorVisible = false
+        editingEntry = nil
+    }
+
+    private func saveEdit() {
+        let cleaned = draft.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return }
+        var finalDraft = draft
+        finalDraft.title = cleaned
+        if let entry = editingEntry {
+            manager.updateSnippet(entry: entry, with: finalDraft)
+        } else {
+            manager.createSnippet(from: finalDraft)
+        }
+        isEditorVisible = false
+        editingEntry = nil
+    }
+}
+
+struct SnippetRowView: View {
+    let entry: SnippetEntry
+    let onInsert: () -> Void
+    let onEdit: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(entry.snippet.title)
+                        .font(.custom("Avenir Next", size: 11).weight(.semibold))
+
+                    Text(entry.source.displayName.uppercased())
+                        .font(.system(size: 8, weight: .semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(overlayChipBackground)
+                        .clipShape(Capsule())
+
+                    if entry.isOverridden {
+                        Text("OVERRIDDEN")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Text(entry.snippet.body)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+
+                if !entry.snippet.tags.isEmpty {
+                    Text(entry.snippet.tags.joined(separator: ", "))
+                        .font(.custom("Avenir Next", size: 9))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            Spacer()
+
+            HStack(spacing: 4) {
+                Button(action: onInsert) {
+                    Image(systemName: "arrow.down.doc")
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.plain)
+                .help("Insert")
+
+                Button(action: onEdit) {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.plain)
+                .help("Edit")
+
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 10))
+                }
+                .buttonStyle(.plain)
+                .help("Delete")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(overlayRowBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onInsert()
+        }
+    }
+}
+
+struct SnippetEditorView: View {
+    @Binding var draft: SnippetDraft
+    let isNew: Bool
+    let repoAvailable: Bool
+    let onCancel: () -> Void
+    let onSave: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(isNew ? "New Snippet" : "Edit Snippet")
+                .font(.custom("Avenir Next", size: 11).weight(.semibold))
+
+            HStack(spacing: 8) {
+                TextField("Title", text: $draft.title)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 11))
+                TextField("ID (optional)", text: $draft.id)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10, design: .monospaced))
+            }
+
+            TextEditor(text: $draft.body)
+                .font(.system(size: 11, design: .monospaced))
+                .frame(height: 90)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color.white.opacity(0.1), lineWidth: 1)
+                )
+
+            HStack(spacing: 8) {
+                TextField("Tags (comma separated)", text: $draft.tagsText)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10))
+                TextField("Folder", text: $draft.folder)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10))
+            }
+
+            HStack(spacing: 8) {
+                TextField("Shells (zsh, bash, fish)", text: $draft.shellsText)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10))
+
+                Picker("Location", selection: $draft.source) {
+                    Text("Global").tag(SnippetSource.global)
+                    Text("Profile").tag(SnippetSource.profile)
+                    if repoAvailable {
+                        Text("Repo").tag(SnippetSource.repo)
+                    }
+                }
+                .frame(maxWidth: 140)
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") { onCancel() }
+                    .controlSize(.small)
+                Button("Save") { onSave() }
+                    .controlSize(.small)
+            }
+        }
+        .padding(8)
+        .background(overlayRowBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
