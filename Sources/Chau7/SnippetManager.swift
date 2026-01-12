@@ -126,12 +126,16 @@ struct SnippetInsertion {
     let finalCursorOffset: Int
 }
 
+/// Manages code snippets with support for global, profile, and repository scopes.
+/// - Note: Thread Safety - @Published properties must be modified on main thread.
+///   Background file operations dispatch to main via DispatchQueue.main.async.
 final class SnippetManager: ObservableObject {
     static let shared = SnippetManager()
 
     @Published private(set) var entries: [SnippetEntry] = []
     @Published private(set) var repoRoot: String?
 
+    /// Background queue for file I/O operations
     private let queue = DispatchQueue(label: "com.chau7.snippets", qos: .utility)
     private var globalMonitor: FileMonitor?
     private var profileMonitor: FileMonitor?
@@ -534,27 +538,29 @@ final class SnippetManager: ObservableObject {
 
     private func ensureBaseDirectories() {
         let base = supportDirectory().appendingPathComponent("snippets", isDirectory: true)
-        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        FileOperations.createDirectory(at: base)
     }
 
     private func ensureSnippetFileExists(at url: URL) {
         let dir = url.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        FileOperations.createDirectory(at: dir)
         guard !FileManager.default.fileExists(atPath: url.path) else { return }
         let file = SnippetFile(version: 1, snippets: [])
         saveSnippets(file.snippets, to: url)
     }
 
     private func loadSnippets(from url: URL) -> [Snippet] {
-        guard let data = try? Data(contentsOf: url) else { return [] }
+        guard let data = FileOperations.readData(from: url) else { return [] }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        if let file = try? decoder.decode(SnippetFile.self, from: data) {
+        // Try current format first, then legacy format
+        if let file = JSONOperations.decode(SnippetFile.self, from: data, context: "snippet file \(url.lastPathComponent)") {
             return file.snippets
         }
-        if let legacy = try? decoder.decode([Snippet].self, from: data) {
+        if let legacy = JSONOperations.decode([Snippet].self, from: data, context: "legacy snippets \(url.lastPathComponent)") {
             return legacy
         }
+        Log.warn("Could not decode snippets from \(url.lastPathComponent)")
         return []
     }
 
@@ -563,10 +569,12 @@ final class SnippetManager: ObservableObject {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        guard let data = try? encoder.encode(file) else { return }
+        guard let data = JSONOperations.encode(file, context: "snippets \(url.lastPathComponent)") else {
+            return
+        }
         let dir = url.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try? data.write(to: url, options: [.atomic])
+        FileOperations.createDirectory(at: dir)
+        FileOperations.writeData(data, to: url, options: [.atomic])
     }
 
     private func supportDirectory() -> URL {

@@ -1,6 +1,26 @@
 import AppKit
 
+// MARK: - ANSI Escape Sequence Parser
+
+/// Parses ANSI escape sequences in terminal output and converts them to attributed strings.
+///
+/// Supports:
+/// - SGR (Select Graphic Rendition) codes for text styling
+/// - 16-color (standard), 256-color, and 24-bit true color
+/// - Text attributes: bold, dim, italic, underline, inverse
+/// - OSC (Operating System Command) sequences (skipped)
+///
+/// ## Usage
+/// ```swift
+/// let attributed = AnsiParser.attributedString(
+///     for: "\u{1B}[31mRed text\u{1B}[0m",
+///     baseFont: .monospacedSystemFont(ofSize: 12, weight: .regular),
+///     baseFg: .white,
+///     baseBg: .black
+/// )
+/// ```
 enum AnsiParser {
+    /// Text styling attributes extracted from ANSI SGR codes.
     struct Style: Equatable {
         var fg: NSColor?
         var bg: NSColor?
@@ -21,6 +41,14 @@ enum AnsiParser {
         )
     }
 
+    /// Converts a line of terminal text with ANSI escape sequences to an attributed string.
+    ///
+    /// - Parameters:
+    ///   - line: Raw terminal line potentially containing ANSI escape sequences
+    ///   - baseFont: Font to use for unstyled text
+    ///   - baseFg: Default foreground color
+    ///   - baseBg: Default background color
+    /// - Returns: Styled attributed string with colors and formatting applied
     static func attributedString(for line: String, baseFont: NSFont, baseFg: NSColor, baseBg: NSColor) -> NSAttributedString {
         let input = TerminalNormalizer.applyBackspacesOnly(line)
         let result = NSMutableAttributedString()

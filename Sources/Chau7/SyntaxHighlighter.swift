@@ -3,9 +3,19 @@ import AppKit
 
 // MARK: - F08: Smart Syntax Highlighting
 
-/// Provides syntax highlighting for terminal output
+/// Provides syntax highlighting for terminal output with caching and background processing.
 final class SyntaxHighlighter {
     static let shared = SyntaxHighlighter()
+
+    // MARK: - Highlighting Cache (Performance Optimization)
+
+    /// LRU cache for highlighted lines to avoid re-processing identical content
+    private var highlightCache: [String: NSAttributedString] = [:]
+    private let cacheQueue = DispatchQueue(label: "com.chau7.highlightCache")
+    private let maxCacheSize = 500
+
+    /// Background queue for expensive highlighting operations
+    private let highlightQueue = DispatchQueue(label: "com.chau7.highlight", qos: .userInitiated)
 
     // MARK: - Pattern Definitions
 
@@ -88,12 +98,41 @@ final class SyntaxHighlighter {
 
     // MARK: - Highlighting
 
-    /// Highlights a line of text and returns an attributed string
+    /// Highlights a line of text and returns an attributed string.
+    /// Uses caching to avoid re-processing identical lines.
     func highlight(_ text: String) -> NSAttributedString {
         guard FeatureSettings.shared.isSyntaxHighlightEnabled else {
             return NSAttributedString(string: text)
         }
 
+        // Check cache first (thread-safe)
+        var cachedResult: NSAttributedString?
+        cacheQueue.sync {
+            cachedResult = highlightCache[text]
+        }
+        if let cached = cachedResult {
+            return cached
+        }
+
+        // Perform highlighting
+        let result = performHighlight(text)
+
+        // Cache the result (thread-safe, with size limit)
+        cacheQueue.async { [weak self] in
+            guard let self else { return }
+            if self.highlightCache.count >= self.maxCacheSize {
+                // Simple eviction: remove ~25% of entries
+                let keysToRemove = Array(self.highlightCache.keys.prefix(self.maxCacheSize / 4))
+                keysToRemove.forEach { self.highlightCache.removeValue(forKey: $0) }
+            }
+            self.highlightCache[text] = result
+        }
+
+        return result
+    }
+
+    /// Core highlighting logic (no caching)
+    private func performHighlight(_ text: String) -> NSAttributedString {
         let attributed = NSMutableAttributedString(string: text)
         let range = NSRange(location: 0, length: text.utf16.count)
 
@@ -118,13 +157,39 @@ final class SyntaxHighlighter {
         return attributed
     }
 
-    /// Highlights multiple lines efficiently
+    /// Highlights multiple lines efficiently using cache
     func highlightLines(_ lines: [String]) -> [NSAttributedString] {
         guard FeatureSettings.shared.isSyntaxHighlightEnabled else {
             return lines.map { NSAttributedString(string: $0) }
         }
 
         return lines.map { highlight($0) }
+    }
+
+    /// Highlights lines asynchronously on a background queue.
+    /// - Parameters:
+    ///   - lines: Lines to highlight
+    ///   - completion: Called on main thread with results
+    func highlightLinesAsync(_ lines: [String], completion: @escaping ([NSAttributedString]) -> Void) {
+        guard FeatureSettings.shared.isSyntaxHighlightEnabled else {
+            completion(lines.map { NSAttributedString(string: $0) })
+            return
+        }
+
+        highlightQueue.async { [weak self] in
+            guard let self else { return }
+            let results = lines.map { self.highlight($0) }
+            DispatchQueue.main.async {
+                completion(results)
+            }
+        }
+    }
+
+    /// Clears the highlight cache (call when color settings change)
+    func clearCache() {
+        cacheQueue.async { [weak self] in
+            self?.highlightCache.removeAll()
+        }
     }
 
     // MARK: - Pattern Application
@@ -161,8 +226,6 @@ final class SyntaxHighlighter {
 
 /// Detects semantic meaning in terminal output for F07 search
 final class SemanticOutputDetector: ObservableObject {
-    static let shared = SemanticOutputDetector()
-
     /// Represents a detected command block
     struct CommandBlock: Identifiable {
         let id = UUID()
@@ -178,9 +241,7 @@ final class SemanticOutputDetector: ObservableObject {
     @Published private(set) var blocks: [CommandBlock] = []
 
     /// Current block being built
-    private var currentBlock: (command: String, startRow: Int, timestamp: Date)?
-
-    private init() {}
+    private var currentBlock: (command: String, startRow: Int, lastRow: Int, timestamp: Date, exitCode: Int32?)?
 
     // MARK: - Detection
 
@@ -193,12 +254,13 @@ final class SemanticOutputDetector: ObservableObject {
             blocks.append(CommandBlock(
                 command: current.command,
                 startRow: current.startRow,
-                endRow: row - 1,
-                timestamp: current.timestamp
+                endRow: max(current.lastRow, current.startRow),
+                timestamp: current.timestamp,
+                exitCode: current.exitCode
             ))
         }
 
-        currentBlock = (command, row, Date())
+        currentBlock = (command, row, row, Date(), nil)
     }
 
     /// Called when a command finishes
@@ -209,7 +271,7 @@ final class SemanticOutputDetector: ObservableObject {
         var block = CommandBlock(
             command: current.command,
             startRow: current.startRow,
-            endRow: row,
+            endRow: max(row, current.startRow),
             timestamp: current.timestamp
         )
         block.exitCode = exitCode
@@ -217,17 +279,50 @@ final class SemanticOutputDetector: ObservableObject {
         currentBlock = nil
     }
 
+    /// Update the last seen row for the active command block
+    func updateCurrentRow(_ row: Int) {
+        guard FeatureSettings.shared.isSemanticSearchEnabled else { return }
+        guard var current = currentBlock else { return }
+        if row > current.lastRow {
+            current.lastRow = row
+            currentBlock = current
+        }
+    }
+
     /// Finds blocks matching a query
     func search(query: String) -> [CommandBlock] {
         let lowercased = query.lowercased()
-        return blocks.filter { block in
+        var results = blocks.filter { block in
             block.command.lowercased().contains(lowercased)
         }
+        if let current = currentBlock,
+           current.command.lowercased().contains(lowercased) {
+            results.append(CommandBlock(
+                command: current.command,
+                startRow: current.startRow,
+                endRow: max(current.lastRow, current.startRow),
+                timestamp: current.timestamp,
+                exitCode: current.exitCode
+            ))
+        }
+        return results
     }
 
     /// Finds error blocks
     func findErrors() -> [CommandBlock] {
-        return blocks.filter { $0.isError }
+        var results = blocks.filter { $0.isError }
+        if let current = currentBlock,
+           let exitCode = current.exitCode,
+           exitCode != 0 {
+            results.append(CommandBlock(
+                command: current.command,
+                startRow: current.startRow,
+                endRow: max(current.lastRow, current.startRow),
+                timestamp: current.timestamp,
+                exitCode: exitCode
+            ))
+        }
+        return results
     }
 
     /// Clears all tracked blocks

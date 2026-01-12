@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Chau7Core
 
 // MARK: - SSH Connection Model
 
@@ -54,15 +55,22 @@ struct SSHConnection: Identifiable, Codable, Equatable, Hashable {
 
         if !identityFile.isEmpty {
             let expanded = (identityFile as NSString).expandingTildeInPath
-            parts.append("-i \"\(expanded)\"")
+            // Use proper shell escaping for identity file path
+            parts.append("-i \(ShellEscaping.escapePath(expanded))")
         }
 
         if !jumpHost.isEmpty {
-            parts.append("-J \"\(jumpHost)\"")
+            // Use proper shell escaping for jump host
+            parts.append("-J \(ShellEscaping.escapeArgument(jumpHost))")
         }
 
         if !extraOptions.isEmpty {
-            parts.append(extraOptions)
+            // Validate extra options before including them
+            let validation = ShellEscaping.validateSSHOptions(extraOptions)
+            if validation.isValid {
+                parts.append(extraOptions)
+            }
+            // If invalid, skip the extra options silently for security
         }
 
         if !user.isEmpty {
@@ -72,6 +80,11 @@ struct SSHConnection: Identifiable, Codable, Equatable, Hashable {
         }
 
         return parts.joined(separator: " ")
+    }
+
+    /// Validates the extra SSH options for security
+    var extraOptionsValidation: ShellEscaping.SSHValidationResult {
+        ShellEscaping.validateSSHOptions(extraOptions)
     }
 }
 
@@ -92,15 +105,17 @@ final class SSHConnectionManager: ObservableObject {
 
     func loadConnections() {
         if let data = UserDefaults.standard.data(forKey: storageKey),
-           let decoded = try? JSONDecoder().decode([SSHConnection].self, from: data) {
+           let decoded = JSONOperations.decode([SSHConnection].self, from: data, context: "SSH connections") {
             connections = decoded
         }
         folders = UserDefaults.standard.stringArray(forKey: foldersKey) ?? []
     }
 
     func saveConnections() {
-        if let encoded = try? JSONEncoder().encode(connections) {
+        if let encoded = JSONOperations.encode(connections, context: "SSH connections") {
             UserDefaults.standard.set(encoded, forKey: storageKey)
+        } else {
+            Log.error("Failed to save SSH connections - encoding failed")
         }
         UserDefaults.standard.set(folders, forKey: foldersKey)
     }
@@ -143,8 +158,7 @@ final class SSHConnectionManager: ObservableObject {
     // Import from ~/.ssh/config
     func importFromSSHConfig() -> Int {
         let configPath = (("~/.ssh/config" as NSString).expandingTildeInPath)
-        guard let content = try? String(contentsOfFile: configPath, encoding: .utf8) else {
-            Log.warn("SSH: Could not read ~/.ssh/config")
+        guard let content = FileOperations.readString(from: configPath) else {
             return 0
         }
 
@@ -444,6 +458,10 @@ private struct ConnectionRow: View {
         .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
         .cornerRadius(4)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("SSH connection: \(connection.displayName), host: \(connection.host)")
+        .accessibilityHint("Double-tap to connect")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func colorForTag(_ tag: String) -> Color {
@@ -618,6 +636,16 @@ private struct ConnectionEditorView: View {
                 Section("Advanced") {
                     TextField("Jump Host (ProxyJump)", text: $connection.jumpHost)
                     TextField("Extra SSH Options", text: $connection.extraOptions)
+
+                    // Show validation warning for dangerous options
+                    if !connection.extraOptions.isEmpty {
+                        let validation = connection.extraOptionsValidation
+                        if !validation.isValid {
+                            Label(validation.reason ?? "Invalid options", systemImage: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                                .font(.caption)
+                        }
+                    }
                 }
 
                 Section("Appearance") {

@@ -32,6 +32,15 @@ final class CommandDetectionTests: XCTestCase {
         XCTAssertEqual(CommandDetection.detectApp(from: "codex-cli"), "Codex")
     }
 
+    func testDetectAider() {
+        XCTAssertEqual(CommandDetection.detectApp(from: "aider"), "Aider")
+        XCTAssertEqual(CommandDetection.detectApp(from: "aider-chat"), "Aider")
+    }
+
+    func testDetectCursor() {
+        XCTAssertEqual(CommandDetection.detectApp(from: "cursor"), "Cursor")
+    }
+
     func testUnknownCommand() {
         XCTAssertNil(CommandDetection.detectApp(from: "vim"))
         XCTAssertNil(CommandDetection.detectApp(from: "ls -la"))
@@ -150,6 +159,21 @@ final class CommandDetectionTests: XCTestCase {
     func testDetectCopilotFromOutput() {
         XCTAssertEqual(CommandDetection.detectAppFromOutput("GitHub Copilot CLI"), "Copilot")
         XCTAssertEqual(CommandDetection.detectAppFromOutput("Copilot CLI ready"), "Copilot")
+    }
+
+    func testDetectCodexFromOutput() {
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("OpenAI Codex"), "Codex")
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("╭─ Codex"), "Codex")
+    }
+
+    func testDetectAiderFromOutput() {
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("Aider is running"), "Aider")
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("https://aider.chat"), "Aider")
+    }
+
+    func testDetectCursorFromOutput() {
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("Cursor CLI ready"), "Cursor")
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("cursor.sh"), "Cursor")
     }
 
     func testNoDetectionFromOutput() {

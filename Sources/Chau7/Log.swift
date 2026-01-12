@@ -14,6 +14,14 @@ enum Log {
     private static var fileHandle: FileHandle?
     private static var isConfigured = false
     private static var filePathValue = ""
+    private static var writeCount = 0
+    private static let maxLogBytes: Int = {
+        if let raw = EnvVars.get(EnvVars.logMaxBytes),
+           let value = Int(raw), value > 0 {
+            return value
+        }
+        return 10 * 1024 * 1024
+    }()
 
     static let isVerbose: Bool = {
         if EnvVars.get(EnvVars.verbose, legacy: EnvVars.legacyVerbose) == "1" {
@@ -48,6 +56,7 @@ enum Log {
 
         let url = URL(fileURLWithPath: path)
         let dir = url.deletingLastPathComponent()
+        // Note: Can't use FileOperations here to avoid circular dependency with Log
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         if !FileManager.default.fileExists(atPath: url.path) {
@@ -95,6 +104,35 @@ enum Log {
         let data = (line + "\n").data(using: .utf8) ?? Data()
         fileQueue.async {
             try? handle.write(contentsOf: data)
+            writeCount += 1
+            if writeCount % 200 == 0 {
+                trimLogFileIfNeeded()
+            }
         }
+    }
+
+    private static func trimLogFileIfNeeded() {
+        guard maxLogBytes > 0 else { return }
+        let url = URL(fileURLWithPath: filePathValue)
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? UInt64 else {
+            return
+        }
+        let maxBytes = UInt64(maxLogBytes)
+        guard size > maxBytes else { return }
+
+        let keepBytes = maxBytes / 2
+        guard let readHandle = try? FileHandle(forReadingFrom: url) else { return }
+        defer { try? readHandle.close() }
+
+        let start = size > keepBytes ? size - keepBytes : 0
+        try? readHandle.seek(toOffset: start)
+        guard let tailData = try? readHandle.readToEnd() else { return }
+
+        try? fileHandle?.close()
+        guard let writeHandle = try? FileHandle(forWritingTo: url) else { return }
+        try? writeHandle.truncate(atOffset: 0)
+        try? writeHandle.write(contentsOf: tailData)
+        try? writeHandle.seekToEnd()
+        fileHandle = writeHandle
     }
 }

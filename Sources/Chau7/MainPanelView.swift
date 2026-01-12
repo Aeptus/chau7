@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import Chau7Core
 
 // MARK: - Settings Window Wrapper
 
@@ -206,13 +207,9 @@ struct MenuBarPanelView: View {
 struct StreamView: View {
     let selection: StreamSelection
     @ObservedObject var model: AppModel
+    @ObservedObject private var settings = FeatureSettings.shared
 
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .none
-        formatter.timeStyle = .medium
-        return formatter
-    }()
+    private static let timeFormatter = Formatters.mediumTime
 
     var body: some View {
         switch selection {
@@ -268,9 +265,7 @@ struct StreamView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     ForEach(lines.indices, id: \.self) { index in
                         let line = lines[index]
-                        Text(line)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(line.hasPrefix("[INPUT]") ? .primary : .secondary)
+                        lineView(for: line, isInput: line.hasPrefix("[INPUT]"))
                     }
                 }
             }
@@ -298,13 +293,27 @@ struct StreamView: View {
                     ForEach(lines.indices, id: \.self) { index in
                         let line = lines[index]
                         let display = model.isTerminalNormalize ? TerminalNormalizer.normalize(line) : line
-                        Text(display)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(display.hasPrefix("[INPUT]") ? .primary : .secondary)
+                        lineView(for: display, isInput: display.hasPrefix("[INPUT]"))
                     }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private func lineView(for line: String, isInput: Bool) -> some View {
+        let prettyLine = settings.isJSONPrettyPrintEnabled
+            ? (JSONPrettyPrinter.prettyPrint(line) ?? line)
+            : line
+        if settings.isSyntaxHighlightEnabled {
+            let attributed = SyntaxHighlighter.shared.highlight(prettyLine)
+            Text(AttributedString(attributed))
+                .font(.system(size: 11, design: .monospaced))
+        } else {
+            Text(prettyLine)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(isInput ? .primary : .secondary)
         }
     }
 }

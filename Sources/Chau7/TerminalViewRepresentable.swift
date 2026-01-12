@@ -8,10 +8,22 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     @ObservedObject private var settings = FeatureSettings.shared
 
     func makeNSView(context: Context) -> Chau7TerminalView {
+        // Reuse existing terminal view if available (preserves shell session across SwiftUI view recreations)
+        if let existingView = model.existingTerminalView {
+            Log.trace("Reusing existing terminal view for session")
+            existingView.notifyUpdateChanges = !isSuspended
+            existingView.isHidden = isSuspended
+            return existingView
+        }
+
+        // Create new terminal view and start shell process
         let view = Chau7TerminalView(frame: .zero)
         view.processDelegate = model
         view.font = terminalFont()
         view.applyColorScheme(settings.currentColorScheme)
+        view.applyCursorStyle(style: settings.cursorStyle, blink: settings.cursorBlink)
+        view.applyBellSettings(enabled: settings.bellEnabled, sound: settings.bellSound)
+        view.applyScrollbackLines(settings.scrollbackLines)
         view.notifyUpdateChanges = !isSuspended
         view.isHidden = isSuspended
         view.allowMouseReporting = false
@@ -42,10 +54,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         model.attachHighlightView(highlightView)
 
         // Give instant feedback while the shell is starting.
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "EEE MMM d HH:mm:ss"
-        let timestamp = formatter.string(from: Date())
+        let timestamp = Formatters.terminalLogin.string(from: Date())
         view.feed(text: "Last login: \(timestamp)\r\n")
 
         let shell = model.defaultShell()
@@ -84,6 +93,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             nsView.font = desiredFont
         }
         nsView.applyColorScheme(settings.currentColorScheme)
+        nsView.applyCursorStyle(style: settings.cursorStyle, blink: settings.cursorBlink)
+        nsView.applyBellSettings(enabled: settings.bellEnabled, sound: settings.bellSound)
+        nsView.applyScrollbackLines(settings.scrollbackLines)
     }
 
     private func terminalFont() -> NSFont {

@@ -218,26 +218,20 @@ Chau7 is a macOS menu bar helper and terminal overlay built for AI-assisted CLI 
 | CHAU7_TERMINAL_NORMALIZE | Normalize PTY log output (0 disables) |
 | CHAU7_TERMINAL_ANSI | Render ANSI in PTY log viewer (0 disables) |
 | CHAU7_LOG_FILE | Override app log file path |
+| CHAU7_LOG_MAX_BYTES | Max app log size before trimming (default 10MB) |
 | CHAU7_VERBOSE | Verbose logging (1 enables) |
 | CHAU7_TRACE | Trace logging (1 enables) |
 | CHAU7_CLEAR_ON_LAUNCH | Disable clear-on-launch when set to 0/false |
 | CHAU7_PTY_DUMP | Enable raw PTY capture (1 enables) |
 | CHAU7_TRACE_PTY | Same as CHAU7_PTY_DUMP |
 | CHAU7_PTY_DUMP_PATH | Override PTY capture log path |
+| CHAU7_PTY_DUMP_MAX_BYTES | Max PTY capture log size before trimming (default 20MB) |
 
 Legacy AI_* and SMART_OVERLAY_* environment variables are still supported.
 
 ## Experimental or Not Yet Wired
 
-The following items exist in code or settings UI but are not fully wired into the live terminal UI yet:
-
-- Split panes (controller and UI shell exist, not integrated into overlay).
-- Semantic search (command block tracking exists, no UI).
-- Syntax highlighting for live terminal output (engine exists, not attached).
-- Inline images (iTerm2 imgcat parser exists, not attached).
-- Pretty print JSON (setting only).
-- System theme selection for the overlay (setting only).
-- Launch at login toggle in Settings (use LaunchAgent sample for now).
+- Syntax highlighting currently applies to log stream views; live terminal output uses ANSI styling.
 - Tab bar visibility toggle (UI only).
 - Keybinding presets and shortcut editor (stored in settings, not used by runtime).
 - Bell, cursor style/blink, and scrollback size settings (UI only).

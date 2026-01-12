@@ -53,7 +53,7 @@ enum ClaudeCodeEventParser {
             throw ParseError.invalidJSON
         }
 
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        guard let json = JSONOperations.parseJSON(from: data, context: "ClaudeCodeEvent") else {
             throw ParseError.invalidJSON
         }
 
@@ -161,7 +161,7 @@ enum ClaudeTranscriptParser {
         for line in lines {
             guard !line.isEmpty,
                   let data = line.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                  let json = JSONOperations.parseJSON(from: data, context: "transcript line") else {
                 continue
             }
 

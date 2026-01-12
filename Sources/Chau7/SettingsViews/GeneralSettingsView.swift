@@ -7,7 +7,6 @@ import UniformTypeIdentifiers
 struct GeneralSettingsView: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var settings = FeatureSettings.shared
-    @State private var launchAtLogin = false
     @State private var showExportSheet = false
     @State private var showImportSheet = false
     @State private var showResetConfirmation = false
@@ -24,7 +23,7 @@ struct GeneralSettingsView: View {
             SettingsToggle(
                 label: "Launch at Login",
                 help: "Automatically start Chau7 when you log in to your Mac",
-                isOn: $launchAtLogin
+                isOn: $settings.launchAtLogin
             )
 
             SettingsTextField(

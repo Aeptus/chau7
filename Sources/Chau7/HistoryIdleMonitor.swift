@@ -1,4 +1,5 @@
 import Foundation
+import Chau7Core
 
 enum HistorySessionState: String {
     case active

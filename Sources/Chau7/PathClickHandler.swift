@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Chau7Core
 
 // MARK: - F03: Path Click Handler
 
@@ -68,41 +69,51 @@ struct PathClickHandler {
             editorCommand = ProcessInfo.processInfo.environment["EDITOR"] ?? ""
         }
 
+        // Validate and sanitize the path before use
+        guard ShellEscaping.isValidPath(fullPath) else {
+            Log.warn("PathClickHandler: Invalid path detected, refusing to open")
+            return
+        }
+        let safePath = ShellEscaping.escapePath(fullPath)
+
         if editorCommand.isEmpty {
             // Use system default (open command)
             if let line = match.line {
                 // Try common editors with line number support
+                // Using properly escaped path for security
                 let commonEditors = [
-                    ("code", "--goto \"\(fullPath):\(line):\(match.column ?? 1)\""),
-                    ("subl", "\"\(fullPath):\(line):\(match.column ?? 1)\""),
-                    ("atom", "\"\(fullPath):\(line):\(match.column ?? 1)\"")
+                    ("code", "--goto \(safePath):\(line):\(match.column ?? 1)"),
+                    ("subl", "\(safePath):\(line):\(match.column ?? 1)"),
+                    ("atom", "\(safePath):\(line):\(match.column ?? 1)")
                 ]
 
                 for (editor, args) in commonEditors {
-                    if let _ = findExecutable(editor) {
-                        runCommand("\(editor) \(args)")
+                    if let editorPath = findExecutable(editor) {
+                        runCommand(ShellEscaping.escapeArgument(editorPath) + " " + args)
                         return
                     }
                 }
             }
 
-            // Fallback: just open the file
+            // Fallback: just open the file using NSWorkspace (safe, no shell)
             NSWorkspace.shared.open(URL(fileURLWithPath: fullPath))
         } else {
-            // Use configured editor
+            // Use configured editor with proper escaping
+            let safeEditor = ShellEscaping.escapeArgument(editorCommand)
+
             if let line = match.line {
                 // Try to add line number based on editor
                 if editorCommand.contains("code") || editorCommand.contains("subl") {
-                    runCommand("\(editorCommand) --goto \"\(fullPath):\(line):\(match.column ?? 1)\"")
+                    runCommand("\(safeEditor) --goto \(safePath):\(line):\(match.column ?? 1)")
                 } else if editorCommand.contains("vim") || editorCommand.contains("nvim") {
-                    runCommand("\(editorCommand) +\(line) \"\(fullPath)\"")
+                    runCommand("\(safeEditor) +\(line) \(safePath)")
                 } else if editorCommand.contains("emacs") {
-                    runCommand("\(editorCommand) +\(line):\(match.column ?? 1) \"\(fullPath)\"")
+                    runCommand("\(safeEditor) +\(line):\(match.column ?? 1) \(safePath)")
                 } else {
-                    runCommand("\(editorCommand) \"\(fullPath)\"")
+                    runCommand("\(safeEditor) \(safePath)")
                 }
             } else {
-                runCommand("\(editorCommand) \"\(fullPath)\"")
+                runCommand("\(safeEditor) \(safePath)")
             }
         }
     }
@@ -139,6 +150,10 @@ struct PathClickHandler {
         task.arguments = ["-c", command]
         task.standardOutput = nil
         task.standardError = nil
-        try? task.run()
+        do {
+            try task.run()
+        } catch {
+            Log.warn("PathClickHandler: Failed to run command: \(error.localizedDescription)")
+        }
     }
 }

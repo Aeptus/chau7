@@ -364,7 +364,7 @@ struct DebugConsoleView: View {
     }
 
     private func loadLogs() {
-        guard let content = try? String(contentsOfFile: Log.filePath, encoding: .utf8) else {
+        guard let content = FileOperations.readString(from: Log.filePath) else {
             logs = ["(Unable to read log file)"]
             return
         }
@@ -422,7 +422,7 @@ struct DebugConsoleView: View {
 
                     Button("Copy State JSON") {
                         let snapshot = StateSnapshot.capture(from: appModel, overlayModel: overlayModel)
-                        if let data = try? JSONEncoder().encode(snapshot),
+                        if let data = JSONOperations.encode(snapshot, context: "debug state snapshot"),
                            let json = String(data: data, encoding: .utf8) {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(json, forType: .string)
@@ -473,6 +473,11 @@ final class DebugConsoleController {
     private init() {}
 
     private var window: NSWindow?
+    var windowAppearance: NSAppearance? {
+        didSet {
+            window?.appearance = windowAppearance
+        }
+    }
     private weak var appModel: AppModel?
     private weak var overlayModel: OverlayTabsModel?
 
@@ -514,6 +519,7 @@ final class DebugConsoleController {
             newWindow.contentView = hostingView
             newWindow.center()
             newWindow.isReleasedWhenClosed = false
+            newWindow.appearance = windowAppearance
 
             window = newWindow
         }

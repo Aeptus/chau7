@@ -1,20 +1,27 @@
 import Foundation
 
-struct HistoryEntry: Equatable {
-    let sessionId: String
-    let timestamp: TimeInterval
-    let summary: String
-    let isExit: Bool
+public struct HistoryEntry: Equatable {
+    public let sessionId: String
+    public let timestamp: TimeInterval
+    public let summary: String
+    public let isExit: Bool
+
+    public init(sessionId: String, timestamp: TimeInterval, summary: String, isExit: Bool) {
+        self.sessionId = sessionId
+        self.timestamp = timestamp
+        self.summary = summary
+        self.isExit = isExit
+    }
 }
 
-enum HistoryEntryParseError: Error {
+public enum HistoryEntryParseError: Error {
     case notJSONObject
     case missingField(String)
     case invalidFieldType(String)
 }
 
-final class HistoryEntryParser {
-    static func parse(line: String) throws -> HistoryEntry {
+public final class HistoryEntryParser {
+    public static func parse(line: String) throws -> HistoryEntry {
         guard let data = line.data(using: .utf8) else {
             throw HistoryEntryParseError.notJSONObject
         }

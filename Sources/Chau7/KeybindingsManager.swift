@@ -36,6 +36,25 @@ struct KeyBinding: Equatable {
         return KeyBinding(key: key, modifiers: modifiers, action: action)
     }
 
+    static func modifiers(from parts: [String]) -> NSEvent.ModifierFlags {
+        var modifiers: NSEvent.ModifierFlags = []
+        for part in parts.map({ $0.lowercased() }) {
+            switch part {
+            case "ctrl", "control":
+                modifiers.insert(.control)
+            case "cmd", "command":
+                modifiers.insert(.command)
+            case "opt", "option", "alt":
+                modifiers.insert(.option)
+            case "shift":
+                modifiers.insert(.shift)
+            default:
+                break
+            }
+        }
+        return modifiers
+    }
+
     /// Checks if this binding matches the given event
     func matches(_ event: NSEvent) -> Bool {
         let eventFlags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -111,6 +130,9 @@ enum KeyAction: String, CaseIterable {
     case addBookmark
     case showSnippets
     case renameTab
+    case debugConsole
+    case splitHorizontal
+    case splitVertical
 
     // Window
     case closeWindow
@@ -154,119 +176,80 @@ enum KeyAction: String, CaseIterable {
         case .addBookmark: return "Add Bookmark"
         case .showSnippets: return "Snippets"
         case .renameTab: return "Rename Tab"
+        case .debugConsole: return "Debug Console"
+        case .splitHorizontal: return "Split Horizontal"
+        case .splitVertical: return "Split Vertical"
         case .closeWindow: return "Close Window"
         case .newWindow: return "New Window"
         }
     }
+
+    static func fromShortcutAction(_ action: String) -> KeyAction? {
+        switch action {
+        case "newTab": return .newTab
+        case "closeTab": return .closeTab
+        case "nextTab": return .nextTab
+        case "previousTab": return .previousTab
+        case "find": return .toggleSearch
+        case "findNext": return .nextMatch
+        case "findPrevious": return .previousMatch
+        case "copy": return .copy
+        case "paste": return .paste
+        case "clear": return .clear
+        case "zoomIn": return .zoomIn
+        case "zoomOut": return .zoomOut
+        case "zoomReset": return .zoomReset
+        case "snippets": return .showSnippets
+        case "renameTab": return .renameTab
+        case "debugConsole": return .debugConsole
+        case "newWindow": return .newWindow
+        case "splitHorizontal": return .splitHorizontal
+        case "splitVertical": return .splitVertical
+        default: return nil
+        }
+    }
 }
 
-/// Manages keybinding presets and active bindings
+/// Manages keybindings and active bindings
 final class KeybindingsManager: ObservableObject {
     static let shared = KeybindingsManager()
 
     @Published private(set) var activeBindings: [KeyBinding] = []
-    @Published var currentPreset: String = "default" {
-        didSet {
-            loadPreset(currentPreset)
-            FeatureSettings.shared.keybindingPreset = currentPreset
-        }
-    }
-
-    // MARK: - Preset Definitions
-
-    private static let defaultBindings: [(String, KeyAction)] = [
-        // Tab management
-        ("cmd+t", .newTab),
-        ("cmd+w", .closeTab),
-        ("ctrl+tab", .nextTab),
-        ("ctrl+shift+tab", .previousTab),
-        ("cmd+1", .selectTab1),
-        ("cmd+2", .selectTab2),
-        ("cmd+3", .selectTab3),
-        ("cmd+4", .selectTab4),
-        ("cmd+5", .selectTab5),
-        ("cmd+6", .selectTab6),
-        ("cmd+7", .selectTab7),
-        ("cmd+8", .selectTab8),
-        ("cmd+9", .selectTab9),
-
-        // Editing
-        ("cmd+c", .copy),
-        ("cmd+v", .paste),
-        ("cmd+a", .selectAll),
-        ("cmd+k", .clear),
-
-        // Search
-        ("cmd+f", .toggleSearch),
-        ("cmd+g", .nextMatch),
-        ("cmd+shift+g", .previousMatch),
-
-        // View
-        ("cmd+=", .zoomIn),
-        ("cmd+-", .zoomOut),
-        ("cmd+0", .zoomReset),
-        ("cmd+ctrl+f", .toggleFullscreen),
-
-        // Features
-        ("cmd+shift+b", .toggleBroadcast),
-        ("cmd+shift+v", .showClipboardHistory),
-        ("cmd+b", .showBookmarks),
-        ("cmd+shift+a", .addBookmark),
-        ("cmd+shift+s", .showSnippets),
-        ("cmd+shift+r", .renameTab),
-
-        // Window
-        ("cmd+shift+w", .closeWindow),
-        ("cmd+n", .newWindow),
-    ]
-
-    private static let vimBindings: [(String, KeyAction)] = [
-        // Vim-style navigation with Ctrl
-        ("ctrl+h", .previousTab),  // hjkl style
-        ("ctrl+l", .nextTab),
-
-        // Include all default bindings
-    ] + defaultBindings
-
-    private static let emacsBindings: [(String, KeyAction)] = [
-        // Emacs-style
-        ("ctrl+a", .selectAll),  // Actually start of line in emacs, but for terminal...
-        ("ctrl+e", .toggleSearch),  // End of line -> search
-        ("ctrl+n", .nextTab),
-        ("ctrl+p", .previousTab),
-
-        // Include most default bindings
-    ] + defaultBindings.filter { $0.1 != .selectAll }
+    private var shortcutsSignature: String = ""
 
     // MARK: - Initialization
 
     private init() {
-        currentPreset = FeatureSettings.shared.keybindingPreset
-        loadPreset(currentPreset)
+        refreshBindings(force: true)
     }
 
-    // MARK: - Preset Management
+    private func refreshBindings(force: Bool = false) {
+        let shortcuts = FeatureSettings.shared.customShortcuts
+        let signature = shortcutsSignature(for: shortcuts)
+        guard force || signature != shortcutsSignature else { return }
 
-    func loadPreset(_ name: String) {
-        let bindings: [(String, KeyAction)]
+        shortcutsSignature = signature
+        activeBindings = shortcuts.compactMap { binding(from: $0) }
+        Log.info("F11: Loaded \(activeBindings.count) keybindings from settings.")
+    }
 
-        switch name {
-        case "vim":
-            bindings = Self.vimBindings
-        case "emacs":
-            bindings = Self.emacsBindings
-        default:
-            bindings = Self.defaultBindings
-        }
+    private func shortcutsSignature(for shortcuts: [KeyboardShortcut]) -> String {
+        shortcuts.map {
+            "\($0.action)|\($0.key.lowercased())|\($0.modifiers.sorted().joined(separator: \",\"))"
+        }.joined(separator: ";")
+    }
 
-        activeBindings = bindings.compactMap { KeyBinding.parse($0.0, action: $0.1) }
-        Log.info("F11: Loaded '\(name)' keybinding preset with \(activeBindings.count) bindings.")
+    private func binding(from shortcut: KeyboardShortcut) -> KeyBinding? {
+        guard let action = KeyAction.fromShortcutAction(shortcut.action) else { return nil }
+        let modifiers = KeyBinding.modifiers(from: shortcut.modifiers)
+        return KeyBinding(key: shortcut.key.lowercased(), modifiers: modifiers, action: action)
     }
 
     // MARK: - Event Handling
 
     /// Returns the action for the given event, or nil if no binding matches
     func actionForEvent(_ event: NSEvent) -> KeyAction? {
+        refreshBindings()
         for binding in activeBindings {
             if binding.matches(event) {
                 return binding.action
@@ -291,7 +274,7 @@ final class KeybindingsManager: ObservableObject {
         case .newTab:
             delegate?.newTab()
         case .closeTab:
-            delegate?.closeTab()
+            delegate?.closeTabFromShortcut()
         case .nextTab:
             delegate?.nextTab()
         case .previousTab:
@@ -370,6 +353,12 @@ final class KeybindingsManager: ObservableObject {
             overlayModel?.toggleSnippetManager()
         case .renameTab:
             delegate?.beginRenameTab()
+        case .debugConsole:
+            DebugConsoleController.shared.toggle()
+        case .splitHorizontal:
+            delegate?.splitHorizontally()
+        case .splitVertical:
+            delegate?.splitVertically()
 
         // Window
         case .closeWindow:

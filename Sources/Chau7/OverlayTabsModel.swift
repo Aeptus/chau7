@@ -89,6 +89,9 @@ struct OverlayTab: Identifiable, Equatable {
     }
 }
 
+/// Manages terminal tabs, search, and broadcast mode for the overlay window.
+/// - Note: Thread Safety - @Published properties must be modified on main thread.
+///   All methods assume main thread execution.
 final class OverlayTabsModel: ObservableObject {
     @Published var tabs: [OverlayTab]
     @Published var selectedTabID: UUID
@@ -98,6 +101,7 @@ final class OverlayTabsModel: ObservableObject {
     @Published var searchMatchCount: Int = 0
     @Published var isCaseSensitive: Bool = false  // Issue #23 fix
     @Published var isRegexSearch: Bool = false
+    @Published var isSemanticSearch: Bool = false
     @Published var searchError: String? = nil
     @Published var isRenameVisible: Bool = false
     @Published var renameText: String = ""
@@ -180,6 +184,7 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     func newTab() {
+        dispatchPrecondition(condition: .onQueue(.main))
         needsFreshTabOnShow = false
         var tab = OverlayTab(appModel: appModel)
         let colors = TabColor.allCases
@@ -238,6 +243,7 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     func closeTab(id: UUID) {
+        dispatchPrecondition(condition: .onQueue(.main))
         Log.info("closeTab called with id=\(id). tabs.count=\(tabs.count)")
         guard let index = tabs.firstIndex(where: { $0.id == id }) else {
             Log.warn("closeTab: tab with id=\(id) not found!")
@@ -408,6 +414,7 @@ final class OverlayTabsModel: ObservableObject {
             let defaults = FeatureSettings.shared
             isCaseSensitive = defaults.findCaseSensitiveDefault
             isRegexSearch = defaults.findRegexDefault
+            isSemanticSearch = false
             searchError = nil
             refreshSearch()
         } else {
@@ -415,6 +422,7 @@ final class OverlayTabsModel: ObservableObject {
             searchResults = []
             searchMatchCount = 0
             searchError = nil
+            isSemanticSearch = false
             // Only clear search for current tab, not all tabs (Issue #7 fix)
             selectedTab?.session?.clearSearch()
             focusSelected()
@@ -430,14 +438,23 @@ final class OverlayTabsModel: ObservableObject {
             return
         }
         guard let session = selectedTab?.session else { return }
-        // Pass case sensitivity setting (Issue #23 fix)
-        let result = session.updateSearch(
-            query: searchQuery,
-            maxMatches: 400,
-            maxPreviewLines: 12,
-            caseSensitive: isCaseSensitive,
-            regexEnabled: isRegexSearch
-        )
+        let result: TerminalSessionModel.SearchSummary
+        if isSemanticSearch && FeatureSettings.shared.isSemanticSearchEnabled {
+            result = session.updateSemanticSearch(
+                query: searchQuery,
+                maxMatches: 400,
+                maxPreviewLines: 12
+            )
+        } else {
+            // Pass case sensitivity setting (Issue #23 fix)
+            result = session.updateSearch(
+                query: searchQuery,
+                maxMatches: 400,
+                maxPreviewLines: 12,
+                caseSensitive: isCaseSensitive,
+                regexEnabled: isRegexSearch
+            )
+        }
         searchResults = result.previewLines
         searchMatchCount = result.count
         searchError = result.error

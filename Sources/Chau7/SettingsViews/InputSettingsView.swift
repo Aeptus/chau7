@@ -7,6 +7,16 @@ struct InputSettingsView: View {
     @State private var editingShortcut: KeyboardShortcut? = nil
     @State private var showShortcutEditor = false
 
+    private var presetBinding: Binding<String> {
+        Binding(
+            get: { settings.keybindingPreset },
+            set: { newValue in
+                settings.keybindingPreset = newValue
+                settings.applyKeybindingPreset(newValue)
+            }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Keyboard
@@ -15,7 +25,7 @@ struct InputSettingsView: View {
             SettingsPicker(
                 label: "Keybinding Preset",
                 help: "Choose a keyboard shortcut preset that matches your workflow",
-                selection: $settings.keybindingPreset,
+                selection: presetBinding,
                 options: [
                     (value: "default", label: "Default"),
                     (value: "vim", label: "Vim"),

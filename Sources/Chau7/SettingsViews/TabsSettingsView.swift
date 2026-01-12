@@ -4,8 +4,6 @@ import SwiftUI
 
 struct TabsSettingsView: View {
     @ObservedObject private var settings = FeatureSettings.shared
-    @State private var newTabPosition = "end"
-    @State private var showTabBarAlways = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -15,7 +13,7 @@ struct TabsSettingsView: View {
             SettingsPicker(
                 label: "New Tab Position",
                 help: "Where to insert newly created tabs",
-                selection: $newTabPosition,
+                selection: $settings.newTabPosition,
                 options: [
                     (value: "end", label: "At End"),
                     (value: "after", label: "After Current")
@@ -32,7 +30,7 @@ struct TabsSettingsView: View {
             SettingsToggle(
                 label: "Always Show Tab Bar",
                 help: "Show the tab bar even when only one tab is open",
-                isOn: $showTabBarAlways
+                isOn: $settings.alwaysShowTabBar
             )
 
             Divider()

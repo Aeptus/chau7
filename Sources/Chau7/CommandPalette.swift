@@ -56,6 +56,8 @@ struct CommandPaletteView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
                     .focused($isSearchFocused)
+                    .accessibilityLabel("Search commands")
+                    .accessibilityHint("Type to filter commands, press Return to execute selected command")
                     .onSubmit {
                         executeSelected()
                     }
@@ -68,6 +70,7 @@ struct CommandPaletteView: View {
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Clear search")
                 }
             }
             .padding(.horizontal, 12)
@@ -107,6 +110,7 @@ struct CommandPaletteView: View {
                 Text("\(filteredCommands.count) commands")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
+                    .accessibilityLabel("\(filteredCommands.count) commands available")
 
                 Spacer()
 
@@ -115,6 +119,8 @@ struct CommandPaletteView: View {
                     KeyHint(keys: ["↵"], label: "select")
                     KeyHint(keys: ["esc"], label: "close")
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Use arrow keys to navigate, Return to select, Escape to close")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -205,6 +211,10 @@ private struct CommandRow: View {
         .padding(.vertical, 8)
         .background(isSelected ? Color.accentColor : Color.clear)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(command.title), \(command.category.rawValue)")
+        .accessibilityHint(command.shortcut.map { "Shortcut: \($0)" } ?? "No keyboard shortcut")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -310,6 +320,24 @@ final class CommandPaletteProvider {
             },
 
             // Terminal commands
+            PaletteCommand(title: "Open Text Editor", shortcut: "⌥⌘E", category: .terminal, icon: "doc.text") {
+                delegate.openTextEditorPane()
+            },
+            PaletteCommand(title: "Split Horizontal", shortcut: "⌘D", category: .terminal, icon: "rectangle.split.1x2") {
+                delegate.splitHorizontally()
+            },
+            PaletteCommand(title: "Split Vertical", shortcut: "⇧⌘D", category: .terminal, icon: "rectangle.split.2x1") {
+                delegate.splitVertically()
+            },
+            PaletteCommand(title: "Close Pane", shortcut: "⌃⌘W", category: .terminal, icon: "xmark.rectangle") {
+                delegate.closeCurrentPane()
+            },
+            PaletteCommand(title: "Focus Next Pane", shortcut: "⌥⌘]", category: .terminal, icon: "arrow.right.square") {
+                delegate.focusNextPane()
+            },
+            PaletteCommand(title: "Focus Previous Pane", shortcut: "⌥⌘[", category: .terminal, icon: "arrow.left.square") {
+                delegate.focusPreviousPane()
+            },
             PaletteCommand(title: "Clear Screen", shortcut: "⌘K", category: .terminal, icon: "clear") {
                 delegate.clearScreen()
             },
@@ -502,6 +530,12 @@ final class CommandPaletteController: ObservableObject {
         window.level = .floating
         window.contentView = hostingView
         window.makeKeyAndOrderFront(nil)
+
+        // Force focus on the search field by making the hosting view first responder
+        // This is needed because @FocusState doesn't work reliably in borderless windows
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            window.makeFirstResponder(hostingView)
+        }
 
         self.window = window
     }

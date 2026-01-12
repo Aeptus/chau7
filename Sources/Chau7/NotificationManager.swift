@@ -1,5 +1,6 @@
 import Foundation
 import UserNotifications
+import Chau7Core
 
 final class NotificationManager {
     static let shared = NotificationManager()

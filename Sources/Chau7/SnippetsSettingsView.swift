@@ -881,7 +881,7 @@ private struct ImportExportSheet: View {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
 
-        if let data = try? encoder.encode(file),
+        if let data = JSONOperations.encode(file, context: "snippet export"),
            let json = String(data: data, encoding: .utf8) {
             exportText = json
         } else {

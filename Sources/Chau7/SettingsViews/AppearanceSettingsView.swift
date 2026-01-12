@@ -5,7 +5,6 @@ import AppKit
 
 struct AppearanceSettingsView: View {
     @ObservedObject private var settings = FeatureSettings.shared
-    @State private var selectedTheme = "auto"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -101,12 +100,8 @@ struct AppearanceSettingsView: View {
             SettingsPicker(
                 label: "Appearance",
                 help: "Choose light, dark, or match system appearance",
-                selection: $selectedTheme,
-                options: [
-                    (value: "auto", label: "System"),
-                    (value: "light", label: "Light"),
-                    (value: "dark", label: "Dark")
-                ]
+                selection: $settings.appTheme,
+                options: AppTheme.allCases.map { (value: $0, label: $0.displayName) }
             )
 
             Divider()

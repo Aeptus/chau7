@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import SwiftTerm
 import Darwin
+import Chau7Core
 
 enum CommandStatus: String {
     case idle
@@ -9,6 +10,10 @@ enum CommandStatus: String {
     case exited
 }
 
+/// Model for a terminal session, managing shell state, search, and output capture.
+/// - Note: Thread Safety - @Published properties must be modified on main thread.
+///   Delegate callbacks from SwiftTerm may arrive on background threads and
+///   dispatch to main via DispatchQueue.main.async.
 final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTerminalViewDelegate {
     @Published var title: String = "Shell"
     @Published var currentDirectory: String = TerminalSessionModel.defaultStartDirectory()
@@ -22,6 +27,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     private weak var appModel: AppModel?
     private weak var terminalView: Chau7TerminalView?
+    /// Strong reference to keep the terminal view alive across SwiftUI view recreations (e.g., when splitting)
+    private var retainedTerminalView: Chau7TerminalView?
     private var settingsObservers: [NSObjectProtocol] = []
     private var idleTimer: DispatchSourceTimer?
     private var lastInputAt = Date.distantPast
@@ -35,93 +42,13 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private var searchQuery: String = ""
     private var cachedBufferData: Data?  // Cached buffer data for search
     private var bufferNeedsRefresh: Bool = true  // Flag to invalidate cache on output
+    private var bufferLineCount: Int = 0
     private var didClearOnLaunch = false
     private var didApplyShellIntegration = false
     private var shellIntegrationOutputCount = 0
     private var shouldAutoFocusOnAttach = true  // Auto-focus when terminal view is attached
 
-    private let appNameMap: [String: String] = [
-        // OpenAI Codex
-        "codex": "Codex",
-        "codex-cli": "Codex",
-        "codex-pty": "Codex",
-        "codex-wrapper": "Codex",
-        // Anthropic Claude
-        "claude": "Claude",
-        "claude-code": "Claude",
-        "claude-cli": "Claude",
-        "claude-pty": "Claude",
-        "claude-wrapper": "Claude",
-        // Google Gemini
-        "gemini": "Gemini",
-        "gemini-cli": "Gemini",
-        "gemini-pty": "Gemini",
-        // OpenAI ChatGPT
-        "chatgpt": "ChatGPT",
-        "chatgpt-cli": "ChatGPT",
-        "gpt": "ChatGPT",
-        "gpt-cli": "ChatGPT",
-        "openai": "ChatGPT",
-        // GitHub Copilot
-        "copilot": "Copilot",
-        "copilot-cli": "Copilot",
-        "github-copilot": "Copilot",
-        // Aider
-        "aider": "Aider",
-        "aider-chat": "Aider",
-        // Cursor
-        "cursor": "Cursor"
-    ]
-
-    /// Output patterns that indicate a specific AI CLI is running
-    /// These catch cases where command detection fails (e.g., first tab, piped commands)
-    private static let defaultOutputDetectionPatterns: [(pattern: String, appName: String)] = [
-        // Claude Code banners
-        ("╭─ Claude", "Claude"),
-        ("claude.ai", "Claude"),
-        ("Anthropic", "Claude"),
-        // Gemini patterns
-        ("Google AI", "Gemini"),
-        ("Gemini Pro", "Gemini"),
-        ("gemini.google", "Gemini"),
-        // ChatGPT patterns
-        ("ChatGPT", "ChatGPT"),
-        ("openai.com", "ChatGPT"),
-        // Copilot patterns
-        ("GitHub Copilot", "Copilot"),
-        ("Copilot CLI", "Copilot"),
-        // Codex patterns
-        ("OpenAI Codex", "Codex"),
-        ("codex-cli", "Codex"),
-        ("Codex CLI", "Codex"),
-        ("╭─ Codex", "Codex"),  // Similar banner style to Claude
-        ("codex.openai", "Codex"),
-        // Aider patterns
-        ("Aider", "Aider"),
-        ("aider.chat", "Aider"),
-        // Cursor patterns
-        ("Cursor", "Cursor"),
-        ("cursor.sh", "Cursor")
-    ]
-
-    private static let wrapperCommands: Set<String> = [
-        "command",
-        "builtin",
-        "exec",
-        "noglob",
-        "time"
-    ]
-
-    private static let sudoOptionsWithValue: Set<String> = [
-        "-u",
-        "-g",
-        "-h",
-        "-p",
-        "-a",
-        "-c",
-        "-t",
-        "-r"
-    ]
+    private let semanticDetector = SemanticOutputDetector()
 
     /// Idle timeout in seconds. Configurable via environment variable.
     private var idleSeconds: TimeInterval {
@@ -152,8 +79,14 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         searchUpdateWorkItem?.cancel()
     }
 
+    /// Returns the existing terminal view if one exists (to reuse across SwiftUI view recreations)
+    var existingTerminalView: Chau7TerminalView? {
+        retainedTerminalView
+    }
+
     func attachTerminal(_ view: Chau7TerminalView) {
         terminalView = view
+        retainedTerminalView = view  // Keep strong reference to survive view recreation
         view.currentDirectory = currentDirectory
 
         // Configure scrollback buffer size from settings
@@ -216,6 +149,11 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         lastOutputAt = Date()
         bufferNeedsRefresh = true  // Invalidate buffer cache on new output
         TerminalOutputCapture.shared.record(data: data, source: activeAppName ?? title)
+        if FeatureSettings.shared.isSemanticSearchEnabled,
+           data.contains(where: { $0 == 0x0A || $0 == 0x0D }),
+           let row = currentBufferRow() {
+            semanticDetector.updateCurrentRow(row)
+        }
         // Check if we should apply shell integration
         maybeApplyShellIntegration()
         // Try to detect AI app from output if not already detected
@@ -250,7 +188,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             let name = trimmedName.isEmpty ? "Custom AI" : trimmedName
             return (trimmedPattern, name)
         }
-        return Self.defaultOutputDetectionPatterns + custom
+        return CommandDetection.outputDetectionPatterns + custom
     }
 
     private func markRunning() {
@@ -277,16 +215,14 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         guard !trimmed.isEmpty else { return }
         updateActiveAppName(from: trimmed)
         recordInputLineIfNeeded()
-        guard trimmed.hasPrefix("cd") else { return }
+        trackSemanticCommand(trimmed)
+        guard let targetRaw = cdTarget(from: trimmed) else { return }
 
-        let remainder = trimmed.dropFirst(2).trimmingCharacters(in: .whitespaces)
         var target: String
-        if remainder.isEmpty {
+        if targetRaw.isEmpty {
             target = FileManager.default.homeDirectoryForCurrentUser.path
-        } else if remainder == "-" {
-            return
         } else {
-            target = remainder
+            target = targetRaw
         }
 
         if target.hasPrefix("~") {
@@ -326,35 +262,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     private func updateActiveAppName(from commandLine: String) {
-        let tokens = tokenizeCommandLine(commandLine)
-        guard let token = extractCommandToken(from: commandLine) else {
-            Log.trace("AI detection: no command token in '\(commandLine.prefix(50))'")
-            return
-        }
-        let normalized = normalizeCommandToken(token)
-        Log.trace("AI detection: command='\(normalized)' from '\(commandLine.prefix(50))'")
-
-        // Check for direct match
-        if let match = appNameMap[normalized] {
+        if let match = CommandDetection.detectApp(from: commandLine) {
             activeAppName = match
-            Log.info("AI detected: \(match) from command '\(normalized)'")
+            Log.info("AI detected: \(match) from command '\(commandLine.prefix(50))'")
             return
-        }
-
-        // Special case: gh copilot (GitHub CLI with copilot subcommand)
-        if normalized == "gh" {
-            if findSubcommand(tokens: tokens, after: "gh", looking: ["copilot"]) != nil {
-                activeAppName = "Copilot"
-                return
-            }
-        }
-
-        // Special case: npx/bunx with AI CLI packages
-        if normalized == "npx" || normalized == "bunx" || normalized == "pnpm" {
-            if let aiApp = findSubcommand(tokens: tokens, after: normalized, looking: Array(appNameMap.keys)) {
-                activeAppName = appNameMap[aiApp]
-                return
-            }
         }
 
         // Custom detection rules (substring match on command line)
@@ -369,183 +280,50 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             }
         }
 
-        activeAppName = nil
+        if activeAppName != nil, isExitCommand(commandLine) {
+            activeAppName = nil
+        }
     }
 
-    /// Finds a subcommand after a given command, skipping options
-    private func findSubcommand(tokens: [String], after command: String, looking targets: [String]) -> String? {
-        guard let cmdIndex = tokens.firstIndex(where: { normalizeCommandToken($0) == command }) else { return nil }
-        for i in (cmdIndex + 1)..<tokens.count {
-            let token = tokens[i]
-            if token.hasPrefix("-") { continue }  // Skip options
-            let normalized = normalizeCommandToken(token)
-            if targets.contains(normalized) {
-                return normalized
-            }
-            // First non-option argument after command
-            break
-        }
-        return nil
+    private func isExitCommand(_ commandLine: String) -> Bool {
+        let tokens = CommandDetection.tokenize(commandLine)
+        guard let cmdIndex = CommandDetection.commandTokenIndex(from: tokens) else { return false }
+        let command = CommandDetection.normalizeToken(tokens[cmdIndex])
+        return command == "exit" || command == "logout" || command == "quit"
     }
 
-    private func extractCommandToken(from commandLine: String) -> String? {
-        let tokens = tokenizeCommandLine(commandLine)
-        guard !tokens.isEmpty else { return nil }
+    private func cdTarget(from commandLine: String) -> String? {
+        let tokens = CommandDetection.tokenize(commandLine)
+        guard let cmdIndex = CommandDetection.commandTokenIndex(from: tokens) else { return nil }
+        let command = CommandDetection.normalizeToken(tokens[cmdIndex])
+        guard command == "cd" else { return nil }
 
-        var index = 0
-        while index < tokens.count {
-            let token = tokens[index]
-            if token.isEmpty {
-                index += 1
-                continue
-            }
-
-            if isEnvAssignment(token) {
-                index += 1
-                continue
-            }
-
-            let lower = token.lowercased()
-            if lower == "env" {
-                index = consumeEnv(tokens: tokens, start: index + 1)
-                continue
-            }
-
-            if lower == "sudo" {
-                index = consumeSudo(tokens: tokens, start: index + 1)
-                continue
-            }
-
-            if Self.wrapperCommands.contains(lower) {
-                index += 1
-                continue
-            }
-
-            if lower.hasPrefix("-") {
-                index += 1
-                continue
-            }
-
-            return token
+        let arguments = tokens[(cmdIndex + 1)...]
+        guard let firstArg = arguments.first else { return "" }
+        if firstArg == "-" {
+            return nil
         }
-
-        return nil
-    }
-
-    private func consumeEnv(tokens: [String], start: Int) -> Int {
-        var index = start
-        while index < tokens.count {
-            let token = tokens[index]
-            if token == "--" {
-                return index + 1
-            }
-            if token.hasPrefix("-") || isEnvAssignment(token) {
-                index += 1
-                continue
-            }
-            break
-        }
-        return index
-    }
-
-    private func consumeSudo(tokens: [String], start: Int) -> Int {
-        var index = start
-        while index < tokens.count {
-            let token = tokens[index]
-            if token == "--" {
-                return index + 1
-            }
-            if token.hasPrefix("-") {
-                if Self.sudoOptionsWithValue.contains(token), index + 1 < tokens.count {
-                    index += 2
-                    continue
-                }
-                index += 1
-                continue
-            }
-            break
-        }
-        return index
-    }
-
-    private func tokenizeCommandLine(_ line: String) -> [String] {
-        var tokens: [String] = []
-        var current = ""
-        var inSingleQuote = false
-        var inDoubleQuote = false
-        var isEscaped = false
-
-        func flushCurrent() {
-            if !current.isEmpty {
-                tokens.append(current)
-                current = ""
-            }
-        }
-
-        for char in line {
-            if isEscaped {
-                current.append(char)
-                isEscaped = false
-                continue
-            }
-
-            if char == "\\" && !inSingleQuote {
-                isEscaped = true
-                continue
-            }
-
-            if char == "'" && !inDoubleQuote {
-                inSingleQuote.toggle()
-                continue
-            }
-
-            if char == "\"" && !inSingleQuote {
-                inDoubleQuote.toggle()
-                continue
-            }
-
-            if !inSingleQuote && !inDoubleQuote {
-                if char == "#" {
-                    break
-                }
-                if char == "|" || char == ";" || char == "&" {
-                    break
-                }
-                if char.isWhitespace {
-                    flushCurrent()
-                    continue
-                }
-            }
-
-            current.append(char)
-        }
-
-        flushCurrent()
-        return tokens
-    }
-
-    private func normalizeCommandToken(_ token: String) -> String {
-        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pathComponent = (trimmed as NSString).lastPathComponent
-        let baseName = (pathComponent as NSString).deletingPathExtension
-        return baseName.lowercased()
-    }
-
-    private func isEnvAssignment(_ token: String) -> Bool {
-        guard let eqIndex = token.firstIndex(of: "=") else { return false }
-        let name = token[..<eqIndex]
-        guard let first = name.first, first == "_" || first.isLetter else { return false }
-        for ch in name.dropFirst() {
-            if ch != "_" && !ch.isLetter && !ch.isNumber {
-                return false
-            }
-        }
-        return true
+        return firstArg
     }
 
     private func recordInputLineIfNeeded() {
-        guard let app = activeAppName, app == "Codex" else { return }
-        terminalView?.recordInputLine()
+        guard let terminalView else { return }
+        if FeatureSettings.shared.isSemanticSearchEnabled || activeAppName == "Codex" {
+            terminalView.recordInputLine()
+        }
+    }
+
+    private func trackSemanticCommand(_ command: String) {
+        guard FeatureSettings.shared.isSemanticSearchEnabled else { return }
+        guard let row = currentBufferRow() else { return }
+        semanticDetector.commandStarted(command, atRow: row)
+    }
+
+    private func currentBufferRow() -> Int? {
+        guard let terminalView else { return nil }
+        let terminal = terminalView.getTerminal()
+        let cursor = terminal.getCursorLocation()
+        return terminal.getTopVisibleRow() + cursor.y
     }
 
     // MARK: - Idle Timer (Issue #5 fix)
@@ -569,7 +347,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     private static let zdotdirPath: String = {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("smartoverlay")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        FileOperations.createDirectory(at: dir)
         return dir.path
     }()
 
@@ -908,6 +686,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         defer { buffer.deallocate() }
         var pwd = passwd()
         var result: UnsafeMutablePointer<passwd>? = UnsafeMutablePointer<passwd>.allocate(capacity: 1)
+        defer { result?.deallocate() }
         if getpwuid_r(getuid(), &pwd, buffer, bufsize, &result) != 0 {
             return "/bin/zsh"
         }
@@ -1033,8 +812,18 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         if bufferNeedsRefresh || cachedBufferData == nil {
             cachedBufferData = terminalView.getTerminal().getBufferAsData()
             bufferNeedsRefresh = false
+            if let data = cachedBufferData {
+                updateBufferLineCount(from: data)
+            }
         }
         return cachedBufferData
+    }
+
+    private func updateBufferLineCount(from bufferData: Data) {
+        let newlineCount = bufferData.reduce(0) { count, byte in
+            count + (byte == 0x0A ? 1 : 0)
+        }
+        bufferLineCount = max(1, newlineCount + 1)
     }
 
     func updateSearch(query: String, maxMatches: Int, maxPreviewLines: Int, caseSensitive: Bool = false, regexEnabled: Bool = false) -> SearchSummary {
@@ -1088,6 +877,30 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         return SearchSummary(count: computed.matches.count, previewLines: computed.previewLines, error: computed.error)
     }
 
+    func updateSemanticSearch(query: String, maxMatches: Int, maxPreviewLines: Int) -> SearchSummary {
+        searchQuery = query
+        searchCaseSensitive = false
+        searchRegexEnabled = false
+
+        _ = getBufferData()
+        let blocks = semanticDetector.search(query: query)
+        let limited = Array(blocks.prefix(maxMatches))
+
+        searchMatches = limited.map { block in
+            SearchMatch(row: block.startRow, col: 0, length: max(1, block.command.count))
+        }
+        activeSearchIndex = 0
+        highlightView?.needsDisplay = true
+
+        let previews = limited.prefix(maxPreviewLines).map { block -> String in
+            if let exitCode = block.exitCode {
+                return "\(block.command) (exit \(exitCode))"
+            }
+            return block.command
+        }
+        return SearchSummary(count: searchMatches.count, previewLines: previews, error: nil)
+    }
+
     func scheduleSearchRefresh() {
         guard !searchQuery.isEmpty else { return }
 
@@ -1139,18 +952,30 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         guard !searchMatches.isEmpty else { return }
         activeSearchIndex = (activeSearchIndex + 1) % searchMatches.count
         highlightView?.needsDisplay = true
+        scrollToActiveMatch()
     }
 
     func previousMatch() {
         guard !searchMatches.isEmpty else { return }
         activeSearchIndex = (activeSearchIndex - 1 + searchMatches.count) % searchMatches.count
         highlightView?.needsDisplay = true
+        scrollToActiveMatch()
     }
 
     func currentMatch() -> SearchMatch? {
         guard !searchMatches.isEmpty else { return nil }
         let index = max(0, min(activeSearchIndex, searchMatches.count - 1))
         return searchMatches[index]
+    }
+
+    private func scrollToActiveMatch() {
+        guard let terminalView, let match = currentMatch() else { return }
+        let terminal = terminalView.getTerminal()
+        let visibleRows = max(1, terminal.rows)
+        let maxScrollback = max(1, bufferLineCount - visibleRows)
+        let clampedRow = max(0, min(match.row, maxScrollback))
+        let position = Double(clampedRow) / Double(maxScrollback)
+        terminalView.scroll(toPosition: position)
     }
 
     /// Computes search matches from pre-captured buffer data (thread-safe).

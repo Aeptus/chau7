@@ -1,4 +1,5 @@
 import SwiftUI
+import Chau7Core
 
 // MARK: - Reusable Terminal Line Components (Code Optimization)
 // Consolidates duplicate line rendering logic from MainPanelView

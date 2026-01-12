@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private weak var activeOverlayModel: OverlayTabsModel?
     private var keyMonitor: Any?
     private var opacityObserver: Any?
+    private var appThemeObserver: Any?
     private var splashController: SplashWindowController?
     private var settingsWindow: NSWindow?
     private var isClosingTab: Bool = false  // Flag to prevent windowShouldClose from hiding window during tab close
@@ -30,11 +31,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.applyWindowOpacity()
         }
 
+        appThemeObserver = NotificationCenter.default.addObserver(
+            forName: .appThemeChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applyAppTheme()
+        }
+
         // Show splash screen while initializing
         splashController = SplashWindowController()
         splashController?.show()
 
         model?.bootstrap()
+        applyAppTheme()
         installKeyMonitor()
 
         // Initialize status bar controller (replaces MenuBarExtra for multi-monitor support)
@@ -97,6 +107,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let opacityObserver {
             NotificationCenter.default.removeObserver(opacityObserver)
             self.opacityObserver = nil
+        }
+        if let appThemeObserver {
+            NotificationCenter.default.removeObserver(appThemeObserver)
+            self.appThemeObserver = nil
         }
         // Cleanup status bar controller
         StatusBarController.shared.cleanup()
@@ -186,6 +200,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func closeTab() {
         ensureActiveOverlayModel()?.closeCurrentTab()
+    }
+
+    func closeTabFromShortcut() {
+        Log.info("Close tab via shortcut.")
+        isClosingTab = true
+        closeTab()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.isClosingTab = false
+        }
     }
 
     func closeWindow() {
@@ -738,6 +761,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         DropdownController.shared.applyOpacity(opacity)
     }
 
+    private func applyAppTheme() {
+        let theme = FeatureSettings.shared.appTheme
+        let appearance: NSAppearance?
+        switch theme {
+        case .system:
+            appearance = nil
+        case .light:
+            appearance = NSAppearance(named: .aqua)
+        case .dark:
+            appearance = NSAppearance(named: .darkAqua)
+        }
+
+        NSApp.appearance = appearance
+        for host in overlayHosts {
+            host.window.appearance = appearance
+        }
+        settingsWindow?.appearance = appearance
+        splashController?.window?.appearance = appearance
+        DebugConsoleController.shared.windowAppearance = appearance
+    }
+
     private func installKeyMonitor() {
         guard keyMonitor == nil else { return }
         // Note: Cmd+C and Cmd+V are now handled directly by Chau7TerminalView
@@ -750,29 +794,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
-        // Check if this is a command-key event in an overlay terminal
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
+        guard let window = NSApp.keyWindow else { return event }
+        let isOverlayWindow = overlayHosts.contains(where: { $0.window == window })
+        let overlayModel = isOverlayWindow ? activeOverlayModel : nil
+
         // Handle Escape key to close search/rename overlays
-        if event.keyCode == KeyboardShortcuts.escapeKeyCode {
-            if let model = activeOverlayModel {
-                if model.isSearchVisible {
-                    model.toggleSearch()
-                    return nil
-                }
-                if model.isRenameVisible {
-                    model.cancelRename()
-                    return nil
-                }
+        if event.keyCode == KeyboardShortcuts.escapeKeyCode, let model = overlayModel {
+            if model.isSearchVisible {
+                model.toggleSearch()
+                return nil
+            }
+            if model.isRenameVisible {
+                model.cancelRename()
+                return nil
             }
         }
 
-        if event.keyCode == KeyboardShortcuts.tabKeyCode {
-            guard let window = NSApp.keyWindow,
-                  overlayHosts.contains(where: { $0.window == window })
-            else {
-                return event
+        if isOverlayWindow, let action = KeybindingsManager.shared.actionForEvent(event) {
+            if action == .closeTab {
+                closeTabFromShortcut()
+            } else {
+                KeybindingsManager.shared.executeAction(action, delegate: self, overlayModel: overlayModel)
             }
+            return nil
+        }
+
+        if event.keyCode == KeyboardShortcuts.tabKeyCode, isOverlayWindow {
             if flags == [.control] {
                 Log.info("Ctrl+Tab: switching to next tab.")
                 nextTab()
@@ -784,44 +833,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 return nil
             }
         }
-
-        // Only process command-key combinations
-        guard flags.contains(.command),
-              let chars = event.charactersIgnoringModifiers?.lowercased()
-        else {
-            return event
-        }
-
-        // NOTE: Cmd+Shift+D (debug console) and Cmd+Shift+P (command palette)
-        // are handled by SwiftUI menu shortcuts in Chau7App.swift.
-        // Do NOT duplicate them here or they will fire twice.
-
-        // Check if we're in an overlay window with terminal as first responder
-        guard let window = NSApp.keyWindow,
-              overlayHosts.contains(where: { $0.window == window })
-        else {
-            return event
-        }
-
-        // NOTE: Cmd+K (clear screen) and Cmd+Shift+W (close window) are handled
-        // by SwiftUI menu shortcuts. Do NOT duplicate them here.
-
-        // Handle Cmd+W to close tab (not window)
-        // This MUST be handled here because we need to set isClosingTab flag
-        // BEFORE the event reaches the window system.
-        if chars == "w", flags == .command {
-            Log.info("Cmd+W: closing current tab.")
-            isClosingTab = true
-            closeTab()
-            // Reset flag after a short delay to allow windowShouldClose to see it
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                self?.isClosingTab = false
-            }
-            return nil  // Consume event to prevent window close
-        }
-
-        // Note: Cmd+C and Cmd+V are handled by Chau7TerminalView.performKeyEquivalent
-        // via the menu command system and sendAction, so we don't duplicate them here.
 
         return event
     }

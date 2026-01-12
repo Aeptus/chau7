@@ -239,4 +239,5 @@ extension Notification.Name {
     static let terminalOpacityChanged = Notification.Name("terminalOpacityChanged")
     static let terminalZoomChanged = Notification.Name("terminalZoomChanged")
     static let settingsProfileChanged = Notification.Name("settingsProfileChanged")
+    static let appThemeChanged = Notification.Name("appThemeChanged")
 }

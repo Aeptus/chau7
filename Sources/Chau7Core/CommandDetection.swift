@@ -32,7 +32,12 @@ public enum CommandDetection {
         // GitHub Copilot
         "copilot": "Copilot",
         "copilot-cli": "Copilot",
-        "github-copilot": "Copilot"
+        "github-copilot": "Copilot",
+        // Aider
+        "aider": "Aider",
+        "aider-chat": "Aider",
+        // Cursor
+        "cursor": "Cursor"
     ]
 
     /// Output patterns that indicate a specific AI CLI is running
@@ -52,7 +57,17 @@ public enum CommandDetection {
         ("GitHub Copilot", "Copilot"),
         ("Copilot CLI", "Copilot"),
         // Codex patterns
-        ("OpenAI Codex", "Codex")
+        ("OpenAI Codex", "Codex"),
+        ("codex-cli", "Codex"),
+        ("Codex CLI", "Codex"),
+        ("╭─ Codex", "Codex"),
+        ("codex.openai", "Codex"),
+        // Aider patterns
+        ("Aider", "Aider"),
+        ("aider.chat", "Aider"),
+        // Cursor patterns
+        ("Cursor", "Cursor"),
+        ("cursor.sh", "Cursor")
     ]
 
     /// Shell wrapper commands that should be skipped
@@ -96,6 +111,57 @@ public enum CommandDetection {
             if let aiApp = findSubcommand(tokens: tokens, after: normalized, looking: Array(appNameMap.keys)) {
                 return appNameMap[aiApp]
             }
+        }
+
+        return nil
+    }
+
+    /// Extracts the command token from a raw command line
+    public static func commandToken(from commandLine: String) -> String? {
+        let tokens = tokenize(commandLine)
+        guard let index = commandTokenIndex(from: tokens) else { return nil }
+        return tokens[index]
+    }
+
+    /// Returns the index of the command token inside tokenized input
+    public static func commandTokenIndex(from tokens: [String]) -> Int? {
+        guard !tokens.isEmpty else { return nil }
+
+        var index = 0
+        while index < tokens.count {
+            let token = tokens[index]
+            if token.isEmpty {
+                index += 1
+                continue
+            }
+
+            if isEnvAssignment(token) {
+                index += 1
+                continue
+            }
+
+            let lower = token.lowercased()
+            if lower == "env" {
+                index = consumeEnv(tokens: tokens, start: index + 1)
+                continue
+            }
+
+            if lower == "sudo" {
+                index = consumeSudo(tokens: tokens, start: index + 1)
+                continue
+            }
+
+            if wrapperCommands.contains(lower) {
+                index += 1
+                continue
+            }
+
+            if lower.hasPrefix("-") {
+                index += 1
+                continue
+            }
+
+            return index
         }
 
         return nil
@@ -197,46 +263,8 @@ public enum CommandDetection {
 
     /// Extracts the command token from tokenized input
     static func extractCommandToken(from tokens: [String]) -> String? {
-        guard !tokens.isEmpty else { return nil }
-
-        var index = 0
-        while index < tokens.count {
-            let token = tokens[index]
-            if token.isEmpty {
-                index += 1
-                continue
-            }
-
-            if isEnvAssignment(token) {
-                index += 1
-                continue
-            }
-
-            let lower = token.lowercased()
-            if lower == "env" {
-                index = consumeEnv(tokens: tokens, start: index + 1)
-                continue
-            }
-
-            if lower == "sudo" {
-                index = consumeSudo(tokens: tokens, start: index + 1)
-                continue
-            }
-
-            if wrapperCommands.contains(lower) {
-                index += 1
-                continue
-            }
-
-            if lower.hasPrefix("-") {
-                index += 1
-                continue
-            }
-
-            return token
-        }
-
-        return nil
+        guard let index = commandTokenIndex(from: tokens) else { return nil }
+        return tokens[index]
     }
 
     static func consumeEnv(tokens: [String], start: Int) -> Int {

@@ -30,6 +30,9 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     private var keyDownMonitor: Any?
     private var focusObservers: [NSObjectProtocol] = []
     private var appliedColorSchemeSignature: String?
+    private var appliedCursorStyle: (style: String, blink: Bool)?
+    private var bellConfig: (enabled: Bool, sound: String)?
+    private var appliedScrollbackLines: Int?
 
     // MARK: - Color Configuration
 
@@ -96,6 +99,97 @@ final class Chau7TerminalView: LocalProcessTerminalView {
             terminalColor(from: scheme.brightWhite)
         ]
         getTerminal().installPalette(colors: palette)
+    }
+
+    func applyCursorStyle(style: String, blink: Bool) {
+        if appliedCursorStyle?.style == style, appliedCursorStyle?.blink == blink {
+            return
+        }
+        let cursorStyle: CursorStyle
+        switch style {
+        case "underline":
+            cursorStyle = blink ? .blinkUnderline : .steadyUnderline
+        case "bar":
+            cursorStyle = blink ? .blinkBar : .steadyBar
+        default:
+            cursorStyle = blink ? .blinkBlock : .steadyBlock
+        }
+        getTerminal().setCursorStyle(cursorStyle)
+        appliedCursorStyle = (style: style, blink: blink)
+    }
+
+    func applyBellSettings(enabled: Bool, sound: String) {
+        bellConfig = (enabled: enabled, sound: sound)
+    }
+
+    func applyScrollbackLines(_ lines: Int) {
+        if appliedScrollbackLines == lines {
+            return
+        }
+        getTerminal().changeHistorySize(lines)
+        appliedScrollbackLines = lines
+    }
+
+    // MARK: - Terminal Delegate Overrides
+
+    override func bell(source: TerminalView) {
+        guard let bellConfig, bellConfig.enabled else { return }
+
+        switch bellConfig.sound {
+        case "none":
+            flashBell()
+        case "subtle":
+            if let sound = NSSound(named: NSSound.Name("Pop")) {
+                sound.play()
+            } else {
+                NSSound.beep()
+            }
+        default:
+            NSSound.beep()
+        }
+    }
+
+    override func createImage(
+        source: Terminal,
+        data: Data,
+        width widthRequest: ImageSizeRequest,
+        height heightRequest: ImageSizeRequest,
+        preserveAspectRatio: Bool
+    ) {
+        guard FeatureSettings.shared.isInlineImagesEnabled else { return }
+        super.createImage(
+            source: source,
+            data: data,
+            width: widthRequest,
+            height: heightRequest,
+            preserveAspectRatio: preserveAspectRatio
+        )
+    }
+
+    override func createImageFromBitmap(source: Terminal, bytes: inout [UInt8], width: Int, height: Int) {
+        guard FeatureSettings.shared.isInlineImagesEnabled else { return }
+        super.createImageFromBitmap(source: source, bytes: &bytes, width: width, height: height)
+    }
+
+    private func flashBell() {
+        let flash = NSView(frame: bounds)
+        flash.wantsLayer = true
+        flash.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.15).cgColor
+        flash.alphaValue = 0.0
+        flash.autoresizingMask = [.width, .height]
+        addSubview(flash)
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.05
+            flash.animator().alphaValue = 1.0
+        } completionHandler: {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.12
+                flash.animator().alphaValue = 0.0
+            } completionHandler: {
+                flash.removeFromSuperview()
+            }
+        }
     }
 
     private func terminalColor(from hex: String) -> Color {

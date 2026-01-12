@@ -241,7 +241,7 @@ final class InlineImageView: NSView {
             if let tiff = self.image.image.tiffRepresentation,
                let bitmap = NSBitmapImageRep(data: tiff),
                let data = bitmap.representation(using: .png, properties: [:]) {
-                try? data.write(to: url)
+                FileOperations.writeData(data, to: url)
             }
         }
     }
@@ -253,8 +253,8 @@ final class InlineImageView: NSView {
 
         if let tiff = image.image.tiffRepresentation,
            let bitmap = NSBitmapImageRep(data: tiff),
-           let data = bitmap.representation(using: .png, properties: [:]) {
-            try? data.write(to: tempURL)
+           let data = bitmap.representation(using: .png, properties: [:]),
+           FileOperations.writeData(data, to: tempURL) {
             NSWorkspace.shared.open(tempURL)
         }
     }

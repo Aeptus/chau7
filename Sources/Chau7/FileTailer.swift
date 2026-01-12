@@ -1,4 +1,5 @@
 import Foundation
+import Chau7Core
 
 /// Generic file tailer that monitors a file for new content.
 /// Replaces EventTailer, HistoryTailer, and TextTailer with a single implementation.
@@ -34,6 +35,8 @@ final class FileTailer<T> {
         self.onItem = onItem
     }
 
+    /// Starts monitoring the file for new content.
+    /// - Parameter prefillLines: Number of existing lines to read initially (0 = start fresh)
     func start(prefillLines: Int = 0) {
         if createIfMissing && !FileManager.default.fileExists(atPath: fileURL.path) {
             Log.warn("File not found. Creating empty file at \(fileURL.path)")
@@ -56,6 +59,7 @@ final class FileTailer<T> {
         self.timer = timer
     }
 
+    /// Stops monitoring and cleans up resources.
     func stop() {
         timer?.cancel()
         timer = nil

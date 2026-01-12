@@ -7,6 +7,8 @@ enum AppLanguage: String, CaseIterable, Identifiable, Codable {
     case system = "system"
     case english = "en"
     case french = "fr"
+    case arabic = "ar"      // RTL language
+    case hebrew = "he"      // RTL language
 
     var id: String { rawValue }
 
@@ -19,6 +21,10 @@ enum AppLanguage: String, CaseIterable, Identifiable, Codable {
             return "English"
         case .french:
             return "Français"
+        case .arabic:
+            return "العربية"
+        case .hebrew:
+            return "עברית"
         }
     }
 
@@ -30,7 +36,28 @@ enum AppLanguage: String, CaseIterable, Identifiable, Codable {
             return Locale(identifier: "en")
         case .french:
             return Locale(identifier: "fr")
+        case .arabic:
+            return Locale(identifier: "ar")
+        case .hebrew:
+            return Locale(identifier: "he")
         }
+    }
+
+    /// Returns true for right-to-left languages
+    var isRTL: Bool {
+        switch self {
+        case .arabic, .hebrew:
+            return true
+        case .system:
+            return Locale.current.language.characterDirection == .rightToLeft
+        default:
+            return false
+        }
+    }
+
+    /// Returns the text direction for this language
+    var layoutDirection: LayoutDirection {
+        isRTL ? .rightToLeft : .leftToRight
     }
 
     /// Returns the bundle for this language, or nil for system default
@@ -130,5 +157,193 @@ extension String {
     func localized(_ args: CVarArg...) -> String {
         let format = L(self, self)
         return String(format: format, arguments: args)
+    }
+}
+
+// MARK: - RTL Support
+
+extension LocalizationManager {
+    /// Current layout direction based on selected language
+    var layoutDirection: LayoutDirection {
+        currentLanguage.layoutDirection
+    }
+
+    /// Whether the current language is RTL
+    var isRTL: Bool {
+        currentLanguage.isRTL
+    }
+}
+
+/// View modifier that applies correct layout direction based on current language
+struct LocalizedLayoutModifier: ViewModifier {
+    @ObservedObject private var localization = LocalizationManager.shared
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.layoutDirection, localization.layoutDirection)
+    }
+}
+
+extension View {
+    /// Applies correct layout direction for the current language (LTR or RTL)
+    func localizedLayout() -> some View {
+        modifier(LocalizedLayoutModifier())
+    }
+
+    /// Flips the view horizontally for RTL languages
+    func flipForRTL() -> some View {
+        scaleEffect(x: LocalizationManager.shared.isRTL ? -1 : 1, y: 1)
+    }
+}
+
+// MARK: - Localized Formatters
+
+/// Provides locale-aware formatters that respect the current language setting.
+enum LocalizedFormatters {
+
+    // MARK: - Date Formatters
+
+    /// Short date format localized to current language (e.g., "1/12/24" or "12/1/24")
+    static var shortDate: DateFormatter {
+        let f = DateFormatter()
+        f.locale = LocalizationManager.shared.currentLanguage.locale
+        f.dateStyle = .short
+        f.timeStyle = .none
+        return f
+    }
+
+    /// Medium date format localized (e.g., "Jan 12, 2024" or "12 janv. 2024")
+    static var mediumDate: DateFormatter {
+        let f = DateFormatter()
+        f.locale = LocalizationManager.shared.currentLanguage.locale
+        f.dateStyle = .medium
+        f.timeStyle = .none
+        return f
+    }
+
+    /// Long date format localized (e.g., "January 12, 2024")
+    static var longDate: DateFormatter {
+        let f = DateFormatter()
+        f.locale = LocalizationManager.shared.currentLanguage.locale
+        f.dateStyle = .long
+        f.timeStyle = .none
+        return f
+    }
+
+    /// Short time format localized (e.g., "3:45 PM" or "15:45")
+    static var shortTime: DateFormatter {
+        let f = DateFormatter()
+        f.locale = LocalizationManager.shared.currentLanguage.locale
+        f.dateStyle = .none
+        f.timeStyle = .short
+        return f
+    }
+
+    /// Medium time format localized (e.g., "3:45:30 PM")
+    static var mediumTime: DateFormatter {
+        let f = DateFormatter()
+        f.locale = LocalizationManager.shared.currentLanguage.locale
+        f.dateStyle = .none
+        f.timeStyle = .medium
+        return f
+    }
+
+    /// Date and time format localized
+    static var dateTime: DateFormatter {
+        let f = DateFormatter()
+        f.locale = LocalizationManager.shared.currentLanguage.locale
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }
+
+    /// Relative date formatter (e.g., "yesterday", "2 days ago")
+    static var relative: RelativeDateTimeFormatter {
+        let f = RelativeDateTimeFormatter()
+        f.locale = LocalizationManager.shared.currentLanguage.locale
+        f.unitsStyle = .abbreviated
+        return f
+    }
+
+    // MARK: - Number Formatters
+
+    /// Decimal number formatter localized (respects decimal separator)
+    static var decimal: NumberFormatter {
+        let f = NumberFormatter()
+        f.locale = LocalizationManager.shared.currentLanguage.locale
+        f.numberStyle = .decimal
+        return f
+    }
+
+    /// Percentage formatter localized
+    static var percent: NumberFormatter {
+        let f = NumberFormatter()
+        f.locale = LocalizationManager.shared.currentLanguage.locale
+        f.numberStyle = .percent
+        f.maximumFractionDigits = 1
+        return f
+    }
+
+    /// File size formatter (e.g., "1.5 MB", "2 Ko")
+    static var fileSize: ByteCountFormatter {
+        let f = ByteCountFormatter()
+        f.countStyle = .file
+        return f
+    }
+
+    /// Integer formatter with grouping (e.g., "1,234" or "1 234")
+    static var integer: NumberFormatter {
+        let f = NumberFormatter()
+        f.locale = LocalizationManager.shared.currentLanguage.locale
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        return f
+    }
+
+    // MARK: - Convenience Methods
+
+    /// Formats a date using the short date format for current locale
+    static func formatShortDate(_ date: Date) -> String {
+        shortDate.string(from: date)
+    }
+
+    /// Formats a date using the medium date format for current locale
+    static func formatMediumDate(_ date: Date) -> String {
+        mediumDate.string(from: date)
+    }
+
+    /// Formats a time using the short time format for current locale
+    static func formatShortTime(_ date: Date) -> String {
+        shortTime.string(from: date)
+    }
+
+    /// Formats a date and time for current locale
+    static func formatDateTime(_ date: Date) -> String {
+        dateTime.string(from: date)
+    }
+
+    /// Formats a relative date (e.g., "2 hours ago")
+    static func formatRelative(_ date: Date) -> String {
+        relative.localizedString(for: date, relativeTo: Date())
+    }
+
+    /// Formats a number with locale-appropriate decimal separator
+    static func formatDecimal(_ number: Double) -> String {
+        decimal.string(from: NSNumber(value: number)) ?? String(number)
+    }
+
+    /// Formats a number as a percentage
+    static func formatPercent(_ value: Double) -> String {
+        percent.string(from: NSNumber(value: value)) ?? "\(Int(value * 100))%"
+    }
+
+    /// Formats bytes as human-readable file size
+    static func formatFileSize(_ bytes: Int64) -> String {
+        fileSize.string(fromByteCount: bytes)
+    }
+
+    /// Formats an integer with locale-appropriate grouping
+    static func formatInteger(_ number: Int) -> String {
+        integer.string(from: NSNumber(value: number)) ?? String(number)
     }
 }

@@ -292,9 +292,8 @@ final class SplitPaneController: ObservableObject {
     }
 
     /// Splits the focused pane with a text editor
+    /// Note: This always works regardless of isSplitPanesEnabled since it's an explicit user action
     func splitWithTextEditor(direction: SplitDirection, filePath: String? = nil) {
-        guard FeatureSettings.shared.isSplitPanesEnabled else { return }
-
         let editor = TextEditorModel()
         if let path = filePath {
             editor.loadFile(at: path)
@@ -484,6 +483,34 @@ final class SplitPaneController: ObservableObject {
         }
     }
 
+    /// Updates the ratio for a specific split node by ID
+    func updateRatio(splitID: UUID, newRatio: CGFloat) {
+        root = updateRatioInNode(root, splitID: splitID, newRatio: newRatio)
+    }
+
+    private func updateRatioInNode(_ node: SplitNode, splitID: UUID, newRatio: CGFloat) -> SplitNode {
+        switch node {
+        case .terminal, .textEditor:
+            return node
+
+        case .split(let id, let dir, let first, let second, let ratio):
+            if id == splitID {
+                // This is the split to update
+                let clampedRatio = max(0.1, min(0.9, newRatio))
+                return .split(id: id, direction: dir, first: first, second: second, ratio: clampedRatio)
+            }
+
+            // Recurse into children
+            return .split(
+                id: id,
+                direction: dir,
+                first: updateRatioInNode(first, splitID: splitID, newRatio: newRatio),
+                second: updateRatioInNode(second, splitID: splitID, newRatio: newRatio),
+                ratio: ratio
+            )
+        }
+    }
+
     // MARK: - Text Editor Operations
 
     /// Appends selected text from terminal to the first text editor
@@ -501,256 +528,4 @@ final class SplitPaneController: ObservableObject {
     }
 }
 
-// MARK: - Split Pane View
-
-struct SplitPaneView: View {
-    @ObservedObject var controller: SplitPaneController
-    let isSuspended: Bool
-
-    var body: some View {
-        SplitNodeView(
-            node: controller.root,
-            focusedID: controller.focusedPaneID,
-            isSuspended: isSuspended,
-            onFocus: { id in
-                controller.focusedPaneID = id
-            }
-        )
-    }
-}
-
-struct SplitNodeView: View {
-    let node: SplitNode
-    let focusedID: UUID
-    let isSuspended: Bool
-    let onFocus: (UUID) -> Void
-
-    var body: some View {
-        switch node {
-        case .terminal(let id, let session):
-            TerminalPaneView(
-                id: id,
-                session: session,
-                isSuspended: isSuspended,
-                onFocus: { onFocus(id) }
-            )
-
-        case .textEditor(let id, let editor):
-            TextEditorPaneView(
-                id: id,
-                editor: editor,
-                onFocus: { onFocus(id) }
-            )
-
-        case .split(_, let direction, let first, let second, let ratio):
-            GeometryReader { geometry in
-                if direction == .horizontal {
-                    HStack(spacing: 1) {
-                        SplitNodeView(node: first, focusedID: focusedID, isSuspended: isSuspended, onFocus: onFocus)
-                            .frame(width: geometry.size.width * ratio - 0.5)
-                        SplitDivider(isVertical: true)
-                        SplitNodeView(node: second, focusedID: focusedID, isSuspended: isSuspended, onFocus: onFocus)
-                    }
-                } else {
-                    VStack(spacing: 1) {
-                        SplitNodeView(node: first, focusedID: focusedID, isSuspended: isSuspended, onFocus: onFocus)
-                            .frame(height: geometry.size.height * ratio - 0.5)
-                        SplitDivider(isVertical: false)
-                        SplitNodeView(node: second, focusedID: focusedID, isSuspended: isSuspended, onFocus: onFocus)
-                    }
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Terminal Pane View
-
-struct TerminalPaneView: View {
-    let id: UUID
-    let session: TerminalSessionModel
-    let isSuspended: Bool
-    let onFocus: () -> Void
-
-    var body: some View {
-        TerminalViewRepresentable(model: session, isSuspended: isSuspended)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                onFocus()
-            }
-    }
-}
-
-// MARK: - Text Editor Pane View
-
-struct TextEditorPaneView: View {
-    let id: UUID
-    @ObservedObject var editor: TextEditorModel
-    let onFocus: () -> Void
-
-    @State private var showFilePicker = false
-
-    var body: some View {
-        VStack(spacing: 0) {
-            // Header bar
-            HStack(spacing: 8) {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-
-                Text(editor.fileName)
-                    .font(.system(size: 11, weight: .medium))
-                    .lineLimit(1)
-
-                if editor.isDirty {
-                    Circle()
-                        .fill(Color.orange)
-                        .frame(width: 6, height: 6)
-                }
-
-                Spacer()
-
-                // Open file button
-                Button {
-                    showFilePicker = true
-                } label: {
-                    Image(systemName: "folder")
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.plain)
-                .help("Open File")
-
-                // Save button
-                Button {
-                    if editor.filePath != nil {
-                        editor.save()
-                    } else {
-                        saveAs()
-                    }
-                } label: {
-                    Image(systemName: "square.and.arrow.down")
-                        .font(.system(size: 11))
-                }
-                .buttonStyle(.plain)
-                .disabled(!editor.isDirty && editor.filePath != nil)
-                .help("Save")
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Color(nsColor: .controlBackgroundColor))
-
-            Divider()
-
-            // Editor content
-            if editor.isLoading {
-                ProgressView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                TextEditorContent(text: Binding(
-                    get: { editor.content },
-                    set: { editor.updateContent($0) }
-                ))
-                .font(.system(size: 12, design: .monospaced))
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            onFocus()
-        }
-        .fileImporter(
-            isPresented: $showFilePicker,
-            allowedContentTypes: [.plainText, .sourceCode, .text],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first {
-                    _ = url.startAccessingSecurityScopedResource()
-                    editor.loadFile(at: url.path)
-                    url.stopAccessingSecurityScopedResource()
-                }
-            case .failure(let error):
-                Log.error("File picker error: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    private func saveAs() {
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.plainText]
-        panel.canCreateDirectories = true
-        panel.nameFieldStringValue = "untitled.txt"
-
-        if panel.runModal() == .OK, let url = panel.url {
-            editor.saveAs(to: url.path)
-        }
-    }
-}
-
-// MARK: - Text Editor Content (NSTextView wrapper for better performance)
-
-struct TextEditorContent: NSViewRepresentable {
-    @Binding var text: String
-
-    func makeNSView(context: Context) -> NSScrollView {
-        let scrollView = NSTextView.scrollableTextView()
-        guard let textView = scrollView.documentView as? NSTextView else {
-            Log.error("TextEditorContent: documentView is not NSTextView")
-            return scrollView
-        }
-
-        textView.isEditable = true
-        textView.isSelectable = true
-        textView.allowsUndo = true
-        textView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-        textView.backgroundColor = NSColor.textBackgroundColor
-        textView.textColor = NSColor.textColor
-        textView.delegate = context.coordinator
-        textView.isAutomaticQuoteSubstitutionEnabled = false
-        textView.isAutomaticDashSubstitutionEnabled = false
-        textView.isAutomaticTextReplacementEnabled = false
-
-        return scrollView
-    }
-
-    func updateNSView(_ scrollView: NSScrollView, context: Context) {
-        guard let textView = scrollView.documentView as? NSTextView else { return }
-        if textView.string != text {
-            // Preserve selection and scroll position
-            let selectedRanges = textView.selectedRanges
-            let visibleRect = textView.visibleRect
-            textView.string = text
-            textView.selectedRanges = selectedRanges
-            textView.scrollToVisible(visibleRect)
-        }
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-
-    class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: TextEditorContent
-
-        init(_ parent: TextEditorContent) {
-            self.parent = parent
-        }
-
-        func textDidChange(_ notification: Notification) {
-            guard let textView = notification.object as? NSTextView else { return }
-            parent.text = textView.string
-        }
-    }
-}
-
-// MARK: - Split Divider
-
-struct SplitDivider: View {
-    let isVertical: Bool
-
-    var body: some View {
-        Rectangle()
-            .fill(Color(nsColor: .separatorColor))
-            .frame(width: isVertical ? 1 : nil, height: isVertical ? nil : 1)
-    }
-}
+// Note: Split pane views moved to SplitPaneViews.swift

@@ -583,3 +583,80 @@
 "misc.unknown" = "Unknown";
 "misc.loading" = "Loading...";
 "misc.empty" = "Empty";
+
+// MARK: - Accessibility Labels
+"a11y.new.tab" = "New tab";
+"a11y.close.tab" = "Close tab";
+"a11y.tab.button" = "Tab %@";
+"a11y.search.field" = "Search";
+"a11y.search.clear" = "Clear search";
+"a11y.toggle.on" = "%@ enabled";
+"a11y.toggle.off" = "%@ disabled";
+"a11y.clipboard.item" = "Clipboard item: %@";
+"a11y.clipboard.paste" = "Paste this item";
+"a11y.clipboard.pin" = "Pin this item";
+"a11y.clipboard.delete" = "Delete this item";
+"a11y.bookmark.item" = "Bookmark: %@";
+"a11y.bookmark.jump" = "Jump to this bookmark";
+"a11y.snippet.item" = "Snippet: %@";
+"a11y.snippet.insert" = "Insert this snippet";
+"a11y.git.branch" = "Git branch: %@";
+"a11y.status.indicator" = "Status: %@";
+"a11y.session.row" = "Session: %@, Status: %@";
+"a11y.ssh.connection" = "SSH connection: %@";
+"a11y.ssh.connect.hint" = "Double-click to connect";
+"a11y.command.row" = "%@, Category: %@";
+"a11y.command.shortcut" = "Shortcut: %@";
+"a11y.command.no.shortcut" = "No keyboard shortcut";
+"a11y.navigation.prev" = "Previous item";
+"a11y.navigation.next" = "Next item";
+"a11y.navigation.back" = "Go back";
+"a11y.overlay.drag" = "Drag to reposition";
+"a11y.slider.value" = "%@ percent";
+
+// MARK: - RTL Languages
+"language.arabic" = "Arabic";
+"language.hebrew" = "Hebrew";
+
+// MARK: - Relative Time
+"time.just.now" = "Just now";
+"time.today" = "Today";
+"time.yesterday" = "Yesterday";
+"time.days.ago" = "%d days ago";
+"time.week.ago" = "1 week ago";
+"time.weeks.ago" = "%d weeks ago";
+"time.month.ago" = "1 month ago";
+"time.months.ago" = "%d months ago";
+
+// MARK: - Numbers and Units
+"unit.bytes" = "%@ bytes";
+"unit.kb" = "%@ KB";
+"unit.mb" = "%@ MB";
+"unit.gb" = "%@ GB";
+"unit.lines" = "%d lines";
+"unit.items" = "%d items";
+"unit.percent" = "%d%%";
+
+// MARK: - Status Messages
+"status.connected" = "Connected";
+"status.disconnected" = "Disconnected";
+"status.connecting" = "Connecting...";
+"status.idle" = "Idle";
+"status.running" = "Running";
+"status.completed" = "Completed";
+"status.failed" = "Failed";
+"status.pending" = "Pending";
+
+// MARK: - Validation
+"validation.required" = "This field is required";
+"validation.invalid.path" = "Invalid file path";
+"validation.invalid.port" = "Port must be between 1 and 65535";
+"validation.invalid.hostname" = "Invalid hostname";
+"validation.file.not.exists" = "File does not exist";
+
+// MARK: - Confirmation Dialogs
+"confirm.delete.snippet" = "Are you sure you want to delete this snippet?";
+"confirm.delete.connection" = "Are you sure you want to delete this connection?";
+"confirm.delete.bookmark" = "Are you sure you want to delete this bookmark?";
+"confirm.clear.history" = "Are you sure you want to clear the clipboard history?";
+"confirm.action.cannot.undo" = "This action cannot be undone.";

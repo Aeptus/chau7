@@ -107,17 +107,46 @@ struct TerminalColorScheme: Codable, Identifiable, Equatable {
         .default, .solarizedDark, .solarizedLight, .dracula, .nord, .monokai, .gruvboxDark, .tokyoNight
     ]
 
+    // MARK: - Color Cache (Performance Optimization)
+
+    /// Thread-safe cache for parsed NSColor values to avoid repeated hex parsing
+    private static var colorCache: [String: NSColor] = [:]
+    private static let colorCacheLock = NSLock()
+
     func nsColor(for hex: String) -> NSColor {
+        // Check cache first (thread-safe)
+        Self.colorCacheLock.lock()
+        if let cached = Self.colorCache[hex] {
+            Self.colorCacheLock.unlock()
+            return cached
+        }
+        Self.colorCacheLock.unlock()
+
+        // Parse hex string
         var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         hexSanitized = hexSanitized.replacingOccurrences(of: "#", with: "")
         var rgb: UInt64 = 0
         Scanner(string: hexSanitized).scanHexInt64(&rgb)
-        return NSColor(
+        let color = NSColor(
             red: CGFloat((rgb & 0xFF0000) >> 16) / 255.0,
             green: CGFloat((rgb & 0x00FF00) >> 8) / 255.0,
             blue: CGFloat(rgb & 0x0000FF) / 255.0,
             alpha: 1.0
         )
+
+        // Cache the result (thread-safe)
+        Self.colorCacheLock.lock()
+        Self.colorCache[hex] = color
+        Self.colorCacheLock.unlock()
+
+        return color
+    }
+
+    /// Clears the color cache (call when color scheme changes significantly)
+    static func clearColorCache() {
+        colorCacheLock.lock()
+        colorCache.removeAll()
+        colorCacheLock.unlock()
     }
 
     var signature: String {
@@ -169,6 +198,36 @@ struct KeyboardShortcut: Codable, Identifiable, Equatable {
         KeyboardShortcut(action: "splitHorizontal", key: "d", modifiers: ["cmd"]),
         KeyboardShortcut(action: "splitVertical", key: "d", modifiers: ["cmd", "shift"]),
     ]
+
+    static func shortcuts(for preset: String) -> [KeyboardShortcut] {
+        switch preset {
+        case "vim":
+            return applyOverrides(
+                to: defaultShortcuts,
+                overrides: [
+                    "nextTab": KeyboardShortcut(action: "nextTab", key: "l", modifiers: ["ctrl"]),
+                    "previousTab": KeyboardShortcut(action: "previousTab", key: "h", modifiers: ["ctrl"]),
+                ]
+            )
+        case "emacs":
+            return applyOverrides(
+                to: defaultShortcuts,
+                overrides: [
+                    "nextTab": KeyboardShortcut(action: "nextTab", key: "n", modifiers: ["ctrl"]),
+                    "previousTab": KeyboardShortcut(action: "previousTab", key: "p", modifiers: ["ctrl"]),
+                ]
+            )
+        default:
+            return defaultShortcuts
+        }
+    }
+
+    private static func applyOverrides(
+        to base: [KeyboardShortcut],
+        overrides: [String: KeyboardShortcut]
+    ) -> [KeyboardShortcut] {
+        base.map { overrides[$0.action] ?? $0 }
+    }
 
     static func actionDisplayName(_ action: String) -> String {
         switch action {
@@ -322,8 +381,10 @@ struct CustomAIDetectionRule: Codable, Identifiable, Equatable {
 
 // MARK: - Feature Settings (Centralized configuration for all features)
 
-/// Centralized feature flags and settings for Chau7
-/// All features can be toggled in Settings and values are persisted in UserDefaults
+/// Centralized feature flags and settings for Chau7.
+/// All features can be toggled in Settings and values are persisted in UserDefaults.
+/// - Note: Thread Safety - @Published properties must be modified on main thread.
+///   This class is typically accessed from UI code on the main thread.
 final class FeatureSettings: ObservableObject {
     static let shared = FeatureSettings()
 
@@ -382,7 +443,7 @@ final class FeatureSettings: ObservableObject {
     @Published var customColorScheme: TerminalColorScheme? {
         didSet {
             if let scheme = customColorScheme,
-               let data = try? JSONEncoder().encode(scheme) {
+               let data = JSONOperations.encode(scheme, context: "customColorScheme") {
                 UserDefaults.standard.set(data, forKey: Keys.customColorScheme)
             } else {
                 UserDefaults.standard.removeObject(forKey: Keys.customColorScheme)
@@ -416,7 +477,7 @@ final class FeatureSettings: ObservableObject {
 
     @Published var customShortcuts: [KeyboardShortcut] {
         didSet {
-            if let data = try? JSONEncoder().encode(customShortcuts) {
+            if let data = JSONOperations.encode(customShortcuts, context: "customShortcuts") {
                 UserDefaults.standard.set(data, forKey: Keys.customShortcuts)
             }
         }
@@ -441,14 +502,18 @@ final class FeatureSettings: ObservableObject {
     }
 
     func resetShortcutsToDefaults() {
-        customShortcuts = KeyboardShortcut.defaultShortcuts
+        customShortcuts = KeyboardShortcut.shortcuts(for: keybindingPreset)
+    }
+
+    func applyKeybindingPreset(_ preset: String) {
+        customShortcuts = KeyboardShortcut.shortcuts(for: preset)
     }
 
     // MARK: - Notification Filters (NEW)
 
     @Published var notificationFilters: NotificationFilters {
         didSet {
-            if let data = try? JSONEncoder().encode(notificationFilters) {
+            if let data = JSONOperations.encode(notificationFilters, context: "notificationFilters") {
                 UserDefaults.standard.set(data, forKey: Keys.notificationFilters)
             }
         }
@@ -475,6 +540,10 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(newTabPosition, forKey: Keys.newTabPosition) }
     }
 
+    @Published var alwaysShowTabBar: Bool {
+        didSet { UserDefaults.standard.set(alwaysShowTabBar, forKey: Keys.alwaysShowTabBar) }
+    }
+
     // MARK: - Window Transparency
 
     @Published var windowOpacity: Double {
@@ -489,12 +558,32 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
+    // MARK: - App Theme
+
+    @Published var appTheme: AppTheme {
+        didSet {
+            UserDefaults.standard.set(appTheme.rawValue, forKey: Keys.appTheme)
+            NotificationCenter.default.post(name: .appThemeChanged, object: nil)
+        }
+    }
+
     // MARK: - Language Setting
 
     @Published var appLanguage: AppLanguage {
         didSet {
             UserDefaults.standard.set(appLanguage.rawValue, forKey: Keys.appLanguage)
             LocalizationManager.shared.currentLanguage = appLanguage
+        }
+    }
+
+    // MARK: - Launch at Login
+
+    @Published var launchAtLogin: Bool {
+        didSet {
+            UserDefaults.standard.set(launchAtLogin, forKey: Keys.launchAtLogin)
+            if oldValue != launchAtLogin {
+                LaunchAtLoginManager.setEnabled(launchAtLogin)
+            }
         }
     }
 
@@ -576,7 +665,7 @@ final class FeatureSettings: ObservableObject {
 
     @Published var customAIDetectionRules: [CustomAIDetectionRule] {
         didSet {
-            if let data = try? JSONEncoder().encode(customAIDetectionRules) {
+            if let data = JSONOperations.encode(customAIDetectionRules, context: "customAIDetectionRules") {
                 UserDefaults.standard.set(data, forKey: Keys.customAIDetectionRules)
             }
         }
@@ -781,10 +870,15 @@ final class FeatureSettings: ObservableObject {
         // Tab Behavior
         static let lastTabCloseBehavior = "tabs.lastTabCloseBehavior"
         static let newTabPosition = "tabs.newTabPosition"
+        static let alwaysShowTabBar = "tabs.alwaysShowTabBar"
         // Window Opacity
         static let windowOpacity = "window.opacity"
+        // App Theme
+        static let appTheme = "app.theme"
         // Language
         static let appLanguage = "app.language"
+        // Launch at login
+        static let launchAtLogin = "app.launchAtLogin"
         // iCloud Sync (NEW)
         static let iCloudSyncEnabled = "sync.iCloudEnabled"
         // F05
@@ -855,7 +949,7 @@ final class FeatureSettings: ObservableObject {
         // Color Scheme (NEW)
         self.colorSchemeName = defaults.string(forKey: Keys.colorSchemeName) ?? "Default"
         if let data = defaults.data(forKey: Keys.customColorScheme),
-           let scheme = try? JSONDecoder().decode(TerminalColorScheme.self, from: data) {
+           let scheme = JSONOperations.decode(TerminalColorScheme.self, from: data, context: "customColorScheme") {
             self.customColorScheme = scheme
         } else {
             self.customColorScheme = nil
@@ -873,15 +967,16 @@ final class FeatureSettings: ObservableObject {
 
         // Keyboard Shortcuts (NEW)
         if let data = defaults.data(forKey: Keys.customShortcuts),
-           let shortcuts = try? JSONDecoder().decode([KeyboardShortcut].self, from: data) {
+           let shortcuts = JSONOperations.decode([KeyboardShortcut].self, from: data, context: "customShortcuts") {
             self.customShortcuts = shortcuts
         } else {
-            self.customShortcuts = KeyboardShortcut.defaultShortcuts
+            let preset = defaults.string(forKey: Keys.keybindingPreset) ?? "default"
+            self.customShortcuts = KeyboardShortcut.shortcuts(for: preset)
         }
 
         // Notification Filters (NEW)
         if let data = defaults.data(forKey: Keys.notificationFilters),
-           let filters = try? JSONDecoder().decode(NotificationFilters.self, from: data) {
+           let filters = JSONOperations.decode(NotificationFilters.self, from: data, context: "notificationFilters") {
             self.notificationFilters = filters
         } else {
             self.notificationFilters = .defaults
@@ -899,9 +994,18 @@ final class FeatureSettings: ObservableObject {
             self.lastTabCloseBehavior = .keepWindow
         }
         self.newTabPosition = defaults.string(forKey: Keys.newTabPosition) ?? "end"
+        self.alwaysShowTabBar = defaults.object(forKey: Keys.alwaysShowTabBar) as? Bool ?? true
 
         // Window Opacity
         self.windowOpacity = defaults.object(forKey: Keys.windowOpacity) as? Double ?? 1.0
+
+        // App Theme
+        if let themeRaw = defaults.string(forKey: Keys.appTheme),
+           let theme = AppTheme(rawValue: themeRaw) {
+            self.appTheme = theme
+        } else {
+            self.appTheme = .system
+        }
 
         // Language
         if let langRaw = defaults.string(forKey: Keys.appLanguage),
@@ -909,6 +1013,13 @@ final class FeatureSettings: ObservableObject {
             self.appLanguage = lang
         } else {
             self.appLanguage = .system
+        }
+
+        // Launch at Login
+        if defaults.object(forKey: Keys.launchAtLogin) != nil {
+            self.launchAtLogin = defaults.object(forKey: Keys.launchAtLogin) as? Bool ?? false
+        } else {
+            self.launchAtLogin = LaunchAtLoginManager.isEnabled()
         }
 
         // iCloud Sync (NEW)
@@ -940,7 +1051,7 @@ final class FeatureSettings: ObservableObject {
 
         // Custom AI Detection (NEW)
         if let data = defaults.data(forKey: Keys.customAIDetectionRules),
-           let rules = try? JSONDecoder().decode([CustomAIDetectionRule].self, from: data) {
+           let rules = JSONOperations.decode([CustomAIDetectionRule].self, from: data, context: "customAIDetectionRules") {
             self.customAIDetectionRules = rules
         } else {
             self.customAIDetectionRules = []
@@ -993,6 +1104,11 @@ final class FeatureSettings: ObservableObject {
         self.defaultStartDirectory = defaults.string(forKey: Keys.defaultStartDirectory) ?? home
     }
 
+    // MARK: - Overlay Positions Cache (Performance Optimization)
+
+    /// Cached overlay positions to avoid repeated UserDefaults parsing
+    private var cachedOverlayPositions: [String: [String: [String: Double]]]?
+
     func overlayOffset(for id: String, workspace: String?) -> CGSize {
         let key = overlayWorkspaceKey(workspace)
         let store = overlayPositionsStore()
@@ -1025,8 +1141,16 @@ final class FeatureSettings: ObservableObject {
     }
 
     private func overlayPositionsStore() -> [String: [String: [String: Double]]] {
+        // Return cached version if available
+        if let cached = cachedOverlayPositions {
+            return cached
+        }
+
         let defaults = UserDefaults.standard
-        guard let stored = defaults.dictionary(forKey: Keys.overlayPositionsMap) else { return [:] }
+        guard let stored = defaults.dictionary(forKey: Keys.overlayPositionsMap) else {
+            cachedOverlayPositions = [:]
+            return [:]
+        }
         var result: [String: [String: [String: Double]]] = [:]
         for (workspaceKey, value) in stored {
             guard let overlayDict = value as? [String: Any] else { continue }
@@ -1038,10 +1162,12 @@ final class FeatureSettings: ObservableObject {
             }
             result[workspaceKey] = overlayStore
         }
+        cachedOverlayPositions = result
         return result
     }
 
     private func saveOverlayPositionsStore(_ store: [String: [String: [String: Double]]]) {
+        cachedOverlayPositions = store  // Update cache
         UserDefaults.standard.set(store, forKey: Keys.overlayPositionsMap)
         overlayPositionsVersion += 1
     }
@@ -1067,6 +1193,10 @@ final class FeatureSettings: ObservableObject {
         var findCaseSensitiveDefault: Bool?
         var findRegexDefault: Bool?
         var lastTabCloseBehavior: String?
+        var newTabPosition: String?
+        var alwaysShowTabBar: Bool?
+        var appTheme: String?
+        var launchAtLogin: Bool?
         var appLanguage: String?
         var windowOpacity: Double
         var cursorStyle: String
@@ -1123,6 +1253,10 @@ final class FeatureSettings: ObservableObject {
             findCaseSensitiveDefault: findCaseSensitiveDefault,
             findRegexDefault: findRegexDefault,
             lastTabCloseBehavior: lastTabCloseBehavior.rawValue,
+            newTabPosition: newTabPosition,
+            alwaysShowTabBar: alwaysShowTabBar,
+            appTheme: appTheme.rawValue,
+            launchAtLogin: launchAtLogin,
             appLanguage: appLanguage.rawValue,
             windowOpacity: windowOpacity,
             cursorStyle: cursorStyle,
@@ -1164,11 +1298,12 @@ final class FeatureSettings: ObservableObject {
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return try? encoder.encode(exportable)
+        return JSONOperations.encode(exportable, context: "settings export")
     }
 
     func importSettings(from data: Data) -> Bool {
-        guard let imported = try? JSONDecoder().decode(ExportableSettings.self, from: data) else {
+        guard let imported = JSONOperations.decode(ExportableSettings.self, from: data, context: "settings import") else {
+            Log.error("Failed to import settings: invalid data format")
             return false
         }
 
@@ -1192,6 +1327,15 @@ final class FeatureSettings: ObservableObject {
         } else {
             lastTabCloseBehavior = .keepWindow
         }
+        newTabPosition = imported.newTabPosition ?? "end"
+        alwaysShowTabBar = imported.alwaysShowTabBar ?? true
+        if let themeRaw = imported.appTheme,
+           let theme = AppTheme(rawValue: themeRaw) {
+            appTheme = theme
+        } else {
+            appTheme = .system
+        }
+        launchAtLogin = imported.launchAtLogin ?? launchAtLogin
         if let langRaw = imported.appLanguage,
            let lang = AppLanguage(rawValue: langRaw) {
             appLanguage = lang
@@ -1264,7 +1408,8 @@ final class FeatureSettings: ObservableObject {
         startupCommand = ""
 
         // Shortcuts
-        customShortcuts = KeyboardShortcut.defaultShortcuts
+        keybindingPreset = "default"
+        customShortcuts = KeyboardShortcut.shortcuts(for: keybindingPreset)
 
         // Notifications
         notificationFilters = .defaults
@@ -1272,12 +1417,17 @@ final class FeatureSettings: ObservableObject {
         findRegexDefault = false
         lastTabCloseBehavior = .keepWindow
         newTabPosition = "end"
+        alwaysShowTabBar = true
 
         // Language
         appLanguage = .system
 
         // Window
         windowOpacity = 1.0
+        appTheme = .system
+
+        // Launch at login
+        launchAtLogin = false
 
         // Terminal
         cursorStyle = "block"
@@ -1330,6 +1480,7 @@ final class FeatureSettings: ObservableObject {
         colorSchemeName = "Default"
         customColorScheme = nil
         windowOpacity = 1.0
+        appTheme = .system
         isAutoTabThemeEnabled = true
     }
 
@@ -1346,8 +1497,8 @@ final class FeatureSettings: ObservableObject {
     }
 
     func resetInputToDefaults() {
-        customShortcuts = KeyboardShortcut.defaultShortcuts
         keybindingPreset = "default"
+        customShortcuts = KeyboardShortcut.shortcuts(for: keybindingPreset)
         isCopyOnSelectEnabled = false
         isCmdClickPathsEnabled = true
         defaultEditor = ""
@@ -1464,11 +1615,15 @@ extension FeatureSettings {
             shellType: "system",
             customShellPath: "",
             startupCommand: "",
-            customShortcuts: KeyboardShortcut.defaultShortcuts,
+            customShortcuts: KeyboardShortcut.shortcuts(for: "default"),
             notificationFilters: .defaults,
             findCaseSensitiveDefault: false,
             findRegexDefault: false,
             lastTabCloseBehavior: "keepWindow",
+            newTabPosition: "end",
+            alwaysShowTabBar: true,
+            appTheme: "system",
+            launchAtLogin: false,
             appLanguage: "system",
             windowOpacity: 1.0,
             cursorStyle: "block",
@@ -1513,13 +1668,13 @@ extension FeatureSettings {
     var savedProfiles: [SettingsProfile] {
         get {
             guard let data = UserDefaults.standard.data(forKey: Self.profilesKey),
-                  let profiles = try? JSONDecoder().decode([SettingsProfile].self, from: data) else {
+                  let profiles = JSONOperations.decode([SettingsProfile].self, from: data, context: "savedProfiles") else {
                 return SettingsProfile.defaultProfiles
             }
             return profiles
         }
         set {
-            if let data = try? JSONEncoder().encode(newValue) {
+            if let data = JSONOperations.encode(newValue, context: "savedProfiles") {
                 UserDefaults.standard.set(data, forKey: Self.profilesKey)
             }
             objectWillChange.send()
@@ -1544,7 +1699,8 @@ extension FeatureSettings {
 
     func createProfile(name: String, icon: String = "person.fill") -> SettingsProfile {
         guard let currentSettings = exportSettings(),
-              let exportable = try? JSONDecoder().decode(ExportableSettings.self, from: currentSettings) else {
+              let exportable = JSONOperations.decode(ExportableSettings.self, from: currentSettings, context: "createProfile") else {
+            Log.warn("Failed to create profile from current settings, using defaults")
             return SettingsProfile(name: name, icon: icon, settings: Self.defaultExportableSettings)
         }
         let profile = SettingsProfile(name: name, icon: icon, settings: exportable)
@@ -1572,8 +1728,10 @@ extension FeatureSettings {
     }
 
     func loadProfile(_ profile: SettingsProfile) {
-        let encoder = JSONEncoder()
-        guard let data = try? encoder.encode(profile.settings) else { return }
+        guard let data = JSONOperations.encode(profile.settings, context: "load profile \(profile.name)") else {
+            Log.error("Failed to load profile \(profile.name): encoding failed")
+            return
+        }
         _ = importSettings(from: data)
         activeProfileId = profile.id
         NotificationCenter.default.post(name: .settingsProfileChanged, object: profile)
@@ -1581,7 +1739,7 @@ extension FeatureSettings {
 
     func saveCurrentToProfile(_ profile: SettingsProfile) {
         guard let currentSettings = exportSettings(),
-              let exportable = try? JSONDecoder().decode(ExportableSettings.self, from: currentSettings) else {
+              let exportable = JSONOperations.decode(ExportableSettings.self, from: currentSettings, context: "save to profile \(profile.name)") else {
             return
         }
         var updatedProfile = profile

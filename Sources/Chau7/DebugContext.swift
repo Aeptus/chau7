@@ -270,7 +270,7 @@ struct StateSnapshot: Codable {
 
         // Read recent log lines
         var recentLogs: [String] = []
-        if let logData = try? String(contentsOfFile: Log.filePath, encoding: .utf8) {
+        if let logData = FileOperations.readString(from: Log.filePath) {
             let lines = logData.components(separatedBy: .newlines)
             recentLogs = Array(lines.suffix(50))
         }

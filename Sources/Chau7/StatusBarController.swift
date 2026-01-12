@@ -198,6 +198,8 @@ struct StatusBarPanelView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Monitoring status: \(model.isMonitoring ? "Active" : "Paused")")
     }
 
     // MARK: - Scrollable Content
@@ -454,6 +456,8 @@ private struct SessionRow: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(session.projectName) session, \(stateDescription), last active \(timeAgo(session.lastActivity))")
     }
 
     private var isAnimated: Bool {
@@ -678,5 +682,9 @@ private struct QuickSettingToggle: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(label)")
+        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityHint("Double-tap to toggle")
+        .accessibilityAddTraits(.isButton)
     }
 }

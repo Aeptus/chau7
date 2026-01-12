@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import UserNotifications
+import Chau7Core
 
 struct SessionStatus: Identifiable, Equatable {
     let id: String
@@ -10,6 +11,9 @@ struct SessionStatus: Identifiable, Equatable {
     var lastSeen: Date
 }
 
+/// Main application model managing state, monitoring, and notifications.
+/// - Note: Thread Safety - @Published properties must be modified on main thread.
+///   Use DispatchQueue.main.async when updating state from background callbacks.
 final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     @Published var isMonitoring: Bool {
         didSet {
@@ -592,7 +596,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
         let url = URL(fileURLWithPath: logPath)
         let parent = url.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        FileOperations.createDirectory(at: parent)
 
         if !FileManager.default.fileExists(atPath: url.path) {
             FileManager.default.createFile(atPath: url.path, contents: Data(), attributes: nil)

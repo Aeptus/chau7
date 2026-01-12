@@ -583,3 +583,80 @@
 "misc.unknown" = "Inconnu";
 "misc.loading" = "Chargement...";
 "misc.empty" = "Vide";
+
+// MARK: - Accessibility Labels
+"a11y.new.tab" = "Nouvel onglet";
+"a11y.close.tab" = "Fermer l'onglet";
+"a11y.tab.button" = "Onglet %@";
+"a11y.search.field" = "Rechercher";
+"a11y.search.clear" = "Effacer la recherche";
+"a11y.toggle.on" = "%@ activé";
+"a11y.toggle.off" = "%@ désactivé";
+"a11y.clipboard.item" = "Élément du presse-papiers : %@";
+"a11y.clipboard.paste" = "Coller cet élément";
+"a11y.clipboard.pin" = "Épingler cet élément";
+"a11y.clipboard.delete" = "Supprimer cet élément";
+"a11y.bookmark.item" = "Signet : %@";
+"a11y.bookmark.jump" = "Aller à ce signet";
+"a11y.snippet.item" = "Extrait : %@";
+"a11y.snippet.insert" = "Insérer cet extrait";
+"a11y.git.branch" = "Branche Git : %@";
+"a11y.status.indicator" = "État : %@";
+"a11y.session.row" = "Session : %@, État : %@";
+"a11y.ssh.connection" = "Connexion SSH : %@";
+"a11y.ssh.connect.hint" = "Double-cliquer pour se connecter";
+"a11y.command.row" = "%@, Catégorie : %@";
+"a11y.command.shortcut" = "Raccourci : %@";
+"a11y.command.no.shortcut" = "Pas de raccourci clavier";
+"a11y.navigation.prev" = "Élément précédent";
+"a11y.navigation.next" = "Élément suivant";
+"a11y.navigation.back" = "Retour";
+"a11y.overlay.drag" = "Glisser pour repositionner";
+"a11y.slider.value" = "%@ pour cent";
+
+// MARK: - RTL Languages
+"language.arabic" = "Arabe";
+"language.hebrew" = "Hébreu";
+
+// MARK: - Relative Time
+"time.just.now" = "À l'instant";
+"time.today" = "Aujourd'hui";
+"time.yesterday" = "Hier";
+"time.days.ago" = "il y a %d jours";
+"time.week.ago" = "il y a 1 semaine";
+"time.weeks.ago" = "il y a %d semaines";
+"time.month.ago" = "il y a 1 mois";
+"time.months.ago" = "il y a %d mois";
+
+// MARK: - Numbers and Units
+"unit.bytes" = "%@ octets";
+"unit.kb" = "%@ Ko";
+"unit.mb" = "%@ Mo";
+"unit.gb" = "%@ Go";
+"unit.lines" = "%d lignes";
+"unit.items" = "%d éléments";
+"unit.percent" = "%d %%";
+
+// MARK: - Status Messages
+"status.connected" = "Connecté";
+"status.disconnected" = "Déconnecté";
+"status.connecting" = "Connexion...";
+"status.idle" = "Inactif";
+"status.running" = "En cours";
+"status.completed" = "Terminé";
+"status.failed" = "Échoué";
+"status.pending" = "En attente";
+
+// MARK: - Validation
+"validation.required" = "Ce champ est obligatoire";
+"validation.invalid.path" = "Chemin de fichier invalide";
+"validation.invalid.port" = "Le port doit être entre 1 et 65535";
+"validation.invalid.hostname" = "Nom d'hôte invalide";
+"validation.file.not.exists" = "Le fichier n'existe pas";
+
+// MARK: - Confirmation Dialogs
+"confirm.delete.snippet" = "Êtes-vous sûr de vouloir supprimer cet extrait ?";
+"confirm.delete.connection" = "Êtes-vous sûr de vouloir supprimer cette connexion ?";
+"confirm.delete.bookmark" = "Êtes-vous sûr de vouloir supprimer ce signet ?";
+"confirm.clear.history" = "Êtes-vous sûr de vouloir effacer l'historique du presse-papiers ?";
+"confirm.action.cannot.undo" = "Cette action est irréversible.";

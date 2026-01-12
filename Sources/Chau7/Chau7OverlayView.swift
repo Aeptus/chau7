@@ -1,18 +1,45 @@
 import SwiftUI
 import AppKit
 
+// MARK: - Overlay Colors
+
 private let overlayPanelBackground = Color(red: 0.10, green: 0.10, blue: 0.10)
 private let overlayRowBackground = Color(red: 0.16, green: 0.16, blue: 0.16)
 private let overlayChipBackground = Color(red: 0.22, green: 0.22, blue: 0.22)
 
+// MARK: - Overlay Layout Constants
+
+private enum OverlayLayout {
+    // Panel sizes
+    static let searchPanelMaxWidth: CGFloat = 400
+    static let commandPanelMaxWidth: CGFloat = 400
+    static let snippetPanelMaxWidth: CGFloat = 520
+    static let colorPickerMaxWidth: CGFloat = 140
+
+    // Content heights
+    static let searchMatchListMaxHeight: CGFloat = 120
+    static let commandListMaxHeight: CGFloat = 200
+    static let snippetPreviewMaxHeight: CGFloat = 180
+    static let snippetListMaxHeight: CGFloat = 260
+    static let colorPreviewHeight: CGFloat = 90
+
+    // Component sizes
+    static let iconSize: CGFloat = 24
+    static let smallIconSize: CGFloat = 20
+    static let commandListMinWidth: CGFloat = 200
+}
+
 struct Chau7OverlayView: View {
     @ObservedObject var overlayModel: OverlayTabsModel
     @ObservedObject var appModel: AppModel
+    @ObservedObject private var settings = FeatureSettings.shared
 
     var body: some View {
         VStack(spacing: 0) {
-            topBar
-            Divider()
+            if shouldShowTabBar {
+                topBar
+                Divider()
+            }
             terminalStack
         }
         .background(Color.clear)
@@ -34,6 +61,10 @@ struct Chau7OverlayView: View {
                 delay: appModel.suspendRenderDelaySeconds
             )
         }
+    }
+
+    private var shouldShowTabBar: Bool {
+        settings.alwaysShowTabBar || overlayModel.tabs.count > 1
     }
 
     private var topBar: some View {
@@ -80,6 +111,8 @@ struct Chau7OverlayView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .accessibilityLabel("New tab")
+                    .accessibilityHint("Opens a new terminal tab")
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -98,6 +131,7 @@ struct Chau7OverlayView: View {
                 .padding(.vertical, 4)
                 .background(Color.black.opacity(0.20))
                 .clipShape(Capsule())
+                .accessibilityLabel("Git branch: \(session.gitBranch ?? "unknown")")
             }
         }
         .padding(.horizontal, 8)
@@ -174,11 +208,26 @@ struct Chau7OverlayView: View {
                     .zIndex(10)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: overlayModel.isSearchVisible)
-        .animation(.easeInOut(duration: 0.2), value: overlayModel.isRenameVisible)
-        .animation(.easeInOut(duration: 0.2), value: overlayModel.isClipboardHistoryVisible)
-        .animation(.easeInOut(duration: 0.2), value: overlayModel.isBookmarkListVisible)
-        .animation(.easeInOut(duration: 0.2), value: overlayModel.isSnippetManagerVisible)
+        .modifier(ReduceMotionAnimationModifier(
+            values: [
+                overlayModel.isSearchVisible,
+                overlayModel.isRenameVisible,
+                overlayModel.isClipboardHistoryVisible,
+                overlayModel.isBookmarkListVisible,
+                overlayModel.isSnippetManagerVisible
+            ]
+        ))
+    }
+}
+
+/// Modifier that applies animations with reduce motion support
+private struct ReduceMotionAnimationModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let values: [Bool]
+
+    func body(content: Content) -> some View {
+        content
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: values)
     }
 }
 
@@ -315,6 +364,7 @@ struct TabButton: View {
                     .font(.system(size: 10, weight: .bold))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Close tab")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -325,6 +375,10 @@ struct TabButton: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(resolvedTitle) tab, \(resolvedPath)")
+        .accessibilityHint(isSelected ? "Selected. Double-tap to rename" : "Double-tap to select, then double-tap to rename")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .highPriorityGesture(
             TapGesture(count: 2).onEnded {
                 onRename()
@@ -382,6 +436,7 @@ struct TabButtonFallback: View {
                     .font(.system(size: 10, weight: .bold))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Close tab")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -392,6 +447,10 @@ struct TabButtonFallback: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title) tab")
+        .accessibilityHint(isSelected ? "Selected. Double-tap to rename" : "Double-tap to select, then double-tap to rename")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .highPriorityGesture(
             TapGesture(count: 2).onEnded {
                 onRename()
@@ -446,6 +505,7 @@ struct DraggableOverlay<Content: View>: View {
 
 struct SearchOverlayView: View {
     @ObservedObject var model: OverlayTabsModel
+    @ObservedObject private var settings = FeatureSettings.shared
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -455,6 +515,8 @@ struct SearchOverlayView: View {
                     TextField("Search terminal", text: $model.searchQuery)
                         .textFieldStyle(.roundedBorder)
                         .focused($isFocused)
+                        .accessibilityLabel("Search terminal")
+                        .accessibilityHint("Enter text to search in terminal output")
                         .onChange(of: model.searchQuery) { _ in
                             model.refreshSearch()
                         }
@@ -465,6 +527,7 @@ struct SearchOverlayView: View {
                     Text("\(model.searchMatchCount) matches")
                         .font(.custom("Avenir Next", size: 11))
                         .foregroundStyle(.secondary)
+                        .accessibilityLabel("\(model.searchMatchCount) matches found")
 
                     // Case sensitivity toggle (Issue #23 fix)
                     Toggle(isOn: $model.isCaseSensitive) {
@@ -474,9 +537,12 @@ struct SearchOverlayView: View {
                     .toggleStyle(.button)
                     .controlSize(.small)
                     .help("Case sensitive search")
+                    .accessibilityLabel("Case sensitive")
+                    .accessibilityHint(model.isCaseSensitive ? "Currently enabled" : "Currently disabled")
                     .onChange(of: model.isCaseSensitive) { _ in
                         model.refreshSearch()
                     }
+                    .disabled(model.isSemanticSearch)
 
                     Toggle(isOn: $model.isRegexSearch) {
                         Text(".*")
@@ -485,8 +551,25 @@ struct SearchOverlayView: View {
                     .toggleStyle(.button)
                     .controlSize(.small)
                     .help("Regex search")
+                    .accessibilityLabel("Regular expression search")
+                    .accessibilityHint(model.isRegexSearch ? "Currently enabled" : "Currently disabled")
                     .onChange(of: model.isRegexSearch) { _ in
                         model.refreshSearch()
+                    }
+                    .disabled(model.isSemanticSearch)
+
+                    if settings.isSemanticSearchEnabled {
+                        Toggle(isOn: $model.isSemanticSearch) {
+                            Text("Cmd")
+                                .font(.custom("Avenir Next", size: 11).weight(.semibold))
+                        }
+                        .toggleStyle(.button)
+                        .controlSize(.small)
+                        .help("Semantic command search")
+                        .accessibilityLabel("Semantic command search")
+                        .onChange(of: model.isSemanticSearch) { _ in
+                            model.refreshSearch()
+                        }
                     }
 
                     Button("Close") {
@@ -515,15 +598,19 @@ struct SearchOverlayView: View {
                             )
                         }
                     }
-                    .frame(maxHeight: 120)
+                    .frame(maxHeight: OverlayLayout.searchMatchListMaxHeight)
                 }
 
                 HStack(spacing: 8) {
                     Button("Prev") { model.previousMatch() }
                         .controlSize(.small)
+                        .accessibilityLabel("Previous match")
+                        .accessibilityHint("Go to previous search result")
                         // Note: Cmd+Shift+G is in menu commands
                     Button("Next") { model.nextMatch() }
                         .controlSize(.small)
+                        .accessibilityLabel("Next match")
+                        .accessibilityHint("Go to next search result")
                         // Note: Cmd+G is in menu commands
                 }
             }
@@ -582,7 +669,7 @@ struct RenameOverlayView: View {
                 HStack(spacing: 8) {
                     TextField("Tab name", text: $model.renameText)
                         .textFieldStyle(.roundedBorder)
-                        .frame(minWidth: 200)
+                        .frame(minWidth: OverlayLayout.commandListMinWidth)
                         .focused($isFocused)
                         // Issue #18 fix: Allow Enter key to confirm rename
                         .onSubmit {
@@ -676,7 +763,7 @@ struct ClipboardHistoryOverlayView: View {
                             }
                         }
                     }
-                    .frame(maxHeight: 200)
+                    .frame(maxHeight: OverlayLayout.commandListMaxHeight)
                 }
 
                 Text("Click to paste • ⌘V to paste selected")
@@ -687,7 +774,7 @@ struct ClipboardHistoryOverlayView: View {
             .background(overlayPanelBackground)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .padding(.horizontal, 16)
-            .frame(maxWidth: 400)
+            .frame(maxWidth: OverlayLayout.commandPanelMaxWidth)
         }
     }
 }
@@ -745,6 +832,9 @@ struct ClipboardItemRow: View {
         .background(overlayRowBackground)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Clipboard item: \(item.preview)")
+        .accessibilityHint(item.isPinned ? "Pinned. Tap to paste" : "Tap to paste")
         .onTapGesture {
             onPaste()
         }
@@ -800,7 +890,7 @@ struct BookmarkListOverlayView: View {
                             }
                         }
                     }
-                    .frame(maxHeight: 180)
+                    .frame(maxHeight: OverlayLayout.snippetPreviewMaxHeight)
                 }
 
                 Text("⌘B to add bookmark • Click to jump")
@@ -811,7 +901,7 @@ struct BookmarkListOverlayView: View {
             .background(overlayPanelBackground)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .padding(.horizontal, 16)
-            .frame(maxWidth: 400)
+            .frame(maxWidth: OverlayLayout.searchPanelMaxWidth)
         }
     }
 }
@@ -864,6 +954,9 @@ struct BookmarkRow: View {
         .background(overlayRowBackground)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Bookmark: \(bookmark.label ?? bookmark.linePreview)")
+        .accessibilityHint("Tap to jump to this location")
         .onTapGesture {
             onJump()
         }
@@ -948,7 +1041,7 @@ struct SnippetManagerOverlayView: View {
                                     }
                                 }
                             }
-                            .frame(maxHeight: 260)
+                            .frame(maxHeight: OverlayLayout.snippetListMaxHeight)
                         }
                     }
                 }
@@ -965,7 +1058,7 @@ struct SnippetManagerOverlayView: View {
             .background(overlayPanelBackground)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .padding(.horizontal, 16)
-            .frame(maxWidth: 520)
+            .frame(maxWidth: OverlayLayout.snippetPanelMaxWidth)
             .onAppear { isFocused = true }
             .alert(item: $deleteTarget) { entry in
                 Alert(
@@ -1089,6 +1182,9 @@ struct SnippetRowView: View {
         .background(overlayRowBackground)
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Snippet: \(entry.snippet.title)")
+        .accessibilityHint("Tap to insert into terminal")
         .onTapGesture {
             onInsert()
         }
@@ -1118,7 +1214,7 @@ struct SnippetEditorView: View {
 
             TextEditor(text: $draft.body)
                 .font(.system(size: 11, design: .monospaced))
-                .frame(height: 90)
+                .frame(height: OverlayLayout.colorPreviewHeight)
                 .overlay(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .stroke(Color.white.opacity(0.1), lineWidth: 1)
@@ -1145,7 +1241,7 @@ struct SnippetEditorView: View {
                         Text(SnippetSource.repo.displayName).tag(SnippetSource.repo)
                     }
                 }
-                .frame(maxWidth: 140)
+                .frame(maxWidth: OverlayLayout.colorPickerMaxWidth)
             }
 
             HStack {

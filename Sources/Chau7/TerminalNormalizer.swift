@@ -1,5 +1,15 @@
 import Foundation
 
+// MARK: - Terminal Text Normalizer
+
+/// Normalizes terminal output by processing control characters and escape sequences.
+///
+/// This utility handles:
+/// - Backspace characters (^H, DEL) for proper character deletion
+/// - ANSI escape sequences (colors, cursor movement, etc.)
+/// - Other control characters (bell, form feed, etc.)
+///
+/// Used to convert raw terminal output to clean, displayable text.
 enum TerminalNormalizer {
     // MARK: - Pre-compiled Regex (Memory Optimization)
     // Compiled once at startup instead of on every call
@@ -8,6 +18,9 @@ enum TerminalNormalizer {
         try! NSRegularExpression(pattern: "\\u001B\\[[0-9;?]*[ -/]*[@-~]")
     }()
 
+    /// Fully normalizes terminal text by applying backspaces, stripping ANSI codes, and removing control characters.
+    /// - Parameter input: Raw terminal text
+    /// - Returns: Clean text suitable for display or searching
     static func normalize(_ input: String) -> String {
         var output = applyBackspaces(input)
         output = stripAnsi(output)
@@ -15,6 +28,10 @@ enum TerminalNormalizer {
         return output
     }
 
+    /// Applies only backspace processing without stripping ANSI codes.
+    /// Use this when you need to preserve color information for ANSI parsing.
+    /// - Parameter input: Terminal text with potential backspace characters
+    /// - Returns: Text with backspaces resolved
     static func applyBackspacesOnly(_ input: String) -> String {
         applyBackspaces(input)
     }

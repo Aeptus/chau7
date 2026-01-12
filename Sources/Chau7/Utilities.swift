@@ -34,6 +34,7 @@ extension Array {
 enum EnvVars {
     // Logging
     static let logFile = "CHAU7_LOG_FILE"
+    static let logMaxBytes = "CHAU7_LOG_MAX_BYTES"
     static let verbose = "CHAU7_VERBOSE"
     static let trace = "CHAU7_TRACE"
 
@@ -54,6 +55,9 @@ enum EnvVars {
     // Terminal session
     static let idleSeconds = "CHAU7_IDLE_SECONDS"
     static let clearOnLaunch = "CHAU7_CLEAR_ON_LAUNCH"
+
+    // Debug output capture
+    static let ptyDumpMaxBytes = "CHAU7_PTY_DUMP_MAX_BYTES"
 
     // Legacy env var support (for backwards compatibility)
     static let legacyEventsLog = "AI_EVENTS_LOG"

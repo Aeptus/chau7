@@ -1,14 +1,21 @@
 import Foundation
 
-struct AIEvent: Identifiable, Equatable {
-    let id = UUID()
-    let type: String
-    let tool: String
-    let message: String
-    let ts: String
+public struct AIEvent: Identifiable, Equatable {
+    public let id = UUID()
+    public let type: String
+    public let tool: String
+    public let message: String
+    public let ts: String
+
+    public init(type: String, tool: String, message: String, ts: String) {
+        self.type = type
+        self.tool = tool
+        self.message = message
+        self.ts = ts
+    }
 
     /// Returns the notification title for this event.
-    var notificationTitle: String {
+    public var notificationTitle: String {
         switch type.lowercased() {
         case "needs_validation":
             return "\(tool): Validation needed"
@@ -24,7 +31,7 @@ struct AIEvent: Identifiable, Equatable {
     }
 
     /// Returns the notification body for this event.
-    var notificationBody: String {
+    public var notificationBody: String {
         switch type.lowercased() {
         case "needs_validation":
             return message.isEmpty ? "Your input is required." : message
@@ -40,14 +47,14 @@ struct AIEvent: Identifiable, Equatable {
     }
 }
 
-enum AIEventParseError: Error {
+public enum AIEventParseError: Error {
     case notJSONObject
     case missingField(String)
     case invalidFieldType(String)
 }
 
-final class AIEventParser {
-    static func parse(line: String) throws -> AIEvent {
+public final class AIEventParser {
+    public static func parse(line: String) throws -> AIEvent {
         guard let data = line.data(using: .utf8) else {
             throw AIEventParseError.notJSONObject
         }
@@ -73,10 +80,7 @@ final class AIEventParser {
         let type = try getString("type")
         let tool = try getString("tool", default: "CLI")
         let message = try getString("message", default: "")
-        let ts = try getString(
-            "ts",
-            default: DateFormatters.nowISO8601()
-        )
+        let ts = try getString("ts", default: DateFormatters.nowISO8601())
 
         return AIEvent(type: type, tool: tool, message: message, ts: ts)
     }

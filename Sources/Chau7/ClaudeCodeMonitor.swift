@@ -1,8 +1,11 @@
 import Foundation
+import Chau7Core
 
 // MARK: - Claude Code Monitor
 
-/// Monitors Claude Code events via hooks and provides real-time updates
+/// Monitors Claude Code events via hooks and provides real-time updates.
+/// - Note: Thread Safety - @Published properties must be modified on main thread.
+///   Background callbacks dispatch to main via DispatchQueue.main.async.
 final class ClaudeCodeMonitor: ObservableObject {
     static let shared = ClaudeCodeMonitor()
 
@@ -65,7 +68,7 @@ final class ClaudeCodeMonitor: ObservableObject {
         // Ensure events file exists
         let fm = FileManager.default
         let dir = (eventsFilePath as NSString).deletingLastPathComponent
-        try? fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        FileOperations.createDirectory(atPath: dir)
         if !fm.fileExists(atPath: eventsFilePath) {
             fm.createFile(atPath: eventsFilePath, contents: nil)
         }
@@ -110,6 +113,7 @@ final class ClaudeCodeMonitor: ObservableObject {
 
     // MARK: - Event Handling
 
+    /// Called from background queue by FileTailer - dispatches to main thread internally
     private func handleEvent(_ event: ClaudeCodeEvent) {
         Log.trace("Claude event: type=\(event.type.rawValue) session=\(event.shortSessionId) tool=\(event.toolName)")
 
