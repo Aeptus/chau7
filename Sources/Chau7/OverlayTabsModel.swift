@@ -148,6 +148,19 @@ final class OverlayTabsModel: ObservableObject {
         tabs.first { $0.id == selectedTabID }
     }
 
+    func notificationTabTitle(forTool tool: String) -> String? {
+        let trimmed = tool.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let lowerTool = trimmed.lowercased()
+        let matches = tabs.filter { tab in
+            let display = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let active = tab.session?.activeAppName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return display == lowerTool || active == lowerTool
+        }
+        let preferred = matches.first { $0.id == selectedTabID } ?? matches.first
+        return preferred?.displayTitle
+    }
+
     var overlayWorkspaceIdentifier: String? {
         if let repoRoot = SnippetManager.shared.repoRoot {
             return repoRoot
@@ -167,6 +180,20 @@ final class OverlayTabsModel: ObservableObject {
         if let tab = selectedTab, let session = tab.session {
             SnippetManager.shared.updateContextPath(session.currentDirectory)
         }
+    }
+
+    private func inheritedStartDirectory() -> String? {
+        guard FeatureSettings.shared.newTabsUseCurrentDirectory else { return nil }
+        guard let current = selectedTab?.session?.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines),
+              !current.isEmpty else {
+            return nil
+        }
+        let resolved = TerminalSessionModel.resolveStartDirectory(current)
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: resolved, isDirectory: &isDir), isDir.boolValue else {
+            return nil
+        }
+        return resolved
     }
 
     func selectTab(id: UUID) {
@@ -190,6 +217,9 @@ final class OverlayTabsModel: ObservableObject {
         let colors = TabColor.allCases
         if !colors.isEmpty {
             tab.color = colors[tabs.count % colors.count]
+        }
+        if let directory = inheritedStartDirectory() {
+            tab.session?.currentDirectory = directory
         }
 
         // Insert based on settings
@@ -249,6 +279,7 @@ final class OverlayTabsModel: ObservableObject {
             Log.warn("closeTab: tab with id=\(id) not found!")
             return
         }
+        let inheritedDirectory = tabs.count == 1 ? inheritedStartDirectory() : nil
         Log.info("closeTab: found tab at index=\(index)")
         if isRenameVisible {
             clearRenameState(shouldFocus: false)
@@ -270,6 +301,9 @@ final class OverlayTabsModel: ObservableObject {
             var newTab = OverlayTab(appModel: appModel)
             if let firstColor = TabColor.allCases.first {
                 newTab.color = firstColor
+            }
+            if let directory = inheritedDirectory {
+                newTab.session?.currentDirectory = directory
             }
             tabs[index] = newTab
             selectedTabID = newTab.id
@@ -500,6 +534,7 @@ final class OverlayTabsModel: ObservableObject {
         } else if titleChanged {
             tabs[index].customTitle = trimmed
         }
+        tabs[index].session?.tabTitleOverride = tabs[index].customTitle
         tabs[index].color = renameColor
         if renameColor != renameOriginalColor {
             tabs[index].autoColor = nil

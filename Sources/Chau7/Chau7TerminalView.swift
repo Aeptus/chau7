@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import Carbon
+import QuartzCore
 import SwiftTerm
 
 final class Chau7TerminalView: LocalProcessTerminalView {
@@ -28,6 +29,11 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     private var mouseUpMonitor: Any?
     private var mouseMoveMonitor: Any?
     private var keyDownMonitor: Any?
+    private var isEventMonitoringEnabled = false
+
+    // Debounced path detection for mouse hover (latency optimization)
+    private var pathDetectionWorkItem: DispatchWorkItem?
+    private static let pathDetectionQueue = DispatchQueue(label: "com.chau7.pathdetection", qos: .userInteractive)
     private var focusObservers: [NSObjectProtocol] = []
     private var appliedColorSchemeSignature: String?
     private var appliedCursorStyle: (style: String, blink: Bool)?
@@ -132,7 +138,7 @@ final class Chau7TerminalView: LocalProcessTerminalView {
 
     // MARK: - Terminal Delegate Overrides
 
-    override func bell(source: TerminalView) {
+    override func bell(source: Terminal) {
         guard let bellConfig, bellConfig.enabled else { return }
 
         switch bellConfig.sound {
@@ -149,27 +155,8 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         }
     }
 
-    override func createImage(
-        source: Terminal,
-        data: Data,
-        width widthRequest: ImageSizeRequest,
-        height heightRequest: ImageSizeRequest,
-        preserveAspectRatio: Bool
-    ) {
-        guard FeatureSettings.shared.isInlineImagesEnabled else { return }
-        super.createImage(
-            source: source,
-            data: data,
-            width: widthRequest,
-            height: heightRequest,
-            preserveAspectRatio: preserveAspectRatio
-        )
-    }
-
-    override func createImageFromBitmap(source: Terminal, bytes: inout [UInt8], width: Int, height: Int) {
-        guard FeatureSettings.shared.isInlineImagesEnabled else { return }
-        super.createImageFromBitmap(source: source, bytes: &bytes, width: width, height: height)
-    }
+    // Note: createImage and createImageFromBitmap are now handled via terminalDelegate
+    // in SwiftTerm's extension, so we configure inline image support via the delegate instead
 
     private func flashBell() {
         let flash = NSView(frame: bounds)
@@ -207,8 +194,10 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         super.viewDidMoveToWindow()
 
         if window != nil {
-            setupEventMonitors()
-            setupFocusObservers()
+            if isEventMonitoringEnabled {
+                setupEventMonitors()
+                setupFocusObservers()
+            }
             updateCursorLineHighlight()
         } else {
             removeEventMonitors()
@@ -226,74 +215,107 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         removeFocusObservers()
     }
 
+    func setEventMonitoringEnabled(_ enabled: Bool) {
+        guard isEventMonitoringEnabled != enabled else { return }
+        isEventMonitoringEnabled = enabled
+        guard window != nil else { return }
+
+        if enabled {
+            setupEventMonitors()
+            setupFocusObservers()
+        } else {
+            removeEventMonitors()
+            removeFocusObservers()
+        }
+        updateCursorLineHighlight()
+    }
+
     private func setupEventMonitors() {
         removeEventMonitors()
 
+        let settings = FeatureSettings.shared
+        let needsMouseDown = settings.isCmdClickPathsEnabled || settings.isOptionClickCursorEnabled
+        let needsMouseUp = settings.isCopyOnSelectEnabled
+        let needsMouseMove = settings.isCmdClickPathsEnabled
+        let needsKeyDown = settings.isSnippetsEnabled
+
         // F03: Cmd+Click for paths/URLs, Option+Click for cursor positioning - monitor mouse down
-        mouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-            guard let self = self else { return event }
+        // Only install if at least one click feature is enabled (latency optimization)
+        if needsMouseDown {
+            mouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+                guard let self = self else { return event }
 
-            // Only handle events in our window and view
-            guard event.window === self.window else { return event }
-            let location = self.convert(event.locationInWindow, from: nil)
-            guard self.bounds.contains(location) else { return event }
+                // Only handle events in our window and view
+                guard event.window === self.window else { return event }
+                let location = self.convert(event.locationInWindow, from: nil)
+                guard self.bounds.contains(location) else { return event }
 
-            // Check for Cmd+click on paths
-            if event.modifierFlags.contains(.command) && FeatureSettings.shared.isCmdClickPathsEnabled {
-                if self.handleCmdClick(at: location) {
-                    return nil  // Consume the event
+                // Check for Cmd+click on paths
+                if event.modifierFlags.contains(.command) && FeatureSettings.shared.isCmdClickPathsEnabled {
+                    if self.handleCmdClick(at: location) {
+                        return nil  // Consume the event
+                    }
                 }
-            }
 
-            // Option+click to position cursor (like iTerm2)
-            if event.modifierFlags.contains(.option) && FeatureSettings.shared.isOptionClickCursorEnabled {
-                if self.handleOptionClick(at: location) {
-                    return nil  // Consume the event
+                // Option+click to position cursor (like iTerm2)
+                if event.modifierFlags.contains(.option) && FeatureSettings.shared.isOptionClickCursorEnabled {
+                    if self.handleOptionClick(at: location) {
+                        return nil  // Consume the event
+                    }
                 }
-            }
 
-            self.updateCursorLineHighlight()
-            return event
+                self.updateCursorLineHighlight()
+                return event
+            }
         }
 
         // F18: Copy-on-select - monitor mouse up
-        mouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
-            guard let self = self else { return event }
+        // Only install if copy-on-select is enabled (latency optimization)
+        if needsMouseUp {
+            mouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
+                guard let self = self else { return event }
 
-            // Only handle events in our window and view
-            guard event.window === self.window else { return event }
-            let location = self.convert(event.locationInWindow, from: nil)
-            guard self.bounds.contains(location) else { return event }
+                // Only handle events in our window and view
+                guard event.window === self.window else { return event }
+                let location = self.convert(event.locationInWindow, from: nil)
+                guard self.bounds.contains(location) else { return event }
 
-            self.handleMouseUp(event: event)
-            self.updateCursorLineHighlight()
-            return event
+                self.handleMouseUp(event: event)
+                self.updateCursorLineHighlight()
+                return event
+            }
         }
 
         // F03: Cursor change on hover with Cmd held
-        mouseMoveMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
-            guard let self = self else { return event }
+        // Only install if Cmd+click is enabled (latency optimization)
+        if needsMouseMove {
+            mouseMoveMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+                guard let self = self else { return event }
 
-            // Only handle events in our window and view
-            guard event.window === self.window else { return event }
-            let location = self.convert(event.locationInWindow, from: nil)
-            guard self.bounds.contains(location) else { return event }
+                // Only handle events in our window and view
+                guard event.window === self.window else { return event }
+                let location = self.convert(event.locationInWindow, from: nil)
+                guard self.bounds.contains(location) else { return event }
 
-            self.handleMouseMove(at: location, modifiers: event.modifierFlags)
-            self.updateCursorLineHighlight()
-            return event
+                self.handleMouseMove(at: location, modifiers: event.modifierFlags)
+                self.updateCursorLineHighlight()
+                return event
+            }
         }
 
         // F21: Snippet placeholder navigation
-        keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self = self else { return event }
-            guard event.window === self.window else { return event }
-            guard self.window?.firstResponder === self else { return event }
+        // Only install if snippets are enabled (latency optimization)
+        if needsKeyDown {
+            keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self = self else { return event }
+                guard event.window === self.window else { return event }
+                guard self.window?.firstResponder === self else { return event }
 
-            if self.handleSnippetKeyDown(event) {
-                return nil
+                if self.handleSnippetKeyDown(event) {
+                    return nil
+                }
+                return event
             }
-            return event
         }
     }
 
@@ -358,8 +380,9 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         // Option key disables copy-on-select temporarily
         if event.modifierFlags.contains(.option) { return }
 
-        // Check for selection and copy if present (with small delay to let selection finalize)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+        // Check for selection and copy if present (with minimal delay to let selection finalize)
+        // Reduced from 50ms to 15ms for better perceived responsiveness
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.015) { [weak self] in
             guard let self = self else { return }
             if let (startPos, endPos) = self.getSelectionCoordinates() {
                 let terminal = self.getTerminal()
@@ -500,19 +523,40 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     private func handleMouseMove(at location: NSPoint, modifiers: NSEvent.ModifierFlags) {
         guard FeatureSettings.shared.isCmdClickPathsEnabled else { return }
 
-        if modifiers.contains(.command) {
-            if let lineText = getLineAtPoint(location) {
-                let hasURL = !findURLs(in: lineText).isEmpty
-                let hasPath = !PathClickHandler.findPaths(in: lineText).isEmpty
+        // If Command is not held, just show I-beam cursor
+        guard modifiers.contains(.command) else {
+            NSCursor.iBeam.set()
+            return
+        }
 
-                if hasURL || hasPath {
+        // Get line text on main thread (fast operation)
+        guard let lineText = getLineAtPoint(location) else {
+            NSCursor.iBeam.set()
+            return
+        }
+
+        // Cancel any pending detection work
+        pathDetectionWorkItem?.cancel()
+
+        // Debounce and run regex matching on background thread (latency optimization)
+        let work = DispatchWorkItem { [weak self] in
+            guard let self = self else { return }
+            let hasURL = !self.findURLs(in: lineText).isEmpty
+            let hasPath = !PathClickHandler.findPaths(in: lineText).isEmpty
+            let hasClickable = hasURL || hasPath
+
+            DispatchQueue.main.async {
+                if hasClickable {
                     NSCursor.pointingHand.set()
-                    return
+                } else {
+                    NSCursor.iBeam.set()
                 }
             }
         }
+        pathDetectionWorkItem = work
 
-        NSCursor.iBeam.set()
+        // Small debounce to avoid excessive work during rapid mouse movement
+        Self.pathDetectionQueue.asyncAfter(deadline: .now() + 0.016, execute: work)
     }
 
     // MARK: - Copy (with SIGINT fallback)
@@ -598,6 +642,13 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         clipboard.setString(text, forType: .string)
     }
 
+    /// Selects the current input line (the line where the cursor is).
+    /// Used for Cmd+A to select just the current command being typed.
+    func selectCurrentLine() {
+        // Use selectAll as fallback since internal SwiftTerm APIs are not accessible
+        selectAll(nil)
+    }
+
     // MARK: - Paste
 
     override func paste(_ sender: Any) {
@@ -624,20 +675,7 @@ final class Chau7TerminalView: LocalProcessTerminalView {
 
 
     // MARK: - Data Flow Callbacks
-
-    override func dataReceived(slice: ArraySlice<UInt8>) {
-        guard !slice.isEmpty else { return }
-        let data = Data(slice)
-        onOutput?(data)
-
-        let incoming = Array(slice)
-        if incoming.contains(0x1b) || !dimPatchRemainderBytes.isEmpty {
-            let patched = patchDimSequences(incoming)
-            super.dataReceived(slice: patched[...])
-        } else {
-            super.dataReceived(slice: slice)
-        }
-    }
+    // Note: dataReceived is overridden below with local echo support
 
     private func patchDimSequences(_ incoming: [UInt8]) -> [UInt8] {
         let buffer: [UInt8] = dimPatchRemainderBytes + incoming
@@ -695,11 +733,125 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         return true
     }
 
+    // MARK: - Local Echo State
+    // Track pending local echo to suppress PTY duplicates
+    private var pendingLocalEcho: [UInt8] = []
+    // Track pending backspaces to suppress PTY's backspace response
+    private var pendingLocalBackspaces: Int = 0
+
+    /// Checks if the PTY has echo enabled (safe for local echo).
+    /// Returns false for password prompts, vim, etc. where echo is disabled.
+    private var isPtyEchoEnabled: Bool {
+        // Access the PTY file descriptor from LocalProcessTerminalView's process
+        guard let proc = process, proc.childfd >= 0 else { return true }
+
+        var termios = Darwin.termios()
+        guard tcgetattr(proc.childfd, &termios) == 0 else { return true }
+
+        // Check if ECHO flag is set in local modes
+        return (termios.c_lflag & UInt(ECHO)) != 0
+    }
+
     override func send(source: TerminalView, data: ArraySlice<UInt8>) {
         if let text = String(bytes: data, encoding: .utf8) {
             onInput?(text)
         }
+
+        // LOCAL ECHO: Show printable characters IMMEDIATELY before PTY round-trip.
+        // This is the key to matching Terminal.app's perceived latency.
+        // The PTY will echo the same character back, which we'll suppress in dataReceived.
+        //
+        // IMPORTANT: Only do local echo when PTY has echo enabled.
+        // Password prompts disable echo, so we check tcgetattr() to detect this.
+        if isPtyEchoEnabled {
+            for byte in data {
+                // Only local echo printable ASCII (0x20-0x7E)
+                if byte >= 0x20 && byte <= 0x7E {
+                    // Immediately render the character
+                    feed(byteArray: [byte])
+                    pendingLocalEcho.append(byte)
+                } else if (byte == 0x7F || byte == 0x08) && !pendingLocalEcho.isEmpty {
+                    // Backspace/Delete: Undo the last local echo visually
+                    // Keep the char in pendingLocalEcho so PTY's echo is suppressed
+                    // Track the backspace so we suppress PTY's backspace response too
+                    pendingLocalBackspaces += 1
+                    feed(byteArray: [0x08, 0x20, 0x08])  // BS, space, BS
+                }
+            }
+            // Flush display immediately so user sees the character NOW
+            CATransaction.flush()
+        }
+
         super.send(source: source, data: data)
+    }
+
+    override func dataReceived(slice: ArraySlice<UInt8>) {
+        guard !slice.isEmpty else { return }
+
+        // Suppress characters/sequences that we already local-echoed
+        var filteredSlice = slice
+        if !pendingLocalEcho.isEmpty || pendingLocalBackspaces > 0 {
+            var filtered: [UInt8] = []
+            var i = slice.startIndex
+
+            while i < slice.endIndex {
+                let byte = slice[i]
+
+                // Check for backspace sequence: 0x08 0x20 0x08 ("\b \b")
+                if pendingLocalBackspaces > 0 && byte == 0x08 {
+                    let remaining = slice.endIndex - i
+                    if remaining >= 3 && slice[i+1] == 0x20 && slice[i+2] == 0x08 {
+                        // Suppress backspace sequence we already displayed
+                        pendingLocalBackspaces -= 1
+                        // Also remove the char from pendingLocalEcho that was erased
+                        if !pendingLocalEcho.isEmpty {
+                            pendingLocalEcho.removeLast()
+                        }
+                        i += 3
+                        continue
+                    }
+                }
+
+                // Check for local echo character match
+                if !pendingLocalEcho.isEmpty && byte == pendingLocalEcho[0] {
+                    // This byte matches our local echo - suppress it
+                    pendingLocalEcho.removeFirst()
+                    i += 1
+                    continue
+                }
+
+                // Include this byte in output
+                filtered.append(byte)
+                i += 1
+            }
+
+            // Clear stale pending state (timeout protection)
+            if pendingLocalEcho.count > 100 {
+                pendingLocalEcho.removeAll()
+                pendingLocalBackspaces = 0
+            }
+
+            if filtered.isEmpty {
+                // All bytes were suppressed
+                let data = Data(slice)
+                onOutput?(data)
+                return
+            }
+            filteredSlice = filtered[...]
+        }
+
+        let data = Data(filteredSlice)
+        onOutput?(data)
+
+        // Fast path: no escape sequences AND no pending partial sequence
+        if dimPatchRemainderBytes.isEmpty && !filteredSlice.contains(0x1b) {
+            super.dataReceived(slice: filteredSlice)
+            return
+        }
+
+        // Slow path: needs patching
+        let patched = patchDimSequences(Array(filteredSlice))
+        super.dataReceived(slice: patched[...])
     }
 
     override func rangeChanged(source: TerminalView, startY: Int, endY: Int) {

@@ -1,13 +1,30 @@
 import Foundation
 
+public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public static let eventsLog = AIEventSource(rawValue: "events_log")
+    public static let terminalSession = AIEventSource(rawValue: "terminal_session")
+    public static let historyMonitor = AIEventSource(rawValue: "history_monitor")
+    public static let claudeCode = AIEventSource(rawValue: "claude_code")
+    public static let app = AIEventSource(rawValue: "app")
+    public static let unknown = AIEventSource(rawValue: "unknown")
+}
+
 public struct AIEvent: Identifiable, Equatable {
     public let id = UUID()
+    public let source: AIEventSource
     public let type: String
     public let tool: String
     public let message: String
     public let ts: String
 
-    public init(type: String, tool: String, message: String, ts: String) {
+    public init(source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String) {
+        self.source = source
         self.type = type
         self.tool = tool
         self.message = message
@@ -16,17 +33,24 @@ public struct AIEvent: Identifiable, Equatable {
 
     /// Returns the notification title for this event.
     public var notificationTitle: String {
+        notificationTitle(toolOverride: nil)
+    }
+
+    /// Returns the notification title for this event with an optional tool override.
+    public func notificationTitle(toolOverride: String?) -> String {
+        let toolName = (toolOverride ?? tool).trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = toolName.isEmpty ? tool : toolName
         switch type.lowercased() {
         case "needs_validation":
-            return "\(tool): Validation needed"
+            return "\(name): Validation needed"
         case "idle":
-            return "\(tool): Possibly waiting for you"
+            return "\(name): Possibly waiting for you"
         case "finished":
-            return "\(tool): Task finished"
+            return "\(name): Task finished"
         case "failed":
-            return "\(tool): Task failed"
+            return "\(name): Task failed"
         default:
-            return "\(tool): Update"
+            return "\(name): Update"
         }
     }
 
@@ -77,11 +101,13 @@ public final class AIEventParser {
             throw AIEventParseError.missingField(key)
         }
 
+        let sourceRaw = try getString("source", default: AIEventSource.eventsLog.rawValue)
+        let source = AIEventSource(rawValue: sourceRaw)
         let type = try getString("type")
         let tool = try getString("tool", default: "CLI")
         let message = try getString("message", default: "")
         let ts = try getString("ts", default: DateFormatters.nowISO8601())
 
-        return AIEvent(type: type, tool: tool, message: message, ts: ts)
+        return AIEvent(source: source, type: type, tool: tool, message: message, ts: ts)
     }
 }

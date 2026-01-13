@@ -12,7 +12,8 @@ let package = Package(
         .library(name: "Chau7Core", targets: ["Chau7Core"])
     ],
     dependencies: [
-        .package(url: "https://github.com/schiste/Chau7-SwiftTerm.git", revision: "7a6f4acd84c152170336832db4b2fda87722f3ef")
+        .package(url: "https://github.com/schiste/Chau7-SwiftTerm.git", revision: "7a6f4acd84c152170336832db4b2fda87722f3ef"),
+        .package(url: "https://github.com/apple/swift-atomics.git", from: "1.2.0")
     ],
     targets: [
         // Core library with testable logic
@@ -26,11 +27,19 @@ let package = Package(
             name: "Chau7",
             dependencies: [
                 "Chau7Core",
-                .product(name: "SwiftTerm", package: "chau7-swiftterm")
+                .product(name: "SwiftTerm", package: "chau7-swiftterm"),
+                .product(name: "Atomics", package: "swift-atomics")
             ],
             path: "Sources/Chau7",
             resources: [
                 .process("Resources")
+            ],
+            linkerSettings: [
+                .linkedFramework("Metal"),
+                .linkedFramework("MetalKit"),
+                .linkedFramework("IOKit"),
+                .linkedFramework("IOSurface"),
+                .linkedFramework("CoreVideo")
             ]
         ),
         // Test target

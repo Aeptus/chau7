@@ -71,4 +71,10 @@ final class SplashWindowController {
             completion()
         })
     }
+
+    /// Sets the window's appearance for theme consistency
+    var windowAppearance: NSAppearance? {
+        get { window?.appearance }
+        set { window?.appearance = newValue }
+    }
 }

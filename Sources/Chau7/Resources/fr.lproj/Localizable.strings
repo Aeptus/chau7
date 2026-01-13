@@ -55,7 +55,9 @@
 "settings.windows" = "Fenêtres";
 "settings.windows.description" = "Gestion et disposition des fenêtres";
 "settings.ai" = "Intégration IA";
-"settings.ai.description" = "Détection des CLI IA et notifications";
+"settings.ai.description" = "Détection et thématisation des CLI IA";
+"settings.notifications" = "Notifications";
+"settings.notifications.description" = "Préférences d'alertes et filtres d'événements";
 "settings.logs" = "Journaux";
 "settings.logs.description" = "Surveillance des journaux et historique";
 "settings.about" = "À propos";
@@ -660,3 +662,591 @@
 "confirm.delete.bookmark" = "Êtes-vous sûr de vouloir supprimer ce signet ?";
 "confirm.clear.history" = "Êtes-vous sûr de vouloir effacer l'historique du presse-papiers ?";
 "confirm.action.cannot.undo" = "Cette action est irréversible.";
+
+// MARK: - General Settings (Additional)
+"settings.general.startup" = "Démarrage";
+"settings.general.launchAtLogin" = "Lancer au démarrage";
+"settings.general.launchAtLogin.help" = "Démarrer automatiquement Chau7 lors de la connexion à votre Mac";
+
+// Settings Profiles
+"settings.general.profiles" = "Profils de paramètres";
+"settings.general.profiles.description" = "Créez des profils nommés pour différents usages (Travail, Personnel, Présentation)";
+"settings.general.profiles.active" = "Actif :";
+"settings.general.profiles.activeLabel" = "(Actif)";
+"settings.general.profiles.save" = "Enregistrer les paramètres actuels";
+"settings.general.profiles.create" = "Créer un nouveau profil...";
+"settings.general.profiles.createTitle" = "Créer un nouveau profil";
+"settings.general.profiles.namePlaceholder" = "Nom du profil";
+"settings.general.profiles.chooseIcon" = "Choisir une icône";
+"settings.general.profiles.createButton" = "Créer le profil";
+"settings.general.profiles.created" = "Créé le";
+"settings.general.profiles.delete.title" = "Supprimer le profil ?";
+"settings.general.profiles.delete.message" = "Êtes-vous sûr de vouloir supprimer ce profil ? Cette action est irréversible.";
+
+// iCloud Sync
+"settings.general.icloud" = "Synchronisation iCloud";
+"settings.general.icloud.sync" = "Synchroniser via iCloud";
+"settings.general.icloud.sync.help" = "Gardez vos paramètres Chau7 synchronisés sur tous vos Mac";
+"settings.general.icloud.syncNow" = "Synchroniser maintenant";
+"settings.general.icloud.restore" = "Restaurer depuis iCloud";
+
+// Settings Backup
+"settings.general.backup" = "Sauvegarde des paramètres";
+"settings.general.backup.description" = "Exportez vos paramètres dans un fichier JSON ou importez depuis une sauvegarde.";
+"settings.general.backup.export" = "Exporter les paramètres...";
+"settings.general.backup.import" = "Importer les paramètres...";
+
+// Status
+"settings.general.status" = "État";
+"settings.general.status.notifications" = "Notifications";
+"settings.general.status.eventMonitoring" = "Surveillance des événements";
+"settings.general.status.historyMonitoring" = "Surveillance de l'historique";
+"settings.general.status.terminalMonitoring" = "Surveillance du terminal";
+"status.active" = "Actif";
+"status.paused" = "En pause";
+
+// Actions
+"settings.general.actions" = "Actions";
+"settings.general.actions.showOverlay" = "Afficher l'overlay";
+"settings.general.actions.resetWindowPositions" = "Réinitialiser les positions des fenêtres";
+"settings.general.actions.debugConsole" = "Console de débogage";
+
+// Reset
+"settings.general.reset" = "Réinitialisation";
+"settings.general.reset.all" = "Réinitialiser tous les paramètres par défaut";
+"settings.general.reset.confirm.title" = "Réinitialiser tous les paramètres ?";
+"settings.general.reset.confirm.message" = "Cela réinitialisera tous les paramètres de Chau7 à leurs valeurs par défaut. Cette action est irréversible.";
+
+// Common Buttons
+"button.cancel" = "Annuler";
+"button.reset" = "Réinitialiser";
+"button.delete" = "Supprimer";
+"button.load" = "Charger";
+"button.save" = "Enregistrer";
+
+// Input Settings - Shortcut Editor
+"settings.input.editShortcut" = "Modifier le raccourci :";
+"settings.input.key" = "Touche";
+"settings.input.modifiers" = "Modificateurs";
+"settings.input.preview" = "Aperçu :";
+"settings.input.conflictsWith" = "Conflit avec :";
+
+// Logs Settings - Additional Help Text
+"settings.logs.codexHistoryPath.help" = "Chemin vers le fichier d'historique OpenAI Codex";
+"settings.logs.claudeHistoryPath.help" = "Chemin vers le fichier d'historique Claude Code";
+"settings.logs.codexTerminalLog.help" = "Chemin vers le fichier journal PTY de Codex";
+"settings.logs.claudeTerminalLog.help" = "Chemin vers le fichier journal PTY de Claude";
+
+// General Settings - Profile Delete
+"settings.general.profiles.delete" = "Supprimer le profil";
+
+// =============================================================================
+// MARK: - Localisation des vues de paramètres
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// MARK: Paramètres d'apparence
+// -----------------------------------------------------------------------------
+
+// Aperçu en direct
+"settings.appearance.livePreview" = "Aperçu en direct";
+"settings.appearance.livePreview.sampleText" = "Voix ambiguë d'un cœur qui au zéphyr préfère les jattes de kiwis. 🦊";
+"settings.appearance.livePreview.code.function" = "fonction";
+"settings.appearance.livePreview.code.hello" = "Bonjour, Terminal !";
+
+// Section Police
+"settings.appearance.font" = "Police";
+"settings.appearance.font.family" = "Famille de police";
+"settings.appearance.font.family.help" = "Les polices à chasse fixe fonctionnent mieux pour le terminal";
+"settings.appearance.font.size" = "Taille de police";
+"settings.appearance.font.size.help" = "Taille en points (8-32)";
+"settings.appearance.font.defaultZoom" = "Zoom par défaut";
+"settings.appearance.font.defaultZoom.help" = "Niveau de zoom par défaut pour les nouveaux onglets";
+
+// Section Thème de couleurs
+"settings.appearance.colorScheme" = "Thème de couleurs";
+"settings.appearance.colorScheme.scheme" = "Thème de couleurs";
+"settings.appearance.colorScheme.scheme.help" = "Palette de couleurs du terminal";
+"settings.appearance.colorScheme.opacity" = "Opacité de la fenêtre";
+"settings.appearance.colorScheme.opacity.help" = "Niveau de transparence de la fenêtre";
+
+// Section Fenêtre
+"settings.appearance.window" = "Fenêtre";
+"settings.appearance.window.vibrancy" = "Vibrance de la fenêtre";
+"settings.appearance.window.vibrancy.help" = "Effet de verre dépoli derrière la fenêtre";
+
+// Section Thème système
+"settings.appearance.systemTheme" = "Thème système";
+"settings.appearance.systemTheme.appTheme" = "Thème de l'application";
+"settings.appearance.systemTheme.appTheme.help" = "Clair, Sombre ou suivre le réglage Système";
+"settings.appearance.systemTheme.option.system" = "Système";
+"settings.appearance.systemTheme.option.light" = "Clair";
+"settings.appearance.systemTheme.option.dark" = "Sombre";
+
+// Section Thématisation des onglets IA
+"settings.appearance.aiTabTheming" = "Thématisation des onglets IA";
+"settings.appearance.aiTabTheming.autoTheme" = "Thème auto pour onglets IA";
+"settings.appearance.aiTabTheming.autoTheme.help" = "Colorer automatiquement les onglets selon l'IA détectée";
+"settings.appearance.aiTabTheming.claudeColor" = "Couleur onglet Claude";
+"settings.appearance.aiTabTheming.codexColor" = "Couleur onglet Codex";
+"settings.appearance.aiTabTheming.geminiColor" = "Couleur onglet Gemini";
+"settings.appearance.aiTabTheming.copilotColor" = "Couleur onglet Copilot";
+"settings.appearance.aiTabTheming.resetColors" = "Réinitialiser par défaut";
+
+// Section Améliorations de l'affichage
+"settings.appearance.displayEnhancements" = "Améliorations de l'affichage";
+"settings.appearance.displayEnhancements.syntaxHighlighting" = "Coloration syntaxique";
+"settings.appearance.displayEnhancements.syntaxHighlighting.help" = "Coloriser les blocs de code dans la sortie du terminal";
+"settings.appearance.displayEnhancements.lineTimestamps" = "Horodatage des lignes";
+"settings.appearance.displayEnhancements.lineTimestamps.help" = "Afficher l'horodatage pour chaque ligne du terminal";
+"settings.appearance.displayEnhancements.jsonPrettyPrint" = "Formatage JSON";
+"settings.appearance.displayEnhancements.jsonPrettyPrint.help" = "Formater la sortie JSON avec indentation";
+
+// -----------------------------------------------------------------------------
+// MARK: Paramètres du terminal
+// -----------------------------------------------------------------------------
+
+// Section Shell
+"settings.terminal.shell" = "Shell";
+"settings.terminal.shell.shell" = "Shell";
+"settings.terminal.shell.help" = "Le shell à utiliser pour les nouvelles sessions de terminal";
+"settings.terminal.shell.startupCommand" = "Commande de démarrage";
+"settings.terminal.shell.startupCommand.help" = "Commande à exécuter au démarrage du terminal (ex: neofetch)";
+"settings.terminal.shell.startupCommand.placeholder" = "ex: neofetch, fortune | cowsay";
+
+// Section Curseur
+"settings.terminal.cursor" = "Curseur";
+"settings.terminal.cursor.style" = "Style du curseur";
+"settings.terminal.cursor.style.help" = "La forme du curseur du terminal";
+"settings.terminal.cursor.style.block" = "Bloc";
+"settings.terminal.cursor.style.underline" = "Souligné";
+"settings.terminal.cursor.style.bar" = "Barre";
+"settings.terminal.cursor.blink" = "Clignotement du curseur";
+"settings.terminal.cursor.blink.help" = "Animer le curseur avec un clignotement";
+
+// Section Défilement
+"settings.terminal.scrollback" = "Défilement";
+"settings.terminal.scrollback.lines" = "Lignes de défilement";
+"settings.terminal.scrollback.lines.help" = "Nombre de lignes à conserver dans le tampon de défilement";
+
+// Section Sonnerie
+"settings.terminal.bell" = "Sonnerie";
+"settings.terminal.bell.sound" = "Son de la sonnerie";
+"settings.terminal.bell.sound.help" = "Son à jouer pour la sonnerie du terminal";
+"settings.terminal.bell.sound.none" = "Aucun";
+"settings.terminal.bell.sound.default" = "Par défaut";
+"settings.terminal.bell.sound.subtle" = "Subtil";
+"settings.terminal.bell.visualBell" = "Sonnerie visuelle";
+"settings.terminal.bell.visualBell.help" = "Faire clignoter l'écran au lieu de jouer un son";
+
+// Section Performance
+"settings.terminal.performance" = "Performance";
+"settings.terminal.performance.metalRenderer" = "Rendu Metal";
+"settings.terminal.performance.metalRenderer.help" = "Utiliser l'accélération GPU pour le rendu (recommandé)";
+"settings.terminal.performance.reducedMotion" = "Mouvement réduit";
+"settings.terminal.performance.reducedMotion.help" = "Minimiser les animations pour de meilleures performances";
+
+// -----------------------------------------------------------------------------
+// MARK: Paramètres des onglets
+// -----------------------------------------------------------------------------
+
+// Section Comportement
+"settings.tabs.behavior" = "Comportement";
+"settings.tabs.behavior.lastTabClose" = "À la fermeture du dernier onglet";
+"settings.tabs.behavior.lastTabClose.help" = "Ce qui se passe quand le dernier onglet est fermé";
+"settings.tabs.behavior.lastTabClose.closeWindow" = "Fermer la fenêtre";
+"settings.tabs.behavior.lastTabClose.newTab" = "Ouvrir un nouvel onglet";
+"settings.tabs.behavior.lastTabClose.keepOpen" = "Garder la fenêtre ouverte";
+"settings.tabs.behavior.newTabDirectory" = "Répertoire nouvel onglet";
+"settings.tabs.behavior.newTabDirectory.help" = "Ouvrir les nouveaux onglets dans le répertoire de l'onglet actuel";
+"settings.tabs.behavior.confirmClose" = "Confirmer la fermeture";
+"settings.tabs.behavior.confirmClose.help" = "Afficher une confirmation lors de la fermeture d'onglets avec des processus en cours";
+"settings.tabs.newTabPosition" = "Position du nouvel onglet";
+"settings.tabs.newTabPosition.help" = "Où insérer les nouveaux onglets";
+"settings.tabs.atEnd" = "À la fin";
+"settings.tabs.afterCurrent" = "Après l'onglet actuel";
+"settings.tabs.newTabsUseCurrentDirectory" = "Nouveaux onglets dans le répertoire actuel";
+"settings.tabs.newTabsUseCurrentDirectory.help" = "Ouvrir les nouveaux onglets dans le dossier de l'onglet actif (le premier onglet utilise toujours le répertoire par défaut)";
+"settings.tabs.lastTabClose" = "Fermeture du dernier onglet";
+"settings.tabs.lastTabClose.help" = "Choisir ce qui se passe lors de la fermeture du dernier onglet";
+
+// Section Apparence
+"settings.tabs.appearance" = "Apparence";
+"settings.tabs.appearance.showTabBar" = "Afficher la barre d'onglets";
+"settings.tabs.appearance.showTabBar.help" = "Toujours afficher la barre d'onglets, même avec un seul onglet";
+"settings.tabs.appearance.tabPosition" = "Position des onglets";
+"settings.tabs.appearance.tabPosition.help" = "Position de la barre d'onglets";
+"settings.tabs.appearance.tabPosition.top" = "Haut";
+"settings.tabs.appearance.tabPosition.bottom" = "Bas";
+"settings.tabs.appearance.showTabIcons" = "Afficher les icônes d'onglets";
+"settings.tabs.appearance.showTabIcons.help" = "Afficher les icônes dans les onglets (ex: indicateurs IA)";
+"settings.tabs.alwaysShowTabBar" = "Toujours afficher la barre d'onglets";
+"settings.tabs.alwaysShowTabBar.help" = "Afficher la barre d'onglets même avec un seul onglet";
+"settings.tabs.lastCommandBadge" = "Badge de dernière commande";
+"settings.tabs.lastCommandBadge.help" = "Afficher la commande la plus récente dans la zone d'état de l'onglet";
+"settings.tabs.aiProductIcons" = "Icônes des produits IA";
+"settings.tabs.aiProductIcons.help" = "Afficher les icônes SF Symbol pour les CLI IA détectées dans les onglets";
+
+// Section Navigation au clavier
+"settings.tabs.keyboardNavigation" = "Navigation au clavier";
+"settings.tabs.newTab" = "Nouvel onglet";
+"settings.tabs.closeTab" = "Fermer l'onglet";
+"settings.tabs.nextTab" = "Onglet suivant";
+"settings.tabs.previousTab" = "Onglet précédent";
+"settings.tabs.switchToTab" = "Aller à l'onglet 1-9";
+"settings.tabs.renameTab" = "Renommer l'onglet";
+"settings.tabs.keyboardNavigation.cmdNumber" = "Cmd+Numéro pour changer d'onglet";
+"settings.tabs.keyboardNavigation.cmdNumber.help" = "Utiliser Cmd+1-9 pour naviguer entre les onglets";
+"settings.tabs.keyboardNavigation.cmdBrackets" = "Cmd+[ ] pour naviguer";
+"settings.tabs.keyboardNavigation.cmdBrackets.help" = "Utiliser Cmd+[ et Cmd+] pour changer d'onglet";
+
+// -----------------------------------------------------------------------------
+// MARK: Paramètres de saisie
+// -----------------------------------------------------------------------------
+
+// Section Clavier
+"settings.input.keyboard" = "Clavier";
+"settings.input.keyboard.optionAsMeta" = "Option comme touche Meta";
+"settings.input.keyboard.optionAsMeta.help" = "Utiliser la touche Option comme Meta pour les applications terminal";
+"settings.input.keyboard.deleteBackward" = "Comportement de la touche Suppr";
+"settings.input.keyboard.deleteBackward.help" = "Envoyer retour arrière ou caractère de suppression";
+
+// Section Raccourcis clavier
+"settings.input.shortcuts" = "Raccourcis clavier";
+"settings.input.shortcuts.customize" = "Personnaliser les raccourcis...";
+"settings.input.shortcuts.customize.help" = "Configurer les raccourcis globaux et spécifiques à l'application";
+
+// Section Souris
+"settings.input.mouse" = "Souris";
+"settings.input.mouse.copyOnSelect" = "Copier lors de la sélection";
+"settings.input.mouse.copyOnSelect.help" = "Copier automatiquement le texte sélectionné dans le presse-papiers";
+"settings.input.mouse.focusFollowsMouse" = "Le focus suit la souris";
+"settings.input.mouse.focusFollowsMouse.help" = "Donner le focus au panneau sous le curseur de la souris";
+"settings.input.mouse.cmdClickOpens" = "Cmd+Clic ouvre les chemins";
+"settings.input.mouse.cmdClickOpens.help" = "Ouvrir les chemins de fichiers et URLs avec Cmd+clic";
+"settings.input.mouse.urlHandler" = "Gestionnaire d'URL";
+"settings.input.mouse.urlHandler.help" = "Application pour ouvrir les URLs";
+"settings.input.mouse.urlHandler.default" = "Navigateur par défaut";
+
+// Section Diffusion
+"settings.input.broadcast" = "Diffusion";
+"settings.input.broadcast.mode" = "Diffuser la saisie";
+"settings.input.broadcast.mode.help" = "Envoyer les frappes à plusieurs onglets simultanément";
+
+// -----------------------------------------------------------------------------
+// MARK: Paramètres de productivité
+// -----------------------------------------------------------------------------
+
+// Section Snippets
+"settings.productivity.snippets" = "Snippets";
+"settings.productivity.snippets.description" = "Modèles de texte rapides avec expansion optionnelle";
+"settings.productivity.snippets.manage" = "Gérer les snippets...";
+"settings.productivity.snippets.count" = "%d snippets";
+
+// Section Historique du presse-papiers
+"settings.productivity.clipboard" = "Historique du presse-papiers";
+"settings.productivity.clipboard.enabled" = "Activer l'historique du presse-papiers";
+"settings.productivity.clipboard.enabled.help" = "Conserver l'historique du texte copié";
+"settings.productivity.clipboard.maxItems" = "Nombre maximum d'éléments";
+"settings.productivity.clipboard.maxItems.help" = "Nombre d'éléments à conserver dans l'historique";
+"settings.productivity.clipboard.clearHistory" = "Effacer l'historique";
+"settings.productivity.clipboard.clearHistory.confirm.title" = "Effacer l'historique du presse-papiers ?";
+"settings.productivity.clipboard.clearHistory.confirm.message" = "Cela supprimera tous les éléments de l'historique du presse-papiers.";
+
+// Section Signets
+"settings.productivity.bookmarks" = "Signets";
+"settings.productivity.bookmarks.enabled" = "Activer les signets";
+"settings.productivity.bookmarks.enabled.help" = "Sauvegarder et restaurer les positions du terminal";
+
+// Section Recherche
+"settings.productivity.search" = "Recherche";
+"settings.productivity.search.semantic" = "Recherche sémantique";
+"settings.productivity.search.semantic.help" = "Recherche avec conscience des commandes";
+"settings.productivity.search.caseSensitive" = "Sensible à la casse par défaut";
+"settings.productivity.search.caseSensitive.help" = "Sensibilité à la casse par défaut pour la recherche";
+"settings.productivity.search.regex" = "Regex par défaut";
+"settings.productivity.search.regex.help" = "Activer la recherche regex par défaut";
+"settings.productivity.search.wrapAround" = "Recherche cyclique";
+"settings.productivity.search.wrapAround.help" = "Continuer la recherche depuis le début en arrivant à la fin";
+
+// -----------------------------------------------------------------------------
+// MARK: Paramètres des fenêtres
+// -----------------------------------------------------------------------------
+
+// Section Fenêtre d'overlay
+"settings.windows.overlay" = "Fenêtre d'overlay";
+"settings.windows.overlay.enabled" = "Activer l'overlay";
+"settings.windows.overlay.enabled.help" = "Afficher une fenêtre flottante d'overlay";
+"settings.windows.overlay.opacity" = "Opacité de l'overlay";
+"settings.windows.overlay.opacity.help" = "Transparence de la fenêtre d'overlay";
+
+// Section Terminal déroulant
+"settings.windows.dropdown" = "Terminal déroulant";
+"settings.windows.dropdown.enabled" = "Activer le terminal déroulant";
+"settings.windows.dropdown.enabled.help" = "Terminal style Quake déroulant depuis le haut de l'écran";
+"settings.windows.dropdown.hotkey" = "Raccourci global";
+"settings.windows.dropdown.hotkey.help" = "Raccourci clavier pour afficher/masquer le terminal déroulant";
+"settings.windows.dropdown.height" = "Hauteur du terminal déroulant";
+"settings.windows.dropdown.height.help" = "Hauteur du terminal déroulant en pourcentage de l'écran";
+"settings.windows.dropdown.animation" = "Animation";
+"settings.windows.dropdown.animation.help" = "Animer l'apparition du terminal déroulant";
+
+// Section Panneaux divisés
+"settings.windows.splitPanes" = "Panneaux divisés";
+"settings.windows.splitPanes.enabled" = "Activer les panneaux divisés";
+"settings.windows.splitPanes.enabled.help" = "Permettre de diviser le terminal en plusieurs panneaux";
+"settings.windows.splitPanes.focusHighlight" = "Surlignage du focus";
+"settings.windows.splitPanes.focusHighlight.help" = "Surligner la bordure du panneau actif";
+
+// -----------------------------------------------------------------------------
+// MARK: Paramètres d'intégration IA
+// -----------------------------------------------------------------------------
+
+// Section Détection CLI IA
+"settings.ai.detection" = "Détection CLI IA";
+"settings.ai.detection.enabled" = "Activer la détection IA";
+"settings.ai.detection.enabled.help" = "Détecter automatiquement les outils CLI IA dans le terminal";
+"settings.ai.detection.claude" = "Détecter Claude";
+"settings.ai.detection.claude.help" = "Détecter Claude CLI et Claude Code";
+"settings.ai.detection.codex" = "Détecter Codex";
+"settings.ai.detection.codex.help" = "Détecter OpenAI Codex CLI";
+"settings.ai.detection.gemini" = "Détecter Gemini";
+"settings.ai.detection.gemini.help" = "Détecter Google Gemini CLI";
+"settings.ai.detection.copilot" = "Détecter Copilot";
+"settings.ai.detection.copilot.help" = "Détecter GitHub Copilot CLI";
+
+// Section Règles de détection personnalisées
+"settings.ai.customDetection" = "Règles de détection personnalisées";
+"settings.ai.customDetection.description" = "Ajouter des motifs personnalisés pour détecter les outils IA";
+"settings.ai.customDetection.add" = "Ajouter une règle";
+"settings.ai.customDetection.noRules" = "Aucune règle personnalisée définie";
+"settings.ai.customDetection.pattern" = "Motif";
+"settings.ai.customDetection.label" = "Libellé";
+"settings.ai.customDetection.color" = "Couleur";
+
+// Section Notifications
+"settings.ai.notifications" = "Notifications";
+"settings.ai.notifications.enabled" = "Activer les notifications";
+"settings.ai.notifications.enabled.help" = "Afficher des notifications pour les événements IA";
+"settings.ai.notifications.sound" = "Son de notification";
+"settings.ai.notifications.sound.help" = "Jouer un son avec les notifications";
+"settings.ai.notifications.taskComplete" = "Tâche terminée";
+"settings.ai.notifications.taskComplete.help" = "Notifier quand une tâche IA est terminée";
+"settings.ai.notifications.error" = "En cas d'erreur";
+"settings.ai.notifications.error.help" = "Notifier quand l'IA rencontre une erreur";
+"settings.ai.notifications.idle" = "En attente";
+"settings.ai.notifications.idle.help" = "Notifier quand l'IA attend une saisie";
+
+// Section Filtres de notification
+"settings.ai.filters" = "Filtres de notification";
+"settings.ai.filters.description" = "Choisir quels événements déclenchent des notifications";
+"settings.ai.filters.toolUse" = "Utilisation d'outils";
+"settings.ai.filters.toolUse.help" = "Notifier lors de l'utilisation d'outils (lecture, écriture de fichiers, etc.)";
+"settings.ai.filters.thinking" = "Réflexion";
+"settings.ai.filters.thinking.help" = "Notifier quand l'IA traite";
+"settings.ai.filters.response" = "Réponse";
+"settings.ai.filters.response.help" = "Notifier lors des réponses de l'IA";
+
+// Notification Trigger Catalog
+"notifications.source.eventsLog" = "Journal des événements IA";
+"notifications.source.terminalSession" = "Session terminal";
+"notifications.source.historyMonitor" = "Surveillance de l'historique";
+"notifications.source.claudeCode" = "Claude Code";
+"notifications.source.app" = "Application";
+
+"notifications.trigger.eventsLog.finished.label" = "Tâche terminée";
+"notifications.trigger.eventsLog.finished.description" = "Un événement IA signale une tâche terminée.";
+"notifications.trigger.eventsLog.failed.label" = "Tâche échouée";
+"notifications.trigger.eventsLog.failed.description" = "Un événement IA signale un échec ou une erreur.";
+"notifications.trigger.eventsLog.needsValidation.label" = "Validation requise";
+"notifications.trigger.eventsLog.needsValidation.description" = "Un événement IA demande une revue ou une confirmation.";
+"notifications.trigger.eventsLog.permission.label" = "Demande de permission";
+"notifications.trigger.eventsLog.permission.description" = "Un événement IA demande une permission pour continuer.";
+"notifications.trigger.eventsLog.toolComplete.label" = "Outil terminé";
+"notifications.trigger.eventsLog.toolComplete.description" = "Un événement IA signale la fin d'un outil.";
+"notifications.trigger.eventsLog.sessionEnd.label" = "Session terminée";
+"notifications.trigger.eventsLog.sessionEnd.description" = "Un événement IA signale la fin d'une session.";
+"notifications.trigger.eventsLog.idle.label" = "Commande inactive";
+"notifications.trigger.eventsLog.idle.description" = "Un événement IA signale une inactivité ou une attente d'entrée.";
+"notifications.trigger.eventsLog.notification.label" = "Notification personnalisée";
+"notifications.trigger.eventsLog.notification.description" = "Un événement IA demande une notification personnalisée.";
+"notifications.trigger.eventsLog.other.label" = "Autres événements";
+"notifications.trigger.eventsLog.other.description" = "Tout autre type d'événement IA non listé ci-dessus.";
+
+"notifications.trigger.terminalSession.finished.label" = "Commande inactive";
+"notifications.trigger.terminalSession.finished.description" = "La commande du terminal n'a produit aucune sortie pendant le délai d'inactivité.";
+"notifications.trigger.terminalSession.failed.label" = "Shell terminé";
+"notifications.trigger.terminalSession.failed.description" = "Le shell du terminal s'est terminé.";
+
+"notifications.trigger.historyMonitor.idle.label" = "Historique inactif";
+"notifications.trigger.historyMonitor.idle.description" = "Aucune nouvelle entrée d'historique pendant le délai d'inactivité.";
+
+"notifications.trigger.claudeCode.finished.label" = "Réponse terminée";
+"notifications.trigger.claudeCode.finished.description" = "Claude Code a terminé sa réponse dans une session.";
+"notifications.trigger.claudeCode.permission.label" = "Demande de permission";
+"notifications.trigger.claudeCode.permission.description" = "Claude Code attend une permission pour continuer.";
+"notifications.trigger.claudeCode.idle.label" = "Session inactive";
+"notifications.trigger.claudeCode.idle.description" = "La session Claude Code semble inactive.";
+
+"notifications.trigger.app.info.label" = "Notification de test";
+"notifications.trigger.app.info.description" = "Notification de test manuelle depuis les réglages.";
+
+// Section Surveillance des événements
+"settings.ai.monitoring" = "Surveillance des événements";
+"settings.ai.monitoring.realtime" = "Surveillance en temps réel";
+"settings.ai.monitoring.realtime.help" = "Surveiller les événements IA en temps réel";
+"settings.ai.monitoring.logEvents" = "Journaliser les événements";
+"settings.ai.monitoring.logEvents.help" = "Enregistrer les événements IA dans le fichier journal";
+
+// -----------------------------------------------------------------------------
+// MARK: Paramètres des notifications (onglet autonome)
+// -----------------------------------------------------------------------------
+
+// Section État et permissions
+"settings.notifications.status" = "État et permissions";
+"settings.notifications.status.label" = "État";
+"settings.notifications.requestPermission" = "Demander la permission";
+"settings.notifications.systemSettings" = "Réglages système";
+"settings.notifications.sendTest" = "Envoyer un test";
+
+// Section Filtres de notifications
+"settings.notifications.filters" = "Filtres de notifications";
+"settings.notifications.filtersDescription" = "Choisir les événements déclenchant des notifications :";
+
+// Section Surveillance des événements
+"settings.notifications.eventMonitoring" = "Surveillance des événements";
+"settings.notifications.monitorAIEvents" = "Surveiller les événements IA";
+"settings.notifications.monitorAIEvents.help" = "Surveiller les événements des CLI IA comme les fins de tâches, erreurs et demandes de permission";
+"settings.notifications.eventLogPath" = "Chemin du journal d'événements";
+"settings.notifications.eventLogPath.help" = "Chemin vers le fichier journal des événements IA";
+"settings.notifications.restartMonitor" = "Redémarrer la surveillance";
+"settings.notifications.revealInFinder" = "Afficher dans le Finder";
+
+// -----------------------------------------------------------------------------
+// MARK: Paramètres des journaux
+// -----------------------------------------------------------------------------
+
+// Section Journaux d'historique
+"settings.logs.history" = "Journaux d'historique";
+"settings.logs.history.claudePath" = "Chemin de l'historique Claude";
+"settings.logs.history.claudePath.help" = "Chemin vers le fichier d'historique Claude CLI";
+"settings.logs.history.codexPath" = "Chemin de l'historique Codex";
+"settings.logs.history.codexPath.help" = "Chemin vers le fichier d'historique Codex CLI";
+"settings.logs.history.browse" = "Parcourir...";
+"settings.logs.history.reset" = "Réinitialiser par défaut";
+
+// Section Journaux du terminal
+"settings.logs.terminal" = "Journaux du terminal";
+"settings.logs.terminal.claudePath" = "Journal terminal Claude";
+"settings.logs.terminal.claudePath.help" = "Chemin vers le journal de sortie terminal Claude";
+"settings.logs.terminal.codexPath" = "Journal terminal Codex";
+"settings.logs.terminal.codexPath.help" = "Chemin vers le journal de sortie terminal Codex";
+"settings.logs.terminal.normalize" = "Normaliser la sortie";
+"settings.logs.terminal.normalize.help" = "Nettoyer les caractères de contrôle de la sortie";
+"settings.logs.terminal.ansiParsing" = "Analyse ANSI";
+"settings.logs.terminal.ansiParsing.help" = "Analyser et afficher les codes de couleur ANSI";
+
+// Section Sessions actives
+"settings.logs.sessions" = "Sessions actives";
+"settings.logs.sessions.description" = "Sessions de terminal actuellement surveillées";
+"settings.logs.sessions.noSessions" = "Aucune session active";
+"settings.logs.sessions.refresh" = "Actualiser";
+
+// Section Journal de l'application
+"settings.logs.appLog" = "Journal de l'application";
+"settings.logs.appLog.path" = "Chemin du fichier journal";
+"settings.logs.appLog.reveal" = "Révéler dans le Finder";
+"settings.logs.appLog.clear" = "Effacer le journal";
+"settings.logs.appLog.clear.confirm.title" = "Effacer le journal de l'application ?";
+"settings.logs.appLog.clear.confirm.message" = "Cela effacera toutes les entrées du journal. Cette action est irréversible.";
+
+// -----------------------------------------------------------------------------
+// MARK: Paramètres À propos
+// -----------------------------------------------------------------------------
+
+// Section Informations de version
+"settings.about.version" = "Informations de version";
+"settings.about.version.app" = "Chau7";
+"settings.about.version.number" = "Version";
+"settings.about.version.build" = "Build";
+"settings.about.version.checkUpdates" = "Vérifier les mises à jour";
+
+// Section Informations système
+"settings.about.system" = "Informations système";
+"settings.about.system.os" = "macOS";
+"settings.about.system.architecture" = "Architecture";
+
+// Section Liens
+"settings.about.links" = "Liens";
+"settings.about.links.website" = "Site web";
+"settings.about.links.github" = "GitHub";
+"settings.about.links.documentation" = "Documentation";
+"settings.about.links.reportIssue" = "Signaler un problème";
+"settings.about.links.releaseNotes" = "Notes de version";
+
+// Section Remerciements
+"settings.about.acknowledgments" = "Remerciements";
+"settings.about.acknowledgments.openSource" = "Bibliothèques open source";
+"settings.about.acknowledgments.contributors" = "Contributeurs";
+"settings.about.acknowledgments.viewLicenses" = "Voir les licences";
+
+// Copyright
+"settings.about.copyright" = "© 2024 Chau7. Tous droits réservés.";
+
+// MARK: - Astuces Power User
+// Ces astuces s'affichent sur les nouveaux onglets pour aider à découvrir les fonctionnalités
+
+// Raccourcis onglets
+"tip.cmd_t_new_tab" = "Ouvrir un nouvel onglet instantanément";
+"tip.cmd_n_new_window" = "Créer une nouvelle fenêtre";
+"tip.cmd_w_close_tab" = "Fermer l'onglet actuel";
+"tip.cmd_shift_w_close_window" = "Fermer toute la fenêtre";
+"tip.cmd_1_9_switch_tabs" = "Aller directement à un onglet";
+"tip.cmd_shift_brackets_cycle_tabs" = "Naviguer rapidement entre les onglets";
+
+// Raccourcis recherche
+"tip.cmd_f_search" = "Rechercher dans la sortie du terminal";
+"tip.cmd_g_next_match" = "Aller au résultat suivant";
+"tip.cmd_shift_g_prev_match" = "Aller au résultat précédent";
+"tip.cmd_e_search_selection" = "Rechercher le texte sélectionné";
+
+// Raccourcis panneaux divisés
+"tip.cmd_d_split_right" = "Diviser le panneau verticalement";
+"tip.cmd_shift_d_split_down" = "Diviser le panneau horizontalement";
+"tip.cmd_opt_arrows_navigate_panes" = "Naviguer entre les panneaux";
+"tip.cmd_ctrl_w_close_pane" = "Fermer le panneau actuel";
+"tip.cmd_opt_e_equalize_panes" = "Égaliser la taille des panneaux";
+"tip.cmd_shift_e_maximize_pane" = "Maximiser le panneau actuel";
+
+// Raccourcis clavier
+"tip.cmd_k_clear" = "Effacer l'écran du terminal";
+"tip.cmd_shift_k_clear_scrollback" = "Effacer l'écran et l'historique";
+"tip.cmd_plus_minus_font_size" = "Ajuster la taille de police";
+"tip.cmd_0_reset_font" = "Réinitialiser la taille de police";
+
+// Astuces sélection
+"tip.cmd_a_select_line" = "Sélectionner la ligne de commande actuelle";
+"tip.cmd_a_a_select_all" = "Double-tap pour tout sélectionner";
+"tip.triple_click_select_line" = "Triple-clic pour sélectionner une ligne entière";
+"tip.double_click_select_word" = "Double-clic pour sélectionner un mot";
+
+// Fonctionnalités souris
+"tip.cmd_click_open_path" = "Cmd+clic pour ouvrir les chemins dans l'éditeur";
+"tip.opt_click_position_cursor" = "Option+clic pour positionner le curseur";
+"tip.copy_on_select" = "Activer copie-sur-sélection dans Paramètres > Entrée";
+
+// Productivité
+"tip.cmd_p_print" = "Imprimer la sortie du terminal";
+"tip.cmd_shift_p_command_palette" = "Ouvrir la palette de commandes";
+"tip.cmd_semicolon_snippets" = "Insérer des snippets de code rapidement";
+"tip.cmd_shift_o_ssh" = "Ouvrir une nouvelle connexion SSH";
+"tip.cmd_ctrl_f_fullscreen" = "Basculer en mode plein écran";
+"tip.broadcast_mode" = "Le mode broadcast permet de taper dans plusieurs onglets";
+"tip.dropdown_terminal" = "Configurer un terminal déroulant style Quake";
+
+// Indicateurs de statut
+"tip.status_dot_colors" = "Couleurs du point: vert=prêt, orange=en cours, rouge=bloqué";
+
+// Personnalisation onglets
+"tip.tab_colors" = "Clic droit sur un onglet pour changer sa couleur";
+"tip.rename_tab" = "Double-clic sur un onglet pour le renommer";

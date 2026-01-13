@@ -372,7 +372,7 @@ final class CommandPaletteProvider {
             PaletteCommand(title: "Settings...", shortcut: "⌘,", category: .window, icon: "gear") {
                 delegate.showSettings()
             },
-            PaletteCommand(title: "Debug Console", shortcut: "⇧⌘D", category: .window, icon: "terminal") {
+            PaletteCommand(title: "Debug Console", shortcut: "⇧⌘L", category: .window, icon: "terminal") {
                 DebugConsoleController.shared.toggle()
             },
             PaletteCommand(title: "SSH Connections...", shortcut: "⇧⌘O", category: .window, icon: "server.rack") {

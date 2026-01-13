@@ -11,7 +11,26 @@ final class TerminalHighlightView: NSView {
     private var cachedRows: Int = -1
     private var cachedMatchCount: Int = -1
 
+    // Cached font metrics to avoid recalculating on every draw (Latency optimization)
+    private var cachedCellWidth: CGFloat = 0
+    private var cachedFont: NSFont?
+
+    // Display batching to coalesce multiple needsDisplay calls (Latency optimization)
+    private var displayScheduled = false
+
     override var isFlipped: Bool { true }
+
+    /// Schedules a display update, coalescing multiple calls within the same frame.
+    /// This prevents excessive scheduling during rapid buffer updates.
+    func scheduleDisplay() {
+        guard !displayScheduled else { return }
+        displayScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.displayScheduled = false
+            self.needsDisplay = true
+        }
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
@@ -24,12 +43,15 @@ final class TerminalHighlightView: NSView {
         let cols = terminal.cols
         if rows <= 0 || cols <= 0 { return }
 
-        // Calculate cell dimensions from font metrics (Issue #20, #21 improvement)
-        // For monospace fonts, this should be accurate
+        // Use cached font metrics to avoid recalculating on every draw (Latency optimization)
         let font = terminalView.font
-        let sampleChar: NSString = "M"
-        let charSize = sampleChar.size(withAttributes: [.font: font])
-        let cellWidth = charSize.width
+        let cellWidth: CGFloat
+        if cachedFont !== font {
+            cachedFont = font
+            let sampleChar: NSString = "M"
+            cachedCellWidth = sampleChar.size(withAttributes: [.font: font]).width
+        }
+        cellWidth = cachedCellWidth
         let cellHeight = terminalView.bounds.height / CGFloat(rows)
 
         let yDisp = terminal.buffer.yDisp
@@ -113,5 +135,11 @@ final class TerminalHighlightView: NSView {
         cachedRows = -1
         cachedMatchCount = -1
         cachedVisibleMatches = []
+    }
+
+    /// Invalidates the font metrics cache (call when font changes).
+    func invalidateFontCache() {
+        cachedFont = nil
+        cachedCellWidth = 0
     }
 }

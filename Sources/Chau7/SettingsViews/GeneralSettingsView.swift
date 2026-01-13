@@ -18,17 +18,17 @@ struct GeneralSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Startup
-            SettingsSectionHeader("Startup", icon: "power")
+            SettingsSectionHeader(L("settings.general.startup", "Startup"), icon: "power")
 
             SettingsToggle(
-                label: "Launch at Login",
-                help: "Automatically start Chau7 when you log in to your Mac",
+                label: L("settings.general.launchAtLogin", "Launch at Login"),
+                help: L("settings.general.launchAtLogin.help", "Automatically start Chau7 when you log in to your Mac"),
                 isOn: $settings.launchAtLogin
             )
 
             SettingsTextField(
-                label: L("settings.general.defaultDirectory"),
-                help: L("settings.general.defaultDirectory.help"),
+                label: L("settings.general.defaultDirectory", "Default Directory"),
+                help: L("settings.general.defaultDirectory.help", "Starting directory for new terminal sessions"),
                 placeholder: "~",
                 text: $settings.defaultStartDirectory,
                 width: 280,
@@ -39,111 +39,102 @@ struct GeneralSettingsView: View {
                 .padding(.vertical, 8)
 
             // Language
-            SettingsSectionHeader(L("settings.general.language"), icon: "globe")
+            SettingsSectionHeader(L("settings.general.language", "Language"), icon: "globe")
 
             SettingsPicker(
-                label: L("settings.general.language.label"),
-                help: L("settings.general.language.help"),
+                label: L("settings.general.language.label", "App Language"),
+                help: L("settings.general.language.help", "Choose the language for the Chau7 interface"),
                 selection: $settings.appLanguage,
                 options: AppLanguage.allCases.map { (value: $0, label: $0.displayName) }
             )
 
-            SettingsDescription(text: L("settings.general.language.note"))
+            SettingsDescription(text: L("settings.general.language.note", "Some changes may require restarting the app"))
 
             Divider()
                 .padding(.vertical, 8)
 
             // Settings Profiles (NEW)
-            SettingsSectionHeader("Settings Profiles", icon: "person.2.fill")
+            SettingsSectionHeader(L("settings.general.profiles", "Settings Profiles"), icon: "person.2.fill")
 
-            Text("Create named profiles for different workflows (Work, Personal, Presentation Mode)")
+            Text(L("settings.general.profiles.description", "Create named profiles for different workflows (Work, Personal, Presentation Mode)"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             // Active profile indicator
             if let activeProfile = settings.activeProfile {
-                HStack {
-                    Image(systemName: activeProfile.icon)
-                        .foregroundColor(.accentColor)
-                    Text("Active: \(activeProfile.name)")
-                        .fontWeight(.medium)
-                    Spacer()
-                    Button("Save Current Settings") {
-                        settings.saveCurrentToProfile(activeProfile)
+                SettingsRow(L("settings.general.profiles.active", "Active Profile")) {
+                    HStack(spacing: 8) {
+                        Image(systemName: activeProfile.icon)
+                            .foregroundColor(.accentColor)
+                        Text(activeProfile.name)
+                            .fontWeight(.medium)
+                        Button(L("settings.general.profiles.save", "Save Current")) {
+                            settings.saveCurrentToProfile(activeProfile)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.accentColor)
                 }
-                .padding(10)
-                .background(Color.accentColor.opacity(0.1))
-                .cornerRadius(8)
             }
 
             // Profile list
-            VStack(spacing: 4) {
-                ForEach(settings.savedProfiles) { profile in
-                    ProfileRow(
-                        profile: profile,
-                        isActive: profile.id == settings.activeProfileId,
-                        onLoad: { settings.loadProfile(profile) },
-                        onDelete: {
-                            profileToDelete = profile
-                            showDeleteConfirmation = true
-                        }
-                    )
-                }
+            ForEach(settings.savedProfiles) { profile in
+                ProfileRow(
+                    profile: profile,
+                    isActive: profile.id == settings.activeProfileId,
+                    onLoad: { settings.loadProfile(profile) },
+                    onDelete: {
+                        profileToDelete = profile
+                        showDeleteConfirmation = true
+                    }
+                )
             }
-            .padding(8)
-            .background(Color.secondary.opacity(0.05))
-            .cornerRadius(8)
 
             Button(action: { showCreateProfile = true }) {
-                Label("Create New Profile...", systemImage: "plus.circle")
+                Label(L("settings.general.profiles.create", "Create New Profile..."), systemImage: "plus.circle")
             }
 
             Divider()
                 .padding(.vertical, 8)
 
             // iCloud Sync (NEW)
-            SettingsSectionHeader("iCloud Sync", icon: "icloud")
+            SettingsSectionHeader(L("settings.general.icloud", "iCloud Sync"), icon: "icloud")
 
             SettingsToggle(
-                label: "Sync Settings via iCloud",
-                help: "Keep your Chau7 settings synchronized across all your Macs",
+                label: L("settings.general.icloud.sync", "Sync Settings via iCloud"),
+                help: L("settings.general.icloud.sync.help", "Keep your Chau7 settings synchronized across all your Macs"),
                 isOn: $settings.iCloudSyncEnabled
             )
 
             if settings.iCloudSyncEnabled {
-                HStack(spacing: 12) {
-                    Button("Sync Now") {
+                SettingsButtonRow(buttons: [
+                    .init(title: L("settings.general.icloud.syncNow", "Sync Now"), icon: "arrow.triangle.2.circlepath") {
                         settings.syncToiCloud()
-                    }
-
-                    Button("Restore from iCloud") {
+                    },
+                    .init(title: L("settings.general.icloud.restore", "Restore from iCloud"), icon: "icloud.and.arrow.down") {
                         settings.syncFromiCloud()
                     }
-                }
+                ])
             }
 
             Divider()
                 .padding(.vertical, 8)
 
             // Import/Export (NEW)
-            SettingsSectionHeader("Settings Backup", icon: "square.and.arrow.up.on.square")
+            SettingsSectionHeader(L("settings.general.backup", "Settings Backup"), icon: "square.and.arrow.up.on.square")
 
-            Text("Export your settings to a JSON file or import from a backup.")
+            Text(L("settings.general.backup.description", "Export your settings to a JSON file or import from a backup."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 12) {
-                Button("Export Settings...") {
+            SettingsButtonRow(buttons: [
+                .init(title: L("settings.general.backup.export", "Export Settings..."), icon: "square.and.arrow.up") {
                     exportSettings()
-                }
-
-                Button("Import Settings...") {
+                },
+                .init(title: L("settings.general.backup.import", "Import Settings..."), icon: "square.and.arrow.down") {
                     showImportSheet = true
                 }
-            }
+            ])
 
             if let error = importError {
                 Text(error)
@@ -156,24 +147,24 @@ struct GeneralSettingsView: View {
                 .padding(.vertical, 8)
 
             // Status
-            SettingsSectionHeader("Status", icon: "info.circle")
+            SettingsSectionHeader(L("settings.general.status", "Status"), icon: "info.circle")
 
-            SettingsInfoRow(label: "Notifications", value: model.notificationStatus, monospaced: true)
+            SettingsInfoRow(label: L("settings.general.status.notifications", "Notifications"), value: model.notificationStatus, monospaced: true)
             SettingsInfoRow(
-                label: "Event Monitoring",
-                value: model.isMonitoring ? "Active" : "Paused",
+                label: L("settings.general.status.eventMonitoring", "Event Monitoring"),
+                value: model.isMonitoring ? L("status.active", "Active") : L("status.paused", "Paused"),
                 valueColor: model.isMonitoring ? .green : .secondary,
                 monospaced: true
             )
             SettingsInfoRow(
-                label: "History Monitoring",
-                value: model.isIdleMonitoring ? "Active" : "Paused",
+                label: L("settings.general.status.historyMonitoring", "History Monitoring"),
+                value: model.isIdleMonitoring ? L("status.active", "Active") : L("status.paused", "Paused"),
                 valueColor: model.isIdleMonitoring ? .green : .secondary,
                 monospaced: true
             )
             SettingsInfoRow(
-                label: "Terminal Monitoring",
-                value: model.isTerminalMonitoring ? "Active" : "Paused",
+                label: L("settings.general.status.terminalMonitoring", "Terminal Monitoring"),
+                value: model.isTerminalMonitoring ? L("status.active", "Active") : L("status.paused", "Paused"),
                 valueColor: model.isTerminalMonitoring ? .green : .secondary,
                 monospaced: true
             )
@@ -182,16 +173,16 @@ struct GeneralSettingsView: View {
                 .padding(.vertical, 8)
 
             // Actions
-            SettingsSectionHeader("Actions", icon: "hand.tap")
+            SettingsSectionHeader(L("settings.general.actions", "Actions"), icon: "hand.tap")
 
             SettingsButtonRow(buttons: [
-                .init(title: "Show Overlay", icon: "rectangle.inset.filled") {
+                .init(title: L("settings.general.actions.showOverlay", "Show Overlay"), icon: "rectangle.inset.filled") {
                     (NSApp.delegate as? AppDelegate)?.showOverlay()
                 },
-                .init(title: "Reset Window Positions", icon: "arrow.counterclockwise") {
+                .init(title: L("settings.general.actions.resetWindowPositions", "Reset Window Positions"), icon: "arrow.counterclockwise") {
                     FeatureSettings.shared.resetOverlayOffsets()
                 },
-                .init(title: "Debug Console", icon: "terminal") {
+                .init(title: L("settings.general.actions.debugConsole", "Debug Console"), icon: "terminal") {
                     DebugConsoleController.shared.show()
                 }
             ])
@@ -200,14 +191,15 @@ struct GeneralSettingsView: View {
                 .padding(.vertical, 8)
 
             // Reset
-            SettingsSectionHeader("Reset", icon: "arrow.counterclockwise")
+            SettingsSectionHeader(L("settings.general.reset", "Reset"), icon: "arrow.counterclockwise")
 
             SettingsButtonRow(buttons: [
-                .init(title: "Reset All Settings to Defaults", style: .plain) {
+                .init(title: L("settings.general.reset.all", "Reset All Settings to Defaults"), style: .plain) {
                     showResetConfirmation = true
                 }
             ], alignment: .trailing)
         }
+        .localized()
         .fileImporter(
             isPresented: $showImportSheet,
             allowedContentTypes: [.json],
@@ -215,20 +207,20 @@ struct GeneralSettingsView: View {
         ) { result in
             importSettings(result: result)
         }
-        .alert("Reset All Settings?", isPresented: $showResetConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Reset", role: .destructive) {
+        .alert(L("settings.general.reset.confirm.title", "Reset All Settings?"), isPresented: $showResetConfirmation) {
+            Button(L("button.cancel", "Cancel"), role: .cancel) { }
+            Button(L("button.reset", "Reset"), role: .destructive) {
                 settings.resetAllToDefaults()
             }
         } message: {
-            Text("This will reset all Chau7 settings to their default values. This action cannot be undone.")
+            Text(L("settings.general.reset.confirm.message", "This will reset all Chau7 settings to their default values. This action cannot be undone."))
         }
         .sheet(isPresented: $showCreateProfile) {
             CreateProfileSheet(settings: settings) { showCreateProfile = false }
         }
-        .alert("Delete Profile?", isPresented: $showDeleteConfirmation) {
-            Button("Cancel", role: .cancel) { profileToDelete = nil }
-            Button("Delete", role: .destructive) {
+        .alert(L("settings.general.profiles.delete.title", "Delete Profile?"), isPresented: $showDeleteConfirmation) {
+            Button(L("button.cancel", "Cancel"), role: .cancel) { profileToDelete = nil }
+            Button(L("button.delete", "Delete"), role: .destructive) {
                 if let profile = profileToDelete {
                     settings.deleteProfile(id: profile.id)
                 }
@@ -236,7 +228,7 @@ struct GeneralSettingsView: View {
             }
         } message: {
             if let profile = profileToDelete {
-                Text("Are you sure you want to delete the profile \"\(profile.name)\"? This action cannot be undone.")
+                Text(L("settings.general.profiles.delete.message", "Are you sure you want to delete the profile \"\(profile.name)\"? This action cannot be undone."))
             }
         }
     }
@@ -288,46 +280,46 @@ struct ProfileRow: View {
     let onDelete: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: profile.icon)
-                .foregroundColor(isActive ? .accentColor : .secondary)
-                .frame(width: 20)
-
+        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
             VStack(alignment: .leading, spacing: 2) {
-                HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: profile.icon)
+                        .foregroundColor(isActive ? .accentColor : .secondary)
                     Text(profile.name)
                         .fontWeight(isActive ? .semibold : .regular)
                     if isActive {
-                        Text("(Active)")
+                        Text(L("settings.general.profiles.activeLabel", "(Active)"))
                             .font(.caption)
                             .foregroundColor(.accentColor)
                     }
                 }
-                Text("Created \(profile.createdAt.formatted(date: .abbreviated, time: .omitted))")
-                    .font(.caption2)
+                Text(L("settings.general.profiles.created", "Created") + " \(profile.createdAt.formatted(date: .abbreviated, time: .omitted))")
+                    .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
+
+            HStack(spacing: 8) {
+                if !isActive {
+                    Button(L("button.load", "Load")) { onLoad() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
+
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .foregroundStyle(.red.opacity(0.7))
+                }
+                .buttonStyle(.borderless)
+                .disabled(isActive)
+                .opacity(isActive ? 0.3 : 1)
+                .help(L("settings.general.profiles.delete", "Delete profile"))
             }
 
             Spacer()
-
-            if !isActive {
-                Button("Load") { onLoad() }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.accentColor)
-            }
-
-            Button(action: onDelete) {
-                Image(systemName: "trash")
-                    .foregroundStyle(.red.opacity(0.7))
-            }
-            .buttonStyle(.plain)
-            .disabled(isActive)
-            .opacity(isActive ? 0.3 : 1)
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
-        .background(isActive ? Color.accentColor.opacity(0.08) : Color.clear)
-        .cornerRadius(6)
+        .padding(.vertical, 4)
+        .localized()
     }
 }
 
@@ -342,15 +334,15 @@ struct CreateProfileSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Create New Profile")
+            Text(L("settings.general.profiles.createTitle", "Create New Profile"))
                 .font(.headline)
 
             Divider()
 
-            TextField("Profile Name", text: $profileName)
+            TextField(L("settings.general.profiles.namePlaceholder", "Profile Name"), text: $profileName)
                 .textFieldStyle(.roundedBorder)
 
-            Text("Choose Icon")
+            Text(L("settings.general.profiles.chooseIcon", "Choose Icon"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -374,12 +366,12 @@ struct CreateProfileSheet: View {
             Divider()
 
             HStack {
-                Button("Cancel") { onDismiss() }
+                Button(L("button.cancel", "Cancel")) { onDismiss() }
                     .keyboardShortcut(.cancelAction)
 
                 Spacer()
 
-                Button("Create Profile") {
+                Button(L("settings.general.profiles.createButton", "Create Profile")) {
                     let profile = settings.createProfile(name: profileName, icon: selectedIcon)
                     settings.activeProfileId = profile.id
                     onDismiss()
@@ -390,5 +382,6 @@ struct CreateProfileSheet: View {
         }
         .padding(20)
         .frame(width: 400)
+        .localized()
     }
 }

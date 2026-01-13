@@ -1,163 +1,11 @@
 import Foundation
 import AppKit
 import SwiftUI
+import Chau7Core
 
 // Import Localization for AppLanguage
 // Note: AppLanguage is defined in Localization.swift
-
-// MARK: - Color Scheme Presets
-
-struct TerminalColorScheme: Codable, Identifiable, Equatable {
-    var id: String { name }
-    let name: String
-    let background: String  // Hex color
-    let foreground: String
-    let cursor: String
-    let selection: String
-    let black: String
-    let red: String
-    let green: String
-    let yellow: String
-    let blue: String
-    let magenta: String
-    let cyan: String
-    let white: String
-    let brightBlack: String
-    let brightRed: String
-    let brightGreen: String
-    let brightYellow: String
-    let brightBlue: String
-    let brightMagenta: String
-    let brightCyan: String
-    let brightWhite: String
-
-    static let `default` = TerminalColorScheme(
-        name: "Default",
-        background: "#1E1E1E", foreground: "#D4D4D4", cursor: "#FFFFFF", selection: "#264F78",
-        black: "#000000", red: "#CD3131", green: "#0DBC79", yellow: "#E5E510",
-        blue: "#2472C8", magenta: "#BC3FBC", cyan: "#11A8CD", white: "#E5E5E5",
-        brightBlack: "#666666", brightRed: "#F14C4C", brightGreen: "#23D18B", brightYellow: "#F5F543",
-        brightBlue: "#3B8EEA", brightMagenta: "#D670D6", brightCyan: "#29B8DB", brightWhite: "#FFFFFF"
-    )
-
-    static let solarizedDark = TerminalColorScheme(
-        name: "Solarized Dark",
-        background: "#002B36", foreground: "#839496", cursor: "#93A1A1", selection: "#073642",
-        black: "#073642", red: "#DC322F", green: "#859900", yellow: "#B58900",
-        blue: "#268BD2", magenta: "#D33682", cyan: "#2AA198", white: "#EEE8D5",
-        brightBlack: "#002B36", brightRed: "#CB4B16", brightGreen: "#586E75", brightYellow: "#657B83",
-        brightBlue: "#839496", brightMagenta: "#6C71C4", brightCyan: "#93A1A1", brightWhite: "#FDF6E3"
-    )
-
-    static let solarizedLight = TerminalColorScheme(
-        name: "Solarized Light",
-        background: "#FDF6E3", foreground: "#657B83", cursor: "#586E75", selection: "#EEE8D5",
-        black: "#073642", red: "#DC322F", green: "#859900", yellow: "#B58900",
-        blue: "#268BD2", magenta: "#D33682", cyan: "#2AA198", white: "#EEE8D5",
-        brightBlack: "#002B36", brightRed: "#CB4B16", brightGreen: "#586E75", brightYellow: "#657B83",
-        brightBlue: "#839496", brightMagenta: "#6C71C4", brightCyan: "#93A1A1", brightWhite: "#FDF6E3"
-    )
-
-    static let dracula = TerminalColorScheme(
-        name: "Dracula",
-        background: "#282A36", foreground: "#F8F8F2", cursor: "#F8F8F2", selection: "#44475A",
-        black: "#21222C", red: "#FF5555", green: "#50FA7B", yellow: "#F1FA8C",
-        blue: "#BD93F9", magenta: "#FF79C6", cyan: "#8BE9FD", white: "#F8F8F2",
-        brightBlack: "#6272A4", brightRed: "#FF6E6E", brightGreen: "#69FF94", brightYellow: "#FFFFA5",
-        brightBlue: "#D6ACFF", brightMagenta: "#FF92DF", brightCyan: "#A4FFFF", brightWhite: "#FFFFFF"
-    )
-
-    static let nord = TerminalColorScheme(
-        name: "Nord",
-        background: "#2E3440", foreground: "#D8DEE9", cursor: "#D8DEE9", selection: "#434C5E",
-        black: "#3B4252", red: "#BF616A", green: "#A3BE8C", yellow: "#EBCB8B",
-        blue: "#81A1C1", magenta: "#B48EAD", cyan: "#88C0D0", white: "#E5E9F0",
-        brightBlack: "#4C566A", brightRed: "#BF616A", brightGreen: "#A3BE8C", brightYellow: "#EBCB8B",
-        brightBlue: "#81A1C1", brightMagenta: "#B48EAD", brightCyan: "#8FBCBB", brightWhite: "#ECEFF4"
-    )
-
-    static let monokai = TerminalColorScheme(
-        name: "Monokai",
-        background: "#272822", foreground: "#F8F8F2", cursor: "#F8F8F2", selection: "#49483E",
-        black: "#272822", red: "#F92672", green: "#A6E22E", yellow: "#F4BF75",
-        blue: "#66D9EF", magenta: "#AE81FF", cyan: "#A1EFE4", white: "#F8F8F2",
-        brightBlack: "#75715E", brightRed: "#F92672", brightGreen: "#A6E22E", brightYellow: "#F4BF75",
-        brightBlue: "#66D9EF", brightMagenta: "#AE81FF", brightCyan: "#A1EFE4", brightWhite: "#F9F8F5"
-    )
-
-    static let gruvboxDark = TerminalColorScheme(
-        name: "Gruvbox Dark",
-        background: "#282828", foreground: "#EBDBB2", cursor: "#EBDBB2", selection: "#504945",
-        black: "#282828", red: "#CC241D", green: "#98971A", yellow: "#D79921",
-        blue: "#458588", magenta: "#B16286", cyan: "#689D6A", white: "#A89984",
-        brightBlack: "#928374", brightRed: "#FB4934", brightGreen: "#B8BB26", brightYellow: "#FABD2F",
-        brightBlue: "#83A598", brightMagenta: "#D3869B", brightCyan: "#8EC07C", brightWhite: "#EBDBB2"
-    )
-
-    static let tokyoNight = TerminalColorScheme(
-        name: "Tokyo Night",
-        background: "#1A1B26", foreground: "#A9B1D6", cursor: "#C0CAF5", selection: "#33467C",
-        black: "#15161E", red: "#F7768E", green: "#9ECE6A", yellow: "#E0AF68",
-        blue: "#7AA2F7", magenta: "#BB9AF7", cyan: "#7DCFFF", white: "#A9B1D6",
-        brightBlack: "#414868", brightRed: "#F7768E", brightGreen: "#9ECE6A", brightYellow: "#E0AF68",
-        brightBlue: "#7AA2F7", brightMagenta: "#BB9AF7", brightCyan: "#7DCFFF", brightWhite: "#C0CAF5"
-    )
-
-    static let allPresets: [TerminalColorScheme] = [
-        .default, .solarizedDark, .solarizedLight, .dracula, .nord, .monokai, .gruvboxDark, .tokyoNight
-    ]
-
-    // MARK: - Color Cache (Performance Optimization)
-
-    /// Thread-safe cache for parsed NSColor values to avoid repeated hex parsing
-    private static var colorCache: [String: NSColor] = [:]
-    private static let colorCacheLock = NSLock()
-
-    func nsColor(for hex: String) -> NSColor {
-        // Check cache first (thread-safe)
-        Self.colorCacheLock.lock()
-        if let cached = Self.colorCache[hex] {
-            Self.colorCacheLock.unlock()
-            return cached
-        }
-        Self.colorCacheLock.unlock()
-
-        // Parse hex string
-        var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-        hexSanitized = hexSanitized.replacingOccurrences(of: "#", with: "")
-        var rgb: UInt64 = 0
-        Scanner(string: hexSanitized).scanHexInt64(&rgb)
-        let color = NSColor(
-            red: CGFloat((rgb & 0xFF0000) >> 16) / 255.0,
-            green: CGFloat((rgb & 0x00FF00) >> 8) / 255.0,
-            blue: CGFloat(rgb & 0x0000FF) / 255.0,
-            alpha: 1.0
-        )
-
-        // Cache the result (thread-safe)
-        Self.colorCacheLock.lock()
-        Self.colorCache[hex] = color
-        Self.colorCacheLock.unlock()
-
-        return color
-    }
-
-    /// Clears the color cache (call when color scheme changes significantly)
-    static func clearColorCache() {
-        colorCacheLock.lock()
-        colorCache.removeAll()
-        colorCacheLock.unlock()
-    }
-
-    var signature: String {
-        [
-            name, background, foreground, cursor, selection,
-            black, red, green, yellow, blue, magenta, cyan, white,
-            brightBlack, brightRed, brightGreen, brightYellow, brightBlue,
-            brightMagenta, brightCyan, brightWhite
-        ].joined(separator: "|")
-    }
-}
+// Note: TerminalColorScheme is defined in TerminalColorScheme.swift
 
 // MARK: - Keyboard Shortcut
 
@@ -178,25 +26,27 @@ struct KeyboardShortcut: Codable, Identifiable, Equatable {
     }
 
     static let defaultShortcuts: [KeyboardShortcut] = [
+        // Standard macOS shortcuts (keep as ⌘)
         KeyboardShortcut(action: "newTab", key: "t", modifiers: ["cmd"]),
         KeyboardShortcut(action: "closeTab", key: "w", modifiers: ["cmd"]),
-        KeyboardShortcut(action: "nextTab", key: "]", modifiers: ["cmd", "shift"]),
-        KeyboardShortcut(action: "previousTab", key: "[", modifiers: ["cmd", "shift"]),
         KeyboardShortcut(action: "find", key: "f", modifiers: ["cmd"]),
         KeyboardShortcut(action: "findNext", key: "g", modifiers: ["cmd"]),
-        KeyboardShortcut(action: "findPrevious", key: "g", modifiers: ["cmd", "shift"]),
         KeyboardShortcut(action: "copy", key: "c", modifiers: ["cmd"]),
         KeyboardShortcut(action: "paste", key: "v", modifiers: ["cmd"]),
-        KeyboardShortcut(action: "clear", key: "k", modifiers: ["cmd"]),
+        KeyboardShortcut(action: "newWindow", key: "n", modifiers: ["cmd"]),
         KeyboardShortcut(action: "zoomIn", key: "=", modifiers: ["cmd"]),
         KeyboardShortcut(action: "zoomOut", key: "-", modifiers: ["cmd"]),
         KeyboardShortcut(action: "zoomReset", key: "0", modifiers: ["cmd"]),
-        KeyboardShortcut(action: "snippets", key: "s", modifiers: ["cmd", "shift"]),
-        KeyboardShortcut(action: "renameTab", key: "r", modifiers: ["cmd", "shift"]),
-        KeyboardShortcut(action: "debugConsole", key: "d", modifiers: ["cmd", "shift"]),
-        KeyboardShortcut(action: "newWindow", key: "n", modifiers: ["cmd"]),
-        KeyboardShortcut(action: "splitHorizontal", key: "d", modifiers: ["cmd"]),
-        KeyboardShortcut(action: "splitVertical", key: "d", modifiers: ["cmd", "shift"]),
+        // Extended shortcuts (use ⌘⌥)
+        KeyboardShortcut(action: "nextTab", key: "]", modifiers: ["cmd", "opt"]),
+        KeyboardShortcut(action: "previousTab", key: "[", modifiers: ["cmd", "opt"]),
+        KeyboardShortcut(action: "findPrevious", key: "g", modifiers: ["cmd", "opt"]),
+        KeyboardShortcut(action: "clear", key: "k", modifiers: ["cmd", "opt"]),
+        KeyboardShortcut(action: "snippets", key: "s", modifiers: ["cmd", "opt"]),
+        KeyboardShortcut(action: "renameTab", key: "r", modifiers: ["cmd", "opt"]),
+        KeyboardShortcut(action: "debugConsole", key: "l", modifiers: ["cmd", "opt"]),
+        KeyboardShortcut(action: "splitHorizontal", key: "h", modifiers: ["cmd", "opt"]),
+        KeyboardShortcut(action: "splitVertical", key: "v", modifiers: ["cmd", "opt"]),
     ]
 
     static func shortcuts(for preset: String) -> [KeyboardShortcut] {
@@ -304,6 +154,51 @@ struct NotificationFilters: Codable, Equatable {
 }
 
 // MARK: - Last Tab Close Behavior
+
+private extension FeatureSettings {
+    static func triggerState(from filters: NotificationFilters) -> NotificationTriggerState {
+        var state = NotificationTriggerState()
+        for trigger in NotificationTriggerCatalog.all {
+            switch trigger.type {
+            case "finished":
+                state.setEnabled(filters.taskFinished, for: trigger)
+            case "failed":
+                state.setEnabled(filters.taskFailed, for: trigger)
+            case "needs_validation":
+                state.setEnabled(filters.needsValidation, for: trigger)
+            case "permission":
+                state.setEnabled(filters.permissionRequest, for: trigger)
+            case "tool_complete":
+                state.setEnabled(filters.toolComplete, for: trigger)
+            case "session_end":
+                state.setEnabled(filters.sessionEnd, for: trigger)
+            case "idle":
+                state.setEnabled(filters.commandIdle, for: trigger)
+            default:
+                continue
+            }
+        }
+        return state
+    }
+
+    static func legacyNotificationFilters(from state: NotificationTriggerState) -> NotificationFilters {
+        func anyEnabled(_ type: String) -> Bool {
+            let triggers = NotificationTriggerCatalog.all.filter { $0.type == type && !$0.isWildcard }
+            guard !triggers.isEmpty else { return true }
+            return triggers.contains { state.isEnabled(for: $0) }
+        }
+
+        return NotificationFilters(
+            taskFinished: anyEnabled("finished"),
+            taskFailed: anyEnabled("failed"),
+            needsValidation: anyEnabled("needs_validation"),
+            permissionRequest: anyEnabled("permission"),
+            toolComplete: anyEnabled("tool_complete"),
+            sessionEnd: anyEnabled("session_end"),
+            commandIdle: anyEnabled("idle")
+        )
+    }
+}
 
 enum LastTabCloseBehavior: String, CaseIterable, Identifiable, Codable {
     case keepWindow
@@ -473,6 +368,10 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(startupCommand, forKey: Keys.startupCommand) }
     }
 
+    @Published var isLsColorsEnabled: Bool {
+        didSet { UserDefaults.standard.set(isLsColorsEnabled, forKey: Keys.lsColorsEnabled) }
+    }
+
     // MARK: - Keyboard Shortcuts (NEW)
 
     @Published var customShortcuts: [KeyboardShortcut] {
@@ -511,6 +410,24 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - Notification Filters (NEW)
 
+    @Published var notificationTriggerState: NotificationTriggerState {
+        didSet {
+            var normalized = notificationTriggerState
+            normalized.normalize()
+            if normalized != notificationTriggerState {
+                notificationTriggerState = normalized
+                return
+            }
+            if let data = JSONOperations.encode(notificationTriggerState, context: "notificationTriggerState") {
+                UserDefaults.standard.set(data, forKey: Keys.notificationTriggerState)
+            }
+            let legacy = Self.legacyNotificationFilters(from: notificationTriggerState)
+            if legacy != notificationFilters {
+                notificationFilters = legacy
+            }
+        }
+    }
+
     @Published var notificationFilters: NotificationFilters {
         didSet {
             if let data = JSONOperations.encode(notificationFilters, context: "notificationFilters") {
@@ -540,8 +457,21 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(newTabPosition, forKey: Keys.newTabPosition) }
     }
 
+    /// When enabled, new tabs inherit the current tab's directory.
+    @Published var newTabsUseCurrentDirectory: Bool {
+        didSet { UserDefaults.standard.set(newTabsUseCurrentDirectory, forKey: Keys.newTabsUseCurrentDirectory) }
+    }
+
     @Published var alwaysShowTabBar: Bool {
         didSet { UserDefaults.standard.set(alwaysShowTabBar, forKey: Keys.alwaysShowTabBar) }
+    }
+
+    /// When true, the toolbar stays visible in fullscreen (like Chrome's "Always Show Toolbar in Full Screen")
+    @Published var alwaysShowToolbarInFullscreen: Bool {
+        didSet {
+            UserDefaults.standard.set(alwaysShowToolbarInFullscreen, forKey: Keys.alwaysShowToolbarInFullscreen)
+            NotificationCenter.default.post(name: .fullscreenToolbarSettingChanged, object: nil)
+        }
     }
 
     // MARK: - Window Transparency
@@ -671,27 +601,6 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    // MARK: - F04: Quick Dropdown Terminal
-
-    @Published var isDropdownEnabled: Bool {
-        didSet { UserDefaults.standard.set(isDropdownEnabled, forKey: Keys.dropdownEnabled) }
-    }
-
-    @Published var dropdownHotkey: String {
-        didSet { UserDefaults.standard.set(dropdownHotkey, forKey: Keys.dropdownHotkey) }
-    }
-
-    @Published var dropdownHeight: Double {
-        didSet {
-            let clamped = max(0.1, min(dropdownHeight, 1.0))
-            if dropdownHeight != clamped {
-                dropdownHeight = clamped
-                return
-            }
-            UserDefaults.standard.set(dropdownHeight, forKey: Keys.dropdownHeight)
-        }
-    }
-
     // MARK: - F13: Broadcast Input
 
     @Published var isBroadcastEnabled: Bool {
@@ -793,6 +702,15 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(isSplitPanesEnabled, forKey: Keys.splitPanes) }
     }
 
+    // MARK: - Immediate Display Flush (Latency Optimization)
+
+    /// Enables immediate display flush after input for reduced perceived latency.
+    /// Forces CATransaction.flush() after each keystroke to ensure pending display
+    /// updates are rendered immediately rather than waiting for the next frame.
+    @Published var isLocalEchoEnabled: Bool {
+        didSet { UserDefaults.standard.set(isLocalEchoEnabled, forKey: Keys.localEchoEnabled) }
+    }
+
     // MARK: - F11: Keybindings
 
     @Published var keybindingPreset: String {
@@ -860,9 +778,11 @@ final class FeatureSettings: ObservableObject {
         static let shellType = "terminal.shellType"
         static let customShellPath = "terminal.customShellPath"
         static let startupCommand = "terminal.startupCommand"
+        static let lsColorsEnabled = "terminal.lsColorsEnabled"
         // Keyboard Shortcuts (NEW)
         static let customShortcuts = "keyboard.customShortcuts"
         // Notification Filters (NEW)
+        static let notificationTriggerState = "notifications.triggerState"
         static let notificationFilters = "notifications.filters"
         // Find Defaults (NEW)
         static let findCaseSensitiveDefault = "search.defaultCaseSensitive"
@@ -870,7 +790,9 @@ final class FeatureSettings: ObservableObject {
         // Tab Behavior
         static let lastTabCloseBehavior = "tabs.lastTabCloseBehavior"
         static let newTabPosition = "tabs.newTabPosition"
+        static let newTabsUseCurrentDirectory = "tabs.newTabsUseCurrentDirectory"
         static let alwaysShowTabBar = "tabs.alwaysShowTabBar"
+        static let alwaysShowToolbarInFullscreen = "tabs.alwaysShowToolbarInFullscreen"
         // Window Opacity
         static let windowOpacity = "window.opacity"
         // App Theme
@@ -896,10 +818,6 @@ final class FeatureSettings: ObservableObject {
         static let defaultEditor = "feature.defaultEditor"
         static let urlHandler = "feature.urlHandler"
         static let customAIDetectionRules = "ai.customDetectionRules"
-        // F04
-        static let dropdownEnabled = "feature.dropdownEnabled"
-        static let dropdownHotkey = "feature.dropdownHotkey"
-        static let dropdownHeight = "feature.dropdownHeight"
         // F13
         static let broadcastEnabled = "feature.broadcastEnabled"
         // F16
@@ -923,6 +841,8 @@ final class FeatureSettings: ObservableObject {
         static let semanticSearch = "feature.semanticSearch"
         // F02
         static let splitPanes = "feature.splitPanes"
+        // Local Echo (Latency Optimization)
+        static let localEchoEnabled = "feature.localEchoEnabled"
         // F11
         static let keybindingPreset = "feature.keybindingPreset"
         // General
@@ -964,23 +884,44 @@ final class FeatureSettings: ObservableObject {
         }
         self.customShellPath = defaults.string(forKey: Keys.customShellPath) ?? ""
         self.startupCommand = defaults.string(forKey: Keys.startupCommand) ?? ""
+        self.isLsColorsEnabled = defaults.object(forKey: Keys.lsColorsEnabled) as? Bool ?? true
 
         // Keyboard Shortcuts (NEW)
+        let loadedShortcuts: [KeyboardShortcut]
         if let data = defaults.data(forKey: Keys.customShortcuts),
            let shortcuts = JSONOperations.decode([KeyboardShortcut].self, from: data, context: "customShortcuts") {
-            self.customShortcuts = shortcuts
+            loadedShortcuts = shortcuts
         } else {
             let preset = defaults.string(forKey: Keys.keybindingPreset) ?? "default"
-            self.customShortcuts = KeyboardShortcut.shortcuts(for: preset)
+            loadedShortcuts = KeyboardShortcut.shortcuts(for: preset)
         }
+        self.customShortcuts = Self.migratedShortcutsIfNeeded(loadedShortcuts)
+
+        // Local Echo / Immediate Display Flush (default: disabled)
+        // Initialize early to ensure all properties are set before any are accessed
+        self.isLocalEchoEnabled = defaults.object(forKey: Keys.localEchoEnabled) as? Bool ?? false
 
         // Notification Filters (NEW)
+        let loadedFilters: NotificationFilters
         if let data = defaults.data(forKey: Keys.notificationFilters),
            let filters = JSONOperations.decode(NotificationFilters.self, from: data, context: "notificationFilters") {
-            self.notificationFilters = filters
+            loadedFilters = filters
         } else {
-            self.notificationFilters = .defaults
+            loadedFilters = .defaults
         }
+        self.notificationFilters = loadedFilters
+
+        let resolvedTriggerState: NotificationTriggerState
+        if let data = defaults.data(forKey: Keys.notificationTriggerState),
+           let state = JSONOperations.decode(NotificationTriggerState.self, from: data, context: "notificationTriggerState") {
+            var normalized = state
+            normalized.normalize()
+            resolvedTriggerState = normalized
+        } else {
+            resolvedTriggerState = Self.triggerState(from: loadedFilters)
+        }
+        self.notificationTriggerState = resolvedTriggerState
+        self.notificationFilters = Self.legacyNotificationFilters(from: resolvedTriggerState)
 
         // Find Defaults (NEW)
         self.findCaseSensitiveDefault = defaults.object(forKey: Keys.findCaseSensitiveDefault) as? Bool ?? false
@@ -994,7 +935,9 @@ final class FeatureSettings: ObservableObject {
             self.lastTabCloseBehavior = .keepWindow
         }
         self.newTabPosition = defaults.string(forKey: Keys.newTabPosition) ?? "end"
+        self.newTabsUseCurrentDirectory = defaults.object(forKey: Keys.newTabsUseCurrentDirectory) as? Bool ?? true
         self.alwaysShowTabBar = defaults.object(forKey: Keys.alwaysShowTabBar) as? Bool ?? true
+        self.alwaysShowToolbarInFullscreen = defaults.object(forKey: Keys.alwaysShowToolbarInFullscreen) as? Bool ?? false
 
         // Window Opacity
         self.windowOpacity = defaults.object(forKey: Keys.windowOpacity) as? Double ?? 1.0
@@ -1057,11 +1000,6 @@ final class FeatureSettings: ObservableObject {
             self.customAIDetectionRules = []
         }
 
-        // F04: Dropdown (default: disabled)
-        self.isDropdownEnabled = defaults.object(forKey: Keys.dropdownEnabled) as? Bool ?? false
-        self.dropdownHotkey = defaults.string(forKey: Keys.dropdownHotkey) ?? "ctrl+`"
-        self.dropdownHeight = defaults.object(forKey: Keys.dropdownHeight) as? Double ?? 0.4  // 40% of screen
-
         // F13: Broadcast (default: disabled)
         self.isBroadcastEnabled = defaults.object(forKey: Keys.broadcastEnabled) as? Bool ?? false
 
@@ -1092,6 +1030,8 @@ final class FeatureSettings: ObservableObject {
         // F02: Split Panes (default: enabled)
         self.isSplitPanesEnabled = defaults.object(forKey: Keys.splitPanes) as? Bool ?? true
 
+        // Note: isLocalEchoEnabled is initialized earlier in the init to avoid property access errors
+
         // F11: Keybindings (default: "default")
         self.keybindingPreset = defaults.string(forKey: Keys.keybindingPreset) ?? "default"
 
@@ -1102,6 +1042,31 @@ final class FeatureSettings: ObservableObject {
         self.bellEnabled = defaults.object(forKey: Keys.bellEnabled) as? Bool ?? true
         self.bellSound = defaults.string(forKey: Keys.bellSound) ?? "default"
         self.defaultStartDirectory = defaults.string(forKey: Keys.defaultStartDirectory) ?? home
+    }
+
+    private static func migratedShortcutsIfNeeded(_ shortcuts: [KeyboardShortcut]) -> [KeyboardShortcut] {
+        guard let debugIndex = shortcuts.firstIndex(where: { $0.action == "debugConsole" }),
+              let splitIndex = shortcuts.firstIndex(where: { $0.action == "splitVertical" }) else {
+            return shortcuts
+        }
+
+        let debugShortcut = shortcuts[debugIndex]
+        let splitShortcut = shortcuts[splitIndex]
+        let debugKey = debugShortcut.key.lowercased()
+        let splitKey = splitShortcut.key.lowercased()
+        let debugModifiers = Set(debugShortcut.modifiers.map { $0.lowercased() })
+        let splitModifiers = Set(splitShortcut.modifiers.map { $0.lowercased() })
+
+        let isLegacyConflict = debugKey == "d"
+            && splitKey == "d"
+            && debugModifiers == ["cmd", "shift"]
+            && splitModifiers == ["cmd", "shift"]
+
+        guard isLegacyConflict else { return shortcuts }
+
+        var updated = shortcuts
+        updated[debugIndex] = KeyboardShortcut(action: "debugConsole", key: "l", modifiers: ["cmd", "opt"])
+        return updated
     }
 
     // MARK: - Overlay Positions Cache (Performance Optimization)
@@ -1188,13 +1153,17 @@ final class FeatureSettings: ObservableObject {
         var shellType: String
         var customShellPath: String
         var startupCommand: String
+        var isLsColorsEnabled: Bool?
         var customShortcuts: [KeyboardShortcut]
+        var notificationTriggerState: NotificationTriggerState?
         var notificationFilters: NotificationFilters
         var findCaseSensitiveDefault: Bool?
         var findRegexDefault: Bool?
         var lastTabCloseBehavior: String?
         var newTabPosition: String?
+        var newTabsUseCurrentDirectory: Bool?
         var alwaysShowTabBar: Bool?
+        var alwaysShowToolbarInFullscreen: Bool?
         var appTheme: String?
         var launchAtLogin: Bool?
         var appLanguage: String?
@@ -1215,9 +1184,6 @@ final class FeatureSettings: ObservableObject {
         var defaultEditor: String
         var urlHandler: String?
         var customAIDetectionRules: [CustomAIDetectionRule]?
-        var isDropdownEnabled: Bool
-        var dropdownHotkey: String
-        var dropdownHeight: Double
         var isBroadcastEnabled: Bool
         var isClipboardHistoryEnabled: Bool
         var clipboardHistoryMaxItems: Int
@@ -1248,13 +1214,17 @@ final class FeatureSettings: ObservableObject {
             shellType: shellType.rawValue,
             customShellPath: customShellPath,
             startupCommand: startupCommand,
+            isLsColorsEnabled: isLsColorsEnabled,
             customShortcuts: customShortcuts,
+            notificationTriggerState: notificationTriggerState,
             notificationFilters: notificationFilters,
             findCaseSensitiveDefault: findCaseSensitiveDefault,
             findRegexDefault: findRegexDefault,
             lastTabCloseBehavior: lastTabCloseBehavior.rawValue,
             newTabPosition: newTabPosition,
+            newTabsUseCurrentDirectory: newTabsUseCurrentDirectory,
             alwaysShowTabBar: alwaysShowTabBar,
+            alwaysShowToolbarInFullscreen: alwaysShowToolbarInFullscreen,
             appTheme: appTheme.rawValue,
             launchAtLogin: launchAtLogin,
             appLanguage: appLanguage.rawValue,
@@ -1275,9 +1245,6 @@ final class FeatureSettings: ObservableObject {
             defaultEditor: defaultEditor,
             urlHandler: urlHandler.rawValue,
             customAIDetectionRules: customAIDetectionRules,
-            isDropdownEnabled: isDropdownEnabled,
-            dropdownHotkey: dropdownHotkey,
-            dropdownHeight: dropdownHeight,
             isBroadcastEnabled: isBroadcastEnabled,
             isClipboardHistoryEnabled: isClipboardHistoryEnabled,
             clipboardHistoryMaxItems: clipboardHistoryMaxItems,
@@ -1317,8 +1284,16 @@ final class FeatureSettings: ObservableObject {
         }
         customShellPath = imported.customShellPath
         startupCommand = imported.startupCommand
+        isLsColorsEnabled = imported.isLsColorsEnabled ?? true
         customShortcuts = imported.customShortcuts
-        notificationFilters = imported.notificationFilters
+        if let state = imported.notificationTriggerState {
+            var normalized = state
+            normalized.normalize()
+            notificationTriggerState = normalized
+        } else {
+            notificationTriggerState = Self.triggerState(from: imported.notificationFilters)
+        }
+        notificationFilters = Self.legacyNotificationFilters(from: notificationTriggerState)
         findCaseSensitiveDefault = imported.findCaseSensitiveDefault ?? false
         findRegexDefault = imported.findRegexDefault ?? false
         if let behaviorRaw = imported.lastTabCloseBehavior,
@@ -1328,7 +1303,9 @@ final class FeatureSettings: ObservableObject {
             lastTabCloseBehavior = .keepWindow
         }
         newTabPosition = imported.newTabPosition ?? "end"
+        newTabsUseCurrentDirectory = imported.newTabsUseCurrentDirectory ?? true
         alwaysShowTabBar = imported.alwaysShowTabBar ?? true
+        alwaysShowToolbarInFullscreen = imported.alwaysShowToolbarInFullscreen ?? false
         if let themeRaw = imported.appTheme,
            let theme = AppTheme(rawValue: themeRaw) {
             appTheme = theme
@@ -1364,9 +1341,6 @@ final class FeatureSettings: ObservableObject {
             urlHandler = .system
         }
         customAIDetectionRules = imported.customAIDetectionRules ?? []
-        isDropdownEnabled = imported.isDropdownEnabled
-        dropdownHotkey = imported.dropdownHotkey
-        dropdownHeight = imported.dropdownHeight
         isBroadcastEnabled = imported.isBroadcastEnabled
         isClipboardHistoryEnabled = imported.isClipboardHistoryEnabled
         clipboardHistoryMaxItems = imported.clipboardHistoryMaxItems
@@ -1406,18 +1380,22 @@ final class FeatureSettings: ObservableObject {
         shellType = .system
         customShellPath = ""
         startupCommand = ""
+        isLsColorsEnabled = true
 
         // Shortcuts
         keybindingPreset = "default"
         customShortcuts = KeyboardShortcut.shortcuts(for: keybindingPreset)
 
         // Notifications
-        notificationFilters = .defaults
+        notificationTriggerState = NotificationTriggerState()
+        notificationFilters = Self.legacyNotificationFilters(from: notificationTriggerState)
         findCaseSensitiveDefault = false
         findRegexDefault = false
         lastTabCloseBehavior = .keepWindow
         newTabPosition = "end"
+        newTabsUseCurrentDirectory = true
         alwaysShowTabBar = true
+        alwaysShowToolbarInFullscreen = false
 
         // Language
         appLanguage = .system
@@ -1448,9 +1426,6 @@ final class FeatureSettings: ObservableObject {
         defaultEditor = ""
         urlHandler = .system
         customAIDetectionRules = []
-        isDropdownEnabled = false
-        dropdownHotkey = "ctrl+`"
-        dropdownHeight = 0.4
         isBroadcastEnabled = false
         isClipboardHistoryEnabled = true
         clipboardHistoryMaxItems = 50
@@ -1494,6 +1469,7 @@ final class FeatureSettings: ObservableObject {
         shellType = .system
         customShellPath = ""
         startupCommand = ""
+        isLsColorsEnabled = true
     }
 
     func resetInputToDefaults() {
@@ -1524,13 +1500,36 @@ final class FeatureSettings: ObservableObject {
     // MARK: - iCloud Sync (NEW)
 
     private let iCloudKey = "com.chau7.settings"
+    private var iCloudSyncWorkItem: DispatchWorkItem?
+    private let iCloudSyncDebounceInterval: TimeInterval = 2.0  // 2 seconds debounce
 
     func syncToiCloud() {
         guard iCloudSyncEnabled else { return }
+
+        // Cancel previous pending sync
+        iCloudSyncWorkItem?.cancel()
+
+        // Create new debounced sync
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self = self, self.iCloudSyncEnabled else { return }
+            guard let data = self.exportSettings() else { return }
+            NSUbiquitousKeyValueStore.default.set(data, forKey: self.iCloudKey)
+            NSUbiquitousKeyValueStore.default.synchronize()
+            Log.info("Settings synced to iCloud (debounced)")
+        }
+
+        iCloudSyncWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + iCloudSyncDebounceInterval, execute: workItem)
+    }
+
+    /// Force immediate sync without debouncing (e.g., on app quit)
+    func forceSyncToiCloud() {
+        guard iCloudSyncEnabled else { return }
+        iCloudSyncWorkItem?.cancel()
         guard let data = exportSettings() else { return }
         NSUbiquitousKeyValueStore.default.set(data, forKey: iCloudKey)
         NSUbiquitousKeyValueStore.default.synchronize()
-        Log.info("Settings synced to iCloud")
+        Log.info("Settings force synced to iCloud")
     }
 
     func syncFromiCloud() {
@@ -1615,12 +1614,15 @@ extension FeatureSettings {
             shellType: "system",
             customShellPath: "",
             startupCommand: "",
+            isLsColorsEnabled: true,
             customShortcuts: KeyboardShortcut.shortcuts(for: "default"),
+            notificationTriggerState: NotificationTriggerState(),
             notificationFilters: .defaults,
             findCaseSensitiveDefault: false,
             findRegexDefault: false,
             lastTabCloseBehavior: "keepWindow",
             newTabPosition: "end",
+            newTabsUseCurrentDirectory: true,
             alwaysShowTabBar: true,
             appTheme: "system",
             launchAtLogin: false,
@@ -1642,9 +1644,6 @@ extension FeatureSettings {
             defaultEditor: "",
             urlHandler: "system",
             customAIDetectionRules: [],
-            isDropdownEnabled: false,
-            dropdownHotkey: "ctrl+`",
-            dropdownHeight: 0.4,
             isBroadcastEnabled: false,
             isClipboardHistoryEnabled: true,
             clipboardHistoryMaxItems: 50,

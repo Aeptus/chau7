@@ -237,7 +237,7 @@ enum HelpContent {
             - **⇧⌘P**: Command Palette
             - **⇧⌘O**: SSH Connections
             - **⌘;**: Snippets
-            - **⇧⌘D**: Debug Console
+            - **⇧⌘L**: Debug Console
             """,
             relatedTopics: ["Command Palette", "Settings"]
         ),
@@ -382,7 +382,7 @@ enum HelpContent {
             - **Tabs**: Behavior, appearance
             - **Input**: Keyboard, mouse settings
             - **Productivity**: Snippets, bookmarks, search
-            - **Windows**: Overlay, dropdown, split panes
+            - **Windows**: Overlay, split panes
             - **AI Integration**: Detection, tab theming
             - **Logs**: History, terminal logs
             - **About**: Version info, links

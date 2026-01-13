@@ -9,20 +9,20 @@ struct ProductivitySettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Snippets
-            SettingsSectionHeader("Snippets", icon: "text.badge.plus")
+            SettingsSectionHeader(L("settings.productivity.snippets", "Snippets"), icon: "text.badge.plus")
 
             // Quick summary and manage button
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Reusable text snippets with placeholders")
+                    Text(L("settings.productivity.snippetsDescription", "Reusable text snippets with placeholders"))
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                     HStack(spacing: 12) {
-                        Label("\(SnippetManager.shared.entries.filter { $0.source == .global }.count) User", systemImage: "person.fill")
+                        Label("\(SnippetManager.shared.entries.filter { $0.source == .global }.count) \(L("settings.productivity.user", "User"))", systemImage: "person.fill")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                         if SnippetManager.shared.repoRoot != nil {
-                            Label("\(SnippetManager.shared.entries.filter { $0.source == .repo }.count) Repo", systemImage: "folder.fill")
+                            Label("\(SnippetManager.shared.entries.filter { $0.source == .repo }.count) \(L("settings.productivity.repo", "Repo"))", systemImage: "folder.fill")
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary)
                         }
@@ -32,11 +32,9 @@ struct ProductivitySettingsView: View {
                 Spacer()
 
                 Button {
-                    if let appDelegate = NSApp.delegate as? AppDelegate {
-                        appDelegate.showSnippetsSettings()
-                    }
+                    SnippetsSettingsWindowController.shared.show()
                 } label: {
-                    Label("Manage Snippets", systemImage: "text.badge.plus")
+                    Label(L("settings.productivity.manageSnippets", "Manage Snippets"), systemImage: "text.badge.plus")
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
@@ -50,14 +48,14 @@ struct ProductivitySettingsView: View {
                 Image(systemName: "keyboard")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
-                Text("Press ⌘; to open snippet picker in terminal")
+                Text(L("settings.productivity.snippetShortcutHint", "Press ⌘⌥S to open snippet picker in terminal"))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
             }
 
             SettingsToggle(
-                label: "Enable Snippets",
-                help: "Use reusable text snippets with placeholders",
+                label: L("settings.productivity.enableSnippets", "Enable Snippets"),
+                help: L("settings.productivity.enableSnippets.help", "Use reusable text snippets with placeholders"),
                 isOn: $settings.isSnippetsEnabled
             )
             .onChange(of: settings.isSnippetsEnabled) { _ in
@@ -65,8 +63,8 @@ struct ProductivitySettingsView: View {
             }
 
             SettingsToggle(
-                label: "Repository Snippets",
-                help: "Load snippets from the current git repository (.chau7/snippets.json)",
+                label: L("settings.productivity.repositorySnippets", "Repository Snippets"),
+                help: L("settings.productivity.repositorySnippets.help", "Load snippets from the current git repository (.chau7/snippets.json)"),
                 isOn: $settings.isRepoSnippetsEnabled,
                 disabled: !settings.isSnippetsEnabled
             )
@@ -75,19 +73,19 @@ struct ProductivitySettingsView: View {
             }
 
             SettingsPicker(
-                label: "Insert Mode",
-                help: "How snippets are inserted into the terminal",
+                label: L("settings.productivity.insertMode", "Insert Mode"),
+                help: L("settings.productivity.insertMode.help", "How snippets are inserted into the terminal"),
                 selection: $settings.snippetInsertMode,
                 options: [
-                    (value: "expand", label: "Expand (type)"),
-                    (value: "paste", label: "Paste")
+                    (value: "expand", label: L("settings.productivity.expandType", "Expand (type)")),
+                    (value: "paste", label: L("settings.productivity.paste", "Paste"))
                 ],
                 disabled: !settings.isSnippetsEnabled
             )
 
             SettingsToggle(
-                label: "Placeholder Navigation",
-                help: "Enable Tab key navigation between snippet placeholders",
+                label: L("settings.productivity.placeholderNavigation", "Placeholder Navigation"),
+                help: L("settings.productivity.placeholderNavigation.help", "Enable Tab key navigation between snippet placeholders"),
                 isOn: $settings.snippetPlaceholdersEnabled,
                 disabled: !settings.isSnippetsEnabled || settings.snippetInsertMode == "paste"
             )
@@ -96,17 +94,17 @@ struct ProductivitySettingsView: View {
                 .padding(.vertical, 8)
 
             // Clipboard History
-            SettingsSectionHeader("Clipboard History", icon: "doc.on.clipboard")
+            SettingsSectionHeader(L("settings.productivity.clipboardHistory", "Clipboard History"), icon: "doc.on.clipboard")
 
             SettingsToggle(
-                label: "Enable Clipboard History",
-                help: "Keep a history of copied text for quick access",
+                label: L("settings.productivity.enableClipboardHistory", "Enable Clipboard History"),
+                help: L("settings.productivity.enableClipboardHistory.help", "Keep a history of copied text for quick access"),
                 isOn: $settings.isClipboardHistoryEnabled
             )
 
             SettingsNumberField(
-                label: "Maximum Items",
-                help: "Number of clipboard entries to remember (1-500)",
+                label: L("settings.productivity.maximumItems", "Maximum Items"),
+                help: L("settings.productivity.maximumItems.help", "Number of clipboard entries to remember (1-500)"),
                 value: $settings.clipboardHistoryMaxItems,
                 width: 80,
                 disabled: !settings.isClipboardHistoryEnabled
@@ -116,17 +114,17 @@ struct ProductivitySettingsView: View {
                 .padding(.vertical, 8)
 
             // Bookmarks
-            SettingsSectionHeader("Bookmarks", icon: "bookmark")
+            SettingsSectionHeader(L("settings.productivity.bookmarks", "Bookmarks"), icon: "bookmark")
 
             SettingsToggle(
-                label: "Enable Bookmarks",
-                help: "Save and recall positions in terminal scrollback",
+                label: L("settings.productivity.enableBookmarks", "Enable Bookmarks"),
+                help: L("settings.productivity.enableBookmarks.help", "Save and recall positions in terminal scrollback"),
                 isOn: $settings.isBookmarksEnabled
             )
 
             SettingsNumberField(
-                label: "Maximum Per Tab",
-                help: "Number of bookmarks allowed per tab (1-200)",
+                label: L("settings.productivity.maximumPerTab", "Maximum Per Tab"),
+                help: L("settings.productivity.maximumPerTab.help", "Number of bookmarks allowed per tab (1-200)"),
                 value: $settings.maxBookmarksPerTab,
                 width: 80,
                 disabled: !settings.isBookmarksEnabled
@@ -136,46 +134,36 @@ struct ProductivitySettingsView: View {
                 .padding(.vertical, 8)
 
             // Search
-            SettingsSectionHeader("Search", icon: "magnifyingglass")
+            SettingsSectionHeader(L("settings.productivity.search", "Search"), icon: "magnifyingglass")
 
             SettingsToggle(
-                label: "Semantic Search",
-                help: "Enable command-aware search through terminal history (requires shell integration)",
+                label: L("settings.productivity.semanticSearch", "Semantic Search"),
+                help: L("settings.productivity.semanticSearch.help", "Enable command-aware search through terminal history (requires shell integration)"),
                 isOn: $settings.isSemanticSearchEnabled
             )
 
-            VStack(alignment: .leading, spacing: 6) {
-                SettingsToggle(
-                    label: "Default Case Sensitive",
-                    help: "Start new find sessions with case-sensitive matching",
-                    isOn: $settings.findCaseSensitiveDefault
-                )
+            SettingsToggle(
+                label: L("settings.productivity.defaultCaseSensitive", "Default Case Sensitive"),
+                help: L("settings.productivity.defaultCaseSensitive.help", "Start new find sessions with case-sensitive matching"),
+                isOn: $settings.findCaseSensitiveDefault
+            )
 
-                SettingsToggle(
-                    label: "Default Regex",
-                    help: "Start new find sessions with regex matching enabled",
-                    isOn: $settings.findRegexDefault
-                )
-            }
-            .padding(8)
-            .background(Color.secondary.opacity(0.05))
-            .cornerRadius(8)
+            SettingsToggle(
+                label: L("settings.productivity.defaultRegex", "Default Regex"),
+                help: L("settings.productivity.defaultRegex.help", "Start new find sessions with regex matching enabled"),
+                isOn: $settings.findRegexDefault
+            )
 
-            VStack(alignment: .leading, spacing: 4) {
-                SettingsShortcutRow(label: "Find", shortcut: "⌘F")
-                SettingsShortcutRow(label: "Find Next", shortcut: "⌘G")
-                SettingsShortcutRow(label: "Find Previous", shortcut: "⌘⇧G")
-            }
-            .padding(8)
-            .background(Color.secondary.opacity(0.05))
-            .cornerRadius(8)
+            SettingsShortcutRow(label: L("settings.productivity.find", "Find"), shortcut: "⌘F")
+            SettingsShortcutRow(label: L("settings.productivity.findNext", "Find Next"), shortcut: "⌘G")
+            SettingsShortcutRow(label: L("settings.productivity.findPrevious", "Find Previous"), shortcut: "⌘⌥G")
 
             Divider()
                 .padding(.vertical, 8)
 
             // Reset Button
             SettingsButtonRow(buttons: [
-                .init(title: "Reset Productivity to Defaults", style: .plain) {
+                .init(title: L("settings.productivity.resetToDefaults", "Reset Productivity to Defaults"), style: .plain) {
                     settings.resetProductivityToDefaults()
                 }
             ], alignment: .trailing)

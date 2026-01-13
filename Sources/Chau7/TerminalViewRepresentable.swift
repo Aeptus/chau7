@@ -1,10 +1,12 @@
 import SwiftUI
 import AppKit
 import SwiftTerm
+import QuartzCore
 
 struct TerminalViewRepresentable: NSViewRepresentable {
     @ObservedObject var model: TerminalSessionModel
     var isSuspended: Bool
+    var isActive: Bool
     @ObservedObject private var settings = FeatureSettings.shared
 
     func makeNSView(context: Context) -> Chau7TerminalView {
@@ -13,11 +15,19 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             Log.trace("Reusing existing terminal view for session")
             existingView.notifyUpdateChanges = !isSuspended
             existingView.isHidden = isSuspended
+            existingView.setEventMonitoringEnabled(isActive && !isSuspended)
             return existingView
         }
 
         // Create new terminal view and start shell process
         let view = Chau7TerminalView(frame: .zero)
+
+        // CRITICAL: Disable Big Sur's full-redraw behavior.
+        // Starting with Big Sur, macOS redraws the ENTIRE view even when only
+        // a small region is marked dirty. This adds significant latency.
+        // Setting this to true enables incremental/partial redraws.
+        view.disableFullRedrawOnAnyChanges = true
+
         view.processDelegate = model
         view.font = terminalFont()
         view.applyColorScheme(settings.currentColorScheme)
@@ -26,6 +36,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.applyScrollbackLines(settings.scrollbackLines)
         view.notifyUpdateChanges = !isSuspended
         view.isHidden = isSuspended
+        view.setEventMonitoringEnabled(isActive && !isSuspended)
         view.allowMouseReporting = false
         view.onInput = { [weak model] text in
             model?.handleInput(text)
@@ -35,11 +46,19 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         }
         view.onBufferChanged = { [weak model] in
             model?.scheduleSearchRefresh()
-            model?.highlightView?.needsDisplay = true
+            model?.highlightView?.scheduleDisplay()  // Use batched display for better latency
         }
+
+        // MARK: - Disable Implicit Animations (Latency Optimization)
+        // Implicit CALayer animations can add 250ms+ to rendering. Disable them
+        // for all terminal-related views to ensure immediate display updates.
+        view.wantsLayer = true
+        view.layer?.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
 
         let cursorLineView = TerminalCursorLineView(frame: .zero)
         cursorLineView.autoresizingMask = [.width, .height]
+        cursorLineView.wantsLayer = true
+        cursorLineView.layer?.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "opacity": NSNull()]
         view.addSubview(cursorLineView)
         view.attachCursorLineView(cursorLineView)
 
@@ -48,14 +67,15 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         highlightView.session = model
         highlightView.autoresizingMask = [.width, .height]
         highlightView.wantsLayer = true
+        highlightView.layer?.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
         highlightView.layer?.backgroundColor = NSColor.clear.cgColor
         view.addSubview(highlightView)
         highlightView.frame = view.bounds
         model.attachHighlightView(highlightView)
 
-        // Give instant feedback while the shell is starting.
-        let timestamp = Formatters.terminalLogin.string(from: Date())
-        view.feed(text: "Last login: \(timestamp)\r\n")
+        // Show a random power user tip while the shell is starting
+        let tip = PowerUserTips.randomFormattedTip()
+        view.feed(text: "\(tip)\r\n")
 
         let shell = model.defaultShell()
         let execName = "-" + URL(fileURLWithPath: shell).lastPathComponent
@@ -75,6 +95,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: Chau7TerminalView, context: Context) {
+        nsView.setEventMonitoringEnabled(isActive && !isSuspended)
         if nsView.isHidden != isSuspended {
             nsView.isHidden = isSuspended
             if !isSuspended {

@@ -9,7 +9,7 @@ struct AppearanceSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Live Preview Panel (NEW)
-            SettingsSectionHeader("Live Preview", icon: "rectangle.inset.filled.and.cursorarrow")
+            SettingsSectionHeader(L("settings.appearance.livePreview", "Live Preview"), icon: "rectangle.inset.filled.and.cursorarrow")
 
             LiveTerminalPreview(settings: settings)
                 .padding(.bottom, 8)
@@ -18,55 +18,51 @@ struct AppearanceSettingsView: View {
                 .padding(.vertical, 8)
 
             // Font Settings (NEW)
-            SettingsSectionHeader("Font", icon: "textformat")
+            SettingsSectionHeader(L("settings.appearance.font", "Font"), icon: "textformat")
 
             SettingsPicker(
-                label: "Font Family",
-                help: "Choose a monospace font for the terminal",
+                label: L("settings.appearance.fontFamily", "Font Family"),
+                help: L("settings.appearance.fontFamily.help", "Choose a monospace font for the terminal"),
                 selection: $settings.fontFamily,
                 options: FeatureSettings.availableFonts.map { (value: $0, label: $0) }
             )
 
-            SettingsRow("Font Size", help: "Terminal font size in points (8-72)") {
-                HStack {
-                    Stepper(value: $settings.fontSize, in: 8...72) {
-                        Text("\(settings.fontSize) pt")
-                            .font(.system(.body, design: .monospaced))
-                            .frame(width: 60, alignment: .trailing)
-                    }
-                }
-            }
+            SettingsStepper(
+                label: L("settings.appearance.fontSize", "Font Size"),
+                help: L("settings.appearance.fontSize.help", "Terminal font size in points (8-72)"),
+                value: $settings.fontSize,
+                range: 8...72,
+                suffix: " pt"
+            )
 
-            SettingsRow("Default Zoom", help: "Scale new terminal sessions (50-200%)") {
-                HStack {
-                    Slider(value: Binding(
-                        get: { Double(settings.defaultZoomPercent) },
-                        set: { settings.defaultZoomPercent = Int($0) }
-                    ), in: 50...200, step: 5)
-                        .frame(width: 150)
-                    Text("\(settings.defaultZoomPercent)%")
-                        .font(.system(.body, design: .monospaced))
-                        .frame(width: 55, alignment: .trailing)
-                }
-            }
+            SettingsSlider(
+                label: L("settings.appearance.defaultZoom", "Default Zoom"),
+                help: L("settings.appearance.defaultZoom.help", "Scale new terminal sessions (50-200%)"),
+                value: Binding(
+                    get: { Double(settings.defaultZoomPercent) },
+                    set: { settings.defaultZoomPercent = Int($0) }
+                ),
+                range: 50...200,
+                step: 5,
+                format: "%.0f",
+                suffix: "%"
+            )
 
             // Font Preview
-            Text("The quick brown fox jumps over the lazy dog")
+            Text(L("settings.appearance.fontPreview", "The quick brown fox jumps over the lazy dog"))
                 .font(.custom(settings.fontFamily, size: CGFloat(settings.fontSize)))
-                .padding(8)
-                .background(Color.secondary.opacity(0.1))
-                .cornerRadius(6)
+                .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Divider()
                 .padding(.vertical, 8)
 
             // Color Scheme (NEW)
-            SettingsSectionHeader("Color Scheme", icon: "paintpalette")
+            SettingsSectionHeader(L("settings.appearance.colorScheme", "Color Scheme"), icon: "paintpalette")
 
             SettingsPicker(
-                label: "Scheme",
-                help: "Choose a terminal color scheme preset",
+                label: L("settings.appearance.scheme", "Scheme"),
+                help: L("settings.appearance.scheme.help", "Choose a terminal color scheme preset"),
                 selection: $settings.colorSchemeName,
                 options: TerminalColorScheme.allPresets.map { (value: $0.name, label: $0.name) }
             )
@@ -79,27 +75,30 @@ struct AppearanceSettingsView: View {
                 .padding(.vertical, 8)
 
             // Window Transparency (NEW)
-            SettingsSectionHeader("Window", icon: "square.on.square.dashed")
+            SettingsSectionHeader(L("settings.appearance.window", "Window"), icon: "square.on.square.dashed")
 
-            SettingsRow("Window Opacity", help: "Transparency level for terminal window (30-100%)") {
-                HStack {
-                    Slider(value: $settings.windowOpacity, in: 0.3...1.0, step: 0.05)
-                        .frame(width: 150)
-                    Text("\(Int(settings.windowOpacity * 100))%")
-                        .font(.system(.body, design: .monospaced))
-                        .frame(width: 45, alignment: .trailing)
-                }
-            }
+            SettingsSlider(
+                label: L("settings.appearance.windowOpacity", "Window Opacity"),
+                help: L("settings.appearance.windowOpacity.help", "Transparency level for terminal window (30-100%)"),
+                value: Binding(
+                    get: { settings.windowOpacity * 100 },
+                    set: { settings.windowOpacity = $0 / 100 }
+                ),
+                range: 30...100,
+                step: 5,
+                format: "%.0f",
+                suffix: "%"
+            )
 
             Divider()
                 .padding(.vertical, 8)
 
             // Theme
-            SettingsSectionHeader("System Theme", icon: "circle.lefthalf.filled")
+            SettingsSectionHeader(L("settings.appearance.systemTheme", "System Theme"), icon: "circle.lefthalf.filled")
 
             SettingsPicker(
-                label: "Appearance",
-                help: "Choose light, dark, or match system appearance",
+                label: L("settings.appearance.appearance", "Appearance"),
+                help: L("settings.appearance.appearance.help", "Choose light, dark, or match system appearance"),
                 selection: $settings.appTheme,
                 options: AppTheme.allCases.map { (value: $0, label: $0.displayName) }
             )
@@ -108,11 +107,11 @@ struct AppearanceSettingsView: View {
                 .padding(.vertical, 8)
 
             // AI Theming
-            SettingsSectionHeader("AI Tab Theming", icon: "sparkles")
+            SettingsSectionHeader(L("settings.appearance.aiTabTheming", "AI Tab Theming"), icon: "sparkles")
 
             SettingsToggle(
-                label: "Auto Tab Themes",
-                help: "Automatically color tabs based on the detected AI CLI (Claude = purple, Codex = green, etc.)",
+                label: L("settings.appearance.autoTabThemes", "Auto Tab Themes"),
+                help: L("settings.appearance.autoTabThemes.help", "Automatically color tabs based on the detected AI CLI (Claude = purple, Codex = green, etc.)"),
                 isOn: $settings.isAutoTabThemeEnabled
             )
 
@@ -120,42 +119,42 @@ struct AppearanceSettingsView: View {
                 .padding(.vertical, 8)
 
             // Display Enhancements
-            SettingsSectionHeader("Display Enhancements", icon: "eye")
+            SettingsSectionHeader(L("settings.appearance.displayEnhancements", "Display Enhancements"), icon: "eye")
 
             SettingsToggle(
-                label: "Syntax Highlighting",
-                help: "Highlight code syntax in terminal output for better readability",
+                label: L("settings.appearance.syntaxHighlighting", "Syntax Highlighting"),
+                help: L("settings.appearance.syntaxHighlighting.help", "Highlight code syntax in terminal output for better readability"),
                 isOn: $settings.isSyntaxHighlightEnabled
             )
 
             SettingsToggle(
-                label: "Clickable URLs",
-                help: "Make URLs in terminal output clickable to open in browser",
+                label: L("settings.appearance.clickableURLs", "Clickable URLs"),
+                help: L("settings.appearance.clickableURLs.help", "Make URLs in terminal output clickable to open in browser"),
                 isOn: $settings.isClickableURLsEnabled
             )
 
             SettingsToggle(
-                label: "Inline Images",
-                help: "Display images inline using iTerm2's imgcat protocol (use imgcat command)",
+                label: L("settings.appearance.inlineImages", "Inline Images"),
+                help: L("settings.appearance.inlineImages.help", "Display images inline using iTerm2's imgcat protocol (use imgcat command)"),
                 isOn: $settings.isInlineImagesEnabled
             )
 
             SettingsToggle(
-                label: "Pretty Print JSON",
-                help: "Automatically format JSON output with indentation and colors",
+                label: L("settings.appearance.prettyPrintJSON", "Pretty Print JSON"),
+                help: L("settings.appearance.prettyPrintJSON.help", "Automatically format JSON output with indentation and colors"),
                 isOn: $settings.isJSONPrettyPrintEnabled
             )
 
             SettingsToggle(
-                label: "Line Timestamps",
-                help: "Show timestamps next to each terminal line",
+                label: L("settings.appearance.lineTimestamps", "Line Timestamps"),
+                help: L("settings.appearance.lineTimestamps.help", "Show timestamps next to each terminal line"),
                 isOn: $settings.isLineTimestampsEnabled
             )
 
             if settings.isLineTimestampsEnabled {
                 SettingsTextField(
-                    label: "Timestamp Format",
-                    help: "Date format string (e.g., HH:mm:ss, yyyy-MM-dd HH:mm)",
+                    label: L("settings.appearance.timestampFormat", "Timestamp Format"),
+                    help: L("settings.appearance.timestampFormat.help", "Date format string (e.g., HH:mm:ss, yyyy-MM-dd HH:mm)"),
                     placeholder: "HH:mm:ss",
                     text: $settings.timestampFormat,
                     width: 150,
@@ -167,13 +166,11 @@ struct AppearanceSettingsView: View {
                 .padding(.vertical, 8)
 
             // Reset Button
-            HStack {
-                Spacer()
-                Button("Reset Appearance to Defaults") {
+            SettingsButtonRow(buttons: [
+                .init(title: L("settings.appearance.resetToDefaults", "Reset Appearance to Defaults"), style: .plain) {
                     settings.resetAppearanceToDefaults()
                 }
-                .foregroundColor(.red)
-            }
+            ], alignment: .trailing)
         }
     }
 }

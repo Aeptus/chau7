@@ -124,6 +124,14 @@ public enum ShellEscaping {
             )
         }
 
+        // Check for shell control characters
+        if trimmed.contains(";") || trimmed.contains("&") || trimmed.contains("\n") || trimmed.contains("\r") {
+            return SSHValidationResult(
+                isValid: false,
+                reason: "Shell control characters are not allowed"
+            )
+        }
+
         return SSHValidationResult(isValid: true)
     }
 

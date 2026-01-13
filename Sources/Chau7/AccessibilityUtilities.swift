@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 // MARK: - Accessibility Utilities
 
@@ -236,5 +237,84 @@ extension View {
     /// - Returns: View with minimum touch target
     func minimumTouchTarget(_ size: CGFloat = 44) -> some View {
         modifier(MinimumTouchTargetModifier(minSize: size))
+    }
+}
+
+// MARK: - Focus Ring for Keyboard Navigation
+
+/// Adds a visible focus ring when the view has keyboard focus.
+struct KeyboardFocusRingModifier: ViewModifier {
+    let isFocused: Bool
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .stroke(Color.accentColor, lineWidth: 2)
+                    .opacity(isFocused ? 1 : 0)
+            )
+    }
+}
+
+extension View {
+    /// Adds a keyboard focus ring indicator.
+    /// - Parameters:
+    ///   - isFocused: Whether the view currently has focus
+    ///   - cornerRadius: Corner radius of the focus ring
+    /// - Returns: View with focus ring overlay
+    func keyboardFocusRing(isFocused: Bool, cornerRadius: CGFloat = 6) -> some View {
+        modifier(KeyboardFocusRingModifier(isFocused: isFocused, cornerRadius: cornerRadius))
+    }
+}
+
+// MARK: - VoiceOver Announcements
+
+/// Utility for making VoiceOver announcements.
+enum AccessibilityAnnouncement {
+    /// Post an announcement to VoiceOver.
+    /// - Parameter message: The message to announce
+    static func post(_ message: String) {
+        #if os(macOS)
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
+            .announcement: message,
+            .priority: NSAccessibilityPriorityLevel.high.rawValue
+        ])
+        #endif
+    }
+
+    /// Announce search results count.
+    static func announceSearchResults(_ count: Int) {
+        let message = count == 0 ? "No results found" :
+                     count == 1 ? "1 result found" :
+                     "\(count) results found"
+        post(message)
+    }
+
+    /// Announce a selection change.
+    static func announceSelection(_ item: String) {
+        post("Selected: \(item)")
+    }
+
+    /// Announce an action completion.
+    static func announceAction(_ action: String) {
+        post(action)
+    }
+}
+
+// MARK: - List Navigation Accessibility
+
+/// Accessibility traits and labels for navigable lists.
+extension View {
+    /// Makes a list item navigable with keyboard.
+    /// - Parameters:
+    ///   - index: Item index in the list
+    ///   - total: Total number of items
+    ///   - label: Item label for VoiceOver
+    /// - Returns: View with list navigation accessibility
+    func accessibleListItem(index: Int, total: Int, label: String) -> some View {
+        self
+            .accessibilityLabel(label)
+            .accessibilityHint("Item \(index + 1) of \(total). Use arrow keys to navigate.")
     }
 }

@@ -9,7 +9,7 @@ private let overlayChipBackground = Color(red: 0.22, green: 0.22, blue: 0.22)
 
 // MARK: - Overlay Layout Constants
 
-private enum OverlayLayout {
+enum OverlayLayout {
     // Panel sizes
     static let searchPanelMaxWidth: CGFloat = 400
     static let commandPanelMaxWidth: CGFloat = 400
@@ -27,50 +27,62 @@ private enum OverlayLayout {
     static let iconSize: CGFloat = 24
     static let smallIconSize: CGFloat = 20
     static let commandListMinWidth: CGFloat = 200
+
+    // Tab bar
+    static let tabBarHeight: CGFloat = 36
 }
 
-struct Chau7OverlayView: View {
+// MARK: - Safari-style Unified Toolbar Delegate
+
+/// Toolbar delegate that provides a tab bar as the main toolbar item.
+/// Uses Safari's unified toolbar style for seamless traffic light integration.
+final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
+    static let shared = TabBarToolbarDelegate()
+
+    private static let tabBarItemIdentifier = NSToolbarItem.Identifier("TabBarItem")
+    private var tabsModels: [NSToolbar.Identifier: OverlayTabsModel] = [:]
+
+    private override init() {
+        super.init()
+    }
+
+    func registerTabsModel(_ model: OverlayTabsModel, for toolbarIdentifier: NSToolbar.Identifier) {
+        tabsModels[toolbarIdentifier] = model
+    }
+
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        guard itemIdentifier == Self.tabBarItemIdentifier,
+              let tabsModel = tabsModels[toolbar.identifier] else {
+            return nil
+        }
+
+        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        let tabBarView = ToolbarTabBarView(overlayModel: tabsModel)
+        let hostingView = NSHostingView(rootView: tabBarView)
+        item.view = hostingView
+
+        return item
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [Self.tabBarItemIdentifier]
+    }
+
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [Self.tabBarItemIdentifier]
+    }
+}
+
+/// SwiftUI view for the tab bar that goes in the unified toolbar
+private struct ToolbarTabBarView: View {
     @ObservedObject var overlayModel: OverlayTabsModel
-    @ObservedObject var appModel: AppModel
     @ObservedObject private var settings = FeatureSettings.shared
 
     var body: some View {
-        VStack(spacing: 0) {
-            if shouldShowTabBar {
-                topBar
-                Divider()
-            }
-            terminalStack
-        }
-        .background(Color.clear)
-        .onAppear {
-            overlayModel.configureRenderSuspension(
-                enabled: appModel.isSuspendBackgroundRendering,
-                delay: appModel.suspendRenderDelaySeconds
-            )
-        }
-        .onChange(of: appModel.isSuspendBackgroundRendering) { _ in
-            overlayModel.configureRenderSuspension(
-                enabled: appModel.isSuspendBackgroundRendering,
-                delay: appModel.suspendRenderDelaySeconds
-            )
-        }
-        .onChange(of: appModel.suspendRenderDelayText) { _ in
-            overlayModel.configureRenderSuspension(
-                enabled: appModel.isSuspendBackgroundRendering,
-                delay: appModel.suspendRenderDelaySeconds
-            )
-        }
-    }
-
-    private var shouldShowTabBar: Bool {
-        settings.alwaysShowTabBar || overlayModel.tabs.count > 1
-    }
-
-    private var topBar: some View {
         let selected = overlayModel.selectedTab
         let session = selected?.session
-        return HStack(spacing: 12) {
+
+        HStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(overlayModel.tabs) { tab in
@@ -80,9 +92,9 @@ struct Chau7OverlayView: View {
                                 session: session,
                                 isSelected: tab.id == overlayModel.selectedTabID,
                                 isSuspended: overlayModel.isTabSuspended(tab.id),
-                                tabColor: tab.effectiveColor,  // F05: Use effective color (auto or manual)
-                                commandBadge: tab.commandBadge,  // F20: Last command badge
-                                isBroadcastIncluded: overlayModel.isBroadcastMode && !overlayModel.broadcastExcludedTabIDs.contains(tab.id),  // F13
+                                tabColor: tab.effectiveColor,
+                                commandBadge: tab.commandBadge,
+                                isBroadcastIncluded: overlayModel.isBroadcastMode && !overlayModel.broadcastExcludedTabIDs.contains(tab.id),
                                 onSelect: { overlayModel.selectTab(id: tab.id) },
                                 onRename: { overlayModel.beginRename(tabID: tab.id) },
                                 onClose: { overlayModel.closeTab(id: tab.id) }
@@ -114,8 +126,8 @@ struct Chau7OverlayView: View {
                     .accessibilityLabel("New tab")
                     .accessibilityHint("Opens a new terminal tab")
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
             }
 
             Spacer()
@@ -134,17 +146,39 @@ struct Chau7OverlayView: View {
                 .accessibilityLabel("Git branch: \(session.gitBranch ?? "unknown")")
             }
         }
-        .padding(.horizontal, 8)
-        .background(
-            LinearGradient(
-                colors: [
-                    Color.black.opacity(0.20),
-                    Color.black.opacity(0.05)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
+        .padding(.trailing, 8)
+        .frame(height: OverlayLayout.tabBarHeight)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+struct Chau7OverlayView: View {
+    @ObservedObject var overlayModel: OverlayTabsModel
+    @ObservedObject var appModel: AppModel
+    @ObservedObject private var settings = FeatureSettings.shared
+
+    var body: some View {
+        // Tab bar is now in the unified toolbar (Safari-style)
+        terminalStack
+        .background(Color.clear)
+        .onAppear {
+            overlayModel.configureRenderSuspension(
+                enabled: appModel.isSuspendBackgroundRendering,
+                delay: appModel.suspendRenderDelaySeconds
             )
-        )
+        }
+        .onChange(of: appModel.isSuspendBackgroundRendering) { _ in
+            overlayModel.configureRenderSuspension(
+                enabled: appModel.isSuspendBackgroundRendering,
+                delay: appModel.suspendRenderDelaySeconds
+            )
+        }
+        .onChange(of: appModel.suspendRenderDelayText) { _ in
+            overlayModel.configureRenderSuspension(
+                enabled: appModel.isSuspendBackgroundRendering,
+                delay: appModel.suspendRenderDelaySeconds
+            )
+        }
     }
 
     private var terminalStack: some View {
@@ -153,7 +187,7 @@ struct Chau7OverlayView: View {
             ForEach(overlayModel.tabs) { tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
                 let isSuspended = overlayModel.isTabSuspended(tab.id)
-                SplitPaneView(controller: tab.splitController, isSuspended: isSuspended)
+                SplitPaneView(controller: tab.splitController, isSuspended: isSuspended, isActive: isSelected)
                     .opacity(isSelected ? 1 : 0)
                     .allowsHitTesting(isSelected)
                     .accessibilityHidden(!isSelected)

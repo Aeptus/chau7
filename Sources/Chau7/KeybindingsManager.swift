@@ -123,7 +123,6 @@ enum KeyAction: String, CaseIterable {
     case clearWord  // Ctrl+W
 
     // Features
-    case toggleDropdown
     case toggleBroadcast
     case showClipboardHistory
     case showBookmarks
@@ -169,7 +168,6 @@ enum KeyAction: String, CaseIterable {
         case .suspend: return "Suspend"
         case .clearLine: return "Clear Line"
         case .clearWord: return "Clear Word"
-        case .toggleDropdown: return "Toggle Dropdown"
         case .toggleBroadcast: return "Toggle Broadcast"
         case .showClipboardHistory: return "Clipboard History"
         case .showBookmarks: return "Bookmarks"
@@ -235,7 +233,7 @@ final class KeybindingsManager: ObservableObject {
 
     private func shortcutsSignature(for shortcuts: [KeyboardShortcut]) -> String {
         shortcuts.map {
-            "\($0.action)|\($0.key.lowercased())|\($0.modifiers.sorted().joined(separator: \",\"))"
+            "\($0.action)|\($0.key.lowercased())|\($0.modifiers.sorted().joined(separator: ","))"
         }.joined(separator: ";")
     }
 
@@ -339,8 +337,6 @@ final class KeybindingsManager: ObservableObject {
             overlayModel?.selectedTab?.session?.sendInput("\u{17}")  // Ctrl+W
 
         // Features
-        case .toggleDropdown:
-            delegate?.toggleDropdown()
         case .toggleBroadcast:
             overlayModel?.toggleBroadcast()
         case .showClipboardHistory:

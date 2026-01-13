@@ -7,12 +7,14 @@ import UniformTypeIdentifiers
 struct SplitPaneView: View {
     @ObservedObject var controller: SplitPaneController
     let isSuspended: Bool
+    let isActive: Bool
 
     var body: some View {
         SplitNodeView(
             node: controller.root,
             focusedID: controller.focusedPaneID,
             isSuspended: isSuspended,
+            isActive: isActive,
             onFocus: { id in
                 controller.focusedPaneID = id
             },
@@ -27,6 +29,7 @@ struct SplitNodeView: View {
     let node: SplitNode
     let focusedID: UUID
     let isSuspended: Bool
+    let isActive: Bool
     let onFocus: (UUID) -> Void
     let onUpdateRatio: (UUID, CGFloat) -> Void
 
@@ -37,6 +40,7 @@ struct SplitNodeView: View {
                 id: id,
                 session: session,
                 isSuspended: isSuspended,
+                isActive: isActive,
                 onFocus: { onFocus(id) }
             )
 
@@ -56,6 +60,7 @@ struct SplitNodeView: View {
                 modelRatio: ratio,
                 focusedID: focusedID,
                 isSuspended: isSuspended,
+                isActive: isActive,
                 onFocus: onFocus,
                 onUpdateRatio: onUpdateRatio
             )
@@ -72,6 +77,7 @@ struct SplitContainerView: View {
     let modelRatio: CGFloat
     let focusedID: UUID
     let isSuspended: Bool
+    let isActive: Bool
     let onFocus: (UUID) -> Void
     let onUpdateRatio: (UUID, CGFloat) -> Void
 
@@ -85,7 +91,7 @@ struct SplitContainerView: View {
 
             if direction == .horizontal {
                 HStack(spacing: 0) {
-                    SplitNodeView(node: first, focusedID: focusedID, isSuspended: isSuspended, onFocus: onFocus, onUpdateRatio: onUpdateRatio)
+                    SplitNodeView(node: first, focusedID: focusedID, isSuspended: isSuspended, isActive: isActive, onFocus: onFocus, onUpdateRatio: onUpdateRatio)
                         .frame(width: (totalSize - dividerSize) * effectiveRatio)
                     SplitDivider(
                         isVertical: true,
@@ -96,11 +102,11 @@ struct SplitContainerView: View {
                             onUpdateRatio(splitID, newRatio)
                         }
                     )
-                    SplitNodeView(node: second, focusedID: focusedID, isSuspended: isSuspended, onFocus: onFocus, onUpdateRatio: onUpdateRatio)
+                    SplitNodeView(node: second, focusedID: focusedID, isSuspended: isSuspended, isActive: isActive, onFocus: onFocus, onUpdateRatio: onUpdateRatio)
                 }
             } else {
                 VStack(spacing: 0) {
-                    SplitNodeView(node: first, focusedID: focusedID, isSuspended: isSuspended, onFocus: onFocus, onUpdateRatio: onUpdateRatio)
+                    SplitNodeView(node: first, focusedID: focusedID, isSuspended: isSuspended, isActive: isActive, onFocus: onFocus, onUpdateRatio: onUpdateRatio)
                         .frame(height: (totalSize - dividerSize) * effectiveRatio)
                     SplitDivider(
                         isVertical: false,
@@ -111,7 +117,7 @@ struct SplitContainerView: View {
                             onUpdateRatio(splitID, newRatio)
                         }
                     )
-                    SplitNodeView(node: second, focusedID: focusedID, isSuspended: isSuspended, onFocus: onFocus, onUpdateRatio: onUpdateRatio)
+                    SplitNodeView(node: second, focusedID: focusedID, isSuspended: isSuspended, isActive: isActive, onFocus: onFocus, onUpdateRatio: onUpdateRatio)
                 }
             }
         }
@@ -130,10 +136,11 @@ struct TerminalPaneView: View {
     let id: UUID
     let session: TerminalSessionModel
     let isSuspended: Bool
+    let isActive: Bool
     let onFocus: () -> Void
 
     var body: some View {
-        TerminalViewRepresentable(model: session, isSuspended: isSuspended)
+        TerminalViewRepresentable(model: session, isSuspended: isSuspended, isActive: isActive)
             .contentShape(Rectangle())
             .onTapGesture {
                 onFocus()

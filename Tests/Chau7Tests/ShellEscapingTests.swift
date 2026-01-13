@@ -137,6 +137,12 @@ final class ShellEscapingTests: XCTestCase {
         XCTAssertFalse(ShellEscaping.validateSSHOptions("-v < input").isValid)
     }
 
+    func testValidateSSHOptionsShellControlCharacters() {
+        XCTAssertFalse(ShellEscaping.validateSSHOptions("-v; rm -rf /").isValid)
+        XCTAssertFalse(ShellEscaping.validateSSHOptions("-v && whoami").isValid)
+        XCTAssertFalse(ShellEscaping.validateSSHOptions("-v \nwhoami").isValid)
+    }
+
     // MARK: - Path Validation Tests
 
     func testIsValidPathSimple() {

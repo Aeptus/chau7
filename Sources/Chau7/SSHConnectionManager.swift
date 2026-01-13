@@ -74,9 +74,10 @@ struct SSHConnection: Identifiable, Codable, Equatable, Hashable {
         }
 
         if !user.isEmpty {
-            parts.append("\(user)@\(host)")
+            let destination = "\(user)@\(host)"
+            parts.append(ShellEscaping.escapeArgument(destination))
         } else {
-            parts.append(host)
+            parts.append(ShellEscaping.escapeArgument(host))
         }
 
         return parts.joined(separator: " ")

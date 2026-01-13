@@ -116,15 +116,15 @@ struct MenuBarPanelView: View {
                     .controlSize(.mini)
             }
 
-            if model.recentEvents.isEmpty {
+            if displayableRecentEvents.isEmpty {
                 Text("No recent events")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             } else {
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(model.recentEvents.suffix(8).reversed()) { event in
+                    ForEach(displayableRecentEvents) { event in
                         HStack(alignment: .top, spacing: 6) {
-                            Text(event.type.uppercased())
+                            Text(eventTypeLabel(for: event))
                                 .font(.system(size: 10, weight: .semibold))
                                 .frame(width: 70, alignment: .leading)
                             VStack(alignment: .leading, spacing: 2) {
@@ -140,6 +140,21 @@ struct MenuBarPanelView: View {
                 }
             }
         }
+    }
+
+    private var displayableRecentEvents: [AIEvent] {
+        let filtered = model.recentEvents.filter { event in
+            guard let trigger = NotificationTriggerCatalog.trigger(for: event) else { return true }
+            return trigger.displayContexts.contains(.activity)
+        }
+        return Array(filtered.suffix(8).reversed())
+    }
+
+    private func eventTypeLabel(for event: AIEvent) -> String {
+        if let trigger = NotificationTriggerCatalog.trigger(for: event) {
+            return trigger.localizedLabel.uppercased()
+        }
+        return event.type.uppercased()
     }
 
     private var streamSection: some View {
@@ -358,6 +373,7 @@ struct SettingsRootView: View {
             SettingsDetailView(selection: selection, model: model, searchQuery: searchQuery)
         }
         .frame(minWidth: 820, minHeight: 650)
+        .localized()
         .onChange(of: searchQuery) { newQuery in
             // Auto-select first matching section when searching
             if !newQuery.isEmpty, let firstMatch = filteredSections.first {
@@ -471,7 +487,9 @@ struct SettingsDetailView: View {
                     case .windows:
                         WindowsSettingsView()
                     case .aiIntegration:
-                        AIIntegrationSettingsView(model: model)
+                        AIIntegrationSettingsView()
+                    case .notifications:
+                        NotificationsSettingsView(model: model)
                     case .logs:
                         LogsSettingsView(model: model)
                     case .about:

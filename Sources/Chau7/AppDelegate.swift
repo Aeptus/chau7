@@ -19,8 +19,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var isClosingTab: Bool = false  // Flag to prevent windowShouldClose from hiding window during tab close
     private var nextOverlayWindowNumber: Int = 1
 
+    // MARK: - App Nap Prevention
+    // Activity token to prevent App Nap from throttling the terminal
+    private var activityToken: NSObjectProtocol?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.info("AppDelegate did finish launching.")
+
+        // CRITICAL: Prevent App Nap from throttling the terminal
+        // This eliminates the "first keystroke lag" issue
+        activityToken = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical],
+            reason: "Terminal requires low-latency input processing"
+        )
+        Log.info("App Nap prevention enabled with latency-critical activity")
+
         NSApp.activate(ignoringOtherApps: true)
 
         opacityObserver = NotificationCenter.default.addObserver(
@@ -50,11 +63,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Initialize status bar controller (replaces MenuBarExtra for multi-monitor support)
         if let model {
             StatusBarController.shared.setup(model: model)
-        }
-
-        // F04: Initialize dropdown terminal controller
-        if let model {
-            DropdownController.shared.setup(appModel: model)
         }
 
         // Create overlay window hidden behind splash - this starts the shell
@@ -100,6 +108,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // End App Nap prevention activity
+        if let activityToken {
+            ProcessInfo.processInfo.endActivity(activityToken)
+            self.activityToken = nil
+        }
+
         if let keyMonitor {
             NSEvent.removeMonitor(keyMonitor)
             self.keyMonitor = nil
@@ -114,13 +128,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         // Cleanup status bar controller
         StatusBarController.shared.cleanup()
-        // F04: Cleanup dropdown controller
-        DropdownController.shared.cleanup()
-    }
-
-    // F04: Toggle dropdown terminal
-    func toggleDropdown() {
-        DropdownController.shared.toggleDropdown()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -460,14 +467,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Log.info("Pasted escaped text.")
     }
 
+    // MARK: - Smart Select All (Cmd+A / Cmd+A Cmd+A)
+    private var lastSelectAllTime: Date?
+    private let doubleTapThreshold: TimeInterval = 0.4  // 400ms for double-tap
+
     func selectAll() {
         guard let window = NSApp.keyWindow,
               overlayHosts.contains(where: { $0.window == window }),
               let terminalView = window.firstResponder as? Chau7TerminalView
         else { return }
 
-        terminalView.selectAll(nil)
-        Log.info("Selected all text.")
+        let now = Date()
+
+        // Check if this is a double-tap (Cmd+A Cmd+A)
+        if let lastTime = lastSelectAllTime,
+           now.timeIntervalSince(lastTime) < doubleTapThreshold {
+            // Double-tap: Select entire terminal buffer
+            terminalView.selectAll(nil)
+            Log.info("Cmd+A Cmd+A: Selected all terminal buffer.")
+            lastSelectAllTime = nil  // Reset for next sequence
+        } else {
+            // Single tap: Select current input line
+            selectCurrentInputLine(in: terminalView)
+            Log.info("Cmd+A: Selected current input line.")
+            lastSelectAllTime = now
+        }
+    }
+
+    private func selectCurrentInputLine(in terminalView: Chau7TerminalView) {
+        terminalView.selectCurrentLine()
     }
 
     func clearToPreviousMark() {
@@ -618,7 +646,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         alert.informativeText = """
         To report a bug or request a feature:
 
-        1. Open Debug Console (⇧⌘D) to capture logs
+        1. Open Debug Console (⇧⌘L) to capture logs
         2. Note the steps to reproduce the issue
         3. Include your macOS version and Chau7 version
 
@@ -668,6 +696,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             activeOverlayModel = host.model
             host.model.focusSelected()
         }
+    }
+
+    /// Fullscreen with auto-hiding menu bar (appears on hover at top edge)
+    func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposedOptions: NSApplication.PresentationOptions = []) -> NSApplication.PresentationOptions {
+        // Only apply to overlay windows
+        guard overlayHosts.contains(where: { $0.window == window }) else {
+            return proposedOptions
+        }
+        // .autoHideMenuBar: menu bar hides but appears on top-edge hover
+        // .fullScreen: standard fullscreen mode
+        // Note: We don't use .autoHideToolbar since we have no system toolbar
+        return [.autoHideMenuBar, .fullScreen]
     }
 
     /// Returns the active overlay model, creating a new overlay window if none exists.
@@ -723,14 +763,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let window = OverlayWindow(
             contentRect: NSRect(origin: origin, size: NSSize(width: width, height: height)),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
 
         window.title = "Chau7 - Window \(windowNumber)"
-        window.titleVisibility = .visible
-        window.titlebarAppearsTransparent = false
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+
+        // Safari-style unified toolbar - traffic lights integrate naturally
+        let toolbarIdentifier = NSToolbar.Identifier("Chau7Toolbar-\(windowNumber)")
+        // Register tabsModel BEFORE creating toolbar (toolbar populates items immediately)
+        TabBarToolbarDelegate.shared.registerTabsModel(tabsModel, for: toolbarIdentifier)
+
+        let toolbar = NSToolbar(identifier: toolbarIdentifier)
+        toolbar.displayMode = .iconOnly
+        toolbar.delegate = TabBarToolbarDelegate.shared
+        window.toolbar = toolbar
+        if #available(macOS 11.0, *) {
+            window.toolbarStyle = .unified
+            window.titlebarSeparatorStyle = .none
+        }
+
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = true
@@ -741,6 +796,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = blur
+
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
@@ -758,7 +814,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         for host in overlayHosts {
             host.window.alphaValue = opacity
         }
-        DropdownController.shared.applyOpacity(opacity)
     }
 
     private func applyAppTheme() {
@@ -778,7 +833,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             host.window.appearance = appearance
         }
         settingsWindow?.appearance = appearance
-        splashController?.window?.appearance = appearance
+        splashController?.windowAppearance = appearance
         DebugConsoleController.shared.windowAppearance = appearance
     }
 
@@ -791,6 +846,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.handleKeyEvent(event) ?? event
         }
         Log.info("Installed local key monitor.")
+    }
+
+    private func eventMatchesMenuShortcut(_ event: NSEvent) -> Bool {
+        guard let key = normalizedKeyEquivalent(from: event) else { return false }
+        let modifiers = normalizedModifierFlags(event.modifierFlags)
+        return menuContainsKeyEquivalent(NSApp.mainMenu, key: key, modifiers: modifiers)
+    }
+
+    private func normalizedKeyEquivalent(from event: NSEvent) -> String? {
+        if let key = event.charactersIgnoringModifiers?.lowercased(), !key.isEmpty {
+            return key
+        }
+        if let key = event.characters?.lowercased(), !key.isEmpty {
+            return key
+        }
+        return nil
+    }
+
+    private func normalizedModifierFlags(_ flags: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags {
+        var normalized = flags.intersection(.deviceIndependentFlagsMask)
+        normalized.remove(.capsLock)
+        return normalized
+    }
+
+    private func menuContainsKeyEquivalent(
+        _ menu: NSMenu?,
+        key: String,
+        modifiers: NSEvent.ModifierFlags
+    ) -> Bool {
+        guard let menu else { return false }
+        for item in menu.items {
+            if item.isEnabled {
+                let itemKey = item.keyEquivalent.lowercased()
+                if !itemKey.isEmpty {
+                    let itemModifiers = item.keyEquivalentModifierMask
+                        .intersection(.deviceIndependentFlagsMask)
+                    if itemKey == key && itemModifiers == modifiers {
+                        return true
+                    }
+                }
+            }
+            if menuContainsKeyEquivalent(item.submenu, key: key, modifiers: modifiers) {
+                return true
+            }
+        }
+        return false
     }
 
     private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
@@ -812,13 +913,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         }
 
-        if isOverlayWindow, let action = KeybindingsManager.shared.actionForEvent(event) {
-            if action == .closeTab {
-                closeTabFromShortcut()
-            } else {
-                KeybindingsManager.shared.executeAction(action, delegate: self, overlayModel: overlayModel)
+        if isOverlayWindow {
+            if eventMatchesMenuShortcut(event) {
+                return event
             }
-            return nil
+            if let action = KeybindingsManager.shared.actionForEvent(event) {
+                if action == .closeTab {
+                    closeTabFromShortcut()
+                } else {
+                    KeybindingsManager.shared.executeAction(action, delegate: self, overlayModel: overlayModel)
+                }
+                return nil
+            }
         }
 
         if event.keyCode == KeyboardShortcuts.tabKeyCode, isOverlayWindow {

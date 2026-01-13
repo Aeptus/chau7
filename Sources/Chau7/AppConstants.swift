@@ -92,9 +92,6 @@ enum AppConstants {
         /// Tab bar height
         static let tabBarHeight: CGFloat = 32
 
-        /// Default dropdown height percentage
-        static let defaultDropdownHeight: Double = 0.4
-
         /// Minimum split pane ratio
         static let minSplitRatio: CGFloat = 0.1
 

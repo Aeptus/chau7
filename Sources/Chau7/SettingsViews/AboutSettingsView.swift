@@ -17,7 +17,7 @@ struct AboutSettingsView: View {
                     Text("Chau7")
                         .font(.title)
                         .fontWeight(.bold)
-                    Text("AI CLI Terminal Companion")
+                    Text(L("settings.about.tagline", "AI CLI Terminal Companion"))
                         .foregroundStyle(.secondary)
                     Text(bundleVersion)
                         .font(.caption)
@@ -30,37 +30,27 @@ struct AboutSettingsView: View {
                 .padding(.vertical, 8)
 
             // Version Details
-            SettingsSectionHeader("Version Information", icon: "info.circle")
+            SettingsSectionHeader(L("settings.about.versionInformation", "Version Information"), icon: "info.circle")
 
-            VStack(alignment: .leading, spacing: 4) {
-                SettingsInfoRow(label: "Application", value: ProcessInfo.processInfo.processName, monospaced: true)
-                SettingsInfoRow(label: "Bundle ID", value: Bundle.main.bundleIdentifier ?? "Not bundled", monospaced: true)
-                SettingsInfoRow(label: "Version", value: bundleVersion, monospaced: true)
-            }
-            .padding(8)
-            .background(Color.secondary.opacity(0.05))
-            .cornerRadius(8)
+            SettingsInfoRow(label: L("settings.about.application", "Application"), value: ProcessInfo.processInfo.processName, monospaced: true)
+            SettingsInfoRow(label: L("settings.about.bundleId", "Bundle ID"), value: Bundle.main.bundleIdentifier ?? L("settings.about.notBundled", "Not bundled"), monospaced: true)
+            SettingsInfoRow(label: L("settings.about.version", "Version"), value: bundleVersion, monospaced: true)
 
             Divider()
                 .padding(.vertical, 8)
 
             // System Info
-            SettingsSectionHeader("System Information", icon: "desktopcomputer")
+            SettingsSectionHeader(L("settings.about.systemInformation", "System Information"), icon: "desktopcomputer")
 
-            VStack(alignment: .leading, spacing: 4) {
-                SettingsInfoRow(label: "macOS", value: ProcessInfo.processInfo.operatingSystemVersionString, monospaced: true)
-                SettingsInfoRow(label: "Architecture", value: machineArchitecture, monospaced: true)
-                SettingsInfoRow(label: "Shell", value: ProcessInfo.processInfo.environment["SHELL"] ?? "Unknown", monospaced: true)
-            }
-            .padding(8)
-            .background(Color.secondary.opacity(0.05))
-            .cornerRadius(8)
+            SettingsInfoRow(label: "macOS", value: ProcessInfo.processInfo.operatingSystemVersionString, monospaced: true)
+            SettingsInfoRow(label: L("settings.about.architecture", "Architecture"), value: machineArchitecture, monospaced: true)
+            SettingsInfoRow(label: L("settings.about.shell", "Shell"), value: ProcessInfo.processInfo.environment["SHELL"] ?? L("settings.about.unknown", "Unknown"), monospaced: true)
 
             Divider()
                 .padding(.vertical, 8)
 
             // Links
-            SettingsSectionHeader("Links", icon: "link")
+            SettingsSectionHeader(L("settings.about.links", "Links"), icon: "link")
 
             HStack(spacing: 16) {
                 Link(destination: URL(string: "https://github.com/anthropics/chau7")!) {
@@ -68,11 +58,11 @@ struct AboutSettingsView: View {
                 }
 
                 Link(destination: URL(string: "https://github.com/anthropics/chau7/issues")!) {
-                    Label("Report Issue", systemImage: "exclamationmark.bubble")
+                    Label(L("settings.about.reportIssue", "Report Issue"), systemImage: "exclamationmark.bubble")
                 }
 
                 Link(destination: URL(string: "https://github.com/anthropics/chau7/blob/main/README.md")!) {
-                    Label("Documentation", systemImage: "book")
+                    Label(L("settings.about.documentation", "Documentation"), systemImage: "book")
                 }
             }
             .buttonStyle(.link)
@@ -81,15 +71,15 @@ struct AboutSettingsView: View {
                 .padding(.vertical, 8)
 
             // Logs
-            SettingsSectionHeader("Application Log", icon: "doc.text")
+            SettingsSectionHeader(L("settings.about.applicationLog", "Application Log"), icon: "doc.text")
 
-            SettingsInfoRow(label: "Log Path", value: model.logFilePath, monospaced: true)
+            SettingsInfoRow(label: L("settings.about.logPath", "Log Path"), value: model.logFilePath, monospaced: true)
 
             SettingsButtonRow(buttons: [
-                .init(title: "Reveal in Finder", icon: "folder") {
+                .init(title: L("settings.about.revealInFinder", "Reveal in Finder"), icon: "folder") {
                     model.revealLogFile()
                 },
-                .init(title: "Debug Console", icon: "terminal") {
+                .init(title: L("settings.about.debugConsole", "Debug Console"), icon: "terminal") {
                     DebugConsoleController.shared.show()
                 }
             ])
@@ -98,10 +88,10 @@ struct AboutSettingsView: View {
                 .padding(.vertical, 8)
 
             // Acknowledgments
-            SettingsSectionHeader("Acknowledgments", icon: "heart")
+            SettingsSectionHeader(L("settings.about.acknowledgments", "Acknowledgments"), icon: "heart")
 
-            SettingsDescription(text: "Chau7 is built with SwiftTerm for terminal emulation.")
-            SettingsDescription(text: "Copyright © 2024-2025. All rights reserved.")
+            SettingsDescription(text: L("settings.about.swiftTermCredit", "Chau7 is built with SwiftTerm for terminal emulation."))
+            SettingsDescription(text: L("settings.about.copyright", "Copyright © 2024-2025. All rights reserved."))
         }
     }
 

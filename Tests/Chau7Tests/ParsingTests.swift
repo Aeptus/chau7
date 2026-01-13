@@ -6,6 +6,7 @@ final class ParsingTests: XCTestCase {
     func testAIEventParserDefaults() throws {
         let line = #"{"type":"finished","tool":"Codex","message":"Done"}"#
         let event = try AIEventParser.parse(line: line)
+        XCTAssertEqual(event.source, .eventsLog)
         XCTAssertEqual(event.type, "finished")
         XCTAssertEqual(event.tool, "Codex")
         XCTAssertEqual(event.message, "Done")

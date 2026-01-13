@@ -62,8 +62,13 @@ enum AppLanguage: String, CaseIterable, Identifiable, Codable {
 
     /// Returns the bundle for this language, or nil for system default
     var bundle: Bundle? {
+        bundle(from: Bundle.main)
+    }
+
+    /// Returns the bundle for this language from a specific base bundle
+    func bundle(from baseBundle: Bundle) -> Bundle? {
         guard self != .system else { return nil }
-        guard let path = Bundle.main.path(forResource: rawValue, ofType: "lproj"),
+        guard let path = baseBundle.path(forResource: rawValue, ofType: "lproj"),
               let bundle = Bundle(path: path) else {
             return nil
         }
@@ -76,39 +81,56 @@ enum AppLanguage: String, CaseIterable, Identifiable, Codable {
 final class LocalizationManager: ObservableObject {
     static let shared = LocalizationManager()
 
+    /// Incremented on every language change to force SwiftUI view updates
+    @Published private(set) var refreshToken: Int = 0
+
     @Published var currentLanguage: AppLanguage {
         didSet {
             UserDefaults.standard.set(currentLanguage.rawValue, forKey: "appLanguage")
             updateBundle()
+            // Increment token to force SwiftUI views to re-render
+            refreshToken += 1
             NotificationCenter.default.post(name: .languageDidChange, object: nil)
         }
     }
 
     private(set) var bundle: Bundle
 
+    /// The resource bundle for localized strings (Bundle.module for SPM packages)
+    private static let resourceBundle: Bundle = {
+        #if SWIFT_PACKAGE
+        return Bundle.module
+        #else
+        return Bundle.main
+        #endif
+    }()
+
     private init() {
         let savedLanguage = UserDefaults.standard.string(forKey: "appLanguage") ?? "system"
         self.currentLanguage = AppLanguage(rawValue: savedLanguage) ?? .system
-        self.bundle = Bundle.main
+        self.bundle = Self.resourceBundle
         updateBundle()
     }
 
     private func updateBundle() {
-        if let languageBundle = currentLanguage.bundle {
+        let baseBundle = Self.resourceBundle
+        if let languageBundle = currentLanguage.bundle(from: baseBundle) {
             bundle = languageBundle
         } else {
             // System default - use preferred language
-            let preferredLanguage = Bundle.main.preferredLocalizations.first ?? "en"
-            if let path = Bundle.main.path(forResource: preferredLanguage, ofType: "lproj"),
+            let preferredLanguage = baseBundle.preferredLocalizations.first ?? "en"
+            if let path = baseBundle.path(forResource: preferredLanguage, ofType: "lproj"),
                let preferredBundle = Bundle(path: path) {
                 bundle = preferredBundle
             } else {
-                bundle = Bundle.main
+                bundle = baseBundle
             }
         }
     }
 
     func localizedString(_ key: String, defaultValue: String = "") -> String {
+        // Access refreshToken to create dependency for SwiftUI
+        _ = refreshToken
         let value = bundle.localizedString(forKey: key, value: nil, table: nil)
         if value == key && !defaultValue.isEmpty {
             return defaultValue
@@ -184,10 +206,28 @@ struct LocalizedLayoutModifier: ViewModifier {
     }
 }
 
+/// View modifier that forces re-render when language changes
+struct LocalizedViewModifier: ViewModifier {
+    @ObservedObject private var localization = LocalizationManager.shared
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.layoutDirection, localization.layoutDirection)
+            // Use refreshToken as id to force re-render on language change
+            .id(localization.refreshToken)
+    }
+}
+
 extension View {
     /// Applies correct layout direction for the current language (LTR or RTL)
     func localizedLayout() -> some View {
         modifier(LocalizedLayoutModifier())
+    }
+
+    /// Makes this view refresh when the app language changes
+    /// Use this on views that contain localized strings
+    func localized() -> some View {
+        modifier(LocalizedViewModifier())
     }
 
     /// Flips the view horizontally for RTL languages

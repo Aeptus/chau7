@@ -36,6 +36,12 @@ struct KeyboardShortcutsEditorView: View {
         }
     }
 
+    private var conflictsByAction: [String: [KeyboardShortcut]] {
+        Dictionary(uniqueKeysWithValues: settings.customShortcuts.map { shortcut in
+            (shortcut.action, settings.shortcutConflicts(for: shortcut))
+        })
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Header
@@ -74,6 +80,7 @@ struct KeyboardShortcutsEditorView: View {
                         ShortcutGroupView(
                             title: group,
                             shortcuts: shortcuts,
+                            conflictsByAction: conflictsByAction,
                             editingShortcut: $editingShortcut,
                             onUpdate: { updated in
                                 updateShortcut(updated)
@@ -123,6 +130,7 @@ struct KeyboardShortcutsEditorView: View {
 private struct ShortcutGroupView: View {
     let title: String
     let shortcuts: [KeyboardShortcut]
+    let conflictsByAction: [String: [KeyboardShortcut]]
     @Binding var editingShortcut: KeyboardShortcut?
     let onUpdate: (KeyboardShortcut) -> Void
 
@@ -137,6 +145,7 @@ private struct ShortcutGroupView: View {
                 ForEach(shortcuts) { shortcut in
                     ShortcutRowView(
                         shortcut: shortcut,
+                        conflicts: conflictsByAction[shortcut.action] ?? [],
                         isEditing: editingShortcut?.action == shortcut.action,
                         onStartEdit: {
                             editingShortcut = shortcut
@@ -162,6 +171,7 @@ private struct ShortcutGroupView: View {
 
 private struct ShortcutRowView: View {
     let shortcut: KeyboardShortcut
+    let conflicts: [KeyboardShortcut]
     let isEditing: Bool
     let onStartEdit: () -> Void
     let onUpdate: (KeyboardShortcut) -> Void
@@ -171,53 +181,69 @@ private struct ShortcutRowView: View {
     @State private var recordedModifiers: [String] = []
 
     var body: some View {
-        HStack {
-            Text(KeyboardShortcut.actionDisplayName(shortcut.action))
-                .font(.system(size: 13))
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(KeyboardShortcut.actionDisplayName(shortcut.action))
+                    .font(.system(size: 13))
 
-            Spacer()
+                Spacer()
 
-            if isEditing {
-                // Recording state
-                HStack(spacing: 8) {
-                    ShortcutRecorderView(
-                        onRecord: { key, modifiers in
-                            recordedKey = key
-                            recordedModifiers = modifiers
+                if isEditing {
+                    // Recording state
+                    HStack(spacing: 8) {
+                        ShortcutRecorderView(
+                            onRecord: { key, modifiers in
+                                recordedKey = key
+                                recordedModifiers = modifiers
+                            }
+                        )
+
+                        Button("Save") {
+                            if let key = recordedKey {
+                                var updated = shortcut
+                                updated.key = key
+                                updated.modifiers = recordedModifiers
+                                onUpdate(updated)
+                            }
                         }
-                    )
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .disabled(recordedKey == nil)
 
-                    Button("Save") {
-                        if let key = recordedKey {
-                            var updated = shortcut
-                            updated.key = key
-                            updated.modifiers = recordedModifiers
-                            onUpdate(updated)
+                        Button("Cancel") {
+                            onCancel()
                         }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .disabled(recordedKey == nil)
+                } else {
+                    // Display state
+                    Button {
+                        onStartEdit()
+                    } label: {
+                        Text(shortcut.displayString)
+                            .font(.system(size: 12, design: .monospaced))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color(NSColor.separatorColor).opacity(0.3))
+                            .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
 
-                    Button("Cancel") {
-                        onCancel()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+            if !conflicts.isEmpty {
+                let conflictNames = conflicts
+                    .map { KeyboardShortcut.actionDisplayName($0.action) }
+                    .sorted()
+                    .joined(separator: ", ")
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                    Text("Conflict: \(conflictNames)")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                 }
-            } else {
-                // Display state
-                Button {
-                    onStartEdit()
-                } label: {
-                    Text(shortcut.displayString)
-                        .font(.system(size: 12, design: .monospaced))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color(NSColor.separatorColor).opacity(0.3))
-                        .cornerRadius(4)
-                }
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 12)

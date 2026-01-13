@@ -55,7 +55,9 @@
 "settings.windows" = "Windows";
 "settings.windows.description" = "Window management and layout";
 "settings.ai" = "AI Integration";
-"settings.ai.description" = "AI CLI detection and notifications";
+"settings.ai.description" = "AI CLI detection and theming";
+"settings.notifications" = "Notifications";
+"settings.notifications.description" = "Alert preferences and event filters";
 "settings.logs" = "Logs";
 "settings.logs.description" = "Log monitoring and history";
 "settings.about" = "About";
@@ -660,3 +662,593 @@
 "confirm.delete.bookmark" = "Are you sure you want to delete this bookmark?";
 "confirm.clear.history" = "Are you sure you want to clear the clipboard history?";
 "confirm.action.cannot.undo" = "This action cannot be undone.";
+
+// MARK: - General Settings (Additional)
+"settings.general.startup" = "Startup";
+"settings.general.launchAtLogin" = "Launch at Login";
+"settings.general.launchAtLogin.help" = "Automatically start Chau7 when you log in to your Mac";
+
+// Settings Profiles
+"settings.general.profiles" = "Settings Profiles";
+"settings.general.profiles.description" = "Create named profiles for different workflows (Work, Personal, Presentation Mode)";
+"settings.general.profiles.active" = "Active:";
+"settings.general.profiles.activeLabel" = "(Active)";
+"settings.general.profiles.save" = "Save Current Settings";
+"settings.general.profiles.create" = "Create New Profile...";
+"settings.general.profiles.createTitle" = "Create New Profile";
+"settings.general.profiles.namePlaceholder" = "Profile Name";
+"settings.general.profiles.chooseIcon" = "Choose Icon";
+"settings.general.profiles.createButton" = "Create Profile";
+"settings.general.profiles.created" = "Created";
+"settings.general.profiles.delete.title" = "Delete Profile?";
+"settings.general.profiles.delete.message" = "Are you sure you want to delete this profile? This action cannot be undone.";
+
+// iCloud Sync
+"settings.general.icloud" = "iCloud Sync";
+"settings.general.icloud.sync" = "Sync Settings via iCloud";
+"settings.general.icloud.sync.help" = "Keep your Chau7 settings synchronized across all your Macs";
+"settings.general.icloud.syncNow" = "Sync Now";
+"settings.general.icloud.restore" = "Restore from iCloud";
+
+// Settings Backup
+"settings.general.backup" = "Settings Backup";
+"settings.general.backup.description" = "Export your settings to a JSON file or import from a backup.";
+"settings.general.backup.export" = "Export Settings...";
+"settings.general.backup.import" = "Import Settings...";
+
+// Status
+"settings.general.status" = "Status";
+"settings.general.status.notifications" = "Notifications";
+"settings.general.status.eventMonitoring" = "Event Monitoring";
+"settings.general.status.historyMonitoring" = "History Monitoring";
+"settings.general.status.terminalMonitoring" = "Terminal Monitoring";
+"status.active" = "Active";
+"status.paused" = "Paused";
+
+// Actions
+"settings.general.actions" = "Actions";
+"settings.general.actions.showOverlay" = "Show Overlay";
+"settings.general.actions.resetWindowPositions" = "Reset Window Positions";
+"settings.general.actions.debugConsole" = "Debug Console";
+
+// Reset
+"settings.general.reset" = "Reset";
+"settings.general.reset.all" = "Reset All Settings to Defaults";
+"settings.general.reset.confirm.title" = "Reset All Settings?";
+"settings.general.reset.confirm.message" = "This will reset all Chau7 settings to their default values. This action cannot be undone.";
+
+// Common Buttons
+"button.cancel" = "Cancel";
+"button.reset" = "Reset";
+"button.delete" = "Delete";
+"button.load" = "Load";
+"button.save" = "Save";
+
+// Input Settings - Shortcut Editor
+"settings.input.editShortcut" = "Edit Shortcut:";
+"settings.input.key" = "Key";
+"settings.input.modifiers" = "Modifiers";
+"settings.input.preview" = "Preview:";
+"settings.input.conflictsWith" = "Conflicts with:";
+
+// Logs Settings - Additional Help Text
+"settings.logs.codexHistoryPath.help" = "Path to the OpenAI Codex history file";
+"settings.logs.claudeHistoryPath.help" = "Path to the Claude Code history file";
+"settings.logs.codexTerminalLog.help" = "Path to the Codex PTY wrapper log file";
+"settings.logs.claudeTerminalLog.help" = "Path to the Claude PTY wrapper log file";
+
+// General Settings - Profile Delete
+"settings.general.profiles.delete" = "Delete profile";
+
+// =============================================================================
+// MARK: - Settings Views Localization
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// MARK: Appearance Settings
+// -----------------------------------------------------------------------------
+
+// Live Preview
+"settings.appearance.livePreview" = "Live Preview";
+"settings.appearance.livePreview.sampleText" = "The quick brown fox jumps over the lazy dog. 🦊";
+"settings.appearance.livePreview.code.function" = "function";
+"settings.appearance.livePreview.code.hello" = "Hello, Terminal!";
+
+// Font Section
+"settings.appearance.font" = "Font";
+"settings.appearance.font.family" = "Font Family";
+"settings.appearance.font.family.help" = "Monospace fonts work best for terminal output";
+"settings.appearance.font.size" = "Font Size";
+"settings.appearance.font.size.help" = "Size in points (8-32)";
+"settings.appearance.font.defaultZoom" = "Default Zoom";
+"settings.appearance.font.defaultZoom.help" = "Default zoom level for new tabs";
+
+// Color Scheme Section
+"settings.appearance.colorScheme" = "Color Scheme";
+"settings.appearance.colorScheme.scheme" = "Color Scheme";
+"settings.appearance.colorScheme.scheme.help" = "Terminal color palette";
+"settings.appearance.colorScheme.opacity" = "Window Opacity";
+"settings.appearance.colorScheme.opacity.help" = "Window transparency level";
+
+// Window Section
+"settings.appearance.window" = "Window";
+"settings.appearance.window.vibrancy" = "Window Vibrancy";
+"settings.appearance.window.vibrancy.help" = "Frosted glass effect behind window";
+
+// System Theme Section
+"settings.appearance.systemTheme" = "System Theme";
+"settings.appearance.systemTheme.appTheme" = "App Theme";
+"settings.appearance.systemTheme.appTheme.help" = "Light, Dark, or follow System setting";
+"settings.appearance.systemTheme.option.system" = "System";
+"settings.appearance.systemTheme.option.light" = "Light";
+"settings.appearance.systemTheme.option.dark" = "Dark";
+
+// AI Tab Theming Section
+"settings.appearance.aiTabTheming" = "AI Tab Theming";
+"settings.appearance.aiTabTheming.autoTheme" = "Auto-theme AI Tabs";
+"settings.appearance.aiTabTheming.autoTheme.help" = "Automatically color tabs based on detected AI CLI";
+"settings.appearance.aiTabTheming.claudeColor" = "Claude Tab Color";
+"settings.appearance.aiTabTheming.codexColor" = "Codex Tab Color";
+"settings.appearance.aiTabTheming.geminiColor" = "Gemini Tab Color";
+"settings.appearance.aiTabTheming.copilotColor" = "Copilot Tab Color";
+"settings.appearance.aiTabTheming.resetColors" = "Reset to Defaults";
+
+// Display Enhancements Section
+"settings.appearance.displayEnhancements" = "Display Enhancements";
+"settings.appearance.displayEnhancements.syntaxHighlighting" = "Syntax Highlighting";
+"settings.appearance.displayEnhancements.syntaxHighlighting.help" = "Colorize code blocks in terminal output";
+"settings.appearance.displayEnhancements.lineTimestamps" = "Line Timestamps";
+"settings.appearance.displayEnhancements.lineTimestamps.help" = "Show timestamps for each terminal line";
+"settings.appearance.displayEnhancements.jsonPrettyPrint" = "JSON Pretty Print";
+"settings.appearance.displayEnhancements.jsonPrettyPrint.help" = "Format JSON output with indentation";
+
+// -----------------------------------------------------------------------------
+// MARK: Terminal Settings
+// -----------------------------------------------------------------------------
+
+// Shell Section
+"settings.terminal.shell" = "Shell";
+"settings.terminal.shell.shell" = "Shell";
+"settings.terminal.shell.help" = "The shell to use for new terminal sessions";
+"settings.terminal.shell.startupCommand" = "Startup Command";
+"settings.terminal.shell.startupCommand.help" = "Command to run when terminal starts (e.g., neofetch)";
+"settings.terminal.shell.startupCommand.placeholder" = "e.g., neofetch, fortune | cowsay";
+"settings.terminal.lsColors" = "ls Colors";
+"settings.terminal.lsColors.help" = "Enable colored ls output by setting CLICOLOR and LSCOLORS";
+
+// Cursor Section
+"settings.terminal.cursor" = "Cursor";
+"settings.terminal.cursor.style" = "Cursor Style";
+"settings.terminal.cursor.style.help" = "The shape of the terminal cursor";
+"settings.terminal.cursor.style.block" = "Block";
+"settings.terminal.cursor.style.underline" = "Underline";
+"settings.terminal.cursor.style.bar" = "Bar";
+"settings.terminal.cursor.blink" = "Cursor Blink";
+"settings.terminal.cursor.blink.help" = "Animate cursor with blinking";
+
+// Scrollback Section
+"settings.terminal.scrollback" = "Scrollback";
+"settings.terminal.scrollback.lines" = "Scrollback Lines";
+"settings.terminal.scrollback.lines.help" = "Number of lines to keep in scrollback buffer";
+
+// Bell Section
+"settings.terminal.bell" = "Bell";
+"settings.terminal.bell.sound" = "Bell Sound";
+"settings.terminal.bell.sound.help" = "Sound to play for terminal bell";
+"settings.terminal.bell.sound.none" = "None";
+"settings.terminal.bell.sound.default" = "Default";
+"settings.terminal.bell.sound.subtle" = "Subtle";
+"settings.terminal.bell.visualBell" = "Visual Bell";
+"settings.terminal.bell.visualBell.help" = "Flash screen instead of playing sound";
+
+// Performance Section
+"settings.terminal.performance" = "Performance";
+"settings.terminal.performance.metalRenderer" = "Metal Renderer";
+"settings.terminal.performance.metalRenderer.help" = "Use GPU acceleration for rendering (recommended)";
+"settings.terminal.performance.reducedMotion" = "Reduced Motion";
+"settings.terminal.performance.reducedMotion.help" = "Minimize animations for better performance";
+
+// -----------------------------------------------------------------------------
+// MARK: Tabs Settings
+// -----------------------------------------------------------------------------
+
+// Behavior Section
+"settings.tabs.behavior" = "Behavior";
+"settings.tabs.behavior.lastTabClose" = "When closing last tab";
+"settings.tabs.behavior.lastTabClose.help" = "What happens when the last tab is closed";
+"settings.tabs.behavior.lastTabClose.closeWindow" = "Close Window";
+"settings.tabs.behavior.lastTabClose.newTab" = "Open New Tab";
+"settings.tabs.behavior.lastTabClose.keepOpen" = "Keep Window Open";
+"settings.tabs.behavior.newTabDirectory" = "New Tab Directory";
+"settings.tabs.behavior.newTabDirectory.help" = "Open new tabs in the current tab's directory";
+"settings.tabs.behavior.confirmClose" = "Confirm Close";
+"settings.tabs.behavior.confirmClose.help" = "Show confirmation when closing tabs with running processes";
+"settings.tabs.newTabPosition" = "New Tab Position";
+"settings.tabs.newTabPosition.help" = "Where to insert newly created tabs";
+"settings.tabs.atEnd" = "At End";
+"settings.tabs.afterCurrent" = "After Current";
+"settings.tabs.newTabsUseCurrentDirectory" = "New Tabs Use Current Directory";
+"settings.tabs.newTabsUseCurrentDirectory.help" = "Open new tabs in the active tab's folder (the first tab still uses Default Directory)";
+"settings.tabs.lastTabClose" = "Last Tab Close";
+"settings.tabs.lastTabClose.help" = "Choose what happens when closing the final tab";
+
+// Appearance Section
+"settings.tabs.appearance" = "Appearance";
+"settings.tabs.appearance.showTabBar" = "Show Tab Bar";
+"settings.tabs.appearance.showTabBar.help" = "Always show the tab bar, even with single tab";
+"settings.tabs.appearance.tabPosition" = "Tab Position";
+"settings.tabs.appearance.tabPosition.help" = "Position of the tab bar";
+"settings.tabs.appearance.tabPosition.top" = "Top";
+"settings.tabs.appearance.tabPosition.bottom" = "Bottom";
+"settings.tabs.appearance.showTabIcons" = "Show Tab Icons";
+"settings.tabs.appearance.showTabIcons.help" = "Show icons in tabs (e.g., AI CLI indicators)";
+"settings.tabs.alwaysShowTabBar" = "Always Show Tab Bar";
+"settings.tabs.alwaysShowTabBar.help" = "Show the tab bar even when only one tab is open";
+"settings.tabs.lastCommandBadge" = "Last Command Badge";
+"settings.tabs.lastCommandBadge.help" = "Show the most recent command in the tab status area";
+"settings.tabs.aiProductIcons" = "AI Product Icons";
+"settings.tabs.aiProductIcons.help" = "Display SF Symbol icons for detected AI CLIs in tabs";
+
+// Keyboard Navigation Section
+"settings.tabs.keyboardNavigation" = "Keyboard Navigation";
+"settings.tabs.newTab" = "New Tab";
+"settings.tabs.closeTab" = "Close Tab";
+"settings.tabs.nextTab" = "Next Tab";
+"settings.tabs.previousTab" = "Previous Tab";
+"settings.tabs.switchToTab" = "Switch to Tab 1-9";
+"settings.tabs.renameTab" = "Rename Tab";
+"settings.tabs.keyboardNavigation.cmdNumber" = "Cmd+Number to Switch Tabs";
+"settings.tabs.keyboardNavigation.cmdNumber.help" = "Use Cmd+1-9 to switch between tabs";
+"settings.tabs.keyboardNavigation.cmdBrackets" = "Cmd+[ ] to Navigate";
+"settings.tabs.keyboardNavigation.cmdBrackets.help" = "Use Cmd+[ and Cmd+] to switch tabs";
+
+// -----------------------------------------------------------------------------
+// MARK: Input Settings
+// -----------------------------------------------------------------------------
+
+// Keyboard Section
+"settings.input.keyboard" = "Keyboard";
+"settings.input.keyboard.optionAsMeta" = "Option as Meta Key";
+"settings.input.keyboard.optionAsMeta.help" = "Use Option key as Meta for terminal applications";
+"settings.input.keyboard.deleteBackward" = "Delete Key Behavior";
+"settings.input.keyboard.deleteBackward.help" = "Send backspace or delete character";
+
+// Keyboard Shortcuts Section
+"settings.input.shortcuts" = "Keyboard Shortcuts";
+"settings.input.shortcuts.customize" = "Customize Shortcuts...";
+"settings.input.shortcuts.customize.help" = "Configure global and app-specific shortcuts";
+
+// Mouse Section
+"settings.input.mouse" = "Mouse";
+"settings.input.mouse.copyOnSelect" = "Copy on Select";
+"settings.input.mouse.copyOnSelect.help" = "Automatically copy selected text to clipboard";
+"settings.input.mouse.focusFollowsMouse" = "Focus Follows Mouse";
+"settings.input.mouse.focusFollowsMouse.help" = "Focus pane under mouse cursor";
+"settings.input.mouse.cmdClickOpens" = "Cmd+Click Opens Paths";
+"settings.input.mouse.cmdClickOpens.help" = "Open file paths and URLs with Cmd+click";
+"settings.input.mouse.urlHandler" = "URL Handler";
+"settings.input.mouse.urlHandler.help" = "Application to open URLs";
+"settings.input.mouse.urlHandler.default" = "Default Browser";
+
+// Broadcast Section
+"settings.input.broadcast" = "Broadcast";
+"settings.input.broadcast.mode" = "Broadcast Input";
+"settings.input.broadcast.mode.help" = "Send keystrokes to multiple tabs simultaneously";
+
+// -----------------------------------------------------------------------------
+// MARK: Productivity Settings
+// -----------------------------------------------------------------------------
+
+// Snippets Section
+"settings.productivity.snippets" = "Snippets";
+"settings.productivity.snippets.description" = "Quick text templates with optional expansion";
+"settings.productivity.snippets.manage" = "Manage Snippets...";
+"settings.productivity.snippets.count" = "%d snippets";
+
+// Clipboard History Section
+"settings.productivity.clipboard" = "Clipboard History";
+"settings.productivity.clipboard.enabled" = "Enable Clipboard History";
+"settings.productivity.clipboard.enabled.help" = "Keep history of copied text";
+"settings.productivity.clipboard.maxItems" = "Maximum Items";
+"settings.productivity.clipboard.maxItems.help" = "Number of items to keep in history";
+"settings.productivity.clipboard.clearHistory" = "Clear History";
+"settings.productivity.clipboard.clearHistory.confirm.title" = "Clear Clipboard History?";
+"settings.productivity.clipboard.clearHistory.confirm.message" = "This will remove all items from clipboard history.";
+
+// Bookmarks Section
+"settings.productivity.bookmarks" = "Bookmarks";
+"settings.productivity.bookmarks.enabled" = "Enable Bookmarks";
+"settings.productivity.bookmarks.enabled.help" = "Save and restore terminal positions";
+
+// Search Section
+"settings.productivity.search" = "Search";
+"settings.productivity.search.semantic" = "Semantic Search";
+"settings.productivity.search.semantic.help" = "Search with command awareness";
+"settings.productivity.search.caseSensitive" = "Case Sensitive by Default";
+"settings.productivity.search.caseSensitive.help" = "Default case sensitivity for find";
+"settings.productivity.search.regex" = "Regex by Default";
+"settings.productivity.search.regex.help" = "Enable regex search by default";
+"settings.productivity.search.wrapAround" = "Wrap Around";
+"settings.productivity.search.wrapAround.help" = "Continue search from beginning when reaching end";
+
+// -----------------------------------------------------------------------------
+// MARK: Windows Settings
+// -----------------------------------------------------------------------------
+
+// Overlay Window Section
+"settings.windows.overlay" = "Overlay Window";
+"settings.windows.overlay.enabled" = "Enable Overlay";
+"settings.windows.overlay.enabled.help" = "Show floating overlay window";
+"settings.windows.overlay.opacity" = "Overlay Opacity";
+"settings.windows.overlay.opacity.help" = "Transparency of the overlay window";
+
+// Dropdown Terminal Section
+"settings.windows.dropdown" = "Dropdown Terminal";
+"settings.windows.dropdown.enabled" = "Enable Dropdown";
+"settings.windows.dropdown.enabled.help" = "Quake-style dropdown terminal from top of screen";
+"settings.windows.dropdown.hotkey" = "Global Hotkey";
+"settings.windows.dropdown.hotkey.help" = "Keyboard shortcut to toggle dropdown";
+"settings.windows.dropdown.height" = "Dropdown Height";
+"settings.windows.dropdown.height.help" = "Height of dropdown as percentage of screen";
+"settings.windows.dropdown.animation" = "Animation";
+"settings.windows.dropdown.animation.help" = "Animate dropdown appearance";
+
+// Split Panes Section
+"settings.windows.splitPanes" = "Split Panes";
+"settings.windows.splitPanes.enabled" = "Enable Split Panes";
+"settings.windows.splitPanes.enabled.help" = "Allow splitting terminal into multiple panes";
+"settings.windows.splitPanes.focusHighlight" = "Focus Highlight";
+"settings.windows.splitPanes.focusHighlight.help" = "Highlight the focused pane border";
+
+// -----------------------------------------------------------------------------
+// MARK: AI Integration Settings
+// -----------------------------------------------------------------------------
+
+// AI CLI Detection Section
+"settings.ai.detection" = "AI CLI Detection";
+"settings.ai.detection.enabled" = "Enable AI Detection";
+"settings.ai.detection.enabled.help" = "Automatically detect AI CLI tools in terminal";
+"settings.ai.detection.claude" = "Detect Claude";
+"settings.ai.detection.claude.help" = "Detect Claude CLI and Claude Code";
+"settings.ai.detection.codex" = "Detect Codex";
+"settings.ai.detection.codex.help" = "Detect OpenAI Codex CLI";
+"settings.ai.detection.gemini" = "Detect Gemini";
+"settings.ai.detection.gemini.help" = "Detect Google Gemini CLI";
+"settings.ai.detection.copilot" = "Detect Copilot";
+"settings.ai.detection.copilot.help" = "Detect GitHub Copilot CLI";
+
+// Custom Detection Rules Section
+"settings.ai.customDetection" = "Custom Detection Rules";
+"settings.ai.customDetection.description" = "Add custom patterns to detect AI tools";
+"settings.ai.customDetection.add" = "Add Rule";
+"settings.ai.customDetection.noRules" = "No custom rules defined";
+"settings.ai.customDetection.pattern" = "Pattern";
+"settings.ai.customDetection.label" = "Label";
+"settings.ai.customDetection.color" = "Color";
+
+// Notifications Section
+"settings.ai.notifications" = "Notifications";
+"settings.ai.notifications.enabled" = "Enable Notifications";
+"settings.ai.notifications.enabled.help" = "Show notifications for AI events";
+"settings.ai.notifications.sound" = "Notification Sound";
+"settings.ai.notifications.sound.help" = "Play sound with notifications";
+"settings.ai.notifications.taskComplete" = "Task Complete";
+"settings.ai.notifications.taskComplete.help" = "Notify when AI task completes";
+"settings.ai.notifications.error" = "On Error";
+"settings.ai.notifications.error.help" = "Notify when AI encounters an error";
+"settings.ai.notifications.idle" = "On Idle";
+"settings.ai.notifications.idle.help" = "Notify when AI is waiting for input";
+
+// Notification Filters Section
+"settings.ai.filters" = "Notification Filters";
+"settings.ai.filters.description" = "Choose which events trigger notifications";
+"settings.ai.filters.toolUse" = "Tool Use";
+"settings.ai.filters.toolUse.help" = "Notify on tool usage (file read, write, etc.)";
+"settings.ai.filters.thinking" = "Thinking";
+"settings.ai.filters.thinking.help" = "Notify when AI is processing";
+"settings.ai.filters.response" = "Response";
+"settings.ai.filters.response.help" = "Notify on AI responses";
+
+// Notification Trigger Catalog
+"notifications.source.eventsLog" = "AI Events Log";
+"notifications.source.terminalSession" = "Terminal Session";
+"notifications.source.historyMonitor" = "History Monitor";
+"notifications.source.claudeCode" = "Claude Code";
+"notifications.source.app" = "App";
+
+"notifications.trigger.eventsLog.finished.label" = "Task finished";
+"notifications.trigger.eventsLog.finished.description" = "An AI event reports a completed task.";
+"notifications.trigger.eventsLog.failed.label" = "Task failed";
+"notifications.trigger.eventsLog.failed.description" = "An AI event reports a failure or error.";
+"notifications.trigger.eventsLog.needsValidation.label" = "Needs validation";
+"notifications.trigger.eventsLog.needsValidation.description" = "An AI event requests review or confirmation.";
+"notifications.trigger.eventsLog.permission.label" = "Permission request";
+"notifications.trigger.eventsLog.permission.description" = "An AI event requests permission to proceed.";
+"notifications.trigger.eventsLog.toolComplete.label" = "Tool complete";
+"notifications.trigger.eventsLog.toolComplete.description" = "An AI event reports a tool finished executing.";
+"notifications.trigger.eventsLog.sessionEnd.label" = "Session ended";
+"notifications.trigger.eventsLog.sessionEnd.description" = "An AI event reports a session ended.";
+"notifications.trigger.eventsLog.idle.label" = "Command idle";
+"notifications.trigger.eventsLog.idle.description" = "An AI event reports inactivity or waiting for input.";
+"notifications.trigger.eventsLog.notification.label" = "Custom notification";
+"notifications.trigger.eventsLog.notification.description" = "An AI event requests a custom notification.";
+"notifications.trigger.eventsLog.other.label" = "Other events";
+"notifications.trigger.eventsLog.other.description" = "Any other AI event types not listed above.";
+
+"notifications.trigger.terminalSession.finished.label" = "Command idle";
+"notifications.trigger.terminalSession.finished.description" = "Terminal command produced no output for the idle timeout.";
+"notifications.trigger.terminalSession.failed.label" = "Shell exited";
+"notifications.trigger.terminalSession.failed.description" = "Terminal shell process exited.";
+
+"notifications.trigger.historyMonitor.idle.label" = "History idle";
+"notifications.trigger.historyMonitor.idle.description" = "No new history entries for the idle timeout.";
+
+"notifications.trigger.claudeCode.finished.label" = "Response complete";
+"notifications.trigger.claudeCode.finished.description" = "Claude Code finished responding in a session.";
+"notifications.trigger.claudeCode.permission.label" = "Permission request";
+"notifications.trigger.claudeCode.permission.description" = "Claude Code is waiting for permission to continue.";
+"notifications.trigger.claudeCode.idle.label" = "Session idle";
+"notifications.trigger.claudeCode.idle.description" = "Claude Code session appears idle.";
+
+"notifications.trigger.app.info.label" = "Test notification";
+"notifications.trigger.app.info.description" = "Manual test notification from settings.";
+
+// Event Monitoring Section
+"settings.ai.monitoring" = "Event Monitoring";
+"settings.ai.monitoring.realtime" = "Real-time Monitoring";
+"settings.ai.monitoring.realtime.help" = "Monitor AI events as they happen";
+"settings.ai.monitoring.logEvents" = "Log Events";
+"settings.ai.monitoring.logEvents.help" = "Record AI events to log file";
+
+// -----------------------------------------------------------------------------
+// MARK: Notifications Settings (Standalone Tab)
+// -----------------------------------------------------------------------------
+
+// Status & Permissions Section
+"settings.notifications.status" = "Status & Permissions";
+"settings.notifications.status.label" = "Status";
+"settings.notifications.requestPermission" = "Request Permission";
+"settings.notifications.systemSettings" = "System Settings";
+"settings.notifications.sendTest" = "Send Test";
+
+// Notification Filters Section
+"settings.notifications.filters" = "Notification Filters";
+"settings.notifications.filtersDescription" = "Choose which events trigger notifications:";
+
+// Event Monitoring Section
+"settings.notifications.eventMonitoring" = "Event Monitoring";
+"settings.notifications.monitorAIEvents" = "Monitor AI Events";
+"settings.notifications.monitorAIEvents.help" = "Watch for AI CLI events like task completion, failures, and permission requests";
+"settings.notifications.eventLogPath" = "Event Log Path";
+"settings.notifications.eventLogPath.help" = "Path to the AI event log file";
+"settings.notifications.restartMonitor" = "Restart Monitor";
+"settings.notifications.revealInFinder" = "Reveal in Finder";
+
+// -----------------------------------------------------------------------------
+// MARK: Logs Settings
+// -----------------------------------------------------------------------------
+
+// History Logs Section
+"settings.logs.history" = "History Logs";
+"settings.logs.history.claudePath" = "Claude History Path";
+"settings.logs.history.claudePath.help" = "Path to Claude CLI history file";
+"settings.logs.history.codexPath" = "Codex History Path";
+"settings.logs.history.codexPath.help" = "Path to Codex CLI history file";
+"settings.logs.history.browse" = "Browse...";
+"settings.logs.history.reset" = "Reset to Default";
+
+// Terminal Logs Section
+"settings.logs.terminal" = "Terminal Logs";
+"settings.logs.terminal.claudePath" = "Claude Terminal Log";
+"settings.logs.terminal.claudePath.help" = "Path to Claude terminal output log";
+"settings.logs.terminal.codexPath" = "Codex Terminal Log";
+"settings.logs.terminal.codexPath.help" = "Path to Codex terminal output log";
+"settings.logs.terminal.normalize" = "Normalize Output";
+"settings.logs.terminal.normalize.help" = "Clean control characters from output";
+"settings.logs.terminal.ansiParsing" = "ANSI Parsing";
+"settings.logs.terminal.ansiParsing.help" = "Parse and render ANSI color codes";
+
+// Active Sessions Section
+"settings.logs.sessions" = "Active Sessions";
+"settings.logs.sessions.description" = "Currently monitored terminal sessions";
+"settings.logs.sessions.noSessions" = "No active sessions";
+"settings.logs.sessions.refresh" = "Refresh";
+
+// Application Log Section
+"settings.logs.appLog" = "Application Log";
+"settings.logs.appLog.path" = "Log File Path";
+"settings.logs.appLog.reveal" = "Reveal in Finder";
+"settings.logs.appLog.clear" = "Clear Log";
+"settings.logs.appLog.clear.confirm.title" = "Clear Application Log?";
+"settings.logs.appLog.clear.confirm.message" = "This will clear all log entries. This cannot be undone.";
+
+// -----------------------------------------------------------------------------
+// MARK: About Settings
+// -----------------------------------------------------------------------------
+
+// Version Information Section
+"settings.about.version" = "Version Information";
+"settings.about.version.app" = "Chau7";
+"settings.about.version.number" = "Version";
+"settings.about.version.build" = "Build";
+"settings.about.version.checkUpdates" = "Check for Updates";
+
+// System Information Section
+"settings.about.system" = "System Information";
+"settings.about.system.os" = "macOS";
+"settings.about.system.architecture" = "Architecture";
+
+// Links Section
+"settings.about.links" = "Links";
+"settings.about.links.website" = "Website";
+"settings.about.links.github" = "GitHub";
+"settings.about.links.documentation" = "Documentation";
+"settings.about.links.reportIssue" = "Report Issue";
+"settings.about.links.releaseNotes" = "Release Notes";
+
+// Acknowledgments Section
+"settings.about.acknowledgments" = "Acknowledgments";
+"settings.about.acknowledgments.openSource" = "Open Source Libraries";
+"settings.about.acknowledgments.contributors" = "Contributors";
+"settings.about.acknowledgments.viewLicenses" = "View Licenses";
+
+// Copyright
+"settings.about.copyright" = "© 2024 Chau7. All rights reserved.";
+
+// MARK: - Power User Tips
+// These tips are displayed on new terminal tabs to help users discover features
+
+// Tab shortcuts
+"tip.cmd_t_new_tab" = "Open a new tab instantly";
+"tip.cmd_n_new_window" = "Create a new window";
+"tip.cmd_w_close_tab" = "Close the current tab";
+"tip.cmd_shift_w_close_window" = "Close the entire window";
+"tip.cmd_1_9_switch_tabs" = "Jump directly to any tab";
+"tip.cmd_shift_brackets_cycle_tabs" = "Cycle through tabs quickly";
+
+// Search shortcuts
+"tip.cmd_f_search" = "Search through terminal output";
+"tip.cmd_g_next_match" = "Jump to the next search match";
+"tip.cmd_shift_g_prev_match" = "Jump to the previous search match";
+"tip.cmd_e_search_selection" = "Search for selected text";
+
+// Split pane shortcuts
+"tip.cmd_d_split_right" = "Split the pane vertically";
+"tip.cmd_shift_d_split_down" = "Split the pane horizontally";
+"tip.cmd_opt_arrows_navigate_panes" = "Navigate between split panes";
+"tip.cmd_ctrl_w_close_pane" = "Close the current split pane";
+"tip.cmd_opt_e_equalize_panes" = "Make all panes equal size";
+"tip.cmd_shift_e_maximize_pane" = "Maximize the current pane";
+
+// Keyboard shortcuts
+"tip.cmd_k_clear" = "Clear the terminal screen";
+"tip.cmd_shift_k_clear_scrollback" = "Clear screen and scrollback history";
+"tip.cmd_plus_minus_font_size" = "Adjust font size on the fly";
+"tip.cmd_0_reset_font" = "Reset font size to default";
+
+// Selection tips
+"tip.cmd_a_select_line" = "Select the current input line";
+"tip.cmd_a_a_select_all" = "Double-tap to select entire buffer";
+"tip.triple_click_select_line" = "Triple-click to select an entire line";
+"tip.double_click_select_word" = "Double-click to select a word";
+
+// Mouse features
+"tip.cmd_click_open_path" = "Cmd+click to open file paths in your editor";
+"tip.opt_click_position_cursor" = "Option+click to position cursor anywhere";
+"tip.copy_on_select" = "Enable copy-on-select in Settings > Input for faster copying";
+
+// Productivity features
+"tip.cmd_p_print" = "Print terminal output";
+"tip.cmd_shift_p_command_palette" = "Open the command palette for quick actions";
+"tip.cmd_semicolon_snippets" = "Insert code snippets quickly";
+"tip.cmd_shift_o_ssh" = "Open a new SSH connection";
+"tip.cmd_ctrl_f_fullscreen" = "Toggle fullscreen mode";
+"tip.broadcast_mode" = "Broadcast mode lets you type in multiple tabs at once";
+"tip.dropdown_terminal" = "Set up a dropdown terminal like Quake mode";
+
+// Status indicators
+"tip.status_dot_colors" = "Tab dot colors: green=idle, orange=running, blue=waiting, red=stuck";
+
+// Tab customization
+"tip.tab_colors" = "Right-click a tab to change its color for organization";
+"tip.rename_tab" = "Double-click a tab to rename it";

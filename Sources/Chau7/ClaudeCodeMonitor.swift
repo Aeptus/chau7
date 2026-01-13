@@ -236,6 +236,7 @@ final class ClaudeCodeMonitor: ObservableObject {
 
     private func notifyResponseComplete(_ event: ClaudeCodeEvent) {
         let aiEvent = AIEvent(
+            source: .claudeCode,
             type: "finished",
             tool: "Claude",
             message: "Response complete in \(event.projectName)",
@@ -247,6 +248,7 @@ final class ClaudeCodeMonitor: ObservableObject {
     private func notifyPermissionRequest(_ event: ClaudeCodeEvent) {
         let toolDesc = event.toolName.isEmpty ? "action" : event.toolName
         let aiEvent = AIEvent(
+            source: .claudeCode,
             type: "permission",
             tool: "Claude",
             message: "Needs permission for \(toolDesc) in \(event.projectName)",
@@ -257,6 +259,7 @@ final class ClaudeCodeMonitor: ObservableObject {
 
     private func notifySessionIdle(_ session: ClaudeSessionInfo, idleFor: TimeInterval) {
         let aiEvent = AIEvent(
+            source: .claudeCode,
             type: "idle",
             tool: "Claude",
             message: "Waiting for input in \(session.projectName) (\(Int(idleFor))s idle)",

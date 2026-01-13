@@ -3,7 +3,7 @@ import AppKit
 
 // MARK: - Debug Console View
 
-/// A hidden debug console accessible via Cmd+Shift+D (when enabled).
+/// A hidden debug console accessible via Cmd+Shift+L (when enabled).
 /// Shows real-time state, active contexts, event history, and allows generating bug reports.
 struct DebugConsoleView: View {
     @ObservedObject var appModel: AppModel
@@ -134,6 +134,7 @@ struct DebugConsoleView: View {
                         stateRow("Title", value: tab.customTitle ?? tab.session?.title ?? "(no terminal)")
                         stateRow("App", value: tab.session?.activeAppName ?? "none")
                         stateRow("Directory", value: tab.session?.currentDirectory ?? "")
+                        stateRow("Input Lag", value: tab.session?.inputLatencySummary ?? "n/a")
                         if tab.session?.isGitRepo == true {
                             stateRow("Git Branch", value: tab.session?.gitBranch ?? "unknown")
                         }

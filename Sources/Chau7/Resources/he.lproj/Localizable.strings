@@ -1,0 +1,1151 @@
+/* Chau7 Localizable Strings - Hebrew */
+
+// MARK: - General
+"app.name" = "Chau7";
+"app.tagline" = "רעיון מסוף CLI לבינה מלאכותית";
+"app.copyright" = "זכויות יוצרים © 2024-2025. כל הזכויות שמורות.";
+
+// MARK: - Common Actions
+"action.ok" = "אישור";
+"action.cancel" = "ביטול";
+"action.save" = "שמירה";
+"action.delete" = "מחיקה";
+"action.edit" = "עריכה";
+"action.add" = "הוספה";
+"action.remove" = "הסרה";
+"action.close" = "סגירה";
+"action.done" = "סיום";
+"action.reset" = "איפוס";
+"action.apply" = "החלה";
+"action.copy" = "העתקה";
+"action.paste" = "הדבקה";
+"action.cut" = "גזירה";
+"action.select.all" = "בחירת הכל";
+"action.clear" = "ניקוי";
+"action.search" = "חיפוש";
+"action.refresh" = "רענון";
+"action.import" = "ייבוא";
+"action.export" = "ייצוא";
+
+// MARK: - Language Settings
+"language.title" = "שפה";
+"language.system" = "ברירת מחדל מערכת";
+"language.restart.hint" = "חלק מהשינויים עשויים לדרוש הפעלה מחדש";
+"settings.general.language" = "שפה";
+"settings.general.language.label" = "שפת תצוגה";
+"settings.general.language.help" = "בחר את שפת ממשק היישום";
+"settings.general.language.note" = "שינוי השפה יעדכן את הממשק מיד. חלק מרכיבי המערכת עשויים לדרוש הפעלה מחדש.";
+"settings.general.defaultDirectory" = "ספריית ברירת מחדל";
+"settings.general.defaultDirectory.help" = "ספריית התחלה לכרטיסיות מסוף חדשות";
+
+// MARK: - Settings Sections
+"settings.title" = "הגדרות";
+"settings.general" = "כללי";
+"settings.general.description" = "העדפות והתנהגות יישום";
+"settings.appearance" = "מראה";
+"settings.appearance.description" = "התאמה אישית ויזואלית וערכות נושא";
+"settings.terminal" = "מסוף";
+"settings.terminal.description" = "הגדרות מעטפת ואמולטור מסוף";
+"settings.tabs" = "כרטיסיות";
+"settings.tabs.description" = "התנהגות סרגל כרטיסיות וניווט";
+"settings.input" = "קלט";
+"settings.input.description" = "הגדרות מקלדת ועכבר";
+"settings.productivity" = "פרודוקטיביות";
+"settings.productivity.description" = "תכונות זרימת עבודה ויעילות";
+"settings.windows" = "חלונות";
+"settings.windows.description" = "ניהול חלונות ופריסה";
+"settings.ai" = "אינטגרציית AI";
+"settings.ai.description" = "זיהוי CLI לבינה מלאכותית והתראות";
+"settings.logs" = "יומנים";
+"settings.logs.description" = "ניטור יומנים והיסטוריה";
+"settings.about" = "אודות";
+"settings.about.description" = "מידע גרסה ותודות";
+
+// MARK: - General Settings
+"general.startup" = "הפעלה";
+"general.launch.login" = "הפעלה בכניסה";
+"general.launch.login.help" = "הפעל Chau7 אוטומטית בכניסה ל-Mac";
+"general.show.menubar" = "הצג בשורת התפריטים";
+"general.show.menubar.help" = "הצג סמל Chau7 בשורת תפריטי המערכת לגישה מהירה";
+"general.show.dock" = "הצג ב-Dock";
+"general.show.dock.help" = "הצג סמל Chau7 ב-Dock";
+"general.show.overlay.launch" = "הצג שכבת-על בהפעלה";
+"general.show.overlay.launch.help" = "הצג אוטומטית את שכבת-העל של המסוף כש-Chau7 מופעל";
+"general.restore.tabs" = "שחזר כרטיסיות בהפעלה";
+"general.restore.tabs.help" = "זכור ושחזר כרטיסיות פתוחות בהפעלה מחדש";
+
+"general.updates" = "עדכונים";
+"general.check.updates" = "בדוק עדכונים אוטומטית";
+"general.check.updates.help" = "בדוק מעת לעת גרסאות חדשות של Chau7";
+
+"general.import.export" = "ייבוא / ייצוא הגדרות";
+"general.import" = "ייבוא הגדרות";
+"general.export" = "ייצוא הגדרות";
+
+"general.status" = "סטטוס";
+"general.status.notifications" = "התראות";
+"general.status.event.monitoring" = "ניטור אירועים";
+"general.status.history.monitoring" = "ניטור היסטוריה";
+"general.status.terminal.monitoring" = "ניטור מסוף";
+"general.status.active" = "פעיל";
+"general.status.paused" = "מושהה";
+
+"general.actions" = "פעולות";
+"general.show.overlay" = "הצג שכבת-על";
+"general.reset.positions" = "אפס מיקומי חלונות";
+"general.debug.console" = "מסוף ניפוי באגים";
+
+"general.reset" = "איפוס";
+"general.reset.all" = "אפס את כל ההגדרות לברירות מחדל";
+"general.reset.confirm.title" = "לאפס את כל ההגדרות?";
+"general.reset.confirm.message" = "פעולה זו תאפס את כל ההעדפות לערכי ברירת המחדל. לא ניתן לבטל פעולה זו.";
+
+// MARK: - Appearance Settings
+"appearance.theme" = "ערכת נושא";
+"appearance.theme.light" = "בהיר";
+"appearance.theme.dark" = "כהה";
+"appearance.theme.system" = "מערכת";
+"appearance.theme.help" = "בחר את ערכת הנושא החזותית ליישום";
+
+"appearance.font" = "גופן";
+"appearance.font.family" = "משפחת גופנים";
+"appearance.font.family.help" = "בחר את סוג גופן המסוף";
+"appearance.font.size" = "גודל גופן";
+"appearance.font.size.help" = "גודל טקסט המסוף בנקודות";
+"appearance.font.ligatures" = "קשירות גופן";
+"appearance.font.ligatures.help" = "אפשר קשירות לגופנים שתומכים בכך (כגון Fira Code)";
+
+"appearance.cursor" = "סמן";
+"appearance.cursor.style" = "סגנון סמן";
+"appearance.cursor.style.block" = "בלוק";
+"appearance.cursor.style.underline" = "קו תחתון";
+"appearance.cursor.style.bar" = "פס";
+"appearance.cursor.style.help" = "צורת סמן המסוף";
+"appearance.cursor.blink" = "הבהוב סמן";
+"appearance.cursor.blink.help" = "הנפש את הסמן עם אפקט הבהוב";
+
+"appearance.colors" = "צבעים";
+"appearance.color.scheme" = "ערכת צבעים";
+"appearance.color.scheme.help" = "לוח צבעי המסוף";
+"appearance.background.opacity" = "שקיפות רקע";
+"appearance.background.opacity.help" = "שקיפות רקע המסוף (0-100%)";
+"appearance.blur.background" = "טשטוש רקע";
+"appearance.blur.background.help" = "החל אפקט טשטוש על תוכן מאחורי המסוף";
+
+"appearance.window" = "חלון";
+"appearance.titlebar.style" = "סגנון שורת כותרת";
+"appearance.titlebar.native" = "מקורי";
+"appearance.titlebar.minimal" = "מינימלי";
+"appearance.titlebar.hidden" = "מוסתר";
+"appearance.titlebar.help" = "מראה שורת כותרת החלון";
+"appearance.vibrancy" = "תוססות חלון";
+"appearance.vibrancy.help" = "אפשר אפקט תוססות מערכת על החלון";
+
+"appearance.reset" = "אפס מראה לברירות מחדל";
+
+// MARK: - Terminal Settings
+"terminal.shell" = "מעטפת";
+"terminal.shell.default" = "מעטפת ברירת מחדל";
+"terminal.shell.default.help" = "השתמש במעטפת ברירת המחדל של המערכת (מ-/etc/passwd)";
+"terminal.shell.custom" = "מעטפת מותאמת אישית";
+"terminal.shell.custom.help" = "ציין נתיב מעטפת מותאם אישית";
+"terminal.shell.path" = "נתיב מעטפת";
+"terminal.shell.path.help" = "נתיב מלא לקובץ הפעלת המעטפת";
+"terminal.current.shell" = "מעטפת נוכחית";
+"terminal.startup.command" = "פקודת הפעלה";
+"terminal.startup.command.help" = "פקודה להרצה אוטומטית כשנפתחת הפעלת מסוף חדשה";
+
+"terminal.scrollback" = "גלילה לאחור";
+"terminal.scrollback.lines" = "שורות גלילה לאחור";
+"terminal.scrollback.lines.help" = "מספר מקסימלי של שורות לשמור בהיסטוריית הגלילה";
+"terminal.unlimited.scrollback" = "גלילה לאחור ללא הגבלה";
+"terminal.unlimited.scrollback.help" = "שמור את כל פלט המסוף (עשוי להשתמש ביותר זיכרון)";
+
+"terminal.behavior" = "התנהגות";
+"terminal.bell" = "פעמון מסוף";
+"terminal.bell.help" = "השמע צליל כשמתקבל תו פעמון מסוף";
+"terminal.visual.bell" = "פעמון חזותי";
+"terminal.visual.bell.help" = "הבהב את המסך במקום להשמיע צליל לפעמון";
+"terminal.focus.follows.mouse" = "מיקוד עוקב אחר עכבר";
+"terminal.focus.follows.mouse.help" = "מקד אוטומטית חלוניות מסוף בעת ריחוף מעליהן";
+
+"terminal.encoding" = "קידוד";
+"terminal.encoding.utf8" = "קידוד UTF-8";
+"terminal.encoding.utf8.help" = "השתמש בקידוד תווים UTF-8 לקלט/פלט מסוף";
+
+"terminal.reset" = "אפס מסוף לברירות מחדל";
+
+// MARK: - Tabs Settings
+"tabs.behavior" = "התנהגות";
+"tabs.new.position" = "מיקום כרטיסייה חדשה";
+"tabs.new.position.help" = "היכן להכניס כרטיסיות חדשות";
+"tabs.new.position.end" = "בסוף";
+"tabs.new.position.after" = "אחרי הנוכחית";
+"tabs.last.close" = "סגירת כרטיסייה אחרונה";
+"tabs.last.close.help" = "בחר מה קורה בסגירת הכרטיסייה האחרונה";
+"tabs.last.close.window" = "סגור חלון";
+"tabs.last.close.new" = "פתח כרטיסייה חדשה";
+"tabs.last.close.nothing" = "לא לעשות כלום";
+"tabs.always.show" = "הצג תמיד סרגל כרטיסיות";
+"tabs.always.show.help" = "הצג את סרגל הכרטיסיות גם כשיש רק כרטיסייה אחת פתוחה";
+
+"tabs.appearance" = "מראה";
+"tabs.command.badge" = "תג פקודה אחרונה";
+"tabs.command.badge.help" = "הצג את הפקודה האחרונה באזור סטטוס הכרטיסייה";
+"tabs.ai.icons" = "סמלי מוצרי AI";
+"tabs.ai.icons.help" = "הצג סמלי SF Symbol עבור CLI מזוהים של AI בכרטיסיות";
+
+"tabs.keyboard" = "ניווט מקלדת";
+"tabs.shortcut.new" = "כרטיסייה חדשה";
+"tabs.shortcut.close" = "סגור כרטיסייה";
+"tabs.shortcut.next" = "כרטיסייה הבאה";
+"tabs.shortcut.prev" = "כרטיסייה קודמת";
+"tabs.shortcut.switch" = "עבור לכרטיסייה 1-9";
+"tabs.shortcut.rename" = "שנה שם כרטיסייה";
+
+// MARK: - Input Settings
+"input.keyboard" = "מקלדת";
+"input.keybinding.preset" = "הגדרה מוגדרת מראש לקשרי מקשים";
+"input.keybinding.preset.help" = "בחר הגדרת קיצורי מקלדת שמתאימה לזרימת העבודה שלך";
+"input.keybinding.default" = "ברירת מחדל";
+"input.keybinding.vim" = "Vim";
+"input.keybinding.emacs" = "Emacs";
+
+"input.shortcuts" = "קיצורי מקלדת";
+"input.shortcuts.hint" = "לחץ על קיצור להתאמה אישית. התנגשויות יודגשו.";
+"input.shortcuts.reset" = "אפס קיצורים לברירות מחדל";
+
+"input.mouse" = "עכבר";
+"input.copy.select" = "העתק בבחירה";
+"input.copy.select.help" = "העתק טקסט אוטומטית ללוח כשבוחרים אותו עם העכבר";
+"input.cmd.click" = "Cmd+לחיצה על נתיבים";
+"input.cmd.click.help" = "פתח נתיבי קבצים בעורך כש-Cmd לחוץ ולוחצים עליהם במסוף";
+"input.url.handler" = "מטפל URL";
+"input.url.handler.help" = "בחר איזה דפדפן נפתח ב-Cmd+לחיצה על URL";
+"input.default.editor" = "עורך ברירת מחדל";
+"input.default.editor.help" = "עורך לפתיחת קבצים (השאר ריק לברירת מחדל או $EDITOR)";
+"input.option.click" = "Option+לחיצה לסמן";
+"input.option.click.help" = "הזז סמן למיקום הלחיצה בלחיצת Option (כמו iTerm2)";
+
+"input.broadcast" = "שידור";
+"input.broadcast.enable" = "שדר קלט";
+"input.broadcast.enable.help" = "שלח קלט מקלדת לכל הכרטיסיות הפתוחות בו-זמנית";
+
+"input.reset" = "אפס קלט לברירות מחדל";
+
+// MARK: - Productivity Settings
+"productivity.completions" = "השלמות";
+"productivity.autocomplete" = "הצג השלמה אוטומטית";
+"productivity.autocomplete.help" = "הצג הצעות להשלמת פקודות בעת הקלדה";
+"productivity.inline.suggestions" = "הצעות מוטמעות";
+"productivity.inline.suggestions.help" = "הצג רמזי השלמה ישירות בשורת הפקודה";
+
+"productivity.history" = "היסטוריה";
+"productivity.history.search" = "חיפוש היסטוריה";
+"productivity.history.search.help" = "אפשר חיפוש הפוך Ctrl+R בהיסטוריית פקודות";
+"productivity.history.suggestions" = "הצעות היסטוריה";
+"productivity.history.suggestions.help" = "הצע פקודות מההיסטוריה בעת הקלדה";
+
+"productivity.clipboard" = "לוח";
+"productivity.clipboard.history" = "היסטוריית לוח";
+"productivity.clipboard.history.help" = "זכור טקסט שהועתק ואפשר הדבקה מההיסטוריה";
+"productivity.clipboard.access" = "גישה עם";
+"productivity.clipboard.max" = "מקסימום פריטי היסטוריה";
+"productivity.clipboard.max.help" = "מספר מקסימלי של ערכי לוח לזכור";
+
+"productivity.snippets" = "קטעי קוד";
+"productivity.snippets.description" = "קטעי טקסט מהירים עם הרחבת תגים";
+"productivity.snippets.count" = "%d קטעי קוד זמינים";
+"productivity.snippets.invoke" = "הפעל עם";
+"productivity.snippets.manage" = "נהל קטעי קוד";
+
+"productivity.search" = "חיפוש";
+"productivity.semantic.search" = "חיפוש סמנטי";
+"productivity.semantic.search.help" = "אפשר חיפוש מודע לפקודות בהיסטוריית המסוף";
+"productivity.case.sensitive" = "רגיש לרישיות ברירת מחדל";
+"productivity.case.sensitive.help" = "התחל הפעלות חיפוש חדשות עם התאמה רגישה לרישיות";
+"productivity.regex.default" = "Regex ברירת מחדל";
+"productivity.regex.default.help" = "התחל הפעלות חיפוש חדשות עם התאמת regex מופעלת";
+"productivity.shortcut.find" = "חפש";
+"productivity.shortcut.find.next" = "חפש הבא";
+"productivity.shortcut.find.prev" = "חפש קודם";
+
+"productivity.reset" = "אפס פרודוקטיביות לברירות מחדל";
+
+// MARK: - Windows Settings
+"windows.overlay" = "חלון שכבת-על";
+"windows.overlay.show" = "הצג שכבת-על";
+"windows.overlay.reset" = "אפס מיקום";
+"windows.overlay.hint" = "חלון שכבת-העל זוכר את מיקומו לכל סביבת עבודה ומשחזר אותו אוטומטית.";
+
+"windows.dropdown" = "מסוף נפתח";
+"windows.dropdown.enable" = "אפשר נפתח";
+"windows.dropdown.enable.help" = "הצג מסוף נפתח בסגנון Quake עם מקש קיצור גלובלי";
+"windows.dropdown.hotkey" = "מקש קיצור";
+"windows.dropdown.hotkey.help" = "קיצור מקלדת גלובלי להחלפת נפתח";
+"windows.dropdown.height" = "גובה";
+"windows.dropdown.height.help" = "גובה נפתח כאחוז מהמסך (10-100%)";
+
+"windows.split" = "חלוניות מפוצלות";
+"windows.split.enable" = "אפשר חלוניות מפוצלות";
+"windows.split.enable.help" = "אפשר פיצול מסוף למספר חלוניות בתוך כרטיסייה אחת";
+"windows.split.horizontal" = "פיצול אופקי";
+"windows.split.vertical" = "פיצול אנכי";
+"windows.split.navigate" = "נווט בחלוניות";
+
+// MARK: - AI Integration Settings
+"ai.detection" = "זיהוי CLI של AI";
+"ai.detection.hint" = "Chau7 מזהה אוטומטית CLI אלה של AI ומחיל ערכות נושא מתאימות:";
+"ai.detection.claude" = "Claude Code";
+"ai.detection.codex" = "OpenAI Codex";
+"ai.detection.gemini" = "Gemini";
+"ai.detection.chatgpt" = "ChatGPT";
+"ai.detection.copilot" = "GitHub Copilot";
+"ai.detection.aider" = "Aider";
+"ai.detection.cursor" = "Cursor";
+
+"ai.custom" = "כללי זיהוי מותאמים אישית";
+"ai.custom.hint" = "הוסף תבניות פקודה או פלט לתיוג CLI מותאמים אישית של AI.";
+"ai.custom.pattern" = "תבנית";
+"ai.custom.pattern.placeholder" = "mycli, /opt/ai/bin";
+"ai.custom.name" = "שם תצוגה";
+"ai.custom.name.placeholder" = "ה-AI שלי";
+"ai.custom.color" = "צבע";
+"ai.custom.enabled" = "מופעל";
+"ai.custom.add" = "הוסף כלל";
+"ai.custom.remove" = "הסר";
+
+"ai.tab.theming" = "ערכות נושא כרטיסיות";
+"ai.auto.theme" = "צבעי כרטיסיות אוטומטיים";
+"ai.auto.theme.help" = "צבע כרטיסיות אוטומטית בהתבסס על ה-CLI המזוהה של AI";
+
+"ai.notifications" = "התראות";
+"ai.notifications.status" = "סטטוס";
+"ai.notifications.request" = "בקש הרשאה";
+"ai.notifications.system" = "הגדרות מערכת";
+"ai.notifications.test" = "שלח בדיקה";
+
+"ai.filters" = "מסנני התראות";
+"ai.filters.hint" = "בחר אילו אירועים מפעילים התראות:";
+"ai.filter.task.finished" = "משימה הסתיימה";
+"ai.filter.task.finished.help" = "הודע כשמשימת AI מסתיימת בהצלחה";
+"ai.filter.task.failed" = "משימה נכשלה";
+"ai.filter.task.failed.help" = "הודע כשמשימת AI נכשלת או נתקלת בשגיאה";
+"ai.filter.needs.validation" = "דורש אימות";
+"ai.filter.needs.validation.help" = "הודע כשמשימת AI דורשת סקירה או אישור אנושי";
+"ai.filter.permission" = "בקשת הרשאה";
+"ai.filter.permission.help" = "הודע כשכלי דורש הרשאה להמשיך";
+"ai.filter.tool.complete" = "כלי הושלם";
+"ai.filter.tool.complete.help" = "הודע כשכלים בודדים משלימים ביצוע";
+"ai.filter.session.end" = "סיום הפעלה";
+"ai.filter.session.end.help" = "הודע כשהפעלת AI מסתיימת";
+"ai.filter.command.idle" = "פקודה בהמתנה";
+"ai.filter.command.idle.help" = "הודע כשמסוף הופך לא פעיל אחרי ביצוע פקודה";
+
+"ai.monitoring" = "ניטור אירועים";
+"ai.monitoring.enable" = "נטר אירועי AI";
+"ai.monitoring.enable.help" = "עקוב אחר אירועי CLI של AI כגון השלמת משימה, כשלונות ובקשות הרשאה";
+"ai.monitoring.log.path" = "נתיב יומן אירועים";
+"ai.monitoring.log.path.help" = "נתיב לקובץ יומן אירועי AI";
+"ai.monitoring.restart" = "הפעל מחדש ניטור";
+"ai.monitoring.reveal" = "הצג ב-Finder";
+
+// MARK: - Logs Settings
+"logs.history" = "יומני היסטוריה";
+"logs.history.enable" = "נטר יומני היסטוריה";
+"logs.history.enable.help" = "עקוב אחר קבצי היסטוריית CLI של AI לפעילות הפעלה וזיהוי חוסר פעילות";
+"logs.idle.seconds" = "שניות חוסר פעילות";
+"logs.idle.seconds.help" = "שניות של חוסר פעילות לפני שליחת התראת חוסר פעילות";
+"logs.stale.seconds" = "שניות ישן";
+"logs.stale.seconds.help" = "שניות לפני סימון הפעלה כסגורה";
+"logs.codex.history" = "נתיב היסטוריית Codex";
+"logs.claude.history" = "נתיב היסטוריית Claude";
+"logs.restart.monitors" = "הפעל מחדש ניטורים";
+"logs.clear.history" = "נקה היסטוריה";
+
+"logs.terminal" = "יומני מסוף";
+"logs.terminal.enable" = "נטר יומני מסוף";
+"logs.terminal.enable.help" = "עקוב אחר קבצי פלט עטיפת PTY לפעילות מסוף";
+"logs.terminal.normalize" = "נרמל פלט";
+"logs.terminal.normalize.help" = "הסר קודי ANSI ותווי בקרה מתצוגת היומן";
+"logs.terminal.ansi" = "הצג עיצוב ANSI";
+"logs.terminal.ansi.help" = "הצג צבעים ועיצוב ANSI בצופה היומן";
+"logs.codex.terminal" = "יומן מסוף Codex";
+"logs.claude.terminal" = "יומן מסוף Claude";
+"logs.reload.lines" = "טען מחדש שורות אחרונות";
+"logs.clear.logs" = "נקה יומנים";
+
+"logs.sessions" = "הפעלות פעילות";
+"logs.sessions.empty" = "עדיין לא נמצאות הפעלות במעקב.";
+
+// MARK: - About Settings
+"about.version" = "מידע גרסה";
+"about.application" = "יישום";
+"about.bundle.id" = "מזהה חבילה";
+"about.version.label" = "גרסה";
+"about.not.bundled" = "לא ארוז";
+"about.dev.build" = "בניית פיתוח";
+
+"about.system" = "מידע מערכת";
+"about.macos" = "macOS";
+"about.architecture" = "ארכיטקטורה";
+"about.shell" = "מעטפת";
+"about.arch.apple" = "Apple Silicon (arm64)";
+"about.arch.intel" = "Intel (x86_64)";
+"about.arch.unknown" = "לא ידוע";
+
+"about.links" = "קישורים";
+"about.github" = "GitHub";
+"about.report.issue" = "דווח על בעיה";
+"about.documentation" = "תיעוד";
+
+"about.log" = "יומן יישום";
+"about.log.path" = "נתיב יומן";
+"about.reveal.finder" = "הצג ב-Finder";
+"about.open.debug" = "מסוף ניפוי באגים";
+
+"about.acknowledgments" = "תודות";
+"about.swiftterm" = "Chau7 בנוי עם SwiftTerm לאמולציית מסוף.";
+
+// MARK: - Command Palette
+"palette.title" = "לוח פקודות";
+"palette.search.placeholder" = "הקלד פקודה...";
+"palette.commands.count" = "%d פקודות";
+"palette.navigate" = "נווט";
+"palette.select" = "בחר";
+"palette.close" = "סגור";
+
+// Command Categories
+"palette.category.file" = "קובץ";
+"palette.category.edit" = "עריכה";
+"palette.category.view" = "תצוגה";
+"palette.category.terminal" = "מסוף";
+"palette.category.tabs" = "כרטיסיות";
+"palette.category.window" = "חלון";
+"palette.category.help" = "עזרה";
+
+// Commands
+"palette.cmd.new.window" = "חלון חדש";
+"palette.cmd.new.tab" = "כרטיסייה חדשה";
+"palette.cmd.close.tab" = "סגור כרטיסייה";
+"palette.cmd.close.window" = "סגור חלון";
+"palette.cmd.close.other" = "סגור כרטיסיות אחרות";
+"palette.cmd.export" = "ייצא טקסט...";
+"palette.cmd.print" = "הדפס...";
+"palette.cmd.cut" = "גזור";
+"palette.cmd.copy" = "העתק";
+"palette.cmd.paste" = "הדבק";
+"palette.cmd.paste.escaped" = "הדבק עם בריחה";
+"palette.cmd.select.all" = "בחר הכל";
+"palette.cmd.find" = "חפש...";
+"palette.cmd.find.next" = "חפש הבא";
+"palette.cmd.find.prev" = "חפש קודם";
+"palette.cmd.snippets" = "קטעי קוד...";
+"palette.cmd.manage.snippets" = "נהל קטעי קוד...";
+"palette.cmd.fullscreen" = "החלף מסך מלא";
+"palette.cmd.zoom.in" = "הגדל";
+"palette.cmd.zoom.out" = "הקטן";
+"palette.cmd.zoom.reset" = "גודל אמיתי";
+"palette.cmd.clear.screen" = "נקה מסך";
+"palette.cmd.clear.scrollback" = "נקה גלילה לאחור";
+"palette.cmd.scroll.top" = "גלול למעלה";
+"palette.cmd.scroll.bottom" = "גלול למטה";
+"palette.cmd.next.tab" = "הצג כרטיסייה הבאה";
+"palette.cmd.prev.tab" = "הצג כרטיסייה קודמת";
+"palette.cmd.move.right" = "הזז כרטיסייה ימינה";
+"palette.cmd.move.left" = "הזז כרטיסייה שמאלה";
+"palette.cmd.rename.tab" = "שנה שם כרטיסייה...";
+"palette.cmd.settings" = "הגדרות...";
+"palette.cmd.debug" = "מסוף ניפוי באגים";
+"palette.cmd.ssh" = "חיבורי SSH...";
+"palette.cmd.shortcuts" = "קיצורי מקלדת...";
+"palette.cmd.about" = "אודות Chau7";
+"palette.cmd.docs" = "תיעוד";
+"palette.cmd.report" = "דווח על בעיה";
+
+// MARK: - Snippets
+"snippets.title" = "קטעי קוד";
+"snippets.search.placeholder" = "חפש קטעי קוד...";
+"snippets.source.all" = "כל המקורות";
+"snippets.source.user" = "משתמש";
+"snippets.source.profile" = "פרופיל";
+"snippets.source.repo" = "מאגר";
+"snippets.count" = "%d קטעי קוד";
+"snippets.empty" = "לא נמצאו קטעי קוד";
+"snippets.empty.hint" = "צור את קטע הקוד הראשון שלך באמצעות כפתור + למעלה, או ייבא קטעי קוד מקובץ JSON.";
+"snippets.delete.title" = "למחוק קטע קוד?";
+"snippets.new" = "קטע קוד חדש";
+"snippets.edit" = "ערוך קטע קוד";
+"snippets.title.label" = "כותרת";
+"snippets.body.label" = "תוכן";
+"snippets.tags.label" = "תגיות";
+"snippets.tags.placeholder" = "תגיות מופרדות בפסיקים";
+"snippets.source.label" = "מקור";
+"snippets.available.tokens" = "תגים זמינים";
+
+"snippets.import" = "ייבוא";
+"snippets.export" = "ייצוא";
+"snippets.import.success" = "יובאו %d קטעי קוד";
+"snippets.export.success" = "יוצאו %d קטעי קוד";
+
+// MARK: - SSH Manager
+"ssh.title" = "חיבורי SSH";
+"ssh.search.placeholder" = "חפש חיבורים...";
+"ssh.new" = "חיבור חדש";
+"ssh.edit" = "ערוך חיבור";
+"ssh.connect" = "התחבר";
+"ssh.delete.title" = "למחוק חיבור?";
+"ssh.empty" = "אין חיבורי SSH";
+"ssh.empty.hint" = "הוסף את חיבור ה-SSH הראשון שלך באמצעות כפתור +.";
+
+"ssh.name" = "שם";
+"ssh.name.placeholder" = "השרת שלי";
+"ssh.host" = "מארח";
+"ssh.host.placeholder" = "שם מארח או IP";
+"ssh.port" = "פורט";
+"ssh.user" = "משתמש";
+"ssh.user.placeholder" = "שם משתמש";
+"ssh.key" = "קובץ זהות";
+"ssh.key.placeholder" = "~/.ssh/id_rsa";
+"ssh.key.browse" = "עיין";
+"ssh.options" = "אפשרויות נוספות";
+"ssh.options.placeholder" = "-o StrictHostKeyChecking=no";
+"ssh.color" = "צבע כרטיסייה";
+
+// MARK: - Help
+"help.title" = "עזרה";
+"help.search.placeholder" = "חפש נושאי עזרה...";
+"help.getting.started" = "מדריך התחלתי";
+"help.command.palette" = "לוח פקודות";
+"help.tabs.windows" = "כרטיסיות וחלונות";
+"help.keyboard.shortcuts" = "קיצורי מקלדת";
+"help.ssh.connections" = "חיבורי SSH";
+"help.terminal.output" = "פלט מסוף";
+"help.snippets" = "קטעי קוד";
+"help.ai.integration" = "אינטגרציית AI";
+"help.settings" = "הגדרות";
+"help.troubleshooting" = "פתרון בעיות";
+"help.related.topics" = "נושאים קשורים";
+
+// MARK: - Notifications
+"notification.task.finished" = "משימה הסתיימה";
+"notification.task.failed" = "משימה נכשלה";
+"notification.needs.validation" = "דורש אימות";
+"notification.permission.request" = "בקשת הרשאה";
+"notification.command.idle" = "פקודה בהמתנה";
+"notification.session.end" = "הפעלה הסתיימה";
+
+// MARK: - Errors
+"error.generic" = "אירעה שגיאה";
+"error.file.not.found" = "קובץ לא נמצא";
+"error.permission.denied" = "הרשאה נדחתה";
+"error.import.failed" = "הייבוא נכשל";
+"error.export.failed" = "הייצוא נכשל";
+"error.connection.failed" = "החיבור נכשל";
+
+// MARK: - Tab States
+"tab.shell" = "מעטפת";
+"tab.suspended" = "מושהה";
+"tab.rename.placeholder" = "הזן שם כרטיסייה";
+
+// MARK: - Menu Items
+"menu.file" = "קובץ";
+"menu.edit" = "עריכה";
+"menu.view" = "תצוגה";
+"menu.terminal" = "מסוף";
+"menu.window" = "חלון";
+"menu.help" = "עזרה";
+
+// MARK: - Debug Console
+"debug.title" = "מסוף ניפוי באגים";
+"debug.clear" = "נקה";
+"debug.copy.all" = "העתק הכל";
+"debug.filter" = "סנן";
+"debug.level.all" = "הכל";
+"debug.level.info" = "מידע";
+"debug.level.warning" = "אזהרה";
+"debug.level.error" = "שגיאה";
+
+// MARK: - Time
+"time.now" = "עכשיו";
+"time.seconds.ago" = "לפני %d שניות";
+"time.minute.ago" = "לפני דקה";
+"time.minutes.ago" = "לפני %d דקות";
+"time.hour.ago" = "לפני שעה";
+"time.hours.ago" = "לפני %d שעות";
+
+// MARK: - Miscellaneous
+"misc.enabled" = "מופעל";
+"misc.disabled" = "מושבת";
+"misc.default" = "ברירת מחדל";
+"misc.custom" = "מותאם אישית";
+"misc.none" = "אין";
+"misc.unknown" = "לא ידוע";
+"misc.loading" = "טוען...";
+"misc.empty" = "ריק";
+
+// MARK: - Accessibility Labels
+"a11y.new.tab" = "כרטיסייה חדשה";
+"a11y.close.tab" = "סגור כרטיסייה";
+"a11y.tab.button" = "כרטיסייה %@";
+"a11y.search.field" = "חיפוש";
+"a11y.search.clear" = "נקה חיפוש";
+"a11y.toggle.on" = "%@ מופעל";
+"a11y.toggle.off" = "%@ מושבת";
+"a11y.clipboard.item" = "פריט לוח: %@";
+"a11y.clipboard.paste" = "הדבק פריט זה";
+"a11y.clipboard.pin" = "הצמד פריט זה";
+"a11y.clipboard.delete" = "מחק פריט זה";
+"a11y.bookmark.item" = "סימנייה: %@";
+"a11y.bookmark.jump" = "קפוץ למיקום זה";
+"a11y.snippet.item" = "קטע קוד: %@";
+"a11y.snippet.insert" = "הכנס קטע קוד זה";
+"a11y.git.branch" = "ענף Git: %@";
+"a11y.status.indicator" = "סטטוס: %@";
+"a11y.session.row" = "הפעלה: %@, סטטוס: %@";
+"a11y.ssh.connection" = "חיבור SSH: %@";
+"a11y.ssh.connect.hint" = "לחץ פעמיים להתחברות";
+"a11y.command.row" = "%@, קטגוריה: %@";
+"a11y.command.shortcut" = "קיצור: %@";
+"a11y.command.no.shortcut" = "אין קיצור מקלדת";
+"a11y.navigation.prev" = "פריט קודם";
+"a11y.navigation.next" = "פריט הבא";
+"a11y.navigation.back" = "חזרה";
+"a11y.overlay.drag" = "גרור למיקום מחדש";
+"a11y.slider.value" = "%@ אחוזים";
+
+// MARK: - RTL Languages
+"language.arabic" = "ערבית";
+"language.hebrew" = "עברית";
+
+// MARK: - Relative Time
+"time.just.now" = "עכשיו";
+"time.today" = "היום";
+"time.yesterday" = "אתמול";
+"time.days.ago" = "לפני %d ימים";
+"time.week.ago" = "לפני שבוע";
+"time.weeks.ago" = "לפני %d שבועות";
+"time.month.ago" = "לפני חודש";
+"time.months.ago" = "לפני %d חודשים";
+
+// MARK: - Numbers and Units
+"unit.bytes" = "%@ בתים";
+"unit.kb" = "%@ ק״ב";
+"unit.mb" = "%@ מ״ב";
+"unit.gb" = "%@ ג״ב";
+"unit.lines" = "%d שורות";
+"unit.items" = "%d פריטים";
+"unit.percent" = "%d%%";
+
+// MARK: - Status Messages
+"status.connected" = "מחובר";
+"status.disconnected" = "מנותק";
+"status.connecting" = "מתחבר...";
+"status.idle" = "לא פעיל";
+"status.running" = "פועל";
+"status.completed" = "הושלם";
+"status.failed" = "נכשל";
+"status.pending" = "ממתין";
+
+// MARK: - Validation
+"validation.required" = "שדה זה נדרש";
+"validation.invalid.path" = "נתיב קובץ לא חוקי";
+"validation.invalid.port" = "פורט חייב להיות בין 1 ל-65535";
+"validation.invalid.hostname" = "שם מארח לא חוקי";
+"validation.file.not.exists" = "קובץ לא קיים";
+
+// MARK: - Confirmation Dialogs
+"confirm.delete.snippet" = "האם אתה בטוח שברצונך למחוק קטע קוד זה?";
+"confirm.delete.connection" = "האם אתה בטוח שברצונך למחוק חיבור זה?";
+"confirm.delete.bookmark" = "האם אתה בטוח שברצונך למחוק סימנייה זו?";
+"confirm.clear.history" = "האם אתה בטוח שברצונך לנקות את היסטוריית הלוח?";
+"confirm.action.cannot.undo" = "לא ניתן לבטל פעולה זו.";
+
+// MARK: - General Settings (Additional)
+"settings.general.startup" = "הפעלה";
+"settings.general.launchAtLogin" = "הפעל בעת התחברות";
+"settings.general.launchAtLogin.help" = "הפעל את Chau7 אוטומטית בעת התחברות ל-Mac";
+
+// Settings Profiles
+"settings.general.profiles" = "פרופילי הגדרות";
+"settings.general.profiles.description" = "צור פרופילים בעלי שם לתהליכי עבודה שונים (עבודה, אישי, מצגת)";
+"settings.general.profiles.active" = "פעיל:";
+"settings.general.profiles.activeLabel" = "(פעיל)";
+"settings.general.profiles.save" = "שמור הגדרות נוכחיות";
+"settings.general.profiles.create" = "צור פרופיל חדש...";
+"settings.general.profiles.createTitle" = "צור פרופיל חדש";
+"settings.general.profiles.namePlaceholder" = "שם הפרופיל";
+"settings.general.profiles.chooseIcon" = "בחר סמל";
+"settings.general.profiles.createButton" = "צור פרופיל";
+"settings.general.profiles.created" = "נוצר";
+"settings.general.profiles.delete.title" = "למחוק פרופיל?";
+"settings.general.profiles.delete.message" = "האם אתה בטוח שברצונך למחוק פרופיל זה? לא ניתן לבטל פעולה זו.";
+
+// iCloud Sync
+"settings.general.icloud" = "סנכרון iCloud";
+"settings.general.icloud.sync" = "סנכרן דרך iCloud";
+"settings.general.icloud.sync.help" = "שמור על הגדרות Chau7 מסונכרנות בכל מחשבי ה-Mac שלך";
+"settings.general.icloud.syncNow" = "סנכרן עכשיו";
+"settings.general.icloud.restore" = "שחזר מ-iCloud";
+
+// Settings Backup
+"settings.general.backup" = "גיבוי הגדרות";
+"settings.general.backup.description" = "ייצא את ההגדרות לקובץ JSON או ייבא מגיבוי.";
+"settings.general.backup.export" = "ייצא הגדרות...";
+"settings.general.backup.import" = "ייבא הגדרות...";
+
+// Status
+"settings.general.status" = "סטטוס";
+"settings.general.status.notifications" = "התראות";
+"settings.general.status.eventMonitoring" = "ניטור אירועים";
+"settings.general.status.historyMonitoring" = "ניטור היסטוריה";
+"settings.general.status.terminalMonitoring" = "ניטור טרמינל";
+"status.active" = "פעיל";
+"status.paused" = "מושהה";
+
+// Actions
+"settings.general.actions" = "פעולות";
+"settings.general.actions.showOverlay" = "הצג שכבת-על";
+"settings.general.actions.resetWindowPositions" = "אפס מיקומי חלונות";
+"settings.general.actions.debugConsole" = "קונסולת ניפוי";
+
+// Reset
+"settings.general.reset" = "איפוס";
+"settings.general.reset.all" = "אפס את כל ההגדרות לברירת מחדל";
+"settings.general.reset.confirm.title" = "לאפס את כל ההגדרות?";
+"settings.general.reset.confirm.message" = "פעולה זו תאפס את כל הגדרות Chau7 לערכי ברירת המחדל. לא ניתן לבטל פעולה זו.";
+
+// Common Buttons
+"button.cancel" = "ביטול";
+"button.reset" = "איפוס";
+"button.delete" = "מחק";
+"button.load" = "טען";
+
+// =============================================================================
+// MARK: - תרגום תצוגות הגדרות
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// MARK: הגדרות מראה
+// -----------------------------------------------------------------------------
+
+// תצוגה מקדימה חיה
+"settings.appearance.livePreview" = "תצוגה מקדימה חיה";
+"settings.appearance.livePreview.sampleText" = "דג סקרן שט בים מאוכזב ולפתע מצא חברה. 🦊";
+"settings.appearance.livePreview.code.function" = "פונקציה";
+"settings.appearance.livePreview.code.hello" = "שלום, טרמינל!";
+
+// מקטע גופן
+"settings.appearance.font" = "גופן";
+"settings.appearance.font.family" = "משפחת גופן";
+"settings.appearance.font.family.help" = "גופנים חד-רוחב עובדים הכי טוב לפלט טרמינל";
+"settings.appearance.font.size" = "גודל גופן";
+"settings.appearance.font.size.help" = "גודל בנקודות (8-32)";
+"settings.appearance.font.defaultZoom" = "זום ברירת מחדל";
+"settings.appearance.font.defaultZoom.help" = "רמת זום ברירת מחדל לכרטיסיות חדשות";
+
+// מקטע ערכת צבעים
+"settings.appearance.colorScheme" = "ערכת צבעים";
+"settings.appearance.colorScheme.scheme" = "ערכת צבעים";
+"settings.appearance.colorScheme.scheme.help" = "פלטת צבעי הטרמינל";
+"settings.appearance.colorScheme.opacity" = "שקיפות חלון";
+"settings.appearance.colorScheme.opacity.help" = "רמת שקיפות החלון";
+
+// מקטע חלון
+"settings.appearance.window" = "חלון";
+"settings.appearance.window.vibrancy" = "חיוניות חלון";
+"settings.appearance.window.vibrancy.help" = "אפקט זכוכית מט מאחורי החלון";
+
+// מקטע ערכת נושא מערכת
+"settings.appearance.systemTheme" = "ערכת נושא מערכת";
+"settings.appearance.systemTheme.appTheme" = "ערכת נושא אפליקציה";
+"settings.appearance.systemTheme.appTheme.help" = "בהיר, כהה, או עקוב אחר הגדרת המערכת";
+"settings.appearance.systemTheme.option.system" = "מערכת";
+"settings.appearance.systemTheme.option.light" = "בהיר";
+"settings.appearance.systemTheme.option.dark" = "כהה";
+
+// מקטע עיצוב כרטיסיות AI
+"settings.appearance.aiTabTheming" = "עיצוב כרטיסיות AI";
+"settings.appearance.aiTabTheming.autoTheme" = "עיצוב אוטומטי לכרטיסיות AI";
+"settings.appearance.aiTabTheming.autoTheme.help" = "צבע כרטיסיות אוטומטית לפי כלי AI מזוהה";
+"settings.appearance.aiTabTheming.claudeColor" = "צבע כרטיסית Claude";
+"settings.appearance.aiTabTheming.codexColor" = "צבע כרטיסית Codex";
+"settings.appearance.aiTabTheming.geminiColor" = "צבע כרטיסית Gemini";
+"settings.appearance.aiTabTheming.copilotColor" = "צבע כרטיסית Copilot";
+"settings.appearance.aiTabTheming.resetColors" = "אפס לברירת מחדל";
+
+// מקטע שיפורי תצוגה
+"settings.appearance.displayEnhancements" = "שיפורי תצוגה";
+"settings.appearance.displayEnhancements.syntaxHighlighting" = "הדגשת תחביר";
+"settings.appearance.displayEnhancements.syntaxHighlighting.help" = "צבע בלוקי קוד בפלט הטרמינל";
+"settings.appearance.displayEnhancements.lineTimestamps" = "חותמות זמן לשורות";
+"settings.appearance.displayEnhancements.lineTimestamps.help" = "הצג חותמות זמן לכל שורה בטרמינל";
+"settings.appearance.displayEnhancements.jsonPrettyPrint" = "עיצוב JSON";
+"settings.appearance.displayEnhancements.jsonPrettyPrint.help" = "עצב פלט JSON עם הזחה";
+
+// -----------------------------------------------------------------------------
+// MARK: הגדרות טרמינל
+// -----------------------------------------------------------------------------
+
+// מקטע מעטפת
+"settings.terminal.shell" = "מעטפת";
+"settings.terminal.shell.shell" = "מעטפת";
+"settings.terminal.shell.help" = "המעטפת לשימוש בהפעלות טרמינל חדשות";
+"settings.terminal.shell.startupCommand" = "פקודת הפעלה";
+"settings.terminal.shell.startupCommand.help" = "פקודה להרצה כשהטרמינל מתחיל (למשל: neofetch)";
+"settings.terminal.shell.startupCommand.placeholder" = "למשל: neofetch, fortune | cowsay";
+
+// מקטע סמן
+"settings.terminal.cursor" = "סמן";
+"settings.terminal.cursor.style" = "סגנון סמן";
+"settings.terminal.cursor.style.help" = "צורת סמן הטרמינל";
+"settings.terminal.cursor.style.block" = "בלוק";
+"settings.terminal.cursor.style.underline" = "קו תחתון";
+"settings.terminal.cursor.style.bar" = "פס";
+"settings.terminal.cursor.blink" = "הבהוב סמן";
+"settings.terminal.cursor.blink.help" = "הנפש את הסמן עם הבהוב";
+
+// מקטע גלילה אחורה
+"settings.terminal.scrollback" = "גלילה אחורה";
+"settings.terminal.scrollback.lines" = "שורות גלילה אחורה";
+"settings.terminal.scrollback.lines.help" = "מספר השורות לשמור בחוצץ הגלילה";
+
+// מקטע פעמון
+"settings.terminal.bell" = "פעמון";
+"settings.terminal.bell.sound" = "צליל פעמון";
+"settings.terminal.bell.sound.help" = "צליל להשמעה לפעמון הטרמינל";
+"settings.terminal.bell.sound.none" = "ללא";
+"settings.terminal.bell.sound.default" = "ברירת מחדל";
+"settings.terminal.bell.sound.subtle" = "עדין";
+"settings.terminal.bell.visualBell" = "פעמון חזותי";
+"settings.terminal.bell.visualBell.help" = "הבהב מסך במקום להשמיע צליל";
+
+// מקטע ביצועים
+"settings.terminal.performance" = "ביצועים";
+"settings.terminal.performance.metalRenderer" = "מעבד Metal";
+"settings.terminal.performance.metalRenderer.help" = "השתמש בהאצת GPU לעיבוד (מומלץ)";
+"settings.terminal.performance.reducedMotion" = "תנועה מופחתת";
+"settings.terminal.performance.reducedMotion.help" = "צמצם הנפשות לביצועים טובים יותר";
+
+// -----------------------------------------------------------------------------
+// MARK: הגדרות כרטיסיות
+// -----------------------------------------------------------------------------
+
+// מקטע התנהגות
+"settings.tabs.behavior" = "התנהגות";
+"settings.tabs.behavior.lastTabClose" = "בסגירת כרטיסייה אחרונה";
+"settings.tabs.behavior.lastTabClose.help" = "מה קורה כשסוגרים את הכרטיסייה האחרונה";
+"settings.tabs.behavior.lastTabClose.closeWindow" = "סגור חלון";
+"settings.tabs.behavior.lastTabClose.newTab" = "פתח כרטיסייה חדשה";
+"settings.tabs.behavior.lastTabClose.keepOpen" = "השאר חלון פתוח";
+"settings.tabs.behavior.newTabDirectory" = "תיקיית כרטיסייה חדשה";
+"settings.tabs.behavior.newTabDirectory.help" = "פתח כרטיסיות חדשות בתיקיית הכרטיסייה הנוכחית";
+"settings.tabs.behavior.confirmClose" = "אשר סגירה";
+"settings.tabs.behavior.confirmClose.help" = "הצג אישור בסגירת כרטיסיות עם תהליכים פעילים";
+"settings.tabs.newTabPosition" = "מיקום לשונית חדשה";
+"settings.tabs.newTabPosition.help" = "היכן להוסיף לשוניות חדשות";
+"settings.tabs.atEnd" = "בסוף";
+"settings.tabs.afterCurrent" = "אחרי הנוכחית";
+"settings.tabs.newTabsUseCurrentDirectory" = "לשוניות חדשות משתמשות בתיקייה הנוכחית";
+"settings.tabs.newTabsUseCurrentDirectory.help" = "פתח לשוניות חדשות בתיקייה של הלשונית הפעילה (הלשונית הראשונה עדיין משתמשת בתיקיית ברירת המחדל)";
+"settings.tabs.lastTabClose" = "סגירת הלשונית האחרונה";
+"settings.tabs.lastTabClose.help" = "בחר מה קורה בעת סגירת הלשונית האחרונה";
+
+// מקטע מראה
+"settings.tabs.appearance" = "מראה";
+"settings.tabs.appearance.showTabBar" = "הצג סרגל כרטיסיות";
+"settings.tabs.appearance.showTabBar.help" = "תמיד הצג סרגל כרטיסיות, גם עם כרטיסייה אחת";
+"settings.tabs.appearance.tabPosition" = "מיקום כרטיסיות";
+"settings.tabs.appearance.tabPosition.help" = "מיקום סרגל הכרטיסיות";
+"settings.tabs.appearance.tabPosition.top" = "למעלה";
+"settings.tabs.appearance.tabPosition.bottom" = "למטה";
+"settings.tabs.appearance.showTabIcons" = "הצג אייקוני כרטיסיות";
+"settings.tabs.appearance.showTabIcons.help" = "הצג אייקונים בכרטיסיות (למשל: מחווני AI)";
+"settings.tabs.alwaysShowTabBar" = "הצג תמיד את סרגל הלשוניות";
+"settings.tabs.alwaysShowTabBar.help" = "הצג את סרגל הלשוניות גם כשיש לשונית אחת בלבד";
+"settings.tabs.lastCommandBadge" = "תג הפקודה האחרונה";
+"settings.tabs.lastCommandBadge.help" = "הצג את הפקודה האחרונה באזור המצב של הלשונית";
+"settings.tabs.aiProductIcons" = "סמלי מוצרי בינה מלאכותית";
+"settings.tabs.aiProductIcons.help" = "הצג סמלי SF Symbol עבור כלי CLI של בינה מלאכותית שזוהו בלשוניות";
+
+// מקטע ניווט מקלדת
+"settings.tabs.keyboardNavigation" = "ניווט מקלדת";
+"settings.tabs.newTab" = "לשונית חדשה";
+"settings.tabs.closeTab" = "סגירת לשונית";
+"settings.tabs.nextTab" = "הלשונית הבאה";
+"settings.tabs.previousTab" = "הלשונית הקודמת";
+"settings.tabs.switchToTab" = "מעבר ללשונית 1-9";
+"settings.tabs.renameTab" = "שינוי שם לשונית";
+"settings.tabs.keyboardNavigation.cmdNumber" = "Cmd+מספר להחלפת כרטיסיות";
+"settings.tabs.keyboardNavigation.cmdNumber.help" = "השתמש ב-Cmd+1-9 למעבר בין כרטיסיות";
+"settings.tabs.keyboardNavigation.cmdBrackets" = "Cmd+[ ] לניווט";
+"settings.tabs.keyboardNavigation.cmdBrackets.help" = "השתמש ב-Cmd+[ ו-Cmd+] להחלפת כרטיסיות";
+
+// -----------------------------------------------------------------------------
+// MARK: הגדרות קלט
+// -----------------------------------------------------------------------------
+
+// מקטע מקלדת
+"settings.input.keyboard" = "מקלדת";
+"settings.input.keyboard.optionAsMeta" = "Option כמקש Meta";
+"settings.input.keyboard.optionAsMeta.help" = "השתמש במקש Option כ-Meta ליישומי טרמינל";
+"settings.input.keyboard.deleteBackward" = "התנהגות מקש מחיקה";
+"settings.input.keyboard.deleteBackward.help" = "שלח backspace או תו מחיקה";
+
+// מקטע קיצורי מקלדת
+"settings.input.shortcuts" = "קיצורי מקלדת";
+"settings.input.shortcuts.customize" = "התאם קיצורים...";
+"settings.input.shortcuts.customize.help" = "הגדר קיצורים גלובליים וספציפיים לאפליקציה";
+
+// מקטע עכבר
+"settings.input.mouse" = "עכבר";
+"settings.input.mouse.copyOnSelect" = "העתק בבחירה";
+"settings.input.mouse.copyOnSelect.help" = "העתק אוטומטית טקסט נבחר ללוח";
+"settings.input.mouse.focusFollowsMouse" = "פוקוס עוקב אחר עכבר";
+"settings.input.mouse.focusFollowsMouse.help" = "התמקד בחלונית מתחת לסמן העכבר";
+"settings.input.mouse.cmdClickOpens" = "Cmd+לחיצה פותח נתיבים";
+"settings.input.mouse.cmdClickOpens.help" = "פתח נתיבי קבצים וכתובות URL עם Cmd+לחיצה";
+"settings.input.mouse.urlHandler" = "מטפל URL";
+"settings.input.mouse.urlHandler.help" = "יישום לפתיחת כתובות URL";
+"settings.input.mouse.urlHandler.default" = "דפדפן ברירת מחדל";
+
+// מקטע שידור
+"settings.input.broadcast" = "שידור";
+"settings.input.broadcast.mode" = "שדר קלט";
+"settings.input.broadcast.mode.help" = "שלח הקשות למספר כרטיסיות בו-זמנית";
+
+// -----------------------------------------------------------------------------
+// MARK: הגדרות פרודוקטיביות
+// -----------------------------------------------------------------------------
+
+// מקטע קטעי קוד
+"settings.productivity.snippets" = "קטעי קוד";
+"settings.productivity.snippets.description" = "תבניות טקסט מהירות עם הרחבה אופציונלית";
+"settings.productivity.snippets.manage" = "נהל קטעי קוד...";
+"settings.productivity.snippets.count" = "%d קטעי קוד";
+
+// מקטע היסטוריית לוח
+"settings.productivity.clipboard" = "היסטוריית לוח";
+"settings.productivity.clipboard.enabled" = "אפשר היסטוריית לוח";
+"settings.productivity.clipboard.enabled.help" = "שמור היסטוריה של טקסט מועתק";
+"settings.productivity.clipboard.maxItems" = "מקסימום פריטים";
+"settings.productivity.clipboard.maxItems.help" = "מספר פריטים לשמור בהיסטוריה";
+"settings.productivity.clipboard.clearHistory" = "נקה היסטוריה";
+"settings.productivity.clipboard.clearHistory.confirm.title" = "לנקות היסטוריית לוח?";
+"settings.productivity.clipboard.clearHistory.confirm.message" = "פעולה זו תסיר את כל הפריטים מהיסטוריית הלוח.";
+
+// מקטע סימניות
+"settings.productivity.bookmarks" = "סימניות";
+"settings.productivity.bookmarks.enabled" = "אפשר סימניות";
+"settings.productivity.bookmarks.enabled.help" = "שמור ושחזר מיקומי טרמינל";
+
+// מקטע חיפוש
+"settings.productivity.search" = "חיפוש";
+"settings.productivity.search.semantic" = "חיפוש סמנטי";
+"settings.productivity.search.semantic.help" = "חפש עם מודעות לפקודות";
+"settings.productivity.search.caseSensitive" = "תלוי רישיות כברירת מחדל";
+"settings.productivity.search.caseSensitive.help" = "רגישות לרישיות ברירת מחדל לחיפוש";
+"settings.productivity.search.regex" = "Regex כברירת מחדל";
+"settings.productivity.search.regex.help" = "אפשר חיפוש ביטויים רגולריים כברירת מחדל";
+"settings.productivity.search.wrapAround" = "עטוף מסביב";
+"settings.productivity.search.wrapAround.help" = "המשך חיפוש מההתחלה כשמגיעים לסוף";
+
+// -----------------------------------------------------------------------------
+// MARK: הגדרות חלונות
+// -----------------------------------------------------------------------------
+
+// מקטע חלון שכבת-על
+"settings.windows.overlay" = "חלון שכבת-על";
+"settings.windows.overlay.enabled" = "אפשר שכבת-על";
+"settings.windows.overlay.enabled.help" = "הצג חלון שכבת-על צף";
+"settings.windows.overlay.opacity" = "שקיפות שכבת-על";
+"settings.windows.overlay.opacity.help" = "שקיפות חלון שכבת-העל";
+
+// מקטע טרמינל נפתח
+"settings.windows.dropdown" = "טרמינל נפתח";
+"settings.windows.dropdown.enabled" = "אפשר נפתח";
+"settings.windows.dropdown.enabled.help" = "טרמינל נפתח בסגנון Quake מראש המסך";
+"settings.windows.dropdown.hotkey" = "קיצור גלובלי";
+"settings.windows.dropdown.hotkey.help" = "קיצור מקלדת להחלפת הנפתח";
+"settings.windows.dropdown.height" = "גובה נפתח";
+"settings.windows.dropdown.height.help" = "גובה הנפתח כאחוז מהמסך";
+"settings.windows.dropdown.animation" = "הנפשה";
+"settings.windows.dropdown.animation.help" = "הנפש הופעת נפתח";
+
+// מקטע חלוניות מפוצלות
+"settings.windows.splitPanes" = "חלוניות מפוצלות";
+"settings.windows.splitPanes.enabled" = "אפשר חלוניות מפוצלות";
+"settings.windows.splitPanes.enabled.help" = "אפשר פיצול טרמינל לחלוניות מרובות";
+"settings.windows.splitPanes.focusHighlight" = "הדגשת פוקוס";
+"settings.windows.splitPanes.focusHighlight.help" = "הדגש את גבול החלונית הממוקדת";
+
+// -----------------------------------------------------------------------------
+// MARK: הגדרות אינטגרציית AI
+// -----------------------------------------------------------------------------
+
+// מקטע זיהוי CLI של AI
+"settings.ai.detection" = "זיהוי CLI של AI";
+"settings.ai.detection.enabled" = "אפשר זיהוי AI";
+"settings.ai.detection.enabled.help" = "זהה אוטומטית כלי CLI של AI בטרמינל";
+"settings.ai.detection.claude" = "זהה Claude";
+"settings.ai.detection.claude.help" = "זהה Claude CLI ו-Claude Code";
+"settings.ai.detection.codex" = "זהה Codex";
+"settings.ai.detection.codex.help" = "זהה OpenAI Codex CLI";
+"settings.ai.detection.gemini" = "זהה Gemini";
+"settings.ai.detection.gemini.help" = "זהה Google Gemini CLI";
+"settings.ai.detection.copilot" = "זהה Copilot";
+"settings.ai.detection.copilot.help" = "זהה GitHub Copilot CLI";
+
+// מקטע כללי זיהוי מותאמים
+"settings.ai.customDetection" = "כללי זיהוי מותאמים";
+"settings.ai.customDetection.description" = "הוסף דפוסים מותאמים לזיהוי כלי AI";
+"settings.ai.customDetection.add" = "הוסף כלל";
+"settings.ai.customDetection.noRules" = "לא הוגדרו כללים מותאמים";
+"settings.ai.customDetection.pattern" = "דפוס";
+"settings.ai.customDetection.label" = "תווית";
+"settings.ai.customDetection.color" = "צבע";
+
+// מקטע התראות
+"settings.ai.notifications" = "התראות";
+"settings.ai.notifications.enabled" = "אפשר התראות";
+"settings.ai.notifications.enabled.help" = "הצג התראות לאירועי AI";
+"settings.ai.notifications.sound" = "צליל התראה";
+"settings.ai.notifications.sound.help" = "השמע צליל עם התראות";
+"settings.ai.notifications.taskComplete" = "משימה הושלמה";
+"settings.ai.notifications.taskComplete.help" = "התרע כשמשימת AI מסתיימת";
+"settings.ai.notifications.error" = "בשגיאה";
+"settings.ai.notifications.error.help" = "התרע כש-AI נתקל בשגיאה";
+"settings.ai.notifications.idle" = "בהמתנה";
+"settings.ai.notifications.idle.help" = "התרע כש-AI מחכה לקלט";
+
+// מקטע פילטרי התראות
+"settings.ai.filters" = "פילטרי התראות";
+"settings.ai.filters.description" = "בחר אילו אירועים מפעילים התראות";
+"settings.ai.filters.toolUse" = "שימוש בכלים";
+"settings.ai.filters.toolUse.help" = "התרע על שימוש בכלים (קריאת קבצים, כתיבה וכו')";
+"settings.ai.filters.thinking" = "חשיבה";
+"settings.ai.filters.thinking.help" = "התרע כש-AI מעבד";
+"settings.ai.filters.response" = "תגובה";
+"settings.ai.filters.response.help" = "התרע על תגובות AI";
+
+// Notification Trigger Catalog
+"notifications.source.eventsLog" = "יומן אירועי AI";
+"notifications.source.terminalSession" = "סשן טרמינל";
+"notifications.source.historyMonitor" = "ניטור היסטוריה";
+"notifications.source.claudeCode" = "Claude Code";
+"notifications.source.app" = "יישום";
+
+"notifications.trigger.eventsLog.finished.label" = "המשימה הושלמה";
+"notifications.trigger.eventsLog.finished.description" = "אירוע AI מדווח על השלמת משימה.";
+"notifications.trigger.eventsLog.failed.label" = "המשימה נכשלה";
+"notifications.trigger.eventsLog.failed.description" = "אירוע AI מדווח על כשל או שגיאה.";
+"notifications.trigger.eventsLog.needsValidation.label" = "דורש אימות";
+"notifications.trigger.eventsLog.needsValidation.description" = "אירוע AI מבקש בדיקה או אישור.";
+"notifications.trigger.eventsLog.permission.label" = "בקשת הרשאה";
+"notifications.trigger.eventsLog.permission.description" = "אירוע AI מבקש הרשאה להמשיך.";
+"notifications.trigger.eventsLog.toolComplete.label" = "הכלי הושלם";
+"notifications.trigger.eventsLog.toolComplete.description" = "אירוע AI מדווח על סיום כלי.";
+"notifications.trigger.eventsLog.sessionEnd.label" = "הסשן הסתיים";
+"notifications.trigger.eventsLog.sessionEnd.description" = "אירוע AI מדווח על סיום סשן.";
+"notifications.trigger.eventsLog.idle.label" = "הפקודה בהמתנה";
+"notifications.trigger.eventsLog.idle.description" = "אירוע AI מדווח על חוסר פעילות או המתנה לקלט.";
+"notifications.trigger.eventsLog.notification.label" = "התראה מותאמת";
+"notifications.trigger.eventsLog.notification.description" = "אירוע AI מבקש התראה מותאמת.";
+"notifications.trigger.eventsLog.other.label" = "אירועים אחרים";
+"notifications.trigger.eventsLog.other.description" = "כל סוגי אירועי AI אחרים שאינם ברשימה לעיל.";
+
+"notifications.trigger.terminalSession.finished.label" = "הפקודה בהמתנה";
+"notifications.trigger.terminalSession.finished.description" = "פקודת הטרמינל לא הפיקה פלט במשך זמן ההמתנה.";
+"notifications.trigger.terminalSession.failed.label" = "ה־Shell הסתיים";
+"notifications.trigger.terminalSession.failed.description" = "תהליך ה־Shell של הטרמינל הסתיים.";
+
+"notifications.trigger.historyMonitor.idle.label" = "היסטוריה בהמתנה";
+"notifications.trigger.historyMonitor.idle.description" = "אין רשומות היסטוריה חדשות במשך זמן ההמתנה.";
+
+"notifications.trigger.claudeCode.finished.label" = "התגובה הושלמה";
+"notifications.trigger.claudeCode.finished.description" = "Claude Code סיים להגיב בסשן.";
+"notifications.trigger.claudeCode.permission.label" = "בקשת הרשאה";
+"notifications.trigger.claudeCode.permission.description" = "Claude Code ממתין להרשאה להמשיך.";
+"notifications.trigger.claudeCode.idle.label" = "הסשן בהמתנה";
+"notifications.trigger.claudeCode.idle.description" = "הסשן של Claude Code נראה בהמתנה.";
+
+"notifications.trigger.app.info.label" = "התראת בדיקה";
+"notifications.trigger.app.info.description" = "התראת בדיקה ידנית מההגדרות.";
+
+// מקטע ניטור אירועים
+"settings.ai.monitoring" = "ניטור אירועים";
+"settings.ai.monitoring.realtime" = "ניטור בזמן אמת";
+"settings.ai.monitoring.realtime.help" = "נטר אירועי AI בזמן שהם קורים";
+"settings.ai.monitoring.logEvents" = "תעד אירועים";
+"settings.ai.monitoring.logEvents.help" = "תעד אירועי AI בקובץ יומן";
+
+// -----------------------------------------------------------------------------
+// MARK: הגדרות יומנים
+// -----------------------------------------------------------------------------
+
+// מקטע יומני היסטוריה
+"settings.logs.history" = "יומני היסטוריה";
+"settings.logs.history.claudePath" = "נתיב היסטוריית Claude";
+"settings.logs.history.claudePath.help" = "נתיב לקובץ היסטוריית Claude CLI";
+"settings.logs.history.codexPath" = "נתיב היסטוריית Codex";
+"settings.logs.history.codexPath.help" = "נתיב לקובץ היסטוריית Codex CLI";
+"settings.logs.history.browse" = "עיין...";
+"settings.logs.history.reset" = "אפס לברירת מחדל";
+
+// מקטע יומני טרמינל
+"settings.logs.terminal" = "יומני טרמינל";
+"settings.logs.terminal.claudePath" = "יומן טרמינל Claude";
+"settings.logs.terminal.claudePath.help" = "נתיב ליומן פלט טרמינל Claude";
+"settings.logs.terminal.codexPath" = "יומן טרמינל Codex";
+"settings.logs.terminal.codexPath.help" = "נתיב ליומן פלט טרמינל Codex";
+"settings.logs.terminal.normalize" = "נרמל פלט";
+"settings.logs.terminal.normalize.help" = "נקה תווי בקרה מהפלט";
+"settings.logs.terminal.ansiParsing" = "ניתוח ANSI";
+"settings.logs.terminal.ansiParsing.help" = "נתח והצג קודי צבע ANSI";
+
+// מקטע הפעלות פעילות
+"settings.logs.sessions" = "הפעלות פעילות";
+"settings.logs.sessions.description" = "הפעלות טרמינל מנוטרות כרגע";
+"settings.logs.sessions.noSessions" = "אין הפעלות פעילות";
+"settings.logs.sessions.refresh" = "רענן";
+
+// מקטע יומן אפליקציה
+"settings.logs.appLog" = "יומן אפליקציה";
+"settings.logs.appLog.path" = "נתיב קובץ יומן";
+"settings.logs.appLog.reveal" = "הצג ב-Finder";
+"settings.logs.appLog.clear" = "נקה יומן";
+"settings.logs.appLog.clear.confirm.title" = "לנקות יומן אפליקציה?";
+"settings.logs.appLog.clear.confirm.message" = "פעולה זו תנקה את כל רשומות היומן. לא ניתן לבטל פעולה זו.";
+
+// -----------------------------------------------------------------------------
+// MARK: הגדרות אודות
+// -----------------------------------------------------------------------------
+
+// מקטע פרטי גרסה
+"settings.about.version" = "פרטי גרסה";
+"settings.about.version.app" = "Chau7";
+"settings.about.version.number" = "גרסה";
+"settings.about.version.build" = "בניה";
+"settings.about.version.checkUpdates" = "בדוק עדכונים";
+
+// מקטע מידע מערכת
+"settings.about.system" = "מידע מערכת";
+"settings.about.system.os" = "macOS";
+"settings.about.system.architecture" = "ארכיטקטורה";
+
+// מקטע קישורים
+"settings.about.links" = "קישורים";
+"settings.about.links.website" = "אתר";
+"settings.about.links.github" = "GitHub";
+"settings.about.links.documentation" = "תיעוד";
+"settings.about.links.reportIssue" = "דווח על בעיה";
+"settings.about.links.releaseNotes" = "הערות שחרור";
+
+// מקטע תודות
+"settings.about.acknowledgments" = "תודות";
+"settings.about.acknowledgments.openSource" = "ספריות קוד פתוח";
+"settings.about.acknowledgments.contributors" = "תורמים";
+"settings.about.acknowledgments.viewLicenses" = "צפה ברישיונות";
+
+// זכויות יוצרים
+"settings.about.copyright" = "© 2024 Chau7. כל הזכויות שמורות.";

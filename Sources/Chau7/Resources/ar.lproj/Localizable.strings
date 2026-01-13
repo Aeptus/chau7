@@ -1,0 +1,1151 @@
+/* Chau7 Localizable Strings - Arabic */
+
+// MARK: - General
+"app.name" = "Chau7";
+"app.tagline" = "رفيق طرفية الذكاء الاصطناعي";
+"app.copyright" = "حقوق الطبع والنشر © 2024-2025. جميع الحقوق محفوظة.";
+
+// MARK: - Common Actions
+"action.ok" = "موافق";
+"action.cancel" = "إلغاء";
+"action.save" = "حفظ";
+"action.delete" = "حذف";
+"action.edit" = "تعديل";
+"action.add" = "إضافة";
+"action.remove" = "إزالة";
+"action.close" = "إغلاق";
+"action.done" = "تم";
+"action.reset" = "إعادة تعيين";
+"action.apply" = "تطبيق";
+"action.copy" = "نسخ";
+"action.paste" = "لصق";
+"action.cut" = "قص";
+"action.select.all" = "تحديد الكل";
+"action.clear" = "مسح";
+"action.search" = "بحث";
+"action.refresh" = "تحديث";
+"action.import" = "استيراد";
+"action.export" = "تصدير";
+
+// MARK: - Language Settings
+"language.title" = "اللغة";
+"language.system" = "افتراضي النظام";
+"language.restart.hint" = "قد تتطلب بعض التغييرات إعادة التشغيل";
+"settings.general.language" = "اللغة";
+"settings.general.language.label" = "لغة العرض";
+"settings.general.language.help" = "اختر لغة واجهة التطبيق";
+"settings.general.language.note" = "سيؤدي تغيير اللغة إلى تحديث الواجهة فوراً. قد تتطلب بعض عناصر النظام إعادة تشغيل التطبيق.";
+"settings.general.defaultDirectory" = "المجلد الافتراضي";
+"settings.general.defaultDirectory.help" = "مجلد البدء لعلامات تبويب الطرفية الجديدة";
+
+// MARK: - Settings Sections
+"settings.title" = "الإعدادات";
+"settings.general" = "عام";
+"settings.general.description" = "تفضيلات وسلوك التطبيق";
+"settings.appearance" = "المظهر";
+"settings.appearance.description" = "التخصيص المرئي والسمات";
+"settings.terminal" = "الطرفية";
+"settings.terminal.description" = "إعدادات الصدفة ومحاكي الطرفية";
+"settings.tabs" = "علامات التبويب";
+"settings.tabs.description" = "سلوك شريط التبويب والتنقل";
+"settings.input" = "الإدخال";
+"settings.input.description" = "إعدادات لوحة المفاتيح والفأرة";
+"settings.productivity" = "الإنتاجية";
+"settings.productivity.description" = "ميزات سير العمل والكفاءة";
+"settings.windows" = "النوافذ";
+"settings.windows.description" = "إدارة النوافذ والتخطيط";
+"settings.ai" = "تكامل الذكاء الاصطناعي";
+"settings.ai.description" = "اكتشاف CLI للذكاء الاصطناعي والإشعارات";
+"settings.logs" = "السجلات";
+"settings.logs.description" = "مراقبة السجلات والتاريخ";
+"settings.about" = "حول";
+"settings.about.description" = "معلومات الإصدار والشكر";
+
+// MARK: - General Settings
+"general.startup" = "بدء التشغيل";
+"general.launch.login" = "التشغيل عند تسجيل الدخول";
+"general.launch.login.help" = "تشغيل Chau7 تلقائياً عند تسجيل الدخول إلى Mac";
+"general.show.menubar" = "إظهار في شريط القوائم";
+"general.show.menubar.help" = "عرض أيقونة Chau7 في شريط قوائم النظام للوصول السريع";
+"general.show.dock" = "إظهار في Dock";
+"general.show.dock.help" = "عرض أيقونة Chau7 في Dock";
+"general.show.overlay.launch" = "إظهار التراكب عند التشغيل";
+"general.show.overlay.launch.help" = "إظهار تراكب الطرفية تلقائياً عند بدء Chau7";
+"general.restore.tabs" = "استعادة التبويبات عند التشغيل";
+"general.restore.tabs.help" = "تذكر واستعادة التبويبات المفتوحة عند إعادة تشغيل التطبيق";
+
+"general.updates" = "التحديثات";
+"general.check.updates" = "التحقق من التحديثات تلقائياً";
+"general.check.updates.help" = "التحقق الدوري من الإصدارات الجديدة من Chau7";
+
+"general.import.export" = "استيراد / تصدير الإعدادات";
+"general.import" = "استيراد الإعدادات";
+"general.export" = "تصدير الإعدادات";
+
+"general.status" = "الحالة";
+"general.status.notifications" = "الإشعارات";
+"general.status.event.monitoring" = "مراقبة الأحداث";
+"general.status.history.monitoring" = "مراقبة التاريخ";
+"general.status.terminal.monitoring" = "مراقبة الطرفية";
+"general.status.active" = "نشط";
+"general.status.paused" = "متوقف مؤقتاً";
+
+"general.actions" = "الإجراءات";
+"general.show.overlay" = "إظهار التراكب";
+"general.reset.positions" = "إعادة تعيين مواضع النوافذ";
+"general.debug.console" = "وحدة تحكم التصحيح";
+
+"general.reset" = "إعادة تعيين";
+"general.reset.all" = "إعادة تعيين جميع الإعدادات للافتراضي";
+"general.reset.confirm.title" = "إعادة تعيين جميع الإعدادات؟";
+"general.reset.confirm.message" = "سيؤدي هذا إلى إعادة تعيين جميع التفضيلات إلى قيمها الافتراضية. لا يمكن التراجع عن هذا الإجراء.";
+
+// MARK: - Appearance Settings
+"appearance.theme" = "السمة";
+"appearance.theme.light" = "فاتح";
+"appearance.theme.dark" = "داكن";
+"appearance.theme.system" = "النظام";
+"appearance.theme.help" = "اختر السمة المرئية للتطبيق";
+
+"appearance.font" = "الخط";
+"appearance.font.family" = "عائلة الخط";
+"appearance.font.family.help" = "اختر نوع خط الطرفية";
+"appearance.font.size" = "حجم الخط";
+"appearance.font.size.help" = "حجم نص الطرفية بالنقاط";
+"appearance.font.ligatures" = "الحروف المتصلة";
+"appearance.font.ligatures.help" = "تمكين الحروف المتصلة للخطوط التي تدعمها (مثل Fira Code)";
+
+"appearance.cursor" = "المؤشر";
+"appearance.cursor.style" = "نمط المؤشر";
+"appearance.cursor.style.block" = "كتلة";
+"appearance.cursor.style.underline" = "تسطير";
+"appearance.cursor.style.bar" = "شريط";
+"appearance.cursor.style.help" = "شكل مؤشر الطرفية";
+"appearance.cursor.blink" = "وميض المؤشر";
+"appearance.cursor.blink.help" = "تحريك المؤشر بتأثير الوميض";
+
+"appearance.colors" = "الألوان";
+"appearance.color.scheme" = "مخطط الألوان";
+"appearance.color.scheme.help" = "لوحة ألوان الطرفية";
+"appearance.background.opacity" = "شفافية الخلفية";
+"appearance.background.opacity.help" = "شفافية خلفية الطرفية (0-100%)";
+"appearance.blur.background" = "طمس الخلفية";
+"appearance.blur.background.help" = "تطبيق تأثير الطمس على المحتوى خلف الطرفية";
+
+"appearance.window" = "النافذة";
+"appearance.titlebar.style" = "نمط شريط العنوان";
+"appearance.titlebar.native" = "أصلي";
+"appearance.titlebar.minimal" = "بسيط";
+"appearance.titlebar.hidden" = "مخفي";
+"appearance.titlebar.help" = "مظهر شريط عنوان النافذة";
+"appearance.vibrancy" = "حيوية النافذة";
+"appearance.vibrancy.help" = "تمكين تأثير الحيوية على النافذة";
+
+"appearance.reset" = "إعادة تعيين المظهر للافتراضي";
+
+// MARK: - Terminal Settings
+"terminal.shell" = "الصدفة";
+"terminal.shell.default" = "الصدفة الافتراضية";
+"terminal.shell.default.help" = "استخدام صدفة النظام الافتراضية (من /etc/passwd)";
+"terminal.shell.custom" = "صدفة مخصصة";
+"terminal.shell.custom.help" = "تحديد مسار صدفة مخصص";
+"terminal.shell.path" = "مسار الصدفة";
+"terminal.shell.path.help" = "المسار الكامل للملف التنفيذي للصدفة";
+"terminal.current.shell" = "الصدفة الحالية";
+"terminal.startup.command" = "أمر بدء التشغيل";
+"terminal.startup.command.help" = "أمر يتم تشغيله تلقائياً عند بدء جلسة طرفية جديدة";
+
+"terminal.scrollback" = "التمرير للخلف";
+"terminal.scrollback.lines" = "أسطر التمرير للخلف";
+"terminal.scrollback.lines.help" = "الحد الأقصى لعدد الأسطر للاحتفاظ بها في سجل التمرير";
+"terminal.unlimited.scrollback" = "تمرير غير محدود";
+"terminal.unlimited.scrollback.help" = "الاحتفاظ بجميع مخرجات الطرفية (قد يستخدم ذاكرة أكثر)";
+
+"terminal.behavior" = "السلوك";
+"terminal.bell" = "جرس الطرفية";
+"terminal.bell.help" = "تشغيل صوت عند استلام حرف جرس الطرفية";
+"terminal.visual.bell" = "جرس مرئي";
+"terminal.visual.bell.help" = "وميض الشاشة بدلاً من تشغيل صوت للجرس";
+"terminal.focus.follows.mouse" = "التركيز يتبع الفأرة";
+"terminal.focus.follows.mouse.help" = "التركيز تلقائياً على لوحات الطرفية عند التمرير فوقها";
+
+"terminal.encoding" = "الترميز";
+"terminal.encoding.utf8" = "ترميز UTF-8";
+"terminal.encoding.utf8.help" = "استخدام ترميز حروف UTF-8 لإدخال/إخراج الطرفية";
+
+"terminal.reset" = "إعادة تعيين الطرفية للافتراضي";
+
+// MARK: - Tabs Settings
+"tabs.behavior" = "السلوك";
+"tabs.new.position" = "موضع التبويب الجديد";
+"tabs.new.position.help" = "أين يتم إدراج التبويبات المنشأة حديثاً";
+"tabs.new.position.end" = "في النهاية";
+"tabs.new.position.after" = "بعد الحالي";
+"tabs.last.close" = "إغلاق آخر تبويب";
+"tabs.last.close.help" = "اختر ما يحدث عند إغلاق التبويب الأخير";
+"tabs.last.close.window" = "إغلاق النافذة";
+"tabs.last.close.new" = "فتح تبويب جديد";
+"tabs.last.close.nothing" = "لا شيء";
+"tabs.always.show" = "إظهار شريط التبويب دائماً";
+"tabs.always.show.help" = "إظهار شريط التبويب حتى عندما يكون هناك تبويب واحد فقط";
+
+"tabs.appearance" = "المظهر";
+"tabs.command.badge" = "شارة آخر أمر";
+"tabs.command.badge.help" = "إظهار آخر أمر تم تنفيذه في منطقة حالة التبويب";
+"tabs.ai.icons" = "أيقونات منتجات الذكاء الاصطناعي";
+"tabs.ai.icons.help" = "عرض أيقونات SF Symbol لواجهات CLI المكتشفة في التبويبات";
+
+"tabs.keyboard" = "التنقل بلوحة المفاتيح";
+"tabs.shortcut.new" = "تبويب جديد";
+"tabs.shortcut.close" = "إغلاق التبويب";
+"tabs.shortcut.next" = "التبويب التالي";
+"tabs.shortcut.prev" = "التبويب السابق";
+"tabs.shortcut.switch" = "التبديل إلى التبويب 1-9";
+"tabs.shortcut.rename" = "إعادة تسمية التبويب";
+
+// MARK: - Input Settings
+"input.keyboard" = "لوحة المفاتيح";
+"input.keybinding.preset" = "إعداد مسبق لروابط المفاتيح";
+"input.keybinding.preset.help" = "اختر إعداد اختصارات لوحة المفاتيح الذي يناسب سير عملك";
+"input.keybinding.default" = "افتراضي";
+"input.keybinding.vim" = "Vim";
+"input.keybinding.emacs" = "Emacs";
+
+"input.shortcuts" = "اختصارات لوحة المفاتيح";
+"input.shortcuts.hint" = "انقر على اختصار لتخصيصه. سيتم تمييز التعارضات.";
+"input.shortcuts.reset" = "إعادة تعيين الاختصارات للافتراضي";
+
+"input.mouse" = "الفأرة";
+"input.copy.select" = "نسخ عند التحديد";
+"input.copy.select.help" = "نسخ النص تلقائياً إلى الحافظة عند تحديده بالفأرة";
+"input.cmd.click" = "Cmd+النقر على المسارات";
+"input.cmd.click.help" = "فتح مسارات الملفات في المحرر عند الضغط على Cmd والنقر عليها في الطرفية";
+"input.url.handler" = "معالج عناوين URL";
+"input.url.handler.help" = "اختر المتصفح الذي يفتح عند Cmd+النقر على عنوان URL";
+"input.default.editor" = "المحرر الافتراضي";
+"input.default.editor.help" = "المحرر لفتح الملفات (اتركه فارغاً للافتراضي أو $EDITOR)";
+"input.option.click" = "Option+النقر للمؤشر";
+"input.option.click.help" = "نقل المؤشر إلى الموضع المنقور عليه بالضغط على Option والنقر (مثل iTerm2)";
+
+"input.broadcast" = "البث";
+"input.broadcast.enable" = "بث الإدخال";
+"input.broadcast.enable.help" = "إرسال إدخال لوحة المفاتيح إلى جميع التبويبات المفتوحة في نفس الوقت";
+
+"input.reset" = "إعادة تعيين الإدخال للافتراضي";
+
+// MARK: - Productivity Settings
+"productivity.completions" = "الإكمال";
+"productivity.autocomplete" = "إظهار الإكمال التلقائي";
+"productivity.autocomplete.help" = "عرض اقتراحات إكمال الأوامر أثناء الكتابة";
+"productivity.inline.suggestions" = "اقتراحات مضمنة";
+"productivity.inline.suggestions.help" = "إظهار تلميحات الإكمال مباشرة في سطر الأوامر";
+
+"productivity.history" = "التاريخ";
+"productivity.history.search" = "بحث التاريخ";
+"productivity.history.search.help" = "تمكين البحث العكسي Ctrl+R عبر تاريخ الأوامر";
+"productivity.history.suggestions" = "اقتراحات التاريخ";
+"productivity.history.suggestions.help" = "اقتراح أوامر من التاريخ أثناء الكتابة";
+
+"productivity.clipboard" = "الحافظة";
+"productivity.clipboard.history" = "تاريخ الحافظة";
+"productivity.clipboard.history.help" = "تذكر النص المنسوخ والسماح بالصق من التاريخ";
+"productivity.clipboard.access" = "الوصول باستخدام";
+"productivity.clipboard.max" = "الحد الأقصى لعناصر التاريخ";
+"productivity.clipboard.max.help" = "الحد الأقصى لعدد إدخالات الحافظة للتذكر";
+
+"productivity.snippets" = "القصاصات";
+"productivity.snippets.description" = "قصاصات نصية سريعة مع توسيع الرموز";
+"productivity.snippets.count" = "%d قصاصة متاحة";
+"productivity.snippets.invoke" = "استدعاء باستخدام";
+"productivity.snippets.manage" = "إدارة القصاصات";
+
+"productivity.search" = "البحث";
+"productivity.semantic.search" = "البحث الدلالي";
+"productivity.semantic.search.help" = "تمكين البحث المدرك للأوامر عبر تاريخ الطرفية";
+"productivity.case.sensitive" = "حساسية الحالة الافتراضية";
+"productivity.case.sensitive.help" = "بدء جلسات بحث جديدة مع مطابقة حساسة لحالة الأحرف";
+"productivity.regex.default" = "Regex افتراضي";
+"productivity.regex.default.help" = "بدء جلسات بحث جديدة مع تمكين مطابقة التعبيرات النمطية";
+"productivity.shortcut.find" = "بحث";
+"productivity.shortcut.find.next" = "البحث التالي";
+"productivity.shortcut.find.prev" = "البحث السابق";
+
+"productivity.reset" = "إعادة تعيين الإنتاجية للافتراضي";
+
+// MARK: - Windows Settings
+"windows.overlay" = "نافذة التراكب";
+"windows.overlay.show" = "إظهار التراكب";
+"windows.overlay.reset" = "إعادة تعيين الموضع";
+"windows.overlay.hint" = "تتذكر نافذة التراكب موضعها لكل مساحة عمل وتستعيده تلقائياً.";
+
+"windows.dropdown" = "طرفية منسدلة";
+"windows.dropdown.enable" = "تمكين المنسدلة";
+"windows.dropdown.enable.help" = "إظهار طرفية منسدلة بنمط Quake مع مفتاح اختصار عام";
+"windows.dropdown.hotkey" = "مفتاح الاختصار";
+"windows.dropdown.hotkey.help" = "اختصار لوحة المفاتيح العام لتبديل المنسدلة";
+"windows.dropdown.height" = "الارتفاع";
+"windows.dropdown.height.help" = "ارتفاع المنسدلة كنسبة مئوية من الشاشة (10-100%)";
+
+"windows.split" = "تقسيم اللوحات";
+"windows.split.enable" = "تمكين تقسيم اللوحات";
+"windows.split.enable.help" = "السماح بتقسيم الطرفية إلى عدة لوحات داخل تبويب واحد";
+"windows.split.horizontal" = "تقسيم أفقي";
+"windows.split.vertical" = "تقسيم عمودي";
+"windows.split.navigate" = "التنقل بين اللوحات";
+
+// MARK: - AI Integration Settings
+"ai.detection" = "اكتشاف CLI للذكاء الاصطناعي";
+"ai.detection.hint" = "يكتشف Chau7 تلقائياً واجهات CLI للذكاء الاصطناعي ويطبق السمات المناسبة:";
+"ai.detection.claude" = "Claude Code";
+"ai.detection.codex" = "OpenAI Codex";
+"ai.detection.gemini" = "Gemini";
+"ai.detection.chatgpt" = "ChatGPT";
+"ai.detection.copilot" = "GitHub Copilot";
+"ai.detection.aider" = "Aider";
+"ai.detection.cursor" = "Cursor";
+
+"ai.custom" = "قواعد اكتشاف مخصصة";
+"ai.custom.hint" = "أضف أنماط أوامر أو مخرجات لوسم واجهات CLI للذكاء الاصطناعي المخصصة.";
+"ai.custom.pattern" = "النمط";
+"ai.custom.pattern.placeholder" = "mycli, /opt/ai/bin";
+"ai.custom.name" = "اسم العرض";
+"ai.custom.name.placeholder" = "ذكائي الاصطناعي";
+"ai.custom.color" = "اللون";
+"ai.custom.enabled" = "مفعل";
+"ai.custom.add" = "إضافة قاعدة";
+"ai.custom.remove" = "إزالة";
+
+"ai.tab.theming" = "سمات التبويب";
+"ai.auto.theme" = "ألوان تبويب تلقائية";
+"ai.auto.theme.help" = "تلوين التبويبات تلقائياً بناءً على CLI المكتشف";
+
+"ai.notifications" = "الإشعارات";
+"ai.notifications.status" = "الحالة";
+"ai.notifications.request" = "طلب الإذن";
+"ai.notifications.system" = "إعدادات النظام";
+"ai.notifications.test" = "إرسال اختبار";
+
+"ai.filters" = "فلاتر الإشعارات";
+"ai.filters.hint" = "اختر الأحداث التي تُشغّل الإشعارات:";
+"ai.filter.task.finished" = "انتهاء المهمة";
+"ai.filter.task.finished.help" = "إشعار عند اكتمال مهمة الذكاء الاصطناعي بنجاح";
+"ai.filter.task.failed" = "فشل المهمة";
+"ai.filter.task.failed.help" = "إشعار عند فشل مهمة الذكاء الاصطناعي أو حدوث خطأ";
+"ai.filter.needs.validation" = "يحتاج تحقق";
+"ai.filter.needs.validation.help" = "إشعار عندما تحتاج مهمة الذكاء الاصطناعي مراجعة أو موافقة بشرية";
+"ai.filter.permission" = "طلب إذن";
+"ai.filter.permission.help" = "إشعار عندما تتطلب أداة إذناً للمتابعة";
+"ai.filter.tool.complete" = "اكتمال الأداة";
+"ai.filter.tool.complete.help" = "إشعار عند اكتمال تنفيذ الأدوات الفردية";
+"ai.filter.session.end" = "نهاية الجلسة";
+"ai.filter.session.end.help" = "إشعار عند إنهاء جلسة الذكاء الاصطناعي";
+"ai.filter.command.idle" = "خمول الأمر";
+"ai.filter.command.idle.help" = "إشعار عندما تصبح الطرفية خاملة بعد تنفيذ الأمر";
+
+"ai.monitoring" = "مراقبة الأحداث";
+"ai.monitoring.enable" = "مراقبة أحداث الذكاء الاصطناعي";
+"ai.monitoring.enable.help" = "مراقبة أحداث CLI للذكاء الاصطناعي مثل اكتمال المهمة والفشل وطلبات الإذن";
+"ai.monitoring.log.path" = "مسار سجل الأحداث";
+"ai.monitoring.log.path.help" = "مسار ملف سجل أحداث الذكاء الاصطناعي";
+"ai.monitoring.restart" = "إعادة تشغيل المراقب";
+"ai.monitoring.reveal" = "عرض في Finder";
+
+// MARK: - Logs Settings
+"logs.history" = "سجلات التاريخ";
+"logs.history.enable" = "مراقبة سجلات التاريخ";
+"logs.history.enable.help" = "مراقبة ملفات تاريخ CLI للذكاء الاصطناعي لنشاط الجلسة واكتشاف الخمول";
+"logs.idle.seconds" = "ثواني الخمول";
+"logs.idle.seconds.help" = "ثواني عدم النشاط قبل إرسال إشعار الخمول";
+"logs.stale.seconds" = "ثواني القدم";
+"logs.stale.seconds.help" = "الثواني قبل تمييز الجلسة كمغلقة";
+"logs.codex.history" = "مسار تاريخ Codex";
+"logs.claude.history" = "مسار تاريخ Claude";
+"logs.restart.monitors" = "إعادة تشغيل المراقبين";
+"logs.clear.history" = "مسح التاريخ";
+
+"logs.terminal" = "سجلات الطرفية";
+"logs.terminal.enable" = "مراقبة سجلات الطرفية";
+"logs.terminal.enable.help" = "مراقبة ملفات مخرجات غلاف PTY لنشاط الطرفية";
+"logs.terminal.normalize" = "تطبيع المخرجات";
+"logs.terminal.normalize.help" = "إزالة رموز ANSI وحروف التحكم من عرض السجل";
+"logs.terminal.ansi" = "عرض تنسيق ANSI";
+"logs.terminal.ansi.help" = "عرض ألوان وتنسيق ANSI في عارض السجل";
+"logs.codex.terminal" = "سجل طرفية Codex";
+"logs.claude.terminal" = "سجل طرفية Claude";
+"logs.reload.lines" = "إعادة تحميل آخر الأسطر";
+"logs.clear.logs" = "مسح السجلات";
+
+"logs.sessions" = "الجلسات النشطة";
+"logs.sessions.empty" = "لم يتم تتبع أي جلسات بعد.";
+
+// MARK: - About Settings
+"about.version" = "معلومات الإصدار";
+"about.application" = "التطبيق";
+"about.bundle.id" = "معرف الحزمة";
+"about.version.label" = "الإصدار";
+"about.not.bundled" = "غير محزم";
+"about.dev.build" = "بناء التطوير";
+
+"about.system" = "معلومات النظام";
+"about.macos" = "macOS";
+"about.architecture" = "المعمارية";
+"about.shell" = "الصدفة";
+"about.arch.apple" = "Apple Silicon (arm64)";
+"about.arch.intel" = "Intel (x86_64)";
+"about.arch.unknown" = "غير معروف";
+
+"about.links" = "الروابط";
+"about.github" = "GitHub";
+"about.report.issue" = "الإبلاغ عن مشكلة";
+"about.documentation" = "الوثائق";
+
+"about.log" = "سجل التطبيق";
+"about.log.path" = "مسار السجل";
+"about.reveal.finder" = "عرض في Finder";
+"about.open.debug" = "وحدة تحكم التصحيح";
+
+"about.acknowledgments" = "الشكر";
+"about.swiftterm" = "تم بناء Chau7 باستخدام SwiftTerm لمحاكاة الطرفية.";
+
+// MARK: - Command Palette
+"palette.title" = "لوحة الأوامر";
+"palette.search.placeholder" = "اكتب أمراً...";
+"palette.commands.count" = "%d أوامر";
+"palette.navigate" = "تنقل";
+"palette.select" = "تحديد";
+"palette.close" = "إغلاق";
+
+// Command Categories
+"palette.category.file" = "ملف";
+"palette.category.edit" = "تحرير";
+"palette.category.view" = "عرض";
+"palette.category.terminal" = "طرفية";
+"palette.category.tabs" = "تبويبات";
+"palette.category.window" = "نافذة";
+"palette.category.help" = "مساعدة";
+
+// Commands
+"palette.cmd.new.window" = "نافذة جديدة";
+"palette.cmd.new.tab" = "تبويب جديد";
+"palette.cmd.close.tab" = "إغلاق التبويب";
+"palette.cmd.close.window" = "إغلاق النافذة";
+"palette.cmd.close.other" = "إغلاق التبويبات الأخرى";
+"palette.cmd.export" = "تصدير النص...";
+"palette.cmd.print" = "طباعة...";
+"palette.cmd.cut" = "قص";
+"palette.cmd.copy" = "نسخ";
+"palette.cmd.paste" = "لصق";
+"palette.cmd.paste.escaped" = "لصق مع تهريب";
+"palette.cmd.select.all" = "تحديد الكل";
+"palette.cmd.find" = "بحث...";
+"palette.cmd.find.next" = "البحث التالي";
+"palette.cmd.find.prev" = "البحث السابق";
+"palette.cmd.snippets" = "قصاصات...";
+"palette.cmd.manage.snippets" = "إدارة القصاصات...";
+"palette.cmd.fullscreen" = "تبديل ملء الشاشة";
+"palette.cmd.zoom.in" = "تكبير";
+"palette.cmd.zoom.out" = "تصغير";
+"palette.cmd.zoom.reset" = "الحجم الفعلي";
+"palette.cmd.clear.screen" = "مسح الشاشة";
+"palette.cmd.clear.scrollback" = "مسح التمرير للخلف";
+"palette.cmd.scroll.top" = "التمرير للأعلى";
+"palette.cmd.scroll.bottom" = "التمرير للأسفل";
+"palette.cmd.next.tab" = "إظهار التبويب التالي";
+"palette.cmd.prev.tab" = "إظهار التبويب السابق";
+"palette.cmd.move.right" = "نقل التبويب لليمين";
+"palette.cmd.move.left" = "نقل التبويب لليسار";
+"palette.cmd.rename.tab" = "إعادة تسمية التبويب...";
+"palette.cmd.settings" = "الإعدادات...";
+"palette.cmd.debug" = "وحدة تحكم التصحيح";
+"palette.cmd.ssh" = "اتصالات SSH...";
+"palette.cmd.shortcuts" = "اختصارات لوحة المفاتيح...";
+"palette.cmd.about" = "حول Chau7";
+"palette.cmd.docs" = "الوثائق";
+"palette.cmd.report" = "الإبلاغ عن مشكلة";
+
+// MARK: - Snippets
+"snippets.title" = "القصاصات";
+"snippets.search.placeholder" = "بحث في القصاصات...";
+"snippets.source.all" = "جميع المصادر";
+"snippets.source.user" = "مستخدم";
+"snippets.source.profile" = "ملف تعريف";
+"snippets.source.repo" = "مستودع";
+"snippets.count" = "%d قصاصة";
+"snippets.empty" = "لا توجد قصاصات";
+"snippets.empty.hint" = "أنشئ أول قصاصة باستخدام زر + أعلاه، أو استورد قصاصات من ملف JSON.";
+"snippets.delete.title" = "حذف القصاصة؟";
+"snippets.new" = "قصاصة جديدة";
+"snippets.edit" = "تحرير القصاصة";
+"snippets.title.label" = "العنوان";
+"snippets.body.label" = "المحتوى";
+"snippets.tags.label" = "الوسوم";
+"snippets.tags.placeholder" = "وسوم مفصولة بفواصل";
+"snippets.source.label" = "المصدر";
+"snippets.available.tokens" = "الرموز المتاحة";
+
+"snippets.import" = "استيراد";
+"snippets.export" = "تصدير";
+"snippets.import.success" = "تم استيراد %d قصاصة";
+"snippets.export.success" = "تم تصدير %d قصاصة";
+
+// MARK: - SSH Manager
+"ssh.title" = "اتصالات SSH";
+"ssh.search.placeholder" = "بحث في الاتصالات...";
+"ssh.new" = "اتصال جديد";
+"ssh.edit" = "تحرير الاتصال";
+"ssh.connect" = "اتصال";
+"ssh.delete.title" = "حذف الاتصال؟";
+"ssh.empty" = "لا توجد اتصالات SSH";
+"ssh.empty.hint" = "أضف أول اتصال SSH باستخدام زر +.";
+
+"ssh.name" = "الاسم";
+"ssh.name.placeholder" = "خادمي";
+"ssh.host" = "المضيف";
+"ssh.host.placeholder" = "اسم المضيف أو IP";
+"ssh.port" = "المنفذ";
+"ssh.user" = "المستخدم";
+"ssh.user.placeholder" = "اسم المستخدم";
+"ssh.key" = "ملف الهوية";
+"ssh.key.placeholder" = "~/.ssh/id_rsa";
+"ssh.key.browse" = "تصفح";
+"ssh.options" = "خيارات إضافية";
+"ssh.options.placeholder" = "-o StrictHostKeyChecking=no";
+"ssh.color" = "لون التبويب";
+
+// MARK: - Help
+"help.title" = "المساعدة";
+"help.search.placeholder" = "بحث في مواضيع المساعدة...";
+"help.getting.started" = "البدء";
+"help.command.palette" = "لوحة الأوامر";
+"help.tabs.windows" = "التبويبات والنوافذ";
+"help.keyboard.shortcuts" = "اختصارات لوحة المفاتيح";
+"help.ssh.connections" = "اتصالات SSH";
+"help.terminal.output" = "مخرجات الطرفية";
+"help.snippets" = "القصاصات";
+"help.ai.integration" = "تكامل الذكاء الاصطناعي";
+"help.settings" = "الإعدادات";
+"help.troubleshooting" = "استكشاف الأخطاء";
+"help.related.topics" = "مواضيع ذات صلة";
+
+// MARK: - Notifications
+"notification.task.finished" = "انتهت المهمة";
+"notification.task.failed" = "فشلت المهمة";
+"notification.needs.validation" = "يحتاج تحقق";
+"notification.permission.request" = "طلب إذن";
+"notification.command.idle" = "الأمر خامل";
+"notification.session.end" = "انتهت الجلسة";
+
+// MARK: - Errors
+"error.generic" = "حدث خطأ";
+"error.file.not.found" = "الملف غير موجود";
+"error.permission.denied" = "تم رفض الإذن";
+"error.import.failed" = "فشل الاستيراد";
+"error.export.failed" = "فشل التصدير";
+"error.connection.failed" = "فشل الاتصال";
+
+// MARK: - Tab States
+"tab.shell" = "صدفة";
+"tab.suspended" = "معلق";
+"tab.rename.placeholder" = "أدخل اسم التبويب";
+
+// MARK: - Menu Items
+"menu.file" = "ملف";
+"menu.edit" = "تحرير";
+"menu.view" = "عرض";
+"menu.terminal" = "طرفية";
+"menu.window" = "نافذة";
+"menu.help" = "مساعدة";
+
+// MARK: - Debug Console
+"debug.title" = "وحدة تحكم التصحيح";
+"debug.clear" = "مسح";
+"debug.copy.all" = "نسخ الكل";
+"debug.filter" = "فلتر";
+"debug.level.all" = "الكل";
+"debug.level.info" = "معلومات";
+"debug.level.warning" = "تحذير";
+"debug.level.error" = "خطأ";
+
+// MARK: - Time
+"time.now" = "الآن";
+"time.seconds.ago" = "منذ %d ثانية";
+"time.minute.ago" = "منذ دقيقة";
+"time.minutes.ago" = "منذ %d دقيقة";
+"time.hour.ago" = "منذ ساعة";
+"time.hours.ago" = "منذ %d ساعة";
+
+// MARK: - Miscellaneous
+"misc.enabled" = "مفعل";
+"misc.disabled" = "معطل";
+"misc.default" = "افتراضي";
+"misc.custom" = "مخصص";
+"misc.none" = "لا شيء";
+"misc.unknown" = "غير معروف";
+"misc.loading" = "جاري التحميل...";
+"misc.empty" = "فارغ";
+
+// MARK: - Accessibility Labels
+"a11y.new.tab" = "تبويب جديد";
+"a11y.close.tab" = "إغلاق التبويب";
+"a11y.tab.button" = "التبويب %@";
+"a11y.search.field" = "بحث";
+"a11y.search.clear" = "مسح البحث";
+"a11y.toggle.on" = "%@ مفعل";
+"a11y.toggle.off" = "%@ معطل";
+"a11y.clipboard.item" = "عنصر الحافظة: %@";
+"a11y.clipboard.paste" = "لصق هذا العنصر";
+"a11y.clipboard.pin" = "تثبيت هذا العنصر";
+"a11y.clipboard.delete" = "حذف هذا العنصر";
+"a11y.bookmark.item" = "إشارة مرجعية: %@";
+"a11y.bookmark.jump" = "الانتقال لهذا الموقع";
+"a11y.snippet.item" = "قصاصة: %@";
+"a11y.snippet.insert" = "إدراج هذه القصاصة";
+"a11y.git.branch" = "فرع Git: %@";
+"a11y.status.indicator" = "الحالة: %@";
+"a11y.session.row" = "الجلسة: %@، الحالة: %@";
+"a11y.ssh.connection" = "اتصال SSH: %@";
+"a11y.ssh.connect.hint" = "انقر مرتين للاتصال";
+"a11y.command.row" = "%@، الفئة: %@";
+"a11y.command.shortcut" = "الاختصار: %@";
+"a11y.command.no.shortcut" = "لا يوجد اختصار لوحة مفاتيح";
+"a11y.navigation.prev" = "العنصر السابق";
+"a11y.navigation.next" = "العنصر التالي";
+"a11y.navigation.back" = "رجوع";
+"a11y.overlay.drag" = "اسحب لإعادة الموضع";
+"a11y.slider.value" = "%@ بالمئة";
+
+// MARK: - RTL Languages
+"language.arabic" = "العربية";
+"language.hebrew" = "עברית";
+
+// MARK: - Relative Time
+"time.just.now" = "الآن";
+"time.today" = "اليوم";
+"time.yesterday" = "أمس";
+"time.days.ago" = "منذ %d أيام";
+"time.week.ago" = "منذ أسبوع";
+"time.weeks.ago" = "منذ %d أسابيع";
+"time.month.ago" = "منذ شهر";
+"time.months.ago" = "منذ %d أشهر";
+
+// MARK: - Numbers and Units
+"unit.bytes" = "%@ بايت";
+"unit.kb" = "%@ ك.ب";
+"unit.mb" = "%@ م.ب";
+"unit.gb" = "%@ ج.ب";
+"unit.lines" = "%d سطر";
+"unit.items" = "%d عنصر";
+"unit.percent" = "%d%%";
+
+// MARK: - Status Messages
+"status.connected" = "متصل";
+"status.disconnected" = "غير متصل";
+"status.connecting" = "جاري الاتصال...";
+"status.idle" = "خامل";
+"status.running" = "قيد التشغيل";
+"status.completed" = "مكتمل";
+"status.failed" = "فشل";
+"status.pending" = "قيد الانتظار";
+
+// MARK: - Validation
+"validation.required" = "هذا الحقل مطلوب";
+"validation.invalid.path" = "مسار ملف غير صالح";
+"validation.invalid.port" = "يجب أن يكون المنفذ بين 1 و 65535";
+"validation.invalid.hostname" = "اسم مضيف غير صالح";
+"validation.file.not.exists" = "الملف غير موجود";
+
+// MARK: - Confirmation Dialogs
+"confirm.delete.snippet" = "هل أنت متأكد من حذف هذه القصاصة؟";
+"confirm.delete.connection" = "هل أنت متأكد من حذف هذا الاتصال؟";
+"confirm.delete.bookmark" = "هل أنت متأكد من حذف هذه الإشارة المرجعية؟";
+"confirm.clear.history" = "هل أنت متأكد من مسح تاريخ الحافظة؟";
+"confirm.action.cannot.undo" = "لا يمكن التراجع عن هذا الإجراء.";
+
+// MARK: - General Settings (Additional)
+"settings.general.startup" = "بدء التشغيل";
+"settings.general.launchAtLogin" = "التشغيل عند تسجيل الدخول";
+"settings.general.launchAtLogin.help" = "بدء تشغيل Chau7 تلقائياً عند تسجيل الدخول إلى Mac";
+
+// Settings Profiles
+"settings.general.profiles" = "ملفات تعريف الإعدادات";
+"settings.general.profiles.description" = "أنشئ ملفات تعريف مسماة لسير عمل مختلف (عمل، شخصي، عرض تقديمي)";
+"settings.general.profiles.active" = "نشط:";
+"settings.general.profiles.activeLabel" = "(نشط)";
+"settings.general.profiles.save" = "حفظ الإعدادات الحالية";
+"settings.general.profiles.create" = "إنشاء ملف تعريف جديد...";
+"settings.general.profiles.createTitle" = "إنشاء ملف تعريف جديد";
+"settings.general.profiles.namePlaceholder" = "اسم ملف التعريف";
+"settings.general.profiles.chooseIcon" = "اختر أيقونة";
+"settings.general.profiles.createButton" = "إنشاء ملف التعريف";
+"settings.general.profiles.created" = "تم الإنشاء";
+"settings.general.profiles.delete.title" = "حذف ملف التعريف؟";
+"settings.general.profiles.delete.message" = "هل أنت متأكد من حذف ملف التعريف هذا؟ لا يمكن التراجع عن هذا الإجراء.";
+
+// iCloud Sync
+"settings.general.icloud" = "مزامنة iCloud";
+"settings.general.icloud.sync" = "المزامنة عبر iCloud";
+"settings.general.icloud.sync.help" = "حافظ على مزامنة إعدادات Chau7 عبر جميع أجهزة Mac";
+"settings.general.icloud.syncNow" = "مزامنة الآن";
+"settings.general.icloud.restore" = "استعادة من iCloud";
+
+// Settings Backup
+"settings.general.backup" = "نسخ احتياطي للإعدادات";
+"settings.general.backup.description" = "صدّر إعداداتك إلى ملف JSON أو استورد من نسخة احتياطية.";
+"settings.general.backup.export" = "تصدير الإعدادات...";
+"settings.general.backup.import" = "استيراد الإعدادات...";
+
+// Status
+"settings.general.status" = "الحالة";
+"settings.general.status.notifications" = "الإشعارات";
+"settings.general.status.eventMonitoring" = "مراقبة الأحداث";
+"settings.general.status.historyMonitoring" = "مراقبة السجل";
+"settings.general.status.terminalMonitoring" = "مراقبة الطرفية";
+"status.active" = "نشط";
+"status.paused" = "متوقف مؤقتاً";
+
+// Actions
+"settings.general.actions" = "الإجراءات";
+"settings.general.actions.showOverlay" = "إظهار التراكب";
+"settings.general.actions.resetWindowPositions" = "إعادة تعيين مواضع النوافذ";
+"settings.general.actions.debugConsole" = "وحدة تحكم التصحيح";
+
+// Reset
+"settings.general.reset" = "إعادة التعيين";
+"settings.general.reset.all" = "إعادة تعيين جميع الإعدادات إلى الافتراضي";
+"settings.general.reset.confirm.title" = "إعادة تعيين جميع الإعدادات؟";
+"settings.general.reset.confirm.message" = "سيؤدي هذا إلى إعادة تعيين جميع إعدادات Chau7 إلى قيمها الافتراضية. لا يمكن التراجع عن هذا الإجراء.";
+
+// Common Buttons
+"button.cancel" = "إلغاء";
+"button.reset" = "إعادة تعيين";
+"button.delete" = "حذف";
+"button.load" = "تحميل";
+
+// =============================================================================
+// MARK: - ترجمة واجهات الإعدادات
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// MARK: إعدادات المظهر
+// -----------------------------------------------------------------------------
+
+// المعاينة المباشرة
+"settings.appearance.livePreview" = "معاينة مباشرة";
+"settings.appearance.livePreview.sampleText" = "صِف خَلقَ خَودٍ كَمِثلِ الشَمسِ إِذ بَزَغَت يَحظى الضَجيعُ بِها نَجلاءَ مِعطارِ. 🦊";
+"settings.appearance.livePreview.code.function" = "دالة";
+"settings.appearance.livePreview.code.hello" = "مرحباً، الطرفية!";
+
+// قسم الخط
+"settings.appearance.font" = "الخط";
+"settings.appearance.font.family" = "عائلة الخط";
+"settings.appearance.font.family.help" = "الخطوط أحادية المسافة تعمل بشكل أفضل لمخرجات الطرفية";
+"settings.appearance.font.size" = "حجم الخط";
+"settings.appearance.font.size.help" = "الحجم بالنقاط (8-32)";
+"settings.appearance.font.defaultZoom" = "التكبير الافتراضي";
+"settings.appearance.font.defaultZoom.help" = "مستوى التكبير الافتراضي للتبويبات الجديدة";
+
+// قسم نظام الألوان
+"settings.appearance.colorScheme" = "نظام الألوان";
+"settings.appearance.colorScheme.scheme" = "نظام الألوان";
+"settings.appearance.colorScheme.scheme.help" = "لوحة ألوان الطرفية";
+"settings.appearance.colorScheme.opacity" = "شفافية النافذة";
+"settings.appearance.colorScheme.opacity.help" = "مستوى شفافية النافذة";
+
+// قسم النافذة
+"settings.appearance.window" = "النافذة";
+"settings.appearance.window.vibrancy" = "حيوية النافذة";
+"settings.appearance.window.vibrancy.help" = "تأثير الزجاج المصنفر خلف النافذة";
+
+// قسم سمة النظام
+"settings.appearance.systemTheme" = "سمة النظام";
+"settings.appearance.systemTheme.appTheme" = "سمة التطبيق";
+"settings.appearance.systemTheme.appTheme.help" = "فاتح أو داكن أو متابعة إعداد النظام";
+"settings.appearance.systemTheme.option.system" = "النظام";
+"settings.appearance.systemTheme.option.light" = "فاتح";
+"settings.appearance.systemTheme.option.dark" = "داكن";
+
+// قسم تلوين تبويبات الذكاء الاصطناعي
+"settings.appearance.aiTabTheming" = "تلوين تبويبات الذكاء الاصطناعي";
+"settings.appearance.aiTabTheming.autoTheme" = "تلوين تبويبات الذكاء الاصطناعي تلقائياً";
+"settings.appearance.aiTabTheming.autoTheme.help" = "تلوين التبويبات تلقائياً بناءً على أداة الذكاء الاصطناعي المكتشفة";
+"settings.appearance.aiTabTheming.claudeColor" = "لون تبويب Claude";
+"settings.appearance.aiTabTheming.codexColor" = "لون تبويب Codex";
+"settings.appearance.aiTabTheming.geminiColor" = "لون تبويب Gemini";
+"settings.appearance.aiTabTheming.copilotColor" = "لون تبويب Copilot";
+"settings.appearance.aiTabTheming.resetColors" = "إعادة تعيين للافتراضي";
+
+// قسم تحسينات العرض
+"settings.appearance.displayEnhancements" = "تحسينات العرض";
+"settings.appearance.displayEnhancements.syntaxHighlighting" = "تمييز الصياغة";
+"settings.appearance.displayEnhancements.syntaxHighlighting.help" = "تلوين كتل الكود في مخرجات الطرفية";
+"settings.appearance.displayEnhancements.lineTimestamps" = "طوابع وقت الأسطر";
+"settings.appearance.displayEnhancements.lineTimestamps.help" = "إظهار الطوابع الزمنية لكل سطر في الطرفية";
+"settings.appearance.displayEnhancements.jsonPrettyPrint" = "تنسيق JSON";
+"settings.appearance.displayEnhancements.jsonPrettyPrint.help" = "تنسيق مخرجات JSON مع المسافات البادئة";
+
+// -----------------------------------------------------------------------------
+// MARK: إعدادات الطرفية
+// -----------------------------------------------------------------------------
+
+// قسم الصدفة
+"settings.terminal.shell" = "الصدفة";
+"settings.terminal.shell.shell" = "الصدفة";
+"settings.terminal.shell.help" = "الصدفة المستخدمة لجلسات الطرفية الجديدة";
+"settings.terminal.shell.startupCommand" = "أمر البدء";
+"settings.terminal.shell.startupCommand.help" = "الأمر المنفذ عند بدء الطرفية (مثل: neofetch)";
+"settings.terminal.shell.startupCommand.placeholder" = "مثال: neofetch, fortune | cowsay";
+
+// قسم المؤشر
+"settings.terminal.cursor" = "المؤشر";
+"settings.terminal.cursor.style" = "نمط المؤشر";
+"settings.terminal.cursor.style.help" = "شكل مؤشر الطرفية";
+"settings.terminal.cursor.style.block" = "مربع";
+"settings.terminal.cursor.style.underline" = "خط سفلي";
+"settings.terminal.cursor.style.bar" = "شريط";
+"settings.terminal.cursor.blink" = "وميض المؤشر";
+"settings.terminal.cursor.blink.help" = "تحريك المؤشر بالوميض";
+
+// قسم التمرير
+"settings.terminal.scrollback" = "التمرير";
+"settings.terminal.scrollback.lines" = "أسطر التمرير";
+"settings.terminal.scrollback.lines.help" = "عدد الأسطر المحتفظ بها في ذاكرة التمرير";
+
+// قسم الجرس
+"settings.terminal.bell" = "الجرس";
+"settings.terminal.bell.sound" = "صوت الجرس";
+"settings.terminal.bell.sound.help" = "الصوت المشغل لجرس الطرفية";
+"settings.terminal.bell.sound.none" = "لا شيء";
+"settings.terminal.bell.sound.default" = "الافتراضي";
+"settings.terminal.bell.sound.subtle" = "خفيف";
+"settings.terminal.bell.visualBell" = "جرس مرئي";
+"settings.terminal.bell.visualBell.help" = "وميض الشاشة بدلاً من تشغيل الصوت";
+
+// قسم الأداء
+"settings.terminal.performance" = "الأداء";
+"settings.terminal.performance.metalRenderer" = "عارض Metal";
+"settings.terminal.performance.metalRenderer.help" = "استخدام تسريع GPU للعرض (موصى به)";
+"settings.terminal.performance.reducedMotion" = "حركة مخفضة";
+"settings.terminal.performance.reducedMotion.help" = "تقليل الحركات لأداء أفضل";
+
+// -----------------------------------------------------------------------------
+// MARK: إعدادات التبويبات
+// -----------------------------------------------------------------------------
+
+// قسم السلوك
+"settings.tabs.behavior" = "السلوك";
+"settings.tabs.behavior.lastTabClose" = "عند إغلاق آخر تبويب";
+"settings.tabs.behavior.lastTabClose.help" = "ما يحدث عند إغلاق آخر تبويب";
+"settings.tabs.behavior.lastTabClose.closeWindow" = "إغلاق النافذة";
+"settings.tabs.behavior.lastTabClose.newTab" = "فتح تبويب جديد";
+"settings.tabs.behavior.lastTabClose.keepOpen" = "إبقاء النافذة مفتوحة";
+"settings.tabs.behavior.newTabDirectory" = "دليل التبويب الجديد";
+"settings.tabs.behavior.newTabDirectory.help" = "فتح تبويبات جديدة في دليل التبويب الحالي";
+"settings.tabs.behavior.confirmClose" = "تأكيد الإغلاق";
+"settings.tabs.behavior.confirmClose.help" = "إظهار تأكيد عند إغلاق تبويبات بها عمليات قيد التشغيل";
+"settings.tabs.newTabPosition" = "موضع علامة التبويب الجديدة";
+"settings.tabs.newTabPosition.help" = "مكان إدراج علامات التبويب الجديدة";
+"settings.tabs.atEnd" = "في النهاية";
+"settings.tabs.afterCurrent" = "بعد التبويب الحالي";
+"settings.tabs.newTabsUseCurrentDirectory" = "فتح علامات تبويب جديدة في الدليل الحالي";
+"settings.tabs.newTabsUseCurrentDirectory.help" = "افتح علامات التبويب الجديدة في مجلد علامة التبويب النشطة (يبقى أول تبويب يستخدم الدليل الافتراضي)";
+"settings.tabs.lastTabClose" = "إغلاق آخر علامة تبويب";
+"settings.tabs.lastTabClose.help" = "اختر ما يحدث عند إغلاق آخر علامة تبويب";
+
+// قسم المظهر
+"settings.tabs.appearance" = "المظهر";
+"settings.tabs.appearance.showTabBar" = "إظهار شريط التبويبات";
+"settings.tabs.appearance.showTabBar.help" = "إظهار شريط التبويبات دائماً حتى مع تبويب واحد";
+"settings.tabs.appearance.tabPosition" = "موضع التبويبات";
+"settings.tabs.appearance.tabPosition.help" = "موضع شريط التبويبات";
+"settings.tabs.appearance.tabPosition.top" = "أعلى";
+"settings.tabs.appearance.tabPosition.bottom" = "أسفل";
+"settings.tabs.appearance.showTabIcons" = "إظهار أيقونات التبويبات";
+"settings.tabs.appearance.showTabIcons.help" = "إظهار الأيقونات في التبويبات (مثل مؤشرات الذكاء الاصطناعي)";
+"settings.tabs.alwaysShowTabBar" = "إظهار شريط علامات التبويب دائمًا";
+"settings.tabs.alwaysShowTabBar.help" = "اعرض شريط علامات التبويب حتى عند وجود علامة تبويب واحدة";
+"settings.tabs.lastCommandBadge" = "شارة آخر أمر";
+"settings.tabs.lastCommandBadge.help" = "عرض أحدث أمر في منطقة حالة علامة التبويب";
+"settings.tabs.aiProductIcons" = "أيقونات منتجات الذكاء الاصطناعي";
+"settings.tabs.aiProductIcons.help" = "عرض أيقونات SF Symbol لأدوات CLI للذكاء الاصطناعي المكتشفة في علامات التبويب";
+
+// قسم التنقل بلوحة المفاتيح
+"settings.tabs.keyboardNavigation" = "التنقل بلوحة المفاتيح";
+"settings.tabs.newTab" = "علامة تبويب جديدة";
+"settings.tabs.closeTab" = "إغلاق علامة التبويب";
+"settings.tabs.nextTab" = "علامة التبويب التالية";
+"settings.tabs.previousTab" = "علامة التبويب السابقة";
+"settings.tabs.switchToTab" = "التبديل إلى علامة التبويب 1-9";
+"settings.tabs.renameTab" = "إعادة تسمية علامة التبويب";
+"settings.tabs.keyboardNavigation.cmdNumber" = "Cmd+رقم لتبديل التبويبات";
+"settings.tabs.keyboardNavigation.cmdNumber.help" = "استخدام Cmd+1-9 للتنقل بين التبويبات";
+"settings.tabs.keyboardNavigation.cmdBrackets" = "Cmd+[ ] للتنقل";
+"settings.tabs.keyboardNavigation.cmdBrackets.help" = "استخدام Cmd+[ و Cmd+] لتبديل التبويبات";
+
+// -----------------------------------------------------------------------------
+// MARK: إعدادات الإدخال
+// -----------------------------------------------------------------------------
+
+// قسم لوحة المفاتيح
+"settings.input.keyboard" = "لوحة المفاتيح";
+"settings.input.keyboard.optionAsMeta" = "Option كمفتاح Meta";
+"settings.input.keyboard.optionAsMeta.help" = "استخدام مفتاح Option كـ Meta لتطبيقات الطرفية";
+"settings.input.keyboard.deleteBackward" = "سلوك مفتاح الحذف";
+"settings.input.keyboard.deleteBackward.help" = "إرسال مسافة للخلف أو حرف الحذف";
+
+// قسم اختصارات لوحة المفاتيح
+"settings.input.shortcuts" = "اختصارات لوحة المفاتيح";
+"settings.input.shortcuts.customize" = "تخصيص الاختصارات...";
+"settings.input.shortcuts.customize.help" = "تكوين الاختصارات العامة والخاصة بالتطبيق";
+
+// قسم الفأرة
+"settings.input.mouse" = "الفأرة";
+"settings.input.mouse.copyOnSelect" = "نسخ عند التحديد";
+"settings.input.mouse.copyOnSelect.help" = "نسخ النص المحدد تلقائياً إلى الحافظة";
+"settings.input.mouse.focusFollowsMouse" = "التركيز يتبع الفأرة";
+"settings.input.mouse.focusFollowsMouse.help" = "التركيز على اللوحة تحت مؤشر الفأرة";
+"settings.input.mouse.cmdClickOpens" = "Cmd+نقر يفتح المسارات";
+"settings.input.mouse.cmdClickOpens.help" = "فتح مسارات الملفات وعناوين URL بـ Cmd+نقر";
+"settings.input.mouse.urlHandler" = "معالج URL";
+"settings.input.mouse.urlHandler.help" = "التطبيق لفتح عناوين URL";
+"settings.input.mouse.urlHandler.default" = "المتصفح الافتراضي";
+
+// قسم البث
+"settings.input.broadcast" = "البث";
+"settings.input.broadcast.mode" = "بث الإدخال";
+"settings.input.broadcast.mode.help" = "إرسال ضغطات المفاتيح لعدة تبويبات في وقت واحد";
+
+// -----------------------------------------------------------------------------
+// MARK: إعدادات الإنتاجية
+// -----------------------------------------------------------------------------
+
+// قسم المقتطفات
+"settings.productivity.snippets" = "المقتطفات";
+"settings.productivity.snippets.description" = "قوالب نصية سريعة مع توسيع اختياري";
+"settings.productivity.snippets.manage" = "إدارة المقتطفات...";
+"settings.productivity.snippets.count" = "%d مقتطفات";
+
+// قسم سجل الحافظة
+"settings.productivity.clipboard" = "سجل الحافظة";
+"settings.productivity.clipboard.enabled" = "تفعيل سجل الحافظة";
+"settings.productivity.clipboard.enabled.help" = "الاحتفاظ بسجل النص المنسوخ";
+"settings.productivity.clipboard.maxItems" = "الحد الأقصى للعناصر";
+"settings.productivity.clipboard.maxItems.help" = "عدد العناصر المحتفظ بها في السجل";
+"settings.productivity.clipboard.clearHistory" = "مسح السجل";
+"settings.productivity.clipboard.clearHistory.confirm.title" = "مسح سجل الحافظة؟";
+"settings.productivity.clipboard.clearHistory.confirm.message" = "سيؤدي هذا إلى إزالة جميع العناصر من سجل الحافظة.";
+
+// قسم الإشارات المرجعية
+"settings.productivity.bookmarks" = "الإشارات المرجعية";
+"settings.productivity.bookmarks.enabled" = "تفعيل الإشارات المرجعية";
+"settings.productivity.bookmarks.enabled.help" = "حفظ واستعادة مواضع الطرفية";
+
+// قسم البحث
+"settings.productivity.search" = "البحث";
+"settings.productivity.search.semantic" = "البحث الدلالي";
+"settings.productivity.search.semantic.help" = "البحث مع الوعي بالأوامر";
+"settings.productivity.search.caseSensitive" = "حساسية الحالة افتراضياً";
+"settings.productivity.search.caseSensitive.help" = "حساسية الحالة الافتراضية للبحث";
+"settings.productivity.search.regex" = "Regex افتراضياً";
+"settings.productivity.search.regex.help" = "تفعيل بحث التعبيرات النمطية افتراضياً";
+"settings.productivity.search.wrapAround" = "الالتفاف";
+"settings.productivity.search.wrapAround.help" = "متابعة البحث من البداية عند الوصول للنهاية";
+
+// -----------------------------------------------------------------------------
+// MARK: إعدادات النوافذ
+// -----------------------------------------------------------------------------
+
+// قسم نافذة التراكب
+"settings.windows.overlay" = "نافذة التراكب";
+"settings.windows.overlay.enabled" = "تفعيل التراكب";
+"settings.windows.overlay.enabled.help" = "إظهار نافذة تراكب عائمة";
+"settings.windows.overlay.opacity" = "شفافية التراكب";
+"settings.windows.overlay.opacity.help" = "شفافية نافذة التراكب";
+
+// قسم الطرفية المنسدلة
+"settings.windows.dropdown" = "الطرفية المنسدلة";
+"settings.windows.dropdown.enabled" = "تفعيل القائمة المنسدلة";
+"settings.windows.dropdown.enabled.help" = "طرفية منسدلة بنمط Quake من أعلى الشاشة";
+"settings.windows.dropdown.hotkey" = "اختصار عام";
+"settings.windows.dropdown.hotkey.help" = "اختصار لوحة المفاتيح لتبديل القائمة المنسدلة";
+"settings.windows.dropdown.height" = "ارتفاع القائمة المنسدلة";
+"settings.windows.dropdown.height.help" = "ارتفاع القائمة المنسدلة كنسبة مئوية من الشاشة";
+"settings.windows.dropdown.animation" = "الحركة";
+"settings.windows.dropdown.animation.help" = "تحريك ظهور القائمة المنسدلة";
+
+// قسم اللوحات المنقسمة
+"settings.windows.splitPanes" = "اللوحات المنقسمة";
+"settings.windows.splitPanes.enabled" = "تفعيل اللوحات المنقسمة";
+"settings.windows.splitPanes.enabled.help" = "السماح بتقسيم الطرفية إلى لوحات متعددة";
+"settings.windows.splitPanes.focusHighlight" = "تمييز التركيز";
+"settings.windows.splitPanes.focusHighlight.help" = "تمييز حدود اللوحة المركزة";
+
+// -----------------------------------------------------------------------------
+// MARK: إعدادات تكامل الذكاء الاصطناعي
+// -----------------------------------------------------------------------------
+
+// قسم كشف CLI للذكاء الاصطناعي
+"settings.ai.detection" = "كشف CLI للذكاء الاصطناعي";
+"settings.ai.detection.enabled" = "تفعيل كشف الذكاء الاصطناعي";
+"settings.ai.detection.enabled.help" = "الكشف التلقائي عن أدوات CLI للذكاء الاصطناعي في الطرفية";
+"settings.ai.detection.claude" = "كشف Claude";
+"settings.ai.detection.claude.help" = "كشف Claude CLI و Claude Code";
+"settings.ai.detection.codex" = "كشف Codex";
+"settings.ai.detection.codex.help" = "كشف OpenAI Codex CLI";
+"settings.ai.detection.gemini" = "كشف Gemini";
+"settings.ai.detection.gemini.help" = "كشف Google Gemini CLI";
+"settings.ai.detection.copilot" = "كشف Copilot";
+"settings.ai.detection.copilot.help" = "كشف GitHub Copilot CLI";
+
+// قسم قواعد الكشف المخصصة
+"settings.ai.customDetection" = "قواعد الكشف المخصصة";
+"settings.ai.customDetection.description" = "إضافة أنماط مخصصة لكشف أدوات الذكاء الاصطناعي";
+"settings.ai.customDetection.add" = "إضافة قاعدة";
+"settings.ai.customDetection.noRules" = "لا توجد قواعد مخصصة محددة";
+"settings.ai.customDetection.pattern" = "النمط";
+"settings.ai.customDetection.label" = "التسمية";
+"settings.ai.customDetection.color" = "اللون";
+
+// قسم الإشعارات
+"settings.ai.notifications" = "الإشعارات";
+"settings.ai.notifications.enabled" = "تفعيل الإشعارات";
+"settings.ai.notifications.enabled.help" = "إظهار إشعارات لأحداث الذكاء الاصطناعي";
+"settings.ai.notifications.sound" = "صوت الإشعار";
+"settings.ai.notifications.sound.help" = "تشغيل صوت مع الإشعارات";
+"settings.ai.notifications.taskComplete" = "اكتمال المهمة";
+"settings.ai.notifications.taskComplete.help" = "الإشعار عند اكتمال مهمة الذكاء الاصطناعي";
+"settings.ai.notifications.error" = "عند الخطأ";
+"settings.ai.notifications.error.help" = "الإشعار عندما يواجه الذكاء الاصطناعي خطأ";
+"settings.ai.notifications.idle" = "عند الخمول";
+"settings.ai.notifications.idle.help" = "الإشعار عندما ينتظر الذكاء الاصطناعي الإدخال";
+
+// قسم فلاتر الإشعارات
+"settings.ai.filters" = "فلاتر الإشعارات";
+"settings.ai.filters.description" = "اختيار الأحداث التي تطلق الإشعارات";
+"settings.ai.filters.toolUse" = "استخدام الأدوات";
+"settings.ai.filters.toolUse.help" = "الإشعار عند استخدام الأدوات (قراءة وكتابة الملفات، إلخ)";
+"settings.ai.filters.thinking" = "التفكير";
+"settings.ai.filters.thinking.help" = "الإشعار عندما يعالج الذكاء الاصطناعي";
+"settings.ai.filters.response" = "الاستجابة";
+"settings.ai.filters.response.help" = "الإشعار عند استجابات الذكاء الاصطناعي";
+
+// Notification Trigger Catalog
+"notifications.source.eventsLog" = "سجل أحداث الذكاء الاصطناعي";
+"notifications.source.terminalSession" = "جلسة الطرفية";
+"notifications.source.historyMonitor" = "مراقبة السجل";
+"notifications.source.claudeCode" = "Claude Code";
+"notifications.source.app" = "التطبيق";
+
+"notifications.trigger.eventsLog.finished.label" = "اكتملت المهمة";
+"notifications.trigger.eventsLog.finished.description" = "حدث ذكاء اصطناعي يبلّغ عن اكتمال مهمة.";
+"notifications.trigger.eventsLog.failed.label" = "فشلت المهمة";
+"notifications.trigger.eventsLog.failed.description" = "حدث ذكاء اصطناعي يبلّغ عن فشل أو خطأ.";
+"notifications.trigger.eventsLog.needsValidation.label" = "يحتاج تحقق";
+"notifications.trigger.eventsLog.needsValidation.description" = "حدث ذكاء اصطناعي يطلب مراجعة أو تأكيد.";
+"notifications.trigger.eventsLog.permission.label" = "طلب إذن";
+"notifications.trigger.eventsLog.permission.description" = "حدث ذكاء اصطناعي يطلب إذنًا للمتابعة.";
+"notifications.trigger.eventsLog.toolComplete.label" = "اكتمال الأداة";
+"notifications.trigger.eventsLog.toolComplete.description" = "حدث ذكاء اصطناعي يبلّغ عن انتهاء أداة.";
+"notifications.trigger.eventsLog.sessionEnd.label" = "انتهت الجلسة";
+"notifications.trigger.eventsLog.sessionEnd.description" = "حدث ذكاء اصطناعي يبلّغ عن انتهاء جلسة.";
+"notifications.trigger.eventsLog.idle.label" = "الأمر خامل";
+"notifications.trigger.eventsLog.idle.description" = "حدث ذكاء اصطناعي يبلّغ عن خمول أو انتظار إدخال.";
+"notifications.trigger.eventsLog.notification.label" = "إشعار مخصص";
+"notifications.trigger.eventsLog.notification.description" = "حدث ذكاء اصطناعي يطلب إشعارًا مخصصًا.";
+"notifications.trigger.eventsLog.other.label" = "أحداث أخرى";
+"notifications.trigger.eventsLog.other.description" = "أي أنواع أخرى من أحداث الذكاء الاصطناعي غير المدرجة أعلاه.";
+
+"notifications.trigger.terminalSession.finished.label" = "الأمر خامل";
+"notifications.trigger.terminalSession.finished.description" = "لم تصدر عن أمر الطرفية أي مخرجات خلال مهلة الخمول.";
+"notifications.trigger.terminalSession.failed.label" = "انتهت عملية الصدفة";
+"notifications.trigger.terminalSession.failed.description" = "انتهت عملية الصدفة في الطرفية.";
+
+"notifications.trigger.historyMonitor.idle.label" = "السجل خامل";
+"notifications.trigger.historyMonitor.idle.description" = "لا توجد إدخالات سجل جديدة خلال مهلة الخمول.";
+
+"notifications.trigger.claudeCode.finished.label" = "اكتملت الاستجابة";
+"notifications.trigger.claudeCode.finished.description" = "انتهى Claude Code من الاستجابة في جلسة.";
+"notifications.trigger.claudeCode.permission.label" = "طلب إذن";
+"notifications.trigger.claudeCode.permission.description" = "Claude Code ينتظر إذنًا للمتابعة.";
+"notifications.trigger.claudeCode.idle.label" = "الجلسة خاملة";
+"notifications.trigger.claudeCode.idle.description" = "تبدو جلسة Claude Code خاملة.";
+
+"notifications.trigger.app.info.label" = "إشعار اختبار";
+"notifications.trigger.app.info.description" = "إشعار اختبار يدوي من الإعدادات.";
+
+// قسم مراقبة الأحداث
+"settings.ai.monitoring" = "مراقبة الأحداث";
+"settings.ai.monitoring.realtime" = "المراقبة الفورية";
+"settings.ai.monitoring.realtime.help" = "مراقبة أحداث الذكاء الاصطناعي فور حدوثها";
+"settings.ai.monitoring.logEvents" = "تسجيل الأحداث";
+"settings.ai.monitoring.logEvents.help" = "تسجيل أحداث الذكاء الاصطناعي في ملف السجل";
+
+// -----------------------------------------------------------------------------
+// MARK: إعدادات السجلات
+// -----------------------------------------------------------------------------
+
+// قسم سجلات التاريخ
+"settings.logs.history" = "سجلات التاريخ";
+"settings.logs.history.claudePath" = "مسار سجل Claude";
+"settings.logs.history.claudePath.help" = "المسار إلى ملف سجل Claude CLI";
+"settings.logs.history.codexPath" = "مسار سجل Codex";
+"settings.logs.history.codexPath.help" = "المسار إلى ملف سجل Codex CLI";
+"settings.logs.history.browse" = "تصفح...";
+"settings.logs.history.reset" = "إعادة تعيين للافتراضي";
+
+// قسم سجلات الطرفية
+"settings.logs.terminal" = "سجلات الطرفية";
+"settings.logs.terminal.claudePath" = "سجل طرفية Claude";
+"settings.logs.terminal.claudePath.help" = "المسار إلى سجل مخرجات طرفية Claude";
+"settings.logs.terminal.codexPath" = "سجل طرفية Codex";
+"settings.logs.terminal.codexPath.help" = "المسار إلى سجل مخرجات طرفية Codex";
+"settings.logs.terminal.normalize" = "تطبيع المخرجات";
+"settings.logs.terminal.normalize.help" = "تنظيف أحرف التحكم من المخرجات";
+"settings.logs.terminal.ansiParsing" = "تحليل ANSI";
+"settings.logs.terminal.ansiParsing.help" = "تحليل وعرض رموز ألوان ANSI";
+
+// قسم الجلسات النشطة
+"settings.logs.sessions" = "الجلسات النشطة";
+"settings.logs.sessions.description" = "جلسات الطرفية المراقبة حالياً";
+"settings.logs.sessions.noSessions" = "لا توجد جلسات نشطة";
+"settings.logs.sessions.refresh" = "تحديث";
+
+// قسم سجل التطبيق
+"settings.logs.appLog" = "سجل التطبيق";
+"settings.logs.appLog.path" = "مسار ملف السجل";
+"settings.logs.appLog.reveal" = "إظهار في Finder";
+"settings.logs.appLog.clear" = "مسح السجل";
+"settings.logs.appLog.clear.confirm.title" = "مسح سجل التطبيق؟";
+"settings.logs.appLog.clear.confirm.message" = "سيؤدي هذا إلى مسح جميع إدخالات السجل. لا يمكن التراجع عن هذا الإجراء.";
+
+// -----------------------------------------------------------------------------
+// MARK: إعدادات حول
+// -----------------------------------------------------------------------------
+
+// قسم معلومات الإصدار
+"settings.about.version" = "معلومات الإصدار";
+"settings.about.version.app" = "Chau7";
+"settings.about.version.number" = "الإصدار";
+"settings.about.version.build" = "البناء";
+"settings.about.version.checkUpdates" = "التحقق من التحديثات";
+
+// قسم معلومات النظام
+"settings.about.system" = "معلومات النظام";
+"settings.about.system.os" = "macOS";
+"settings.about.system.architecture" = "البنية";
+
+// قسم الروابط
+"settings.about.links" = "الروابط";
+"settings.about.links.website" = "الموقع";
+"settings.about.links.github" = "GitHub";
+"settings.about.links.documentation" = "التوثيق";
+"settings.about.links.reportIssue" = "الإبلاغ عن مشكلة";
+"settings.about.links.releaseNotes" = "ملاحظات الإصدار";
+
+// قسم الشكر
+"settings.about.acknowledgments" = "الشكر";
+"settings.about.acknowledgments.openSource" = "مكتبات مفتوحة المصدر";
+"settings.about.acknowledgments.contributors" = "المساهمون";
+"settings.about.acknowledgments.viewLicenses" = "عرض التراخيص";
+
+// حقوق النشر
+"settings.about.copyright" = "© 2024 Chau7. جميع الحقوق محفوظة.";

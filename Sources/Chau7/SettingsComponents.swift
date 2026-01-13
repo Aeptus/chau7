@@ -92,6 +92,11 @@ struct SettingsToggle: View {
             Spacer()
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label)
+        .accessibilityHint(help)
+        .accessibilityValue(isOn ? "enabled" : "disabled")
+        .accessibilityAddTraits(.isButton)
     }
 }
 
@@ -133,6 +138,20 @@ struct SettingsSlider: View {
             Spacer()
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label)
+        .accessibilityHint(help ?? "")
+        .accessibilityValue(String(format: format, value) + suffix)
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment:
+                value = min(value + step, range.upperBound)
+            case .decrement:
+                value = max(value - step, range.lowerBound)
+            @unknown default:
+                break
+            }
+        }
     }
 }
 
@@ -168,6 +187,10 @@ struct SettingsStepper: View {
             Spacer()
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label)
+        .accessibilityHint(help ?? "")
+        .accessibilityValue("\(value)\(suffix)")
     }
 }
 
@@ -201,6 +224,8 @@ struct SettingsTextField: View {
                 .font(monospaced ? .system(size: 12, design: .monospaced) : .body)
                 .disabled(disabled)
                 .onSubmit { onSubmit?() }
+                .accessibilityLabel(label)
+                .accessibilityHint(help ?? "")
 
             Spacer()
         }
@@ -235,6 +260,8 @@ struct SettingsNumberField: View {
                 .frame(width: width)
                 .disabled(disabled)
                 .onSubmit { onSubmit?() }
+                .accessibilityLabel(label)
+                .accessibilityHint(help ?? "")
 
             Spacer()
         }
@@ -276,6 +303,10 @@ struct SettingsPicker<T: Hashable>: View {
             Spacer()
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label)
+        .accessibilityHint(help ?? "")
+        .accessibilityValue(options.first { $0.value == selection }?.label ?? "")
     }
 }
 
@@ -299,6 +330,8 @@ struct SettingsInfoRow: View {
             Spacer()
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(value)")
     }
 }
 
@@ -452,6 +485,8 @@ struct SettingsShortcutRow: View {
                 .cornerRadius(4)
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label), keyboard shortcut: \(shortcut)")
     }
 }
 
@@ -467,6 +502,7 @@ struct SettingsDetectionRow: View {
             Circle()
                 .fill(color)
                 .frame(width: 10, height: 10)
+                .accessibilityHidden(true)
             Text(name)
                 .fontWeight(.medium)
             Spacer()
@@ -475,7 +511,10 @@ struct SettingsDetectionRow: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(name) AI detection")
+        .accessibilityHint("Commands: \(commands)")
     }
 }
 
-// Note: NotificationFilterToggle is defined in MainPanelView.swift with help parameter
+// Note: NotificationFilterToggle is defined in NotificationsSettingsView.swift

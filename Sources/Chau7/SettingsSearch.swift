@@ -26,6 +26,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case productivity
     case windows
     case aiIntegration
+    case notifications
     case logs
     case about
 
@@ -33,16 +34,17 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .general: return "General"
-        case .appearance: return "Appearance"
-        case .terminal: return "Terminal"
-        case .tabs: return "Tabs"
-        case .input: return "Input"
-        case .productivity: return "Productivity"
-        case .windows: return "Windows"
-        case .aiIntegration: return "AI Integration"
-        case .logs: return "Logs"
-        case .about: return "About"
+        case .general: return L("settings.general", "General")
+        case .appearance: return L("settings.appearance", "Appearance")
+        case .terminal: return L("settings.terminal", "Terminal")
+        case .tabs: return L("settings.tabs", "Tabs")
+        case .input: return L("settings.input", "Input")
+        case .productivity: return L("settings.productivity", "Productivity")
+        case .windows: return L("settings.windows", "Windows")
+        case .aiIntegration: return L("settings.ai", "AI Integration")
+        case .notifications: return L("settings.notifications", "Notifications")
+        case .logs: return L("settings.logs", "Logs")
+        case .about: return L("settings.about", "About")
         }
     }
 
@@ -56,6 +58,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .productivity: return "bolt.fill"
         case .windows: return "macwindow.on.rectangle"
         case .aiIntegration: return "sparkles"
+        case .notifications: return "bell.badge"
         case .logs: return "doc.text.magnifyingglass"
         case .about: return "info.circle"
         }
@@ -63,16 +66,17 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var description: String {
         switch self {
-        case .general: return "Startup behavior, profiles, and backup"
-        case .appearance: return "Font, colors, and display preferences"
-        case .terminal: return "Shell, cursor, scrollback, and bell"
-        case .tabs: return "Tab behavior and appearance"
-        case .input: return "Keyboard shortcuts and mouse behavior"
-        case .productivity: return "Snippets, clipboard, bookmarks, and search"
-        case .windows: return "Overlay, dropdown, and split panes"
-        case .aiIntegration: return "AI CLI detection and notifications"
-        case .logs: return "Log files and session tracking"
-        case .about: return "Version information and links"
+        case .general: return L("settings.general.description", "Startup behavior, profiles, and backup")
+        case .appearance: return L("settings.appearance.description", "Font, colors, and display preferences")
+        case .terminal: return L("settings.terminal.description", "Shell, cursor, scrollback, and bell")
+        case .tabs: return L("settings.tabs.description", "Tab behavior and appearance")
+        case .input: return L("settings.input.description", "Keyboard shortcuts and mouse behavior")
+        case .productivity: return L("settings.productivity.description", "Snippets, clipboard, bookmarks, and search")
+        case .windows: return L("settings.windows.description", "Overlay and split panes")
+        case .aiIntegration: return L("settings.ai.description", "AI CLI detection and theming")
+        case .notifications: return L("settings.notifications.description", "Alert preferences and event filters")
+        case .logs: return L("settings.logs.description", "Log files and session tracking")
+        case .about: return L("settings.about.description", "Version information and links")
         }
     }
 }
@@ -131,6 +135,9 @@ extension FeatureSettings {
         SearchableSetting(id: "startupCommand", section: .terminal, title: "Startup Command",
                          keywords: ["init", "run", "execute", "neofetch"],
                          description: "Command to run when terminal starts"),
+        SearchableSetting(id: "lsColors", section: .terminal, title: "ls Colors",
+                         keywords: ["ls", "colors", "colorize", "LSCOLORS", "CLICOLOR"],
+                         description: "Enable colored ls output in new sessions"),
         SearchableSetting(id: "cursor", section: .terminal, title: "Cursor Style",
                          keywords: ["block", "underline", "bar", "caret"],
                          description: "Terminal cursor appearance"),
@@ -165,6 +172,9 @@ extension FeatureSettings {
         SearchableSetting(id: "lastTabClose", section: .tabs, title: "Last Tab Close",
                          keywords: ["close", "window", "behavior", "final"],
                          description: "What happens when closing the last tab"),
+        SearchableSetting(id: "newTabDirectory", section: .tabs, title: "New Tab Directory",
+                         keywords: ["current", "working", "directory", "folder", "inherit"],
+                         description: "Open new tabs in the active tab's directory"),
 
         // Productivity
         SearchableSetting(id: "snippets", section: .productivity, title: "Snippets",
@@ -184,9 +194,6 @@ extension FeatureSettings {
                          description: "Default settings for the find bar"),
 
         // Windows
-        SearchableSetting(id: "dropdown", section: .windows, title: "Dropdown Terminal",
-                         keywords: ["quake", "slide", "hotkey", "global"],
-                         description: "Quake-style dropdown terminal"),
         SearchableSetting(id: "splitPanes", section: .windows, title: "Split Panes",
                          keywords: ["split", "divide", "pane", "horizontal", "vertical"],
                          description: "Split terminal into panes"),
@@ -201,12 +208,17 @@ extension FeatureSettings {
         SearchableSetting(id: "autoTabTheme", section: .aiIntegration, title: "Auto Tab Themes",
                          keywords: ["color", "tab", "ai", "theme"],
                          description: "Color tabs by AI model"),
-        SearchableSetting(id: "notifications", section: .aiIntegration, title: "Notifications",
-                         keywords: ["alert", "notify", "task", "complete"],
-                         description: "AI event notifications"),
-        SearchableSetting(id: "notificationFilters", section: .aiIntegration, title: "Notification Filters",
-                         keywords: ["filter", "event", "type", "toggle"],
-                         description: "Filter which events notify"),
+
+        // Notifications
+        SearchableSetting(id: "notificationStatus", section: .notifications, title: "Notification Status",
+                         keywords: ["permission", "alert", "system", "status"],
+                         description: "Notification permission status"),
+        SearchableSetting(id: "notificationFilters", section: .notifications, title: "Notification Filters",
+                         keywords: ["filter", "event", "type", "toggle", "task", "complete", "failed"],
+                         description: "Filter which events trigger notifications"),
+        SearchableSetting(id: "eventMonitoring", section: .notifications, title: "Event Monitoring",
+                         keywords: ["monitor", "watch", "ai", "events", "log"],
+                         description: "Monitor AI CLI events for notifications"),
     ]
 
     static func searchSettings(query: String) -> [(section: SettingsSection, settings: [SearchableSetting])] {
@@ -240,4 +252,5 @@ extension Notification.Name {
     static let terminalZoomChanged = Notification.Name("terminalZoomChanged")
     static let settingsProfileChanged = Notification.Name("settingsProfileChanged")
     static let appThemeChanged = Notification.Name("appThemeChanged")
+    static let fullscreenToolbarSettingChanged = Notification.Name("fullscreenToolbarSettingChanged")
 }

@@ -20,14 +20,14 @@ struct InputSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Keyboard
-            SettingsSectionHeader("Keyboard", icon: "keyboard")
+            SettingsSectionHeader(L("settings.input.keyboard", "Keyboard"), icon: "keyboard")
 
             SettingsPicker(
-                label: "Keybinding Preset",
-                help: "Choose a keyboard shortcut preset that matches your workflow",
+                label: L("settings.input.keybindingPreset", "Keybinding Preset"),
+                help: L("settings.input.keybindingPreset.help", "Choose a keyboard shortcut preset that matches your workflow"),
                 selection: presetBinding,
                 options: [
-                    (value: "default", label: "Default"),
+                    (value: "default", label: L("settings.input.default", "Default")),
                     (value: "vim", label: "Vim"),
                     (value: "emacs", label: "Emacs")
                 ]
@@ -37,65 +37,59 @@ struct InputSettingsView: View {
                 .padding(.vertical, 8)
 
             // Keyboard Shortcuts Editor (NEW)
-            SettingsSectionHeader("Keyboard Shortcuts", icon: "command")
+            SettingsSectionHeader(L("settings.input.keyboardShortcuts", "Keyboard Shortcuts"), icon: "command")
 
-            Text("Click on a shortcut to customize it. Conflicts will be highlighted.")
+            Text(L("settings.input.shortcutsHelp", "Click on a shortcut to customize it. Conflicts will be highlighted."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 4)
 
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(settings.customShortcuts) { shortcut in
-                    KeyboardShortcutRow(
-                        shortcut: shortcut,
-                        hasConflict: !settings.shortcutConflicts(for: shortcut).isEmpty,
-                        onEdit: {
-                            editingShortcut = shortcut
-                            showShortcutEditor = true
-                        }
-                    )
-                }
+            ForEach(settings.customShortcuts) { shortcut in
+                KeyboardShortcutRow(
+                    shortcut: shortcut,
+                    hasConflict: !settings.shortcutConflicts(for: shortcut).isEmpty,
+                    onEdit: {
+                        editingShortcut = shortcut
+                        showShortcutEditor = true
+                    }
+                )
             }
-            .padding(8)
-            .background(Color.secondary.opacity(0.05))
-            .cornerRadius(8)
 
-            HStack {
-                Button("Reset Shortcuts to Defaults") {
+            SettingsButtonRow(buttons: [
+                .init(title: L("settings.input.resetShortcuts", "Reset Shortcuts to Defaults"), style: .plain) {
                     settings.resetShortcutsToDefaults()
                 }
-                .foregroundColor(.orange)
-            }
+            ])
 
             Divider()
                 .padding(.vertical, 8)
 
             // Mouse
-            SettingsSectionHeader("Mouse", icon: "computermouse")
+            SettingsSectionHeader(L("settings.input.mouse", "Mouse"), icon: "computermouse")
 
             SettingsToggle(
-                label: "Copy on Select",
-                help: "Automatically copy text to clipboard when you select it with the mouse",
+                label: L("settings.input.copyOnSelect", "Copy on Select"),
+                help: L("settings.input.copyOnSelect.help", "Automatically copy text to clipboard when you select it with the mouse"),
                 isOn: $settings.isCopyOnSelectEnabled
             )
 
             SettingsToggle(
-                label: "Cmd+Click Paths",
-                help: "Open file paths in your editor when you Cmd+click them in the terminal",
+                label: L("settings.input.cmdClickPaths", "Cmd+Click Paths"),
+                help: L("settings.input.cmdClickPaths.help", "Open file paths in your editor when you Cmd+click them in the terminal"),
                 isOn: $settings.isCmdClickPathsEnabled
             )
 
             if settings.isCmdClickPathsEnabled {
                 SettingsPicker(
-                    label: "URL Handler",
-                    help: "Choose which browser opens when Cmd+clicking a URL",
+                    label: L("settings.input.urlHandler", "URL Handler"),
+                    help: L("settings.input.urlHandler.help", "Choose which browser opens when Cmd+clicking a URL"),
                     selection: $settings.urlHandler,
                     options: URLHandler.allCases.map { (value: $0, label: $0.displayName) }
                 )
 
                 SettingsTextField(
-                    label: "Default Editor",
-                    help: "Editor to open files with (leave empty for system default or $EDITOR)",
+                    label: L("settings.input.defaultEditor", "Default Editor"),
+                    help: L("settings.input.defaultEditor.help", "Editor to open files with (leave empty for system default or $EDITOR)"),
                     placeholder: "/usr/local/bin/code",
                     text: $settings.defaultEditor,
                     width: 250,
@@ -104,8 +98,8 @@ struct InputSettingsView: View {
             }
 
             SettingsToggle(
-                label: "Option+Click Cursor",
-                help: "Move cursor to clicked position by pressing Option and clicking (like iTerm2)",
+                label: L("settings.input.optionClickCursor", "Option+Click Cursor"),
+                help: L("settings.input.optionClickCursor.help", "Move cursor to clicked position by pressing Option and clicking (like iTerm2)"),
                 isOn: $settings.isOptionClickCursorEnabled
             )
 
@@ -113,11 +107,11 @@ struct InputSettingsView: View {
                 .padding(.vertical, 8)
 
             // Broadcast
-            SettingsSectionHeader("Broadcast", icon: "antenna.radiowaves.left.and.right")
+            SettingsSectionHeader(L("settings.input.broadcast", "Broadcast"), icon: "antenna.radiowaves.left.and.right")
 
             SettingsToggle(
-                label: "Broadcast Input",
-                help: "Send keyboard input to all open tabs simultaneously (useful for multi-server commands)",
+                label: L("settings.input.broadcastInput", "Broadcast Input"),
+                help: L("settings.input.broadcastInput.help", "Send keyboard input to all open tabs simultaneously (useful for multi-server commands)"),
                 isOn: $settings.isBroadcastEnabled
             )
 
@@ -125,13 +119,11 @@ struct InputSettingsView: View {
                 .padding(.vertical, 8)
 
             // Reset Button
-            HStack {
-                Spacer()
-                Button("Reset Input to Defaults") {
+            SettingsButtonRow(buttons: [
+                .init(title: L("settings.input.resetToDefaults", "Reset Input to Defaults"), style: .plain) {
                     settings.resetInputToDefaults()
                 }
-                .foregroundColor(.red)
-            }
+            ], alignment: .trailing)
         }
         .sheet(isPresented: $showShortcutEditor) {
             if let shortcut = editingShortcut {
@@ -197,21 +189,21 @@ struct ShortcutEditorSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Edit Shortcut: \(KeyboardShortcut.actionDisplayName(shortcut.action))")
+            Text(L("settings.input.editShortcut", "Edit Shortcut:") + " \(KeyboardShortcut.actionDisplayName(shortcut.action))")
                 .font(.headline)
 
             Divider()
 
             HStack {
-                Text("Key")
+                Text(L("settings.input.key", "Key"))
                 Spacer()
-                TextField("Key", text: $key)
+                TextField(L("settings.input.key", "Key"), text: $key)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 80)
                     .font(.system(.body, design: .monospaced))
             }
 
-            Text("Modifiers")
+            Text(L("settings.input.modifiers", "Modifiers"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -224,7 +216,7 @@ struct ShortcutEditorSheet: View {
 
             // Preview
             HStack {
-                Text("Preview:")
+                Text(L("settings.input.preview", "Preview:"))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(previewString)
@@ -240,7 +232,7 @@ struct ShortcutEditorSheet: View {
                 HStack {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(.orange)
-                    Text("Conflicts with: \(conflicts.map { KeyboardShortcut.actionDisplayName($0.action) }.joined(separator: ", "))")
+                    Text(L("settings.input.conflictsWith", "Conflicts with:") + " \(conflicts.map { KeyboardShortcut.actionDisplayName($0.action) }.joined(separator: ", "))")
                         .font(.caption)
                         .foregroundColor(.orange)
                 }
@@ -249,14 +241,14 @@ struct ShortcutEditorSheet: View {
             Divider()
 
             HStack {
-                Button("Cancel") {
+                Button(L("button.cancel", "Cancel")) {
                     onDismiss()
                 }
                 .keyboardShortcut(.cancelAction)
 
                 Spacer()
 
-                Button("Save") {
+                Button(L("button.save", "Save")) {
                     saveShortcut()
                     onDismiss()
                 }

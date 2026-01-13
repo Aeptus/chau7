@@ -9,6 +9,7 @@ final class NotificationManager {
     /// Access must be synchronized via the serial queue
     private var _useNativeNotifications = true
     private let queue = DispatchQueue(label: "com.chau7.notificationManager")
+    var tabTitleProvider: ((String) -> String?)?
 
     private var useNativeNotifications: Bool {
         get { queue.sync { _useNativeNotifications } }
@@ -30,7 +31,8 @@ final class NotificationManager {
         if useNativeNotifications {
             tryNativeNotification(for: event)
         } else {
-            sendAppleScriptNotification(title: event.notificationTitle, body: event.notificationBody)
+            let title = event.notificationTitle(toolOverride: resolveTabTitle(for: event.tool))
+            sendAppleScriptNotification(title: title, body: event.notificationBody)
         }
     }
 
@@ -43,13 +45,15 @@ final class NotificationManager {
             case .denied:
                 Log.info("Native notifications denied, using AppleScript fallback")
                 self?.useNativeNotifications = false
-                self?.sendAppleScriptNotification(title: event.notificationTitle, body: event.notificationBody)
+                let title = event.notificationTitle(toolOverride: self?.resolveTabTitle(for: event.tool))
+                self?.sendAppleScriptNotification(title: title, body: event.notificationBody)
             case .notDetermined:
                 // Try to schedule anyway - if it fails, we'll fall back to AppleScript
                 self?.scheduleNativeNotification(for: event)
             @unknown default:
                 Log.warn("Unknown notification authorization status, trying AppleScript")
-                self?.sendAppleScriptNotification(title: event.notificationTitle, body: event.notificationBody)
+                let title = event.notificationTitle(toolOverride: self?.resolveTabTitle(for: event.tool))
+                self?.sendAppleScriptNotification(title: title, body: event.notificationBody)
             }
         }
     }
@@ -58,7 +62,7 @@ final class NotificationManager {
         Log.info("Scheduling notification: type=\(event.type) tool=\(event.tool)")
 
         let content = UNMutableNotificationContent()
-        content.title = event.notificationTitle
+        content.title = event.notificationTitle(toolOverride: resolveTabTitle(for: event.tool))
         content.body = event.notificationBody
         content.sound = .default
 
@@ -75,7 +79,8 @@ final class NotificationManager {
                 // Fall back to AppleScript for future notifications
                 self?.useNativeNotifications = false
                 // Try AppleScript for this notification
-                self?.sendAppleScriptNotification(title: event.notificationTitle, body: event.notificationBody)
+                let title = event.notificationTitle(toolOverride: self?.resolveTabTitle(for: event.tool))
+                self?.sendAppleScriptNotification(title: title, body: event.notificationBody)
             } else {
                 Log.info("Native notification scheduled successfully.")
             }
@@ -117,24 +122,21 @@ final class NotificationManager {
     }
 
     private func shouldNotify(_ event: AIEvent) -> Bool {
-        let filters = FeatureSettings.shared.notificationFilters
-        switch event.type.lowercased() {
-        case "finished":
-            return filters.taskFinished
-        case "failed":
-            return filters.taskFailed
-        case "needs_validation":
-            return filters.needsValidation
-        case "permission":
-            return filters.permissionRequest
-        case "tool_complete":
-            return filters.toolComplete
-        case "session_end":
-            return filters.sessionEnd
-        case "idle":
-            return filters.commandIdle
-        default:
-            return true
+        if let trigger = NotificationTriggerCatalog.trigger(for: event) {
+            return FeatureSettings.shared.notificationTriggerState.isEnabled(for: trigger)
         }
+        return true
+    }
+
+    private func resolveTabTitle(for tool: String) -> String? {
+        guard let provider = tabTitleProvider else { return nil }
+        if Thread.isMainThread {
+            return provider(tool)
+        }
+        var value: String?
+        DispatchQueue.main.sync {
+            value = provider(tool)
+        }
+        return value
     }
 }

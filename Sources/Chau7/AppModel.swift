@@ -531,6 +531,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             return
         }
         let event = AIEvent(
+            source: .app,
             type: "info",
             tool: "Chau7",
             message: "Test notification",
@@ -539,8 +540,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         NotificationManager.shared.notify(for: event)
     }
 
-    func recordEvent(type: String, tool: String, message: String, notify: Bool) {
+    func recordEvent(source: AIEventSource, type: String, tool: String, message: String, notify: Bool) {
         let event = AIEvent(
+            source: source,
             type: type,
             tool: tool,
             message: message,
@@ -830,6 +832,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         Log.info("Idle detected for \(toolName) session=\(shortSession) idleFor=\(idleSeconds)s")
 
         let event = AIEvent(
+            source: .historyMonitor,
             type: "idle",
             tool: toolName,
             message: message,

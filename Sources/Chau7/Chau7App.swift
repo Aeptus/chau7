@@ -14,6 +14,9 @@ struct Chau7App: App {
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
         let overlayModel = OverlayTabsModel(appModel: model)
+        NotificationManager.shared.tabTitleProvider = { [weak overlayModel] tool in
+            overlayModel?.notificationTabTitle(forTool: tool)
+        }
         _overlayModel = StateObject(wrappedValue: overlayModel)
         _ = SnippetManager.shared
         AppIcon.apply()
@@ -299,7 +302,7 @@ struct Chau7App: App {
                 Button("Debug Console") {
                     DebugConsoleController.shared.toggle()
                 }
-                .keyboardShortcut("d", modifiers: [.command, .shift])
+                .keyboardShortcut("l", modifiers: [.command, .shift])
             }
         }
     }
