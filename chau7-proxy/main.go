@@ -29,10 +29,17 @@ func main() {
 
 	// Initialize IPC notifier
 	ipc := NewIPCNotifier(config.IPCSocketPath)
+	ipc.SetDatabase(db) // Enable event storage
 	defer ipc.Close()
 
+	// Initialize task manager
+	taskManager := NewTaskManager(db, ipc, config.CandidateGracePeriod, config.IdleTimeout)
+
 	// Create proxy handler
-	proxy := NewProxyHandler(config, db, ipc)
+	proxy := NewProxyHandler(config, db, ipc, taskManager)
+
+	// Create task endpoints handler
+	taskEndpoints := NewTaskEndpoints(taskManager, db)
 
 	// Create HTTP server mux
 	mux := http.NewServeMux()
@@ -42,6 +49,17 @@ func main() {
 
 	// Stats endpoint
 	mux.HandleFunc("/stats", handleStats(db))
+
+	// Task management endpoints
+	mux.HandleFunc("/task/candidate", taskEndpoints.HandleGetCandidate)
+	mux.HandleFunc("/task/start", taskEndpoints.HandleStartTask)
+	mux.HandleFunc("/task/dismiss", taskEndpoints.HandleDismissCandidate)
+	mux.HandleFunc("/task/assess", taskEndpoints.HandleAssessTask)
+	mux.HandleFunc("/task/current", taskEndpoints.HandleGetCurrentTask)
+	mux.HandleFunc("/task/name", taskEndpoints.HandleUpdateTaskName)
+
+	// Events endpoint
+	mux.HandleFunc("/events", taskEndpoints.HandleGetEvents)
 
 	// All other requests go to the proxy
 	mux.Handle("/", proxy)

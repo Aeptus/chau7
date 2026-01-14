@@ -6,11 +6,11 @@ import (
 
 func TestExtractAnthropicRequest(t *testing.T) {
 	tests := []struct {
-		name         string
-		body         string
-		expectModel  string
-		expectMsgs   int
-		expectMax    int
+		name        string
+		body        string
+		expectModel string
+		expectMsgs  int
+		expectMax   int
 	}{
 		{
 			name: "Full Anthropic request",
@@ -72,12 +72,12 @@ func TestExtractAnthropicRequest(t *testing.T) {
 
 func TestExtractAnthropicResponse(t *testing.T) {
 	tests := []struct {
-		name          string
-		body          string
-		expectModel   string
-		expectInput   int
-		expectOutput  int
-		expectReason  string
+		name         string
+		body         string
+		expectModel  string
+		expectInput  int
+		expectOutput int
+		expectReason string
 	}{
 		{
 			name: "Standard response",
@@ -140,11 +140,11 @@ func TestExtractAnthropicResponse(t *testing.T) {
 
 func TestExtractOpenAIRequest(t *testing.T) {
 	tests := []struct {
-		name         string
-		body         string
-		expectModel  string
-		expectMsgs   int
-		expectMax    int
+		name        string
+		body        string
+		expectModel string
+		expectMsgs  int
+		expectMax   int
 	}{
 		{
 			name: "GPT-4 request",
@@ -191,12 +191,12 @@ func TestExtractOpenAIRequest(t *testing.T) {
 
 func TestExtractOpenAIResponse(t *testing.T) {
 	tests := []struct {
-		name          string
-		body          string
-		expectModel   string
-		expectInput   int
-		expectOutput  int
-		expectReason  string
+		name         string
+		body         string
+		expectModel  string
+		expectInput  int
+		expectOutput int
+		expectReason string
 	}{
 		{
 			name: "Standard completion",
@@ -263,10 +263,10 @@ func TestExtractOpenAIResponse(t *testing.T) {
 
 func TestExtractGeminiRequest(t *testing.T) {
 	tests := []struct {
-		name         string
-		body         string
-		expectMsgs   int
-		expectMax    int
+		name       string
+		body       string
+		expectMsgs int
+		expectMax  int
 	}{
 		{
 			name: "With generation config",
@@ -318,12 +318,12 @@ func TestExtractGeminiRequest(t *testing.T) {
 
 func TestExtractGeminiResponse(t *testing.T) {
 	tests := []struct {
-		name          string
-		body          string
-		expectModel   string
-		expectInput   int
-		expectOutput  int
-		expectReason  string
+		name         string
+		body         string
+		expectModel  string
+		expectInput  int
+		expectOutput int
+		expectReason string
 	}{
 		{
 			name: "Standard response",
@@ -439,9 +439,9 @@ data: [DONE]
 			expectOutput: 0,
 		},
 		{
-			name:     "Only DONE marker",
-			provider: ProviderOpenAI,
-			chunks:   "data: [DONE]\n",
+			name:         "Only DONE marker",
+			provider:     ProviderOpenAI,
+			chunks:       "data: [DONE]\n",
 			expectInput:  0,
 			expectOutput: 0,
 		},
