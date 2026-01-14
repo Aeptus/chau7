@@ -346,8 +346,14 @@ func (tm *TaskManager) DismissCandidate(tabID, candidateID, method string) (bool
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 
+	// Check if candidate exists before dismissing
+	candidate := tm.candidates[tabID]
+	if candidate == nil || (candidateID != "" && candidate.ID != candidateID) {
+		return false, 0
+	}
+
 	reassigned := tm.dismissCandidateLocked(tabID, candidateID, method)
-	return reassigned >= 0, reassigned
+	return true, reassigned
 }
 
 // AssessTask records the outcome of a task
