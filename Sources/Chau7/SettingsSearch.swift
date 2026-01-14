@@ -253,4 +253,8 @@ extension Notification.Name {
     static let settingsProfileChanged = Notification.Name("settingsProfileChanged")
     static let appThemeChanged = Notification.Name("appThemeChanged")
     static let fullscreenToolbarSettingChanged = Notification.Name("fullscreenToolbarSettingChanged")
+    // API Analytics
+    static let apiAnalyticsSettingsChanged = Notification.Name("apiAnalyticsSettingsChanged")
+    static let apiCallRecorded = Notification.Name("apiCallRecorded")
+    static let proxyStatusChanged = Notification.Name("proxyStatusChanged")
 }

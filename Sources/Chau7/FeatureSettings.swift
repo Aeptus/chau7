@@ -764,6 +764,32 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
+    // MARK: - API Analytics Settings
+
+    @Published var isAPIAnalyticsEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(isAPIAnalyticsEnabled, forKey: Keys.apiAnalyticsEnabled)
+            NotificationCenter.default.post(name: .apiAnalyticsSettingsChanged, object: nil)
+        }
+    }
+
+    @Published var apiAnalyticsPort: Int {
+        didSet {
+            let clamped = max(1024, min(apiAnalyticsPort, 65535))
+            if apiAnalyticsPort != clamped {
+                apiAnalyticsPort = clamped
+                return
+            }
+            UserDefaults.standard.set(apiAnalyticsPort, forKey: Keys.apiAnalyticsPort)
+        }
+    }
+
+    @Published var apiAnalyticsLogPrompts: Bool {
+        didSet {
+            UserDefaults.standard.set(apiAnalyticsLogPrompts, forKey: Keys.apiAnalyticsLogPrompts)
+        }
+    }
+
     // MARK: - Keys
 
     private enum Keys {
@@ -853,6 +879,10 @@ final class FeatureSettings: ObservableObject {
         static let bellSound = "terminal.bellSound"
         static let defaultStartDirectory = "terminal.defaultStartDirectory"
         static let overlayPositionsMap = "overlay.positions.map"
+        // API Analytics
+        static let apiAnalyticsEnabled = "analytics.api.enabled"
+        static let apiAnalyticsPort = "analytics.api.port"
+        static let apiAnalyticsLogPrompts = "analytics.api.logPrompts"
     }
 
     // MARK: - Init
@@ -1042,6 +1072,11 @@ final class FeatureSettings: ObservableObject {
         self.bellEnabled = defaults.object(forKey: Keys.bellEnabled) as? Bool ?? true
         self.bellSound = defaults.string(forKey: Keys.bellSound) ?? "default"
         self.defaultStartDirectory = defaults.string(forKey: Keys.defaultStartDirectory) ?? home
+
+        // API Analytics (default: disabled)
+        self.isAPIAnalyticsEnabled = defaults.object(forKey: Keys.apiAnalyticsEnabled) as? Bool ?? false
+        self.apiAnalyticsPort = defaults.object(forKey: Keys.apiAnalyticsPort) as? Int ?? 18080
+        self.apiAnalyticsLogPrompts = defaults.object(forKey: Keys.apiAnalyticsLogPrompts) as? Bool ?? false
     }
 
     private static func migratedShortcutsIfNeeded(_ shortcuts: [KeyboardShortcut]) -> [KeyboardShortcut] {

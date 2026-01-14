@@ -147,8 +147,11 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     @Published var recentEvents: [AIEvent] = []
     @Published var claudeCodeEvents: [ClaudeCodeEvent] = []
     @Published var claudeCodeSessions: [ClaudeCodeMonitor.ClaudeSessionInfo] = []
+    @Published var apiCallEvents: [APICallEvent] = []
+    @Published var apiCallStats: APICallStats?
 
     private var tailer: FileTailer<AIEvent>?
+    private var apiCallObserver: Any?
     private var idleMonitors: [HistoryIdleMonitor] = []
     private var codexTerminalTailer: FileTailer<String>?
     private var claudeTerminalTailer: FileTailer<String>?
@@ -307,7 +310,47 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         applyIdleMonitoringState()
         applyTerminalMonitoringState()
         startClaudeCodeMonitor()
+        startAPICallObserver()
         startCleanupTimer()
+    }
+
+    // MARK: - API Call Tracking (from Proxy)
+
+    private func startAPICallObserver() {
+        apiCallObserver = NotificationCenter.default.addObserver(
+            forName: .apiCallRecorded,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self = self,
+                  let event = notification.userInfo?["event"] as? APICallEvent else { return }
+            self.handleAPICallEvent(event)
+        }
+        Log.info("API call observer started")
+    }
+
+    private func handleAPICallEvent(_ event: APICallEvent) {
+        apiCallEvents.append(event)
+        apiCallEvents.trimToLast(100)
+
+        // Also create an AIEvent for the unified event stream
+        let message = "\(event.provider.displayName) \(event.model): in:\(event.inputTokens) out:\(event.outputTokens) \(event.formattedCost)"
+        let aiEvent = AIEvent(
+            id: event.id,
+            source: .apiProxy,
+            type: event.hasError ? "error" : "api_call",
+            tool: event.provider.displayName,
+            message: message,
+            ts: DateFormatters.iso8601.string(from: event.timestamp)
+        )
+        recentEvents.append(aiEvent)
+        recentEvents.trimToLast(25)
+
+        Log.info("API call recorded: \(event.provider.rawValue) \(event.model) $\(String(format: "%.4f", event.costUSD))")
+    }
+
+    func refreshAPIStats() async {
+        apiCallStats = await ProxyManager.shared.getStats()
     }
 
     // MARK: - Periodic Cleanup (Memory optimization)

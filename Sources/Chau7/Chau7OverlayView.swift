@@ -29,7 +29,7 @@ enum OverlayLayout {
     static let commandListMinWidth: CGFloat = 200
 
     // Tab bar
-    static let tabBarHeight: CGFloat = 36
+    static let tabBarHeight: CGFloat = 28
 }
 
 // MARK: - Safari-style Unified Toolbar Delegate
@@ -119,15 +119,18 @@ private struct ToolbarTabBarView: View {
                     } label: {
                         Image(systemName: "plus")
                             .font(.system(size: 12, weight: .semibold))
-                            .frame(width: 24, height: 24)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 3)
+                    .background(Color.black.opacity(0.18))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .contentShape(Rectangle())
                     .accessibilityLabel("New tab")
                     .accessibilityHint("Opens a new terminal tab")
                 }
                 .padding(.horizontal, 8)
-                .padding(.vertical, 6)
+                .padding(.vertical, 3)
             }
 
             Spacer()
@@ -401,7 +404,7 @@ struct TabButton: View {
             .accessibilityLabel("Close tab")
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.vertical, 3)
         .background(
             isSelected
                 ? tabColor.color.opacity(0.25)
@@ -473,7 +476,7 @@ struct TabButtonFallback: View {
             .accessibilityLabel("Close tab")
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.vertical, 3)
         .background(
             isSelected
                 ? tabColor.color.opacity(0.25)
