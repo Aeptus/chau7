@@ -166,9 +166,11 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.baseline.RecordCall(model, respMeta.OutputTokens)
 
 		// Update database with output stats
-		if err := p.db.UpdateModelOutputStats(model, respMeta.OutputTokens); err != nil {
-			if p.config.LogLevel == "debug" {
-				log.Printf("[DEBUG] Failed to update model stats: %v", err)
+		if p.db != nil {
+			if err := p.db.UpdateModelOutputStats(model, respMeta.OutputTokens); err != nil {
+				if p.config.LogLevel == "debug" {
+					log.Printf("[DEBUG] Failed to update model stats: %v", err)
+				}
 			}
 		}
 	}
