@@ -550,6 +550,17 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
           precmd_functions+=smartoverlay_precmd
         fi
         smartoverlay_precmd
+
+        # Chau7 CLI header injection for Claude Code
+        chau7_update_project() {
+          local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
+          export CHAU7_PROJECT="${git_root:-$PWD}"
+          export ANTHROPIC_EXTRA_HEADERS="X-Chau7-Session:${CHAU7_SESSION_ID:-},X-Chau7-Tab:${CHAU7_TAB_ID:-},X-Chau7-Project:${CHAU7_PROJECT:-}"
+        }
+        chau7_update_project
+        if command -v add-zsh-hook >/dev/null 2>&1; then
+          add-zsh-hook chpwd chau7_update_project
+        fi
         """
 
         // Create .bashrc for bash
@@ -573,6 +584,16 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
           printf '\\e]7;file://%s%s\\a' "$HOSTNAME" "$PWD"
         }
         PROMPT_COMMAND="smartoverlay_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+
+        # Chau7 CLI header injection for Claude Code
+        chau7_update_project() {
+          local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
+          export CHAU7_PROJECT="${git_root:-$PWD}"
+          export ANTHROPIC_EXTRA_HEADERS="X-Chau7-Session:${CHAU7_SESSION_ID:-},X-Chau7-Tab:${CHAU7_TAB_ID:-},X-Chau7-Project:${CHAU7_PROJECT:-}"
+        }
+        chau7_update_project
+        # Update on directory change via PROMPT_COMMAND
+        PROMPT_COMMAND="chau7_update_project${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
         """
 
         // Create config.fish for fish
@@ -596,6 +617,19 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         function smartoverlay_precmd --on-event fish_prompt
           printf '\\e]7;file://%s%s\\a' (hostname) (pwd)
         end
+
+        # Chau7 CLI header injection for Claude Code
+        function chau7_update_project --on-variable PWD
+          set -l git_root (git rev-parse --show-toplevel 2>/dev/null)
+          if test -n "$git_root"
+            set -gx CHAU7_PROJECT $git_root
+          else
+            set -gx CHAU7_PROJECT $PWD
+          end
+          set -gx ANTHROPIC_EXTRA_HEADERS "X-Chau7-Session:$CHAU7_SESSION_ID,X-Chau7-Tab:$CHAU7_TAB_ID,X-Chau7-Project:$CHAU7_PROJECT"
+        end
+        # Initialize on startup
+        chau7_update_project
         """
 
         // Write all integration files
