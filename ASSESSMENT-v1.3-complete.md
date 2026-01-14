@@ -1,16 +1,17 @@
-# Token Reduction Platform - v1.2 Implementation Complete
+# Token Reduction Platform - v1.3 Implementation Complete
 
 > Updated from SPEC-Token-Reduction-Platform.md
 
 ## Executive Summary
 
-The Chau7 Token Reduction Platform now has **v1.0, v1.1, and v1.2 fully implemented**.
+The Chau7 Token Reduction Platform now has **v1.0, v1.1, v1.2, and v1.3 fully implemented**.
 
 | Version | Status | Features |
 |---------|--------|----------|
 | v1.0 | ✅ Complete | Token accounting, cost calculation, IPC, SQLite |
 | v1.1 | ✅ Complete | Task lifecycle, correlation headers, candidate state machine |
 | v1.2 | ✅ Complete | Baseline estimation, Aethyme integration, Mockup forwarding |
+| v1.3 | ✅ Complete | Shell integration for CLI header injection |
 
 ---
 
@@ -200,9 +201,38 @@ Sources/Chau7/Proxy/
 
 ---
 
+## v1.3 Shell Integration (CLI Header Injection)
+
+Shell integration now automatically sets `ANTHROPIC_EXTRA_HEADERS` so Claude Code sends correlation headers to the proxy.
+
+### Features
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| ANTHROPIC_EXTRA_HEADERS setup | ✅ | Auto-set on shell startup |
+| CHAU7_PROJECT dynamic update | ✅ | Updates on directory change |
+| Git root detection | ✅ | Uses git repo root if available |
+| Zsh integration | ✅ | Uses chpwd hook |
+| Bash integration | ✅ | Uses PROMPT_COMMAND |
+| Fish integration | ✅ | Uses --on-variable PWD |
+
+### Headers Injected
+
+```
+X-Chau7-Session: <session_id>
+X-Chau7-Tab: <tab_id>
+X-Chau7-Project: <git_root_or_cwd>
+```
+
+### File Modified
+
+- `TerminalSessionModel.swift:544-632` - Shell integration for zsh/bash/fish
+
+---
+
 ## Future Work
 
-With v1.2 complete, the platform has all planned proxy-side features. Future work includes:
+With v1.3 complete, the platform has all planned client-side features. Future work includes:
 
 | Component | Feature | Notes |
 |-----------|---------|-------|
@@ -210,4 +240,3 @@ With v1.2 complete, the platform has all planned proxy-side features. Future wor
 | Aethyme | Skill pack metadata | Server-side implementation |
 | Mockup | Event ingestion API | Server-side implementation |
 | Mockup | Analytics dashboard | Web UI implementation |
-| Chau7 | Shell wrapper for CLI | `ANTHROPIC_EXTRA_HEADERS` integration |
