@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -17,16 +18,20 @@ type ProxyHandler struct {
 	db          *Database
 	ipc         *IPCNotifier
 	taskManager *TaskManager
+	baseline    *BaselineEstimator // v1.2
+	mockup      *MockupClient      // v1.2
 	client      *http.Client
 }
 
 // NewProxyHandler creates a new proxy handler
-func NewProxyHandler(config *Config, db *Database, ipc *IPCNotifier, taskManager *TaskManager) *ProxyHandler {
+func NewProxyHandler(config *Config, db *Database, ipc *IPCNotifier, taskManager *TaskManager, baseline *BaselineEstimator, mockup *MockupClient) *ProxyHandler {
 	return &ProxyHandler{
 		config:      config,
 		db:          db,
 		ipc:         ipc,
 		taskManager: taskManager,
+		baseline:    baseline,
+		mockup:      mockup,
 		client: &http.Client{
 			Timeout: 5 * time.Minute, // Long timeout for streaming responses
 			Transport: &http.Transport{
@@ -142,6 +147,32 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Calculate cost
 	cost := CalculateCostForCall(provider, model, respMeta.InputTokens, respMeta.OutputTokens)
 
+	// v1.2: Calculate baseline estimate
+	var baseline *BaselineEstimate
+	if p.baseline != nil && resp.StatusCode == 200 {
+		// Extract context pack ID from headers if present
+		contextPackID := r.Header.Get("X-Chau7-Context-Pack")
+
+		baseline = p.baseline.EstimateBaseline(
+			provider,
+			model,
+			promptPreview,
+			respMeta.InputTokens,
+			respMeta.OutputTokens,
+			contextPackID,
+		)
+
+		// Record call for historical stats
+		p.baseline.RecordCall(model, respMeta.OutputTokens)
+
+		// Update database with output stats
+		if err := p.db.UpdateModelOutputStats(model, respMeta.OutputTokens); err != nil {
+			if p.config.LogLevel == "debug" {
+				log.Printf("[DEBUG] Failed to update model stats: %v", err)
+			}
+		}
+	}
+
 	// Create record
 	record := &APICallRecord{
 		SessionID:    headers.SessionID,
@@ -156,8 +187,13 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Timestamp:    startTime,
 	}
 
-	// Log to database with task correlation
-	callID, err := p.db.InsertAPICallWithTask(record, actualTaskID, headers.TabID, headers.Project)
+	// Log to database with task correlation and baseline (v1.2)
+	var callID int64
+	if baseline != nil {
+		callID, err = p.db.InsertAPICallWithBaseline(record, actualTaskID, headers.TabID, headers.Project, baseline)
+	} else {
+		callID, err = p.db.InsertAPICallWithTask(record, actualTaskID, headers.TabID, headers.Project)
+	}
 	if err != nil {
 		log.Printf("[WARN] Failed to log API call: %v", err)
 	}
@@ -175,10 +211,23 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// v1.2: Forward event to Mockup analytics
+	if p.mockup != nil {
+		if err := p.mockup.SendAPICallEvent(record, actualTaskID, baseline, headers); err != nil {
+			if p.config.LogLevel == "debug" {
+				log.Printf("[DEBUG] Mockup forwarding failed: %v", err)
+			}
+		}
+	}
+
 	// Log summary
-	log.Printf("[INFO] %s %s: %d | %s | in:%d out:%d | %dms | $%.4f | task:%s",
+	savedInfo := ""
+	if baseline != nil {
+		savedInfo = fmt.Sprintf(" | saved:%d", baseline.TokensSaved)
+	}
+	log.Printf("[INFO] %s %s: %d | %s | in:%d out:%d | %dms | $%.4f | task:%s%s",
 		r.Method, r.URL.Path, resp.StatusCode, model,
-		respMeta.InputTokens, respMeta.OutputTokens, latencyMs, cost, actualTaskID)
+		respMeta.InputTokens, respMeta.OutputTokens, latencyMs, cost, actualTaskID, savedInfo)
 
 	_ = bytesWritten // Silence unused variable warning
 }
