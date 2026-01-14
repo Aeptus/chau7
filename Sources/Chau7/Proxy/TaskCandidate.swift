@@ -42,6 +42,10 @@ public struct TrackedTask: Identifiable, Codable, Equatable, Sendable {
     public var totalTokens: Int
     public var totalCostUSD: Double
 
+    // v1.2: Baseline metrics
+    public var baselineTotalTokens: Int
+    public var tokensSaved: Int
+
     public var durationSeconds: Int64 {
         Int64((completedAt ?? Date()).timeIntervalSince(startedAt))
     }
@@ -62,6 +66,20 @@ public struct TrackedTask: Identifiable, Codable, Equatable, Sendable {
         } else {
             return "\(seconds / 3600)h \(seconds % 3600 / 60)m"
         }
+    }
+
+    // v1.2: Formatted tokens saved
+    public var formattedTokensSaved: String {
+        if tokensSaved > 0 {
+            return "+\(tokensSaved)"
+        } else if tokensSaved < 0 {
+            return "\(tokensSaved)"
+        }
+        return "0"
+    }
+
+    public var hasSavings: Bool {
+        tokensSaved > 0
     }
 }
 

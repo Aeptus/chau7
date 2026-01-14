@@ -363,7 +363,9 @@ public final class ProxyIPCServer: ObservableObject {
                 completedAt: nil,
                 totalAPICalls: 0,
                 totalTokens: 0,
-                totalCostUSD: 0
+                totalCostUSD: 0,
+                baselineTotalTokens: 0,
+                tokensSaved: 0
             )
 
             Task { @MainActor in

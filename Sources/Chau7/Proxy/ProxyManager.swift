@@ -391,6 +391,9 @@ public final class ProxyManager: ObservableObject {
                 let startMethod: String?
                 let trigger: String?
                 let projectPath: String?
+                // v1.2: Baseline metrics
+                let baselineTotalTokens: Int?
+                let tokensSaved: Int?
 
                 enum CodingKeys: String, CodingKey {
                     case hasTask = "has_task"
@@ -404,6 +407,8 @@ public final class ProxyManager: ObservableObject {
                     case startMethod = "start_method"
                     case trigger
                     case projectPath = "project_path"
+                    case baselineTotalTokens = "baseline_total_tokens"
+                    case tokensSaved = "tokens_saved"
                 }
             }
 
@@ -429,7 +434,9 @@ public final class ProxyManager: ObservableObject {
                 completedAt: nil,
                 totalAPICalls: resp.totalCalls ?? 0,
                 totalTokens: resp.totalTokens ?? 0,
-                totalCostUSD: resp.totalCostUSD ?? 0
+                totalCostUSD: resp.totalCostUSD ?? 0,
+                baselineTotalTokens: resp.baselineTotalTokens ?? 0,
+                tokensSaved: resp.tokensSaved ?? 0
             )
         } catch {
             logger.warning("Failed to get current task: \(error.localizedDescription)")
@@ -499,7 +506,9 @@ public final class ProxyManager: ObservableObject {
                 completedAt: nil,
                 totalAPICalls: 0,
                 totalTokens: 0,
-                totalCostUSD: 0
+                totalCostUSD: 0,
+                baselineTotalTokens: 0,
+                tokensSaved: 0
             )
         } catch {
             logger.warning("Failed to start task: \(error.localizedDescription)")

@@ -52,6 +52,17 @@ public struct TaskAssessmentView: View {
                 }
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
+
+                // v1.2: Tokens saved indicator
+                if task.tokensSaved != 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: task.hasSavings ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                            .foregroundColor(task.hasSavings ? .green : .orange)
+                        Text("\(task.formattedTokensSaved) tokens")
+                            .foregroundColor(task.hasSavings ? .green : .orange)
+                    }
+                    .font(.system(size: 10, weight: .medium))
+                }
             }
             .padding(8)
             .background(Color(NSColor.controlBackgroundColor))
@@ -126,6 +137,13 @@ public struct TaskAssessmentBar: View {
                 Text("\(task.totalTokens)")
                     .font(.system(size: 10).monospacedDigit())
                     .foregroundColor(.secondary)
+
+                // v1.2: Show tokens saved
+                if task.tokensSaved != 0 {
+                    Text("(\(task.formattedTokensSaved))")
+                        .font(.system(size: 10).monospacedDigit())
+                        .foregroundColor(task.hasSavings ? .green : .orange)
+                }
 
                 Text(task.formattedCost)
                     .font(.system(size: 10).monospacedDigit())
@@ -206,7 +224,9 @@ struct TaskAssessmentView_Previews: PreviewProvider {
                     completedAt: nil,
                     totalAPICalls: 12,
                     totalTokens: 45000,
-                    totalCostUSD: 0.234
+                    totalCostUSD: 0.234,
+                    baselineTotalTokens: 52000,
+                    tokensSaved: 7000
                 ),
                 onApprove: { _ in },
                 onFail: { _ in },
@@ -228,7 +248,9 @@ struct TaskAssessmentView_Previews: PreviewProvider {
                     completedAt: nil,
                     totalAPICalls: 5,
                     totalTokens: 12000,
-                    totalCostUSD: 0.089
+                    totalCostUSD: 0.089,
+                    baselineTotalTokens: 15000,
+                    tokensSaved: 3000
                 ),
                 onApprove: {},
                 onFail: {}
