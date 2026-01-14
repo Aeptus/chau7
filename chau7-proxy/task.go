@@ -101,8 +101,9 @@ type TaskManager struct {
 	idleTimeout time.Duration
 
 	// Dependencies
-	db  *Database
-	ipc *IPCNotifier
+	db     *Database
+	ipc    *IPCNotifier
+	mockup *MockupClient // v1.2: for analytics forwarding
 }
 
 // NewTaskManager creates a new task manager
@@ -123,6 +124,11 @@ func NewTaskManager(db *Database, ipc *IPCNotifier, gracePeriod, idleTimeout tim
 	go tm.runGracePeriodChecker()
 
 	return tm
+}
+
+// SetMockupClient sets the mockup client for analytics forwarding
+func (tm *TaskManager) SetMockupClient(mockup *MockupClient) {
+	tm.mockup = mockup
 }
 
 // ProcessAPICall handles task lifecycle for an incoming API call
@@ -403,8 +409,25 @@ func (tm *TaskManager) AssessTask(taskID string, approved bool, note string) err
 	tm.db.InsertTaskAssessmentWithBaseline(assessment, baselineMetrics)
 	tm.db.UpdateTask(task)
 
-	// Emit assessment event
-	tm.ipc.NotifyTaskAssessment(task, assessment)
+	// Emit assessment event via IPC
+	tm.ipc.NotifyTaskAssessmentWithBaseline(task, assessment, baselineMetrics)
+
+	// v1.2: Forward to Mockup analytics
+	if tm.mockup != nil && baselineMetrics != nil {
+		// Convert TaskBaselineMetrics to BaselineEstimate for Mockup
+		baseline := &BaselineEstimate{
+			TotalTokens: baselineMetrics.BaselineTotalTokens,
+			TokensSaved: baselineMetrics.TokensSaved,
+			Method:      BaselineMethodHistoricalAvg, // aggregated from multiple calls
+		}
+		// Construct correlation headers from task
+		headers := &CorrelationHeaders{
+			SessionID: task.SessionID,
+			TabID:     task.TabID,
+			Project:   task.ProjectPath,
+		}
+		tm.mockup.SendTaskAssessmentEvent(assessment, task, baseline, headers)
+	}
 
 	return nil
 }
