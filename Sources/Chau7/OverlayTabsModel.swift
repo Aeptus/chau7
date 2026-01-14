@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Combine
 
 struct OverlayTab: Identifiable, Equatable {
     let id: UUID
@@ -121,6 +122,12 @@ final class OverlayTabsModel: ObservableObject {
     // F21: Snippets
     @Published var isSnippetManagerVisible: Bool = false
 
+    // Task Lifecycle (v1.1)
+    @Published var currentCandidate: TaskCandidate? = nil
+    @Published var currentTask: TrackedTask? = nil
+    @Published var isTaskAssessmentVisible: Bool = false
+
+    private var taskCancellables: Set<AnyCancellable> = []
     private var renameTabID: UUID? = nil
     private var renameOriginalTitle: String = ""
     private var renameOriginalColor: TabColor = .blue
@@ -142,6 +149,9 @@ final class OverlayTabsModel: ObservableObject {
         }
         self.tabs = [first]
         self.selectedTabID = first.id
+
+        // Setup task lifecycle observers (v1.1)
+        setupTaskObservers()
     }
 
     var selectedTab: OverlayTab? {
@@ -208,6 +218,9 @@ final class OverlayTabsModel: ObservableObject {
         if isSearchVisible {
             refreshSearch()
         }
+        // Update task state for new tab (v1.1)
+        updateCurrentCandidate(from: ProxyIPCServer.shared.pendingCandidates)
+        updateCurrentTask(from: ProxyIPCServer.shared.activeTasks)
     }
 
     func newTab() {
@@ -845,5 +858,110 @@ final class OverlayTabsModel: ObservableObject {
         tabs[index].lastCommand = cmd
 
         Log.trace("F20: Command finished with code \(exitCode), duration: \(cmd.durationString)")
+    }
+
+    // MARK: - Task Lifecycle (v1.1)
+
+    func setupTaskObservers() {
+        let ipc = ProxyIPCServer.shared
+
+        // Observe pending candidates
+        ipc.$pendingCandidates
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] candidates in
+                guard let self else { return }
+                self.updateCurrentCandidate(from: candidates)
+            }
+            .store(in: &taskCancellables)
+
+        // Observe active tasks
+        ipc.$activeTasks
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] tasks in
+                guard let self else { return }
+                self.updateCurrentTask(from: tasks)
+            }
+            .store(in: &taskCancellables)
+    }
+
+    private func updateCurrentCandidate(from candidates: [String: TaskCandidate]) {
+        guard let session = selectedTab?.session else {
+            currentCandidate = nil
+            return
+        }
+        currentCandidate = candidates[session.tabIdentifier]
+    }
+
+    private func updateCurrentTask(from tasks: [String: TrackedTask]) {
+        guard let session = selectedTab?.session else {
+            currentTask = nil
+            return
+        }
+        currentTask = tasks[session.tabIdentifier]
+    }
+
+    func confirmTaskCandidate() {
+        guard let candidate = currentCandidate,
+              let session = selectedTab?.session else { return }
+
+        Task {
+            if let task = await ProxyManager.shared.startTask(
+                tabId: session.tabIdentifier,
+                taskName: nil,
+                candidateId: candidate.id
+            ) {
+                await MainActor.run {
+                    self.currentCandidate = nil
+                    self.currentTask = task
+                    Log.info("Task confirmed: \(task.name)")
+                }
+            }
+        }
+    }
+
+    func dismissTaskCandidate() {
+        guard let candidate = currentCandidate,
+              let session = selectedTab?.session else { return }
+
+        Task {
+            let dismissed = await ProxyManager.shared.dismissCandidate(
+                tabId: session.tabIdentifier,
+                candidateId: candidate.id
+            )
+            if dismissed {
+                await MainActor.run {
+                    self.currentCandidate = nil
+                    Log.info("Task candidate dismissed")
+                }
+            }
+        }
+    }
+
+    func showTaskAssessment() {
+        guard currentTask != nil else { return }
+        isTaskAssessmentVisible = true
+    }
+
+    func dismissTaskAssessment() {
+        isTaskAssessmentVisible = false
+    }
+
+    func assessTask(approved: Bool, note: String?) {
+        guard let task = currentTask else { return }
+
+        Task {
+            let success = await ProxyManager.shared.assessTask(
+                taskId: task.id,
+                approved: approved,
+                note: note
+            )
+            if success {
+                await MainActor.run {
+                    self.isTaskAssessmentVisible = false
+                    self.currentTask = nil
+                    Log.info("Task assessed: \(approved ? "success" : "failed")")
+                }
+            }
+        }
     }
 }

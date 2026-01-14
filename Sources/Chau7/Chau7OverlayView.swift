@@ -244,6 +244,51 @@ struct Chau7OverlayView: View {
                     .transition(.move(edge: .top).combined(with: .opacity))
                     .zIndex(10)
             }
+
+            // Task Lifecycle (v1.1) - Candidate banner at top
+            if let candidate = overlayModel.currentCandidate {
+                TaskCandidateView(
+                    candidate: candidate,
+                    onConfirm: { overlayModel.confirmTaskCandidate() },
+                    onDismiss: { overlayModel.dismissTaskCandidate() }
+                )
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(15)
+            }
+
+            // Task Lifecycle (v1.1) - Assessment panel
+            if overlayModel.isTaskAssessmentVisible, let task = overlayModel.currentTask {
+                VStack {
+                    Spacer()
+                    TaskAssessmentView(
+                        task: task,
+                        onApprove: { note in overlayModel.assessTask(approved: true, note: note) },
+                        onFail: { note in overlayModel.assessTask(approved: false, note: note) },
+                        onCancel: { overlayModel.dismissTaskAssessment() }
+                    )
+                    .padding(.bottom, 20)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(15)
+            }
+
+            // Task Lifecycle (v1.1) - Active task bar at bottom
+            if let task = overlayModel.currentTask, !overlayModel.isTaskAssessmentVisible {
+                VStack {
+                    Spacer()
+                    TaskAssessmentBar(
+                        task: task,
+                        onApprove: { overlayModel.assessTask(approved: true, note: nil) },
+                        onFail: { overlayModel.showTaskAssessment() }
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(12)
+            }
         }
         .modifier(ReduceMotionAnimationModifier(
             values: [
@@ -251,7 +296,10 @@ struct Chau7OverlayView: View {
                 overlayModel.isRenameVisible,
                 overlayModel.isClipboardHistoryVisible,
                 overlayModel.isBookmarkListVisible,
-                overlayModel.isSnippetManagerVisible
+                overlayModel.isSnippetManagerVisible,
+                overlayModel.currentCandidate != nil,
+                overlayModel.currentTask != nil,
+                overlayModel.isTaskAssessmentVisible
             ]
         ))
     }

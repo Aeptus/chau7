@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -163,7 +164,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// If this call was made during candidate grace period, track it for potential reassignment
 	if strings.HasPrefix(taskID, "candidate:") && callID > 0 {
-		p.taskManager.AddPendingCall(headers.TabID, string(rune(callID)))
+		p.taskManager.AddPendingCall(headers.TabID, strconv.FormatInt(callID, 10))
 	}
 
 	// Notify host application via IPC with task context
