@@ -60,6 +60,11 @@ func main() {
 	// Initialize task manager
 	taskManager := NewTaskManager(db, ipc, config.CandidateGracePeriod, config.IdleTimeout)
 
+	// v1.2: Wire up mockup client for analytics forwarding
+	if mockupClient != nil {
+		taskManager.SetMockupClient(mockupClient)
+	}
+
 	// Create proxy handler
 	proxy := NewProxyHandler(config, db, ipc, taskManager, baselineEstimator, mockupClient)
 

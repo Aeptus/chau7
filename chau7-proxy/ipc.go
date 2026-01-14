@@ -148,10 +148,21 @@ func (n *IPCNotifier) NotifyTaskCandidateDismissed(candidate *TaskCandidate, dis
 	return n.sendEvent(msg)
 }
 
-// NotifyTaskAssessment sends a task assessment notification
+// NotifyTaskAssessment sends a task assessment notification (legacy, without baseline)
 func (n *IPCNotifier) NotifyTaskAssessment(task *Task, assessment *TaskAssessment) error {
+	return n.NotifyTaskAssessmentWithBaseline(task, assessment, nil)
+}
+
+// NotifyTaskAssessmentWithBaseline sends a task assessment notification with baseline metrics
+func (n *IPCNotifier) NotifyTaskAssessmentWithBaseline(task *Task, assessment *TaskAssessment, baseline *TaskBaselineMetrics) error {
 	if n.socketPath == "" {
 		return nil
+	}
+
+	// v1.2: Include tokens saved from baseline metrics
+	var tokensSaved *int
+	if baseline != nil && baseline.BaselineCallCount > 0 {
+		tokensSaved = &baseline.TokensSaved
 	}
 
 	msg := &IPCEventMessage{
@@ -169,7 +180,7 @@ func (n *IPCNotifier) NotifyTaskAssessment(task *Task, assessment *TaskAssessmen
 			TotalAPICalls:   assessment.TotalAPICalls,
 			TotalTokens:     assessment.TotalTokens,
 			TotalCostUSD:    assessment.TotalCostUSD,
-			TokensSaved:     nil, // Will be populated in v1.2 with baseline estimation
+			TokensSaved:     tokensSaved,
 			DurationSeconds: assessment.DurationSeconds,
 		},
 	}
