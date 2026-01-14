@@ -397,7 +397,10 @@ func (tm *TaskManager) AssessTask(taskID string, approved bool, note string) err
 		DurationSeconds: int64(now.Sub(task.StartedAt).Seconds()),
 		AssessedAt:      now,
 	}
-	tm.db.InsertTaskAssessment(assessment)
+
+	// v1.2: Get baseline metrics and save with assessment
+	baselineMetrics, _ := tm.db.GetTaskBaselineMetrics(taskID)
+	tm.db.InsertTaskAssessmentWithBaseline(assessment, baselineMetrics)
 	tm.db.UpdateTask(task)
 
 	// Emit assessment event

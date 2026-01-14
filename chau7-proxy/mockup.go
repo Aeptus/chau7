@@ -241,10 +241,29 @@ func (c *MockupClient) Flush() error {
 
 	events := c.batch
 	c.batch = make([]*MockupEvent, 0, c.batchSize)
+	c.mu.Unlock()
+
+	err := c.sendBatch(events)
+
+	c.mu.Lock()
+	if err != nil {
+		// On failure, prepend events back to batch for retry
+		// Limit to avoid unbounded growth (keep most recent if over limit)
+		maxRetainedEvents := c.batchSize * 10
+		if len(c.batch)+len(events) > maxRetainedEvents {
+			// Drop oldest events (from failed batch) to make room
+			keepFromFailed := maxRetainedEvents - len(c.batch)
+			if keepFromFailed > 0 {
+				c.batch = append(events[len(events)-keepFromFailed:], c.batch...)
+			}
+		} else {
+			c.batch = append(events, c.batch...)
+		}
+	}
 	c.lastFlush = time.Now()
 	c.mu.Unlock()
 
-	return c.sendBatch(events)
+	return err
 }
 
 // sendBatch sends a batch of events to Mockup

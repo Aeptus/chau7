@@ -226,25 +226,33 @@ func (be *BaselineEstimator) getHistoricalOutputAvg(model string, actualOutput i
 // getModelDefaultOutput returns a default output estimate based on model class
 func (be *BaselineEstimator) getModelDefaultOutput(model string, actualOutput int) int {
 	// Model-specific output averages (based on typical usage patterns)
-	defaults := map[string]int{
-		"claude-opus":   2000,
-		"claude-sonnet": 1500,
-		"claude-haiku":  1000,
-		"gpt-4":         1500,
-		"gpt-4o":        1500,
-		"gpt-4o-mini":   1000,
-		"gpt-3.5":       800,
-		"gemini-pro":    1200,
-		"gemini-flash":  1000,
-		"o1":            3000,
-		"o3":            2500,
+	// Order matters: more specific prefixes first to avoid wrong matches
+	// e.g., "gpt-4o-mini" should match before "gpt-4o" or "gpt-4"
+	prefixes := []struct {
+		prefix    string
+		avgOutput int
+	}{
+		{"claude-opus", 2000},
+		{"claude-sonnet", 1500},
+		{"claude-haiku", 1000},
+		{"gpt-4o-mini", 1000},  // Must be before gpt-4o and gpt-4
+		{"gpt-4o", 1500},       // Must be before gpt-4
+		{"gpt-4-turbo", 1500},  // Must be before gpt-4
+		{"gpt-4", 1500},
+		{"gpt-3.5", 800},
+		{"gemini-pro", 1200},
+		{"gemini-flash", 1000},
+		{"o1-mini", 2000},
+		{"o1", 3000},
+		{"o3-mini", 2000},
+		{"o3", 2500},
 	}
 
-	// Try prefix matching
-	for prefix, defaultOutput := range defaults {
-		if len(model) >= len(prefix) && model[:len(prefix)] == prefix {
-			if defaultOutput > actualOutput {
-				return defaultOutput
+	// Try prefix matching (in order - most specific first)
+	for _, p := range prefixes {
+		if len(model) >= len(p.prefix) && model[:len(p.prefix)] == p.prefix {
+			if p.avgOutput > actualOutput {
+				return p.avgOutput
 			}
 			return actualOutput
 		}
