@@ -12,11 +12,12 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable {
     public static let historyMonitor = AIEventSource(rawValue: "history_monitor")
     public static let claudeCode = AIEventSource(rawValue: "claude_code")
     public static let app = AIEventSource(rawValue: "app")
+    public static let apiProxy = AIEventSource(rawValue: "api_proxy")
     public static let unknown = AIEventSource(rawValue: "unknown")
 }
 
 public struct AIEvent: Identifiable, Equatable {
-    public let id = UUID()
+    public let id: UUID
     public let source: AIEventSource
     public let type: String
     public let tool: String
@@ -24,6 +25,16 @@ public struct AIEvent: Identifiable, Equatable {
     public let ts: String
 
     public init(source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String) {
+        self.id = UUID()
+        self.source = source
+        self.type = type
+        self.tool = tool
+        self.message = message
+        self.ts = ts
+    }
+
+    public init(id: UUID, source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String) {
+        self.id = id
         self.source = source
         self.type = type
         self.tool = tool

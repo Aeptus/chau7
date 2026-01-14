@@ -1250,3 +1250,7 @@
 // Personnalisation onglets
 "tip.tab_colors" = "Clic droit sur un onglet pour changer sa couleur";
 "tip.rename_tab" = "Double-clic sur un onglet pour le renommer";
+
+/* Added for key parity */
+"settings.terminal.lsColors" = "Couleurs de ls";
+"settings.terminal.lsColors.help" = "Activer la sortie de ls en couleur en définissant CLICOLOR et LSCOLORS";

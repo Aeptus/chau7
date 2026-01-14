@@ -38,6 +38,9 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     private var appliedColorSchemeSignature: String?
     private var appliedCursorStyle: (style: String, blink: Bool)?
     private var bellConfig: (enabled: Bool, sound: String)?
+    private var commandSelectionActive = false
+    private var commandSelectionRange: CommandSelectionRange?
+    private var commandSelectionMonitor: Any?
     private var appliedScrollbackLines: Int?
 
     // MARK: - Color Configuration
@@ -309,7 +312,7 @@ final class Chau7TerminalView: LocalProcessTerminalView {
             keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 guard let self = self else { return event }
                 guard event.window === self.window else { return event }
-                guard self.window?.firstResponder === self else { return event }
+                guard self.isFirstResponderInTerminal() else { return event }
 
                 if self.handleSnippetKeyDown(event) {
                     return nil
@@ -561,26 +564,6 @@ final class Chau7TerminalView: LocalProcessTerminalView {
 
     // MARK: - Copy (with SIGINT fallback)
 
-    /// Copies selected text to clipboard. If no selection exists, sends Ctrl+C (SIGINT)
-    /// to interrupt the running process - matching standard terminal behavior.
-    override func copy(_ sender: Any) {
-        // Get selection coordinates via reflection and extract text
-        if let (startPos, endPos) = getSelectionCoordinates() {
-            let terminal = getTerminal()
-            let text = terminal.getText(start: startPos, end: endPos)
-
-            if !text.isEmpty {
-                copyToClipboard(text)
-                Log.trace("Copied \(text.count) chars from selection.")
-                return
-            }
-        }
-
-        // No selection - send Ctrl+C (SIGINT) to interrupt running process
-        Log.trace("No selection - sending SIGINT.")
-        send(data: [0x03])
-    }
-
     /// Gets selection start/end coordinates via reflection from SwiftTerm's SelectionService.
     /// SwiftTerm's getSelection() has a bug where it returns empty even with valid selection,
     /// so we bypass it by reading the coordinates directly and calling getText().
@@ -642,11 +625,17 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         clipboard.setString(text, forType: .string)
     }
 
-    /// Selects the current input line (the line where the cursor is).
-    /// Used for Cmd+A to select just the current command being typed.
-    func selectCurrentLine() {
-        // Use selectAll as fallback since internal SwiftTerm APIs are not accessible
-        selectAll(nil)
+    /// Selects the full current command (including wrapped rows).
+    /// Used for Cmd+A to select the command being typed.
+    func selectCurrentCommand() {
+        guard let range = currentCommandRange() else { return }
+        commandSelectionRange = range
+        commandSelectionActive = true
+        installCommandSelectionMonitor()
+        if !applySelection(range: range) {
+            // Fallback: keep command selection active for copy/delete handling.
+            commandSelectionActive = true
+        }
     }
 
     // MARK: - Paste
@@ -671,6 +660,229 @@ final class Chau7TerminalView: LocalProcessTerminalView {
             return true
         }
         return false
+    }
+
+    // MARK: - Command Selection
+
+    private struct CommandSelectionRange {
+        let startRow: Int
+        let endRow: Int
+        let startCol: Int
+        let endCol: Int
+    }
+
+    private func currentCommandRange() -> CommandSelectionRange? {
+        let terminal = getTerminal()
+        let cursor = terminal.getCursorLocation()
+        let cursorRow = terminal.getTopVisibleRow() + cursor.y
+        let endCol = min(max(cursor.x, 0), max(terminal.cols - 1, 0))
+        guard let lines = bufferLinesSnapshot(), !lines.isEmpty else {
+            return CommandSelectionRange(startRow: cursorRow, endRow: cursorRow, startCol: 0, endCol: endCol)
+        }
+        let clampedRow = min(max(cursorRow, 0), lines.count - 1)
+        var startRow = clampedRow
+        while startRow > 0, isWrappedLine(lines[startRow]) {
+            startRow -= 1
+        }
+        var endRow = clampedRow
+        while endRow + 1 < lines.count, isWrappedLine(lines[endRow + 1]) {
+            endRow += 1
+        }
+        return CommandSelectionRange(startRow: startRow, endRow: endRow, startCol: 0, endCol: endCol)
+    }
+
+    private func applySelection(range: CommandSelectionRange) -> Bool {
+        guard let window else { return false }
+        let terminal = getTerminal()
+        let topRow = terminal.getTopVisibleRow()
+        let cellWidth = max(caretFrame.width, 1)
+        let cellHeight = max(caretFrame.height, 1)
+
+        func locationFor(row: Int, col: Int) -> NSPoint {
+            let displayRow = row - topRow
+            let x = CGFloat(col) * cellWidth + (cellWidth * 0.5)
+            let y = bounds.height - (CGFloat(displayRow) + 0.5) * cellHeight
+            return NSPoint(x: x, y: y)
+        }
+
+        let startPoint = locationFor(row: range.startRow, col: range.startCol)
+        let endPoint = locationFor(row: range.endRow, col: range.endCol)
+        let startInWindow = convert(startPoint, to: nil)
+        let endInWindow = convert(endPoint, to: nil)
+
+        let previousMouseReporting = allowMouseReporting
+        allowMouseReporting = false
+        defer { allowMouseReporting = previousMouseReporting }
+
+        guard let startEvent = NSEvent.mouseEvent(
+            with: .leftMouseDragged,
+            location: startInWindow,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ),
+        let endEvent = NSEvent.mouseEvent(
+            with: .leftMouseDragged,
+            location: endInWindow,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1
+        ) else {
+            return false
+        }
+
+        mouseDragged(with: startEvent)
+        mouseDragged(with: endEvent)
+        return true
+    }
+
+    private func bufferLinesSnapshot() -> [Any?]? {
+        let buffer = getTerminal().buffer
+        let bufferMirror = Mirror(reflecting: buffer)
+        guard let linesChild = bufferMirror.children.first(where: { $0.label == "_lines" }) else {
+            return nil
+        }
+        let linesObject = linesChild.value
+        let linesMirror = Mirror(reflecting: linesObject)
+
+        guard let arrayChild = linesMirror.children.first(where: { $0.label == "array" }) else {
+            return nil
+        }
+        let arrayValue = arrayChild.value
+        let array: [Any?]
+        if let typedArray = arrayValue as? [Any?] {
+            array = typedArray
+        } else {
+            array = Mirror(reflecting: arrayValue).children.map { $0.value }
+        }
+        guard !array.isEmpty else { return nil }
+
+        let startIndex = (linesMirror.children.first(where: { $0.label == "startIndex" })?.value as? Int) ?? 0
+        let count = (linesMirror.children.first(where: { $0.label == "_count" })?.value as? Int) ?? array.count
+        let limit = min(count, array.count)
+
+        var lines: [Any?] = []
+        lines.reserveCapacity(limit)
+        for index in 0..<limit {
+            let idx = (startIndex + index) % array.count
+            lines.append(array[idx])
+        }
+        return lines
+    }
+
+    private func isWrappedLine(_ line: Any?) -> Bool {
+        guard let unwrapped = unwrapOptional(line) else { return false }
+        for child in Mirror(reflecting: unwrapped).children {
+            if child.label == "isWrapped", let value = child.value as? Bool {
+                return value
+            }
+        }
+        return false
+    }
+
+    private func unwrapOptional(_ value: Any?) -> Any? {
+        guard let value else { return nil }
+        let mirror = Mirror(reflecting: value)
+        guard mirror.displayStyle == .optional else { return value }
+        return mirror.children.first?.value
+    }
+
+    private func clearCommandSelection() {
+        commandSelectionActive = false
+        commandSelectionRange = nil
+        selectNone()
+        removeCommandSelectionMonitor()
+    }
+
+    func clearCommandSelectionState() {
+        commandSelectionActive = false
+        commandSelectionRange = nil
+        removeCommandSelectionMonitor()
+    }
+
+    private func commandSelectionText() -> String? {
+        guard let range = commandSelectionRange else { return nil }
+        let terminal = getTerminal()
+        let start = Position(col: range.startCol, row: range.startRow)
+        let end = Position(col: range.endCol, row: range.endRow)
+        let text = terminal.getText(start: start, end: end)
+        return text.trimmingCharacters(in: .newlines)
+    }
+
+    override func copy(_ sender: Any) {
+        if let (startPos, endPos) = getSelectionCoordinates() {
+            let terminal = getTerminal()
+            let text = terminal.getText(start: startPos, end: endPos)
+
+            if !text.isEmpty {
+                copyToClipboard(text)
+                Log.trace("Copied \(text.count) chars from selection.")
+                return
+            }
+        }
+
+        if commandSelectionActive, let text = commandSelectionText(), !text.isEmpty {
+            copyToClipboard(text)
+            Log.trace("Copied \(text.count) chars from command selection.")
+            clearCommandSelection()
+            return
+        }
+
+        // No selection - send Ctrl+C (SIGINT) to interrupt running process
+        Log.trace("No selection - sending SIGINT.")
+        send(data: [0x03])
+    }
+
+    private func installCommandSelectionMonitor() {
+        guard commandSelectionMonitor == nil else { return }
+        commandSelectionMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            guard self.commandSelectionActive else { return event }
+            guard event.window === self.window else { return event }
+            guard self.isFirstResponderInTerminal() else { return event }
+
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if flags == [.command],
+               event.charactersIgnoringModifiers?.lowercased() == "c" {
+                self.copy(self)
+                return nil
+            }
+            if flags.isEmpty,
+               event.keyCode == UInt16(kVK_Delete) || event.keyCode == UInt16(kVK_ForwardDelete) {
+                let text = self.commandSelectionText() ?? ""
+                self.clearCommandSelection()
+                if text.isEmpty {
+                    self.send(data: [0x15])  // Ctrl+U
+                } else {
+                    self.send(data: [0x05])  // Ctrl+E
+                    self.send(txt: String(repeating: "\u{7F}", count: text.count))
+                }
+                return nil
+            }
+
+            self.commandSelectionActive = false
+            return event
+        }
+    }
+
+    private func removeCommandSelectionMonitor() {
+        if let monitor = commandSelectionMonitor {
+            NSEvent.removeMonitor(monitor)
+            commandSelectionMonitor = nil
+        }
+    }
+
+    private func isFirstResponderInTerminal() -> Bool {
+        guard let responder = window?.firstResponder as? NSView else { return false }
+        return responder === self || responder.isDescendant(of: self)
     }
 
 
@@ -757,13 +969,20 @@ final class Chau7TerminalView: LocalProcessTerminalView {
             onInput?(text)
         }
 
+        if data.contains(0x03) || data.contains(0x15) {
+            pendingLocalEcho.removeAll()
+            pendingLocalBackspaces = 0
+        }
+
+        let localEchoEnabled = FeatureSettings.shared.isLocalEchoEnabled && isPtyEchoEnabled
+        if !localEchoEnabled {
+            pendingLocalEcho.removeAll()
+            pendingLocalBackspaces = 0
+        }
+
         // LOCAL ECHO: Show printable characters IMMEDIATELY before PTY round-trip.
-        // This is the key to matching Terminal.app's perceived latency.
         // The PTY will echo the same character back, which we'll suppress in dataReceived.
-        //
-        // IMPORTANT: Only do local echo when PTY has echo enabled.
-        // Password prompts disable echo, so we check tcgetattr() to detect this.
-        if isPtyEchoEnabled {
+        if localEchoEnabled {
             for byte in data {
                 // Only local echo printable ASCII (0x20-0x7E)
                 if byte >= 0x20 && byte <= 0x7E {

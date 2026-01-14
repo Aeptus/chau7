@@ -928,6 +928,25 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             }
         }
 
+        // MARK: - API Analytics Proxy Injection
+        let settings = FeatureSettings.shared
+        if settings.isAPIAnalyticsEnabled {
+            let proxyBase = "http://127.0.0.1:\(settings.apiAnalyticsPort)"
+            let openAIBase = "\(proxyBase)/v1"
+
+            // Claude Code / Anthropic SDK
+            dict["ANTHROPIC_BASE_URL"] = proxyBase
+
+            // Codex CLI / OpenAI SDK
+            dict["OPENAI_BASE_URL"] = openAIBase
+
+            // Gemini CLI / Google GenAI SDK
+            dict["GOOGLE_GEMINI_BASE_URL"] = proxyBase
+
+            // Session ID for correlation with terminal session
+            dict["CHAU7_SESSION_ID"] = dict["TERM_SESSION_ID"] ?? UUID().uuidString
+        }
+
         return dict.map { "\($0.key)=\($0.value)" }
     }
 

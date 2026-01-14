@@ -44,6 +44,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
         Log.info("App Nap prevention enabled with latency-critical activity")
 
+        // Start API analytics proxy if enabled
+        Task { @MainActor in
+            ProxyIPCServer.shared.start()
+            ProxyManager.shared.startIfEnabled()
+            Log.info("API proxy subsystem initialized")
+        }
+
         NSApp.activate(ignoringOtherApps: true)
 
         opacityObserver = NotificationCenter.default.addObserver(
@@ -118,6 +125,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Stop API analytics proxy
+        Task { @MainActor in
+            ProxyManager.shared.stop()
+            ProxyIPCServer.shared.stop()
+            Log.info("API proxy subsystem stopped")
+        }
+
         // End App Nap prevention activity
         if let activityToken {
             ProcessInfo.processInfo.endActivity(activityToken)
@@ -482,30 +496,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let doubleTapThreshold: TimeInterval = 0.4  // 400ms for double-tap
 
     func selectAll() {
-        guard let window = NSApp.keyWindow,
-              overlayHosts.contains(where: { $0.window == window }),
-              let terminalView = window.firstResponder as? Chau7TerminalView
-        else { return }
+        guard let window = NSApp.keyWindow else { return }
+        if let terminalView = window.firstResponder as? Chau7TerminalView,
+           overlayHosts.contains(where: { $0.window == window }) {
+            let now = Date()
 
-        let now = Date()
+            // Check if this is a double-tap (Cmd+A Cmd+A)
+            if let lastTime = lastSelectAllTime,
+               now.timeIntervalSince(lastTime) < doubleTapThreshold {
+                // Double-tap: Select entire terminal buffer
+                terminalView.selectAll(nil)
+                terminalView.clearCommandSelectionState()
+                Log.info("Cmd+A Cmd+A: Selected all terminal buffer.")
+                lastSelectAllTime = nil  // Reset for next sequence
+            } else {
+                // Single tap: Select current command (including wrapped rows)
+                selectCurrentInputLine(in: terminalView)
+                Log.info("Cmd+A: Selected current command.")
+                lastSelectAllTime = now
+            }
+            return
+        }
 
-        // Check if this is a double-tap (Cmd+A Cmd+A)
-        if let lastTime = lastSelectAllTime,
-           now.timeIntervalSince(lastTime) < doubleTapThreshold {
-            // Double-tap: Select entire terminal buffer
-            terminalView.selectAll(nil)
-            Log.info("Cmd+A Cmd+A: Selected all terminal buffer.")
-            lastSelectAllTime = nil  // Reset for next sequence
-        } else {
-            // Single tap: Select current input line
-            selectCurrentInputLine(in: terminalView)
-            Log.info("Cmd+A: Selected current input line.")
-            lastSelectAllTime = now
+        lastSelectAllTime = nil
+        if !NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) {
+            window.firstResponder?.perform(#selector(NSText.selectAll(_:)), with: nil)
         }
     }
 
     private func selectCurrentInputLine(in terminalView: Chau7TerminalView) {
-        terminalView.selectCurrentLine()
+        terminalView.selectCurrentCommand()
     }
 
     func clearToPreviousMark() {
@@ -787,7 +807,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         toolbar.delegate = TabBarToolbarDelegate.shared
         window.toolbar = toolbar
         if #available(macOS 11.0, *) {
-            window.toolbarStyle = .unified
+            window.toolbarStyle = .unifiedCompact
             window.titlebarSeparatorStyle = .none
         }
 
@@ -905,6 +925,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let window = NSApp.keyWindow else { return event }
         let isOverlayWindow = overlayHosts.contains(where: { $0.window == window })
         let overlayModel = isOverlayWindow ? activeOverlayModel : nil
+
+        if flags == [.command], normalizedKeyEquivalent(from: event) == ";" {
+            toggleSnippets()
+            return nil
+        }
 
         // Handle Escape key to close search/rename overlays
         if event.keyCode == KeyboardShortcuts.escapeKeyCode, let model = overlayModel {

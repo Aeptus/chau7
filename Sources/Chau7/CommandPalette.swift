@@ -28,7 +28,7 @@ struct CommandPaletteView: View {
     @Binding var isVisible: Bool
     @State private var searchText = ""
     @State private var selectedIndex = 0
-    @FocusState private var isSearchFocused: Bool
+    @State private var shouldFocusSearch = false
 
     let commands: [PaletteCommand]
     let onDismiss: () -> Void
@@ -52,15 +52,21 @@ struct CommandPaletteView: View {
                     .foregroundColor(.secondary)
                     .font(.system(size: 14))
 
-                TextField("Type a command...", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14))
-                    .focused($isSearchFocused)
-                    .accessibilityLabel("Search commands")
-                    .accessibilityHint("Type to filter commands, press Return to execute selected command")
-                    .onSubmit {
-                        executeSelected()
-                    }
+                CommandPaletteSearchField(
+                    text: $searchText,
+                    shouldFocus: shouldFocusSearch,
+                    onReturn: { executeSelected() },
+                    onUpArrow: {
+                        if selectedIndex > 0 { selectedIndex -= 1 }
+                    },
+                    onDownArrow: {
+                        if selectedIndex < filteredCommands.count - 1 { selectedIndex += 1 }
+                    },
+                    onEscape: { dismiss() }
+                )
+                .frame(maxWidth: .infinity)
+                .accessibilityLabel("Search commands")
+                .accessibilityHint("Type to filter commands, press Return to execute selected command")
 
                 if !searchText.isEmpty {
                     Button {
@@ -133,25 +139,14 @@ struct CommandPaletteView: View {
         .onAppear {
             selectedIndex = 0
             searchText = ""
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                isSearchFocused = true
+            shouldFocusSearch = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                shouldFocusSearch = false
             }
         }
         .onChange(of: searchText) { _ in
             selectedIndex = 0
         }
-        .background(
-            CommandPaletteKeyHandler(
-                onUpArrow: {
-                    if selectedIndex > 0 { selectedIndex -= 1 }
-                },
-                onDownArrow: {
-                    if selectedIndex < filteredCommands.count - 1 { selectedIndex += 1 }
-                },
-                onEscape: { dismiss() },
-                onReturn: { executeSelected() }
-            )
-        )
     }
 
     private func executeSelected() {
@@ -237,6 +232,131 @@ private struct KeyHint: View {
             Text(label)
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
+        }
+    }
+}
+
+// MARK: - Search Field (Arrow/Escape Handling)
+
+private struct CommandPaletteSearchField: NSViewRepresentable {
+    @Binding var text: String
+    var shouldFocus: Bool
+    var onReturn: () -> Void
+    var onUpArrow: () -> Void
+    var onDownArrow: () -> Void
+    var onEscape: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> KeyHandlingTextField {
+        let field = KeyHandlingTextField()
+        field.placeholderString = "Type a command..."
+        field.font = NSFont.systemFont(ofSize: 14)
+        field.isEditable = true
+        field.isSelectable = true
+        field.usesSingleLineMode = true
+        field.lineBreakMode = .byTruncatingTail
+        field.textColor = NSColor.labelColor
+        field.isBordered = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.delegate = context.coordinator
+        field.onReturn = onReturn
+        field.onUpArrow = onUpArrow
+        field.onDownArrow = onDownArrow
+        field.onEscape = onEscape
+        return field
+    }
+
+    func updateNSView(_ nsView: KeyHandlingTextField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+        nsView.shouldFocus = shouldFocus
+        nsView.onReturn = onReturn
+        nsView.onUpArrow = onUpArrow
+        nsView.onDownArrow = onDownArrow
+        nsView.onEscape = onEscape
+        if shouldFocus {
+            nsView.focusIfNeeded()
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        private let parent: CommandPaletteSearchField
+
+        init(_ parent: CommandPaletteSearchField) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? NSTextField else { return }
+            parent.text = field.stringValue
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            switch commandSelector {
+            case #selector(NSResponder.moveUp(_:)):
+                parent.onUpArrow()
+                return true
+            case #selector(NSResponder.moveDown(_:)):
+                parent.onDownArrow()
+                return true
+            case #selector(NSResponder.cancelOperation(_:)):
+                parent.onEscape()
+                return true
+            case #selector(NSResponder.insertNewline(_:)),
+                 #selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)):
+                parent.onReturn()
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    final class KeyHandlingTextField: NSTextField {
+        var onReturn: (() -> Void)?
+        var onUpArrow: (() -> Void)?
+        var onDownArrow: (() -> Void)?
+        var onEscape: (() -> Void)?
+        var shouldFocus = false
+
+        func focusIfNeeded() {
+            guard let window else { return }
+            if window.firstResponder === self {
+                return
+            }
+            if let editor = window.firstResponder as? NSTextView, editor.delegate as? NSTextField === self {
+                return
+            }
+            DispatchQueue.main.async {
+                window.makeFirstResponder(self)
+            }
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if shouldFocus {
+                focusIfNeeded()
+            }
+        }
+
+        override func keyDown(with event: NSEvent) {
+            switch event.keyCode {
+            case 126: // Up arrow
+                onUpArrow?()
+            case 125: // Down arrow
+                onDownArrow?()
+            case 53: // Escape
+                onEscape?()
+            case 36: // Return
+                onReturn?()
+            default:
+                super.keyDown(with: event)
+            }
         }
     }
 }
@@ -396,74 +516,6 @@ final class CommandPaletteProvider {
     }
 }
 
-// MARK: - Key Handler (macOS 13 compatible)
-
-private struct CommandPaletteKeyHandler: NSViewRepresentable {
-    let onUpArrow: () -> Void
-    let onDownArrow: () -> Void
-    let onEscape: () -> Void
-    let onReturn: () -> Void
-
-    func makeNSView(context: Context) -> KeyHandlerView {
-        let view = KeyHandlerView()
-        view.onUpArrow = onUpArrow
-        view.onDownArrow = onDownArrow
-        view.onEscape = onEscape
-        view.onReturn = onReturn
-        return view
-    }
-
-    func updateNSView(_ nsView: KeyHandlerView, context: Context) {
-        nsView.onUpArrow = onUpArrow
-        nsView.onDownArrow = onDownArrow
-        nsView.onEscape = onEscape
-        nsView.onReturn = onReturn
-    }
-
-    final class KeyHandlerView: NSView {
-        var onUpArrow: (() -> Void)?
-        var onDownArrow: (() -> Void)?
-        var onEscape: (() -> Void)?
-        var onReturn: (() -> Void)?
-
-        override var acceptsFirstResponder: Bool { true }
-
-        override func keyDown(with event: NSEvent) {
-            switch event.keyCode {
-            case 126: // Up arrow
-                onUpArrow?()
-            case 125: // Down arrow
-                onDownArrow?()
-            case 53: // Escape
-                onEscape?()
-            case 36: // Return
-                onReturn?()
-            default:
-                super.keyDown(with: event)
-            }
-        }
-
-        override func performKeyEquivalent(with event: NSEvent) -> Bool {
-            switch event.keyCode {
-            case 126: // Up arrow
-                onUpArrow?()
-                return true
-            case 125: // Down arrow
-                onDownArrow?()
-                return true
-            case 53: // Escape
-                onEscape?()
-                return true
-            case 36: // Return
-                onReturn?()
-                return true
-            default:
-                return super.performKeyEquivalent(with: event)
-            }
-        }
-    }
-}
-
 // MARK: - Command Palette Controller
 
 final class CommandPaletteController: ObservableObject {
@@ -476,6 +528,11 @@ final class CommandPaletteController: ObservableObject {
     private let provider = CommandPaletteProvider()
 
     private init() {}
+
+    private final class CommandPalettePanel: NSPanel {
+        override var canBecomeKey: Bool { true }
+        override var canBecomeMain: Bool { true }
+    }
 
     func setup(appDelegate: AppDelegate) {
         provider.appDelegate = appDelegate
@@ -519,7 +576,7 @@ final class CommandPaletteController: ObservableObject {
         let x = screenFrame.midX - width / 2
         let y = screenFrame.maxY - height - 100
 
-        let window = NSWindow(
+        let window = CommandPalettePanel(
             contentRect: NSRect(x: x, y: y, width: width, height: height),
             styleMask: [.borderless],
             backing: .buffered,
@@ -528,14 +585,12 @@ final class CommandPaletteController: ObservableObject {
         window.isOpaque = false
         window.backgroundColor = .clear
         window.level = .floating
+        window.isMovableByWindowBackground = true
+        window.hidesOnDeactivate = true
+        window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         window.contentView = hostingView
         window.makeKeyAndOrderFront(nil)
-
-        // Force focus on the search field by making the hosting view first responder
-        // This is needed because @FocusState doesn't work reliably in borderless windows
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            window.makeFirstResponder(hostingView)
-        }
+        NSApp.activate(ignoringOtherApps: true)
 
         self.window = window
     }

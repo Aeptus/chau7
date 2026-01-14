@@ -12,7 +12,7 @@ let package = Package(
         .library(name: "Chau7Core", targets: ["Chau7Core"])
     ],
     dependencies: [
-        .package(url: "https://github.com/schiste/Chau7-SwiftTerm.git", revision: "7a6f4acd84c152170336832db4b2fda87722f3ef"),
+        .package(url: "https://github.com/schiste/Chau7-SwiftTerm.git", revision: "688a888456c2fc3f09cfeca7cc060b49c8ab9cee"),
         .package(url: "https://github.com/apple/swift-atomics.git", from: "1.2.0")
     ],
     targets: [
@@ -32,7 +32,18 @@ let package = Package(
             ],
             path: "Sources/Chau7",
             resources: [
-                .process("Resources")
+                .copy("Resources/chau7-proxy"),
+                .process("Resources/ar.lproj"),
+                .process("Resources/en.lproj"),
+                .process("Resources/fr.lproj"),
+                .process("Resources/he.lproj"),
+                .process("Resources/aider-logo.png"),
+                .process("Resources/chatgpt-logo.png"),
+                .process("Resources/claude-logo.png"),
+                .process("Resources/codex-logo.png"),
+                .process("Resources/copilot-logo.png"),
+                .process("Resources/cursor-logo.png"),
+                .process("Resources/gemini-logo.png")
             ],
             linkerSettings: [
                 .linkedFramework("Metal"),
