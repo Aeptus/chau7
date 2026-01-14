@@ -2,6 +2,16 @@ import AppKit
 import SwiftUI
 import SwiftTerm
 
+private final class OverlayBlurView: NSVisualEffectView {
+    weak var hostedView: NSView?
+
+    override func layout() {
+        super.layout()
+        guard let hostedView else { return }
+        hostedView.frame = window?.contentLayoutRect ?? bounds
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var model: AppModel?
     var overlayModel: OverlayTabsModel?
@@ -744,29 +754,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             y: screenFrame.maxY - height - 60
         )
 
-        let overlay = Chau7OverlayView(overlayModel: tabsModel, appModel: model)
-        let hostingView = NSHostingView(rootView: overlay)
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-
-        let blur = NSVisualEffectView()
-        blur.material = .hudWindow
-        blur.blendingMode = .behindWindow
-        blur.state = .active
-        blur.addSubview(hostingView)
-
-        NSLayoutConstraint.activate([
-            hostingView.leadingAnchor.constraint(equalTo: blur.leadingAnchor),
-            hostingView.trailingAnchor.constraint(equalTo: blur.trailingAnchor),
-            hostingView.topAnchor.constraint(equalTo: blur.topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: blur.bottomAnchor)
-        ])
-
         let window = OverlayWindow(
             contentRect: NSRect(origin: origin, size: NSSize(width: width, height: height)),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
+
+        let overlay = Chau7OverlayView(overlayModel: tabsModel, appModel: model)
+        let hostingView = NSHostingView(rootView: overlay)
+
+        let blur = OverlayBlurView()
+        blur.material = .hudWindow
+        blur.blendingMode = .behindWindow
+        blur.state = .active
+        window.contentView = blur
+        blur.hostedView = hostingView
+        blur.addSubview(hostingView)
+        hostingView.frame = window.contentLayoutRect
 
         window.title = "Chau7 - Window \(windowNumber)"
         window.titleVisibility = .hidden

@@ -3,20 +3,50 @@ import AppKit
 import SwiftTerm
 import QuartzCore
 
+/// Container view for the terminal (no inset needed - content is below toolbar)
+final class TerminalContainerView: NSView {
+    let terminalView: Chau7TerminalView
+    var onFirstLayout: ((Chau7TerminalView) -> Void)?
+    private var didRunFirstLayout = false
+
+    init(terminalView: Chau7TerminalView) {
+        self.terminalView = terminalView
+        super.init(frame: .zero)
+        addSubview(terminalView)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) not implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        terminalView.frame = bounds
+        if !didRunFirstLayout && bounds.width > 0 && bounds.height > 0 {
+            didRunFirstLayout = true
+            onFirstLayout?(terminalView)
+        }
+    }
+}
+
 struct TerminalViewRepresentable: NSViewRepresentable {
     @ObservedObject var model: TerminalSessionModel
     var isSuspended: Bool
     var isActive: Bool
     @ObservedObject private var settings = FeatureSettings.shared
 
-    func makeNSView(context: Context) -> Chau7TerminalView {
+    func makeNSView(context: Context) -> TerminalContainerView {
         // Reuse existing terminal view if available (preserves shell session across SwiftUI view recreations)
         if let existingView = model.existingTerminalView {
             Log.trace("Reusing existing terminal view for session")
             existingView.notifyUpdateChanges = !isSuspended
             existingView.isHidden = isSuspended
             existingView.setEventMonitoringEnabled(isActive && !isSuspended)
-            return existingView
+            // Wrap in container if not already
+            if let container = existingView.superview as? TerminalContainerView {
+                return container
+            }
+            return TerminalContainerView(terminalView: existingView)
         }
 
         // Create new terminal view and start shell process
@@ -73,28 +103,35 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         highlightView.frame = view.bounds
         model.attachHighlightView(highlightView)
 
-        // Show a random power user tip while the shell is starting
-        let tip = PowerUserTips.randomFormattedTip()
-        view.feed(text: "\(tip)\r\n")
+        let container = TerminalContainerView(terminalView: view)
+        container.onFirstLayout = { [weak model, weak view] terminalView in
+            guard let model, let view else { return }
+            // Show a random power user tip while the shell is starting
+            let tip = PowerUserTips.randomFormattedTip()
+            if let headerBox = terminalHeaderBox(cols: terminalView.getTerminal().cols, message: tip) {
+                terminalView.feed(text: headerBox)
+            }
 
-        let shell = model.defaultShell()
-        let execName = "-" + URL(fileURLWithPath: shell).lastPathComponent
-        let env = model.buildEnvironment()
-        // Note: Do NOT change process-wide CWD here - it affects all tabs.
-        // The shell process starts with its own CWD from the environment.
-        let args = model.shellArguments()
-        view.startProcess(executable: shell, args: args, environment: env, execName: execName)
+            let shell = model.defaultShell()
+            let execName = "-" + URL(fileURLWithPath: shell).lastPathComponent
+            let env = model.buildEnvironment()
+            // Note: Do NOT change process-wide CWD here - it affects all tabs.
+            // The shell process starts with its own CWD from the environment.
+            let args = model.shellArguments()
+            terminalView.startProcess(executable: shell, args: args, environment: env, execName: execName)
 
-        model.attachTerminal(view)
-        model.applyFontSize()
+            model.attachTerminal(view)
+            model.applyFontSize()
 
-        // Apply shell integration after shell is ready.
-        // We detect readiness by watching for the first output (prompt).
-        model.scheduleShellIntegration(for: view)
-        return view
+            // Apply shell integration after shell is ready.
+            // We detect readiness by watching for the first output (prompt).
+            model.scheduleShellIntegration(for: view)
+        }
+        return container
     }
 
-    func updateNSView(_ nsView: Chau7TerminalView, context: Context) {
+    func updateNSView(_ container: TerminalContainerView, context: Context) {
+        let nsView = container.terminalView
         nsView.setEventMonitoringEnabled(isActive && !isSuspended)
         if nsView.isHidden != isSuspended {
             nsView.isHidden = isSuspended
@@ -125,4 +162,62 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         }
         return NSFont.monospacedSystemFont(ofSize: model.fontSize, weight: .regular)
     }
+}
+
+private func terminalHeaderBox(cols: Int, message: String) -> String? {
+    let sideMargin = 2
+    let boxWidth = cols - (sideMargin * 2)
+    let interiorWidth = boxWidth - 2
+    guard interiorWidth >= 4 else { return nil }
+    let prefix = String(repeating: " ", count: sideMargin)
+    let top = prefix + "+" + String(repeating: "-", count: interiorWidth) + "+"
+    let sanitized = sanitizeBoxMessage(message)
+    let fitMessage: String
+    if sanitized.count > interiorWidth {
+        let endIndex = sanitized.index(sanitized.startIndex, offsetBy: max(0, interiorWidth - 3))
+        fitMessage = String(sanitized[..<endIndex]) + "..."
+    } else {
+        fitMessage = sanitized
+    }
+    let padding = max(0, interiorWidth - fitMessage.count)
+    let leftPadding = padding / 2
+    let rightPadding = padding - leftPadding
+    let middle = prefix + "|" + String(repeating: " ", count: leftPadding) + fitMessage + String(repeating: " ", count: rightPadding) + "|"
+    let bottom = prefix + "+" + String(repeating: "-", count: interiorWidth) + "+"
+    let colorOn = "\u{1b}[97m"
+    let colorOff = "\u{1b}[0m"
+    return "\(colorOn)\(top)\r\n\(middle)\r\n\(bottom)\(colorOff)\r\n"
+}
+
+private func sanitizeBoxMessage(_ message: String) -> String {
+    let replacements: [(String, String)] = [
+        ("💡", "TIP"),
+        ("⌘", "CMD+"),
+        ("⇧", "SHIFT+"),
+        ("⌥", "OPT+"),
+        ("⌃", "CTRL+"),
+        ("→", "->"),
+        ("←", "<-"),
+        ("↑", "^"),
+        ("↓", "v"),
+        ("•", "*")
+    ]
+
+    var working = message
+    for (from, to) in replacements {
+        working = working.replacingOccurrences(of: from, with: to)
+    }
+
+    var ascii = String()
+    ascii.reserveCapacity(working.count)
+    for scalar in working.unicodeScalars {
+        if scalar.isASCII {
+            ascii.unicodeScalars.append(scalar)
+        } else {
+            ascii.append(" ")
+        }
+    }
+
+    let collapsed = ascii.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+    return collapsed.trimmingCharacters(in: .whitespacesAndNewlines)
 }
