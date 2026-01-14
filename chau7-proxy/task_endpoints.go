@@ -64,7 +64,8 @@ type AssessRequest struct {
 
 // AssessResponse is returned by POST /task/assess
 type AssessResponse struct {
-	Success bool `json:"success"`
+	Success     bool `json:"success"`
+	TokensSaved int  `json:"tokens_saved,omitempty"` // v1.2
 }
 
 // CurrentTaskResponse is returned by GET /task/current
@@ -80,6 +81,9 @@ type CurrentTaskResponse struct {
 	StartMethod  string  `json:"start_method,omitempty"`
 	Trigger      string  `json:"trigger,omitempty"`
 	ProjectPath  string  `json:"project_path,omitempty"`
+	// v1.2: Baseline metrics
+	BaselineTotalTokens int `json:"baseline_total_tokens,omitempty"`
+	TokensSaved         int `json:"tokens_saved,omitempty"`
 }
 
 // UpdateNameRequest is the body for PUT /task/name
@@ -220,7 +224,16 @@ func (te *TaskEndpoints) HandleAssessTask(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSON(w, AssessResponse{Success: true})
+	resp := AssessResponse{Success: true}
+
+	// v1.2: Include tokens saved in response
+	if te.db != nil {
+		if baselineMetrics, err := te.db.GetTaskBaselineMetrics(req.TaskID); err == nil && baselineMetrics != nil {
+			resp.TokensSaved = baselineMetrics.TokensSaved
+		}
+	}
+
+	writeJSON(w, resp)
 }
 
 // HandleGetCurrentTask handles GET /task/current
@@ -243,7 +256,7 @@ func (te *TaskEndpoints) HandleGetCurrentTask(w http.ResponseWriter, r *http.Req
 
 	durationSec := int64(time.Since(task.StartedAt).Seconds())
 
-	writeJSON(w, CurrentTaskResponse{
+	resp := CurrentTaskResponse{
 		HasTask:      true,
 		TaskID:       task.ID,
 		TaskName:     task.Name,
@@ -255,7 +268,17 @@ func (te *TaskEndpoints) HandleGetCurrentTask(w http.ResponseWriter, r *http.Req
 		StartMethod:  string(task.StartMethod),
 		Trigger:      string(task.Trigger),
 		ProjectPath:  task.ProjectPath,
-	})
+	}
+
+	// v1.2: Add baseline metrics if available
+	if te.db != nil {
+		if baselineMetrics, err := te.db.GetTaskBaselineMetrics(task.ID); err == nil && baselineMetrics != nil {
+			resp.BaselineTotalTokens = baselineMetrics.BaselineTotalTokens
+			resp.TokensSaved = baselineMetrics.TokensSaved
+		}
+	}
+
+	writeJSON(w, resp)
 }
 
 // HandleUpdateTaskName handles PUT /task/name

@@ -258,6 +258,15 @@ func initSchema(db *sql.DB) error {
 
 		CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
 		CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
+
+		-- v1.2: Model output statistics for baseline estimation
+		CREATE TABLE IF NOT EXISTS model_output_stats (
+			model TEXT PRIMARY KEY,
+			total_calls INTEGER DEFAULT 0,
+			total_output INTEGER DEFAULT 0,
+			avg_output REAL DEFAULT 0,
+			last_updated TEXT DEFAULT (datetime('now'))
+		);
 	`
 
 	_, err := db.Exec(schema)
@@ -304,6 +313,40 @@ func runMigrations(db *sql.DB) error {
 			db.Exec(m) // Ignore errors for columns that may already exist
 		}
 	}
+
+	// v1.2 migrations: Add baseline fields to api_calls
+	baselineMigrations := []string{
+		"ALTER TABLE api_calls ADD COLUMN baseline_input_tokens INTEGER",
+		"ALTER TABLE api_calls ADD COLUMN baseline_output_tokens INTEGER",
+		"ALTER TABLE api_calls ADD COLUMN baseline_total_tokens INTEGER",
+		"ALTER TABLE api_calls ADD COLUMN baseline_method TEXT",
+		"ALTER TABLE api_calls ADD COLUMN baseline_version TEXT",
+		"ALTER TABLE api_calls ADD COLUMN tokens_saved INTEGER",
+	}
+	for _, m := range baselineMigrations {
+		db.Exec(m) // Ignore errors for columns that may already exist
+	}
+
+	// v1.2: Add baseline fields to task_assessments
+	assessmentMigrations := []string{
+		"ALTER TABLE task_assessments ADD COLUMN baseline_total_tokens INTEGER",
+		"ALTER TABLE task_assessments ADD COLUMN tokens_saved INTEGER",
+		"ALTER TABLE task_assessments ADD COLUMN baseline_method TEXT",
+	}
+	for _, m := range assessmentMigrations {
+		db.Exec(m) // Ignore errors for columns that may already exist
+	}
+
+	// Create model_output_stats table if it doesn't exist (for older databases)
+	db.Exec(`
+		CREATE TABLE IF NOT EXISTS model_output_stats (
+			model TEXT PRIMARY KEY,
+			total_calls INTEGER DEFAULT 0,
+			total_output INTEGER DEFAULT 0,
+			avg_output REAL DEFAULT 0,
+			last_updated TEXT DEFAULT (datetime('now'))
+		)
+	`)
 
 	return nil
 }
@@ -540,4 +583,160 @@ func (d *Database) GetEvents(limit, offset int) ([]Event, int, error) {
 	}
 
 	return events, total, rows.Err()
+}
+
+// --- v1.2 Baseline Methods ---
+
+// UpdateModelOutputStats updates the output statistics for a model
+func (d *Database) UpdateModelOutputStats(model string, outputTokens int) error {
+	_, err := d.db.Exec(`
+		INSERT INTO model_output_stats (model, total_calls, total_output, avg_output, last_updated)
+		VALUES (?, 1, ?, ?, datetime('now'))
+		ON CONFLICT(model) DO UPDATE SET
+			total_calls = total_calls + 1,
+			total_output = total_output + excluded.total_output,
+			avg_output = CAST((total_output + excluded.total_output) AS REAL) / (total_calls + 1),
+			last_updated = datetime('now')
+	`, model, outputTokens, float64(outputTokens))
+	return err
+}
+
+// GetModelOutputStats retrieves all model output statistics
+func (d *Database) GetModelOutputStats() ([]*ModelOutputStats, error) {
+	rows, err := d.db.Query(`
+		SELECT model, total_calls, total_output, avg_output, last_updated
+		FROM model_output_stats
+		WHERE total_calls > 0
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stats []*ModelOutputStats
+	for rows.Next() {
+		var s ModelOutputStats
+		var lastUpdated string
+		if err := rows.Scan(&s.Model, &s.TotalCalls, &s.TotalOutput, &s.AvgOutput, &lastUpdated); err != nil {
+			continue
+		}
+		s.LastUpdated, _ = time.Parse(time.RFC3339, lastUpdated)
+		stats = append(stats, &s)
+	}
+	return stats, rows.Err()
+}
+
+// InsertAPICallWithBaseline inserts an API call with task and baseline data
+func (d *Database) InsertAPICallWithBaseline(record *APICallRecord, taskID, tabID, projectPath string, baseline *BaselineEstimate) (int64, error) {
+	var baselineInput, baselineOutput, baselineTotal, tokensSaved *int
+	var baselineMethod, baselineVersion *string
+
+	if baseline != nil {
+		baselineInput = &baseline.InputTokens
+		baselineOutput = &baseline.OutputTokens
+		baselineTotal = &baseline.TotalTokens
+		tokensSaved = &baseline.TokensSaved
+		method := string(baseline.Method)
+		baselineMethod = &method
+		baselineVersion = &baseline.Version
+	}
+
+	result, err := d.db.Exec(`
+		INSERT INTO api_calls (
+			session_id, provider, model, endpoint,
+			input_tokens, output_tokens, latency_ms, status_code,
+			cost_usd, timestamp, error_message, task_id, tab_id, project_path,
+			baseline_input_tokens, baseline_output_tokens, baseline_total_tokens,
+			baseline_method, baseline_version, tokens_saved
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		record.SessionID,
+		string(record.Provider),
+		record.Model,
+		record.Endpoint,
+		record.InputTokens,
+		record.OutputTokens,
+		record.LatencyMs,
+		record.StatusCode,
+		record.CostUSD,
+		record.Timestamp.UTC().Format(time.RFC3339),
+		record.ErrorMessage,
+		taskID,
+		tabID,
+		projectPath,
+		baselineInput,
+		baselineOutput,
+		baselineTotal,
+		baselineMethod,
+		baselineVersion,
+		tokensSaved,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+// GetTaskBaselineMetrics returns aggregated baseline metrics for a task
+func (d *Database) GetTaskBaselineMetrics(taskID string) (*TaskBaselineMetrics, error) {
+	row := d.db.QueryRow(`
+		SELECT
+			COALESCE(SUM(baseline_total_tokens), 0) as baseline_total,
+			COALESCE(SUM(tokens_saved), 0) as tokens_saved,
+			COUNT(CASE WHEN baseline_method IS NOT NULL THEN 1 END) as baseline_count
+		FROM api_calls
+		WHERE task_id = ?
+	`, taskID)
+
+	var metrics TaskBaselineMetrics
+	err := row.Scan(&metrics.BaselineTotalTokens, &metrics.TokensSaved, &metrics.BaselineCallCount)
+	if err != nil {
+		return nil, err
+	}
+	return &metrics, nil
+}
+
+// TaskBaselineMetrics contains baseline aggregation for a task
+type TaskBaselineMetrics struct {
+	BaselineTotalTokens int
+	TokensSaved         int
+	BaselineCallCount   int
+}
+
+// InsertTaskAssessmentWithBaseline records a task assessment with baseline data
+func (d *Database) InsertTaskAssessmentWithBaseline(assessment *TaskAssessment, baseline *TaskBaselineMetrics) error {
+	approved := 0
+	if assessment.Approved {
+		approved = 1
+	}
+
+	var baselineTotal, tokensSaved *int
+	var baselineMethod *string
+	if baseline != nil && baseline.BaselineCallCount > 0 {
+		baselineTotal = &baseline.BaselineTotalTokens
+		tokensSaved = &baseline.TokensSaved
+		method := "aggregated"
+		baselineMethod = &method
+	}
+
+	_, err := d.db.Exec(`
+		INSERT INTO task_assessments (
+			task_id, approved, note, total_api_calls,
+			total_tokens, total_cost_usd, duration_seconds, assessed_at,
+			baseline_total_tokens, tokens_saved, baseline_method
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		assessment.TaskID,
+		approved,
+		assessment.Note,
+		assessment.TotalAPICalls,
+		assessment.TotalTokens,
+		assessment.TotalCostUSD,
+		assessment.DurationSeconds,
+		assessment.AssessedAt.UTC().Format(time.RFC3339),
+		baselineTotal,
+		tokensSaved,
+		baselineMethod,
+	)
+	return err
 }

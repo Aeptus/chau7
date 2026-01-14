@@ -32,11 +32,36 @@ func main() {
 	ipc.SetDatabase(db) // Enable event storage
 	defer ipc.Close()
 
+	// v1.2: Initialize Aethyme client (optional)
+	var aethymeClient *AethymeClient
+	if config.AethymeURL != "" {
+		aethymeClient = NewAethymeClient(config.AethymeURL, config.AethymeAPIKey)
+		log.Printf("[INFO] Aethyme integration enabled: %s", config.AethymeURL)
+	}
+
+	// v1.2: Initialize Mockup client (optional)
+	var mockupClient *MockupClient
+	if config.MockupURL != "" {
+		mockupClient = NewMockupClient(config.MockupURL, config.MockupAPIKey)
+		log.Printf("[INFO] Mockup analytics enabled: %s", config.MockupURL)
+		defer mockupClient.Close()
+	}
+
+	// v1.2: Initialize baseline estimator
+	var baselineEstimator *BaselineEstimator
+	if config.EnableBaseline {
+		baselineEstimator = NewBaselineEstimator(db, aethymeClient)
+		if err := baselineEstimator.LoadHistoricalStats(); err != nil {
+			log.Printf("[WARN] Failed to load historical stats: %v", err)
+		}
+		log.Printf("[INFO] Baseline estimation enabled")
+	}
+
 	// Initialize task manager
 	taskManager := NewTaskManager(db, ipc, config.CandidateGracePeriod, config.IdleTimeout)
 
 	// Create proxy handler
-	proxy := NewProxyHandler(config, db, ipc, taskManager)
+	proxy := NewProxyHandler(config, db, ipc, taskManager, baselineEstimator, mockupClient)
 
 	// Create task endpoints handler
 	taskEndpoints := NewTaskEndpoints(taskManager, db)
