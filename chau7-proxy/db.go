@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -193,12 +194,16 @@ func initSchema(db *sql.DB) error {
 			status_code INTEGER,
 			cost_usd REAL DEFAULT 0,
 			timestamp TEXT DEFAULT (datetime('now')),
-			error_message TEXT
+			error_message TEXT,
+			task_id TEXT,
+			tab_id TEXT,
+			project_path TEXT
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_api_calls_session ON api_calls(session_id);
 		CREATE INDEX IF NOT EXISTS idx_api_calls_timestamp ON api_calls(timestamp);
 		CREATE INDEX IF NOT EXISTS idx_api_calls_provider ON api_calls(provider, model);
+		CREATE INDEX IF NOT EXISTS idx_api_calls_task ON api_calls(task_id);
 
 		CREATE TABLE IF NOT EXISTS model_pricing (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -209,13 +214,330 @@ func initSchema(db *sql.DB) error {
 			effective_date TEXT NOT NULL,
 			UNIQUE(provider, model_pattern, effective_date)
 		);
+
+		CREATE TABLE IF NOT EXISTS tasks (
+			id TEXT PRIMARY KEY,
+			candidate_id TEXT,
+			tab_id TEXT NOT NULL,
+			session_id TEXT,
+			project_path TEXT,
+			name TEXT,
+			state TEXT NOT NULL DEFAULT 'active',
+			start_method TEXT,
+			trigger TEXT,
+			started_at TEXT NOT NULL,
+			completed_at TEXT,
+			created_at TEXT DEFAULT (datetime('now'))
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_tasks_tab ON tasks(tab_id);
+		CREATE INDEX IF NOT EXISTS idx_tasks_state ON tasks(state);
+		CREATE INDEX IF NOT EXISTS idx_tasks_started ON tasks(started_at);
+
+		CREATE TABLE IF NOT EXISTS task_assessments (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			task_id TEXT NOT NULL,
+			approved INTEGER NOT NULL,
+			note TEXT,
+			total_api_calls INTEGER,
+			total_tokens INTEGER,
+			total_cost_usd REAL,
+			duration_seconds INTEGER,
+			assessed_at TEXT DEFAULT (datetime('now')),
+			FOREIGN KEY (task_id) REFERENCES tasks(id)
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_assessments_task ON task_assessments(task_id);
+
+		CREATE TABLE IF NOT EXISTS events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			type TEXT NOT NULL,
+			data TEXT NOT NULL,
+			timestamp TEXT DEFAULT (datetime('now'))
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
+		CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
 	`
 
 	_, err := db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Run migrations for existing databases
+	return runMigrations(db)
+}
+
+// runMigrations handles schema upgrades for existing databases
+func runMigrations(db *sql.DB) error {
+	// Check if task_id column exists in api_calls
+	rows, err := db.Query("PRAGMA table_info(api_calls)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	hasTaskID := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			continue
+		}
+		if name == "task_id" {
+			hasTaskID = true
+			break
+		}
+	}
+
+	if !hasTaskID {
+		// Add new columns to api_calls
+		migrations := []string{
+			"ALTER TABLE api_calls ADD COLUMN task_id TEXT",
+			"ALTER TABLE api_calls ADD COLUMN tab_id TEXT",
+			"ALTER TABLE api_calls ADD COLUMN project_path TEXT",
+		}
+		for _, m := range migrations {
+			db.Exec(m) // Ignore errors for columns that may already exist
+		}
+	}
+
+	return nil
 }
 
 // Health check for database
 func (d *Database) Ping() error {
 	return d.db.Ping()
+}
+
+// --- Task Methods ---
+
+// InsertTask creates a new task record
+func (d *Database) InsertTask(task *Task) error {
+	var completedAt *string
+	if task.CompletedAt != nil {
+		s := task.CompletedAt.UTC().Format(time.RFC3339)
+		completedAt = &s
+	}
+
+	_, err := d.db.Exec(`
+		INSERT INTO tasks (
+			id, candidate_id, tab_id, session_id, project_path,
+			name, state, start_method, trigger, started_at, completed_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		task.ID,
+		task.CandidateID,
+		task.TabID,
+		task.SessionID,
+		task.ProjectPath,
+		task.Name,
+		string(task.State),
+		string(task.StartMethod),
+		string(task.Trigger),
+		task.StartedAt.UTC().Format(time.RFC3339),
+		completedAt,
+	)
+	return err
+}
+
+// UpdateTask updates an existing task record
+func (d *Database) UpdateTask(task *Task) error {
+	var completedAt *string
+	if task.CompletedAt != nil {
+		s := task.CompletedAt.UTC().Format(time.RFC3339)
+		completedAt = &s
+	}
+
+	_, err := d.db.Exec(`
+		UPDATE tasks SET
+			name = ?,
+			state = ?,
+			completed_at = ?
+		WHERE id = ?
+	`,
+		task.Name,
+		string(task.State),
+		completedAt,
+		task.ID,
+	)
+	return err
+}
+
+// GetTask retrieves a task by ID
+func (d *Database) GetTask(taskID string) (*Task, error) {
+	row := d.db.QueryRow(`
+		SELECT id, candidate_id, tab_id, session_id, project_path,
+			   name, state, start_method, trigger, started_at, completed_at
+		FROM tasks WHERE id = ?
+	`, taskID)
+
+	var task Task
+	var candidateID, sessionID, projectPath, name sql.NullString
+	var startMethod, trigger, completedAt sql.NullString
+	var startedAt string
+
+	err := row.Scan(
+		&task.ID,
+		&candidateID,
+		&task.TabID,
+		&sessionID,
+		&projectPath,
+		&name,
+		&task.State,
+		&startMethod,
+		&trigger,
+		&startedAt,
+		&completedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	task.CandidateID = candidateID.String
+	task.SessionID = sessionID.String
+	task.ProjectPath = projectPath.String
+	task.Name = name.String
+	task.StartMethod = TaskStartMethod(startMethod.String)
+	task.Trigger = TaskTrigger(trigger.String)
+	task.StartedAt, _ = time.Parse(time.RFC3339, startedAt)
+	if completedAt.Valid {
+		t, _ := time.Parse(time.RFC3339, completedAt.String)
+		task.CompletedAt = &t
+	}
+
+	return &task, nil
+}
+
+// GetTaskMetrics returns aggregated metrics for a task
+func (d *Database) GetTaskMetrics(taskID string) (*TaskMetrics, error) {
+	row := d.db.QueryRow(`
+		SELECT
+			COUNT(*) as total_calls,
+			COALESCE(SUM(input_tokens + output_tokens), 0) as total_tokens,
+			COALESCE(SUM(cost_usd), 0) as total_cost
+		FROM api_calls
+		WHERE task_id = ?
+	`, taskID)
+
+	var metrics TaskMetrics
+	err := row.Scan(&metrics.TotalCalls, &metrics.TotalTokens, &metrics.TotalCost)
+	if err != nil {
+		return nil, err
+	}
+	return &metrics, nil
+}
+
+// UpdateCallTaskID updates the task_id for an API call
+func (d *Database) UpdateCallTaskID(callID string, taskID string) error {
+	_, err := d.db.Exec(`UPDATE api_calls SET task_id = ? WHERE id = ?`, taskID, callID)
+	return err
+}
+
+// InsertTaskAssessment records a task assessment
+func (d *Database) InsertTaskAssessment(assessment *TaskAssessment) error {
+	approved := 0
+	if assessment.Approved {
+		approved = 1
+	}
+
+	_, err := d.db.Exec(`
+		INSERT INTO task_assessments (
+			task_id, approved, note, total_api_calls,
+			total_tokens, total_cost_usd, duration_seconds, assessed_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		assessment.TaskID,
+		approved,
+		assessment.Note,
+		assessment.TotalAPICalls,
+		assessment.TotalTokens,
+		assessment.TotalCostUSD,
+		assessment.DurationSeconds,
+		assessment.AssessedAt.UTC().Format(time.RFC3339),
+	)
+	return err
+}
+
+// InsertAPICallWithTask inserts an API call with task correlation
+func (d *Database) InsertAPICallWithTask(record *APICallRecord, taskID, tabID, projectPath string) (int64, error) {
+	result, err := d.db.Exec(`
+		INSERT INTO api_calls (
+			session_id, provider, model, endpoint,
+			input_tokens, output_tokens, latency_ms, status_code,
+			cost_usd, timestamp, error_message, task_id, tab_id, project_path
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		record.SessionID,
+		string(record.Provider),
+		record.Model,
+		record.Endpoint,
+		record.InputTokens,
+		record.OutputTokens,
+		record.LatencyMs,
+		record.StatusCode,
+		record.CostUSD,
+		record.Timestamp.UTC().Format(time.RFC3339),
+		record.ErrorMessage,
+		taskID,
+		tabID,
+		projectPath,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+// InsertEvent stores an event in the database
+func (d *Database) InsertEvent(eventType string, data []byte) error {
+	_, err := d.db.Exec(`
+		INSERT INTO events (type, data, timestamp)
+		VALUES (?, ?, datetime('now'))
+	`, eventType, string(data))
+	return err
+}
+
+// GetEvents retrieves recent events with pagination
+func (d *Database) GetEvents(limit, offset int) ([]Event, int, error) {
+	// Get total count
+	var total int
+	err := d.db.QueryRow(`SELECT COUNT(*) FROM events`).Scan(&total)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Get events
+	rows, err := d.db.Query(`
+		SELECT type, data, timestamp
+		FROM events
+		ORDER BY timestamp DESC
+		LIMIT ? OFFSET ?
+	`, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var events []Event
+	for rows.Next() {
+		var eventType, data, timestamp string
+		if err := rows.Scan(&eventType, &data, &timestamp); err != nil {
+			continue
+		}
+
+		var eventData interface{}
+		json.Unmarshal([]byte(data), &eventData)
+
+		events = append(events, Event{
+			Type:      eventType,
+			Data:      eventData,
+			Timestamp: timestamp,
+		})
+	}
+
+	return events, total, rows.Err()
 }

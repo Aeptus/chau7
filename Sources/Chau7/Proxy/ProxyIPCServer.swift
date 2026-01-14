@@ -16,6 +16,10 @@ public final class ProxyIPCServer: ObservableObject {
     @Published public private(set) var isListening = false
     @Published public private(set) var recentEvents: [APICallEvent] = []
 
+    // Task lifecycle state
+    @Published public private(set) var pendingCandidates: [String: TaskCandidate] = [:] // tabId -> candidate
+    @Published public private(set) var activeTasks: [String: TrackedTask] = [:] // tabId -> task
+
     // MARK: - Private Properties
 
     private var socketFD: Int32 = -1
@@ -234,13 +238,13 @@ public final class ProxyIPCServer: ObservableObject {
     private func processBuffer() {
         // Messages are newline-delimited JSON
         while let newlineIndex = buffer.firstIndex(of: UInt8(ascii: "\n")) {
-            let lineData = buffer.prefix(upTo: newlineIndex)
+            let lineData = Data(buffer.prefix(upTo: newlineIndex))
             buffer = Data(buffer.suffix(from: buffer.index(after: newlineIndex)))
 
             guard !lineData.isEmpty else { continue }
 
             do {
-                let message = try JSONDecoder().decode(ProxyIPCServerMessage.self, from: lineData)
+                let message = try ProxyIPCServerMessage.decode(from: lineData)
                 handleMessage(message)
             } catch {
                 logger.warning("Failed to decode IPC message: \(error.localizedDescription)")
@@ -252,13 +256,28 @@ public final class ProxyIPCServer: ObservableObject {
     }
 
     private func handleMessage(_ message: ProxyIPCServerMessage) {
-        guard message.type == "api_call" else {
+        switch message.type {
+        case "api_call":
+            handleAPICallMessage(message.data)
+
+        case "task_candidate":
+            handleTaskCandidateMessage(message.rawData)
+
+        case "task_started":
+            handleTaskStartedMessage(message.rawData)
+
+        case "task_candidate_dismissed":
+            handleTaskDismissedMessage(message.rawData)
+
+        case "task_assessment":
+            handleTaskAssessmentMessage(message.rawData)
+
+        default:
             logger.warning("Unknown message type: \(message.type)")
-            return
         }
+    }
 
-        let data = message.data
-
+    private func handleAPICallMessage(_ data: ProxyIPCServerData) {
         // Convert to APICallEvent
         let event = APICallEvent(
             id: UUID(),
@@ -278,6 +297,150 @@ public final class ProxyIPCServer: ObservableObject {
         // Update state on main thread
         Task { @MainActor in
             self.addEvent(event)
+
+            // Update task metrics if associated with a task
+            if let tabId = data.tabId, !tabId.isEmpty,
+               var task = self.activeTasks[tabId] {
+                task.totalAPICalls += 1
+                task.totalTokens += event.totalTokens
+                task.totalCostUSD += event.costUSD
+                self.activeTasks[tabId] = task
+            }
+        }
+    }
+
+    private func handleTaskCandidateMessage(_ rawData: Data?) {
+        guard let data = rawData else { return }
+
+        do {
+            let eventData = try JSONDecoder().decode(TaskCandidateEventWrapper.self, from: data)
+            let candidateData = eventData.data
+
+            let candidate = TaskCandidate(
+                id: candidateData.candidateId,
+                tabId: candidateData.tabId,
+                sessionId: candidateData.sessionId,
+                projectPath: candidateData.projectPath,
+                suggestedName: candidateData.suggestedName,
+                trigger: TaskTrigger(rawValue: candidateData.trigger) ?? .manual,
+                confidence: candidateData.confidence,
+                gracePeriodEnd: Date().addingTimeInterval(Double(candidateData.gracePeriodSeconds)),
+                createdAt: Date()
+            )
+
+            Task { @MainActor in
+                self.pendingCandidates[candidate.tabId] = candidate
+                NotificationCenter.default.post(
+                    name: .taskCandidateReceived,
+                    object: nil,
+                    userInfo: ["candidate": candidate]
+                )
+                self.logger.info("Task candidate received: \(candidate.suggestedName)")
+            }
+        } catch {
+            logger.warning("Failed to decode task_candidate: \(error.localizedDescription)")
+        }
+    }
+
+    private func handleTaskStartedMessage(_ rawData: Data?) {
+        guard let data = rawData else { return }
+
+        do {
+            let eventData = try JSONDecoder().decode(TaskStartedEventWrapper.self, from: data)
+            let taskData = eventData.data
+
+            let task = TrackedTask(
+                id: taskData.taskId,
+                candidateId: taskData.candidateId,
+                tabId: taskData.tabId,
+                sessionId: taskData.sessionId,
+                projectPath: taskData.projectPath,
+                name: taskData.taskName,
+                state: .active,
+                startMethod: TaskStartMethod(rawValue: taskData.startMethod) ?? .autoConfirmed,
+                trigger: TaskTrigger(rawValue: taskData.trigger) ?? .manual,
+                startedAt: Date(),
+                completedAt: nil,
+                totalAPICalls: 0,
+                totalTokens: 0,
+                totalCostUSD: 0
+            )
+
+            Task { @MainActor in
+                // Remove candidate if it was confirmed
+                self.pendingCandidates.removeValue(forKey: task.tabId)
+                self.activeTasks[task.tabId] = task
+                NotificationCenter.default.post(
+                    name: .taskStarted,
+                    object: nil,
+                    userInfo: ["task": task]
+                )
+                self.logger.info("Task started: \(task.name)")
+            }
+        } catch {
+            logger.warning("Failed to decode task_started: \(error.localizedDescription)")
+        }
+    }
+
+    private func handleTaskDismissedMessage(_ rawData: Data?) {
+        guard let data = rawData else { return }
+
+        do {
+            let eventData = try JSONDecoder().decode(TaskDismissedEventWrapper.self, from: data)
+            let dismissData = eventData.data
+
+            Task { @MainActor in
+                if let removed = self.pendingCandidates.removeValue(forKey: dismissData.tabId) {
+                    NotificationCenter.default.post(
+                        name: .taskCandidateDismissed,
+                        object: nil,
+                        userInfo: ["candidateId": removed.id, "tabId": dismissData.tabId]
+                    )
+                    self.logger.info("Task candidate dismissed: \(removed.suggestedName)")
+                }
+            }
+        } catch {
+            logger.warning("Failed to decode task_candidate_dismissed: \(error.localizedDescription)")
+        }
+    }
+
+    private func handleTaskAssessmentMessage(_ rawData: Data?) {
+        guard let data = rawData else { return }
+
+        do {
+            let eventData = try JSONDecoder().decode(TaskAssessmentEventWrapper.self, from: data)
+            let assessData = eventData.data
+
+            let assessment = TaskAssessment(
+                taskId: assessData.taskId,
+                approved: assessData.approved,
+                note: assessData.note,
+                totalAPICalls: assessData.totalAPICalls,
+                totalTokens: assessData.totalTokens,
+                totalCostUSD: assessData.totalCostUSD,
+                tokensSaved: assessData.tokensSaved,
+                durationSeconds: assessData.durationSeconds,
+                assessedAt: Date()
+            )
+
+            Task { @MainActor in
+                // Update task state
+                for (tabId, var task) in self.activeTasks {
+                    if task.id == assessment.taskId {
+                        task.completedAt = Date()
+                        self.activeTasks[tabId] = task
+                        break
+                    }
+                }
+                NotificationCenter.default.post(
+                    name: .taskAssessmentReceived,
+                    object: nil,
+                    userInfo: ["assessment": assessment]
+                )
+                self.logger.info("Task assessed: \(assessment.taskId) - \(assessment.approved ? "approved" : "failed")")
+            }
+        } catch {
+            logger.warning("Failed to decode task_assessment: \(error.localizedDescription)")
         }
     }
 
@@ -302,9 +465,37 @@ public final class ProxyIPCServer: ObservableObject {
 // MARK: - IPC Message Types
 
 /// Structure matching Go proxy's IPC message format
-struct ProxyIPCServerMessage: Decodable {
+struct ProxyIPCServerMessage {
     let type: String
     let data: ProxyIPCServerData
+    let rawData: Data?  // Raw JSON for task events
+}
+
+extension ProxyIPCServerMessage {
+    static func decode(from lineData: Data) throws -> ProxyIPCServerMessage {
+        // First, decode just the type
+        struct TypeOnly: Decodable {
+            let type: String
+        }
+        let typeInfo = try JSONDecoder().decode(TypeOnly.self, from: lineData)
+
+        // For api_call, decode the full data; for others, keep raw
+        if typeInfo.type == "api_call" {
+            struct APICallMessage: Decodable {
+                let type: String
+                let data: ProxyIPCServerData
+            }
+            let message = try JSONDecoder().decode(APICallMessage.self, from: lineData)
+            return ProxyIPCServerMessage(type: message.type, data: message.data, rawData: nil)
+        } else {
+            // For task events, pass raw data for specialized decoding
+            return ProxyIPCServerMessage(
+                type: typeInfo.type,
+                data: ProxyIPCServerData.empty,
+                rawData: lineData
+            )
+        }
+    }
 }
 
 struct ProxyIPCServerData: Decodable {
@@ -319,6 +510,14 @@ struct ProxyIPCServerData: Decodable {
     let costUSD: Double
     let timestamp: String
     let errorMessage: String
+    let tabId: String?
+    let projectPath: String?
+
+    static let empty = ProxyIPCServerData(
+        sessionId: "", provider: "", model: "", endpoint: "",
+        inputTokens: 0, outputTokens: 0, latencyMs: 0, statusCode: 0,
+        costUSD: 0, timestamp: "", errorMessage: "", tabId: nil, projectPath: nil
+    )
 
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
@@ -332,6 +531,27 @@ struct ProxyIPCServerData: Decodable {
         case costUSD = "cost_usd"
         case timestamp
         case errorMessage = "error_message"
+        case tabId = "tab_id"
+        case projectPath = "project_path"
+    }
+
+    init(sessionId: String, provider: String, model: String, endpoint: String,
+         inputTokens: Int, outputTokens: Int, latencyMs: Int64, statusCode: Int,
+         costUSD: Double, timestamp: String, errorMessage: String,
+         tabId: String?, projectPath: String?) {
+        self.sessionId = sessionId
+        self.provider = provider
+        self.model = model
+        self.endpoint = endpoint
+        self.inputTokens = inputTokens
+        self.outputTokens = outputTokens
+        self.latencyMs = latencyMs
+        self.statusCode = statusCode
+        self.costUSD = costUSD
+        self.timestamp = timestamp
+        self.errorMessage = errorMessage
+        self.tabId = tabId
+        self.projectPath = projectPath
     }
 
     init(from decoder: Decoder) throws {
@@ -347,5 +567,25 @@ struct ProxyIPCServerData: Decodable {
         costUSD = try container.decode(Double.self, forKey: .costUSD)
         timestamp = try container.decode(String.self, forKey: .timestamp)
         errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage) ?? ""
+        tabId = try container.decodeIfPresent(String.self, forKey: .tabId)
+        projectPath = try container.decodeIfPresent(String.self, forKey: .projectPath)
     }
+}
+
+// MARK: - Task Event Wrappers
+
+struct TaskCandidateEventWrapper: Decodable {
+    let data: TaskCandidateEventData
+}
+
+struct TaskStartedEventWrapper: Decodable {
+    let data: TaskStartedEventData
+}
+
+struct TaskDismissedEventWrapper: Decodable {
+    let data: TaskDismissedEventData
+}
+
+struct TaskAssessmentEventWrapper: Decodable {
+    let data: TaskAssessmentEventData
 }

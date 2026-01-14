@@ -125,33 +125,33 @@ func TestGetPricing_PrefixMatch(t *testing.T) {
 
 func TestGetPricing_FallbackToProvider(t *testing.T) {
 	tests := []struct {
-		provider    Provider
-		model       string
-		expectInput float64
+		provider     Provider
+		model        string
+		expectInput  float64
 		expectOutput float64
 	}{
 		{
-			provider:    ProviderAnthropic,
-			model:       "claude-unknown-model",
-			expectInput: 3.00,  // Falls back to Sonnet pricing
+			provider:     ProviderAnthropic,
+			model:        "claude-unknown-model",
+			expectInput:  3.00, // Falls back to Sonnet pricing
 			expectOutput: 15.00,
 		},
 		{
-			provider:    ProviderOpenAI,
-			model:       "gpt-5-future",
-			expectInput: 2.50,  // Falls back to GPT-4o pricing
+			provider:     ProviderOpenAI,
+			model:        "gpt-5-future",
+			expectInput:  2.50, // Falls back to GPT-4o pricing
 			expectOutput: 10.00,
 		},
 		{
-			provider:    ProviderGemini,
-			model:       "gemini-unknown",
-			expectInput: 0.00,  // Falls back to free tier
+			provider:     ProviderGemini,
+			model:        "gemini-unknown",
+			expectInput:  0.00, // Falls back to free tier
 			expectOutput: 0.00,
 		},
 		{
-			provider:    Provider("unknown"),
-			model:       "some-model",
-			expectInput: 3.00,  // Default fallback
+			provider:     Provider("unknown"),
+			model:        "some-model",
+			expectInput:  3.00, // Default fallback
 			expectOutput: 15.00,
 		},
 	}
