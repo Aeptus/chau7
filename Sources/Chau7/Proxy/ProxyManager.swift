@@ -304,6 +304,311 @@ public final class ProxyManager: ObservableObject {
         }
     }
 
+    // MARK: - Task Management
+
+    /// Gets the current task candidate for a tab
+    public func getTaskCandidate(tabId: String) async -> TaskCandidate? {
+        guard isRunning else { return nil }
+
+        let url = URL(string: "http://127.0.0.1:\(port)/task/candidate?tab_id=\(tabId)")!
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                return nil
+            }
+
+            struct CandidateResponse: Decodable {
+                let hasCandidate: Bool
+                let candidateId: String?
+                let suggestedName: String?
+                let trigger: String?
+                let graceRemainingMs: Int64?
+                let confidence: Double?
+
+                enum CodingKeys: String, CodingKey {
+                    case hasCandidate = "has_candidate"
+                    case candidateId = "candidate_id"
+                    case suggestedName = "suggested_name"
+                    case trigger
+                    case graceRemainingMs = "grace_remaining_ms"
+                    case confidence
+                }
+            }
+
+            let resp = try JSONDecoder().decode(CandidateResponse.self, from: data)
+
+            guard resp.hasCandidate,
+                  let candidateId = resp.candidateId,
+                  let suggestedName = resp.suggestedName,
+                  let trigger = resp.trigger,
+                  let graceRemainingMs = resp.graceRemainingMs else {
+                return nil
+            }
+
+            return TaskCandidate(
+                id: candidateId,
+                tabId: tabId,
+                sessionId: "",
+                projectPath: "",
+                suggestedName: suggestedName,
+                trigger: TaskTrigger(rawValue: trigger) ?? .manual,
+                confidence: resp.confidence ?? 0.5,
+                gracePeriodEnd: Date().addingTimeInterval(Double(graceRemainingMs) / 1000.0),
+                createdAt: Date()
+            )
+        } catch {
+            logger.warning("Failed to get task candidate: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Gets the current active task for a tab
+    public func getCurrentTask(tabId: String) async -> TrackedTask? {
+        guard isRunning else { return nil }
+
+        let url = URL(string: "http://127.0.0.1:\(port)/task/current?tab_id=\(tabId)")!
+
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                return nil
+            }
+
+            struct CurrentTaskResponse: Decodable {
+                let hasTask: Bool
+                let taskId: String?
+                let taskName: String?
+                let state: String?
+                let totalCalls: Int?
+                let totalTokens: Int?
+                let totalCostUSD: Double?
+                let durationSec: Int64?
+                let startMethod: String?
+                let trigger: String?
+                let projectPath: String?
+                // v1.2: Baseline metrics
+                let baselineTotalTokens: Int?
+                let tokensSaved: Int?
+
+                enum CodingKeys: String, CodingKey {
+                    case hasTask = "has_task"
+                    case taskId = "task_id"
+                    case taskName = "task_name"
+                    case state
+                    case totalCalls = "total_calls"
+                    case totalTokens = "total_tokens"
+                    case totalCostUSD = "total_cost_usd"
+                    case durationSec = "duration_sec"
+                    case startMethod = "start_method"
+                    case trigger
+                    case projectPath = "project_path"
+                    case baselineTotalTokens = "baseline_total_tokens"
+                    case tokensSaved = "tokens_saved"
+                }
+            }
+
+            let resp = try JSONDecoder().decode(CurrentTaskResponse.self, from: data)
+
+            guard resp.hasTask,
+                  let taskId = resp.taskId,
+                  let taskName = resp.taskName else {
+                return nil
+            }
+
+            return TrackedTask(
+                id: taskId,
+                candidateId: nil,
+                tabId: tabId,
+                sessionId: "",
+                projectPath: resp.projectPath ?? "",
+                name: taskName,
+                state: TaskState(rawValue: resp.state ?? "active") ?? .active,
+                startMethod: TaskStartMethod(rawValue: resp.startMethod ?? "manual") ?? .manual,
+                trigger: TaskTrigger(rawValue: resp.trigger ?? "manual") ?? .manual,
+                startedAt: Date().addingTimeInterval(-Double(resp.durationSec ?? 0)),
+                completedAt: nil,
+                totalAPICalls: resp.totalCalls ?? 0,
+                totalTokens: resp.totalTokens ?? 0,
+                totalCostUSD: resp.totalCostUSD ?? 0,
+                baselineTotalTokens: resp.baselineTotalTokens ?? 0,
+                tokensSaved: resp.tokensSaved ?? 0
+            )
+        } catch {
+            logger.warning("Failed to get current task: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Starts a new task manually
+    public func startTask(tabId: String, taskName: String?, candidateId: String? = nil) async -> TrackedTask? {
+        guard isRunning else { return nil }
+
+        let url = URL(string: "http://127.0.0.1:\(port)/task/start")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        struct StartRequest: Encodable {
+            let tabId: String
+            let taskName: String?
+            let candidateId: String?
+
+            enum CodingKeys: String, CodingKey {
+                case tabId = "tab_id"
+                case taskName = "task_name"
+                case candidateId = "candidate_id"
+            }
+        }
+
+        do {
+            request.httpBody = try JSONEncoder().encode(StartRequest(
+                tabId: tabId,
+                taskName: taskName,
+                candidateId: candidateId
+            ))
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                return nil
+            }
+
+            struct StartResponse: Decodable {
+                let taskId: String
+                let taskName: String
+
+                enum CodingKeys: String, CodingKey {
+                    case taskId = "task_id"
+                    case taskName = "task_name"
+                }
+            }
+
+            let resp = try JSONDecoder().decode(StartResponse.self, from: data)
+
+            return TrackedTask(
+                id: resp.taskId,
+                candidateId: candidateId,
+                tabId: tabId,
+                sessionId: "",
+                projectPath: "",
+                name: resp.taskName,
+                state: .active,
+                startMethod: candidateId != nil ? .userConfirmed : .manual,
+                trigger: .manual,
+                startedAt: Date(),
+                completedAt: nil,
+                totalAPICalls: 0,
+                totalTokens: 0,
+                totalCostUSD: 0,
+                baselineTotalTokens: 0,
+                tokensSaved: 0
+            )
+        } catch {
+            logger.warning("Failed to start task: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Dismisses a pending task candidate
+    public func dismissCandidate(tabId: String, candidateId: String) async -> Bool {
+        guard isRunning else { return false }
+
+        let url = URL(string: "http://127.0.0.1:\(port)/task/dismiss")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        struct DismissRequest: Encodable {
+            let tabId: String
+            let candidateId: String
+
+            enum CodingKeys: String, CodingKey {
+                case tabId = "tab_id"
+                case candidateId = "candidate_id"
+            }
+        }
+
+        do {
+            request.httpBody = try JSONEncoder().encode(DismissRequest(
+                tabId: tabId,
+                candidateId: candidateId
+            ))
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                return false
+            }
+
+            struct DismissResponse: Decodable {
+                let dismissed: Bool
+            }
+
+            let resp = try JSONDecoder().decode(DismissResponse.self, from: data)
+            return resp.dismissed
+        } catch {
+            logger.warning("Failed to dismiss candidate: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    /// Assesses a task as success or failure
+    public func assessTask(taskId: String, approved: Bool, note: String? = nil) async -> Bool {
+        guard isRunning else { return false }
+
+        let url = URL(string: "http://127.0.0.1:\(port)/task/assess")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        struct AssessRequest: Encodable {
+            let taskId: String
+            let approved: Bool
+            let note: String?
+
+            enum CodingKeys: String, CodingKey {
+                case taskId = "task_id"
+                case approved
+                case note
+            }
+        }
+
+        do {
+            request.httpBody = try JSONEncoder().encode(AssessRequest(
+                taskId: taskId,
+                approved: approved,
+                note: note
+            ))
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                return false
+            }
+
+            struct AssessResponse: Decodable {
+                let success: Bool
+            }
+
+            let resp = try JSONDecoder().decode(AssessResponse.self, from: data)
+            return resp.success
+        } catch {
+            logger.warning("Failed to assess task: \(error.localizedDescription)")
+            return false
+        }
+    }
+
     // MARK: - Private Methods
 
     @objc private func settingsChanged() {

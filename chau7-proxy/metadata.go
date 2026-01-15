@@ -59,9 +59,9 @@ type anthropicRequest struct {
 }
 
 type anthropicResponse struct {
-	Model   string `json:"model"`
-	Usage   anthropicUsage `json:"usage"`
-	StopReason string `json:"stop_reason"`
+	Model      string         `json:"model"`
+	Usage      anthropicUsage `json:"usage"`
+	StopReason string         `json:"stop_reason"`
 }
 
 type anthropicUsage struct {
@@ -104,8 +104,8 @@ type openAIRequest struct {
 }
 
 type openAIResponse struct {
-	Model   string      `json:"model"`
-	Usage   openAIUsage `json:"usage"`
+	Model   string         `json:"model"`
+	Usage   openAIUsage    `json:"usage"`
 	Choices []openAIChoice `json:"choices"`
 }
 
@@ -153,7 +153,7 @@ func extractOpenAIResponse(body []byte) ResponseMetadata {
 // Reference: https://ai.google.dev/api/generate-content
 
 type geminiRequest struct {
-	Contents []any `json:"contents"`
+	Contents         []any                   `json:"contents"`
 	GenerationConfig *geminiGenerationConfig `json:"generationConfig"`
 }
 
