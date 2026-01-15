@@ -67,6 +67,19 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     private let semanticDetector = SemanticOutputDetector()
     private static let osc7Prefix = Data([0x1b, 0x5d, 0x37, 0x3b])
+    private static let aiExitMarkerPrefix = Data("\u{001b}]9;chau7;exit=".utf8)
+    private static let aiExitMarkerSuffix = Data([0x07])
+    private static let aiExitMarkerKeepBytes = max(0, aiExitMarkerPrefix.count - 1)
+
+    private struct AILogContext {
+        let toolName: String
+        let commandLine: String?
+        let logPath: String
+    }
+
+    private var aiLogSession: AITerminalLogSession?
+    private var aiLogContext: AILogContext?
+    private var aiLogPrefixBuffer = Data()
 
     private var notificationTabName: String {
         if let override = tabTitleOverride?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -111,6 +124,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         stopIdleTimer()
         gitCheckWorkItem?.cancel()
         searchUpdateWorkItem?.cancel()
+        aiLogSession?.close()
     }
 
     /// Returns the existing terminal view if one exists (to reuse across SwiftUI view recreations)
@@ -174,6 +188,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             markInputLatencyStart()
         }
         inputBuffer.append(text)
+        if let aiLogSession {
+            aiLogSession.recordInput(text)
+        }
         if text.contains("\n") || text.contains("\r") {
             processInputBuffer()
         }
@@ -191,6 +208,13 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
            data.contains(where: { $0 == 0x0A || $0 == 0x0D }),
            let row = currentBufferRow() {
             semanticDetector.updateCurrentRow(row)
+        }
+        let aiLogResult = processAILogOutput(data)
+        if let logData = aiLogResult.loggable, !logData.isEmpty {
+            aiLogSession?.recordOutput(logData)
+        }
+        if let exitCode = aiLogResult.exitCode {
+            finishAILogging(exitCode: exitCode)
         }
         // Check if we should apply shell integration
         maybeApplyShellIntegration()
@@ -240,6 +264,164 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         }
     }
 
+    private func processAILogOutput(_ data: Data) -> (loggable: Data?, exitCode: Int?) {
+        guard aiLogSession != nil || !aiLogPrefixBuffer.isEmpty else { return (nil, nil) }
+        var combined = aiLogPrefixBuffer
+        combined.append(data)
+        aiLogPrefixBuffer.removeAll(keepingCapacity: true)
+
+        if let prefixRange = combined.range(of: Self.aiExitMarkerPrefix) {
+            let loggable = Data(combined[..<prefixRange.lowerBound])
+            let afterPrefix = prefixRange.upperBound
+            if let suffixRange = combined.range(of: Self.aiExitMarkerSuffix, in: afterPrefix..<combined.endIndex) {
+                let payload = combined[afterPrefix..<suffixRange.lowerBound]
+                let exitCode = parseAIExitCode(payload)
+                aiLogPrefixBuffer.removeAll(keepingCapacity: true)
+                return (loggable, exitCode)
+            }
+            aiLogPrefixBuffer = Data(combined[prefixRange.lowerBound...])
+            return (loggable, nil)
+        }
+
+        let keep = Self.aiExitMarkerKeepBytes
+        if combined.count > keep {
+            let cutIndex = combined.count - keep
+            let loggable = Data(combined[..<cutIndex])
+            aiLogPrefixBuffer = Data(combined[cutIndex...])
+            return (loggable, nil)
+        }
+
+        aiLogPrefixBuffer = combined
+        return (nil, nil)
+    }
+
+    private func parseAIExitCode(_ payload: Data) -> Int? {
+        let raw = String(decoding: payload, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let value = Int(raw) {
+            return value
+        }
+        if let range = raw.range(of: "exit=") {
+            let digits = raw[range.upperBound...].prefix { $0.isNumber }
+            return Int(digits)
+        }
+        return nil
+    }
+
+    private func startAILoggingIfNeeded(toolName: String, commandLine: String?) {
+        guard aiLogSession == nil else { return }
+        let logPath = terminalLogPath(for: toolName)
+        aiLogSession = AITerminalLogSession(toolName: toolName, logPath: logPath)
+        let trimmedCommand = commandLine?.trimmingCharacters(in: .whitespacesAndNewlines)
+        aiLogContext = AILogContext(toolName: toolName, commandLine: trimmedCommand, logPath: logPath)
+        aiLogPrefixBuffer.removeAll(keepingCapacity: true)
+
+        let message: String
+        if let trimmedCommand, !trimmedCommand.isEmpty {
+            message = "Started: \(trimmedCommand)"
+        } else {
+            message = "Started (detected from output)"
+        }
+        AIEventLogWriter.appendEvent(
+            type: "info",
+            tool: toolName,
+            message: message,
+            source: .terminalSession,
+            logPath: eventsLogPath()
+        )
+    }
+
+    private func finishAILogging(exitCode: Int?) {
+        guard let context = aiLogContext else {
+            aiLogSession?.close()
+            aiLogSession = nil
+            aiLogPrefixBuffer.removeAll(keepingCapacity: true)
+            return
+        }
+
+        let type: String
+        if let exitCode, exitCode != 0 {
+            type = "failed"
+        } else {
+            type = "finished"
+        }
+
+        let message: String
+        if let command = context.commandLine, !command.isEmpty {
+            if let exitCode {
+                message = "\(type.capitalized) (exit \(exitCode)): \(command)"
+            } else {
+                message = "\(type.capitalized): \(command)"
+            }
+        } else if let exitCode {
+            message = "\(type.capitalized) (exit \(exitCode))"
+        } else {
+            message = "\(type.capitalized)"
+        }
+
+        AIEventLogWriter.appendEvent(
+            type: type,
+            tool: context.toolName,
+            message: message,
+            source: .terminalSession,
+            logPath: eventsLogPath()
+        )
+
+        aiLogSession?.close()
+        aiLogSession = nil
+        aiLogContext = nil
+        aiLogPrefixBuffer.removeAll(keepingCapacity: true)
+    }
+
+    private func eventsLogPath() -> String {
+        let trimmed = appModel?.logPath.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmed.isEmpty {
+            return trimmed
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".ai-events.log").path
+    }
+
+    private func terminalLogPath(for toolName: String) -> String {
+        let trimmed = toolName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let appModel, trimmed.caseInsensitiveCompare("Codex") == .orderedSame {
+            let path = appModel.codexTerminalPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !path.isEmpty {
+                return path
+            }
+        }
+        if let appModel, trimmed.caseInsensitiveCompare("Claude") == .orderedSame {
+            let path = appModel.claudeTerminalPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !path.isEmpty {
+                return path
+            }
+        }
+
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let logDir = home.appendingPathComponent("Library/Logs/Chau7").path
+        let slug = sanitizeToolName(trimmed)
+        return "\(logDir)/\(slug)-pty.log"
+    }
+
+    private func sanitizeToolName(_ toolName: String) -> String {
+        let lowercased = toolName.lowercased()
+        var slug = ""
+        slug.reserveCapacity(lowercased.count)
+        for scalar in lowercased.unicodeScalars {
+            if CharacterSet.alphanumerics.contains(scalar) {
+                slug.append(Character(scalar))
+            } else if scalar.value == 0x20 || scalar.value == 0x2D || scalar.value == 0x5F {
+                if !slug.hasSuffix("-") {
+                    slug.append("-")
+                }
+            }
+        }
+        if slug.hasSuffix("-") {
+            slug.removeLast()
+        }
+        return slug.isEmpty ? "ai-cli" : slug
+    }
+
     private func maybeHandlePromptUpdate(_ data: Data) -> Bool {
         guard data.range(of: Self.osc7Prefix) != nil else { return false }
         if Thread.isMainThread {
@@ -253,9 +435,13 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     private func clearActiveAppAfterPrompt() {
-        guard activeAppName != nil else { return }
-        Log.info("Clearing active app after OSC 7 prompt update.")
-        activeAppName = nil
+        if activeAppName != nil {
+            Log.info("Clearing active app after OSC 7 prompt update.")
+            activeAppName = nil
+        }
+        if aiLogSession != nil {
+            finishAILogging(exitCode: nil)
+        }
     }
 
     private func markInputLatencyStart() {
@@ -305,6 +491,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             if outputString.contains(pattern) {
                 DispatchQueue.main.async { [weak self] in
                     self?.activeAppName = appName
+                    self?.startAILoggingIfNeeded(toolName: appName, commandLine: nil)
                     Log.info("Detected \(appName) from output pattern: \(pattern)")
                 }
                 return
@@ -417,6 +604,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         if let match = CommandDetection.detectApp(from: commandLine) {
             activeAppName = match
             Log.info("AI detected: \(match) from command '\(commandLine.prefix(50))'")
+            startAILoggingIfNeeded(toolName: match, commandLine: commandLine)
             return
         }
 
@@ -428,6 +616,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             if lowercasedLine.contains(pattern) {
                 let name = rule.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
                 activeAppName = name.isEmpty ? "Custom AI" : name
+                if let activeAppName {
+                    startAILoggingIfNeeded(toolName: activeAppName, commandLine: commandLine)
+                }
                 return
             }
         }
@@ -542,11 +733,17 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         fi
 
         # Chau7 shell integration (runs at startup, not in history)
+        chau7_emit_exit_status() {
+          local code=$?
+          print -Pn "\\e]9;chau7;exit=${code}\\a"
+        }
         smartoverlay_precmd() { print -Pn "\\e]7;file://$HOSTNAME$PWD\\a"; }
         autoload -Uz add-zsh-hook 2>/dev/null
         if command -v add-zsh-hook >/dev/null 2>&1; then
+          add-zsh-hook precmd chau7_emit_exit_status
           add-zsh-hook precmd smartoverlay_precmd
         else
+          precmd_functions+=chau7_emit_exit_status
           precmd_functions+=smartoverlay_precmd
         fi
         smartoverlay_precmd
@@ -583,6 +780,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         smartoverlay_precmd() {
           printf '\\e]7;file://%s%s\\a' "$HOSTNAME" "$PWD"
         }
+        chau7_emit_exit_status() {
+          local code=$?
+          printf '\\e]9;chau7;exit=%s\\a' "$code"
+        }
         PROMPT_COMMAND="smartoverlay_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
 
         # Chau7 CLI header injection for Claude Code
@@ -594,6 +795,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         chau7_update_project
         # Update on directory change via PROMPT_COMMAND
         PROMPT_COMMAND="chau7_update_project${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+        PROMPT_COMMAND="chau7_emit_exit_status${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
         """
 
         // Create config.fish for fish
@@ -615,6 +817,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
         # Chau7 shell integration
         function smartoverlay_precmd --on-event fish_prompt
+          set -l code $status
+          printf '\\e]9;chau7;exit=%s\\a' $code
           printf '\\e]7;file://%s%s\\a' (hostname) (pwd)
         end
 
@@ -700,12 +904,18 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
                 Log.info("Clearing active app after shell prompt update.")
                 self.activeAppName = nil
             }
+            if self.aiLogSession != nil {
+                self.finishAILogging(exitCode: nil)
+            }
         }
     }
 
     func processTerminated(source: TerminalView, exitCode: Int32?) {
         DispatchQueue.main.async {
             self.status = .exited
+        }
+        if aiLogSession != nil {
+            finishAILogging(exitCode: nil)
         }
         let message = exitCode == nil ? "Shell exited." : "Shell exited with code \(exitCode!)."
         appModel?.recordEvent(source: .terminalSession, type: "failed", tool: notificationTabName, message: message, notify: true)
@@ -987,9 +1197,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             dict["CHAU7_TAB_ID"] = tabIdentifier
 
             // Project path for repo switch detection (git root or cwd)
-            if let cwd = currentDirectory {
-                dict["CHAU7_PROJECT"] = detectGitRoot(path: cwd) ?? cwd
-            }
+            let cwd = currentDirectory
+            dict["CHAU7_PROJECT"] = detectGitRoot(path: cwd) ?? cwd
         }
 
         return dict.map { "\($0.key)=\($0.value)" }

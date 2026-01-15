@@ -167,6 +167,9 @@ use the PTY wrappers:
 ./Scripts/claude-pty.sh
 ```
 
+When running AI CLIs inside the Chau7 terminal overlay, PTY output and AI events
+are captured automatically. The wrappers are only needed for external terminals.
+
 These log raw terminal output to:
 - `~/Library/Logs/Chau7/codex-pty.log`
 - `~/Library/Logs/Chau7/claude-pty.log`
@@ -231,7 +234,7 @@ launchctl unload -w ~/Library/LaunchAgents/com.chau7.plist
 - Notifications do not appear: run the app bundle (`./Scripts/build-app.sh`), and verify notifications are allowed in System Settings.
 - Menu bar icon is missing: quit and relaunch, or check `~/Library/Logs/Chau7.log` for launch errors.
 - No AI events: confirm `~/.ai-events.log` is being written and `CHAU7_EVENTS_LOG` is not pointing elsewhere.
-- PTY logs are empty: use `./Scripts/codex-pty.sh` or `./Scripts/claude-pty.sh` and verify `CHAU7_CODEX_TERMINAL_LOG`/`CHAU7_CLAUDE_TERMINAL_LOG`.
+- PTY logs are empty: if you are using an external terminal, run `./Scripts/codex-pty.sh` or `./Scripts/claude-pty.sh` and verify `CHAU7_CODEX_TERMINAL_LOG`/`CHAU7_CLAUDE_TERMINAL_LOG`. Inside the Chau7 terminal overlay, logs are captured automatically.
 - Overlay is hidden or off-screen: use Settings -> Actions -> Reset Window Positions, then reopen via the menu bar icon.
 
 ## FAQ
