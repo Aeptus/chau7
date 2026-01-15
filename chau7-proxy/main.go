@@ -29,10 +29,47 @@ func main() {
 
 	// Initialize IPC notifier
 	ipc := NewIPCNotifier(config.IPCSocketPath)
+	ipc.SetDatabase(db) // Enable event storage
 	defer ipc.Close()
 
+	// v1.2: Initialize Aethyme client (optional)
+	var aethymeClient *AethymeClient
+	if config.AethymeURL != "" {
+		aethymeClient = NewAethymeClient(config.AethymeURL, config.AethymeAPIKey)
+		log.Printf("[INFO] Aethyme integration enabled: %s", config.AethymeURL)
+	}
+
+	// v1.2: Initialize Mockup client (optional)
+	var mockupClient *MockupClient
+	if config.MockupURL != "" {
+		mockupClient = NewMockupClient(config.MockupURL, config.MockupAPIKey)
+		log.Printf("[INFO] Mockup analytics enabled: %s", config.MockupURL)
+		defer mockupClient.Close()
+	}
+
+	// v1.2: Initialize baseline estimator
+	var baselineEstimator *BaselineEstimator
+	if config.EnableBaseline {
+		baselineEstimator = NewBaselineEstimator(db, aethymeClient)
+		if err := baselineEstimator.LoadHistoricalStats(); err != nil {
+			log.Printf("[WARN] Failed to load historical stats: %v", err)
+		}
+		log.Printf("[INFO] Baseline estimation enabled")
+	}
+
+	// Initialize task manager
+	taskManager := NewTaskManager(db, ipc, config.CandidateGracePeriod, config.IdleTimeout)
+
+	// v1.2: Wire up mockup client for analytics forwarding
+	if mockupClient != nil {
+		taskManager.SetMockupClient(mockupClient)
+	}
+
 	// Create proxy handler
-	proxy := NewProxyHandler(config, db, ipc)
+	proxy := NewProxyHandler(config, db, ipc, taskManager, baselineEstimator, mockupClient)
+
+	// Create task endpoints handler
+	taskEndpoints := NewTaskEndpoints(taskManager, db)
 
 	// Create HTTP server mux
 	mux := http.NewServeMux()
@@ -42,6 +79,17 @@ func main() {
 
 	// Stats endpoint
 	mux.HandleFunc("/stats", handleStats(db))
+
+	// Task management endpoints
+	mux.HandleFunc("/task/candidate", taskEndpoints.HandleGetCandidate)
+	mux.HandleFunc("/task/start", taskEndpoints.HandleStartTask)
+	mux.HandleFunc("/task/dismiss", taskEndpoints.HandleDismissCandidate)
+	mux.HandleFunc("/task/assess", taskEndpoints.HandleAssessTask)
+	mux.HandleFunc("/task/current", taskEndpoints.HandleGetCurrentTask)
+	mux.HandleFunc("/task/name", taskEndpoints.HandleUpdateTaskName)
+
+	// Events endpoint
+	mux.HandleFunc("/events", taskEndpoints.HandleGetEvents)
 
 	// All other requests go to the proxy
 	mux.Handle("/", proxy)

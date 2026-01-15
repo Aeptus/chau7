@@ -7,10 +7,10 @@ import (
 
 func TestDetectProvider_Anthropic(t *testing.T) {
 	tests := []struct {
-		name           string
-		path           string
-		headers        map[string]string
-		expectedProv   Provider
+		name         string
+		path         string
+		headers      map[string]string
+		expectedProv Provider
 	}{
 		{
 			name:         "Anthropic messages endpoint",
@@ -199,9 +199,9 @@ func TestGetUpstreamURL(t *testing.T) {
 
 func TestIsStreamingRequest(t *testing.T) {
 	tests := []struct {
-		name       string
-		provider   Provider
-		body       string
+		name        string
+		provider    Provider
+		body        string
 		isStreaming bool
 	}{
 		{

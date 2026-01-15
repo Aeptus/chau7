@@ -19,6 +19,9 @@ enum CommandStatus: String {
 final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTerminalViewDelegate {
     @Published var title: String = "Shell"
     @Published var currentDirectory: String = TerminalSessionModel.defaultStartDirectory()
+
+    /// Unique identifier for this terminal tab, used for task lifecycle tracking
+    let tabIdentifier: String = UUID().uuidString
     @Published var status: CommandStatus = .idle
     @Published var isGitRepo: Bool = false
     @Published var gitBranch: String? = nil
@@ -547,6 +550,17 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
           precmd_functions+=smartoverlay_precmd
         fi
         smartoverlay_precmd
+
+        # Chau7 CLI header injection for Claude Code
+        chau7_update_project() {
+          local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
+          export CHAU7_PROJECT="${git_root:-$PWD}"
+          export ANTHROPIC_EXTRA_HEADERS="X-Chau7-Session:${CHAU7_SESSION_ID:-},X-Chau7-Tab:${CHAU7_TAB_ID:-},X-Chau7-Project:${CHAU7_PROJECT:-}"
+        }
+        chau7_update_project
+        if command -v add-zsh-hook >/dev/null 2>&1; then
+          add-zsh-hook chpwd chau7_update_project
+        fi
         """
 
         // Create .bashrc for bash
@@ -570,6 +584,16 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
           printf '\\e]7;file://%s%s\\a' "$HOSTNAME" "$PWD"
         }
         PROMPT_COMMAND="smartoverlay_precmd${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
+
+        # Chau7 CLI header injection for Claude Code
+        chau7_update_project() {
+          local git_root=$(git rev-parse --show-toplevel 2>/dev/null)
+          export CHAU7_PROJECT="${git_root:-$PWD}"
+          export ANTHROPIC_EXTRA_HEADERS="X-Chau7-Session:${CHAU7_SESSION_ID:-},X-Chau7-Tab:${CHAU7_TAB_ID:-},X-Chau7-Project:${CHAU7_PROJECT:-}"
+        }
+        chau7_update_project
+        # Update on directory change via PROMPT_COMMAND
+        PROMPT_COMMAND="chau7_update_project${PROMPT_COMMAND:+;$PROMPT_COMMAND}"
         """
 
         // Create config.fish for fish
@@ -593,6 +617,19 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         function smartoverlay_precmd --on-event fish_prompt
           printf '\\e]7;file://%s%s\\a' (hostname) (pwd)
         end
+
+        # Chau7 CLI header injection for Claude Code
+        function chau7_update_project --on-variable PWD
+          set -l git_root (git rev-parse --show-toplevel 2>/dev/null)
+          if test -n "$git_root"
+            set -gx CHAU7_PROJECT $git_root
+          else
+            set -gx CHAU7_PROJECT $PWD
+          end
+          set -gx ANTHROPIC_EXTRA_HEADERS "X-Chau7-Session:$CHAU7_SESSION_ID,X-Chau7-Tab:$CHAU7_TAB_ID,X-Chau7-Project:$CHAU7_PROJECT"
+        end
+        # Initialize on startup
+        chau7_update_project
         """
 
         // Write all integration files
@@ -945,6 +982,14 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
             // Session ID for correlation with terminal session
             dict["CHAU7_SESSION_ID"] = dict["TERM_SESSION_ID"] ?? UUID().uuidString
+
+            // Tab ID for task lifecycle tracking (unique per terminal tab)
+            dict["CHAU7_TAB_ID"] = tabIdentifier
+
+            // Project path for repo switch detection (git root or cwd)
+            if let cwd = currentDirectory {
+                dict["CHAU7_PROJECT"] = detectGitRoot(path: cwd) ?? cwd
+            }
         }
 
         return dict.map { "\($0.key)=\($0.value)" }
@@ -1351,6 +1396,37 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         }
         gitCheckWorkItem = work
         gitQueue.async(execute: work)
+    }
+
+    /// Detects the git root directory for a given path
+    /// Returns nil if the path is not within a git repository
+    private func detectGitRoot(path: String) -> String? {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else {
+            return nil
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", path, "rev-parse", "--show-toplevel"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+
+        guard process.terminationStatus == 0 else {
+            return nil
+        }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return output.isEmpty ? nil : output
     }
 
     private func queryGitStatus(path: String) -> (isRepo: Bool, branch: String?) {
