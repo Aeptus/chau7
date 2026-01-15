@@ -884,8 +884,8 @@
 "settings.tabs.alwaysShowTabBar.help" = "Afficher la barre d'onglets même avec un seul onglet";
 "settings.tabs.lastCommandBadge" = "Badge de dernière commande";
 "settings.tabs.lastCommandBadge.help" = "Afficher la commande la plus récente dans la zone d'état de l'onglet";
-"settings.tabs.aiProductIcons" = "Icônes des produits IA";
-"settings.tabs.aiProductIcons.help" = "Afficher les icônes SF Symbol pour les CLI IA détectées dans les onglets";
+"settings.tabs.aiProductIcons" = "Logos des produits IA";
+"settings.tabs.aiProductIcons.help" = "Afficher les logos des produits IA pour les CLI IA détectées dans les onglets";
 
 // Section Navigation au clavier
 "settings.tabs.keyboardNavigation" = "Navigation au clavier";
@@ -1254,3 +1254,59 @@
 /* Added for key parity */
 "settings.terminal.lsColors" = "Couleurs de ls";
 "settings.terminal.lsColors.help" = "Activer la sortie de ls en couleur en définissant CLICOLOR et LSCOLORS";
+
+// MARK: - Task Lifecycle (v1.1)
+
+// Task Candidate View
+"task.candidate.detected" = "Nouvelle tâche détectée";
+"task.candidate.confirm" = "Confirmer";
+"task.candidate.dismiss" = "Ignorer";
+"task.candidate.grace_remaining" = "%ds";
+"task.candidate.auto_confirm" = "Confirmation auto dans %d secondes";
+
+// Task States
+"task.state.none" = "Aucune tâche active";
+"task.state.candidate" = "Tâche candidate";
+"task.state.active" = "Active";
+"task.state.completed" = "Terminée";
+"task.state.abandoned" = "Abandonnée";
+
+// Task Triggers
+"task.trigger.manual" = "Manuel";
+"task.trigger.new_session" = "Nouvelle session";
+"task.trigger.idle_gap" = "Délai d'inactivité";
+"task.trigger.repo_switch" = "Changement de dépôt";
+
+// Task Start Methods
+"task.start_method.manual" = "Démarrée manuellement";
+"task.start_method.auto_confirmed" = "Confirmée automatiquement";
+"task.start_method.user_confirmed" = "Confirmée par l'utilisateur";
+
+// Task Info
+"task.info.name" = "Nom de la tâche";
+"task.info.duration" = "Durée";
+"task.info.api_calls" = "Appels API";
+"task.info.tokens" = "Tokens";
+"task.info.cost" = "Coût";
+"task.info.tokens_saved" = "Tokens économisés";
+
+// Task Assessment
+"task.assess.title" = "Évaluer la tâche";
+"task.assess.approve" = "Approuver";
+"task.assess.reject" = "Rejeter";
+"task.assess.note_placeholder" = "Ajouter des notes (optionnel)";
+"task.assess.success" = "Tâche évaluée avec succès";
+"task.assess.tokens_saved" = "Tokens économisés : %d";
+
+// Task Notifications
+"task.notification.started" = "Tâche démarrée : %@";
+"task.notification.completed" = "Tâche terminée : %@";
+"task.notification.abandoned" = "Tâche abandonnée : %@";
+"task.notification.candidate" = "Nouvelle tâche candidate : %@";
+
+// Task Errors
+"task.error.not_found" = "Tâche introuvable";
+"task.error.already_active" = "Une tâche est déjà active";
+"task.error.no_candidate" = "Aucune tâche candidate en attente";
+"task.error.start_failed" = "Échec du démarrage de la tâche";
+"task.error.assess_failed" = "Échec de l'évaluation de la tâche";

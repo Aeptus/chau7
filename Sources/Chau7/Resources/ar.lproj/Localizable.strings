@@ -865,8 +865,8 @@
 "settings.tabs.alwaysShowTabBar.help" = "اعرض شريط علامات التبويب حتى عند وجود علامة تبويب واحدة";
 "settings.tabs.lastCommandBadge" = "شارة آخر أمر";
 "settings.tabs.lastCommandBadge.help" = "عرض أحدث أمر في منطقة حالة علامة التبويب";
-"settings.tabs.aiProductIcons" = "أيقونات منتجات الذكاء الاصطناعي";
-"settings.tabs.aiProductIcons.help" = "عرض أيقونات SF Symbol لأدوات CLI للذكاء الاصطناعي المكتشفة في علامات التبويب";
+"settings.tabs.aiProductIcons" = "شعارات منتجات الذكاء الاصطناعي";
+"settings.tabs.aiProductIcons.help" = "عرض شعارات منتجات الذكاء الاصطناعي لأدوات CLI المكتشفة في التبويبات";
 
 // قسم التنقل بلوحة المفاتيح
 "settings.tabs.keyboardNavigation" = "التنقل بلوحة المفاتيح";
@@ -1217,3 +1217,61 @@
 "tip.status_dot_colors" = "ألوان نقطة التبويب: أخضر=خامل، برتقالي=قيد التشغيل، أزرق=بانتظار، أحمر=متوقف";
 "tip.tab_colors" = "انقر بزر الماوس الأيمن على تبويب لتغيير لونه للتنظيم";
 "tip.triple_click_select_line" = "انقر ثلاث مرات لتحديد سطر كامل";
+
+// MARK: - دورة حياة المهمة (v1.1)
+
+// عرض المهمة المرشحة
+"task.candidate.detected" = "تم اكتشاف مهمة جديدة";
+"task.candidate.confirm" = "تأكيد";
+"task.candidate.dismiss" = "تجاهل";
+"task.candidate.auto_confirm" = "تأكيد تلقائي خلال %d ثانية";
+
+// حالات المهمة
+"task.state.none" = "لا توجد مهمة";
+"task.state.candidate" = "مرشح";
+"task.state.active" = "نشط";
+"task.state.completed" = "مكتمل";
+"task.state.abandoned" = "متروك";
+
+// محفزات المهمة
+"task.trigger.manual" = "يدوي";
+
+// طرق بدء المهمة
+
+// معلومات المهمة
+"task.info.duration" = "المدة";
+"task.info.tokens" = "الرموز";
+
+// تقييم المهمة
+
+// إشعارات المهمة
+"task.notification.started" = "بدأت المهمة: %@";
+"task.notification.completed" = "اكتملت المهمة: %@";
+"task.notification.abandoned" = "تم ترك المهمة: %@";
+
+// أخطاء المهمة
+"task.error.already_active" = "المهمة نشطة بالفعل";
+
+/* Task keys (parity) */
+"task.assess.approve" = "موافقة";
+"task.assess.note_placeholder" = "أضف ملاحظات (اختياري)";
+"task.assess.reject" = "رفض";
+"task.assess.success" = "تم تقييم المهمة بنجاح";
+"task.assess.title" = "تقييم المهمة";
+"task.assess.tokens_saved" = "الرموز الموفرة: %d";
+"task.candidate.grace_remaining" = "%dث";
+"task.error.assess_failed" = "فشل تقييم المهمة";
+"task.error.no_candidate" = "لا يوجد مرشح معلق";
+"task.error.not_found" = "لم يتم العثور على المهمة";
+"task.error.start_failed" = "فشل بدء المهمة";
+"task.info.api_calls" = "استدعاءات API";
+"task.info.cost" = "التكلفة";
+"task.info.name" = "اسم المهمة";
+"task.info.tokens_saved" = "الرموز الموفرة";
+"task.notification.candidate" = "مرشح مهمة جديد: %@";
+"task.start_method.auto_confirmed" = "تأكيد تلقائي";
+"task.start_method.manual" = "بدء يدوي";
+"task.start_method.user_confirmed" = "تم التأكيد من المستخدم";
+"task.trigger.idle_gap" = "مهلة الخمول";
+"task.trigger.new_session" = "جلسة جديدة";
+"task.trigger.repo_switch" = "تغيير المستودع";

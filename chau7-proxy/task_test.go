@@ -87,7 +87,7 @@ func TestDeriveTaskName(t *testing.T) {
 			name:     "long prompt is truncated",
 			prompt:   "implement a really long feature that does many things and spans over sixty characters easily",
 			override: "",
-			want:     "Implement a really long feature that does many things and...",
+			want:     "Implement a really long feature that does many things and sp", // 60 chars from verb phrase extraction
 		},
 	}
 

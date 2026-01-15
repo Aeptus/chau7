@@ -219,8 +219,10 @@ final class OverlayTabsModel: ObservableObject {
             refreshSearch()
         }
         // Update task state for new tab (v1.1)
-        updateCurrentCandidate(from: ProxyIPCServer.shared.pendingCandidates)
-        updateCurrentTask(from: ProxyIPCServer.shared.activeTasks)
+        MainActor.assumeIsolated {
+            updateCurrentCandidate(from: ProxyIPCServer.shared.pendingCandidates)
+            updateCurrentTask(from: ProxyIPCServer.shared.activeTasks)
+        }
     }
 
     func newTab() {
@@ -863,25 +865,27 @@ final class OverlayTabsModel: ObservableObject {
     // MARK: - Task Lifecycle (v1.1)
 
     func setupTaskObservers() {
-        let ipc = ProxyIPCServer.shared
+        MainActor.assumeIsolated {
+            let ipc = ProxyIPCServer.shared
 
-        // Observe pending candidates
-        ipc.$pendingCandidates
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] candidates in
-                guard let self else { return }
-                self.updateCurrentCandidate(from: candidates)
-            }
-            .store(in: &taskCancellables)
+            // Observe pending candidates
+            ipc.$pendingCandidates
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] candidates in
+                    guard let self else { return }
+                    self.updateCurrentCandidate(from: candidates)
+                }
+                .store(in: &taskCancellables)
 
-        // Observe active tasks
-        ipc.$activeTasks
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] tasks in
-                guard let self else { return }
-                self.updateCurrentTask(from: tasks)
-            }
-            .store(in: &taskCancellables)
+            // Observe active tasks
+            ipc.$activeTasks
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] tasks in
+                    guard let self else { return }
+                    self.updateCurrentTask(from: tasks)
+                }
+                .store(in: &taskCancellables)
+        }
     }
 
     private func updateCurrentCandidate(from candidates: [String: TaskCandidate]) {

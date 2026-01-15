@@ -278,8 +278,8 @@ func TestMockupClient_TaskEvent(t *testing.T) {
 		ProjectPath: "/path/to/repo",
 		Name:        "Fix critical bug",
 		State:       TaskStateActive,
-		Trigger:     TaskTriggerManual,
-		StartMethod: TaskStartManual,
+		Trigger:     TriggerManual,
+		StartMethod: StartMethodManual,
 	}
 
 	headers := &CorrelationHeaders{

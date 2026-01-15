@@ -52,8 +52,8 @@ struct TabsSettingsView: View {
             )
 
             SettingsToggle(
-                label: L("settings.tabs.aiProductIcons", "AI Product Icons"),
-                help: L("settings.tabs.aiProductIcons.help", "Display SF Symbol icons for detected AI CLIs in tabs"),
+                label: L("settings.tabs.aiProductIcons", "AI Product Logos"),
+                help: L("settings.tabs.aiProductIcons.help", "Display AI product logos for detected AI CLIs in tabs"),
                 isOn: $settings.isAutoTabThemeEnabled
             )
 

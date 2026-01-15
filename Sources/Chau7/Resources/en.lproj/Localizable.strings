@@ -886,8 +886,8 @@
 "settings.tabs.alwaysShowTabBar.help" = "Show the tab bar even when only one tab is open";
 "settings.tabs.lastCommandBadge" = "Last Command Badge";
 "settings.tabs.lastCommandBadge.help" = "Show the most recent command in the tab status area";
-"settings.tabs.aiProductIcons" = "AI Product Icons";
-"settings.tabs.aiProductIcons.help" = "Display SF Symbol icons for detected AI CLIs in tabs";
+"settings.tabs.aiProductIcons" = "AI Product Logos";
+"settings.tabs.aiProductIcons.help" = "Display AI product logos for detected AI CLIs in tabs";
 
 // Keyboard Navigation Section
 "settings.tabs.keyboardNavigation" = "Keyboard Navigation";
@@ -1252,3 +1252,59 @@
 // Tab customization
 "tip.tab_colors" = "Right-click a tab to change its color for organization";
 "tip.rename_tab" = "Double-click a tab to rename it";
+
+// MARK: - Task Lifecycle (v1.1)
+
+// Task Candidate View
+"task.candidate.detected" = "New task detected";
+"task.candidate.confirm" = "Confirm";
+"task.candidate.dismiss" = "Dismiss";
+"task.candidate.grace_remaining" = "%ds";
+"task.candidate.auto_confirm" = "Auto-confirming in %d seconds";
+
+// Task States
+"task.state.none" = "No active task";
+"task.state.candidate" = "Task candidate";
+"task.state.active" = "Active";
+"task.state.completed" = "Completed";
+"task.state.abandoned" = "Abandoned";
+
+// Task Triggers
+"task.trigger.manual" = "Manual";
+"task.trigger.new_session" = "New session";
+"task.trigger.idle_gap" = "Idle timeout";
+"task.trigger.repo_switch" = "Repository change";
+
+// Task Start Methods
+"task.start_method.manual" = "Started manually";
+"task.start_method.auto_confirmed" = "Auto-confirmed";
+"task.start_method.user_confirmed" = "User confirmed";
+
+// Task Info
+"task.info.name" = "Task name";
+"task.info.duration" = "Duration";
+"task.info.api_calls" = "API calls";
+"task.info.tokens" = "Tokens";
+"task.info.cost" = "Cost";
+"task.info.tokens_saved" = "Tokens saved";
+
+// Task Assessment
+"task.assess.title" = "Assess task";
+"task.assess.approve" = "Approve";
+"task.assess.reject" = "Reject";
+"task.assess.note_placeholder" = "Add notes (optional)";
+"task.assess.success" = "Task assessed successfully";
+"task.assess.tokens_saved" = "Tokens saved: %d";
+
+// Task Notifications
+"task.notification.started" = "Task started: %@";
+"task.notification.completed" = "Task completed: %@";
+"task.notification.abandoned" = "Task abandoned: %@";
+"task.notification.candidate" = "New task candidate: %@";
+
+// Task Errors
+"task.error.not_found" = "Task not found";
+"task.error.already_active" = "A task is already active";
+"task.error.no_candidate" = "No pending candidate";
+"task.error.start_failed" = "Failed to start task";
+"task.error.assess_failed" = "Failed to assess task";

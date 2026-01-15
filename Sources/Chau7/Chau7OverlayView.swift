@@ -342,50 +342,10 @@ struct TabButton: View {
         session.displayPath()
     }
 
-    /// Returns SF Symbol name for the detected AI product, or nil for regular shell
-    private var aiProductIcon: String? {
+    /// Returns the bundled logo for the detected AI product, or nil for regular shell.
+    private var aiProductLogo: Image? {
         guard let appName = session.activeAppName else { return nil }
-        switch appName {
-        case "Claude":
-            return "brain.head.profile"  // Claude's AI assistant branding
-        case "Gemini":
-            return "sparkles"  // Gemini's star-like logo
-        case "Codex":
-            return "chevron.left.forwardslash.chevron.right"  // Code/developer branding
-        case "ChatGPT":
-            return "bubble.left.and.bubble.right.fill"  // Chat/conversation icon
-        case "Copilot":
-            return "airplane"  // Copilot aviation metaphor
-        case "Aider":
-            return "wrench.and.screwdriver"  // Tool/assistant
-        case "Cursor":
-            return "cursorarrow"  // Cursor icon
-        default:
-            return nil
-        }
-    }
-
-    /// Returns brand color for the detected AI product
-    private var aiProductColor: Color {
-        guard let appName = session.activeAppName else { return .primary }
-        switch appName {
-        case "Claude":
-            return Color(red: 0.85, green: 0.55, blue: 0.35)  // Claude's orange/tan
-        case "Gemini":
-            return Color(red: 0.27, green: 0.53, blue: 0.93)  // Google blue
-        case "Codex":
-            return Color(red: 0.0, green: 0.65, blue: 0.52)   // OpenAI green
-        case "ChatGPT":
-            return Color(red: 0.0, green: 0.65, blue: 0.52)   // OpenAI green
-        case "Copilot":
-            return Color(red: 0.15, green: 0.15, blue: 0.15)  // GitHub dark
-        case "Aider":
-            return Color(red: 0.93, green: 0.46, blue: 0.6)   // Pink
-        case "Cursor":
-            return Color(red: 0.2, green: 0.68, blue: 0.66)   // Teal
-        default:
-            return .primary
-        }
+        return AIAgentLogo.image(forAppName: appName)
     }
 
     var body: some View {
@@ -395,10 +355,11 @@ struct TabButton: View {
 
         HStack(spacing: 8) {
             // AI product logo (persists even when tab is renamed)
-            if let icon = aiProductIcon {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(aiProductColor)
+            if let logo = aiProductLogo {
+                logo
+                    .resizable()
+                    .frame(width: 14, height: 14)
+                    .accessibilityHidden(true)
             }
 
             Text(resolvedTitle)

@@ -865,8 +865,8 @@
 "settings.tabs.alwaysShowTabBar.help" = "הצג את סרגל הלשוניות גם כשיש לשונית אחת בלבד";
 "settings.tabs.lastCommandBadge" = "תג הפקודה האחרונה";
 "settings.tabs.lastCommandBadge.help" = "הצג את הפקודה האחרונה באזור המצב של הלשונית";
-"settings.tabs.aiProductIcons" = "סמלי מוצרי בינה מלאכותית";
-"settings.tabs.aiProductIcons.help" = "הצג סמלי SF Symbol עבור כלי CLI של בינה מלאכותית שזוהו בלשוניות";
+"settings.tabs.aiProductIcons" = "לוגואים של מוצרי בינה מלאכותית";
+"settings.tabs.aiProductIcons.help" = "הצג לוגואים של מוצרי בינה מלאכותית עבור כלי CLI שזוהו בכרטיסיות";
 
 // מקטע ניווט מקלדת
 "settings.tabs.keyboardNavigation" = "ניווט מקלדת";
@@ -1217,3 +1217,61 @@
 "tip.status_dot_colors" = "צבעי נקודת הכרטיסייה: ירוק=בטלה, כתום=פועל, כחול=ממתין, אדום=תקוע";
 "tip.tab_colors" = "לחיצה ימנית על כרטיסייה לשינוי הצבע לצורך ארגון";
 "tip.triple_click_select_line" = "לחיצה משולשת לבחירת שורה שלמה";
+
+// MARK: - מחזור חיים של משימה (v1.1)
+
+// תצוגת משימה מועמדת
+"task.candidate.detected" = "משימה חדשה זוהתה";
+"task.candidate.confirm" = "אישור";
+"task.candidate.dismiss" = "ביטול";
+"task.candidate.auto_confirm" = "אישור אוטומטי בעוד %d שניות";
+
+// מצבי משימה
+"task.state.none" = "אין משימה";
+"task.state.candidate" = "מועמד";
+"task.state.active" = "פעיל";
+"task.state.completed" = "הושלם";
+"task.state.abandoned" = "ננטש";
+
+// טריגרים של משימה
+"task.trigger.manual" = "ידני";
+
+// שיטות התחלת משימה
+
+// מידע על משימה
+"task.info.duration" = "משך";
+"task.info.tokens" = "טוקנים";
+
+// הערכת משימה
+
+// התראות משימה
+"task.notification.started" = "משימה התחילה: %@";
+"task.notification.completed" = "משימה הושלמה: %@";
+"task.notification.abandoned" = "משימה ננטשה: %@";
+
+// שגיאות משימה
+"task.error.already_active" = "משימה כבר פעילה";
+
+/* Task keys (parity) */
+"task.assess.approve" = "אשר";
+"task.assess.note_placeholder" = "הוסף הערות (אופציונלי)";
+"task.assess.reject" = "דחה";
+"task.assess.success" = "הערכת המשימה הצליחה";
+"task.assess.title" = "הערך משימה";
+"task.assess.tokens_saved" = "טוקנים שנחסכו: %d";
+"task.candidate.grace_remaining" = "%d שניות";
+"task.error.assess_failed" = "הערכת המשימה נכשלה";
+"task.error.no_candidate" = "אין מועמד ממתין";
+"task.error.not_found" = "המשימה לא נמצאה";
+"task.error.start_failed" = "התחלת המשימה נכשלה";
+"task.info.api_calls" = "קריאות API";
+"task.info.cost" = "עלות";
+"task.info.name" = "שם המשימה";
+"task.info.tokens_saved" = "טוקנים שנחסכו";
+"task.notification.candidate" = "מועמד חדש למשימה: %@";
+"task.start_method.auto_confirmed" = "אושר אוטומטית";
+"task.start_method.manual" = "הופעל ידנית";
+"task.start_method.user_confirmed" = "אושר על ידי המשתמש";
+"task.trigger.idle_gap" = "פסק זמן של חוסר פעילות";
+"task.trigger.new_session" = "הפעלה חדשה";
+"task.trigger.repo_switch" = "שינוי מאגר";
