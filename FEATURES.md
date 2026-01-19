@@ -147,6 +147,7 @@ Chau7 is a macOS menu bar helper and terminal overlay built for AI-assisted CLI 
 | Cmd+Option+Shift+] | Move tab right |
 | Cmd+Option+Shift+[ | Move tab left |
 | Cmd+Shift+R | Rename tab |
+| Cmd+/ | Keyboard Shortcuts |
 
 ### Editing and Search
 

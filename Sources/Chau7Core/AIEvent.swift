@@ -7,13 +7,26 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable {
         self.rawValue = rawValue
     }
 
+    // MARK: - Core Sources
     public static let eventsLog = AIEventSource(rawValue: "events_log")
     public static let terminalSession = AIEventSource(rawValue: "terminal_session")
     public static let historyMonitor = AIEventSource(rawValue: "history_monitor")
-    public static let claudeCode = AIEventSource(rawValue: "claude_code")
     public static let app = AIEventSource(rawValue: "app")
     public static let apiProxy = AIEventSource(rawValue: "api_proxy")
     public static let unknown = AIEventSource(rawValue: "unknown")
+
+    // MARK: - Shell Sources
+    public static let shell = AIEventSource(rawValue: "shell")
+
+    // MARK: - AI Coding Apps
+    public static let claudeCode = AIEventSource(rawValue: "claude_code")
+    public static let codex = AIEventSource(rawValue: "codex")
+    public static let cursor = AIEventSource(rawValue: "cursor")
+    public static let windsurf = AIEventSource(rawValue: "windsurf")
+    public static let copilot = AIEventSource(rawValue: "copilot")
+    public static let aider = AIEventSource(rawValue: "aider")
+    public static let cline = AIEventSource(rawValue: "cline")
+    public static let continueAI = AIEventSource(rawValue: "continue_ai")
 }
 
 public struct AIEvent: Identifiable, Equatable {

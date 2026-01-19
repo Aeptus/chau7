@@ -27,7 +27,45 @@ final class NotificationManager {
             return
         }
 
-        // Try native notifications first, fall back to AppleScript if needed
+        // Execute configured actions for this trigger
+        executeActionsForEvent(event)
+    }
+
+    /// Execute the actions configured for the trigger matching this event
+    private func executeActionsForEvent(_ event: AIEvent) {
+        // Must access FeatureSettings on main thread
+        let executeOnMain = { [weak self] in
+            guard let trigger = NotificationTriggerCatalog.trigger(for: event) else {
+                // No matching trigger, use default notification
+                self?.showDefaultNotification(for: event)
+                return
+            }
+
+            let actions = FeatureSettings.shared.actionsForTrigger(trigger.id)
+
+            // If no custom actions and only default showNotification, use the fallback
+            if actions.count == 1,
+               let firstAction = actions.first,
+               firstAction.actionType == .showNotification,
+               firstAction.config.isEmpty {
+                // Use optimized native/AppleScript notification path
+                self?.showDefaultNotification(for: event)
+                return
+            }
+
+            // Execute all configured actions
+            NotificationActionExecutor.shared.execute(actions: actions, for: event)
+        }
+
+        if Thread.isMainThread {
+            executeOnMain()
+        } else {
+            DispatchQueue.main.async(execute: executeOnMain)
+        }
+    }
+
+    /// Show the default notification using native or AppleScript
+    private func showDefaultNotification(for event: AIEvent) {
         if useNativeNotifications {
             tryNativeNotification(for: event)
         } else {

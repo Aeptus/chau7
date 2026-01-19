@@ -27,7 +27,7 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     // Click-to-position cursor tracking (like modern text editors)
     private var mouseDownLocation: NSPoint?
     private var didDragSinceMouseDown = false
-    private static let dragThreshold: CGFloat = 3.0  // Pixels of movement before considered a drag
+    private static let dragThreshold: CGFloat = 1.5  // Pixels of movement before considered a drag (lower = more sensitive to selections)
 
     // Event monitors for F03/F18/F21 (since SwiftTerm's input methods aren't open for override)
     private var mouseDownMonitor: Any?
@@ -366,24 +366,38 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         mouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
             guard let self = self else { return event }
 
-            // Only handle events in our window and view
+            // Always clear mouse tracking state on ANY mouseUp to prevent stale state
+            // (even if the mouseUp is in a different window or outside bounds)
+            let downLocation = self.mouseDownLocation
+            let wasDrag = self.didDragSinceMouseDown
+            self.mouseDownLocation = nil
+            self.didDragSinceMouseDown = false
+
+            // Only handle events in our window
             guard event.window === self.window else { return event }
+
+            // Only process click-to-position and copy-on-select if mouseUp is within bounds
             let location = self.convert(event.locationInWindow, from: nil)
             guard self.bounds.contains(location) else { return event }
 
             // Click-to-position: If no drag occurred and single click, position cursor
-            if let downLocation = self.mouseDownLocation, !self.didDragSinceMouseDown {
+            // Multiple safety checks to avoid interfering with selection:
+            if let clickLocation = downLocation, !wasDrag {
                 // Don't position cursor if:
                 // - Shift is held (user wants to extend selection)
                 // - It's a multi-click (double/triple click for word/line selection)
+                // - There's an active selection (user just selected text)
+                // - Command selection mode is active
                 let isSingleClick = event.clickCount == 1
                 let noModifiers = !event.modifierFlags.contains(.shift)
                 let notInCommandSelection = !self.commandSelectionActive
-                if isSingleClick && noModifiers && notInCommandSelection && FeatureSettings.shared.isClickToPositionEnabled {
-                    _ = self.handleClickToPosition(at: downLocation)
+                let noActiveSelection = !self.hasSelection
+                let featureEnabled = FeatureSettings.shared.isClickToPositionEnabled
+
+                if isSingleClick && noModifiers && notInCommandSelection && noActiveSelection && featureEnabled {
+                    _ = self.handleClickToPosition(at: clickLocation)
                 }
             }
-            self.mouseDownLocation = nil
 
             // Copy-on-select: always call handleMouseUp (it checks if feature is enabled)
             // This handles both drag-selections and keyboard selections (Shift+arrows)
@@ -491,19 +505,39 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         // Option key disables copy-on-select temporarily
         if event.modifierFlags.contains(.option) { return }
 
-        // Check for selection and copy if present (with minimal delay to let selection finalize)
-        // Reduced from 50ms to 15ms for better perceived responsiveness
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.015) { [weak self] in
+        // Check for selection and copy if present (with delay to let selection finalize)
+        // Using 30ms for reliability while keeping good perceived responsiveness
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.030) { [weak self] in
             guard let self = self else { return }
+
+            // Try the public getSelection() API first (simpler, more stable)
+            if let text = self.getSelection(), !text.isEmpty {
+                // Only copy if text is different from last copied text
+                // But always update lastSelectionText to track current selection
+                if text != self.lastSelectionText {
+                    self.copyToClipboard(text)
+                    Log.trace("Copy-on-select: copied \(text.count) chars via getSelection().")
+                }
+                self.lastSelectionText = text
+                return
+            }
+
+            // Fallback: use coordinate-based extraction if getSelection() fails
             if let (startPos, endPos) = self.getSelectionCoordinates() {
                 let terminal = self.getTerminal()
                 let text = terminal.getText(start: startPos, end: endPos)
 
-                if !text.isEmpty && text != self.lastSelectionText {
-                    self.copyToClipboard(text)
+                if !text.isEmpty {
+                    if text != self.lastSelectionText {
+                        self.copyToClipboard(text)
+                        Log.trace("Copy-on-select: copied \(text.count) chars via coordinates.")
+                    }
                     self.lastSelectionText = text
-                    Log.trace("Copy-on-select: copied \(text.count) chars.")
                 }
+            } else {
+                // No selection exists - clear lastSelectionText so the same text
+                // can be copied again if user re-selects it
+                self.lastSelectionText = nil
             }
         }
     }
@@ -718,12 +752,17 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     // MARK: - Copy (with SIGINT fallback)
 
     /// Gets selection start/end coordinates via reflection from SwiftTerm's SelectionService.
-    /// SwiftTerm's getSelection() has a bug where it returns empty even with valid selection,
-    /// so we bypass it by reading the coordinates directly and calling getText().
+    /// This is a fallback when getSelection() returns empty despite a valid selection.
+    /// Note: Reflection-based access is fragile and may break with SwiftTerm updates.
     private func getSelectionCoordinates() -> (start: Position, end: Position)? {
         // Find the selection property via Mirror traversal of class hierarchy
         var mirror: Mirror? = Mirror(reflecting: self)
-        while let current = mirror {
+        var iterationCount = 0
+        let maxIterations = 10  // Guard against infinite loops in class hierarchy
+
+        while let current = mirror, iterationCount < maxIterations {
+            iterationCount += 1
+
             for child in current.children {
                 guard child.label == "selection" else { continue }
 
@@ -739,8 +778,7 @@ final class Chau7TerminalView: LocalProcessTerminalView {
 
                 // Extract start and end Position from SelectionService
                 let serviceMirror = Mirror(reflecting: selectionObj)
-                var startCol = 0, startRow = 0, endCol = 0, endRow = 0
-                var foundStart = false, foundEnd = false
+                var startCol: Int?, startRow: Int?, endCol: Int?, endRow: Int?
 
                 for prop in serviceMirror.children {
                     if prop.label == "start" {
@@ -749,7 +787,6 @@ final class Chau7TerminalView: LocalProcessTerminalView {
                             if p.label == "col", let v = p.value as? Int { startCol = v }
                             if p.label == "row", let v = p.value as? Int { startRow = v }
                         }
-                        foundStart = true
                     }
                     if prop.label == "end" {
                         let posMirror = Mirror(reflecting: prop.value)
@@ -757,15 +794,26 @@ final class Chau7TerminalView: LocalProcessTerminalView {
                             if p.label == "col", let v = p.value as? Int { endCol = v }
                             if p.label == "row", let v = p.value as? Int { endRow = v }
                         }
-                        foundEnd = true
                     }
                 }
 
-                // Return coordinates only if we found both and they differ
-                if foundStart && foundEnd && (startCol != endCol || startRow != endRow) {
-                    return (Position(col: startCol, row: startRow), Position(col: endCol, row: endRow))
+                // Return coordinates only if we found all values and they represent a valid selection
+                guard let sc = startCol, let sr = startRow,
+                      let ec = endCol, let er = endRow else {
+                    return nil
                 }
-                return nil
+
+                // Validate: selection must span at least one character
+                guard sc != ec || sr != er else {
+                    return nil
+                }
+
+                // Validate: coordinates should be non-negative
+                guard sc >= 0, sr >= 0, ec >= 0, er >= 0 else {
+                    return nil
+                }
+
+                return (Position(col: sc, row: sr), Position(col: ec, row: er))
             }
             mirror = current.superclassMirror
         }
@@ -836,12 +884,19 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     /// Clears the current selection.
     func clearSelection() {
         selectNone()
+        lastSelectionText = nil  // Clear stale copy-on-select state
         Log.trace("Selection cleared via selectNone().")
     }
 
     /// Returns true if there is currently selected text.
+    /// Uses both public API and reflection fallback for maximum reliability.
     var hasSelection: Bool {
+        // Try the public API first
         if let text = getSelection(), !text.isEmpty {
+            return true
+        }
+        // Fallback: check via coordinates (in case getSelection() has bugs)
+        if getSelectionCoordinates() != nil {
             return true
         }
         return false
@@ -984,6 +1039,7 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         commandSelectionActive = false
         commandSelectionRange = nil
         selectNone()
+        lastSelectionText = nil  // Clear stale copy-on-select state
         removeCommandSelectionMonitor()
     }
 
@@ -1003,17 +1059,26 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     }
 
     override func copy(_ sender: Any) {
+        // Try the public getSelection() API first (consistent with copy-on-select)
+        if let text = getSelection(), !text.isEmpty {
+            copyToClipboard(text)
+            Log.trace("Copied \(text.count) chars via getSelection().")
+            return
+        }
+
+        // Fallback: try coordinate-based extraction if getSelection() fails
         if let (startPos, endPos) = getSelectionCoordinates() {
             let terminal = getTerminal()
             let text = terminal.getText(start: startPos, end: endPos)
 
             if !text.isEmpty {
                 copyToClipboard(text)
-                Log.trace("Copied \(text.count) chars from selection.")
+                Log.trace("Copied \(text.count) chars via coordinates.")
                 return
             }
         }
 
+        // Try command selection (Cmd+A selected the current input)
         if commandSelectionActive, let text = commandSelectionText(), !text.isEmpty {
             copyToClipboard(text)
             Log.trace("Copied \(text.count) chars from command selection.")

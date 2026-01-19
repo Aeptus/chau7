@@ -261,6 +261,74 @@ enum URLHandler: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+// MARK: - Shell Event Configuration
+
+/// Configuration for shell event detection (patterns, thresholds, etc.)
+struct ShellEventConfig: Codable, Equatable {
+    /// Patterns to match in command output (regex strings)
+    var outputPatterns: [ShellOutputPattern] = []
+    /// Exit codes to specifically watch for
+    var watchedExitCodes: [Int] = [1, 2, 126, 127, 128, 130, 137, 139, 143]
+    /// Threshold in seconds for "long-running" command detection
+    var longRunningThresholdSeconds: Int = 60
+    /// Enable directory change notifications
+    var notifyOnDirectoryChange: Bool = false
+    /// Enable git branch change notifications
+    var notifyOnGitBranchChange: Bool = false
+    /// Enable all command completion notifications (not just failures)
+    var notifyOnAllCommandCompletion: Bool = false
+
+    static let `default` = ShellEventConfig()
+}
+
+/// A pattern to match in shell output
+struct ShellOutputPattern: Codable, Identifiable, Equatable, Hashable {
+    var id: UUID = UUID()
+    var name: String
+    var pattern: String  // regex pattern
+    var isEnabled: Bool = true
+    var notificationType: String = "pattern_match"  // maps to trigger type
+
+    static let defaults: [ShellOutputPattern] = [
+        ShellOutputPattern(name: "Error", pattern: "(?i)\\b(error|failed|failure)\\b", isEnabled: false),
+        ShellOutputPattern(name: "Warning", pattern: "(?i)\\bwarning\\b", isEnabled: false),
+        ShellOutputPattern(name: "Build Success", pattern: "(?i)\\b(build succeeded|compilation successful)\\b", isEnabled: false),
+        ShellOutputPattern(name: "Test Passed", pattern: "(?i)\\b(tests? passed|all tests pass)\\b", isEnabled: false),
+        ShellOutputPattern(name: "Test Failed", pattern: "(?i)\\b(tests? failed|test failure)\\b", isEnabled: false),
+    ]
+}
+
+// MARK: - App Event Detection Config
+
+/// Configuration for app-level event detection
+struct AppEventConfig: Codable, Equatable {
+    var scheduledEvents: [ScheduledEvent] = []
+    var inactivityThresholdMinutes: Int = 0  // 0 = disabled
+    var memoryThresholdMB: Int = 0  // 0 = disabled
+    var memoryHysteresisMB: Int = 50  // Must drop this much below threshold before re-alerting
+    var notifyOnTabOpen: Bool = false  // Tab open notifications (can be noisy)
+    var notifyOnTabClose: Bool = false  // Tab close notifications (can be noisy)
+
+    static let `default` = AppEventConfig()
+}
+
+/// A scheduled event that fires at configured times
+struct ScheduledEvent: Codable, Identifiable, Equatable {
+    var id: UUID = UUID()
+    var name: String
+    var scheduleType: ScheduleType = .interval
+    var intervalMinutes: Int = 60  // For interval type
+    var dailyTime: Date = Date()   // For daily type
+    var hourlyMinute: Int = 0      // For hourly type (0-59)
+    var isEnabled: Bool = true
+
+    enum ScheduleType: String, Codable, CaseIterable {
+        case interval = "interval"
+        case daily = "daily"
+        case hourly = "hourly"
+    }
+}
+
 // MARK: - Custom AI Detection Rules
 
 struct CustomAIDetectionRule: Codable, Identifiable, Equatable {
@@ -498,6 +566,9 @@ final class FeatureSettings: ObservableObject {
             }
         }
     }
+    @Published var isShortcutHelperHintEnabled: Bool {
+        didSet { UserDefaults.standard.set(isShortcutHelperHintEnabled, forKey: Keys.shortcutHelperHint) }
+    }
 
     func shortcut(for action: String) -> KeyboardShortcut? {
         customShortcuts.first { $0.action == action }
@@ -550,6 +621,62 @@ final class FeatureSettings: ObservableObject {
             if let data = JSONOperations.encode(notificationFilters, context: "notificationFilters") {
                 UserDefaults.standard.set(data, forKey: Keys.notificationFilters)
             }
+        }
+    }
+
+    /// Trigger-to-actions bindings: maps trigger IDs to lists of configured actions
+    @Published var triggerActionBindings: [String: [NotificationActionConfig]] {
+        didSet {
+            if let data = JSONOperations.encode(triggerActionBindings, context: "triggerActionBindings") {
+                UserDefaults.standard.set(data, forKey: Keys.triggerActionBindings)
+            }
+        }
+    }
+
+    /// Get actions for a specific trigger, with default "showNotification" if none configured
+    func actionsForTrigger(_ triggerId: String) -> [NotificationActionConfig] {
+        if let actions = triggerActionBindings[triggerId], !actions.isEmpty {
+            return actions
+        }
+        // Default action: show notification
+        return [NotificationActionConfig(actionType: .showNotification, enabled: true)]
+    }
+
+    /// Set actions for a trigger
+    func setActionsForTrigger(_ triggerId: String, actions: [NotificationActionConfig]) {
+        var bindings = triggerActionBindings
+        if actions.isEmpty {
+            bindings.removeValue(forKey: triggerId)
+        } else {
+            bindings[triggerId] = actions
+        }
+        triggerActionBindings = bindings
+    }
+
+    /// Add an action to a trigger
+    func addActionToTrigger(_ triggerId: String, action: NotificationActionConfig) {
+        var actions = triggerActionBindings[triggerId] ?? []
+        actions.append(action)
+        triggerActionBindings[triggerId] = actions
+    }
+
+    /// Remove an action from a trigger
+    func removeActionFromTrigger(_ triggerId: String, actionId: UUID) {
+        guard var actions = triggerActionBindings[triggerId] else { return }
+        actions.removeAll { $0.id == actionId }
+        if actions.isEmpty {
+            triggerActionBindings.removeValue(forKey: triggerId)
+        } else {
+            triggerActionBindings[triggerId] = actions
+        }
+    }
+
+    /// Update an action in a trigger
+    func updateActionInTrigger(_ triggerId: String, action: NotificationActionConfig) {
+        guard var actions = triggerActionBindings[triggerId] else { return }
+        if let index = actions.firstIndex(where: { $0.id == action.id }) {
+            actions[index] = action
+            triggerActionBindings[triggerId] = actions
         }
     }
 
@@ -930,6 +1057,24 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
+    // MARK: - Shell Event Detection Settings
+
+    @Published var shellEventConfig: ShellEventConfig {
+        didSet {
+            if let data = JSONOperations.encode(shellEventConfig, context: "shellEventConfig") {
+                UserDefaults.standard.set(data, forKey: Keys.shellEventConfig)
+            }
+        }
+    }
+
+    @Published var appEventConfig: AppEventConfig {
+        didSet {
+            if let data = JSONOperations.encode(appEventConfig, context: "appEventConfig") {
+                UserDefaults.standard.set(data, forKey: Keys.appEventConfig)
+            }
+        }
+    }
+
     // MARK: - Keys
 
     private enum Keys {
@@ -947,9 +1092,11 @@ final class FeatureSettings: ObservableObject {
         static let lsColorsEnabled = "terminal.lsColorsEnabled"
         // Keyboard Shortcuts (NEW)
         static let customShortcuts = "keyboard.customShortcuts"
+        static let shortcutHelperHint = "keyboard.shortcutHelperHint"
         // Notification Filters (NEW)
         static let notificationTriggerState = "notifications.triggerState"
         static let notificationFilters = "notifications.filters"
+        static let triggerActionBindings = "notifications.triggerActionBindings"
         // Find Defaults (NEW)
         static let findCaseSensitiveDefault = "search.defaultCaseSensitive"
         static let findRegexDefault = "search.defaultRegex"
@@ -1027,6 +1174,10 @@ final class FeatureSettings: ObservableObject {
         static let apiAnalyticsEnabled = "analytics.api.enabled"
         static let apiAnalyticsPort = "analytics.api.port"
         static let apiAnalyticsLogPrompts = "analytics.api.logPrompts"
+        // Shell Event Detection
+        static let shellEventConfig = "shell.eventConfig"
+        // App Event Detection
+        static let appEventConfig = "app.eventConfig"
     }
 
     // MARK: - Init
@@ -1070,6 +1221,7 @@ final class FeatureSettings: ObservableObject {
             loadedShortcuts = KeyboardShortcut.shortcuts(for: preset)
         }
         self.customShortcuts = Self.migratedShortcutsIfNeeded(loadedShortcuts)
+        self.isShortcutHelperHintEnabled = defaults.object(forKey: Keys.shortcutHelperHint) as? Bool ?? true
 
         // Local Echo / Immediate Display Flush (default: disabled)
         // Initialize early to ensure all properties are set before any are accessed
@@ -1096,6 +1248,14 @@ final class FeatureSettings: ObservableObject {
         }
         self.notificationTriggerState = resolvedTriggerState
         self.notificationFilters = Self.legacyNotificationFilters(from: resolvedTriggerState)
+
+        // Trigger Action Bindings
+        if let data = defaults.data(forKey: Keys.triggerActionBindings),
+           let bindings = JSONOperations.decode([String: [NotificationActionConfig]].self, from: data, context: "triggerActionBindings") {
+            self.triggerActionBindings = bindings
+        } else {
+            self.triggerActionBindings = [:]
+        }
 
         // Find Defaults (NEW)
         self.findCaseSensitiveDefault = defaults.object(forKey: Keys.findCaseSensitiveDefault) as? Bool ?? false
@@ -1228,6 +1388,22 @@ final class FeatureSettings: ObservableObject {
         self.isAPIAnalyticsEnabled = defaults.object(forKey: Keys.apiAnalyticsEnabled) as? Bool ?? false
         self.apiAnalyticsPort = defaults.object(forKey: Keys.apiAnalyticsPort) as? Int ?? 18080
         self.apiAnalyticsLogPrompts = defaults.object(forKey: Keys.apiAnalyticsLogPrompts) as? Bool ?? false
+
+        // Shell Event Detection
+        if let data = defaults.data(forKey: Keys.shellEventConfig),
+           let config = JSONOperations.decode(ShellEventConfig.self, from: data, context: "shellEventConfig") {
+            self.shellEventConfig = config
+        } else {
+            self.shellEventConfig = .default
+        }
+
+        // App Event Detection
+        if let data = defaults.data(forKey: Keys.appEventConfig),
+           let config = JSONOperations.decode(AppEventConfig.self, from: data, context: "appEventConfig") {
+            self.appEventConfig = config
+        } else {
+            self.appEventConfig = .default
+        }
     }
 
     private static func migratedShortcutsIfNeeded(_ shortcuts: [KeyboardShortcut]) -> [KeyboardShortcut] {
@@ -1361,6 +1537,7 @@ final class FeatureSettings: ObservableObject {
         var startupCommand: String
         var isLsColorsEnabled: Bool?
         var customShortcuts: [KeyboardShortcut]
+        var isShortcutHelperHintEnabled: Bool?
         var notificationTriggerState: NotificationTriggerState?
         var notificationFilters: NotificationFilters
         var findCaseSensitiveDefault: Bool?
@@ -1422,6 +1599,7 @@ final class FeatureSettings: ObservableObject {
             startupCommand: startupCommand,
             isLsColorsEnabled: isLsColorsEnabled,
             customShortcuts: customShortcuts,
+            isShortcutHelperHintEnabled: isShortcutHelperHintEnabled,
             notificationTriggerState: notificationTriggerState,
             notificationFilters: notificationFilters,
             findCaseSensitiveDefault: findCaseSensitiveDefault,
@@ -1492,6 +1670,7 @@ final class FeatureSettings: ObservableObject {
         startupCommand = imported.startupCommand
         isLsColorsEnabled = imported.isLsColorsEnabled ?? true
         customShortcuts = imported.customShortcuts
+        isShortcutHelperHintEnabled = imported.isShortcutHelperHintEnabled ?? true
         if let state = imported.notificationTriggerState {
             var normalized = state
             normalized.normalize()
@@ -1591,6 +1770,7 @@ final class FeatureSettings: ObservableObject {
         // Shortcuts
         keybindingPreset = "default"
         customShortcuts = KeyboardShortcut.shortcuts(for: keybindingPreset)
+        isShortcutHelperHintEnabled = true
 
         // Notifications
         notificationTriggerState = NotificationTriggerState()
@@ -1681,6 +1861,7 @@ final class FeatureSettings: ObservableObject {
     func resetInputToDefaults() {
         keybindingPreset = "default"
         customShortcuts = KeyboardShortcut.shortcuts(for: keybindingPreset)
+        isShortcutHelperHintEnabled = true
         isCopyOnSelectEnabled = false
         isCmdClickPathsEnabled = true
         defaultEditor = ""
@@ -1822,6 +2003,7 @@ extension FeatureSettings {
             startupCommand: "",
             isLsColorsEnabled: true,
             customShortcuts: KeyboardShortcut.shortcuts(for: "default"),
+            isShortcutHelperHintEnabled: true,
             notificationTriggerState: NotificationTriggerState(),
             notificationFilters: .defaults,
             findCaseSensitiveDefault: false,

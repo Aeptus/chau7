@@ -20,6 +20,7 @@ import AppKit
 /// - Cmd+Option+Left: Previous Tab
 /// - Ctrl+Tab: Next Tab
 /// - Ctrl+Shift+Tab: Previous Tab
+/// - Cmd+/: Keyboard Shortcuts
 ///
 /// ### Edit
 /// - Cmd+C: Copy (or interrupt if no selection)

@@ -156,6 +156,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     private var codexTerminalTailer: FileTailer<String>?
     private var claudeTerminalTailer: FileTailer<String>?
     private var cleanupTimer: DispatchSourceTimer?
+    private var appEventEmitter: AppEventEmitter?
     private let maxLogLines = 300
     private let maxHistoryEntries = 200
     private let maxTerminalLines = 250
@@ -312,6 +313,19 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         startClaudeCodeMonitor()
         startAPICallObserver()
         startCleanupTimer()
+        startAppEventEmitter()
+    }
+
+    // MARK: - App Event Emitter
+
+    private func startAppEventEmitter() {
+        appEventEmitter = AppEventEmitter(appModel: self)
+        Log.info("App event emitter started")
+    }
+
+    /// Call when user activity is detected (used by AppEventEmitter for inactivity tracking)
+    func recordUserActivity() {
+        appEventEmitter?.recordActivity()
     }
 
     // MARK: - API Call Tracking (from Proxy)
@@ -837,7 +851,41 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 self.claudeHistoryEntries.append(entry)
                 self.claudeHistoryEntries.trimToLast(self.maxHistoryEntries)
             }
+
+            // Emit event for notification triggers
+            self.emitAIToolEvent(
+                toolName: toolName,
+                type: "finished",
+                message: entry.summary.isEmpty ? "Task completed" : entry.summary
+            )
         }
+    }
+
+    /// Map tool name to AIEventSource for proper trigger matching
+    private func aiEventSource(for toolName: String) -> AIEventSource {
+        switch toolName.lowercased() {
+        case "codex": return .codex
+        case "claude", "claude code": return .claudeCode
+        case "cursor": return .cursor
+        case "windsurf": return .windsurf
+        case "copilot": return .copilot
+        case "aider": return .aider
+        case "cline": return .cline
+        case "continue": return .continueAI
+        default: return .historyMonitor
+        }
+    }
+
+    /// Emit an event for an AI tool that can trigger notifications
+    private func emitAIToolEvent(toolName: String, type: String, message: String) {
+        let source = aiEventSource(for: toolName)
+        recordEvent(
+            source: source,
+            type: type,
+            tool: toolName,
+            message: message,
+            notify: true
+        )
     }
 
     private func updateSessionStatus(
@@ -874,8 +922,10 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
         Log.info("Idle detected for \(toolName) session=\(shortSession) idleFor=\(idleSeconds)s")
 
+        // Use tool-specific source for proper trigger matching
+        let source = aiEventSource(for: toolName)
         let event = AIEvent(
-            source: .historyMonitor,
+            source: source,
             type: "idle",
             tool: toolName,
             message: message,
