@@ -1089,6 +1089,9 @@ final class OverlayTabsModel: ObservableObject {
             isRenameVisible = false
             isClipboardHistoryVisible = false
             isBookmarkListVisible = false
+        } else {
+            // Focus terminal when snippet manager is closed
+            focusSelected()
         }
     }
 
@@ -1114,6 +1117,8 @@ final class OverlayTabsModel: ObservableObject {
         guard let session = selectedTab?.session else { return }
         session.insertSnippet(entry)
         isSnippetManagerVisible = false
+        // Focus terminal immediately after inserting snippet
+        focusSelected()
     }
 
     func addBookmark(label: String? = nil) {
