@@ -24,9 +24,15 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     // F18: Copy-on-select tracking
     private var lastSelectionText: String?
 
+    // Click-to-position cursor tracking (like modern text editors)
+    private var mouseDownLocation: NSPoint?
+    private var didDragSinceMouseDown = false
+    private static let dragThreshold: CGFloat = 3.0  // Pixels of movement before considered a drag
+
     // Event monitors for F03/F18/F21 (since SwiftTerm's input methods aren't open for override)
     private var mouseDownMonitor: Any?
     private var mouseUpMonitor: Any?
+    private var mouseDragMonitor: Any?  // For click vs drag detection
     private var mouseMoveMonitor: Any?
     private var keyDownMonitor: Any?
     private var isEventMonitoringEnabled = false
@@ -139,6 +145,71 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         appliedScrollbackLines = lines
     }
 
+    // MARK: - Context Menu
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard event.window === window else { return nil }
+        if allowMouseReporting, !event.modifierFlags.contains(.control) {
+            return nil
+        }
+        let location = convert(event.locationInWindow, from: nil)
+        guard bounds.contains(location) else { return nil }
+
+        window?.makeFirstResponder(self)
+
+        let menu = NSMenu(title: L("terminal.context.title", "Terminal"))
+        let canCopy = hasSelection || commandSelectionActive
+        let canPaste = NSPasteboard.general.string(forType: .string) != nil
+
+        let copyItem = NSMenuItem(title: L("terminal.context.copy", "Copy"), action: #selector(contextCopy), keyEquivalent: "")
+        copyItem.target = self
+        copyItem.isEnabled = canCopy
+
+        let pasteItem = NSMenuItem(title: L("terminal.context.paste", "Paste"), action: #selector(contextPaste), keyEquivalent: "")
+        pasteItem.target = self
+        pasteItem.isEnabled = canPaste
+
+        let pasteEscapedItem = NSMenuItem(
+            title: L("terminal.context.pasteEscaped", "Paste Escaped"),
+            action: #selector(contextPasteEscaped),
+            keyEquivalent: ""
+        )
+        pasteEscapedItem.target = self
+        pasteEscapedItem.isEnabled = canPaste
+
+        let selectAllItem = NSMenuItem(
+            title: L("terminal.context.selectAll", "Select All"),
+            action: #selector(contextSelectAll),
+            keyEquivalent: ""
+        )
+        selectAllItem.target = self
+
+        let clearScreenItem = NSMenuItem(
+            title: L("terminal.context.clearScreen", "Clear Screen"),
+            action: #selector(contextClearScreen),
+            keyEquivalent: ""
+        )
+        clearScreenItem.target = self
+
+        let clearScrollbackItem = NSMenuItem(
+            title: L("terminal.context.clearScrollback", "Clear Scrollback"),
+            action: #selector(contextClearScrollback),
+            keyEquivalent: ""
+        )
+        clearScrollbackItem.target = self
+
+        menu.addItem(copyItem)
+        menu.addItem(pasteItem)
+        menu.addItem(pasteEscapedItem)
+        menu.addItem(.separator())
+        menu.addItem(selectAllItem)
+        menu.addItem(.separator())
+        menu.addItem(clearScreenItem)
+        menu.addItem(clearScrollbackItem)
+
+        return menu
+    }
+
     // MARK: - Terminal Delegate Overrides
 
     override func bell(source: Terminal) {
@@ -237,56 +308,89 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         removeEventMonitors()
 
         let settings = FeatureSettings.shared
-        let needsMouseDown = settings.isCmdClickPathsEnabled || settings.isOptionClickCursorEnabled
-        let needsMouseUp = settings.isCopyOnSelectEnabled
         let needsMouseMove = settings.isCmdClickPathsEnabled
         let needsKeyDown = settings.isSnippetsEnabled
 
-        // F03: Cmd+Click for paths/URLs, Option+Click for cursor positioning - monitor mouse down
-        // Only install if at least one click feature is enabled (latency optimization)
-        if needsMouseDown {
-            mouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
-                guard let self = self else { return event }
+        // Mouse down monitor: Cmd+Click paths, Option+Click cursor, click-to-position tracking
+        // Always installed to support click-to-position feature
+        mouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            guard let self = self else { return event }
 
-                // Only handle events in our window and view
-                guard event.window === self.window else { return event }
-                let location = self.convert(event.locationInWindow, from: nil)
-                guard self.bounds.contains(location) else { return event }
+            // Only handle events in our window and view
+            guard event.window === self.window else { return event }
+            let location = self.convert(event.locationInWindow, from: nil)
+            guard self.bounds.contains(location) else { return event }
 
-                // Check for Cmd+click on paths
-                if event.modifierFlags.contains(.command) && FeatureSettings.shared.isCmdClickPathsEnabled {
-                    if self.handleCmdClick(at: location) {
-                        return nil  // Consume the event
-                    }
+            // Track mouse down for click-to-position (like modern text editors)
+            self.mouseDownLocation = location
+            self.didDragSinceMouseDown = false
+
+            // Check for Cmd+click on paths
+            if event.modifierFlags.contains(.command) && FeatureSettings.shared.isCmdClickPathsEnabled {
+                if self.handleCmdClick(at: location) {
+                    self.mouseDownLocation = nil  // Don't position cursor for Cmd+click
+                    return nil  // Consume the event
                 }
-
-                // Option+click to position cursor (like iTerm2)
-                if event.modifierFlags.contains(.option) && FeatureSettings.shared.isOptionClickCursorEnabled {
-                    if self.handleOptionClick(at: location) {
-                        return nil  // Consume the event
-                    }
-                }
-
-                self.updateCursorLineHighlight()
-                return event
             }
+
+            // Option+click to position cursor (like iTerm2) - legacy behavior
+            if event.modifierFlags.contains(.option) && FeatureSettings.shared.isOptionClickCursorEnabled {
+                if self.handleOptionClick(at: location) {
+                    self.mouseDownLocation = nil  // Already handled
+                    return nil  // Consume the event
+                }
+            }
+
+            self.updateCursorLineHighlight()
+            return event
         }
 
-        // F18: Copy-on-select - monitor mouse up
-        // Only install if copy-on-select is enabled (latency optimization)
-        if needsMouseUp {
-            mouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
-                guard let self = self else { return event }
+        // Mouse dragged monitor: Track if user is dragging (for click vs drag detection)
+        mouseDragMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDragged) { [weak self] event in
+            guard let self = self else { return event }
+            guard event.window === self.window else { return event }
 
-                // Only handle events in our window and view
-                guard event.window === self.window else { return event }
+            // Check if movement exceeds drag threshold
+            if let downLocation = self.mouseDownLocation {
                 let location = self.convert(event.locationInWindow, from: nil)
-                guard self.bounds.contains(location) else { return event }
-
-                self.handleMouseUp(event: event)
-                self.updateCursorLineHighlight()
-                return event
+                let dx = abs(location.x - downLocation.x)
+                let dy = abs(location.y - downLocation.y)
+                if dx > Self.dragThreshold || dy > Self.dragThreshold {
+                    self.didDragSinceMouseDown = true
+                }
             }
+            return event
+        }
+
+        // Mouse up monitor: Copy-on-select AND click-to-position cursor
+        mouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
+            guard let self = self else { return event }
+
+            // Only handle events in our window and view
+            guard event.window === self.window else { return event }
+            let location = self.convert(event.locationInWindow, from: nil)
+            guard self.bounds.contains(location) else { return event }
+
+            // Click-to-position: If no drag occurred and single click, position cursor
+            if let downLocation = self.mouseDownLocation, !self.didDragSinceMouseDown {
+                // Don't position cursor if:
+                // - Shift is held (user wants to extend selection)
+                // - It's a multi-click (double/triple click for word/line selection)
+                let isSingleClick = event.clickCount == 1
+                let noModifiers = !event.modifierFlags.contains(.shift)
+                let notInCommandSelection = !self.commandSelectionActive
+                if isSingleClick && noModifiers && notInCommandSelection && FeatureSettings.shared.isClickToPositionEnabled {
+                    _ = self.handleClickToPosition(at: downLocation)
+                }
+            }
+            self.mouseDownLocation = nil
+
+            // Copy-on-select: always call handleMouseUp (it checks if feature is enabled)
+            // This handles both drag-selections and keyboard selections (Shift+arrows)
+            self.handleMouseUp(event: event)
+
+            self.updateCursorLineHighlight()
+            return event
         }
 
         // F03: Cursor change on hover with Cmd held
@@ -330,6 +434,10 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         if let monitor = mouseUpMonitor {
             NSEvent.removeMonitor(monitor)
             mouseUpMonitor = nil
+        }
+        if let monitor = mouseDragMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseDragMonitor = nil
         }
         if let monitor = mouseMoveMonitor {
             NSEvent.removeMonitor(monitor)
@@ -432,6 +540,51 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         if let firstPath = pathMatches.first {
             PathClickHandler.openPath(firstPath, relativeTo: currentDirectory)
             Log.info("Cmd+click: opened path \(firstPath.path)")
+            return true
+        }
+
+        return false
+    }
+
+    // MARK: - Click-to-Position Cursor (Modern Editor Style)
+
+    /// Handle click to move cursor to clicked position (like VS Code, Sublime, etc.)
+    /// Only works when clicking on the current input line (cursor row).
+    /// This sends arrow key sequences to move the cursor horizontally.
+    private func handleClickToPosition(at point: NSPoint) -> Bool {
+        let terminal = getTerminal()
+        guard terminal.rows > 0, terminal.cols > 0 else { return false }
+        guard bounds.height > 0, bounds.width > 0 else { return false }
+
+        // Calculate cell dimensions
+        let cellHeight = bounds.height / CGFloat(terminal.rows)
+        let cellWidth = bounds.width / CGFloat(terminal.cols)
+
+        // Calculate clicked row and column (clamped to valid range)
+        let clickedRow = max(0, min(Int((bounds.height - point.y) / cellHeight), terminal.rows - 1))
+        let clickedCol = max(0, min(Int(point.x / cellWidth), terminal.cols - 1))
+
+        // Get current cursor position
+        let cursorRow = terminal.buffer.y
+        let cursorCol = terminal.buffer.x
+
+        // Only position cursor if click is on the SAME ROW as cursor (input line)
+        // This prevents accidentally moving cursor when clicking on output
+        guard clickedRow == cursorRow else { return false }
+
+        let colDiff = clickedCol - cursorCol
+
+        // Build escape sequences for horizontal cursor movement only
+        var sequences = ""
+        if colDiff > 0 {
+            sequences = String(repeating: "\u{1b}[C", count: colDiff)  // Right arrow
+        } else if colDiff < 0 {
+            sequences = String(repeating: "\u{1b}[D", count: -colDiff)  // Left arrow
+        }
+
+        if !sequences.isEmpty {
+            send(txt: sequences)
+            Log.trace("Click-to-position: moved cursor by col=\(colDiff)")
             return true
         }
 
@@ -644,6 +797,38 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         // Use SwiftTerm's base implementation which handles bracketed paste mode
         super.paste(sender)
         Log.trace("Paste executed via SwiftTerm base class.")
+    }
+
+    @objc private func contextCopy(_ sender: Any?) {
+        copy(self)
+    }
+
+    @objc private func contextPaste(_ sender: Any?) {
+        paste(self)
+    }
+
+    @objc private func contextPasteEscaped(_ sender: Any?) {
+        guard let string = NSPasteboard.general.string(forType: .string) else { return }
+        let escaped = PasteEscaper.escape(string)
+        insertText(escaped, replacementRange: NSRange(location: NSNotFound, length: 0))
+        Log.trace("Paste escaped executed from context menu.")
+    }
+
+    @objc private func contextSelectAll(_ sender: Any?) {
+        selectAll(nil)
+        clearCommandSelectionState()
+    }
+
+    @objc private func contextClearScreen(_ sender: Any?) {
+        send(data: [0x0c])
+        clearSelection()
+        Log.trace("Clear screen executed from context menu.")
+    }
+
+    @objc private func contextClearScrollback(_ sender: Any?) {
+        getTerminal().resetToInitialState()
+        clearSelection()
+        Log.trace("Clear scrollback executed from context menu.")
     }
 
     // MARK: - Selection Helpers

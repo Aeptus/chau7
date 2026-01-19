@@ -34,6 +34,18 @@ struct TabsSettingsView: View {
             )
 
             SettingsToggle(
+                label: L("settings.tabs.warnOnCloseWithProcess", "Warn When Closing Tab with Running Process"),
+                help: L("settings.tabs.warnOnCloseWithProcess.help", "Show a confirmation dialog before closing a tab that has a running process"),
+                isOn: $settings.warnOnCloseWithRunningProcess
+            )
+
+            SettingsToggle(
+                label: L("settings.tabs.alwaysWarnOnClose", "Always Warn Before Closing Tab"),
+                help: L("settings.tabs.alwaysWarnOnClose.help", "Show a confirmation dialog before closing any tab"),
+                isOn: $settings.alwaysWarnOnTabClose
+            )
+
+            SettingsToggle(
                 label: L("settings.tabs.alwaysShowTabBar", "Always Show Tab Bar"),
                 help: L("settings.tabs.alwaysShowTabBar.help", "Show the tab bar even when only one tab is open"),
                 isOn: $settings.alwaysShowTabBar
@@ -65,8 +77,8 @@ struct TabsSettingsView: View {
 
             SettingsShortcutRow(label: L("settings.tabs.newTab", "New Tab"), shortcut: "⌘T")
             SettingsShortcutRow(label: L("settings.tabs.closeTab", "Close Tab"), shortcut: "⌘W")
-            SettingsShortcutRow(label: L("settings.tabs.nextTab", "Next Tab"), shortcut: "⌘⌥]")
-            SettingsShortcutRow(label: L("settings.tabs.previousTab", "Previous Tab"), shortcut: "⌘⌥[")
+            SettingsShortcutRow(label: L("settings.tabs.nextTab", "Next Tab"), shortcut: "⇧⌘] or ⌃Tab or ⌥⌘→")
+            SettingsShortcutRow(label: L("settings.tabs.previousTab", "Previous Tab"), shortcut: "⇧⌘[ or ⌃⇧Tab or ⌥⌘←")
             SettingsShortcutRow(label: L("settings.tabs.switchToTab", "Switch to Tab 1-9"), shortcut: "⌘1-9")
             SettingsShortcutRow(label: L("settings.tabs.renameTab", "Rename Tab"), shortcut: "⌘⌥R")
         }

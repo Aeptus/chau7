@@ -473,14 +473,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func pasteEscaped() {
         guard let string = NSPasteboard.general.string(forType: .string) else { return }
-        // Escape special shell characters
-        let escaped = string
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "'", with: "\\'")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "$", with: "\\$")
-            .replacingOccurrences(of: "`", with: "\\`")
-            .replacingOccurrences(of: "!", with: "\\!")
+        let escaped = PasteEscaper.escape(string)
 
         guard let window = NSApp.keyWindow,
               overlayHosts.contains(where: { $0.window == window }),
@@ -892,7 +885,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func normalizedModifierFlags(_ flags: NSEvent.ModifierFlags) -> NSEvent.ModifierFlags {
         var normalized = flags.intersection(.deviceIndependentFlagsMask)
         normalized.remove(.capsLock)
+        normalized.remove(.numericPad)
+        normalized.remove(.function)
         return normalized
+    }
+
+    private func isTextInputFocused(in window: NSWindow?) -> Bool {
+        guard let responder = window?.firstResponder else { return false }
+        if responder is NSTextView || responder is NSTextField {
+            return true
+        }
+        return false
+    }
+
+    private func shouldUseAlternateTabNavigationShortcuts() -> Bool {
+        let settings = FeatureSettings.shared
+        let baseShortcuts = KeyboardShortcut.shortcuts(for: settings.keybindingPreset)
+
+        func matchesBase(action: String) -> Bool {
+            guard let current = settings.shortcut(for: action),
+                  let base = baseShortcuts.first(where: { $0.action == action }) else {
+                return true
+            }
+            let currentKey = current.key.lowercased()
+            let baseKey = base.key.lowercased()
+            let currentModifiers = Set(current.modifiers.map { $0.lowercased() })
+            let baseModifiers = Set(base.modifiers.map { $0.lowercased() })
+            return currentKey == baseKey && currentModifiers == baseModifiers
+        }
+
+        return matchesBase(action: "nextTab") && matchesBase(action: "previousTab")
     }
 
     private func menuContainsKeyEquivalent(
@@ -920,7 +942,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func handleKeyEvent(_ event: NSEvent) -> NSEvent? {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let flags = normalizedModifierFlags(event.modifierFlags)
 
         guard let window = NSApp.keyWindow else { return event }
         let isOverlayWindow = overlayHosts.contains(where: { $0.window == window })
@@ -965,6 +987,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             if flags == [.control, .shift] {
                 Log.info("Ctrl+Shift+Tab: switching to previous tab.")
+                previousTab()
+                return nil
+            }
+        }
+
+        if isOverlayWindow,
+           flags == [.command, .option],
+           shouldUseAlternateTabNavigationShortcuts(),
+           !isTextInputFocused(in: window) {
+            if event.keyCode == KeyboardShortcuts.rightArrowKeyCode {
+                Log.info("Cmd+Opt+Right: switching to next tab.")
+                nextTab()
+                return nil
+            }
+            if event.keyCode == KeyboardShortcuts.leftArrowKeyCode {
+                Log.info("Cmd+Opt+Left: switching to previous tab.")
                 previousTab()
                 return nil
             }

@@ -16,6 +16,8 @@ import AppKit
 /// - Cmd+1-9: Switch to Tab 1-9
 /// - Cmd+Shift+]: Next Tab
 /// - Cmd+Shift+[: Previous Tab
+/// - Cmd+Option+Right: Next Tab
+/// - Cmd+Option+Left: Previous Tab
 /// - Ctrl+Tab: Next Tab
 /// - Ctrl+Shift+Tab: Previous Tab
 ///
@@ -46,6 +48,10 @@ enum KeyboardShortcuts {
     static let escapeKeyCode: UInt16 = 53
     /// Tab key code
     static let tabKeyCode: UInt16 = 48
+    /// Left arrow key code
+    static let leftArrowKeyCode: UInt16 = 123
+    /// Right arrow key code
+    static let rightArrowKeyCode: UInt16 = 124
 
     // MARK: - Character Constants
 
