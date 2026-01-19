@@ -69,6 +69,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     private let semanticDetector = SemanticOutputDetector()
     private let devServerMonitor = DevServerMonitor()
+    private lazy var shellEventDetector = ShellEventDetector(appModel: appModel)
     private static let osc7Prefix = Data([0x1b, 0x5d, 0x37, 0x3b])
     private static let aiExitMarkerPrefix = Data("\u{001b}]9;chau7;exit=".utf8)
     private static let aiExitMarkerSuffix = Data([0x07])
@@ -366,6 +367,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     private func finishAILogging(exitCode: Int?) {
+        // Notify shell event detector
+        shellEventDetector.commandFinished(exitCode: exitCode, command: aiLogContext?.commandLine)
+
         guard let context = aiLogContext else {
             aiLogSession?.close()
             aiLogSession = nil
@@ -1632,6 +1636,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         guard currentDirectory != normalized else { return }
         currentDirectory = normalized
         terminalView?.currentDirectory = normalized
+        // Notify shell event detector of directory change
+        shellEventDetector.directoryChanged(to: normalized)
         if title == "Shell" {
             title = URL(fileURLWithPath: normalized).lastPathComponent
         }
@@ -1646,7 +1652,12 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             let result = self.queryGitStatus(path: path)
             DispatchQueue.main.async {
                 self.isGitRepo = result.isRepo
+                let oldBranch = self.gitBranch
                 self.gitBranch = result.branch
+                // Notify shell event detector of branch change
+                if oldBranch != result.branch {
+                    self.shellEventDetector.gitBranchChanged(to: result.branch)
+                }
             }
         }
         gitCheckWorkItem = work

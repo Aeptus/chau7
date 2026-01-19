@@ -304,6 +304,13 @@ struct Chau7App: App {
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
             }
+
+            CommandGroup(after: .help) {
+                Button("Keyboard Shortcuts...") {
+                    appDelegate.showKeyboardShortcuts()
+                }
+                .keyboardShortcut("/", modifiers: [.command])
+            }
         }
     }
 }

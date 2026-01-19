@@ -602,6 +602,19 @@ struct Chau7OverlayView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(12)
             }
+
+            if settings.isShortcutHelperHintEnabled {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        ShortcutHelperHintView(shortcut: "⌘/")
+                    }
+                    .padding(.trailing, 12)
+                    .padding(.bottom, overlayModel.currentTask != nil ? 52 : 12)
+                }
+                .zIndex(11)
+            }
         }
         .modifier(ReduceMotionAnimationModifier(
             values: [
@@ -615,6 +628,29 @@ struct Chau7OverlayView: View {
                 overlayModel.isTaskAssessmentVisible
             ]
         ))
+    }
+}
+
+private struct ShortcutHelperHintView: View {
+    let shortcut: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(L("shortcut.helper.label", "Keyboard Shortcuts"))
+                .font(.custom("Avenir Next", size: 11).weight(.semibold))
+            Text(shortcut)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.black.opacity(0.25))
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color.black.opacity(0.18))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityLabel("\(L("shortcut.helper.label", "Keyboard Shortcuts")) \(shortcut)")
+        .accessibilityHint(L("shortcut.helper.hint", "Show the keyboard shortcuts window"))
     }
 }
 

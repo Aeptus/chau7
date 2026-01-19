@@ -364,6 +364,17 @@ final class OverlayTabsModel: ObservableObject {
         if isSearchVisible {
             refreshSearch()
         }
+
+        // Emit tab_opened event if enabled
+        if FeatureSettings.shared.appEventConfig.notifyOnTabOpen {
+            appModel.recordEvent(
+                source: .app,
+                type: "tab_opened",
+                tool: "App",
+                message: "New tab opened (total: \(tabs.count))",
+                notify: true
+            )
+        }
     }
 
     func newTab(at directory: String) {
@@ -392,6 +403,17 @@ final class OverlayTabsModel: ObservableObject {
         if isSearchVisible {
             refreshSearch()
         }
+
+        // Emit tab_opened event if enabled
+        if FeatureSettings.shared.appEventConfig.notifyOnTabOpen {
+            appModel.recordEvent(
+                source: .app,
+                type: "tab_opened",
+                tool: "App",
+                message: "New tab opened at \(directory) (total: \(tabs.count))",
+                notify: true
+            )
+        }
     }
 
     func closeCurrentTab() {
@@ -400,33 +422,109 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     /// Check if a tab has any running process (not idle or exited)
-    private func tabHasRunningProcess(_ tab: OverlayTab) -> Bool {
-        // Check primary session status
-        if let session = tab.session {
+    /// Returns the count of running processes across all split panes
+    private func countRunningProcesses(in tab: OverlayTab) -> Int {
+        var count = 0
+        for session in tab.splitController.root.allSessions {
             switch session.status {
             case .running, .waitingForInput, .stuck:
-                return true
+                count += 1
             case .idle, .exited:
-                return false
+                continue
             }
         }
-        return false
+        return count
+    }
+
+    private func tabHasRunningProcess(_ tab: OverlayTab) -> Bool {
+        return countRunningProcesses(in: tab) > 0
     }
 
     /// Show confirmation dialog before closing tab. Returns true if user confirms.
-    private func confirmTabClose(hasRunningProcess: Bool) -> Bool {
+    /// - Parameters:
+    ///   - runningProcessCount: Number of running processes in the tab
+    ///   - isLastTab: Whether this is the last tab (will be replaced, not closed)
+    ///   - willCloseWindow: Whether closing will close the window entirely
+    ///   - isAlwaysWarnMode: Whether we're warning due to "always warn" setting (shows suppression option)
+    private func confirmTabClose(
+        runningProcessCount: Int,
+        isLastTab: Bool,
+        willCloseWindow: Bool,
+        isAlwaysWarnMode: Bool
+    ) -> Bool {
         let alert = NSAlert()
+        let hasRunningProcess = runningProcessCount > 0
+
         if hasRunningProcess {
-            alert.messageText = L("alert.closeTab.runningProcess.title", "Close tab with running process?")
-            alert.informativeText = L("alert.closeTab.runningProcess.message", "This tab has a running process. Closing it will terminate the process.")
+            // Title based on process count
+            if runningProcessCount == 1 {
+                alert.messageText = L("alert.closeTab.runningProcess.title", "Close tab with running process?")
+            } else {
+                alert.messageText = L("alert.closeTab.runningProcesses.title", "Close tab with \(runningProcessCount) running processes?")
+            }
+
+            // Message based on what will happen
+            if isLastTab && !willCloseWindow {
+                // Last tab with keepWindow behavior - tab is replaced
+                if runningProcessCount == 1 {
+                    alert.informativeText = L("alert.closeTab.runningProcess.replace.message",
+                        "This tab has a running process. The process will be terminated and a new tab will open.")
+                } else {
+                    alert.informativeText = L("alert.closeTab.runningProcesses.replace.message",
+                        "This tab has \(runningProcessCount) running processes. All processes will be terminated and a new tab will open.")
+                }
+            } else if willCloseWindow {
+                // Last tab with closeWindow behavior
+                if runningProcessCount == 1 {
+                    alert.informativeText = L("alert.closeTab.runningProcess.closeWindow.message",
+                        "This tab has a running process. The process will be terminated and the window will close.")
+                } else {
+                    alert.informativeText = L("alert.closeTab.runningProcesses.closeWindow.message",
+                        "This tab has \(runningProcessCount) running processes. All processes will be terminated and the window will close.")
+                }
+            } else {
+                // Normal close (multiple tabs exist)
+                if runningProcessCount == 1 {
+                    alert.informativeText = L("alert.closeTab.runningProcess.message",
+                        "This tab has a running process. Closing it will terminate the process.")
+                } else {
+                    alert.informativeText = L("alert.closeTab.runningProcesses.message",
+                        "This tab has \(runningProcessCount) running processes. Closing it will terminate all processes.")
+                }
+            }
         } else {
+            // No running process - only shown when "always warn" is enabled
             alert.messageText = L("alert.closeTab.confirm.title", "Close this tab?")
-            alert.informativeText = L("alert.closeTab.confirm.message", "Are you sure you want to close this tab?")
+            if isLastTab && !willCloseWindow {
+                alert.informativeText = L("alert.closeTab.confirm.replace.message",
+                    "This is the last tab. A new tab will be created.")
+            } else if willCloseWindow {
+                alert.informativeText = L("alert.closeTab.confirm.closeWindow.message",
+                    "This is the last tab. The window will be closed.")
+            } else {
+                alert.informativeText = L("alert.closeTab.confirm.message",
+                    "Are you sure you want to close this tab?")
+            }
         }
+
         alert.alertStyle = .warning
         alert.addButton(withTitle: L("button.closeTab", "Close Tab"))
         alert.addButton(withTitle: L("button.cancel", "Cancel"))
-        return alert.runModal() == .alertFirstButtonReturn
+
+        // Show "Don't ask again" only for the "always warn" mode (not for running process warnings)
+        if isAlwaysWarnMode && !hasRunningProcess {
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = L("alert.closeTab.dontAskAgain", "Don't ask again")
+        }
+
+        let result = alert.runModal()
+
+        // If user checked "Don't ask again", disable the setting
+        if alert.suppressionButton?.state == .on {
+            FeatureSettings.shared.alwaysWarnOnTabClose = false
+        }
+
+        return result == .alertFirstButtonReturn
     }
 
     func closeTab(id: UUID) {
@@ -439,20 +537,30 @@ final class OverlayTabsModel: ObservableObject {
 
         let tab = tabs[index]
         let settings = FeatureSettings.shared
-        let hasRunningProcess = tabHasRunningProcess(tab)
+        let runningProcessCount = countRunningProcesses(in: tab)
+        let hasRunningProcess = runningProcessCount > 0
+        let isLastTab = tabs.count == 1
+        let willCloseWindow = isLastTab && settings.lastTabCloseBehavior == .closeWindow
 
         // Check if we need to show a warning dialog
-        let shouldWarn = settings.alwaysWarnOnTabClose ||
-                        (settings.warnOnCloseWithRunningProcess && hasRunningProcess)
+        let warnForProcess = settings.warnOnCloseWithRunningProcess && hasRunningProcess
+        let warnAlways = settings.alwaysWarnOnTabClose
+        let shouldWarn = warnForProcess || warnAlways
 
         if shouldWarn {
-            guard confirmTabClose(hasRunningProcess: hasRunningProcess) else {
+            let confirmed = confirmTabClose(
+                runningProcessCount: runningProcessCount,
+                isLastTab: isLastTab,
+                willCloseWindow: willCloseWindow,
+                isAlwaysWarnMode: warnAlways && !warnForProcess
+            )
+            guard confirmed else {
                 Log.info("closeTab: user cancelled close for tab \(id)")
                 return
             }
         }
 
-        let inheritedDirectory = tabs.count == 1 ? inheritedStartDirectory() : nil
+        let inheritedDirectory = isLastTab ? inheritedStartDirectory() : nil
         Log.info("closeTab: found tab at index=\(index)")
         if isRenameVisible {
             clearRenameState(shouldFocus: false)
@@ -500,15 +608,90 @@ final class OverlayTabsModel: ObservableObject {
         if isSearchVisible {
             refreshSearch()
         }
+
+        // Emit tab_closed event if enabled
+        if FeatureSettings.shared.appEventConfig.notifyOnTabClose {
+            appModel.recordEvent(
+                source: .app,
+                type: "tab_closed",
+                tool: "App",
+                message: "Tab closed (remaining: \(tabs.count))",
+                notify: true
+            )
+        }
+
         Log.info("closeTab completed. tabs.count=\(tabs.count)")
     }
 
     func closeOtherTabs() {
         guard tabs.count > 1 else { return }
         let currentID = selectedTabID
+        let otherTabs = tabs.filter { $0.id != currentID }
+        let settings = FeatureSettings.shared
+
+        // Count tabs and total processes
+        let totalToClose = otherTabs.count
+        var totalProcessCount = 0
+        var tabsWithProcesses = 0
+        for tab in otherTabs {
+            let count = countRunningProcesses(in: tab)
+            if count > 0 {
+                tabsWithProcesses += 1
+                totalProcessCount += count
+            }
+        }
+
+        // Check if we need to show a warning
+        let warnForProcess = settings.warnOnCloseWithRunningProcess && totalProcessCount > 0
+        let warnAlways = settings.alwaysWarnOnTabClose
+        let shouldWarn = warnForProcess || warnAlways
+
+        if shouldWarn {
+            let alert = NSAlert()
+            if totalProcessCount > 0 {
+                alert.messageText = L("alert.closeOtherTabs.title", "Close \(totalToClose) tabs?")
+                // Build informative message with process details
+                let processInfo: String
+                if totalProcessCount == 1 {
+                    processInfo = L("alert.closeOtherTabs.process.singular",
+                        "1 running process will be terminated.")
+                } else if tabsWithProcesses == 1 {
+                    processInfo = L("alert.closeOtherTabs.processes.oneTab",
+                        "\(totalProcessCount) running processes in 1 tab will be terminated.")
+                } else {
+                    processInfo = L("alert.closeOtherTabs.processes.multipleTabs",
+                        "\(totalProcessCount) running processes across \(tabsWithProcesses) tabs will be terminated.")
+                }
+                alert.informativeText = processInfo
+            } else {
+                alert.messageText = L("alert.closeOtherTabs.confirm.title", "Close \(totalToClose) tabs?")
+                alert.informativeText = L("alert.closeOtherTabs.confirm.message", "Are you sure you want to close all other tabs?")
+            }
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: L("button.closeTabs", "Close Tabs"))
+            alert.addButton(withTitle: L("button.cancel", "Cancel"))
+
+            // Show "Don't ask again" only for "always warn" mode without running processes
+            if warnAlways && totalProcessCount == 0 {
+                alert.showsSuppressionButton = true
+                alert.suppressionButton?.title = L("alert.closeTab.dontAskAgain", "Don't ask again")
+            }
+
+            let result = alert.runModal()
+
+            // If user checked "Don't ask again", disable the setting
+            if alert.suppressionButton?.state == .on {
+                FeatureSettings.shared.alwaysWarnOnTabClose = false
+            }
+
+            guard result == .alertFirstButtonReturn else {
+                Log.info("closeOtherTabs: user cancelled")
+                return
+            }
+        }
 
         // Close all sessions in all tabs except current one
-        for tab in tabs where tab.id != currentID {
+        for tab in otherTabs {
             tab.splitController.root.closeAllSessions()
         }
 

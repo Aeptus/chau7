@@ -201,8 +201,9 @@ enum HelpContent {
             Chau7 provides extensive keyboard shortcuts for efficient navigation.
 
             ## Customizing Shortcuts
-
+            
             Open the Keyboard Shortcuts editor from:
+            - **⌘/**: Keyboard Shortcuts
             - Command Palette: **⇧⌘P** → "Keyboard Shortcuts"
             - Settings → Input → Keyboard Shortcuts
 

@@ -55,6 +55,12 @@ struct InputSettingsView: View {
                 )
             }
 
+            SettingsToggle(
+                label: L("settings.input.shortcutHelperHint", "Shortcut Helper Hint"),
+                help: L("settings.input.shortcutHelperHint.help", "Show the shortcut helper hint in the bottom-right corner of the terminal"),
+                isOn: $settings.isShortcutHelperHintEnabled
+            )
+
             SettingsButtonRow(buttons: [
                 .init(title: L("settings.input.resetShortcuts", "Reset Shortcuts to Defaults"), style: .plain) {
                     settings.resetShortcutsToDefaults()
