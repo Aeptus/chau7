@@ -42,6 +42,10 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.notifyUpdateChanges = !isSuspended
             existingView.isHidden = isSuspended
             existingView.setEventMonitoringEnabled(isActive && !isSuspended)
+            // Configure mouse reporting based on user setting.
+            // When disabled (default), text selection always works.
+            // When enabled, hold Shift to force text selection in apps like vim/tmux.
+            existingView.allowMouseReporting = settings.isMouseReportingEnabled
             // Wrap in container if not already
             if let container = existingView.superview as? TerminalContainerView {
                 return container
@@ -67,7 +71,10 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.notifyUpdateChanges = !isSuspended
         view.isHidden = isSuspended
         view.setEventMonitoringEnabled(isActive && !isSuspended)
-        view.allowMouseReporting = false
+        // Configure mouse reporting based on user setting.
+        // When disabled (default), text selection always works.
+        // When enabled, hold Shift to force text selection in apps like vim/tmux.
+        view.allowMouseReporting = settings.isMouseReportingEnabled
         view.onInput = { [weak model] text in
             model?.handleInput(text)
         }

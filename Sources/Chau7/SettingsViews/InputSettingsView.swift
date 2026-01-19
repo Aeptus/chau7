@@ -103,6 +103,18 @@ struct InputSettingsView: View {
                 isOn: $settings.isOptionClickCursorEnabled
             )
 
+            SettingsToggle(
+                label: L("settings.input.mouseReporting", "Mouse Reporting"),
+                help: L("settings.input.mouseReporting.help", "Allow terminal apps (vim, tmux, etc.) to capture mouse events. When enabled, hold Shift to force text selection. When disabled, text selection always works."),
+                isOn: $settings.isMouseReportingEnabled
+            )
+
+            SettingsToggle(
+                label: L("settings.input.clickToPosition", "Click to Position Cursor"),
+                help: L("settings.input.clickToPosition.help", "Click on the input line to move cursor (like modern text editors). Click+drag still selects text."),
+                isOn: $settings.isClickToPositionEnabled
+            )
+
             Divider()
                 .padding(.vertical, 8)
 
