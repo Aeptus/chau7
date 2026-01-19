@@ -367,8 +367,18 @@ public final class MetalTerminalRenderer: NSObject {
             let row = i / cols
             let col = i % cols
 
-            // Get glyph info
-            let glyphInfo = glyphCache[cell.character] ?? glyphCache[UInt32(Character(" ").asciiValue!)]!
+            // Get glyph info (fallback to space glyph, or render empty cell if not available)
+            guard let glyphInfo = glyphCache[cell.character] ?? glyphCache[32] else {
+                // Write an empty/transparent cell to avoid uninitialized memory artifacts
+                instances[i] = CellInstance(
+                    position: SIMD2(Float(col) * Float(cellSize.width), Float(row) * Float(cellSize.height)),
+                    texCoord: SIMD4(0, 0, 0, 0),
+                    foreground: SIMD4<Float>(0, 0, 0, 0),
+                    background: cell.backgroundColor,
+                    flags: 0
+                )
+                continue
+            }
 
             instances[i] = CellInstance(
                 position: SIMD2(Float(col) * Float(cellSize.width), Float(row) * Float(cellSize.height)),

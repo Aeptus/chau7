@@ -65,7 +65,8 @@ public final class ProxyManager: ObservableObject {
 
     /// Directory for proxy data (database, socket)
     private var dataDirectory: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
         let chau7Dir = appSupport.appendingPathComponent("Chau7/Proxy")
         try? FileManager.default.createDirectory(at: chau7Dir, withIntermediateDirectories: true)
         return chau7Dir

@@ -26,6 +26,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     @Published var isGitRepo: Bool = false
     @Published var gitBranch: String? = nil
     @Published var activeAppName: String? = nil
+    @Published var devServer: DevServerMonitor.DevServerInfo? = nil
     @Published var tabTitleOverride: String? = nil
     @Published var fontSize: CGFloat = 13
     @Published var searchMatches: [SearchMatch] = []
@@ -64,8 +65,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private var didApplyShellIntegration = false
     private var shellIntegrationOutputCount = 0
     private var shouldAutoFocusOnAttach = true  // Auto-focus when terminal view is attached
+    private var didStartDevServerMonitor = false  // Track if dev server monitor has started
 
     private let semanticDetector = SemanticOutputDetector()
+    private let devServerMonitor = DevServerMonitor()
     private static let osc7Prefix = Data([0x1b, 0x5d, 0x37, 0x3b])
     private static let aiExitMarkerPrefix = Data("\u{001b}]9;chau7;exit=".utf8)
     private static let aiExitMarkerSuffix = Data([0x07])
@@ -114,6 +117,18 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         refreshGitStatus(path: currentDirectory)
         SnippetManager.shared.updateContextPath(currentDirectory)
         startIdleTimer()
+        setupDevServerMonitor()
+    }
+
+    private func setupDevServerMonitor() {
+        devServerMonitor.onDevServerChanged = { [weak self] serverInfo in
+            self?.devServer = serverInfo
+            if let serverInfo {
+                Log.info("Dev server detected: \(serverInfo.name) on port \(serverInfo.port ?? 0)")
+            } else {
+                Log.info("Dev server stopped")
+            }
+        }
     }
 
     deinit {
@@ -125,6 +140,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         gitCheckWorkItem?.cancel()
         searchUpdateWorkItem?.cancel()
         aiLogSession?.close()
+        devServerMonitor.stop()
     }
 
     /// Returns the existing terminal view if one exists (to reuse across SwiftUI view recreations)
@@ -225,6 +241,24 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         }
         // Check if AI agent is waiting for user input
         maybeDetectAIWaitingForInput(data)
+        // Check for dev server output patterns
+        maybeDetectDevServer(data)
+    }
+
+    private func maybeDetectDevServer(_ data: Data) {
+        // Start the dev server monitor if not already started
+        if !didStartDevServerMonitor, let view = terminalView {
+            let pid = view.process.shellPid
+            if pid > 0 {
+                didStartDevServerMonitor = true
+                devServerMonitor.start(shellPID: pid)
+            }
+        }
+
+        // Check output for dev server patterns
+        guard devServer == nil else { return }  // Already detected
+        guard let output = String(data: data, encoding: .utf8) else { return }
+        devServerMonitor.checkOutput(output)
     }
 
     /// Detects when an AI agent is waiting for user input (prompts, permission requests, etc.)
@@ -608,6 +642,13 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             return
         }
 
+        // Check for dev server command
+        if let devServerName = CommandDetection.detectDevServer(from: commandLine) {
+            Log.info("Dev server command detected: \(devServerName) from '\(commandLine.prefix(50))'")
+            devServerMonitor.setCommandHint(devServerName)
+            // Don't set activeAppName for dev servers - they're different from AI tools
+        }
+
         // Custom detection rules (substring match on command line)
         let lowercasedLine = commandLine.lowercased()
         for rule in FeatureSettings.shared.customAIDetectionRules {
@@ -907,13 +948,17 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             if self.aiLogSession != nil {
                 self.finishAILogging(exitCode: nil)
             }
+            // Note: Don't clear devServer here - it persists until the server actually stops
+            // The DevServerMonitor will detect when the server is no longer listening
         }
     }
 
     func processTerminated(source: TerminalView, exitCode: Int32?) {
         DispatchQueue.main.async {
             self.status = .exited
+            self.devServer = nil
         }
+        devServerMonitor.stop()
         if aiLogSession != nil {
             finishAILogging(exitCode: nil)
         }
@@ -1196,9 +1241,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             // Tab ID for task lifecycle tracking (unique per terminal tab)
             dict["CHAU7_TAB_ID"] = tabIdentifier
 
-            // Project path for repo switch detection (git root or cwd)
-            let cwd = currentDirectory
-            dict["CHAU7_PROJECT"] = detectGitRoot(path: cwd) ?? cwd
+            // Project path for repo switch detection
+            // Note: Use cwd directly to avoid blocking main thread during shell startup.
+            // Git root detection happens asynchronously via checkGitStatus().
+            dict["CHAU7_PROJECT"] = currentDirectory
         }
 
         return dict.map { "\($0.key)=\($0.value)" }

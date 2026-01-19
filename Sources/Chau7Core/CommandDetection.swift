@@ -6,7 +6,7 @@ import Foundation
 /// Extracted for testability.
 public enum CommandDetection {
 
-    /// Map of command names to their display names
+    /// Map of command names to their display names (AI tools)
     public static let appNameMap: [String: String] = [
         // OpenAI Codex
         "codex": "Codex",
@@ -40,6 +40,74 @@ public enum CommandDetection {
         "cursor": "Cursor"
     ]
 
+    /// Map of dev server command names to their display names
+    public static let devServerMap: [String: String] = [
+        // Vite
+        "vite": "Vite",
+        "vite-node": "Vite",
+        // Next.js
+        "next": "Next.js",
+        "next-dev": "Next.js",
+        // Nuxt
+        "nuxt": "Nuxt",
+        "nuxi": "Nuxt",
+        // Webpack
+        "webpack": "Webpack",
+        "webpack-dev-server": "Webpack",
+        "webpack-cli": "Webpack",
+        // Parcel
+        "parcel": "Parcel",
+        // Turbo
+        "turbo": "Turbo",
+        "turbopack": "Turbo",
+        // Remix
+        "remix": "Remix",
+        // Astro
+        "astro": "Astro",
+        // SvelteKit
+        "svelte-kit": "SvelteKit",
+        // Angular
+        "ng": "Angular",
+        // Vue CLI
+        "vue-cli-service": "Vue",
+        // Create React App
+        "react-scripts": "React",
+        // Gatsby
+        "gatsby": "Gatsby",
+        // Expo
+        "expo": "Expo",
+        // Electron
+        "electron": "Electron",
+        // Tauri
+        "tauri": "Tauri",
+        // Generic dev servers
+        "live-server": "Live Server",
+        "http-server": "HTTP Server",
+        "serve": "Serve",
+        "nodemon": "Nodemon",
+        "ts-node-dev": "TS Node Dev",
+        "tsx": "TSX"
+    ]
+
+    /// Common dev ports and their typical associations
+    public static let commonDevPorts: [Int: String] = [
+        3000: "Dev Server",      // Next.js, Create React App, many others
+        3001: "Dev Server",
+        4000: "Dev Server",      // Phoenix, some Node apps
+        4200: "Angular",         // Angular CLI default
+        5000: "Dev Server",      // Flask, many others
+        5173: "Vite",            // Vite default
+        5174: "Vite",
+        8000: "Dev Server",      // Django, many others
+        8080: "Dev Server",      // Common alternative
+        8081: "Dev Server",
+        8888: "Dev Server",      // Jupyter, some servers
+        9000: "Dev Server",
+        19000: "Expo",           // Expo default
+        19001: "Expo",
+        19002: "Expo"
+    ]
+
     /// Output patterns that indicate a specific AI CLI is running
     public static let outputDetectionPatterns: [(pattern: String, appName: String)] = [
         // Claude Code banners
@@ -68,6 +136,60 @@ public enum CommandDetection {
         // Cursor patterns
         ("Cursor", "Cursor"),
         ("cursor.sh", "Cursor")
+    ]
+
+    /// Output patterns that indicate a dev server is running
+    public static let devServerOutputPatterns: [(pattern: String, appName: String)] = [
+        // Vite
+        ("VITE v", "Vite"),
+        ("vite v", "Vite"),
+        ("➜  Local:   http://localhost:5173", "Vite"),
+        // Next.js
+        ("ready started server on", "Next.js"),
+        ("▲ Next.js", "Next.js"),
+        ("- Local:        http://localhost:3000", "Next.js"),
+        // Nuxt
+        ("Nuxt", "Nuxt"),
+        ("Nitro", "Nuxt"),
+        // Webpack
+        ("webpack compiled", "Webpack"),
+        ("｢wds｣", "Webpack"),
+        ("｢wdm｣", "Webpack"),
+        // Parcel
+        ("Server running at http://localhost:", "Parcel"),
+        ("✨ Built in", "Parcel"),
+        // Angular
+        ("Angular Live Development Server", "Angular"),
+        ("Compiled successfully", "Angular"),
+        // React (Create React App)
+        ("Compiled successfully!", "React"),
+        ("Starting the development server", "React"),
+        // Remix
+        ("Remix App Server", "Remix"),
+        // Astro
+        ("astro", "Astro"),
+        ("🚀  astro", "Astro"),
+        // SvelteKit
+        ("SvelteKit", "SvelteKit"),
+        // Gatsby
+        ("gatsby develop", "Gatsby"),
+        ("Gatsby develop", "Gatsby"),
+        // Expo
+        ("Starting Metro Bundler", "Expo"),
+        ("Metro waiting on", "Expo"),
+        // Electron
+        ("Electron", "Electron"),
+        // Nodemon
+        ("nodemon", "Nodemon"),
+        ("[nodemon]", "Nodemon"),
+        // Generic patterns (lower priority - checked last)
+        ("Listening on port", "Dev Server"),
+        ("listening on port", "Dev Server"),
+        ("Server listening on", "Dev Server"),
+        ("Server running at", "Dev Server"),
+        ("Development server", "Dev Server"),
+        ("dev server running", "Dev Server"),
+        ("Local:", "Dev Server")
     ]
 
     /// Shell wrapper commands that should be skipped
@@ -114,6 +236,108 @@ public enum CommandDetection {
         }
 
         return nil
+    }
+
+    /// Detects a dev server from a command line
+    /// - Parameter commandLine: The command line string
+    /// - Returns: The detected dev server name, or nil
+    public static func detectDevServer(from commandLine: String) -> String? {
+        let tokens = tokenize(commandLine)
+        guard let token = extractCommandToken(from: tokens) else { return nil }
+        let normalized = normalizeToken(token)
+
+        // Direct match on dev server commands
+        if let match = devServerMap[normalized] {
+            return match
+        }
+
+        // Package manager with dev/start scripts: npm run dev, pnpm dev, yarn dev, bun dev
+        let packageManagers = ["npm", "pnpm", "yarn", "bun"]
+        if packageManagers.contains(normalized) {
+            let devScripts = ["dev", "start", "serve", "develop", "watch"]
+            // Check for "run dev", "run start", etc.
+            if findSubcommand(tokens: tokens, after: normalized, looking: ["run"]) != nil {
+                if let script = findSubcommand(tokens: tokens, after: "run", looking: devScripts) {
+                    return scriptToServerName(script)
+                }
+            }
+            // Direct: pnpm dev, yarn dev, bun dev
+            if let script = findSubcommand(tokens: tokens, after: normalized, looking: devScripts) {
+                return scriptToServerName(script)
+            }
+        }
+
+        // npx/bunx with dev server packages
+        if normalized == "npx" || normalized == "bunx" {
+            if let devServer = findSubcommand(tokens: tokens, after: normalized, looking: Array(devServerMap.keys)) {
+                return devServerMap[devServer]
+            }
+        }
+
+        return nil
+    }
+
+    /// Detects a dev server from terminal output
+    /// - Parameter output: The terminal output string
+    /// - Returns: The detected dev server name, or nil
+    public static func detectDevServerFromOutput(_ output: String) -> String? {
+        for (pattern, appName) in devServerOutputPatterns {
+            if output.contains(pattern) {
+                return appName
+            }
+        }
+        return nil
+    }
+
+    /// Extracts a URL from dev server output (e.g., "http://localhost:3000")
+    /// - Parameter output: The terminal output string
+    /// - Returns: The URL string if found, or nil
+    public static func extractDevServerURL(from output: String) -> String? {
+        // Match http://localhost:PORT or http://127.0.0.1:PORT patterns
+        let patterns = [
+            "http://localhost:\\d+",
+            "http://127\\.0\\.0\\.1:\\d+",
+            "https://localhost:\\d+",
+            "http://0\\.0\\.0\\.0:\\d+"
+        ]
+
+        for pattern in patterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: []),
+               let match = regex.firstMatch(in: output, range: NSRange(output.startIndex..., in: output)),
+               let range = Range(match.range, in: output) {
+                return String(output[range])
+            }
+        }
+        return nil
+    }
+
+    /// Extracts the port number from a URL or output
+    /// - Parameter text: Text containing a port number
+    /// - Returns: The port number if found
+    public static func extractPort(from text: String) -> Int? {
+        if let regex = try? NSRegularExpression(pattern: ":(\\d{4,5})(?:/|\\s|$)", options: []),
+           let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+           match.numberOfRanges > 1,
+           let range = Range(match.range(at: 1), in: text) {
+            return Int(text[range])
+        }
+        return nil
+    }
+
+    /// Maps a script name to a dev server display name
+    private static func scriptToServerName(_ script: String) -> String {
+        switch script.lowercased() {
+        case "dev", "develop":
+            return "Dev Server"
+        case "start":
+            return "Dev Server"
+        case "serve":
+            return "Dev Server"
+        case "watch":
+            return "Watch Mode"
+        default:
+            return "Dev Server"
+        }
     }
 
     /// Extracts the command token from a raw command line

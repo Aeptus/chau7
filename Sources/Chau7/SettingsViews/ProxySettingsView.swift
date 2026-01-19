@@ -208,8 +208,11 @@ struct ProxySettingsView: View {
     }
 
     private func openDatabaseFolder() {
-        let path = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("Chau7/proxy")
+        guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            Log.error("Could not locate Application Support directory")
+            return
+        }
+        let path = appSupport.appendingPathComponent("Chau7/proxy")
 
         // Create directory if it doesn't exist
         try? FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
@@ -218,8 +221,11 @@ struct ProxySettingsView: View {
     }
 
     private func clearAnalyticsData() {
-        let dbPath = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-            .appendingPathComponent("Chau7/proxy/analytics.db")
+        guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            Log.error("Could not locate Application Support directory")
+            return
+        }
+        let dbPath = appSupport.appendingPathComponent("Chau7/proxy/analytics.db")
 
         do {
             if FileManager.default.fileExists(atPath: dbPath.path) {

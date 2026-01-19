@@ -34,7 +34,8 @@ public final class ProxyIPCServer: ObservableObject {
 
     /// Socket path
     private var socketPath: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
         return appSupport
             .appendingPathComponent("Chau7/Proxy")
             .appendingPathComponent("proxy.sock")
