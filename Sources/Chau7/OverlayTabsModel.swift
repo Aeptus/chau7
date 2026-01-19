@@ -346,7 +346,7 @@ final class OverlayTabsModel: ObservableObject {
             tab.color = colors[tabs.count % colors.count]
         }
         if let directory = inheritedStartDirectory() {
-            tab.session?.currentDirectory = directory
+            tab.session?.updateCurrentDirectory(directory)
         }
 
         // Insert based on settings
@@ -385,8 +385,8 @@ final class OverlayTabsModel: ObservableObject {
             tab.color = colors[tabs.count % colors.count]
         }
 
-        // Set the starting directory for the new tab
-        tab.session?.currentDirectory = directory
+        // Set the starting directory for the new tab (triggers git status refresh)
+        tab.session?.updateCurrentDirectory(directory)
 
         // Insert based on settings
         let position = FeatureSettings.shared.newTabPosition
@@ -584,7 +584,7 @@ final class OverlayTabsModel: ObservableObject {
                 newTab.color = firstColor
             }
             if let directory = inheritedDirectory {
-                newTab.session?.currentDirectory = directory
+                newTab.session?.updateCurrentDirectory(directory)
             }
             tabs[index] = newTab
             selectedTabID = newTab.id

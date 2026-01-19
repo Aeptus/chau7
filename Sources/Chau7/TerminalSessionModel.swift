@@ -1631,7 +1631,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         return "\(last)ms"
     }
 
-    private func updateCurrentDirectory(_ path: String) {
+    /// Updates the current directory and refreshes git status.
+    /// Call this instead of setting currentDirectory directly to ensure git badge updates.
+    func updateCurrentDirectory(_ path: String) {
         let normalized = URL(fileURLWithPath: path).standardized.path
         guard currentDirectory != normalized else { return }
         currentDirectory = normalized
