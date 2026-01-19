@@ -37,9 +37,9 @@ struct KeyboardShortcut: Codable, Identifiable, Equatable {
         KeyboardShortcut(action: "zoomIn", key: "=", modifiers: ["cmd"]),
         KeyboardShortcut(action: "zoomOut", key: "-", modifiers: ["cmd"]),
         KeyboardShortcut(action: "zoomReset", key: "0", modifiers: ["cmd"]),
-        // Extended shortcuts (use ⌘⌥)
-        KeyboardShortcut(action: "nextTab", key: "]", modifiers: ["cmd", "opt"]),
-        KeyboardShortcut(action: "previousTab", key: "[", modifiers: ["cmd", "opt"]),
+        // Extended shortcuts
+        KeyboardShortcut(action: "nextTab", key: "]", modifiers: ["cmd", "shift"]),
+        KeyboardShortcut(action: "previousTab", key: "[", modifiers: ["cmd", "shift"]),
         KeyboardShortcut(action: "findPrevious", key: "g", modifiers: ["cmd", "opt"]),
         KeyboardShortcut(action: "clear", key: "k", modifiers: ["cmd", "opt"]),
         KeyboardShortcut(action: "snippets", key: "s", modifiers: ["cmd", "opt"]),
@@ -316,11 +316,128 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
+    /// Available monospace fonts for the terminal, filtered by system availability.
+    /// Includes system fonts, popular open-source fonts, and premium fonts.
     static let availableFonts: [String] = {
         let monospacedFonts = [
-            "Menlo", "Monaco", "SF Mono", "Courier New", "Consolas",
-            "JetBrains Mono", "Fira Code", "Source Code Pro", "IBM Plex Mono",
-            "Hack", "Inconsolata", "Anonymous Pro", "Ubuntu Mono", "Roboto Mono"
+            // macOS System Fonts
+            "Menlo",
+            "Monaco",
+            "SF Mono",
+            "Courier New",
+
+            // Microsoft Fonts
+            "Cascadia Code",      // Modern Windows Terminal font with ligatures
+            "Cascadia Mono",      // Cascadia without ligatures
+            "Consolas",
+
+            // JetBrains
+            "JetBrains Mono",     // Popular IDE font with ligatures
+
+            // Adobe/Google Fonts
+            "Source Code Pro",
+            "Roboto Mono",
+
+            // Mozilla
+            "Fira Code",          // Popular font with ligatures
+            "Fira Mono",          // Fira without ligatures
+
+            // IBM
+            "IBM Plex Mono",
+
+            // GitHub
+            "Monaspace Neon",     // GitHub's new font family
+            "Monaspace Argon",
+            "Monaspace Xenon",
+            "Monaspace Radon",
+            "Monaspace Krypton",
+
+            // Vercel
+            "Geist Mono",         // Modern, clean terminal font
+
+            // Other Popular Open Source
+            "Hack",               // Designed for source code
+            "Inconsolata",        // Humanist monospace
+            "Anonymous Pro",
+            "Ubuntu Mono",
+            "Droid Sans Mono",
+            "DejaVu Sans Mono",
+            "Liberation Mono",
+            "PT Mono",
+            "Oxygen Mono",
+            "Space Mono",         // Google Fonts - quirky
+            "Overpass Mono",
+            "Share Tech Mono",
+            "Cousine",
+            "Cutive Mono",
+
+            // Iosevka Family (highly customizable)
+            "Iosevka",
+            "Iosevka Term",
+            "Iosevka Fixed",
+
+            // Victor Mono (cursive italics)
+            "Victor Mono",
+
+            // Fantasque Sans Mono (playful)
+            "Fantasque Sans Mono",
+
+            // Input (customizable)
+            "Input Mono",
+            "Input Mono Narrow",
+            "Input Mono Condensed",
+
+            // Recursive (variable font)
+            "Recursive Mono Linear",
+            "Rec Mono Linear",
+
+            // Comic/Fun
+            "Comic Mono",         // Comic Sans but monospace
+
+            // Maple Mono
+            "Maple Mono",
+            "Maple Mono NF",      // Nerd Font version
+
+            // Commit Mono
+            "Commit Mono",
+
+            // Nerd Font variants (include powerline symbols)
+            "MesloLGS NF",        // Popular for Oh My Zsh
+            "MesloLGM NF",
+            "MesloLGL NF",
+            "Hack Nerd Font",
+            "FiraCode Nerd Font",
+            "JetBrainsMono Nerd Font",
+            "CaskaydiaCove Nerd Font",
+            "Iosevka Nerd Font",
+            "UbuntuMono Nerd Font",
+            "RobotoMono Nerd Font",
+            "SourceCodePro Nerd Font",
+            "Symbols Nerd Font",
+
+            // Premium/Commercial fonts (user must install)
+            "Operator Mono",      // Hoefler&Co - cursive italics
+            "Dank Mono",          // Stylish with ligatures
+            "MonoLisa",           // Designed for long coding sessions
+            "Berkeley Mono",      // Retro feel
+            "Gintronic",          // Modern geometric
+            "Pragmata Pro",       // Compact and dense
+            "Cartograph CF",      // Warm, readable
+            "Codelia",            // Playful
+            "Comic Code",         // Professional Comic Sans
+            "Ellograph CF",       // Elegant
+            "Lilex",              // Modern and clean
+
+            // Coding-specific fonts
+            "Sudo",
+            "Agave",
+            "Cozette",            // Bitmap-style
+            "Terminus",           // Classic bitmap
+            "Tamzen",
+            "Tamsyn",
+            "GoMono",             // Go language official font
+            "Noto Sans Mono",     // Google's universal font
+            "Intel One Mono",     // Intel's open source font
         ]
         let fontManager = NSFontManager.shared
         return monospacedFonts.filter { fontManager.font(withFamily: $0, traits: [], weight: 5, size: 12) != nil }
@@ -474,6 +591,16 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
+    /// When true, shows a warning dialog before closing a tab with a running process
+    @Published var warnOnCloseWithRunningProcess: Bool {
+        didSet { UserDefaults.standard.set(warnOnCloseWithRunningProcess, forKey: Keys.warnOnCloseWithProcess) }
+    }
+
+    /// When true, always shows a warning dialog before closing any tab
+    @Published var alwaysWarnOnTabClose: Bool {
+        didSet { UserDefaults.standard.set(alwaysWarnOnTabClose, forKey: Keys.alwaysWarnOnTabClose) }
+    }
+
     // MARK: - Window Transparency
 
     @Published var windowOpacity: Double {
@@ -581,6 +708,19 @@ final class FeatureSettings: ObservableObject {
     /// Option+click to position cursor in the command line (like iTerm2)
     @Published var isOptionClickCursorEnabled: Bool {
         didSet { UserDefaults.standard.set(isOptionClickCursorEnabled, forKey: Keys.optionClickCursor) }
+    }
+
+    /// Allow terminal apps (vim, tmux, Codex, etc.) to capture mouse events.
+    /// When enabled, hold Shift while clicking/dragging to force text selection.
+    /// When disabled, mouse events always perform text selection.
+    @Published var isMouseReportingEnabled: Bool {
+        didSet { UserDefaults.standard.set(isMouseReportingEnabled, forKey: Keys.mouseReporting) }
+    }
+
+    /// Click on input line to position cursor (like modern text editors).
+    /// Single click moves cursor, click+drag selects text.
+    @Published var isClickToPositionEnabled: Bool {
+        didSet { UserDefaults.standard.set(isClickToPositionEnabled, forKey: Keys.clickToPosition) }
     }
 
     @Published var defaultEditor: String {
@@ -819,6 +959,8 @@ final class FeatureSettings: ObservableObject {
         static let newTabsUseCurrentDirectory = "tabs.newTabsUseCurrentDirectory"
         static let alwaysShowTabBar = "tabs.alwaysShowTabBar"
         static let alwaysShowToolbarInFullscreen = "tabs.alwaysShowToolbarInFullscreen"
+        static let warnOnCloseWithProcess = "tabs.warnOnCloseWithProcess"
+        static let alwaysWarnOnTabClose = "tabs.alwaysWarnOnTabClose"
         // Window Opacity
         static let windowOpacity = "window.opacity"
         // App Theme
@@ -841,6 +983,8 @@ final class FeatureSettings: ObservableObject {
         // F03
         static let cmdClickPaths = "feature.cmdClickPaths"
         static let optionClickCursor = "feature.optionClickCursor"
+        static let mouseReporting = "feature.mouseReporting"
+        static let clickToPosition = "feature.clickToPosition"
         static let defaultEditor = "feature.defaultEditor"
         static let urlHandler = "feature.urlHandler"
         static let customAIDetectionRules = "ai.customDetectionRules"
@@ -968,6 +1112,8 @@ final class FeatureSettings: ObservableObject {
         self.newTabsUseCurrentDirectory = defaults.object(forKey: Keys.newTabsUseCurrentDirectory) as? Bool ?? true
         self.alwaysShowTabBar = defaults.object(forKey: Keys.alwaysShowTabBar) as? Bool ?? true
         self.alwaysShowToolbarInFullscreen = defaults.object(forKey: Keys.alwaysShowToolbarInFullscreen) as? Bool ?? false
+        self.warnOnCloseWithRunningProcess = defaults.object(forKey: Keys.warnOnCloseWithProcess) as? Bool ?? true
+        self.alwaysWarnOnTabClose = defaults.object(forKey: Keys.alwaysWarnOnTabClose) as? Bool ?? false
 
         // Window Opacity
         self.windowOpacity = defaults.object(forKey: Keys.windowOpacity) as? Double ?? 1.0
@@ -1014,6 +1160,11 @@ final class FeatureSettings: ObservableObject {
         // F03: Cmd+Click Paths (default: enabled)
         self.isCmdClickPathsEnabled = defaults.object(forKey: Keys.cmdClickPaths) as? Bool ?? true
         self.isOptionClickCursorEnabled = defaults.object(forKey: Keys.optionClickCursor) as? Bool ?? true
+        // Mouse reporting: disabled by default so text selection always works
+        // Users can enable if they want vim/tmux mouse support (hold Shift to bypass)
+        self.isMouseReportingEnabled = defaults.object(forKey: Keys.mouseReporting) as? Bool ?? false
+        // Click-to-position: enabled by default (like modern text editors)
+        self.isClickToPositionEnabled = defaults.object(forKey: Keys.clickToPosition) as? Bool ?? true
         self.defaultEditor = defaults.string(forKey: Keys.defaultEditor) ?? ""  // Empty = use $EDITOR or system default
         if let handlerRaw = defaults.string(forKey: Keys.urlHandler),
            let handler = URLHandler(rawValue: handlerRaw) {
@@ -1080,28 +1231,48 @@ final class FeatureSettings: ObservableObject {
     }
 
     private static func migratedShortcutsIfNeeded(_ shortcuts: [KeyboardShortcut]) -> [KeyboardShortcut] {
-        guard let debugIndex = shortcuts.firstIndex(where: { $0.action == "debugConsole" }),
-              let splitIndex = shortcuts.firstIndex(where: { $0.action == "splitVertical" }) else {
-            return shortcuts
+        var updated = shortcuts
+        var didUpdate = false
+
+        if let debugIndex = updated.firstIndex(where: { $0.action == "debugConsole" }),
+           let splitIndex = updated.firstIndex(where: { $0.action == "splitVertical" }) {
+            let debugShortcut = updated[debugIndex]
+            let splitShortcut = updated[splitIndex]
+            let debugKey = debugShortcut.key.lowercased()
+            let splitKey = splitShortcut.key.lowercased()
+            let debugModifiers = Set(debugShortcut.modifiers.map { $0.lowercased() })
+            let splitModifiers = Set(splitShortcut.modifiers.map { $0.lowercased() })
+
+            let isLegacyConflict = debugKey == "d"
+                && splitKey == "d"
+                && debugModifiers == ["cmd", "shift"]
+                && splitModifiers == ["cmd", "shift"]
+
+            if isLegacyConflict {
+                updated[debugIndex] = KeyboardShortcut(action: "debugConsole", key: "l", modifiers: ["cmd", "opt"])
+                didUpdate = true
+            }
         }
 
-        let debugShortcut = shortcuts[debugIndex]
-        let splitShortcut = shortcuts[splitIndex]
-        let debugKey = debugShortcut.key.lowercased()
-        let splitKey = splitShortcut.key.lowercased()
-        let debugModifiers = Set(debugShortcut.modifiers.map { $0.lowercased() })
-        let splitModifiers = Set(splitShortcut.modifiers.map { $0.lowercased() })
+        if let nextIndex = updated.firstIndex(where: { $0.action == "nextTab" }) {
+            let nextShortcut = updated[nextIndex]
+            let nextModifiers = Set(nextShortcut.modifiers.map { $0.lowercased() })
+            if nextShortcut.key.lowercased() == "]", nextModifiers == ["cmd", "opt"] {
+                updated[nextIndex] = KeyboardShortcut(action: "nextTab", key: "]", modifiers: ["cmd", "shift"])
+                didUpdate = true
+            }
+        }
 
-        let isLegacyConflict = debugKey == "d"
-            && splitKey == "d"
-            && debugModifiers == ["cmd", "shift"]
-            && splitModifiers == ["cmd", "shift"]
+        if let previousIndex = updated.firstIndex(where: { $0.action == "previousTab" }) {
+            let previousShortcut = updated[previousIndex]
+            let previousModifiers = Set(previousShortcut.modifiers.map { $0.lowercased() })
+            if previousShortcut.key.lowercased() == "[", previousModifiers == ["cmd", "opt"] {
+                updated[previousIndex] = KeyboardShortcut(action: "previousTab", key: "[", modifiers: ["cmd", "shift"])
+                didUpdate = true
+            }
+        }
 
-        guard isLegacyConflict else { return shortcuts }
-
-        var updated = shortcuts
-        updated[debugIndex] = KeyboardShortcut(action: "debugConsole", key: "l", modifiers: ["cmd", "opt"])
-        return updated
+        return didUpdate ? updated : shortcuts
     }
 
     // MARK: - Overlay Positions Cache (Performance Optimization)

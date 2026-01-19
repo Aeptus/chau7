@@ -13,6 +13,14 @@ struct OverlayTab: Identifiable, Equatable {
     var lastCommand: LastCommandInfo? = nil  // F20: Last command tracking
     var bookmarks: [BookmarkManager.Bookmark] = []  // F17: Bookmarks
 
+    // MARK: - Tab Switch Optimization: Cached Snapshot
+    /// Cached screenshot of terminal content for instant visual feedback during tab switch
+    var cachedSnapshot: NSImage? = nil
+    /// Last known cursor position for cursor-first rendering
+    var lastCursorPosition: CGPoint = .zero
+    /// Last known prompt text for cursor placeholder
+    var lastPromptText: String = ""
+
     /// The primary terminal session (first terminal in split tree)
     var session: TerminalSessionModel? {
         splitController.primarySession
@@ -108,6 +116,14 @@ final class OverlayTabsModel: ObservableObject {
     @Published var renameText: String = ""
     @Published var renameColor: TabColor = .blue
     @Published var suspendedTabIDs: Set<UUID> = []
+
+    // MARK: - Tab Switch Optimization State
+    /// Previous tab index for directional animation
+    @Published var previousTabIndex: Int = 0
+    /// Whether the terminal content is ready to display (for snapshot swap)
+    @Published var isTerminalReady: Bool = true
+    /// Set of tab IDs currently being pre-warmed (on hover)
+    private var prewarmingTabIDs: Set<UUID> = []
 
     // F13: Broadcast Input
     @Published var isBroadcastMode: Bool = false
@@ -208,20 +224,116 @@ final class OverlayTabsModel: ObservableObject {
 
     func selectTab(id: UUID) {
         guard selectedTabID != id else { return }
+
+        // MARK: - Tab Switch Optimization: Capture state before switching
+        // 1. Record previous tab index for directional animation
+        let oldIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) ?? 0
+
+        // 2. Capture snapshot of current terminal for instant visual feedback
+        captureCurrentTabSnapshot()
+
+        // 3. Signal that terminal needs time to render (for snapshot swap)
+        isTerminalReady = false
+
+        // 4. Batch all state changes to minimize SwiftUI diff passes
+        // Using direct assignment is faster than withTransaction for simple cases
         if isRenameVisible {
             clearRenameState(shouldFocus: false)
         }
+        previousTabIndex = oldIndex
         selectedTabID = id
+
+        // 5. Pre-cancel suspension before focus (optimization)
+        cancelSuspension(for: id)
+        suspendedTabIDs.remove(id)
+
         focusSelected()
         updateSuspensionState()
         updateSnippetContextForSelection()
         if isSearchVisible {
             refreshSearch()
         }
+
         // Update task state for new tab (v1.1)
         MainActor.assumeIsolated {
             updateCurrentCandidate(from: ProxyIPCServer.shared.pendingCandidates)
             updateCurrentTask(from: ProxyIPCServer.shared.activeTasks)
+        }
+
+        // 6. Mark terminal as ready after a brief delay (allows snapshot to display first)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
+            self?.isTerminalReady = true
+        }
+    }
+
+    // MARK: - Tab Switch Optimization: Snapshot Capture
+
+    /// Captures a screenshot of the current terminal view for instant display during tab switch
+    private func captureCurrentTabSnapshot() {
+        guard let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }),
+              let terminalView = tabs[currentIndex].session?.existingTerminalView else {
+            return
+        }
+
+        // Capture the terminal view as an image
+        guard let bitmapRep = terminalView.bitmapImageRepForCachingDisplay(in: terminalView.bounds) else {
+            return
+        }
+        terminalView.cacheDisplay(in: terminalView.bounds, to: bitmapRep)
+
+        let image = NSImage(size: terminalView.bounds.size)
+        image.addRepresentation(bitmapRep)
+        tabs[currentIndex].cachedSnapshot = image
+
+        // Also capture cursor position and prompt for cursor-first rendering
+        if let session = tabs[currentIndex].session {
+            tabs[currentIndex].lastPromptText = session.displayPath()
+            // Cursor position would need terminal view support - using placeholder
+            tabs[currentIndex].lastCursorPosition = CGPoint(x: 50, y: 20)
+        }
+
+        // Memory optimization: clear snapshots for distant tabs (keep only ± 2)
+        cleanupDistantSnapshots(currentIndex: currentIndex)
+    }
+
+    /// Clears cached snapshots for tabs far from the current position to limit memory usage
+    private func cleanupDistantSnapshots(currentIndex: Int) {
+        for i in 0..<tabs.count {
+            if abs(i - currentIndex) > 2 {
+                tabs[i].cachedSnapshot = nil
+            }
+        }
+    }
+
+    // MARK: - Tab Switch Optimization: Pre-warm on Hover
+
+    /// Pre-warms a tab by canceling its suspension early (called on hover)
+    /// This gives the terminal time to update before the user clicks
+    func prewarmTab(id: UUID) {
+        guard id != selectedTabID else { return }
+        guard !prewarmingTabIDs.contains(id) else { return }
+
+        prewarmingTabIDs.insert(id)
+        cancelSuspension(for: id)
+        suspendedTabIDs.remove(id)
+
+        Log.trace("Pre-warming tab \(id) on hover")
+
+        // Clear prewarm state after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.prewarmingTabIDs.remove(id)
+        }
+    }
+
+    /// Called when hover exits a tab - re-schedules suspension if not selected
+    func cancelPrewarm(id: UUID) {
+        guard id != selectedTabID else { return }
+        prewarmingTabIDs.remove(id)
+
+        // Re-schedule suspension after a short delay if still not selected
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self, id != self.selectedTabID else { return }
+            self.scheduleSuspension(for: id)
         }
     }
 
@@ -287,6 +399,36 @@ final class OverlayTabsModel: ObservableObject {
         closeTab(id: selectedTabID)
     }
 
+    /// Check if a tab has any running process (not idle or exited)
+    private func tabHasRunningProcess(_ tab: OverlayTab) -> Bool {
+        // Check primary session status
+        if let session = tab.session {
+            switch session.status {
+            case .running, .waitingForInput, .stuck:
+                return true
+            case .idle, .exited:
+                return false
+            }
+        }
+        return false
+    }
+
+    /// Show confirmation dialog before closing tab. Returns true if user confirms.
+    private func confirmTabClose(hasRunningProcess: Bool) -> Bool {
+        let alert = NSAlert()
+        if hasRunningProcess {
+            alert.messageText = L("alert.closeTab.runningProcess.title", "Close tab with running process?")
+            alert.informativeText = L("alert.closeTab.runningProcess.message", "This tab has a running process. Closing it will terminate the process.")
+        } else {
+            alert.messageText = L("alert.closeTab.confirm.title", "Close this tab?")
+            alert.informativeText = L("alert.closeTab.confirm.message", "Are you sure you want to close this tab?")
+        }
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L("button.closeTab", "Close Tab"))
+        alert.addButton(withTitle: L("button.cancel", "Cancel"))
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
     func closeTab(id: UUID) {
         dispatchPrecondition(condition: .onQueue(.main))
         Log.info("closeTab called with id=\(id). tabs.count=\(tabs.count)")
@@ -294,6 +436,22 @@ final class OverlayTabsModel: ObservableObject {
             Log.warn("closeTab: tab with id=\(id) not found!")
             return
         }
+
+        let tab = tabs[index]
+        let settings = FeatureSettings.shared
+        let hasRunningProcess = tabHasRunningProcess(tab)
+
+        // Check if we need to show a warning dialog
+        let shouldWarn = settings.alwaysWarnOnTabClose ||
+                        (settings.warnOnCloseWithRunningProcess && hasRunningProcess)
+
+        if shouldWarn {
+            guard confirmTabClose(hasRunningProcess: hasRunningProcess) else {
+                Log.info("closeTab: user cancelled close for tab \(id)")
+                return
+            }
+        }
+
         let inheritedDirectory = tabs.count == 1 ? inheritedStartDirectory() : nil
         Log.info("closeTab: found tab at index=\(index)")
         if isRenameVisible {
@@ -415,6 +573,17 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     // MARK: - Tab Reordering
+
+    func moveTab(id: UUID, toIndex: Int) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let fromIndex = tabs.firstIndex(where: { $0.id == id }) else { return }
+        let clampedIndex = max(0, min(toIndex, tabs.count))
+        let adjustedIndex = clampedIndex > fromIndex ? clampedIndex - 1 : clampedIndex
+        guard adjustedIndex != fromIndex else { return }
+        let tab = tabs.remove(at: fromIndex)
+        tabs.insert(tab, at: adjustedIndex)
+        Log.info("Moved tab \(id) to index \(adjustedIndex)")
+    }
 
     func moveCurrentTabRight() {
         guard let index = tabs.firstIndex(where: { $0.id == selectedTabID }),

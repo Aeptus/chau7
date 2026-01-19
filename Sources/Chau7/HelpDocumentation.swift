@@ -63,8 +63,8 @@ enum HelpContent {
             | New Tab | ⌘T |
             | Close Tab | ⌘W |
             | Close Other Tabs | ⌥⌘W |
-            | Next Tab | ⇧⌘] or ⌃Tab |
-            | Previous Tab | ⇧⌘[ or ⌃⇧Tab |
+            | Next Tab | ⇧⌘] or ⌃Tab or ⌥⌘→ |
+            | Previous Tab | ⇧⌘[ or ⌃⇧Tab or ⌥⌘← |
             | Select Tab 1-9 | ⌘1-9 |
             | Move Tab Right | ⇧⌥⌘] |
             | Move Tab Left | ⇧⌥⌘[ |

@@ -1,11 +1,13 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - Overlay Colors
 
 private let overlayPanelBackground = Color(red: 0.10, green: 0.10, blue: 0.10)
 private let overlayRowBackground = Color(red: 0.16, green: 0.16, blue: 0.16)
 private let overlayChipBackground = Color(red: 0.22, green: 0.22, blue: 0.22)
+private let tabDragType = UTType(exportedAs: "com.chau7.tab")
 
 // MARK: - Overlay Layout Constants
 
@@ -73,45 +75,89 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
     }
 }
 
+private struct TabDropIndicator: Equatable {
+    let tabID: UUID
+    let isAfter: Bool
+}
+
+private struct TabWidthPreferenceKey: PreferenceKey {
+    static var defaultValue: [UUID: CGFloat] = [:]
+
+    static func reduce(value: inout [UUID: CGFloat], nextValue: () -> [UUID: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+private struct TabDropDelegate: DropDelegate {
+    let targetTabID: UUID
+    let tabWidth: CGFloat
+    let overlayModel: OverlayTabsModel
+    @Binding var draggingTabID: UUID?
+    @Binding var dropIndicator: TabDropIndicator?
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [tabDragType]) && draggingTabID != nil
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard info.hasItemsConforming(to: [tabDragType]),
+              let draggingTabID else {
+            return DropProposal(operation: .cancel)
+        }
+        if draggingTabID == targetTabID {
+            dropIndicator = nil
+            return DropProposal(operation: .move)
+        }
+
+        let effectiveWidth = max(tabWidth, 1)
+        let isAfter = info.location.x > effectiveWidth / 2
+        dropIndicator = TabDropIndicator(tabID: targetTabID, isAfter: isAfter)
+
+        guard let fromIndex = overlayModel.tabs.firstIndex(where: { $0.id == draggingTabID }),
+              let targetIndex = overlayModel.tabs.firstIndex(where: { $0.id == targetTabID }) else {
+            return DropProposal(operation: .cancel)
+        }
+
+        var insertionIndex = targetIndex + (isAfter ? 1 : 0)
+        if fromIndex != insertionIndex {
+            withAnimation(.easeInOut(duration: 0.12)) {
+                overlayModel.moveTab(id: draggingTabID, toIndex: insertionIndex)
+            }
+        }
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        if dropIndicator?.tabID == targetTabID {
+            dropIndicator = nil
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dropIndicator = nil
+        draggingTabID = nil
+        return true
+    }
+}
+
 /// SwiftUI view for the tab bar that goes in the unified toolbar
 private struct ToolbarTabBarView: View {
     @ObservedObject var overlayModel: OverlayTabsModel
     @ObservedObject private var settings = FeatureSettings.shared
+    @State private var draggingTabID: UUID? = nil
+    @State private var dropIndicator: TabDropIndicator? = nil
+    @State private var tabWidths: [UUID: CGFloat] = [:]
+    @State private var isTabBarDropTargeted: Bool = false
+    @State private var dragCleanupTask: DispatchWorkItem? = nil
 
     var body: some View {
         let selected = overlayModel.selectedTab
-        let session = selected?.session
 
         HStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(overlayModel.tabs) { tab in
-                        if let session = tab.session {
-                            TabButton(
-                                customTitle: tab.customTitle,
-                                session: session,
-                                isSelected: tab.id == overlayModel.selectedTabID,
-                                isSuspended: overlayModel.isTabSuspended(tab.id),
-                                tabColor: tab.effectiveColor,
-                                commandBadge: tab.commandBadge,
-                                isBroadcastIncluded: overlayModel.isBroadcastMode && !overlayModel.broadcastExcludedTabIDs.contains(tab.id),
-                                onSelect: { overlayModel.selectTab(id: tab.id) },
-                                onRename: { overlayModel.beginRename(tabID: tab.id) },
-                                onClose: { overlayModel.closeTab(id: tab.id) }
-                            )
-                        } else {
-                            TabButtonFallback(
-                                title: tab.displayTitle,
-                                isSelected: tab.id == overlayModel.selectedTabID,
-                                isSuspended: overlayModel.isTabSuspended(tab.id),
-                                tabColor: tab.effectiveColor,
-                                commandBadge: tab.commandBadge,
-                                isBroadcastIncluded: overlayModel.isBroadcastMode && !overlayModel.broadcastExcludedTabIDs.contains(tab.id),
-                                onSelect: { overlayModel.selectTab(id: tab.id) },
-                                onRename: { overlayModel.beginRename(tabID: tab.id) },
-                                onClose: { overlayModel.closeTab(id: tab.id) }
-                            )
-                        }
+                        tabView(for: tab)
                     }
 
                     Button {
@@ -129,29 +175,236 @@ private struct ToolbarTabBarView: View {
                     .accessibilityLabel("New tab")
                     .accessibilityHint("Opens a new terminal tab")
                 }
+                .onPreferenceChange(TabWidthPreferenceKey.self) { widths in
+                    tabWidths = widths
+                }
+                .onDrop(of: [tabDragType], isTargeted: $isTabBarDropTargeted) { _ in
+                    clearDragState()
+                    return true
+                }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
             }
 
             Spacer()
 
-            if let session, session.isGitRepo {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.triangle.branch")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(session.gitBranch ?? "Git")
-                        .font(.custom("Avenir Next", size: 11).weight(.semibold))
+            if let session = selected?.session {
+                HStack(spacing: 8) {
+                    DevServerBadge(session: session)
+                    GitBranchBadge(session: session)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(Color.black.opacity(0.20))
-                .clipShape(Capsule())
-                .accessibilityLabel("Git branch: \(session.gitBranch ?? "unknown")")
             }
         }
         .padding(.trailing, 8)
         .frame(height: OverlayLayout.tabBarHeight)
         .frame(maxWidth: .infinity)
+        .onChange(of: isTabBarDropTargeted) { targeted in
+            if targeted {
+                dragCleanupTask?.cancel()
+                dragCleanupTask = nil
+            } else {
+                let task = DispatchWorkItem { clearDragState() }
+                dragCleanupTask = task
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: task)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func tabView(for tab: OverlayTab) -> some View {
+        let isSelected = tab.id == overlayModel.selectedTabID
+        let isSuspended = overlayModel.isTabSuspended(tab.id)
+        let tabWidth = tabWidths[tab.id] ?? 0
+        Group {
+            if let session = tab.session {
+                TabButton(
+                    customTitle: tab.customTitle,
+                    session: session,
+                    isSelected: isSelected,
+                    isSuspended: isSuspended,
+                    tabColor: tab.effectiveColor,
+                    commandBadge: tab.commandBadge,
+                    isBroadcastIncluded: overlayModel.isBroadcastMode && !overlayModel.broadcastExcludedTabIDs.contains(tab.id),
+                    onSelect: { overlayModel.selectTab(id: tab.id) },
+                    onRename: { overlayModel.beginRename(tabID: tab.id) },
+                    onClose: { overlayModel.closeTab(id: tab.id) },
+                    onHover: { isHovering in
+                        // Tab switch optimization: pre-warm on hover
+                        if isHovering {
+                            overlayModel.prewarmTab(id: tab.id)
+                        } else {
+                            overlayModel.cancelPrewarm(id: tab.id)
+                        }
+                    }
+                )
+            } else {
+                TabButtonFallback(
+                    title: tab.displayTitle,
+                    isSelected: isSelected,
+                    isSuspended: isSuspended,
+                    tabColor: tab.effectiveColor,
+                    commandBadge: tab.commandBadge,
+                    isBroadcastIncluded: overlayModel.isBroadcastMode && !overlayModel.broadcastExcludedTabIDs.contains(tab.id),
+                    onSelect: { overlayModel.selectTab(id: tab.id) },
+                    onRename: { overlayModel.beginRename(tabID: tab.id) },
+                    onClose: { overlayModel.closeTab(id: tab.id) },
+                    onHover: { isHovering in
+                        // Tab switch optimization: pre-warm on hover
+                        if isHovering {
+                            overlayModel.prewarmTab(id: tab.id)
+                        } else {
+                            overlayModel.cancelPrewarm(id: tab.id)
+                        }
+                    }
+                )
+            }
+        }
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(key: TabWidthPreferenceKey.self, value: [tab.id: proxy.size.width])
+                }
+            )
+            .overlay(alignment: dropIndicatorAlignment(for: tab.id)) {
+                if dropIndicator?.tabID == tab.id {
+                    Rectangle()
+                        .fill(Color.accentColor)
+                        .frame(width: 2)
+                        .padding(.vertical, 4)
+                }
+            }
+            .onDrag {
+                startDrag(for: tab.id)
+            }
+            .onDrop(
+                of: [tabDragType],
+                delegate: TabDropDelegate(
+                    targetTabID: tab.id,
+                    tabWidth: tabWidth,
+                    overlayModel: overlayModel,
+                    draggingTabID: $draggingTabID,
+                    dropIndicator: $dropIndicator
+                )
+            )
+    }
+
+    private func startDrag(for tabID: UUID) -> NSItemProvider {
+        overlayModel.selectTab(id: tabID)
+        draggingTabID = tabID
+        dropIndicator = nil
+        return NSItemProvider(item: tabID.uuidString as NSString, typeIdentifier: tabDragType.identifier)
+    }
+
+    private func dropIndicatorAlignment(for tabID: UUID) -> Alignment {
+        guard let indicator = dropIndicator, indicator.tabID == tabID else { return .leading }
+        return indicator.isAfter ? .trailing : .leading
+    }
+
+    private func clearDragState() {
+        dropIndicator = nil
+        draggingTabID = nil
+    }
+}
+
+/// Separate view to properly observe session's git status changes
+private struct GitBranchBadge: View {
+    @ObservedObject var session: TerminalSessionModel
+
+    var body: some View {
+        if session.isGitRepo {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(session.gitBranch ?? "Git")
+                    .font(.custom("Avenir Next", size: 11).weight(.semibold))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Color.black.opacity(0.20))
+            .clipShape(Capsule())
+            .accessibilityLabel("Git branch: \(session.gitBranch ?? "unknown")")
+        }
+    }
+}
+
+/// Separate view to properly observe session's dev server status
+private struct DevServerBadge: View {
+    @ObservedObject var session: TerminalSessionModel
+
+    var body: some View {
+        if let server = session.devServer {
+            HStack(spacing: 6) {
+                Image(systemName: "server.rack")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(server.name)
+                    .font(.custom("Avenir Next", size: 11).weight(.semibold))
+                if let port = server.port {
+                    Text(":\(port)")
+                        .font(.custom("Avenir Next", size: 10).weight(.medium))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Color.green.opacity(0.25))
+            .clipShape(Capsule())
+            .accessibilityLabel("Dev server: \(server.name) on port \(server.port ?? 0)")
+            .onTapGesture {
+                // Open the dev server URL in browser
+                if let url = server.url, let nsURL = URL(string: url) {
+                    NSWorkspace.shared.open(nsURL)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Tab Switch Optimization: Cursor Placeholder
+
+/// A lightweight view that shows a blinking cursor immediately during tab switch.
+/// This creates the perception of instant responsiveness while the terminal renders.
+struct CursorPlaceholderView: View {
+    let promptText: String
+    let cursorPosition: CGPoint
+
+    // Use TimelineView for reliable cursor blinking
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.5)) { timeline in
+            let cursorVisible = Int(timeline.date.timeIntervalSinceReferenceDate * 2) % 2 == 0
+
+            GeometryReader { geometry in
+                ZStack(alignment: .bottomLeading) {
+                    // Minimal dark background
+                    Color.black.opacity(0.95)
+
+                    // Prompt area with blinking cursor at bottom
+                    VStack(alignment: .leading, spacing: 0) {
+                        Spacer()
+
+                        HStack(spacing: 0) {
+                            // Show abbreviated path as prompt
+                            Text("$ ")
+                                .font(.system(size: 13, design: .monospaced))
+                                .foregroundColor(.green.opacity(0.8))
+
+                            Text(promptText)
+                                .font(.system(size: 13, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.7))
+                                .lineLimit(1)
+
+                            Text(" ")
+
+                            // Blinking cursor block
+                            Rectangle()
+                                .fill(Color.white)
+                                .frame(width: 8, height: 16)
+                                .opacity(cursorVisible ? 1 : 0)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 20)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -184,17 +437,77 @@ struct Chau7OverlayView: View {
         }
     }
 
+    /// Computes the slide direction based on tab indices
+    private func slideDirection(for tab: OverlayTab, isSelected: Bool) -> CGFloat {
+        guard isSelected else { return 0 }
+        let currentIndex = overlayModel.tabs.firstIndex(where: { $0.id == tab.id }) ?? 0
+        let previousIndex = overlayModel.previousTabIndex
+        // Slide from right if moving to a tab on the right, from left otherwise
+        return currentIndex > previousIndex ? 1 : -1
+    }
+
     private var terminalStack: some View {
         ZStack(alignment: .top) {
-            // Keep all tab views alive so background processes continue running.
+            // MARK: - Tab Switch Optimization: Snapshot Layer (shows instantly)
+            // This displays a cached screenshot while the real terminal renders
             ForEach(overlayModel.tabs) { tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
+                if isSelected, !overlayModel.isTerminalReady, let snapshot = tab.cachedSnapshot {
+                    // Show snapshot instantly while terminal renders
+                    Image(nsImage: snapshot)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .zIndex(2)  // Above terminal but below overlays
+                }
+            }
+
+            // MARK: - Tab Switch Optimization: Cursor Placeholder (appears first)
+            // Shows a blinking cursor immediately for perceived instant response
+            // Only shows if the tab has been viewed before (has cached prompt text)
+            ForEach(overlayModel.tabs) { tab in
+                let isSelected = tab.id == overlayModel.selectedTabID
+                let hasContent = !tab.lastPromptText.isEmpty || tab.cachedSnapshot != nil
+                if isSelected, !overlayModel.isTerminalReady, hasContent {
+                    CursorPlaceholderView(
+                        promptText: tab.lastPromptText.isEmpty ? "~" : tab.lastPromptText,
+                        cursorPosition: tab.lastCursorPosition
+                    )
+                    .zIndex(3)  // Above snapshot for immediate cursor feedback
+                }
+            }
+
+            // MARK: - Tab Switch Optimization: Lazy Tab Loading + Directional Motion
+            // Only keep nearby tabs (selected ± 1, previous ± 1) in full view hierarchy.
+            // This ensures smooth transitions even when jumping between distant tabs.
+            // Distant tabs use lightweight placeholders - their shell processes
+            // continue running via retainedTerminalView in TerminalSessionModel.
+            ForEach(Array(overlayModel.tabs.enumerated()), id: \.element.id) { index, tab in
+                let isSelected = tab.id == overlayModel.selectedTabID
+                let selectedIndex = overlayModel.tabs.firstIndex(where: { $0.id == overlayModel.selectedTabID }) ?? 0
+                let previousIndex = overlayModel.previousTabIndex
+                // Keep tabs near both current AND previous selection to handle jumps
+                let isNearCurrent = abs(index - selectedIndex) <= 1
+                let isNearPrevious = abs(index - previousIndex) <= 1
+                let isNearby = isNearCurrent || isNearPrevious
                 let isSuspended = overlayModel.isTabSuspended(tab.id)
-                SplitPaneView(controller: tab.splitController, isSuspended: isSuspended, isActive: isSelected)
-                    .opacity(isSelected ? 1 : 0)
-                    .allowsHitTesting(isSelected)
-                    .accessibilityHidden(!isSelected)
-                    .zIndex(isSelected ? 1 : 0)
+                let direction = slideDirection(for: tab, isSelected: isSelected)
+
+                if isNearby {
+                    // Full terminal view for selected and adjacent tabs
+                    SplitPaneView(controller: tab.splitController, isSuspended: isSuspended, isActive: isSelected)
+                        .opacity(isSelected && overlayModel.isTerminalReady ? 1 : 0)
+                        .offset(x: isSelected ? 0 : (30 * direction))  // Subtle slide effect
+                        .allowsHitTesting(isSelected)
+                        .accessibilityHidden(!isSelected)
+                        .zIndex(isSelected ? 1 : 0)
+                        .animation(.spring(response: 0.2, dampingFraction: 0.9), value: isSelected)
+                } else {
+                    // Lightweight placeholder for distant tabs
+                    // The terminal process keeps running via retainedTerminalView
+                    Color.clear
+                        .frame(width: 0, height: 0)
+                        .accessibilityHidden(true)
+                }
             }
 
             if overlayModel.hasActiveOverlay {
@@ -327,6 +640,7 @@ struct TabButton: View {
     let onSelect: () -> Void
     let onRename: () -> Void
     let onClose: () -> Void
+    var onHover: ((Bool) -> Void)? = nil  // Tab switch optimization: pre-warm on hover
 
     private var resolvedTitle: String {
         if let customTitle, !customTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -349,10 +663,6 @@ struct TabButton: View {
     }
 
     var body: some View {
-        let indicatorColor = isSuspended
-            ? Color.gray.opacity(0.6)
-            : (isSelected ? tabColor.color : tabColor.color.opacity(0.6))
-
         HStack(spacing: 8) {
             // AI product logo (persists even when tab is renamed)
             if let logo = aiProductLogo {
@@ -370,10 +680,6 @@ struct TabButton: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-
-            Circle()
-                .fill(indicatorColor)
-                .frame(width: 8, height: 8)
 
             if isSuspended {
                 Image(systemName: "pause.circle.fill")
@@ -433,6 +739,9 @@ struct TabButton: View {
         .onTapGesture {
             onSelect()
         }
+        .onHover { isHovering in
+            onHover?(isHovering)
+        }
     }
 }
 
@@ -446,20 +755,13 @@ struct TabButtonFallback: View {
     let onSelect: () -> Void
     let onRename: () -> Void
     let onClose: () -> Void
+    var onHover: ((Bool) -> Void)? = nil  // Tab switch optimization: pre-warm on hover
 
     var body: some View {
-        let indicatorColor = isSuspended
-            ? Color.gray.opacity(0.6)
-            : (isSelected ? tabColor.color : tabColor.color.opacity(0.6))
-
         HStack(spacing: 8) {
             Text(title)
                 .font(.custom("Avenir Next", size: 12).weight(.semibold))
                 .lineLimit(1)
-
-            Circle()
-                .fill(indicatorColor)
-                .frame(width: 8, height: 8)
 
             if let badge = commandBadge {
                 Text(badge)
@@ -504,6 +806,9 @@ struct TabButtonFallback: View {
         )
         .onTapGesture {
             onSelect()
+        }
+        .onHover { isHovering in
+            onHover?(isHovering)
         }
     }
 }
