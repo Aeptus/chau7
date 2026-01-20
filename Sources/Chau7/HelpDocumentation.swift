@@ -697,6 +697,7 @@ final class HelpWindowController {
             backing: .buffered,
             defer: false
         )
+        window.isReleasedWhenClosed = false
         window.title = "Chau7 Help"
         window.contentView = hostingView
         window.center()

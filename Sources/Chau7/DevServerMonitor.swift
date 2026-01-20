@@ -40,6 +40,7 @@ final class DevServerMonitor {
         checkTimer?.cancel()
         checkTimer = nil
         shellPID = nil
+        lastCommandHint = nil
         if currentServer != nil {
             currentServer = nil
             DispatchQueue.main.async { [weak self] in
@@ -72,6 +73,7 @@ final class DevServerMonitor {
 
             if newServer != currentServer {
                 currentServer = newServer
+                lastCommandHint = nil
                 DispatchQueue.main.async { [weak self] in
                     self?.onDevServerChanged?(newServer)
                 }
@@ -102,6 +104,7 @@ final class DevServerMonitor {
             // No child processes - server might have stopped
             if currentServer != nil {
                 currentServer = nil
+                lastCommandHint = nil
                 DispatchQueue.main.async { [weak self] in
                     self?.onDevServerChanged?(nil)
                 }
@@ -113,6 +116,7 @@ final class DevServerMonitor {
         if let serverInfo = findListeningServer(pids: childPIDs) {
             if serverInfo != currentServer {
                 currentServer = serverInfo
+                lastCommandHint = nil
                 DispatchQueue.main.async { [weak self] in
                     self?.onDevServerChanged?(serverInfo)
                 }
@@ -186,7 +190,7 @@ final class DevServerMonitor {
             guard pidSet.contains(pid) else { continue }
 
             // Extract port from NAME column (e.g., "*:3000" or "127.0.0.1:5173")
-            let name = String(columns.last ?? "")
+            let name = columns[8...].joined(separator: " ")
             if let port = extractPortFromLsof(name) {
                 let serverName = determineServerName(port: port, commandName: String(columns[0]))
                 return DevServerInfo(
@@ -204,17 +208,22 @@ final class DevServerMonitor {
     /// Extract port number from lsof NAME column
     private func extractPortFromLsof(_ name: String) -> Int? {
         // Format: "*:3000" or "127.0.0.1:5173" or "[::1]:8080"
-        if let colonIndex = name.lastIndex(of: ":") {
-            let portString = name[name.index(after: colonIndex)...]
-            return Int(portString)
+        let pattern = ":(\\d{2,5})"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
+        let range = NSRange(name.startIndex..., in: name)
+        let matches = regex.matches(in: name, options: [], range: range)
+        guard let match = matches.last, match.numberOfRanges > 1,
+              let matchRange = Range(match.range(at: 1), in: name) else {
+            return nil
         }
-        return nil
+        return Int(name[matchRange])
     }
 
     /// Determine server name from port and process name
     private func determineServerName(port: Int, commandName: String) -> String {
         // First, check if we have a command hint
         if let hint = lastCommandHint {
+            lastCommandHint = nil
             return hint
         }
 

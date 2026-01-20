@@ -29,6 +29,10 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     private var didDragSinceMouseDown = false
     private static let dragThreshold: CGFloat = 1.5  // Pixels of movement before considered a drag (lower = more sensitive to selections)
 
+    // Auto-scroll during selection drag (SwiftTerm has the mechanism but no timer)
+    private var autoScrollTimer: Timer?
+    private var autoScrollDirection: Int = 0  // -1 = up, 0 = none, 1 = down
+
     // Event monitors for F03/F18/F21 (since SwiftTerm's input methods aren't open for override)
     private var mouseDownMonitor: Any?
     private var mouseUpMonitor: Any?
@@ -48,6 +52,11 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     private var commandSelectionRange: CommandSelectionRange?
     private var commandSelectionMonitor: Any?
     private var appliedScrollbackLines: Int?
+
+    // Smart Scroll: Track whether user is at the bottom of the terminal
+    // When smart scroll is enabled and user has scrolled up, new output won't auto-scroll
+    private var isUserAtBottom: Bool = true
+    private static let scrollBottomThreshold: Double = 0.99  // Consider "at bottom" within 1% of end
 
     // MARK: - Color Configuration
 
@@ -346,25 +355,47 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         }
 
         // Mouse dragged monitor: Track if user is dragging (for click vs drag detection)
+        // Also handles auto-scroll when dragging outside bounds during selection
         mouseDragMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDragged) { [weak self] event in
             guard let self = self else { return event }
             guard event.window === self.window else { return event }
 
+            let location = self.convert(event.locationInWindow, from: nil)
+
             // Check if movement exceeds drag threshold
             if let downLocation = self.mouseDownLocation {
-                let location = self.convert(event.locationInWindow, from: nil)
                 let dx = abs(location.x - downLocation.x)
                 let dy = abs(location.y - downLocation.y)
                 if dx > Self.dragThreshold || dy > Self.dragThreshold {
                     self.didDragSinceMouseDown = true
                 }
             }
+
+            // Auto-scroll when dragging outside bounds during selection
+            if self.didDragSinceMouseDown {
+                if location.y < 0 {
+                    // Dragging below view - scroll down (content moves up)
+                    self.autoScrollDirection = 1
+                    self.startAutoScrollTimer()
+                } else if location.y > self.bounds.height {
+                    // Dragging above view - scroll up (content moves down)
+                    self.autoScrollDirection = -1
+                    self.startAutoScrollTimer()
+                } else {
+                    // Inside bounds - stop auto-scroll
+                    self.stopAutoScrollTimer()
+                }
+            }
+
             return event
         }
 
         // Mouse up monitor: Copy-on-select AND click-to-position cursor
         mouseUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
             guard let self = self else { return event }
+
+            // Stop auto-scroll timer on mouse up
+            self.stopAutoScrollTimer()
 
             // Always clear mouse tracking state on ANY mouseUp to prevent stale state
             // (even if the mouseUp is in a different window or outside bounds)
@@ -902,6 +933,72 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         return false
     }
 
+    // MARK: - Auto-Scroll During Selection
+
+    /// Starts the auto-scroll timer for selection drag outside bounds.
+    /// SwiftTerm has the mechanism but never creates the timer, so we implement it here.
+    private func startAutoScrollTimer() {
+        // Don't create multiple timers
+        guard autoScrollTimer == nil else { return }
+
+        autoScrollTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.performAutoScroll()
+        }
+    }
+
+    /// Stops the auto-scroll timer.
+    private func stopAutoScrollTimer() {
+        autoScrollTimer?.invalidate()
+        autoScrollTimer = nil
+        autoScrollDirection = 0
+    }
+
+    /// Performs one step of auto-scrolling and extends selection.
+    private func performAutoScroll() {
+        guard autoScrollDirection != 0 else { return }
+
+        // Scroll the terminal
+        if autoScrollDirection < 0 {
+            // Scroll up (show earlier content)
+            scrollUp(lines: 2)
+        } else {
+            // Scroll down (show later content)
+            scrollDown(lines: 2)
+        }
+
+        // Synthesize a mouse drag event to extend selection to new position
+        // The y position should be outside bounds to continue extending
+        guard let window = self.window else { return }
+
+        let syntheticY: CGFloat
+        if autoScrollDirection < 0 {
+            // Scrolling up - mouse is above view
+            syntheticY = bounds.height + 10
+        } else {
+            // Scrolling down - mouse is below view
+            syntheticY = -10
+        }
+
+        let localPoint = NSPoint(x: bounds.midX, y: syntheticY)
+        let windowPoint = convert(localPoint, to: nil)
+
+        if let syntheticEvent = NSEvent.mouseEvent(
+            with: .leftMouseDragged,
+            location: windowPoint,
+            modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 1,
+            pressure: 1.0
+        ) {
+            // Call the parent class mouseDragged to extend selection
+            super.mouseDragged(with: syntheticEvent)
+        }
+    }
+
     // MARK: - Command Selection
 
     private struct CommandSelectionRange {
@@ -1257,6 +1354,12 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     override func dataReceived(slice: ArraySlice<UInt8>) {
         guard !slice.isEmpty else { return }
 
+        // Smart Scroll: Save state before processing new data
+        // If user had scrolled up and smart scroll is enabled, we'll restore their position
+        let smartScrollEnabled = FeatureSettings.shared.isSmartScrollEnabled
+        let wasAtBottom = isUserAtBottom
+        let savedScrollPosition = scrollPosition
+
         // Suppress characters/sequences that we already local-echoed
         var filteredSlice = slice
         if !pendingLocalEcho.isEmpty || pendingLocalBackspaces > 0 {
@@ -1315,12 +1418,39 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         // Fast path: no escape sequences AND no pending partial sequence
         if dimPatchRemainderBytes.isEmpty && !filteredSlice.contains(0x1b) {
             super.dataReceived(slice: filteredSlice)
+            // Smart Scroll: Restore scroll position if user wasn't at bottom
+            restoreSmartScrollIfNeeded(smartScrollEnabled: smartScrollEnabled, wasAtBottom: wasAtBottom, savedPosition: savedScrollPosition)
             return
         }
 
         // Slow path: needs patching
         let patched = patchDimSequences(Array(filteredSlice))
         super.dataReceived(slice: patched[...])
+        // Smart Scroll: Restore scroll position if user wasn't at bottom
+        restoreSmartScrollIfNeeded(smartScrollEnabled: smartScrollEnabled, wasAtBottom: wasAtBottom, savedPosition: savedScrollPosition)
+    }
+
+    /// Restores scroll position if smart scroll is enabled and user wasn't at bottom.
+    /// This preserves the user's reading position when new output arrives.
+    private func restoreSmartScrollIfNeeded(smartScrollEnabled: Bool, wasAtBottom: Bool, savedPosition: Double) {
+        // Only restore if:
+        // 1. Smart scroll is enabled
+        // 2. User wasn't at the bottom before new data arrived
+        // 3. The scroll position actually changed (SwiftTerm auto-scrolled)
+        guard smartScrollEnabled, !wasAtBottom, scrollPosition != savedPosition else { return }
+
+        // Edge case: Don't restore to position 0 when scrollback just appeared.
+        // When terminal has no scrollback, scrollPosition is forced to 0 regardless of
+        // actual view state. If savedPosition was 0 and now > 0, scrollback just appeared
+        // and user wasn't actually scrolled up - they were at the only position available.
+        if savedPosition == 0 && scrollPosition > 0 {
+            // Scrollback just appeared - let the auto-scroll to bottom happen
+            isUserAtBottom = scrollPosition >= Self.scrollBottomThreshold
+            return
+        }
+
+        // Restore the user's previous scroll position
+        scroll(toPosition: savedPosition)
     }
 
     override func rangeChanged(source: TerminalView, startY: Int, endY: Int) {
@@ -1333,6 +1463,10 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         super.scrolled(source: source, position: position)
         onBufferChanged?()
         updateCursorLineHighlight()
+
+        // Smart Scroll: Track if user is at or near the bottom
+        // This is called for both user-initiated and programmatic scrolls
+        isUserAtBottom = position >= Self.scrollBottomThreshold
     }
 
     func scrollToTop() {

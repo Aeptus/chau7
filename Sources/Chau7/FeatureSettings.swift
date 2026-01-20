@@ -47,6 +47,8 @@ struct KeyboardShortcut: Codable, Identifiable, Equatable {
         KeyboardShortcut(action: "debugConsole", key: "l", modifiers: ["cmd", "opt"]),
         KeyboardShortcut(action: "splitHorizontal", key: "h", modifiers: ["cmd", "opt"]),
         KeyboardShortcut(action: "splitVertical", key: "v", modifiers: ["cmd", "opt"]),
+        // Recovery shortcut
+        KeyboardShortcut(action: "refreshTabBar", key: "r", modifiers: ["cmd", "shift"]),
     ]
 
     static func shortcuts(for preset: String) -> [KeyboardShortcut] {
@@ -978,6 +980,15 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(isLocalEchoEnabled, forKey: Keys.localEchoEnabled) }
     }
 
+    // MARK: - Smart Scroll (Auto-Scroll Control)
+
+    /// When enabled, new terminal output will NOT auto-scroll to the bottom if the user
+    /// has scrolled up. The user's scroll position is preserved until they manually scroll
+    /// back to the bottom. Default: true (smart behavior enabled).
+    @Published var isSmartScrollEnabled: Bool {
+        didSet { UserDefaults.standard.set(isSmartScrollEnabled, forKey: Keys.smartScrollEnabled) }
+    }
+
     // MARK: - F11: Keybindings
 
     @Published var keybindingPreset: String {
@@ -1160,6 +1171,8 @@ final class FeatureSettings: ObservableObject {
         static let splitPanes = "feature.splitPanes"
         // Local Echo (Latency Optimization)
         static let localEchoEnabled = "feature.localEchoEnabled"
+        // Smart Scroll
+        static let smartScrollEnabled = "feature.smartScrollEnabled"
         // F11
         static let keybindingPreset = "feature.keybindingPreset"
         // General
@@ -1370,6 +1383,9 @@ final class FeatureSettings: ObservableObject {
 
         // F02: Split Panes (default: enabled)
         self.isSplitPanesEnabled = defaults.object(forKey: Keys.splitPanes) as? Bool ?? true
+
+        // Smart Scroll (default: enabled - preserves user's scroll position on new output)
+        self.isSmartScrollEnabled = defaults.object(forKey: Keys.smartScrollEnabled) as? Bool ?? true
 
         // Note: isLocalEchoEnabled is initialized earlier in the init to avoid property access errors
 

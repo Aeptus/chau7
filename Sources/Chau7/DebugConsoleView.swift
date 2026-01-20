@@ -13,6 +13,9 @@ struct DebugConsoleView: View {
     @State private var autoRefresh = true
     @State private var refreshTimer: Timer?
     @State private var logs: [String] = []
+    // Category & level filtering
+    @State private var enabledCategories: Set<LogCategory> = Set(LogCategory.allCases)
+    @State private var enabledLevels: Set<String> = ["INFO", "WARN", "ERROR", "TRACE"]
     @State private var bugReportDescription = ""
     @State private var lastReportPath: String?
 
@@ -310,7 +313,7 @@ struct DebugConsoleView: View {
 
     private var logsView: some View {
         VStack(spacing: 0) {
-            // Filter
+            // Text filter row
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
@@ -331,6 +334,44 @@ struct DebugConsoleView: View {
 
             Divider()
 
+            // Level filters
+            HStack(spacing: 4) {
+                Text("Level:")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                ForEach(["TRACE", "INFO", "WARN", "ERROR"], id: \.self) { level in
+                    levelFilterChip(level)
+                }
+                Spacer()
+                Button("All") {
+                    enabledLevels = ["INFO", "WARN", "ERROR", "TRACE"]
+                }
+                .controlSize(.mini)
+                Button("Errors") {
+                    enabledLevels = ["WARN", "ERROR"]
+                }
+                .controlSize(.mini)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+
+            // Category filters
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    Text("Category:")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    ForEach(LogCategory.allCases, id: \.self) { category in
+                        categoryFilterChip(category)
+                    }
+                }
+                .padding(.horizontal, 8)
+            }
+            .padding(.vertical, 4)
+
+            Divider()
+
+            // Logs content
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     ForEach(filteredLogs, id: \.self) { line in
@@ -340,15 +381,99 @@ struct DebugConsoleView: View {
                 .padding(8)
             }
             .font(.system(size: 10, design: .monospaced))
+
+            // Status bar
+            HStack {
+                Text("\(filteredLogs.count) / \(logs.count) entries")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if let mem = PerfTracker.currentMemoryMB() {
+                    Text("Memory: \(String(format: "%.1f", mem)) MB")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color(nsColor: .controlBackgroundColor))
         }
         .onAppear { loadLogs() }
     }
 
-    private var filteredLogs: [String] {
-        if logFilter.isEmpty {
-            return logs
+    private func levelFilterChip(_ level: String) -> some View {
+        let isEnabled = enabledLevels.contains(level)
+        return Button {
+            if isEnabled {
+                enabledLevels.remove(level)
+            } else {
+                enabledLevels.insert(level)
+            }
+        } label: {
+            Text(level)
+                .font(.system(size: 9, weight: .medium))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(isEnabled ? levelColor(level).opacity(0.3) : Color.gray.opacity(0.2))
+                .foregroundStyle(isEnabled ? levelColor(level) : .secondary)
+                .clipShape(Capsule())
         }
-        return logs.filter { $0.localizedCaseInsensitiveContains(logFilter) }
+        .buttonStyle(.plain)
+    }
+
+    private func categoryFilterChip(_ category: LogCategory) -> some View {
+        let isEnabled = enabledCategories.contains(category)
+        return Button {
+            if isEnabled {
+                enabledCategories.remove(category)
+            } else {
+                enabledCategories.insert(category)
+            }
+        } label: {
+            HStack(spacing: 2) {
+                Text(category.emoji)
+                    .font(.system(size: 8))
+                Text(category.rawValue)
+                    .font(.system(size: 9, weight: .medium))
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(isEnabled ? Color.accentColor.opacity(0.2) : Color.gray.opacity(0.2))
+            .foregroundStyle(isEnabled ? .primary : .secondary)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func levelColor(_ level: String) -> Color {
+        switch level {
+        case "ERROR": return .red
+        case "WARN": return .yellow
+        case "TRACE": return .gray
+        default: return .blue
+        }
+    }
+
+    private var filteredLogs: [String] {
+        logs.filter { line in
+            // Level filter
+            let levelMatch = enabledLevels.contains { level in
+                line.contains("[\(level)]")
+            }
+            guard levelMatch else { return false }
+
+            // Category filter
+            let categoryMatch = enabledCategories.isEmpty || enabledCategories.contains { category in
+                line.contains("[\(category.rawValue)]")
+            }
+            guard categoryMatch else { return false }
+
+            // Text filter
+            if !logFilter.isEmpty {
+                return line.localizedCaseInsensitiveContains(logFilter)
+            }
+            return true
+        }
     }
 
     private func logLine(_ line: String) -> some View {

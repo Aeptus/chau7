@@ -66,6 +66,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private var shellIntegrationOutputCount = 0
     private var shouldAutoFocusOnAttach = true  // Auto-focus when terminal view is attached
     private var didStartDevServerMonitor = false  // Track if dev server monitor has started
+    private var pendingCommandLine: String? = nil
+    private var promptSeenForPendingCommand = false
+    private var commandFinishedNotified = false
 
     private let semanticDetector = SemanticOutputDetector()
     private let devServerMonitor = DevServerMonitor()
@@ -221,6 +224,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         bufferNeedsRefresh = true  // Invalidate buffer cache on new output
         recordInputLatencyIfNeeded()
         TerminalOutputCapture.shared.record(data: data, source: activeAppName ?? title)
+        if let outputText = String(data: data, encoding: .utf8) {
+            shellEventDetector.processOutput(outputText)
+        }
         if FeatureSettings.shared.isSemanticSearchEnabled,
            data.contains(where: { $0 == 0x0A || $0 == 0x0D }),
            let row = currentBufferRow() {
@@ -368,6 +374,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     private func finishAILogging(exitCode: Int?) {
         // Notify shell event detector
+        commandFinishedNotified = true
+        promptSeenForPendingCommand = true
         shellEventDetector.commandFinished(exitCode: exitCode, command: aiLogContext?.commandLine)
 
         guard let context = aiLogContext else {
@@ -464,9 +472,11 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         guard data.range(of: Self.osc7Prefix) != nil else { return false }
         if Thread.isMainThread {
             clearActiveAppAfterPrompt()
+            handlePromptDetected()
         } else {
             DispatchQueue.main.async { [weak self] in
                 self?.clearActiveAppAfterPrompt()
+                self?.handlePromptDetected()
             }
         }
         return true
@@ -479,6 +489,15 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         }
         if aiLogSession != nil {
             finishAILogging(exitCode: nil)
+        }
+    }
+
+    private func handlePromptDetected() {
+        guard hasPendingCommand, pendingCommandLine != nil else { return }
+        promptSeenForPendingCommand = true
+        if !commandFinishedNotified {
+            commandFinishedNotified = true
+            shellEventDetector.commandFinished(exitCode: nil, command: pendingCommandLine)
         }
     }
 
@@ -570,7 +589,16 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     private func handleInputLine(_ line: String) {
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else {
+            pendingCommandLine = nil
+            promptSeenForPendingCommand = false
+            commandFinishedNotified = false
+            return
+        }
+        pendingCommandLine = trimmed
+        promptSeenForPendingCommand = false
+        commandFinishedNotified = false
+        shellEventDetector.commandStarted(command: trimmed, in: currentDirectory)
         updateActiveAppName(from: trimmed)
         recordInputLineIfNeeded()
         trackSemanticCommand(trimmed)
@@ -621,11 +649,16 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
                 }
             }
 
+            // Only mark idle once we see a prompt after the command runs.
+            guard self.promptSeenForPendingCommand else { return }
+
             // Check for idle - no activity for idleSeconds
             guard latestIdleFor >= self.idleSeconds else { return }
 
             self.status = .idle
             self.hasPendingCommand = false
+            self.promptSeenForPendingCommand = false
+            self.pendingCommandLine = nil
 
             let message = "Command idle for \(Int(latestIdleFor))s"
             self.appModel?.recordEvent(
@@ -945,6 +978,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             } else if let directory {
                 self.updateCurrentDirectory(directory)
             }
+            self.handlePromptDetected()
             if self.activeAppName != nil {
                 Log.info("Clearing active app after shell prompt update.")
                 self.activeAppName = nil
@@ -966,8 +1000,16 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         if aiLogSession != nil {
             finishAILogging(exitCode: nil)
         }
-        let message = exitCode == nil ? "Shell exited." : "Shell exited with code \(exitCode!)."
-        appModel?.recordEvent(source: .terminalSession, type: "failed", tool: notificationTabName, message: message, notify: true)
+        let type: String
+        let message: String
+        if let exitCode {
+            type = exitCode == 0 ? "finished" : "failed"
+            message = "Shell exited with code \(exitCode)."
+        } else {
+            type = "failed"
+            message = "Shell exited."
+        }
+        appModel?.recordEvent(source: .terminalSession, type: type, tool: notificationTabName, message: message, notify: true)
     }
 
     // MARK: - Session Control (Issue #5, #15 fixes)

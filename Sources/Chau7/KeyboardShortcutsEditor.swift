@@ -365,6 +365,7 @@ final class KeyboardShortcutsWindowController {
             backing: .buffered,
             defer: false
         )
+        window.isReleasedWhenClosed = false
         window.title = "Keyboard Shortcuts"
         window.contentView = hostingView
         window.center()

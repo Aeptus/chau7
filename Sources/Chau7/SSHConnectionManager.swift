@@ -730,6 +730,7 @@ final class SSHConnectionWindowController {
             backing: .buffered,
             defer: false
         )
+        window.isReleasedWhenClosed = false
         window.title = "SSH Connections"
         window.contentView = hostingView
         window.center()
