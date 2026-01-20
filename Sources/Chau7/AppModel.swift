@@ -47,7 +47,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             UserDefaults.standard.set(idleSecondsText, forKey: Keys.idleSeconds)
             let staleNormalized = Self.normalizeSecondsText(
                 staleSecondsText,
-                defaultValue: 600.0,
+                defaultValue: 180.0,
                 min: (Self.parseSecondsText(idleSecondsText, defaultValue: 5.0) + 1.0)
             )
             if staleSecondsText != staleNormalized {
@@ -61,7 +61,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             let idle = Self.parseSecondsText(idleSecondsText, defaultValue: 5.0)
             let normalized = Self.normalizeSecondsText(
                 staleSecondsText,
-                defaultValue: 600.0,
+                defaultValue: 180.0,
                 min: idle + 1.0
             )
             if staleSecondsText != normalized {
@@ -242,7 +242,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         self.idleSecondsText = defaults.string(forKey: Keys.idleSeconds) ?? "5"
         self.staleSecondsText = envStaleSeconds
             ?? defaults.string(forKey: Keys.staleSeconds)
-            ?? "600"
+            ?? "180"
         self.isTerminalMonitoring = defaults.object(forKey: Keys.isTerminalMonitoring) as? Bool ?? true
         self.codexTerminalPath = envCodexTerminalPath
             ?? defaults.string(forKey: Keys.codexTerminalPath)
@@ -690,7 +690,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             let monitor = HistoryIdleMonitor(
                 fileURL: URL(fileURLWithPath: codexPath),
                 idleSecondsProvider: { [weak self] in self?.idleSeconds ?? 5.0 },
-                staleSecondsProvider: { [weak self] in self?.staleSeconds ?? 600.0 },
+                staleSecondsProvider: { [weak self] in self?.staleSeconds ?? 180.0 },
                 onEntry: { [weak self] entry in
                     self?.handleHistoryEntry(entry, toolName: "Codex")
                 },
@@ -716,7 +716,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             let monitor = HistoryIdleMonitor(
                 fileURL: URL(fileURLWithPath: claudePath),
                 idleSecondsProvider: { [weak self] in self?.idleSeconds ?? 5.0 },
-                staleSecondsProvider: { [weak self] in self?.staleSeconds ?? 600.0 },
+                staleSecondsProvider: { [weak self] in self?.staleSeconds ?? 180.0 },
                 onEntry: { [weak self] entry in
                     self?.handleHistoryEntry(entry, toolName: "Claude")
                 },
@@ -830,7 +830,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
     private var staleSeconds: TimeInterval {
         let trimmed = staleSecondsText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let value = Double(trimmed) ?? 600.0
+        let value = Double(trimmed) ?? 180.0
         return max(idleSeconds + 1.0, value)
     }
 
