@@ -16,8 +16,9 @@ final class FileTailer<T> {
     private let queue: DispatchQueue
 
     // MARK: - Memory Protection
-    /// Maximum buffer size to prevent OOM with malformed files (1MB)
-    private let maxBufferSize = 1024 * 1024
+    /// Maximum buffer size to prevent OOM with malformed files (4MB)
+    /// Increased from 1MB to handle verbose output from tools like Codex
+    private let maxBufferSize = 4 * 1024 * 1024
 
     init(
         fileURL: URL,

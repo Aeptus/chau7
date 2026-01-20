@@ -128,9 +128,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         devServerMonitor.onDevServerChanged = { [weak self] serverInfo in
             self?.devServer = serverInfo
             if let serverInfo {
-                Log.info("Dev server detected: \(serverInfo.name) on port \(serverInfo.port ?? 0)")
+                Log.trace("Dev server detected: \(serverInfo.name) on port \(serverInfo.port ?? 0)")
             } else {
-                Log.info("Dev server stopped")
+                Log.trace("Dev server stopped")
             }
         }
     }
@@ -160,7 +160,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         // Configure scrollback buffer size from settings
         let scrollbackLines = FeatureSettings.shared.scrollbackLines
         view.getTerminal().changeHistorySize(scrollbackLines)
-        Log.info("Configured terminal scrollback: \(scrollbackLines) lines")
+        Log.trace("Configured terminal scrollback: \(scrollbackLines) lines")
 
         // Auto-focus on attach for newly created tabs
         if shouldAutoFocusOnAttach {
@@ -300,7 +300,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.status == .running else { return }
                 self.status = .waitingForInput
-                Log.info("AI agent waiting for input detected")
+                Log.trace("AI agent waiting for input detected")
             }
         }
     }
@@ -484,7 +484,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     private func clearActiveAppAfterPrompt() {
         if activeAppName != nil {
-            Log.info("Clearing active app after OSC 7 prompt update.")
+            Log.trace("Clearing active app after OSC 7 prompt update.")
             activeAppName = nil
         }
         if aiLogSession != nil {
@@ -549,7 +549,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
                 DispatchQueue.main.async { [weak self] in
                     self?.activeAppName = appName
                     self?.startAILoggingIfNeeded(toolName: appName, commandLine: nil)
-                    Log.info("Detected \(appName) from output pattern: \(pattern)")
+                    Log.trace("Detected \(appName) from output pattern: \(pattern)")
                 }
                 return
             }
@@ -644,7 +644,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
                 let outputIdleFor = Date().timeIntervalSince(self.lastOutputAt)
                 if outputIdleFor >= self.stuckSeconds {
                     self.status = .stuck
-                    Log.info("Command marked as stuck after \(Int(runningFor))s")
+                    Log.trace("Command marked as stuck after \(Int(runningFor))s")
                     return
                 }
             }
@@ -674,14 +674,14 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private func updateActiveAppName(from commandLine: String) {
         if let match = CommandDetection.detectApp(from: commandLine) {
             activeAppName = match
-            Log.info("AI detected: \(match) from command '\(commandLine.prefix(50))'")
+            Log.trace("AI detected: \(match) from command '\(commandLine.prefix(50))'")
             startAILoggingIfNeeded(toolName: match, commandLine: commandLine)
             return
         }
 
         // Check for dev server command
         if let devServerName = CommandDetection.detectDevServer(from: commandLine) {
-            Log.info("Dev server command detected: \(devServerName) from '\(commandLine.prefix(50))'")
+            Log.trace("Dev server command detected: \(devServerName) from '\(commandLine.prefix(50))'")
             devServerMonitor.setCommandHint(devServerName)
             // Don't set activeAppName for dev servers - they're different from AI tools
         }
@@ -702,7 +702,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         }
 
         if activeAppName != nil, isExitCommand(commandLine) {
-            Log.info("Clearing active app due to exit command input.")
+            Log.trace("Clearing active app due to exit command input.")
             activeAppName = nil
         }
     }
@@ -943,7 +943,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     func applyShellIntegration(to view: TerminalView) {
         // No-op: integration now happens via shell rc files at startup
-        Log.info("Shell integration applied via shell config files.")
+        Log.trace("Shell integration applied via shell config files.")
     }
 
     func maybeClearOnLaunch() {
@@ -956,7 +956,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         }
         guard let terminalView else { return }
         terminalView.send(txt: "\u{0C}")
-        Log.info("Cleared terminal on launch.")
+        Log.trace("Cleared terminal on launch.")
     }
 
     // MARK: - LocalProcessTerminalViewDelegate
@@ -980,7 +980,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             }
             self.handlePromptDetected()
             if self.activeAppName != nil {
-                Log.info("Clearing active app after shell prompt update.")
+                Log.trace("Clearing active app after shell prompt update.")
                 self.activeAppName = nil
             }
             if self.aiLogSession != nil {
@@ -1023,7 +1023,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
         // Send exit to the shell
         terminalView?.send(txt: "exit\n")
-        Log.info("Sent exit command to shell session.")
+        Log.trace("Sent exit command to shell session.")
     }
 
     func copyOrInterrupt() {
