@@ -126,7 +126,7 @@ private struct TabDropDelegate: DropDelegate {
             return DropProposal(operation: .cancel)
         }
 
-        var insertionIndex = targetIndex + (isAfter ? 1 : 0)
+        let insertionIndex = targetIndex + (isAfter ? 1 : 0)
         if fromIndex != insertionIndex {
             withAnimation(.easeInOut(duration: 0.12)) {
                 overlayModel.moveTab(id: draggingTabID, toIndex: insertionIndex)
@@ -199,8 +199,6 @@ private struct ToolbarTabBarView: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
-                // Hardening: force rasterization to GPU buffer - prevents view discard under memory pressure
-                .drawingGroup(opaque: false)
             }
             // Hardening: ensure ScrollView content maintains minimum size
             .fixedSize(horizontal: false, vertical: true)
@@ -230,14 +228,19 @@ private struct ToolbarTabBarView: View {
             }
         }
         .onChange(of: overlayModel.tabs.count) { newCount in
-            Log.trace("ToolbarTabBarView: tabs.count changed to \(newCount)")
+            Log.info("ToolbarTabBarView: tabs.count changed to \(newCount)")
         }
         .onAppear {
-            Log.trace("ToolbarTabBarView: appeared with \(overlayModel.tabs.count) tabs")
+            Log.info("ToolbarTabBarView: appeared with \(overlayModel.tabs.count) tabs")
+            overlayModel.startTabBarWatchdog()
+        }
+        .onDisappear {
+            overlayModel.stopTabBarWatchdog()
         }
         // Auto-recovery: detect when rendered tab count doesn't match model
-        // Only trigger recovery when tabs are MISSING (rendered < expected), not during normal updates
+        // Report rendered count to model for watchdog monitoring
         .onPreferenceChange(RenderedTabCountKey.self) { renderedCount in
+            overlayModel.reportRenderedTabCount(renderedCount)
             let expectedCount = overlayModel.tabs.count
             // Only act if we rendered ZERO tabs but expected some (the critical bug case)
             // During normal add/remove, renderedCount trails briefly but is never zero when tabs exist
@@ -250,7 +253,7 @@ private struct ToolbarTabBarView: View {
                     // The refresh is idempotent, so false positives are harmless
                     let currentExpected = model.tabs.count
                     if currentExpected > 0 {
-                        Log.warn("TabBar auto-recovery: rendered=0, expected=\(currentExpected), forcing refresh")
+                        Log.warn("TabBar auto-recovery (preference): rendered=0, expected=\(currentExpected), forcing refresh")
                         model.refreshTabBar()
                     }
                 }

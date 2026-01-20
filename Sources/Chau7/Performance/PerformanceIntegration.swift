@@ -109,7 +109,7 @@ public final class PerformanceTerminal {
         // Initialize Metal renderer
         if config.useMetalRendering {
             if let device = metalDevice ?? MTLCreateSystemDefaultDevice() {
-                metalRenderer = try MetalTerminalRenderer(device: device)
+                metalRenderer = MetalTerminalRenderer(device: device)
                 Log.info("PerformanceTerminal: Metal renderer initialized")
             } else {
                 Log.warn("PerformanceTerminal: Metal not available, falling back to CPU")
@@ -269,9 +269,8 @@ public final class PerformanceTerminal {
             // Process color/style changes
             break
         case "H", "f":  // Cursor position
-            let row = params.first ?? 1
-            let col = params.count > 1 ? params[1] : 1
-            // Update cursor position
+            _ = params.first ?? 1  // row (unused - cursor position tracking not implemented)
+            _ = params.count > 1 ? params[1] : 1  // col
             break
         case "J":  // Erase in display
             break

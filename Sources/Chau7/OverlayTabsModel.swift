@@ -128,6 +128,13 @@ final class OverlayTabsModel: ObservableObject {
     // MARK: - Tab Bar Recovery
     /// Token to force SwiftUI to re-render the tab bar when incremented
     @Published var tabBarRefreshToken: Int = 0
+    /// Last reported rendered tab count from the view (for watchdog)
+    /// -1 means the view hasn't reported yet (avoids false positive on startup)
+    var lastReportedRenderedCount: Int = -1
+    /// Timer for watchdog that checks tab bar health
+    private var tabBarWatchdogTimer: DispatchSourceTimer?
+    /// Counter to limit consecutive watchdog refresh attempts
+    private var watchdogRefreshAttempts: Int = 0
 
     // F13: Broadcast Input
     @Published var isBroadcastMode: Bool = false
@@ -172,6 +179,10 @@ final class OverlayTabsModel: ObservableObject {
 
         // Setup task lifecycle observers (v1.1)
         setupTaskObservers()
+    }
+
+    deinit {
+        stopTabBarWatchdog()
     }
 
     var selectedTab: OverlayTab? {
@@ -807,6 +818,53 @@ final class OverlayTabsModel: ObservableObject {
         tabBarRefreshToken += 1
         // Also trigger objectWillChange to ensure all observers update
         objectWillChange.send()
+    }
+
+    /// Called by the view to report how many tabs were actually rendered.
+    /// Used by the watchdog to detect render failures.
+    func reportRenderedTabCount(_ count: Int) {
+        lastReportedRenderedCount = count
+    }
+
+    /// Starts the tab bar watchdog timer.
+    /// The watchdog periodically checks if the view is rendering all tabs.
+    func startTabBarWatchdog() {
+        stopTabBarWatchdog()
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 3.0, repeating: 3.0)
+        timer.setEventHandler { [weak self] in
+            self?.checkTabBarHealth()
+        }
+        timer.resume()
+        tabBarWatchdogTimer = timer
+        Log.info("TabBar watchdog: started")
+    }
+
+    /// Stops the tab bar watchdog timer.
+    func stopTabBarWatchdog() {
+        tabBarWatchdogTimer?.cancel()
+        tabBarWatchdogTimer = nil
+    }
+
+    private func checkTabBarHealth() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        let expected = tabs.count
+        let rendered = lastReportedRenderedCount
+        // Skip check if view hasn't reported yet (-1) or if tabs rendered successfully
+        if rendered < 0 || rendered > 0 {
+            watchdogRefreshAttempts = 0
+            return
+        }
+        // If we have tabs but none are being rendered, force a refresh (max 3 attempts)
+        if expected > 0 && rendered == 0 {
+            watchdogRefreshAttempts += 1
+            if watchdogRefreshAttempts <= 3 {
+                Log.warn("TabBar watchdog: expected=\(expected), rendered=\(rendered), attempt \(watchdogRefreshAttempts), forcing refresh")
+                refreshTabBar()
+            } else if watchdogRefreshAttempts == 4 {
+                Log.error("TabBar watchdog: refresh failed after 3 attempts, stopping retries")
+            }
+        }
     }
 
     // MARK: - Tab Reordering

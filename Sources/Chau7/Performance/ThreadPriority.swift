@@ -241,12 +241,12 @@ public final class RenderThread {
 
     private func renderLoop() {
         // Set real-time priority
-        ThreadPriority.setRealTimePriority()
+        _ = ThreadPriority.setRealTimePriority()
 
         // Set time constraint for 120Hz
         let periodNs: UInt32 = 8_333_333  // 8.33ms for 120Hz
         let computationNs: UInt32 = 2_000_000  // 2ms max computation
-        ThreadPriority.setRealTimeConstraint(
+        _ = ThreadPriority.setRealTimeConstraint(
             period: periodNs,
             computation: computationNs,
             constraint: computationNs
@@ -282,7 +282,7 @@ public final class RenderThread {
         }
 
         // Reset priority before exiting
-        ThreadPriority.resetToDefault()
+        _ = ThreadPriority.resetToDefault()
     }
 }
 
@@ -301,7 +301,7 @@ public final class PTYThreadManager {
     /// Executes a read operation on the optimized PTY read queue.
     public func read(_ work: @escaping () -> Void) {
         readQueue.async {
-            ThreadPriority.setQoS(.ptyRead)
+            _ = ThreadPriority.setQoS(.ptyRead)
             work()
         }
     }
@@ -309,7 +309,7 @@ public final class PTYThreadManager {
     /// Executes a write operation on the optimized PTY write queue.
     public func write(_ work: @escaping () -> Void) {
         writeQueue.async {
-            ThreadPriority.setQoS(.ptyWrite)
+            _ = ThreadPriority.setQoS(.ptyWrite)
             work()
         }
     }

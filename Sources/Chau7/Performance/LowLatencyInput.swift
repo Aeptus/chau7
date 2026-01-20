@@ -136,7 +136,7 @@ public final class LowLatencyInputHandler {
         updateModifiers(usage: usage, pressed: intValue != 0)
 
         // Skip modifier-only events if desired
-        let isModifier = isModifierKey(usage)
+        _ = isModifierKey(usage)
 
         eventCount += 1
         lastEventTime = timestamp

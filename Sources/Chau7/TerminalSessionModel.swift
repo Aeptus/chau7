@@ -128,9 +128,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         devServerMonitor.onDevServerChanged = { [weak self] serverInfo in
             self?.devServer = serverInfo
             if let serverInfo {
-                Log.trace("Dev server detected: \(serverInfo.name) on port \(serverInfo.port ?? 0)")
+                Log.info("Dev server detected: \(serverInfo.name) on port \(serverInfo.port ?? 0)")
             } else {
-                Log.trace("Dev server stopped")
+                Log.info("Dev server stopped")
             }
         }
     }
@@ -644,7 +644,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
                 let outputIdleFor = Date().timeIntervalSince(self.lastOutputAt)
                 if outputIdleFor >= self.stuckSeconds {
                     self.status = .stuck
-                    Log.trace("Command marked as stuck after \(Int(runningFor))s")
+                    Log.info("Command marked as stuck after \(Int(runningFor))s")
                     return
                 }
             }
@@ -674,7 +674,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private func updateActiveAppName(from commandLine: String) {
         if let match = CommandDetection.detectApp(from: commandLine) {
             activeAppName = match
-            Log.trace("AI detected: \(match) from command '\(commandLine.prefix(50))'")
+            Log.info("AI detected: \(match) from command '\(commandLine.prefix(50))'")
             startAILoggingIfNeeded(toolName: match, commandLine: commandLine)
             return
         }

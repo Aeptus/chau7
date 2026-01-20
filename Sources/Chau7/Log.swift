@@ -132,7 +132,7 @@ enum Log {
         guard let writeHandle = try? FileHandle(forWritingTo: url) else { return }
         try? writeHandle.truncate(atOffset: 0)
         try? writeHandle.write(contentsOf: tailData)
-        try? writeHandle.seekToEnd()
+        _ = try? writeHandle.seekToEnd()
         fileHandle = writeHandle
     }
 }
