@@ -89,7 +89,6 @@ public final class TripleBufferedTerminal {
 
             for row in other.dirtyRows {
                 let startIndex = row * cols
-                let endIndex = startIndex + cols
                 memcpy(
                     cells.baseAddress!.advanced(by: startIndex),
                     other.cells.baseAddress!.advanced(by: startIndex),

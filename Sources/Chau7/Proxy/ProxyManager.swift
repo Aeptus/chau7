@@ -221,7 +221,7 @@ public final class ProxyManager: ObservableObject {
         process.terminate()
 
         // Give it a moment to shut down gracefully
-        DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
             if self?.process?.isRunning == true {
                 self?.logger.warning("Proxy didn't stop gracefully, killing...")
                 self?.process?.interrupt()

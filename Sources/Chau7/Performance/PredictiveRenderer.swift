@@ -151,7 +151,7 @@ public final class PredictiveRenderer {
         cacheLock.lock()
         defer { cacheLock.unlock() }
 
-        if var cached = cache[text] {
+        if let cached = cache[text] {
             cacheHits.wrappingIncrement(ordering: .relaxed)
 
             // Update hit count
