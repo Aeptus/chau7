@@ -95,6 +95,7 @@ enum KeyAction: String, CaseIterable {
     case closeTab
     case nextTab
     case previousTab
+    case refreshTabBar  // Recovery: force re-render of tab bar
     case selectTab1, selectTab2, selectTab3, selectTab4
     case selectTab5, selectTab6, selectTab7, selectTab8, selectTab9
 
@@ -143,6 +144,7 @@ enum KeyAction: String, CaseIterable {
         case .closeTab: return "Close Tab"
         case .nextTab: return "Next Tab"
         case .previousTab: return "Previous Tab"
+        case .refreshTabBar: return "Refresh Tab Bar"
         case .selectTab1: return "Select Tab 1"
         case .selectTab2: return "Select Tab 2"
         case .selectTab3: return "Select Tab 3"
@@ -188,6 +190,7 @@ enum KeyAction: String, CaseIterable {
         case "closeTab": return .closeTab
         case "nextTab": return .nextTab
         case "previousTab": return .previousTab
+        case "refreshTabBar": return .refreshTabBar
         case "find": return .toggleSearch
         case "findNext": return .nextMatch
         case "findPrevious": return .previousMatch
@@ -277,6 +280,8 @@ final class KeybindingsManager: ObservableObject {
             delegate?.nextTab()
         case .previousTab:
             delegate?.previousTab()
+        case .refreshTabBar:
+            overlayModel?.refreshTabBar()
         case .selectTab1:
             delegate?.selectTab(number: 1)
         case .selectTab2:

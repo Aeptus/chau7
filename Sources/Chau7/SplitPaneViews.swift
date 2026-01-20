@@ -20,6 +20,9 @@ struct SplitPaneView: View {
             },
             onUpdateRatio: { splitID, newRatio in
                 controller.updateRatio(splitID: splitID, newRatio: newRatio)
+            },
+            onClosePane: { id in
+                controller.closePane(id: id)
             }
         )
     }
@@ -32,6 +35,7 @@ struct SplitNodeView: View {
     let isActive: Bool
     let onFocus: (UUID) -> Void
     let onUpdateRatio: (UUID, CGFloat) -> Void
+    let onClosePane: (UUID) -> Void
 
     var body: some View {
         switch node {
@@ -48,7 +52,8 @@ struct SplitNodeView: View {
             TextEditorPaneView(
                 id: id,
                 editor: editor,
-                onFocus: { onFocus(id) }
+                onFocus: { onFocus(id) },
+                onClose: { onClosePane(id) }
             )
 
         case .split(let splitID, let direction, let first, let second, let ratio):
@@ -62,7 +67,8 @@ struct SplitNodeView: View {
                 isSuspended: isSuspended,
                 isActive: isActive,
                 onFocus: onFocus,
-                onUpdateRatio: onUpdateRatio
+                onUpdateRatio: onUpdateRatio,
+                onClosePane: onClosePane
             )
         }
     }
@@ -80,6 +86,7 @@ struct SplitContainerView: View {
     let isActive: Bool
     let onFocus: (UUID) -> Void
     let onUpdateRatio: (UUID, CGFloat) -> Void
+    let onClosePane: (UUID) -> Void
 
     @State private var liveRatio: CGFloat = 0.5
 
@@ -91,7 +98,7 @@ struct SplitContainerView: View {
 
             if direction == .horizontal {
                 HStack(spacing: 0) {
-                    SplitNodeView(node: first, focusedID: focusedID, isSuspended: isSuspended, isActive: isActive, onFocus: onFocus, onUpdateRatio: onUpdateRatio)
+                    SplitNodeView(node: first, focusedID: focusedID, isSuspended: isSuspended, isActive: isActive, onFocus: onFocus, onUpdateRatio: onUpdateRatio, onClosePane: onClosePane)
                         .frame(width: (totalSize - dividerSize) * effectiveRatio)
                     SplitDivider(
                         isVertical: true,
@@ -102,11 +109,11 @@ struct SplitContainerView: View {
                             onUpdateRatio(splitID, newRatio)
                         }
                     )
-                    SplitNodeView(node: second, focusedID: focusedID, isSuspended: isSuspended, isActive: isActive, onFocus: onFocus, onUpdateRatio: onUpdateRatio)
+                    SplitNodeView(node: second, focusedID: focusedID, isSuspended: isSuspended, isActive: isActive, onFocus: onFocus, onUpdateRatio: onUpdateRatio, onClosePane: onClosePane)
                 }
             } else {
                 VStack(spacing: 0) {
-                    SplitNodeView(node: first, focusedID: focusedID, isSuspended: isSuspended, isActive: isActive, onFocus: onFocus, onUpdateRatio: onUpdateRatio)
+                    SplitNodeView(node: first, focusedID: focusedID, isSuspended: isSuspended, isActive: isActive, onFocus: onFocus, onUpdateRatio: onUpdateRatio, onClosePane: onClosePane)
                         .frame(height: (totalSize - dividerSize) * effectiveRatio)
                     SplitDivider(
                         isVertical: false,
@@ -117,7 +124,7 @@ struct SplitContainerView: View {
                             onUpdateRatio(splitID, newRatio)
                         }
                     )
-                    SplitNodeView(node: second, focusedID: focusedID, isSuspended: isSuspended, isActive: isActive, onFocus: onFocus, onUpdateRatio: onUpdateRatio)
+                    SplitNodeView(node: second, focusedID: focusedID, isSuspended: isSuspended, isActive: isActive, onFocus: onFocus, onUpdateRatio: onUpdateRatio, onClosePane: onClosePane)
                 }
             }
         }
@@ -141,10 +148,14 @@ struct TerminalPaneView: View {
 
     var body: some View {
         TerminalViewRepresentable(model: session, isSuspended: isSuspended, isActive: isActive)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                onFocus()
-            }
+            // Use simultaneousGesture to allow the tap to be recognized without blocking
+            // the NSView's native mouse event handling for text selection
+            .simultaneousGesture(
+                TapGesture()
+                    .onEnded { _ in
+                        onFocus()
+                    }
+            )
     }
 }
 
@@ -154,6 +165,7 @@ struct TextEditorPaneView: View {
     let id: UUID
     @ObservedObject var editor: TextEditorModel
     let onFocus: () -> Void
+    let onClose: () -> Void
 
     @State private var showFilePicker = false
 
@@ -201,6 +213,16 @@ struct TextEditorPaneView: View {
                 .buttonStyle(.plain)
                 .disabled(!editor.isDirty && editor.filePath != nil)
                 .help("Save")
+
+                // Close button
+                Button {
+                    attemptClose()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .buttonStyle(.plain)
+                .help("Close Pane")
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -250,6 +272,51 @@ struct TextEditorPaneView: View {
 
         if panel.runModal() == .OK, let url = panel.url {
             editor.saveAs(to: url.path)
+        }
+    }
+
+    private func attemptClose() {
+        // If content is dirty and not empty, prompt to save
+        if editor.isDirty && !editor.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let alert = NSAlert()
+            alert.messageText = L("alert.closeEditor.title", "Save changes?")
+            alert.informativeText = L("alert.closeEditor.message", "Your changes will be lost if you don't save them.")
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: L("button.save", "Save"))
+            alert.addButton(withTitle: L("button.dontSave", "Don't Save"))
+            alert.addButton(withTitle: L("button.cancel", "Cancel"))
+
+            let response = alert.runModal()
+            switch response {
+            case .alertFirstButtonReturn:
+                // Save
+                if editor.filePath != nil {
+                    editor.save()
+                    onClose()
+                } else {
+                    // Need to save as first
+                    let panel = NSSavePanel()
+                    panel.allowedContentTypes = [.plainText]
+                    panel.canCreateDirectories = true
+                    panel.nameFieldStringValue = "untitled.txt"
+
+                    if panel.runModal() == .OK, let url = panel.url {
+                        if editor.saveAs(to: url.path) {
+                            onClose()
+                        }
+                    }
+                    // If save was cancelled, don't close
+                }
+            case .alertSecondButtonReturn:
+                // Don't save - just close
+                onClose()
+            default:
+                // Cancel - do nothing
+                break
+            }
+        } else {
+            // Content is clean or empty - close directly
+            onClose()
         }
     }
 }

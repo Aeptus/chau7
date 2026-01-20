@@ -125,6 +125,10 @@ final class OverlayTabsModel: ObservableObject {
     /// Set of tab IDs currently being pre-warmed (on hover)
     private var prewarmingTabIDs: Set<UUID> = []
 
+    // MARK: - Tab Bar Recovery
+    /// Token to force SwiftUI to re-render the tab bar when incremented
+    @Published var tabBarRefreshToken: Int = 0
+
     // F13: Broadcast Input
     @Published var isBroadcastMode: Bool = false
     @Published var broadcastExcludedTabIDs: Set<UUID> = []
@@ -224,6 +228,7 @@ final class OverlayTabsModel: ObservableObject {
 
     func selectTab(id: UUID) {
         guard selectedTabID != id else { return }
+        LogEnhanced.tab("Switching tab", tabId: id, tabCount: tabs.count)
 
         // MARK: - Tab Switch Optimization: Capture state before switching
         // 1. Record previous tab index for directional animation
@@ -339,6 +344,7 @@ final class OverlayTabsModel: ObservableObject {
 
     func newTab() {
         dispatchPrecondition(condition: .onQueue(.main))
+        Log.trace("newTab: creating new tab, current tabs.count=\(tabs.count)")
         needsFreshTabOnShow = false
         var tab = OverlayTab(appModel: appModel)
         let colors = TabColor.allCases
@@ -353,11 +359,14 @@ final class OverlayTabsModel: ObservableObject {
         let position = FeatureSettings.shared.newTabPosition
         if position == "after", let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) {
             tabs.insert(tab, at: currentIndex + 1)
+            Log.trace("newTab: inserted at index \(currentIndex + 1), tabs.count=\(tabs.count)")
         } else {
             tabs.append(tab)
+            Log.trace("newTab: appended, tabs.count=\(tabs.count)")
         }
 
         selectedTabID = tab.id
+        Log.trace("newTab: selectedTabID=\(tab.id)")
         focusSelected()
         updateSuspensionState()
         updateSnippetContextForSelection()
@@ -530,12 +539,12 @@ final class OverlayTabsModel: ObservableObject {
     func closeTab(id: UUID) {
         dispatchPrecondition(condition: .onQueue(.main))
         Log.info("closeTab called with id=\(id). tabs.count=\(tabs.count)")
-        guard let index = tabs.firstIndex(where: { $0.id == id }) else {
+        guard let initialIndex = tabs.firstIndex(where: { $0.id == id }) else {
             Log.warn("closeTab: tab with id=\(id) not found!")
             return
         }
 
-        let tab = tabs[index]
+        let tab = tabs[initialIndex]
         let settings = FeatureSettings.shared
         let runningProcessCount = countRunningProcesses(in: tab)
         let hasRunningProcess = runningProcessCount > 0
@@ -560,7 +569,14 @@ final class OverlayTabsModel: ObservableObject {
             }
         }
 
-        let inheritedDirectory = isLastTab ? inheritedStartDirectory() : nil
+        // Re-validate after modal: tabs may have changed while dialog was shown
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else {
+            Log.warn("closeTab: tab \(id) no longer exists after confirmation dialog")
+            return
+        }
+        let isLastTabNow = tabs.count == 1
+
+        let inheritedDirectory = isLastTabNow ? inheritedStartDirectory() : nil
         Log.info("closeTab: found tab at index=\(index)")
         if isRenameVisible {
             clearRenameState(shouldFocus: false)
@@ -569,7 +585,7 @@ final class OverlayTabsModel: ObservableObject {
         // Close all sessions in the split pane tree (not just primary)
         tabs[index].splitController.root.closeAllSessions()
 
-        if tabs.count == 1 {
+        if isLastTabNow {
             let behavior = FeatureSettings.shared.lastTabCloseBehavior
             if behavior == .closeWindow {
                 Log.info("closeTab: last tab - closing window per settings")
@@ -690,8 +706,21 @@ final class OverlayTabsModel: ObservableObject {
             }
         }
 
+        // Re-validate after modal: tabs may have changed while dialog was shown
+        guard tabs.contains(where: { $0.id == currentID }) else {
+            Log.warn("closeOtherTabs: selected tab \(currentID) no longer exists after confirmation dialog")
+            return
+        }
+
+        // Re-compute other tabs based on current state
+        let currentOtherTabs = tabs.filter { $0.id != currentID }
+        guard !currentOtherTabs.isEmpty else {
+            Log.info("closeOtherTabs: no other tabs to close after re-validation")
+            return
+        }
+
         // Close all sessions in all tabs except current one
-        for tab in otherTabs {
+        for tab in currentOtherTabs {
             tab.splitController.root.closeAllSessions()
         }
 
@@ -700,8 +729,12 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     func selectNextTab() {
-        guard tabs.count > 1, let index = tabs.firstIndex(where: { $0.id == selectedTabID }) else { return }
+        guard tabs.count > 1, let index = tabs.firstIndex(where: { $0.id == selectedTabID }) else {
+            Log.trace("selectNextTab: skipped (tabs.count=\(tabs.count))")
+            return
+        }
         let nextIndex = (index + 1) % tabs.count
+        Log.trace("selectNextTab: \(index) -> \(nextIndex), tabs.count=\(tabs.count)")
         selectedTabID = tabs[nextIndex].id
         focusSelected()
         updateSuspensionState()
@@ -712,8 +745,12 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     func selectPreviousTab() {
-        guard tabs.count > 1, let index = tabs.firstIndex(where: { $0.id == selectedTabID }) else { return }
+        guard tabs.count > 1, let index = tabs.firstIndex(where: { $0.id == selectedTabID }) else {
+            Log.trace("selectPreviousTab: skipped (tabs.count=\(tabs.count))")
+            return
+        }
         let prevIndex = (index - 1 + tabs.count) % tabs.count
+        Log.trace("selectPreviousTab: \(index) -> \(prevIndex), tabs.count=\(tabs.count)")
         selectedTabID = tabs[prevIndex].id
         focusSelected()
         updateSuspensionState()
@@ -753,6 +790,23 @@ final class OverlayTabsModel: ObservableObject {
         if isSearchVisible {
             refreshSearch()
         }
+    }
+
+    // MARK: - Tab Bar Recovery
+
+    /// Forces a complete re-render of the tab bar by incrementing the refresh token.
+    /// Use this to recover from SwiftUI rendering issues where tabs disappear visually
+    /// but remain accessible via keyboard shortcuts.
+    func refreshTabBar() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        LogEnhanced.recovery("Forcing tab bar re-render", metadata: [
+            "tabCount": String(tabs.count),
+            "token": String(tabBarRefreshToken),
+            "memory": String(format: "%.1fMB", PerfTracker.currentMemoryMB() ?? 0)
+        ])
+        tabBarRefreshToken += 1
+        // Also trigger objectWillChange to ensure all observers update
+        objectWillChange.send()
     }
 
     // MARK: - Tab Reordering
@@ -1118,6 +1172,25 @@ final class OverlayTabsModel: ObservableObject {
         session.insertSnippet(entry)
         isSnippetManagerVisible = false
         // Focus terminal immediately after inserting snippet
+        focusSelected()
+    }
+
+    /// Inserts a snippet with user-provided variable values
+    func insertSnippetWithVariables(_ entry: SnippetEntry, variables: [SnippetInputVariable]) {
+        guard let session = selectedTab?.session else { return }
+        // Replace variables in snippet body with user values
+        let modifiedBody = SnippetManager.replaceInputVariables(in: entry.snippet.body, with: variables)
+        // Create modified snippet with replaced variables
+        var modifiedSnippet = entry.snippet
+        modifiedSnippet.body = modifiedBody
+        let modifiedEntry = SnippetEntry(
+            snippet: modifiedSnippet,
+            source: entry.source,
+            sourcePath: entry.sourcePath,
+            isOverridden: entry.isOverridden
+        )
+        session.insertSnippet(modifiedEntry)
+        isSnippetManagerVisible = false
         focusSelected()
     }
 

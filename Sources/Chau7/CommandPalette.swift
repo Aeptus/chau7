@@ -418,6 +418,9 @@ final class CommandPaletteProvider {
             PaletteCommand(title: "Find Previous", shortcut: "⇧⌘G", category: .edit, icon: "arrow.up.circle") {
                 delegate.previousSearchMatch()
             },
+            PaletteCommand(title: "Use Selection for Find", shortcut: "⌘E", category: .edit, icon: "text.magnifyingglass") {
+                delegate.useSelectionForFind()
+            },
             PaletteCommand(title: "Snippets...", shortcut: "⌘;", category: .edit, icon: "text.badge.plus") {
                 delegate.toggleSnippets()
             },
@@ -442,6 +445,9 @@ final class CommandPaletteProvider {
             // Terminal commands
             PaletteCommand(title: "Open Text Editor", shortcut: "⌥⌘E", category: .terminal, icon: "doc.text") {
                 delegate.openTextEditorPane()
+            },
+            PaletteCommand(title: "Append Selection to Editor", shortcut: "⇧⌘E", category: .terminal, icon: "text.append") {
+                delegate.appendSelectionToEditor()
             },
             PaletteCommand(title: "Split Horizontal", shortcut: "⌘D", category: .terminal, icon: "rectangle.split.1x2") {
                 delegate.splitHorizontally()
@@ -487,6 +493,33 @@ final class CommandPaletteProvider {
             PaletteCommand(title: "Rename Tab...", shortcut: "⇧⌘R", category: .tabs, icon: "pencil") {
                 delegate.beginRenameTab()
             },
+            PaletteCommand(title: "Select Tab 1", shortcut: "⌘1", category: .tabs, icon: "1.circle") {
+                delegate.selectTab(number: 1)
+            },
+            PaletteCommand(title: "Select Tab 2", shortcut: "⌘2", category: .tabs, icon: "2.circle") {
+                delegate.selectTab(number: 2)
+            },
+            PaletteCommand(title: "Select Tab 3", shortcut: "⌘3", category: .tabs, icon: "3.circle") {
+                delegate.selectTab(number: 3)
+            },
+            PaletteCommand(title: "Select Tab 4", shortcut: "⌘4", category: .tabs, icon: "4.circle") {
+                delegate.selectTab(number: 4)
+            },
+            PaletteCommand(title: "Select Tab 5", shortcut: "⌘5", category: .tabs, icon: "5.circle") {
+                delegate.selectTab(number: 5)
+            },
+            PaletteCommand(title: "Select Tab 6", shortcut: "⌘6", category: .tabs, icon: "6.circle") {
+                delegate.selectTab(number: 6)
+            },
+            PaletteCommand(title: "Select Tab 7", shortcut: "⌘7", category: .tabs, icon: "7.circle") {
+                delegate.selectTab(number: 7)
+            },
+            PaletteCommand(title: "Select Tab 8", shortcut: "⌘8", category: .tabs, icon: "8.circle") {
+                delegate.selectTab(number: 8)
+            },
+            PaletteCommand(title: "Select Tab 9", shortcut: "⌘9", category: .tabs, icon: "9.circle") {
+                delegate.selectTab(number: 9)
+            },
 
             // Window commands
             PaletteCommand(title: "Settings...", shortcut: "⌘,", category: .window, icon: "gear") {
@@ -498,7 +531,7 @@ final class CommandPaletteProvider {
             PaletteCommand(title: "SSH Connections...", shortcut: "⇧⌘O", category: .window, icon: "server.rack") {
                 delegate.showSSHManager()
             },
-            PaletteCommand(title: "Keyboard Shortcuts...", shortcut: nil, category: .window, icon: "keyboard") {
+            PaletteCommand(title: "Keyboard Shortcuts...", shortcut: "⌘/", category: .window, icon: "keyboard") {
                 delegate.showKeyboardShortcuts()
             },
 

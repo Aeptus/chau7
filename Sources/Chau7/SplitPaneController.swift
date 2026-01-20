@@ -355,15 +355,22 @@ final class SplitPaneController: ObservableObject {
 
     /// Closes the focused pane
     func closeFocusedPane() {
+        closePane(id: focusedPaneID)
+    }
+
+    /// Closes a specific pane by ID
+    func closePane(id: UUID) {
         // Don't close if it's the only pane
         guard root.allPaneIDs.count > 1 else { return }
 
-        let result = removeNode(root, targetID: focusedPaneID)
+        let result = removeNode(root, targetID: id)
         if let newRoot = result.node {
             root = newRoot
-            // Focus the sibling or first available
-            if let newFocus = result.siblingID ?? root.allPaneIDs.first {
-                focusedPaneID = newFocus
+            // If we closed the focused pane, focus the sibling or first available
+            if focusedPaneID == id {
+                if let newFocus = result.siblingID ?? root.allPaneIDs.first {
+                    focusedPaneID = newFocus
+                }
             }
         }
     }

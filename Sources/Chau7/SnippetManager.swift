@@ -49,6 +49,8 @@ struct Snippet: Identifiable, Codable, Equatable {
     var tags: [String]
     var folder: String?
     var shells: [String]?
+    /// Optional single-letter shortcut key (a-z) for quick selection in the snippet picker
+    var key: String?
     var createdAt: Date?
     var updatedAt: Date?
 
@@ -59,6 +61,7 @@ struct Snippet: Identifiable, Codable, Equatable {
         tags: [String] = [],
         folder: String? = nil,
         shells: [String]? = nil,
+        key: String? = nil,
         createdAt: Date? = nil,
         updatedAt: Date? = nil
     ) {
@@ -68,8 +71,20 @@ struct Snippet: Identifiable, Codable, Equatable {
         self.tags = tags
         self.folder = folder
         self.shells = shells
+        self.key = key
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+
+    /// Validated key - returns the key only if it's a single lowercase letter a-z
+    /// Handles externally-edited JSON that might have invalid keys
+    var validatedKey: Character? {
+        guard let key = key, !key.isEmpty else { return nil }
+        let normalized = key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard normalized.count == 1, let char = normalized.first, char >= "a" && char <= "z" else {
+            return nil
+        }
+        return char
     }
 }
 
@@ -93,6 +108,8 @@ struct SnippetDraft: Equatable {
     var tagsText: String
     var folder: String
     var shellsText: String
+    /// Quick-select key (single letter a-z, or empty for auto-assign)
+    var key: String
     var source: SnippetSource
 
     init(
@@ -102,6 +119,7 @@ struct SnippetDraft: Equatable {
         tagsText: String = "",
         folder: String = "",
         shellsText: String = "",
+        key: String = "",
         source: SnippetSource = .global
     ) {
         self.id = id
@@ -110,6 +128,7 @@ struct SnippetDraft: Equatable {
         self.tagsText = tagsText
         self.folder = folder
         self.shellsText = shellsText
+        self.key = key
         self.source = source
     }
 }
@@ -118,6 +137,22 @@ struct SnippetPlaceholder: Equatable {
     let index: Int
     let start: Int
     let length: Int
+}
+
+/// Represents a prompted input variable in a snippet
+/// Syntax: ${input:VariableName} or ${input:VariableName:default value}
+struct SnippetInputVariable: Identifiable, Equatable {
+    let id: String  // The variable name (unique within snippet)
+    let name: String  // Display name
+    let defaultValue: String
+    var value: String  // User-provided value
+
+    init(name: String, defaultValue: String = "") {
+        self.id = name
+        self.name = name
+        self.defaultValue = defaultValue
+        self.value = defaultValue
+    }
 }
 
 struct SnippetInsertion {
@@ -246,6 +281,7 @@ final class SnippetManager: ObservableObject {
                 tags: self.parseCSV(draft.tagsText),
                 folder: draft.folder.isEmpty ? nil : draft.folder,
                 shells: self.parseCSV(draft.shellsText),
+                key: Self.normalizeKey(draft.key),
                 createdAt: now,
                 updatedAt: now
             )
@@ -274,6 +310,7 @@ final class SnippetManager: ObservableObject {
                 tags: self.parseCSV(draft.tagsText),
                 folder: draft.folder.isEmpty ? nil : draft.folder,
                 shells: self.parseCSV(draft.shellsText),
+                key: Self.normalizeKey(draft.key),
                 createdAt: entry.snippet.createdAt ?? now,
                 updatedAt: now
             )
@@ -420,6 +457,81 @@ final class SnippetManager: ObservableObject {
     private func parseCSV(_ text: String) -> [String] {
         let parts = text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         return parts.filter { !$0.isEmpty }
+    }
+
+    /// Normalizes a key input: trims, lowercases, takes first char, validates a-z
+    /// Returns nil if invalid or empty
+    private static func normalizeKey(_ input: String) -> String? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let first = trimmed.first, first >= "a" && first <= "z" else {
+            return nil
+        }
+        return String(first)
+    }
+
+    // MARK: - Input Variables
+
+    /// Regex pattern for input variables: ${input:Name} or ${input:Name:default value}
+    private static let inputVariablePattern = #"\$\{input:([^:}]+)(?::([^}]*))?\}"#
+
+    /// Parses input variables from a snippet body
+    /// Returns unique variables in order of first occurrence
+    static func parseInputVariables(from text: String) -> [SnippetInputVariable] {
+        guard let regex = try? NSRegularExpression(pattern: inputVariablePattern) else {
+            return []
+        }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        let matches = regex.matches(in: text, range: range)
+
+        var seenNames = Set<String>()
+        var variables: [SnippetInputVariable] = []
+
+        for match in matches {
+            guard let nameRange = Range(match.range(at: 1), in: text) else { continue }
+            let name = String(text[nameRange])
+
+            // Skip duplicates - only use first occurrence
+            guard !seenNames.contains(name) else { continue }
+            seenNames.insert(name)
+
+            let defaultValue: String
+            if match.numberOfRanges > 2, let defaultRange = Range(match.range(at: 2), in: text) {
+                defaultValue = String(text[defaultRange])
+            } else {
+                defaultValue = ""
+            }
+
+            variables.append(SnippetInputVariable(name: name, defaultValue: defaultValue))
+        }
+
+        return variables
+    }
+
+    /// Checks if a snippet contains input variables that require user input
+    static func hasInputVariables(_ snippet: Snippet) -> Bool {
+        guard let regex = try? NSRegularExpression(pattern: inputVariablePattern) else {
+            return false
+        }
+        let range = NSRange(snippet.body.startIndex..<snippet.body.endIndex, in: snippet.body)
+        return regex.firstMatch(in: snippet.body, range: range) != nil
+    }
+
+    /// Replaces input variables in text with user-provided values
+    static func replaceInputVariables(in text: String, with variables: [SnippetInputVariable]) -> String {
+        var result = text
+        for variable in variables {
+            // Replace all occurrences of ${input:Name} and ${input:Name:default}
+            let patterns = [
+                "\\$\\{input:\(NSRegularExpression.escapedPattern(for: variable.name)):[^}]*\\}",
+                "\\$\\{input:\(NSRegularExpression.escapedPattern(for: variable.name))\\}"
+            ]
+            for pattern in patterns {
+                guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+                let range = NSRange(result.startIndex..<result.endIndex, in: result)
+                result = regex.stringByReplacingMatches(in: result, range: range, withTemplate: variable.value)
+            }
+        }
+        return result
     }
 
     private func mergeEntries(global: [Snippet], profile: [Snippet], repo: [Snippet]) -> [SnippetEntry] {

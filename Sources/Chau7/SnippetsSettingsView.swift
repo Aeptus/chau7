@@ -361,6 +361,7 @@ struct SnippetsSettingsView: View {
             tagsText: entry.snippet.tags.joined(separator: ", "),
             folder: entry.snippet.folder ?? "",
             shellsText: entry.snippet.shells?.joined(separator: ", ") ?? "",
+            key: entry.snippet.key ?? "",
             source: entry.source
         )
         isNewSnippet = false
@@ -482,6 +483,16 @@ private struct SnippetDetailView: View {
                             Label(entry.source.displayName, systemImage: entry.source.icon)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
+
+                            if let key = entry.snippet.validatedKey {
+                                Text("Key: \(String(key))")
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.accentColor)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.accentColor.opacity(0.15))
+                                    .cornerRadius(3)
+                            }
 
                             if entry.isOverridden {
                                 Text("OVERRIDDEN")
@@ -665,7 +676,7 @@ private struct SnippetEditorPanel: View {
 
                 Divider()
 
-                // Title and ID
+                // Title, ID, and Key
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Title")
@@ -684,6 +695,17 @@ private struct SnippetEditorPanel: View {
                             .font(.system(size: 12, design: .monospaced))
                     }
                     .frame(width: 180)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Key (a-z)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        TextField("", text: $draft.key)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12, design: .monospaced))
+                            .help("Quick-select key for snippet picker (single letter a-z)")
+                    }
+                    .frame(width: 60)
                 }
 
                 // Body
@@ -701,6 +723,10 @@ private struct SnippetEditorPanel: View {
                             RoundedRectangle(cornerRadius: 8)
                                 .stroke(Color(NSColor.separatorColor), lineWidth: 1)
                         )
+
+                    Text("Prompted variables: ${input:Name} or ${input:Name:default value}")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
 
                 // Location picker
@@ -942,6 +968,7 @@ private struct ImportExportSheet: View {
                     tagsText: snippet.tags.joined(separator: ", "),
                     folder: snippet.folder ?? "",
                     shellsText: snippet.shells?.joined(separator: ", ") ?? "",
+                    key: snippet.key ?? "",
                     source: selectedSource
                 )
                 SnippetManager.shared.createSnippet(from: draft)
