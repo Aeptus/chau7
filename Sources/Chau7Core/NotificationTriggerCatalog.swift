@@ -296,7 +296,7 @@ public enum NotificationTriggerCatalog {
             labelFallback: "History idle",
             descriptionKey: "notifications.trigger.historyMonitor.idle.description",
             descriptionFallback: "No new history entries for the idle timeout.",
-            defaultEnabled: true,
+            defaultEnabled: false,
             displayContexts: [.settings, .activity]
         ),
 
