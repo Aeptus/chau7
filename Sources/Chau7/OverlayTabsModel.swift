@@ -1,6 +1,60 @@
 import Foundation
 import AppKit
 import Combine
+import SwiftUI
+
+// MARK: - Tab Notification Styling
+
+/// Visual styling that can be applied to a tab via the notification system.
+/// Use this to indicate states like "waiting for input", "error occurred", "task complete", etc.
+struct TabNotificationStyle: Equatable {
+    /// Override color for the tab title (nil = use default)
+    var titleColor: Color? = nil
+
+    /// Make the title italic (e.g., for "waiting" states)
+    var isItalic: Bool = false
+
+    /// Make the title bold (e.g., for "attention needed")
+    var isBold: Bool = false
+
+    /// Subtle pulse animation to draw attention
+    var shouldPulse: Bool = false
+
+    /// Optional icon to show (SF Symbol name)
+    var icon: String? = nil
+
+    /// Icon color (nil = inherit from titleColor or default)
+    var iconColor: Color? = nil
+
+    /// Predefined styles for common states
+    static let waiting = TabNotificationStyle(
+        titleColor: .orange,
+        isItalic: true,
+        shouldPulse: true,
+        icon: "ellipsis.circle"
+    )
+
+    static let error = TabNotificationStyle(
+        titleColor: .red,
+        isBold: true,
+        icon: "exclamationmark.triangle.fill",
+        iconColor: .red
+    )
+
+    static let success = TabNotificationStyle(
+        titleColor: .green,
+        icon: "checkmark.circle.fill",
+        iconColor: .green
+    )
+
+    static let attention = TabNotificationStyle(
+        titleColor: .yellow,
+        isBold: true,
+        shouldPulse: true,
+        icon: "bell.fill",
+        iconColor: .yellow
+    )
+}
 
 struct OverlayTab: Identifiable, Equatable {
     let id: UUID
@@ -12,6 +66,10 @@ struct OverlayTab: Identifiable, Equatable {
     var isManualColorOverride: Bool = false
     var lastCommand: LastCommandInfo? = nil  // F20: Last command tracking
     var bookmarks: [BookmarkManager.Bookmark] = []  // F17: Bookmarks
+
+    // MARK: - Notification Styling
+    /// Active notification style for this tab (nil = default appearance)
+    var notificationStyle: TabNotificationStyle? = nil
 
     // MARK: - Tab Switch Optimization: Cached Snapshot
     /// Cached screenshot of terminal content for instant visual feedback during tab switch
@@ -810,6 +868,134 @@ final class OverlayTabsModel: ObservableObject {
         updateSnippetContextForSelection()
         if isSearchVisible {
             refreshSearch()
+        }
+    }
+
+    // MARK: - Tab Notification Styling
+
+    /// Sets a notification style on a tab to indicate a state (waiting, error, etc.)
+    /// - Parameters:
+    ///   - style: The style to apply, or nil to clear
+    ///   - tabID: The tab to style (defaults to selected tab)
+    func setNotificationStyle(_ style: TabNotificationStyle?, for tabID: UUID? = nil) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        let targetID = tabID ?? selectedTabID
+        guard let index = tabs.firstIndex(where: { $0.id == targetID }) else { return }
+        tabs[index].notificationStyle = style
+        Log.info("Tab notification style set: \(style?.icon ?? "cleared") for tab \(targetID)")
+    }
+
+    /// Sets a notification style on the tab associated with a terminal session
+    func setNotificationStyle(_ style: TabNotificationStyle?, forSession session: TerminalSessionModel) {
+        guard let tab = tabs.first(where: { $0.session === session }) else { return }
+        setNotificationStyle(style, for: tab.id)
+    }
+
+    /// Clears notification style from a tab
+    func clearNotificationStyle(for tabID: UUID? = nil) {
+        setNotificationStyle(nil, for: tabID)
+    }
+
+    /// Clears notification styles from all tabs
+    func clearAllNotificationStyles() {
+        for i in tabs.indices {
+            tabs[i].notificationStyle = nil
+        }
+    }
+
+    /// Applies a notification style to a tab based on tool name (used by notification action system)
+    /// - Parameters:
+    ///   - tool: The tool/app name to match (e.g., "Codex", "Claude Code")
+    ///   - stylePreset: Preset name ("waiting", "error", "success", "attention", "clear")
+    ///   - config: Additional configuration (customColor, italic, bold, pulse)
+    func applyNotificationStyle(forTool tool: String, stylePreset: String, config: [String: String]) {
+        dispatchPrecondition(condition: .onQueue(.main))
+
+        // Find tab matching the tool - prefer exact matches, fall back to contains
+        let lowerTool = tool.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        // First try exact match
+        var matchedTab = tabs.first { tab in
+            let display = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let active = tab.session?.activeAppName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return display == lowerTool || active == lowerTool
+        }
+
+        // Fall back to contains match if no exact match
+        if matchedTab == nil {
+            matchedTab = tabs.first { tab in
+                let display = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                let active = tab.session?.activeAppName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                return display.contains(lowerTool) || (active?.contains(lowerTool) == true)
+            }
+        }
+
+        guard let tab = matchedTab else {
+            Log.info("applyNotificationStyle: No tab found matching tool '\(tool)'")
+            return
+        }
+
+        // Build the style
+        let style: TabNotificationStyle?
+        if stylePreset == "clear" {
+            style = nil
+        } else {
+            style = buildNotificationStyle(preset: stylePreset, config: config)
+        }
+
+        setNotificationStyle(style, for: tab.id)
+    }
+
+    /// Builds a TabNotificationStyle from preset and config
+    private func buildNotificationStyle(preset: String, config: [String: String]) -> TabNotificationStyle {
+        // Start with preset
+        var style: TabNotificationStyle
+        switch preset {
+        case "waiting":
+            style = .waiting
+        case "error":
+            style = .error
+        case "success":
+            style = .success
+        case "attention":
+            style = .attention
+        default:
+            style = TabNotificationStyle()
+        }
+
+        // Apply custom overrides from config
+        if let customColor = config["customColor"], !customColor.isEmpty {
+            style.titleColor = colorFromString(customColor)
+            style.iconColor = colorFromString(customColor)
+        }
+
+        // Allow explicit enable/disable of style features
+        if let italic = config["italic"]?.lowercased() {
+            style.isItalic = (italic == "true" || italic == "1")
+        }
+
+        if let bold = config["bold"]?.lowercased() {
+            style.isBold = (bold == "true" || bold == "1")
+        }
+
+        if let pulse = config["pulse"]?.lowercased() {
+            style.shouldPulse = (pulse == "true" || pulse == "1")
+        }
+
+        return style
+    }
+
+    /// Converts color string to SwiftUI Color
+    private func colorFromString(_ colorName: String) -> Color {
+        switch colorName.lowercased() {
+        case "red": return .red
+        case "orange": return .orange
+        case "yellow": return .yellow
+        case "green": return .green
+        case "blue": return .blue
+        case "purple": return .purple
+        case "pink": return .pink
+        default: return .primary
         }
     }
 

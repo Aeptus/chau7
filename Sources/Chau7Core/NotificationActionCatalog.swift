@@ -9,6 +9,7 @@ public enum NotificationActionType: String, Codable, CaseIterable, Identifiable 
     case playSound = "play_sound"
     case focusWindow = "focus_window"
     case badgeTab = "badge_tab"
+    case styleTab = "style_tab"
 
     // Script & automation
     case runScript = "run_script"
@@ -286,6 +287,38 @@ public enum NotificationActionCatalog {
                     ConfigOption(id: "green", label: "Green"),
                     ConfigOption(id: "blue", label: "Blue")
                 ])
+            ]
+        ),
+        NotificationActionInfo(
+            type: .styleTab,
+            labelKey: "action.styleTab.label",
+            labelFallback: "Style Tab",
+            descriptionKey: "action.styleTab.description",
+            descriptionFallback: "Apply visual styling to the tab (color, italic, pulse animation)",
+            icon: "paintbrush",
+            category: .basic,
+            configFields: [
+                ActionConfigField(id: "style", labelKey: "action.field.style", labelFallback: "Style Preset", type: .picker, defaultValue: "waiting", options: [
+                    ConfigOption(id: "waiting", label: "Waiting (orange italic + pulse)"),
+                    ConfigOption(id: "error", label: "Error (red bold)"),
+                    ConfigOption(id: "success", label: "Success (green)"),
+                    ConfigOption(id: "attention", label: "Attention (yellow bold + pulse)"),
+                    ConfigOption(id: "clear", label: "Clear Style")
+                ]),
+                ActionConfigField(id: "customColor", labelKey: "action.field.customColor", labelFallback: "Custom Color (optional)", type: .picker, options: [
+                    ConfigOption(id: "", label: "Use preset"),
+                    ConfigOption(id: "red", label: "Red"),
+                    ConfigOption(id: "orange", label: "Orange"),
+                    ConfigOption(id: "yellow", label: "Yellow"),
+                    ConfigOption(id: "green", label: "Green"),
+                    ConfigOption(id: "blue", label: "Blue"),
+                    ConfigOption(id: "purple", label: "Purple"),
+                    ConfigOption(id: "pink", label: "Pink")
+                ]),
+                ActionConfigField(id: "italic", labelKey: "action.field.italic", labelFallback: "Italic", type: .toggle, defaultValue: "false"),
+                ActionConfigField(id: "bold", labelKey: "action.field.bold", labelFallback: "Bold", type: .toggle, defaultValue: "false"),
+                ActionConfigField(id: "pulse", labelKey: "action.field.pulse", labelFallback: "Pulse Animation", type: .toggle, defaultValue: "false"),
+                ActionConfigField(id: "autoClearSeconds", labelKey: "action.field.autoClearSeconds", labelFallback: "Auto-clear after (seconds)", type: .number, placeholder: "0 = never")
             ]
         ),
 
