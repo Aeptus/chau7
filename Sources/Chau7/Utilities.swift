@@ -54,6 +54,7 @@ enum EnvVars {
 
     // Terminal session
     static let idleSeconds = "CHAU7_IDLE_SECONDS"
+    static let commandFallbackSeconds = "CHAU7_COMMAND_FALLBACK_SECONDS"
     static let clearOnLaunch = "CHAU7_CLEAR_ON_LAUNCH"
 
     // Debug output capture
@@ -72,6 +73,7 @@ enum EnvVars {
     static let legacyTrace = "AI_NOTIFIER_TRACE"
     static let legacyLogFile = "AI_NOTIFIER_LOG_FILE"
     static let legacyIdleSeconds = "SMART_OVERLAY_IDLE_SECONDS"
+    static let legacyCommandFallbackSeconds = "SMART_OVERLAY_COMMAND_FALLBACK_SECONDS"
     static let legacyClearOnLaunch = "SMART_OVERLAY_CLEAR_ON_LAUNCH"
 
     /// Gets an environment variable, trying new name first then legacy.
