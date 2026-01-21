@@ -131,10 +131,14 @@ final class OverlayTabsModel: ObservableObject {
     /// Last reported rendered tab count from the view (for watchdog)
     /// -1 means the view hasn't reported yet (avoids false positive on startup)
     var lastReportedRenderedCount: Int = -1
+    /// Last reported tab bar size (for visibility-based recovery)
+    var lastReportedTabBarSize: CGSize = .zero
     /// Timer for watchdog that checks tab bar health
     private var tabBarWatchdogTimer: DispatchSourceTimer?
     /// Counter to limit consecutive watchdog refresh attempts
     private var watchdogRefreshAttempts: Int = 0
+    /// Minimum acceptable tab bar width per tab (for visibility detection)
+    private let minWidthPerTab: CGFloat = 30
 
     // F13: Broadcast Input
     @Published var isBroadcastMode: Bool = false
@@ -179,6 +183,12 @@ final class OverlayTabsModel: ObservableObject {
 
         // Setup task lifecycle observers (v1.1)
         setupTaskObservers()
+
+        // Start tab bar watchdog immediately (model-owned lifecycle)
+        // This ensures the watchdog runs regardless of view lifecycle events
+        DispatchQueue.main.async { [weak self] in
+            self?.startTabBarWatchdog()
+        }
     }
 
     deinit {
@@ -826,10 +836,20 @@ final class OverlayTabsModel: ObservableObject {
         lastReportedRenderedCount = count
     }
 
+    /// Called by the view to report the tab bar's actual rendered size.
+    /// Used for visibility-based recovery (detect invisible but "rendered" tabs).
+    func reportTabBarSize(_ size: CGSize) {
+        lastReportedTabBarSize = size
+    }
+
     /// Starts the tab bar watchdog timer.
     /// The watchdog periodically checks if the view is rendering all tabs.
     func startTabBarWatchdog() {
-        stopTabBarWatchdog()
+        // Prevent duplicate timers
+        guard tabBarWatchdogTimer == nil else {
+            Log.info("TabBar watchdog: already running, skipping start")
+            return
+        }
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + 3.0, repeating: 3.0)
         timer.setEventHandler { [weak self] in
@@ -850,20 +870,42 @@ final class OverlayTabsModel: ObservableObject {
         dispatchPrecondition(condition: .onQueue(.main))
         let expected = tabs.count
         let rendered = lastReportedRenderedCount
-        // Skip check if view hasn't reported yet (-1) or if tabs rendered successfully
-        if rendered < 0 || rendered > 0 {
-            watchdogRefreshAttempts = 0
+        let size = lastReportedTabBarSize
+
+        // Skip check if view hasn't reported yet
+        if rendered < 0 {
             return
         }
-        // If we have tabs but none are being rendered, force a refresh (max 3 attempts)
+
+        var needsRecovery = false
+        var reason = ""
+
+        // Check 1: Zero rendered count
         if expected > 0 && rendered == 0 {
+            needsRecovery = true
+            reason = "rendered=0, expected=\(expected)"
+        }
+
+        // Check 2: Tabs rendered but size is suspiciously small (visibility issue)
+        // Only check if rendered count seems OK but size suggests invisibility
+        if !needsRecovery && expected > 0 && rendered > 0 {
+            let minExpectedWidth = CGFloat(expected) * minWidthPerTab
+            if size.width < minExpectedWidth || size.height < 10 {
+                needsRecovery = true
+                reason = "size too small: \(Int(size.width))x\(Int(size.height)), expected width >= \(Int(minExpectedWidth))"
+            }
+        }
+
+        if needsRecovery {
             watchdogRefreshAttempts += 1
             if watchdogRefreshAttempts <= 3 {
-                Log.warn("TabBar watchdog: expected=\(expected), rendered=\(rendered), attempt \(watchdogRefreshAttempts), forcing refresh")
+                Log.warn("TabBar watchdog: \(reason), attempt \(watchdogRefreshAttempts), forcing refresh")
                 refreshTabBar()
             } else if watchdogRefreshAttempts == 4 {
                 Log.error("TabBar watchdog: refresh failed after 3 attempts, stopping retries")
             }
+        } else {
+            watchdogRefreshAttempts = 0
         }
     }
 
