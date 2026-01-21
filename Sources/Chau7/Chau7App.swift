@@ -303,6 +303,13 @@ struct Chau7App: App {
                     DebugConsoleController.shared.toggle()
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Refresh Tab Bar") {
+                    appDelegate.refreshTabBar()
+                }
+                .keyboardShortcut("r", modifiers: [.command, .option])
             }
 
             CommandGroup(after: .help) {

@@ -112,6 +112,13 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     /// Stuck timeout in seconds - when command runs this long without output, mark as stuck.
     private let stuckSeconds: TimeInterval = 30.0
+    private var fallbackCompletionSeconds: TimeInterval {
+        if let raw = EnvVars.get(EnvVars.commandFallbackSeconds, legacy: EnvVars.legacyCommandFallbackSeconds),
+           let value = Double(raw), value > 0 {
+            return value
+        }
+        return max(30.0, max(idleSeconds * 3.0, stuckSeconds * 2.0))
+    }
 
     init(appModel: AppModel) {
         self.appModel = appModel
@@ -649,8 +656,19 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
                 }
             }
 
-            // Only mark idle once we see a prompt after the command runs.
-            guard self.promptSeenForPendingCommand else { return }
+            // Prefer prompt-based completion, but fall back after a long idle if prompt updates are missing.
+            if !self.promptSeenForPendingCommand {
+                if latestIdleFor >= self.fallbackCompletionSeconds {
+                    self.promptSeenForPendingCommand = true
+                    if !self.commandFinishedNotified {
+                        self.commandFinishedNotified = true
+                        self.shellEventDetector.commandFinished(exitCode: nil, command: self.pendingCommandLine)
+                    }
+                    Log.info("Fallback completion after \(Int(latestIdleFor))s without prompt")
+                } else {
+                    return
+                }
+            }
 
             // Check for idle - no activity for idleSeconds
             guard latestIdleFor >= self.idleSeconds else { return }

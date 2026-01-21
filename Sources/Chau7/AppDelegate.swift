@@ -592,6 +592,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ensureActiveOverlayModel()?.moveCurrentTabLeft()
     }
 
+    func refreshTabBar() {
+        ensureActiveOverlayModel()?.refreshTabBar()
+    }
+
     // MARK: - Pane Actions
 
     func splitHorizontally() {
