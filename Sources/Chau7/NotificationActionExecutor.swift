@@ -10,12 +10,17 @@ final class NotificationActionExecutor {
     // MARK: - Dependencies (injected from app)
     var tabFocusHandler: ((String) -> Void)?
     var tabBadgeHandler: ((String, String, String) -> Void)?  // tabId, text, color
+    var tabStyleHandler: ((String, String, [String: String]) -> Void)?  // tool, stylePreset, config
     var snippetExecuteHandler: ((String, String, Bool) -> Void)?  // tabId, snippetId, autoExecute
     var menuBarAlertHandler: ((Int, Bool) -> Void)?  // duration, animate
 
     // MARK: - Time Tracking State
     private var activeTimers: [String: Date] = [:]
     private let queue = DispatchQueue(label: "com.chau7.actionExecutor", qos: .userInitiated)
+
+    // MARK: - Tab Style Auto-Clear Tracking
+    /// Tracks pending auto-clear work items per tool to allow cancellation
+    private var pendingStyleClears: [String: DispatchWorkItem] = [:]
 
     private init() {}
 
@@ -42,6 +47,8 @@ final class NotificationActionExecutor {
             executeFocusWindow(context)
         case .badgeTab:
             executeBadgeTab(context)
+        case .styleTab:
+            executeStyleTab(context)
 
         // Automation
         case .runScript:
@@ -221,6 +228,31 @@ final class NotificationActionExecutor {
 
         DispatchQueue.main.async { [weak self] in
             self?.tabBadgeHandler?(ctx.event.tool, badgeText, badgeColor)
+        }
+    }
+
+    private func executeStyleTab(_ ctx: ActionContext) {
+        let stylePreset = ctx.configValue("style") ?? "waiting"
+        let config = ctx.config.config  // Pass all config to handler
+        let tool = ctx.event.tool
+
+        // Cancel any pending auto-clear for this tool
+        pendingStyleClears[tool]?.cancel()
+        pendingStyleClears.removeValue(forKey: tool)
+
+        DispatchQueue.main.async { [weak self] in
+            self?.tabStyleHandler?(tool, stylePreset, config)
+        }
+
+        // Handle auto-clear if configured
+        let autoClearSeconds = ctx.configInt("autoClearSeconds", default: 0)
+        if autoClearSeconds > 0 {
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.pendingStyleClears.removeValue(forKey: tool)
+                self?.tabStyleHandler?(tool, "clear", [:])
+            }
+            pendingStyleClears[tool] = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(autoClearSeconds), execute: workItem)
         }
     }
 

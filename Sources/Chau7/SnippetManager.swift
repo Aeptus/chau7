@@ -139,19 +139,59 @@ struct SnippetPlaceholder: Equatable {
     let length: Int
 }
 
+/// The type of input control for a snippet variable
+enum SnippetInputType: Equatable {
+    case text           // Free-form text input
+    case singleSelect   // Single selection from options (dropdown)
+    case multiSelect    // Multiple selection from options (checkboxes)
+}
+
 /// Represents a prompted input variable in a snippet
-/// Syntax: ${input:VariableName} or ${input:VariableName:default value}
+/// Syntax:
+/// - ${input:name} - text input, no default
+/// - ${input:name:default} - text input with default value
+/// - ${input:name:opt1|opt2|opt3} - single select picker (pipe-delimited options)
+/// - ${multiselect:name:opt1|opt2|opt3} - multi select picker
 struct SnippetInputVariable: Identifiable, Equatable {
     let id: String  // The variable name (unique within snippet)
     let name: String  // Display name
     let defaultValue: String
-    var value: String  // User-provided value
+    var value: String  // User-provided value (for text and single select)
 
+    // Picker support
+    let inputType: SnippetInputType
+    let options: [String]  // Available options for picker types
+    var selectedOptions: Set<String>  // Selected options for multi-select
+
+    /// Creates a text input variable
     init(name: String, defaultValue: String = "") {
         self.id = name
         self.name = name
         self.defaultValue = defaultValue
         self.value = defaultValue
+        self.inputType = .text
+        self.options = []
+        self.selectedOptions = []
+    }
+
+    /// Creates a picker variable (single or multi select)
+    init(name: String, options: [String], inputType: SnippetInputType) {
+        self.id = name
+        self.name = name
+        self.options = options
+        self.inputType = inputType
+
+        // For single select, default to first option
+        // For multi select, default to empty selection
+        if inputType == .singleSelect, let first = options.first {
+            self.defaultValue = first
+            self.value = first
+            self.selectedOptions = []
+        } else {
+            self.defaultValue = ""
+            self.value = ""
+            self.selectedOptions = []
+        }
     }
 }
 
@@ -472,19 +512,51 @@ final class SnippetManager: ObservableObject {
     // MARK: - Input Variables
 
     /// Regex pattern for input variables: ${input:Name} or ${input:Name:default value}
+    /// Also matches ${input:Name:opt1|opt2|opt3} for single-select pickers
     private static let inputVariablePattern = #"\$\{input:([^:}]+)(?::([^}]*))?\}"#
+
+    /// Regex pattern for multi-select variables: ${multiselect:Name:opt1|opt2|opt3}
+    private static let multiselectPattern = #"\$\{multiselect:([^:}]+):([^}]+)\}"#
 
     /// Parses input variables from a snippet body
     /// Returns unique variables in order of first occurrence
+    /// Supports: ${input:name}, ${input:name:default}, ${input:name:opt1|opt2}, ${multiselect:name:opt1|opt2}
     static func parseInputVariables(from text: String) -> [SnippetInputVariable] {
-        guard let regex = try? NSRegularExpression(pattern: inputVariablePattern) else {
-            return []
-        }
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        let matches = regex.matches(in: text, range: range)
-
         var seenNames = Set<String>()
         var variables: [SnippetInputVariable] = []
+
+        // First, parse multiselect variables
+        if let multiselectRegex = try? NSRegularExpression(pattern: multiselectPattern) {
+            let range = NSRange(text.startIndex..<text.endIndex, in: text)
+            let matches = multiselectRegex.matches(in: text, range: range)
+
+            for match in matches {
+                guard let nameRange = Range(match.range(at: 1), in: text),
+                      let optionsRange = Range(match.range(at: 2), in: text) else { continue }
+
+                let name = String(text[nameRange])
+                guard !seenNames.contains(name) else { continue }
+                seenNames.insert(name)
+
+                let optionsString = String(text[optionsRange])
+                // Trim whitespace and filter empty options, then deduplicate
+                var seenOptions = Set<String>()
+                let options = optionsString.split(separator: "|")
+                    .map { String($0).trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty && seenOptions.insert($0).inserted }
+
+                guard !options.isEmpty else { continue }  // Skip if no valid options
+                variables.append(SnippetInputVariable(name: name, options: options, inputType: .multiSelect))
+            }
+        }
+
+        // Then, parse input variables (text or single-select)
+        guard let inputRegex = try? NSRegularExpression(pattern: inputVariablePattern) else {
+            return variables
+        }
+
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        let matches = inputRegex.matches(in: text, range: range)
 
         for match in matches {
             guard let nameRange = Range(match.range(at: 1), in: text) else { continue }
@@ -494,14 +566,32 @@ final class SnippetManager: ObservableObject {
             guard !seenNames.contains(name) else { continue }
             seenNames.insert(name)
 
-            let defaultValue: String
-            if match.numberOfRanges > 2, let defaultRange = Range(match.range(at: 2), in: text) {
-                defaultValue = String(text[defaultRange])
-            } else {
-                defaultValue = ""
-            }
+            // Check if there's a value/options portion
+            if match.numberOfRanges > 2, let valueRange = Range(match.range(at: 2), in: text) {
+                let valueString = String(text[valueRange])
 
-            variables.append(SnippetInputVariable(name: name, defaultValue: defaultValue))
+                // If value contains "|", treat as single-select picker options
+                if valueString.contains("|") {
+                    // Trim whitespace and filter empty options, then deduplicate
+                    var seenOptions = Set<String>()
+                    let options = valueString.split(separator: "|")
+                        .map { String($0).trimmingCharacters(in: .whitespaces) }
+                        .filter { !$0.isEmpty && seenOptions.insert($0).inserted }
+
+                    // If no valid options remain, treat as text input with the original value
+                    if options.isEmpty {
+                        variables.append(SnippetInputVariable(name: name, defaultValue: valueString))
+                    } else {
+                        variables.append(SnippetInputVariable(name: name, options: options, inputType: .singleSelect))
+                    }
+                } else {
+                    // Regular text input with default value
+                    variables.append(SnippetInputVariable(name: name, defaultValue: valueString))
+                }
+            } else {
+                // Text input with no default
+                variables.append(SnippetInputVariable(name: name, defaultValue: ""))
+            }
         }
 
         return variables
@@ -509,26 +599,56 @@ final class SnippetManager: ObservableObject {
 
     /// Checks if a snippet contains input variables that require user input
     static func hasInputVariables(_ snippet: Snippet) -> Bool {
-        guard let regex = try? NSRegularExpression(pattern: inputVariablePattern) else {
-            return false
-        }
         let range = NSRange(snippet.body.startIndex..<snippet.body.endIndex, in: snippet.body)
-        return regex.firstMatch(in: snippet.body, range: range) != nil
+
+        // Check for ${input:...}
+        if let inputRegex = try? NSRegularExpression(pattern: inputVariablePattern),
+           inputRegex.firstMatch(in: snippet.body, range: range) != nil {
+            return true
+        }
+
+        // Check for ${multiselect:...}
+        if let multiselectRegex = try? NSRegularExpression(pattern: multiselectPattern),
+           multiselectRegex.firstMatch(in: snippet.body, range: range) != nil {
+            return true
+        }
+
+        return false
     }
 
     /// Replaces input variables in text with user-provided values
     static func replaceInputVariables(in text: String, with variables: [SnippetInputVariable]) -> String {
         var result = text
         for variable in variables {
-            // Replace all occurrences of ${input:Name} and ${input:Name:default}
-            let patterns = [
+            // Determine the replacement value based on input type
+            let replacementValue: String
+            switch variable.inputType {
+            case .text, .singleSelect:
+                replacementValue = variable.value
+            case .multiSelect:
+                // Join selected options with space
+                replacementValue = variable.selectedOptions.sorted().joined(separator: " ")
+            }
+
+            // Escape the value for regex replacement (handles special characters like $, \)
+            let escapedValue = NSRegularExpression.escapedTemplate(for: replacementValue)
+
+            // Replace ${input:Name:...} and ${input:Name}
+            let inputPatterns = [
                 "\\$\\{input:\(NSRegularExpression.escapedPattern(for: variable.name)):[^}]*\\}",
                 "\\$\\{input:\(NSRegularExpression.escapedPattern(for: variable.name))\\}"
             ]
-            for pattern in patterns {
+            for pattern in inputPatterns {
                 guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
                 let range = NSRange(result.startIndex..<result.endIndex, in: result)
-                result = regex.stringByReplacingMatches(in: result, range: range, withTemplate: variable.value)
+                result = regex.stringByReplacingMatches(in: result, range: range, withTemplate: escapedValue)
+            }
+
+            // Replace ${multiselect:Name:...}
+            let multiselectPattern = "\\$\\{multiselect:\(NSRegularExpression.escapedPattern(for: variable.name)):[^}]*\\}"
+            if let regex = try? NSRegularExpression(pattern: multiselectPattern) {
+                let range = NSRange(result.startIndex..<result.endIndex, in: result)
+                result = regex.stringByReplacingMatches(in: result, range: range, withTemplate: escapedValue)
             }
         }
         return result

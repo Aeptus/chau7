@@ -17,6 +17,13 @@ struct Chau7App: App {
         NotificationManager.shared.tabTitleProvider = { [weak overlayModel] tool in
             overlayModel?.notificationTabTitle(forTool: tool)
         }
+
+        // Wire up tab style handler for notification actions
+        NotificationActionExecutor.shared.tabStyleHandler = { [weak overlayModel] tool, stylePreset, config in
+            guard let model = overlayModel else { return }
+            model.applyNotificationStyle(forTool: tool, stylePreset: stylePreset, config: config)
+        }
+
         _overlayModel = StateObject(wrappedValue: overlayModel)
         _ = SnippetManager.shared
         AppIcon.apply()

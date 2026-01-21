@@ -58,7 +58,10 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         cachedHostingViews.removeValue(forKey: toolbarIdentifier)
     }
 
-    /// Removes cached resources for a toolbar (call when window closes)
+    /// Removes cached resources for a toolbar.
+    /// Note: Currently unused because overlay windows are hidden (orderOut) rather than
+    /// destroyed. The windows persist for the app's lifetime, so cached views are retained
+    /// intentionally. Call this if window destruction is added in the future.
     func unregisterToolbar(_ toolbarIdentifier: NSToolbar.Identifier) {
         tabsModels.removeValue(forKey: toolbarIdentifier)
         cachedHostingViews.removeValue(forKey: toolbarIdentifier)
@@ -754,6 +757,29 @@ struct UnifiedTabButton: View {
     let onClose: () -> Void
     var onHover: ((Bool) -> Void)? = nil
 
+    // Pulse animation state
+    @State private var isPulsing: Bool = false
+
+    // Notification style helpers
+    private var notificationStyle: TabNotificationStyle? { tab.notificationStyle }
+
+    private var titleFont: Font {
+        var font = Font.custom("Avenir Next", size: 12)
+        if notificationStyle?.isBold == true {
+            font = font.weight(.bold)
+        } else {
+            font = font.weight(.semibold)
+        }
+        if notificationStyle?.isItalic == true {
+            font = font.italic()
+        }
+        return font
+    }
+
+    private var titleColor: Color? {
+        notificationStyle?.titleColor
+    }
+
     private var resolvedTitle: String {
         if let customTitle = tab.customTitle,
            !customTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -783,8 +809,14 @@ struct UnifiedTabButton: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // AI product logo
-            if let logo = aiProductLogo {
+            // Notification style icon (takes precedence over AI logo when present)
+            if let iconName = notificationStyle?.icon {
+                Image(systemName: iconName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(notificationStyle?.iconColor ?? notificationStyle?.titleColor ?? .primary)
+                    .accessibilityHidden(true)
+            } else if let logo = aiProductLogo {
+                // AI product logo (only if no notification icon)
                 logo
                     .resizable()
                     .frame(width: 14, height: 14)
@@ -792,7 +824,8 @@ struct UnifiedTabButton: View {
             }
 
             Text(resolvedTitle)
-                .font(.custom("Avenir Next", size: 12).weight(.semibold))
+                .font(titleFont)
+                .foregroundStyle(titleColor ?? .primary)
                 .lineLimit(1)
 
             // Path (only show if we have a session with path info)
@@ -865,6 +898,27 @@ struct UnifiedTabButton: View {
         }
         .onHover { isHovering in
             onHover?(isHovering)
+        }
+        // Pulse animation for attention states
+        .opacity(isPulsing ? 0.6 : 1.0)
+        .animation(
+            isPulsing
+                ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
+                : .default,
+            value: isPulsing
+        )
+        .onChange(of: notificationStyle?.shouldPulse) { shouldPulse in
+            // Explicitly handle nil (style cleared) as false
+            isPulsing = shouldPulse == true
+        }
+        .onChange(of: tab.notificationStyle) { newStyle in
+            // When style is cleared entirely, stop pulsing
+            if newStyle == nil {
+                isPulsing = false
+            }
+        }
+        .onAppear {
+            isPulsing = notificationStyle?.shouldPulse == true
         }
     }
 }
@@ -1567,7 +1621,6 @@ struct SnippetManagerOverlayView: View {
     @State private var editingEntry: SnippetEntry?
     @State private var isEditorVisible = false
     @State private var deleteTarget: SnippetEntry?
-    @State private var shouldFocusSearch = false
     // Variable input dialog state
     @State private var pendingVariableEntry: SnippetEntry?
     @State private var pendingVariables: [SnippetInputVariable] = []
@@ -1687,7 +1740,6 @@ struct SnippetManagerOverlayView: View {
                     } else {
                         SnippetSearchField(
                             text: $query,
-                            shouldFocus: shouldFocusSearch,
                             onEscape: { model.toggleSnippetManager() },
                             onLetterKey: { letter in
                                 // Handle quick select when query is empty
@@ -1756,10 +1808,9 @@ struct SnippetManagerOverlayView: View {
             .padding(.horizontal, 16)
             .frame(maxWidth: OverlayLayout.snippetPanelMaxWidth)
             .onAppear {
-                shouldFocusSearch = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    shouldFocusSearch = false
-                }
+                // Focus is now handled by SnippetSearchField.focusWithRetry() in makeNSView
+                // This just resets query state on reopen
+                query = ""
             }
             .alert(item: $deleteTarget) { entry in
                 Alert(
@@ -2034,6 +2085,37 @@ struct SnippetVariableDialog: View {
     let onInsert: () -> Void
     @FocusState private var focusedField: String?
 
+    /// Creates a safe binding to a variable's value that won't crash if index becomes invalid
+    /// This prevents crashes when the array is cleared while text field callbacks are pending
+    private func safeValueBinding(for variable: SnippetInputVariable) -> Binding<String> {
+        Binding<String>(
+            get: {
+                // Find by id instead of index for safety
+                variables.first(where: { $0.id == variable.id })?.value ?? variable.value
+            },
+            set: { newValue in
+                // Find and update by id instead of index
+                if let idx = variables.firstIndex(where: { $0.id == variable.id }) {
+                    variables[idx].value = newValue
+                }
+            }
+        )
+    }
+
+    /// Creates a safe binding to a variable's selectedOptions for multi-select
+    private func safeSelectedOptionsBinding(for variable: SnippetInputVariable) -> Binding<Set<String>> {
+        Binding<Set<String>>(
+            get: {
+                variables.first(where: { $0.id == variable.id })?.selectedOptions ?? variable.selectedOptions
+            },
+            set: { newValue in
+                if let idx = variables.firstIndex(where: { $0.id == variable.id }) {
+                    variables[idx].selectedOptions = newValue
+                }
+            }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -2047,28 +2129,24 @@ struct SnippetVariableDialog: View {
                     .foregroundStyle(.secondary)
             }
 
-            ForEach(variables.indices, id: \.self) { index in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(variables[index].name)
-                        .font(.custom("Avenir Next", size: 10).weight(.medium))
-                        .foregroundStyle(.secondary)
-
-                    TextField(
-                        variables[index].defaultValue.isEmpty ? "Enter value..." : variables[index].defaultValue,
-                        text: $variables[index].value
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 11))
-                    .focused($focusedField, equals: variables[index].id)
-                    .onSubmit {
+            // Use ForEach with identifiable items instead of indices to avoid binding crashes
+            // when the array is modified while text field callbacks are pending
+            ForEach(variables) { variable in
+                SnippetVariableRow(
+                    variable: variable,
+                    valueBinding: safeValueBinding(for: variable),
+                    selectedOptionsBinding: safeSelectedOptionsBinding(for: variable),
+                    focusedField: $focusedField,
+                    onSubmit: {
                         // Move to next field or submit
-                        if index < variables.count - 1 {
-                            focusedField = variables[index + 1].id
+                        if let currentIndex = variables.firstIndex(where: { $0.id == variable.id }),
+                           currentIndex < variables.count - 1 {
+                            focusedField = variables[currentIndex + 1].id
                         } else {
                             onInsert()
                         }
                     }
-                }
+                )
             }
 
             HStack {
@@ -2090,11 +2168,162 @@ struct SnippetVariableDialog: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .frame(minWidth: 300, maxWidth: 400)
         .onAppear {
-            // Focus first field
-            if let first = variables.first {
+            // Focus first text field (pickers don't need focus)
+            if let first = variables.first(where: { $0.inputType == .text }) {
                 focusedField = first.id
             }
         }
+    }
+}
+
+/// Helper view for each variable row - renders appropriate control based on input type
+private struct SnippetVariableRow: View {
+    let variable: SnippetInputVariable
+    @Binding var valueBinding: String
+    @Binding var selectedOptionsBinding: Set<String>
+    var focusedField: FocusState<String?>.Binding
+    let onSubmit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(variable.name)
+                .font(.custom("Avenir Next", size: 10).weight(.medium))
+                .foregroundStyle(.secondary)
+
+            switch variable.inputType {
+            case .text:
+                TextField(
+                    variable.defaultValue.isEmpty ? "Enter value..." : variable.defaultValue,
+                    text: $valueBinding
+                )
+                .textFieldStyle(.roundedBorder)
+                .font(.system(size: 11))
+                .focused(focusedField, equals: variable.id)
+                .onSubmit(onSubmit)
+
+            case .singleSelect:
+                if variable.options.isEmpty {
+                    // Fallback to text field if options array is empty (defensive)
+                    TextField("Enter value...", text: $valueBinding)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11))
+                } else {
+                    Picker("", selection: $valueBinding) {
+                        ForEach(variable.options, id: \.self) { option in
+                            Text(option).tag(option)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .font(.system(size: 11))
+                }
+
+            case .multiSelect:
+                if variable.options.isEmpty {
+                    // Fallback to text field if options array is empty (defensive)
+                    TextField("Enter values (space-separated)...", text: $valueBinding)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11))
+                } else {
+                    MultiSelectOptionsView(
+                        options: variable.options,
+                        selectedOptions: $selectedOptionsBinding
+                    )
+                }
+            }
+        }
+    }
+}
+
+/// Multi-select options displayed as toggle buttons
+private struct MultiSelectOptionsView: View {
+    let options: [String]
+    @Binding var selectedOptions: Set<String>
+
+    var body: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(options, id: \.self) { option in
+                MultiSelectOptionButton(
+                    option: option,
+                    isSelected: selectedOptions.contains(option),
+                    onToggle: {
+                        if selectedOptions.contains(option) {
+                            selectedOptions.remove(option)
+                        } else {
+                            selectedOptions.insert(option)
+                        }
+                    }
+                )
+            }
+        }
+    }
+}
+
+/// Individual toggle button for multi-select option
+private struct MultiSelectOptionButton: View {
+    let option: String
+    let isSelected: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            HStack(spacing: 4) {
+                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 10))
+                    .foregroundStyle(isSelected ? .white : .secondary)
+                Text(option)
+                    .font(.system(size: 10))
+                    .foregroundStyle(isSelected ? .white : .primary)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(isSelected ? Color.accentColor : Color.secondary.opacity(0.15))
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Simple flow layout for multi-select options
+private struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = computeLayout(proposal: proposal, subviews: subviews)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = computeLayout(proposal: proposal, subviews: subviews)
+        for (index, position) in result.positions.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y), proposal: .unspecified)
+        }
+    }
+
+    private func computeLayout(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
+        let maxWidth = proposal.width ?? .infinity
+        var positions: [CGPoint] = []
+        var currentX: CGFloat = 0
+        var currentY: CGFloat = 0
+        var lineHeight: CGFloat = 0
+        var totalWidth: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+
+            if currentX + size.width > maxWidth && currentX > 0 {
+                currentX = 0
+                currentY += lineHeight + spacing
+                lineHeight = 0
+            }
+
+            positions.append(CGPoint(x: currentX, y: currentY))
+            lineHeight = max(lineHeight, size.height)
+            currentX += size.width + spacing
+            totalWidth = max(totalWidth, currentX - spacing)
+        }
+
+        return (CGSize(width: totalWidth, height: currentY + lineHeight), positions)
     }
 }
 
@@ -2102,7 +2331,6 @@ struct SnippetVariableDialog: View {
 
 private struct SnippetSearchField: NSViewRepresentable {
     @Binding var text: String
-    var shouldFocus: Bool
     var onEscape: () -> Void
     var onLetterKey: (Character) -> Void
 
@@ -2126,6 +2354,9 @@ private struct SnippetSearchField: NSViewRepresentable {
         field.onEscape = onEscape
         field.onLetterKey = onLetterKey
         field.textBinding = $text
+
+        // Request focus with retry logic to handle view hierarchy timing
+        field.focusWithRetry()
         return field
     }
 
@@ -2133,13 +2364,9 @@ private struct SnippetSearchField: NSViewRepresentable {
         if nsView.stringValue != text {
             nsView.stringValue = text
         }
-        nsView.shouldFocus = shouldFocus
         nsView.onEscape = onEscape
         nsView.onLetterKey = onLetterKey
         nsView.textBinding = $text
-        if shouldFocus {
-            nsView.focusIfNeeded()
-        }
     }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
@@ -2167,7 +2394,9 @@ private struct SnippetSearchField: NSViewRepresentable {
         var onEscape: (() -> Void)?
         var onLetterKey: ((Character) -> Void)?
         var textBinding: Binding<String>?
-        var shouldFocus = false
+
+        /// Generation counter to cancel stale focus retries
+        private var focusGeneration: Int = 0
 
         func focusIfNeeded() {
             guard let window else { return }
@@ -2177,9 +2406,48 @@ private struct SnippetSearchField: NSViewRepresentable {
             if let editor = window.firstResponder as? NSTextView, editor.delegate as? NSTextField === self {
                 return
             }
-            DispatchQueue.main.async {
-                window.makeFirstResponder(self)
+            window.makeFirstResponder(self)
+        }
+
+        /// Focuses the field with retry logic for when view hierarchy isn't ready
+        func focusWithRetry(attempts: Int = 3, delay: TimeInterval = 0.05) {
+            // Increment generation to cancel any pending retries from previous calls
+            focusGeneration += 1
+            let currentGeneration = focusGeneration
+            focusWithRetryInternal(attempts: attempts, delay: delay, generation: currentGeneration)
+        }
+
+        private func focusWithRetryInternal(attempts: Int, delay: TimeInterval, generation: Int) {
+            // Cancel if generation has changed (panel was closed/reopened)
+            guard generation == focusGeneration else { return }
+            guard attempts > 0 else { return }
+
+            // Check if still in view hierarchy
+            guard let window, superview != nil else {
+                // Not in hierarchy yet, retry
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    self?.focusWithRetryInternal(attempts: attempts - 1, delay: delay * 2, generation: generation)
+                }
+                return
             }
+
+            // Already focused
+            if window.firstResponder === self { return }
+            if let editor = window.firstResponder as? NSTextView, editor.delegate as? NSTextField === self { return }
+
+            // Try to focus
+            let success = window.makeFirstResponder(self)
+            if !success {
+                // Focus failed, retry with longer delay
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    self?.focusWithRetryInternal(attempts: attempts - 1, delay: delay * 2, generation: generation)
+                }
+            }
+        }
+
+        /// Cancel pending focus retries (call when view is being removed)
+        func cancelFocusRetries() {
+            focusGeneration += 1
         }
 
         override func keyDown(with event: NSEvent) {
