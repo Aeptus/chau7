@@ -463,10 +463,18 @@ struct DebugConsoleView: View {
             guard levelMatch else { return false }
 
             // Category filter
-            let categoryMatch = enabledCategories.isEmpty || enabledCategories.contains { category in
+            // Check if line has ANY category tag (LogEnhanced format)
+            let hasAnyCategory = LogCategory.allCases.contains { category in
                 line.contains("[\(category.rawValue)]")
             }
-            guard categoryMatch else { return false }
+            if hasAnyCategory {
+                // If it has a category, check if that category is enabled
+                let categoryMatch = enabledCategories.contains { category in
+                    line.contains("[\(category.rawValue)]")
+                }
+                guard categoryMatch else { return false }
+            }
+            // If no category tag (standard Log.info() format), always pass category filter
 
             // Text filter
             if !logFilter.isEmpty {
