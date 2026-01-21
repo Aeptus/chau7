@@ -44,12 +44,25 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
     private static let tabBarItemIdentifier = NSToolbarItem.Identifier("TabBarItem")
     private var tabsModels: [NSToolbar.Identifier: OverlayTabsModel] = [:]
 
+    /// Cached hosting views to prevent recreation on toolbar reload.
+    /// This is critical for stability - macOS may request toolbar items multiple times.
+    private var cachedHostingViews: [NSToolbar.Identifier: NSHostingView<ToolbarTabBarView>] = [:]
+
     private override init() {
         super.init()
     }
 
     func registerTabsModel(_ model: OverlayTabsModel, for toolbarIdentifier: NSToolbar.Identifier) {
         tabsModels[toolbarIdentifier] = model
+        // Invalidate cached view when model changes
+        cachedHostingViews.removeValue(forKey: toolbarIdentifier)
+    }
+
+    /// Removes cached resources for a toolbar (call when window closes)
+    func unregisterToolbar(_ toolbarIdentifier: NSToolbar.Identifier) {
+        tabsModels.removeValue(forKey: toolbarIdentifier)
+        cachedHostingViews.removeValue(forKey: toolbarIdentifier)
+        Log.info("TabBarToolbarDelegate: unregistered toolbar \(toolbarIdentifier)")
     }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
@@ -59,8 +72,21 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         }
 
         let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+
+        // Reuse cached hosting view if available (critical for stability)
+        if let cachedView = cachedHostingViews[toolbar.identifier] {
+            Log.info("TabBarToolbarDelegate: reusing cached hosting view for \(toolbar.identifier)")
+            item.view = cachedView
+            return item
+        }
+
+        // Create new hosting view only if not cached
+        Log.info("TabBarToolbarDelegate: creating new hosting view for \(toolbar.identifier)")
         let tabBarView = ToolbarTabBarView(overlayModel: tabsModel)
         let hostingView = NSHostingView(rootView: tabBarView)
+
+        // Cache for future requests
+        cachedHostingViews[toolbar.identifier] = hostingView
         item.view = hostingView
 
         return item
@@ -93,6 +119,18 @@ private struct RenderedTabCountKey: PreferenceKey {
     static var defaultValue: Int = 0
     static func reduce(value: inout Int, nextValue: () -> Int) {
         value += nextValue()
+    }
+}
+
+/// Preference key for tracking tab bar size (for visibility-based recovery)
+private struct TabBarSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        let next = nextValue()
+        // Take the larger size (in case of multiple reports)
+        if next.width > value.width || next.height > value.height {
+            value = next
+        }
     }
 }
 
@@ -217,6 +255,15 @@ private struct ToolbarTabBarView: View {
         .frame(maxWidth: .infinity)
         // Hardening: ensure tab bar always has rendered content (prevents "invisible" optimization)
         .background(Color.black.opacity(0.001))
+        // Report actual rendered size for visibility-based recovery
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: TabBarSizeKey.self, value: geo.size)
+            }
+        )
+        .onPreferenceChange(TabBarSizeKey.self) { size in
+            overlayModel.reportTabBarSize(size)
+        }
         .onChange(of: isTabBarDropTargeted) { targeted in
             if targeted {
                 dragCleanupTask?.cancel()
@@ -232,10 +279,8 @@ private struct ToolbarTabBarView: View {
         }
         .onAppear {
             Log.info("ToolbarTabBarView: appeared with \(overlayModel.tabs.count) tabs")
-            overlayModel.startTabBarWatchdog()
-        }
-        .onDisappear {
-            overlayModel.stopTabBarWatchdog()
+            // Note: Watchdog is now started by the model, not by view lifecycle
+            // This ensures consistent operation regardless of view recreation
         }
         // Auto-recovery: detect when rendered tab count doesn't match model
         // Report rendered count to model for watchdog monitoring
@@ -268,50 +313,26 @@ private struct ToolbarTabBarView: View {
         let isSelected = tab.id == overlayModel.selectedTabID
         let isSuspended = overlayModel.isTabSuspended(tab.id)
         let tabWidth = tabWidths[tab.id] ?? 0
-        Group {
-            if let session = tab.session {
-                TabButton(
-                    customTitle: tab.customTitle,
-                    session: session,
-                    isSelected: isSelected,
-                    isSuspended: isSuspended,
-                    tabColor: tab.effectiveColor,
-                    commandBadge: tab.commandBadge,
-                    isBroadcastIncluded: overlayModel.isBroadcastMode && !overlayModel.broadcastExcludedTabIDs.contains(tab.id),
-                    onSelect: { overlayModel.selectTab(id: tab.id) },
-                    onRename: { overlayModel.beginRename(tabID: tab.id) },
-                    onClose: { overlayModel.closeTab(id: tab.id) },
-                    onHover: { isHovering in
-                        // Tab switch optimization: pre-warm on hover
-                        if isHovering {
-                            overlayModel.prewarmTab(id: tab.id)
-                        } else {
-                            overlayModel.cancelPrewarm(id: tab.id)
-                        }
-                    }
-                )
-            } else {
-                TabButtonFallback(
-                    title: tab.displayTitle,
-                    isSelected: isSelected,
-                    isSuspended: isSuspended,
-                    tabColor: tab.effectiveColor,
-                    commandBadge: tab.commandBadge,
-                    isBroadcastIncluded: overlayModel.isBroadcastMode && !overlayModel.broadcastExcludedTabIDs.contains(tab.id),
-                    onSelect: { overlayModel.selectTab(id: tab.id) },
-                    onRename: { overlayModel.beginRename(tabID: tab.id) },
-                    onClose: { overlayModel.closeTab(id: tab.id) },
-                    onHover: { isHovering in
-                        // Tab switch optimization: pre-warm on hover
-                        if isHovering {
-                            overlayModel.prewarmTab(id: tab.id)
-                        } else {
-                            overlayModel.cancelPrewarm(id: tab.id)
-                        }
-                    }
-                )
+
+        // Use UnifiedTabButton for stable view identity (avoids if/else type switching)
+        UnifiedTabButton(
+            tab: tab,
+            isSelected: isSelected,
+            isSuspended: isSuspended,
+            isBroadcastIncluded: overlayModel.isBroadcastMode && !overlayModel.broadcastExcludedTabIDs.contains(tab.id),
+            onSelect: { overlayModel.selectTab(id: tab.id) },
+            onRename: { overlayModel.beginRename(tabID: tab.id) },
+            onClose: { overlayModel.closeTab(id: tab.id) },
+            onHover: { isHovering in
+                if isHovering {
+                    overlayModel.prewarmTab(id: tab.id)
+                } else {
+                    overlayModel.cancelPrewarm(id: tab.id)
+                }
             }
-        }
+        )
+        // Explicit stable identity based on tab UUID
+        .id(tab.id)
             .background(
                 GeometryReader { proxy in
                     Color.clear.preference(key: TabWidthPreferenceKey.self, value: [tab.id: proxy.size.width])
@@ -717,6 +738,138 @@ private struct ReduceMotionAnimationModifier: ViewModifier {
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: values)
     }
 }
+
+// MARK: - Unified Tab Button (Stable Identity)
+
+/// A unified tab button that handles both session and non-session cases
+/// without view identity switching. This prevents SwiftUI from recreating
+/// the view when tab.session changes between nil and non-nil.
+struct UnifiedTabButton: View {
+    let tab: OverlayTab
+    let isSelected: Bool
+    let isSuspended: Bool
+    let isBroadcastIncluded: Bool
+    let onSelect: () -> Void
+    let onRename: () -> Void
+    let onClose: () -> Void
+    var onHover: ((Bool) -> Void)? = nil
+
+    private var resolvedTitle: String {
+        if let customTitle = tab.customTitle,
+           !customTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return customTitle
+        }
+        if let activeName = tab.session?.activeAppName, !activeName.isEmpty {
+            return activeName
+        }
+        if tab.splitController.root.allTerminalIDs.isEmpty {
+            return "Editor"
+        }
+        return "Shell"
+    }
+
+    private var resolvedPath: String {
+        tab.session?.displayPath() ?? ""
+    }
+
+    private var aiProductLogo: Image? {
+        guard let appName = tab.session?.activeAppName else { return nil }
+        return AIAgentLogo.image(forAppName: appName)
+    }
+
+    private var isGitRepo: Bool {
+        tab.session?.isGitRepo ?? false
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // AI product logo
+            if let logo = aiProductLogo {
+                logo
+                    .resizable()
+                    .frame(width: 14, height: 14)
+                    .accessibilityHidden(true)
+            }
+
+            Text(resolvedTitle)
+                .font(.custom("Avenir Next", size: 12).weight(.semibold))
+                .lineLimit(1)
+
+            // Path (only show if we have a session with path info)
+            if !resolvedPath.isEmpty {
+                Text("- \(resolvedPath)")
+                    .font(.custom("Avenir Next", size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            if isSuspended {
+                Image(systemName: "pause.circle.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .help("Rendering suspended")
+            }
+
+            // F20: Command badge
+            if let badge = tab.commandBadge {
+                Text(badge)
+                    .font(.custom("Avenir Next", size: 10).weight(.medium))
+                    .foregroundStyle(badge.contains("✗") ? .red : .green)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(Color.black.opacity(0.2))
+                    .clipShape(Capsule())
+            }
+
+            // F13: Broadcast indicator
+            if isBroadcastIncluded {
+                Image(systemName: "dot.radiowaves.left.and.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.orange)
+            }
+
+            // Git indicator
+            if isGitRepo {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .bold))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close tab")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 3)
+        .background(
+            isSelected
+                ? tab.effectiveColor.color.opacity(0.25)
+                : Color.black.opacity(0.18)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(resolvedTitle) tab" + (resolvedPath.isEmpty ? "" : ", \(resolvedPath)"))
+        .accessibilityHint(isSelected ? "Selected. Double-tap to rename" : "Double-tap to select, then double-tap to rename")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .highPriorityGesture(
+            TapGesture(count: 2).onEnded {
+                onRename()
+            }
+        )
+        .onTapGesture {
+            onSelect()
+        }
+        .onHover { isHovering in
+            onHover?(isHovering)
+        }
+    }
+}
+
+// MARK: - Legacy Tab Buttons (kept for reference)
 
 struct TabButton: View {
     let customTitle: String?
