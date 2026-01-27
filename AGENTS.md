@@ -10,13 +10,14 @@ Guidelines for AI agents working on the Chau7 codebase.
 
 ```
 Chau7/
-├── Sources/
-│   ├── Chau7/           # Main app (SwiftUI + AppKit)
-│   └── Chau7Core/       # Testable pure functions
-├── Tests/
-│   └── Chau7Tests/      # Unit tests
-├── Scripts/             # Build and helper scripts
-└── Package.swift        # Swift Package Manager config
+├── apps/
+│   ├── chau7-macos/      # SwiftUI + AppKit macOS app (SwiftPM)
+│   └── chau7-ios/        # Native iOS app
+├── services/
+│   ├── chau7-relay/      # Cloudflare relay (Workers + Durable Objects)
+│   └── chau7-remote/     # Go relay client for macOS
+└── docs/
+    └── remote-control/  # Remote control spec
 ```
 
 ## Testing Requirements
@@ -27,10 +28,12 @@ Chau7/
 2. **Build check**: `swift build` - Must compile without errors
 3. **Add tests for new logic**: Any new pure functions should have tests
 
+Run these from `apps/chau7-macos`.
+
 ### Test Infrastructure
 
 - **Chau7Core module**: Contains testable pure functions
-- **Tests location**: `Tests/Chau7Tests/`
+- **Tests location**: `apps/chau7-macos/Tests/Chau7Tests/`
 - **Test framework**: XCTest (requires Xcode)
 
 ### When to Add Tests
@@ -87,16 +90,16 @@ _ = snapshot.save()  // Saves to ~/.chau7/snapshots/
 
 When adding complex logic:
 
-1. Extract pure functions to `Sources/Chau7Core/`
-2. Keep UI/state management in `Sources/Chau7/`
+1. Extract pure functions to `apps/chau7-macos/Sources/Chau7Core/`
+2. Keep UI/state management in `apps/chau7-macos/Sources/Chau7/`
 3. Add corresponding tests
 
 Example:
 ```swift
-// In Chau7Core/CommandDetection.swift
+// In apps/chau7-macos/Sources/Chau7Core/CommandDetection.swift
 public static func tokenize(_ line: String) -> [String]
 
-// In Chau7/TerminalSessionModel.swift
+// In apps/chau7-macos/Sources/Chau7/TerminalSessionModel.swift
 let tokens = CommandDetection.tokenize(commandLine)
 ```
 
@@ -134,12 +137,12 @@ When adding support for new AI CLIs:
 
 | Purpose | Location |
 |---------|----------|
-| Main app entry | `Sources/Chau7/Chau7App.swift` |
-| App delegate | `Sources/Chau7/AppDelegate.swift` |
-| Terminal session | `Sources/Chau7/TerminalSessionModel.swift` |
-| AI detection (testable) | `Sources/Chau7Core/CommandDetection.swift` |
-| Debug tools | `Sources/Chau7/DebugContext.swift`, `DebugConsoleView.swift` |
-| Tests | `Tests/Chau7Tests/CommandDetectionTests.swift` |
+| Main app entry | `apps/chau7-macos/Sources/Chau7/Chau7App.swift` |
+| App delegate | `apps/chau7-macos/Sources/Chau7/AppDelegate.swift` |
+| Terminal session | `apps/chau7-macos/Sources/Chau7/TerminalSessionModel.swift` |
+| AI detection (testable) | `apps/chau7-macos/Sources/Chau7Core/CommandDetection.swift` |
+| Debug tools | `apps/chau7-macos/Sources/Chau7/DebugContext.swift`, `apps/chau7-macos/Sources/Chau7/DebugConsoleView.swift` |
+| Tests | `apps/chau7-macos/Tests/Chau7Tests/CommandDetectionTests.swift` |
 | Logs | `~/Library/Logs/Chau7.log` |
 | Bug reports | `~/.chau7/reports/` |
 | State snapshots | `~/.chau7/snapshots/` |
