@@ -1,0 +1,558 @@
+import SwiftUI
+import AppKit
+import UniformTypeIdentifiers
+import Chau7Core
+
+// MARK: - Settings Window Wrapper
+
+/// Wrapper view for the standalone settings window (opened via Cmd+,)
+struct SettingsWindowView: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        SettingsRootView(model: model)
+    }
+}
+
+// MARK: - Menu Bar Panel View
+
+enum StreamSelection: String, CaseIterable, Identifiable {
+    case codexHistory
+    case claudeHistory
+    case codexTerminal
+    case claudeTerminal
+    case verbose
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .codexHistory: return "Codex"
+        case .claudeHistory: return "Claude"
+        case .codexTerminal: return "Codex TTY"
+        case .claudeTerminal: return "Claude TTY"
+        case .verbose: return "Verbose"
+        }
+    }
+}
+
+struct MenuBarPanelView: View {
+    @ObservedObject var model: AppModel
+    @State private var streamSelection: StreamSelection = .codexHistory
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            Divider()
+            notificationsSection
+            Divider()
+            activitySection
+            Divider()
+            streamSection
+            Divider()
+            quickToggles
+            footer
+        }
+        .padding(12)
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Text("Chau7")
+                .font(.headline)
+
+            Circle()
+                .fill(model.isMonitoring ? Color.green : Color.gray)
+                .frame(width: 8, height: 8)
+                .help(model.isMonitoring ? "Monitoring active" : "Monitoring paused")
+
+            Spacer()
+
+            Button("Show Overlay") {
+                (NSApp.delegate as? AppDelegate)?.showOverlay()
+            }
+            .controlSize(.small)
+
+            Button("Settings...") {
+                (NSApp.delegate as? AppDelegate)?.showSettings()
+            }
+            .controlSize(.small)
+        }
+    }
+
+    private var notificationsSection: some View {
+        let isBundled = Bundle.main.bundleIdentifier != nil
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("Notifications")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            LabeledContent("Status", value: model.notificationStatus)
+
+            if let warning = model.notificationWarning {
+                Text(warning)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 8) {
+                Button("Request Permission") { model.requestNotificationPermission() }
+                Button("Test") { model.sendTestNotification() }
+            }
+            .controlSize(.small)
+            .disabled(!isBundled)
+        }
+    }
+
+    private var activitySection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Activity")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Clear") { model.recentEvents.removeAll() }
+                    .controlSize(.mini)
+            }
+
+            if displayableRecentEvents.isEmpty {
+                Text("No recent events")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(displayableRecentEvents) { event in
+                        HStack(alignment: .top, spacing: 6) {
+                            Text(eventTypeLabel(for: event))
+                                .font(.system(size: 10, weight: .semibold))
+                                .frame(width: 70, alignment: .leading)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(event.tool)
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text(event.message)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var displayableRecentEvents: [AIEvent] {
+        let filtered = model.recentEvents.filter { event in
+            guard let trigger = NotificationTriggerCatalog.trigger(for: event) else { return true }
+            return trigger.displayContexts.contains(.activity)
+        }
+        return Array(filtered.suffix(8).reversed())
+    }
+
+    private func eventTypeLabel(for event: AIEvent) -> String {
+        if let trigger = NotificationTriggerCatalog.trigger(for: event) {
+            return trigger.localizedLabel.uppercased()
+        }
+        return event.type.uppercased()
+    }
+
+    private var streamSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Streams")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Picker("Stream", selection: $streamSelection) {
+                ForEach(StreamSelection.allCases) { selection in
+                    Text(selection.title).tag(selection)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            StreamView(selection: streamSelection, model: model)
+                .frame(height: 160)
+        }
+    }
+
+    private var quickToggles: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Quick Toggles")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Toggle("Monitor AI events", isOn: $model.isMonitoring)
+                .onChange(of: model.isMonitoring) { _ in
+                    model.applyMonitoringState()
+                }
+
+            Toggle("Monitor history logs", isOn: $model.isIdleMonitoring)
+                .onChange(of: model.isIdleMonitoring) { _ in
+                    model.applyIdleMonitoringState()
+                }
+
+            Toggle("Monitor terminal logs", isOn: $model.isTerminalMonitoring)
+                .onChange(of: model.isTerminalMonitoring) { _ in
+                    model.applyTerminalMonitoringState()
+                }
+        }
+    }
+
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(model.logFilePath)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+
+            HStack(spacing: 8) {
+                Button("Reveal Log") { model.revealLogFile() }
+                    .controlSize(.small)
+                Spacer()
+                Button("Quit Chau7") { NSApplication.shared.terminate(nil) }
+                    .controlSize(.small)
+            }
+        }
+    }
+}
+
+// MARK: - Stream View
+
+struct StreamView: View {
+    let selection: StreamSelection
+    @ObservedObject var model: AppModel
+    @ObservedObject private var settings = FeatureSettings.shared
+
+    private static let timeFormatter = Formatters.mediumTime
+
+    var body: some View {
+        switch selection {
+        case .codexHistory:
+            historyList(entries: model.codexHistoryEntries)
+        case .claudeHistory:
+            historyList(entries: model.claudeHistoryEntries)
+        case .codexTerminal:
+            terminalLogView(lines: model.codexTerminalLines)
+        case .claudeTerminal:
+            terminalLogView(lines: model.claudeTerminalLines)
+        case .verbose:
+            logList(lines: model.logLines)
+        }
+    }
+
+    @ViewBuilder
+    private func historyList(entries: [HistoryEntry]) -> some View {
+        if entries.isEmpty {
+            Text("No history yet.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(entries.indices, id: \.self) { index in
+                        let entry = entries[index]
+                        let date = Date(timeIntervalSince1970: entry.timestamp)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(Self.timeFormatter.string(from: date)) - \(entry.sessionId.prefix(8))")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text(entry.summary)
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                                .lineLimit(3)
+                        }
+                        Divider()
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private func logList(lines: [String]) -> some View {
+        if lines.isEmpty {
+            Text("No logs yet.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(lines.indices, id: \.self) { index in
+                        let line = lines[index]
+                        lineView(for: line, isInput: line.hasPrefix("[INPUT]"))
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private func terminalLogView(lines: [String]) -> some View {
+        if lines.isEmpty {
+            Text("No logs yet.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        } else if model.isTerminalAnsi {
+            AnsiLogView(
+                lines: lines,
+                baseFont: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
+                baseForeground: NSColor.textColor,
+                baseBackground: NSColor.textBackgroundColor
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(lines.indices, id: \.self) { index in
+                        let line = lines[index]
+                        let display = model.isTerminalNormalize ? TerminalNormalizer.normalize(line) : line
+                        lineView(for: display, isInput: display.hasPrefix("[INPUT]"))
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private func lineView(for line: String, isInput: Bool) -> some View {
+        let prettyLine = settings.isJSONPrettyPrintEnabled
+            ? (JSONPrettyPrinter.prettyPrint(line) ?? line)
+            : line
+        if settings.isSyntaxHighlightEnabled {
+            let attributed = SyntaxHighlighter.shared.highlight(prettyLine)
+            Text(AttributedString(attributed))
+                .font(.system(size: 11, design: .monospaced))
+        } else {
+            Text(prettyLine)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(isInput ? .primary : .secondary)
+        }
+    }
+}
+
+// MARK: - Settings Root View (SettingsSection is now in SettingsSearch.swift)
+
+struct SettingsRootView: View {
+    @ObservedObject var model: AppModel
+    @State private var selection: SettingsSection = .general
+    @State private var searchQuery: String = ""
+
+    private var matchingSections: Set<SettingsSection> {
+        FeatureSettings.sectionsMatching(query: searchQuery)
+    }
+
+    private var filteredSections: [SettingsSection] {
+        if searchQuery.isEmpty {
+            return SettingsSection.allCases
+        }
+        return SettingsSection.allCases.filter { matchingSections.contains($0) }
+    }
+
+    var body: some View {
+        NavigationSplitView {
+            VStack(spacing: 0) {
+                // Search Bar
+                SettingsSearchBar(searchQuery: $searchQuery)
+
+                // Section List
+                List(filteredSections, selection: $selection) { section in
+                    SettingsSidebarRow(
+                        section: section,
+                        isHighlighted: !searchQuery.isEmpty && matchingSections.contains(section),
+                        matchCount: searchQuery.isEmpty ? 0 : FeatureSettings.searchableSettings.filter { $0.section == section && $0.matches(searchQuery) }.count
+                    )
+                    .tag(section)
+                }
+                .listStyle(.sidebar)
+            }
+            .frame(minWidth: 200)
+        } detail: {
+            SettingsDetailView(selection: selection, model: model, searchQuery: searchQuery)
+        }
+        .frame(minWidth: 820, minHeight: 650)
+        .localized()
+        .onChange(of: searchQuery) { newQuery in
+            // Auto-select first matching section when searching
+            if !newQuery.isEmpty, let firstMatch = filteredSections.first {
+                selection = firstMatch
+            }
+        }
+    }
+}
+
+// MARK: - Settings Search Bar
+
+struct SettingsSearchBar: View {
+    @Binding var searchQuery: String
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+
+            TextField("Search settings...", text: $searchQuery)
+                .textFieldStyle(.plain)
+                .focused($isFocused)
+
+            if !searchQuery.isEmpty {
+                Button(action: { searchQuery = "" }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(8)
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(8)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+}
+
+// MARK: - Settings Sidebar Row
+
+struct SettingsSidebarRow: View {
+    let section: SettingsSection
+    let isHighlighted: Bool
+    let matchCount: Int
+
+    var body: some View {
+        HStack {
+            Label(section.title, systemImage: section.systemImage)
+                .foregroundColor(isHighlighted ? .accentColor : .primary)
+
+            if matchCount > 0 {
+                Spacer()
+                Text("\(matchCount)")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.accentColor)
+                    .clipShape(Capsule())
+            }
+        }
+    }
+}
+
+// MARK: - Settings Detail View
+
+struct SettingsDetailView: View {
+    let selection: SettingsSection
+    @ObservedObject var model: AppModel
+    var searchQuery: String = ""
+
+    private var matchingSettings: [SearchableSetting] {
+        guard !searchQuery.isEmpty else { return [] }
+        return FeatureSettings.searchableSettings.filter {
+            $0.section == selection && $0.matches(searchQuery)
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // Section header with description
+                sectionHeader
+
+                // Search results hint
+                if !searchQuery.isEmpty && !matchingSettings.isEmpty {
+                    SearchResultsHint(matchingSettings: matchingSettings, query: searchQuery)
+                }
+
+                Divider()
+                    .padding(.bottom, 16)
+
+                // Section content
+                Group {
+                    switch selection {
+                    case .general:
+                        GeneralSettingsView(model: model)
+                    case .appearance:
+                        AppearanceSettingsView()
+                    case .terminal:
+                        TerminalSettingsView(model: model)
+                    case .tabs:
+                        TabsSettingsView()
+                    case .input:
+                        InputSettingsView()
+                    case .productivity:
+                        ProductivitySettingsView()
+                    case .windows:
+                        WindowsSettingsView()
+                    case .remote:
+                        RemoteSettingsView()
+                    case .aiIntegration:
+                        AIIntegrationSettingsView()
+                    case .notifications:
+                        NotificationsSettingsView(model: model)
+                    case .logs:
+                        LogsSettingsView(model: model)
+                    case .about:
+                        AboutSettingsView(model: model)
+                    }
+                }
+            }
+            .padding(24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var sectionHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(selection.title)
+                .font(.title2)
+                .fontWeight(.semibold)
+            Text(selection.description)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.bottom, 12)
+    }
+}
+
+// MARK: - Search Results Hint
+
+struct SearchResultsHint: View {
+    let matchingSettings: [SearchableSetting]
+    let query: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                Text("Found \(matchingSettings.count) matching setting\(matchingSettings.count == 1 ? "" : "s") for \"\(query)\"")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(matchingSettings) { setting in
+                HStack {
+                    Image(systemName: "arrow.right")
+                        .font(.caption2)
+                        .foregroundColor(.accentColor)
+                    Text(setting.title)
+                        .font(.caption)
+                        .foregroundColor(.accentColor)
+                    Text("– \(setting.description)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(12)
+        .background(Color.accentColor.opacity(0.1))
+        .cornerRadius(8)
+        .padding(.bottom, 8)
+    }
+}
+
+// Note: Reusable settings components moved to SettingsComponents.swift
+// Note: Individual settings views moved to SettingsViews/ folder

@@ -1,0 +1,18 @@
+# Chau7 Relay (Cloudflare Workers + Durable Objects)
+
+This service forwards encrypted frames between macOS and iOS clients. It does
+not inspect payloads.
+
+## Build/Deploy
+From this directory:
+
+```bash
+npm install
+npm run build
+npm run deploy
+```
+
+## Cloudflare
+Set the Cloudflare build root to `services/chau7-relay`.
+
+See `docs/remote-control/SPEC-Remote-Control.md` for protocol details.
