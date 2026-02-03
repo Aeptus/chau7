@@ -66,23 +66,49 @@ final class TerminalHighlightView: NSView {
             )
         }
 
-        guard !cachedVisibleMatches.isEmpty else { return }
+        let dangerEnabled = FeatureSettings.shared.isDangerousCommandHighlightEnabled
+        let dangerRows = dangerEnabled
+            ? session.dangerousCommandRowsVisible(top: yDisp, bottom: yDisp + rows - 1)
+            : []
+
+        guard !cachedVisibleMatches.isEmpty || !dangerRows.isEmpty else { return }
 
         let highlightColor = NSColor.systemYellow.withAlphaComponent(0.28)
         let activeColor = NSColor.systemOrange.withAlphaComponent(0.45)
+        let dangerFill = NSColor.systemRed.withAlphaComponent(0.32)
+        let dangerStroke = NSColor.systemRed.withAlphaComponent(0.60)
 
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
+        // Draw dangerous command rows first (full-line highlight)
+        if !dangerRows.isEmpty {
+            context.setFillColor(dangerFill.cgColor)
+            context.setStrokeColor(dangerStroke.cgColor)
+            context.setLineWidth(1.0)
+            for row in dangerRows {
+                let visibleRow = row - yDisp
+                if visibleRow < 0 || visibleRow >= rows {
+                    continue
+                }
+                let y = CGFloat(visibleRow) * cellHeight
+                let rect = NSRect(x: 0, y: y, width: CGFloat(cols) * cellWidth, height: cellHeight)
+                context.fill(rect.insetBy(dx: 0.5, dy: 0.5))
+                context.stroke(rect.insetBy(dx: 0.5, dy: 0.5))
+            }
+        }
+
         // Draw all visible matches
-        context.setFillColor(highlightColor.cgColor)
-        for match in cachedVisibleMatches {
-            let visibleRow = match.row - yDisp
-            let col = max(0, min(match.col, cols - 1))
-            let length = max(1, min(match.length, cols - col))
-            let x = CGFloat(col) * cellWidth
-            let y = CGFloat(visibleRow) * cellHeight
-            let rect = NSRect(x: x, y: y, width: CGFloat(length) * cellWidth, height: cellHeight)
-            context.fill(rect.insetBy(dx: 0.5, dy: 0.5))
+        if !cachedVisibleMatches.isEmpty {
+            context.setFillColor(highlightColor.cgColor)
+            for match in cachedVisibleMatches {
+                let visibleRow = match.row - yDisp
+                let col = max(0, min(match.col, cols - 1))
+                let length = max(1, min(match.length, cols - col))
+                let x = CGFloat(col) * cellWidth
+                let y = CGFloat(visibleRow) * cellHeight
+                let rect = NSRect(x: x, y: y, width: CGFloat(length) * cellWidth, height: cellHeight)
+                context.fill(rect.insetBy(dx: 0.5, dy: 0.5))
+            }
         }
 
         // Draw active match with different color

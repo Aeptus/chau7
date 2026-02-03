@@ -840,6 +840,14 @@
 "settings.terminal.bell.sound.subtle" = "Subtle";
 "settings.terminal.bell.visualBell" = "Visual Bell";
 "settings.terminal.bell.visualBell.help" = "Flash screen instead of playing sound";
+"settings.terminal.dangerousCommands" = "Dangerous Commands";
+"settings.terminal.dangerousCommands.enabled" = "Highlight Dangerous Commands";
+"settings.terminal.dangerousCommands.enabled.help" = "Make risky commands stand out in the terminal output";
+"settings.terminal.dangerousCommands.help" = "Commands in this list are highlighted when entered. Matching is case-insensitive and ignores extra spaces.";
+"settings.terminal.dangerousCommands.patterns" = "Patterns";
+"settings.terminal.dangerousCommands.patternPlaceholder" = "Pattern";
+"settings.terminal.dangerousCommands.add" = "Add";
+"settings.terminal.dangerousCommands.remove" = "Remove pattern";
 
 // Performance Section
 "settings.terminal.performance" = "Performance";
@@ -944,6 +952,12 @@
 "settings.productivity.snippets.description" = "Quick text templates with optional expansion";
 "settings.productivity.snippets.manage" = "Manage Snippets...";
 "settings.productivity.snippets.count" = "%d snippets";
+"settings.productivity.repositorySnippets" = "Repository Snippets";
+"settings.productivity.repositorySnippets.help" = "Load snippets from the current git repository (.chau7/snippets.json)";
+"settings.productivity.protectedFolders" = "Allow Protected Folders";
+"settings.productivity.protectedFolders.help" = "Allow background repo detection in Downloads, Desktop, and Documents (may prompt for permissions)";
+"settings.productivity.protectedFolders.grant" = "Grant Access";
+"settings.productivity.protectedFolders.openSettings" = "Open System Settings";
 
 // Clipboard History Section
 "settings.productivity.clipboard" = "Clipboard History";

@@ -224,10 +224,10 @@ final class SnippetManager: ObservableObject {
         reloadAll()
     }
 
-    func updateContextPath(_ path: String) {
+    func updateContextPath(_ path: String, force: Bool = false) {
         guard FeatureSettings.shared.isSnippetsEnabled else { return }
         let normalized = URL(fileURLWithPath: path).standardized.path
-        guard normalized != lastContextPath else { return }
+        if !force && normalized == lastContextPath { return }
         lastContextPath = normalized
 
         if let root = repoRoot, normalized == root || normalized.hasPrefix(root + "/") {
@@ -248,6 +248,11 @@ final class SnippetManager: ObservableObject {
         }
         resolveWorkItem = work
         queue.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    func refreshContextForCurrentPath() {
+        guard !lastContextPath.isEmpty else { return }
+        updateContextPath(lastContextPath, force: true)
     }
 
     func reloadAll() {
@@ -847,30 +852,14 @@ final class SnippetManager: ObservableObject {
         }
     }
 
-    /// Directories where we skip git repo detection to avoid permission prompts
-    private static let protectedDirectories: Set<String> = {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return [
-            "\(home)/Downloads",
-            "\(home)/Desktop",
-            "\(home)/Documents",
-            "\(home)/Library",
-            "/Applications",
-            "/System",
-            "/Library"
-        ]
-    }()
-
     /// Cache of paths we've already checked and found to not be git repos
     private var nonGitPathCache: Set<String> = []
 
     private func resolveRepoRoot(path: String) -> String? {
         // Skip protected directories to avoid repeated permission prompts
-        for protected in Self.protectedDirectories {
-            if path == protected || path.hasPrefix(protected + "/") {
-                Log.trace("Skipping git check for protected directory: \(path)")
-                return nil
-            }
+        if ProtectedPathPolicy.shouldSkipAutoAccess(path: path) {
+            Log.trace("Skipping git check for protected directory: \(path)")
+            return nil
         }
 
         // Check if we've already determined this path isn't in a git repo

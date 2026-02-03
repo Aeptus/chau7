@@ -7,6 +7,20 @@ private let overlayPanelBackground = Color(red: 0.10, green: 0.10, blue: 0.10)
 private let overlayRowBackground = Color(red: 0.16, green: 0.16, blue: 0.16)
 private let overlayChipBackground = Color(red: 0.22, green: 0.22, blue: 0.22)
 
+// MARK: - Toolbar Background
+
+private struct ToolbarBackgroundView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .hudWindow
+        view.blendingMode = .withinWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
+
 // MARK: - Overlay Layout Constants
 
 enum OverlayLayout {
@@ -41,6 +55,7 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
 
     private static let tabBarItemIdentifier = NSToolbarItem.Identifier("TabBarItem")
     private var tabsModels: [NSToolbar.Identifier: OverlayTabsModel] = [:]
+    private var toolbarItems: [NSToolbar.Identifier: NSToolbarItem] = [:]
 
     /// Cached hosting views to prevent recreation on toolbar reload.
     /// This is critical for stability - macOS may request toolbar items multiple times.
@@ -63,6 +78,7 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
     func unregisterToolbar(_ toolbarIdentifier: NSToolbar.Identifier) {
         tabsModels.removeValue(forKey: toolbarIdentifier)
         cachedHostingViews.removeValue(forKey: toolbarIdentifier)
+        toolbarItems.removeValue(forKey: toolbarIdentifier)
         Log.info("TabBarToolbarDelegate: unregistered toolbar \(toolbarIdentifier)")
     }
 
@@ -73,11 +89,13 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         }
 
         let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        toolbarItems[toolbar.identifier] = item
 
         // Reuse cached hosting view if available (critical for stability)
         if let cachedView = cachedHostingViews[toolbar.identifier] {
             Log.info("TabBarToolbarDelegate: reusing cached hosting view for \(toolbar.identifier)")
             item.view = cachedView
+            applySizing(to: item, model: tabsModel)
             return item
         }
 
@@ -89,6 +107,7 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         // Cache for future requests
         cachedHostingViews[toolbar.identifier] = hostingView
         item.view = hostingView
+        applySizing(to: item, model: tabsModel)
 
         return item
     }
@@ -123,6 +142,7 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         // 1. Remove the old toolbar entirely - this destroys the stale NSHostingView
         window.toolbar = nil
         cachedHostingViews.removeValue(forKey: toolbarID)
+        toolbarItems.removeValue(forKey: toolbarID)
 
         // 2. Create a fresh toolbar - macOS will call our delegate to make a new NSHostingView
         let newToolbar = NSToolbar(identifier: toolbarID)
@@ -133,8 +153,43 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
             window.toolbarStyle = .unifiedCompact
             window.titlebarSeparatorStyle = .none
         }
+        TitlebarBackgroundInstaller.install(for: window)
 
         Log.info("TabBarToolbarDelegate: toolbar recreated for \(toolbarID)")
+        DispatchQueue.main.async { [weak self] in
+            self?.updateToolbarItemSizing(for: window)
+        }
+    }
+
+    func updateToolbarItemSizing(for window: NSWindow) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let toolbar = window.toolbar else { return }
+        guard let item = toolbarItems[toolbar.identifier] else { return }
+        let model = tabsModels[toolbar.identifier]
+        applySizing(to: item, model: model)
+    }
+
+    private func applySizing(to item: NSToolbarItem, model: OverlayTabsModel?) {
+        let minWidth = max(180, CGFloat(model?.tabs.count ?? 1) * 30)
+        let maxWidth: CGFloat
+        let height: CGFloat
+        if let window = model?.overlayWindow {
+            maxWidth = max(window.contentLayoutRect.width, minWidth)
+            let titlebarHeight = window.frame.height - window.contentLayoutRect.height
+            height = max(OverlayLayout.tabBarHeight, titlebarHeight)
+        } else {
+            maxWidth = max(800, minWidth)
+            height = OverlayLayout.tabBarHeight
+        }
+        item.minSize = NSSize(width: minWidth, height: height)
+        item.maxSize = NSSize(width: maxWidth, height: height)
+        if let view = item.view {
+            var frame = view.frame
+            frame.size.width = maxWidth
+            frame.size.height = height
+            view.frame = frame
+            view.needsLayout = true
+        }
     }
 }
 
@@ -185,7 +240,8 @@ private struct ToolbarTabBarView: View {
     var body: some View {
         let selected = overlayModel.selectedTab
 
-        HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     // Use refresh token in ForEach id to force complete re-render on recovery
@@ -232,12 +288,15 @@ private struct ToolbarTabBarView: View {
                     GitBranchBadge(session: session)
                 }
             }
+            }
+            .frame(height: OverlayLayout.tabBarHeight, alignment: .top)
+            // Keep a minimal background on the actual tab row only.
+            .background(Color.black.opacity(0.001))
         }
         .padding(.trailing, 8)
-        .frame(minHeight: OverlayLayout.tabBarHeight, maxHeight: OverlayLayout.tabBarHeight)
-        .frame(maxWidth: .infinity)
-        // Hardening: ensure tab bar always has rendered content (prevents "invisible" optimization)
-        .background(Color.black.opacity(0.001))
+        .frame(minWidth: 180)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(ToolbarBackgroundView())
         // Report actual rendered size for visibility-based recovery
         .background(
             GeometryReader { geo in

@@ -207,6 +207,8 @@ final class OverlayTabsModel: ObservableObject {
     private var watchdogRefreshAttempts: Int = 0
     /// Minimum acceptable tab bar width per tab (for visibility detection)
     private let minWidthPerTab: CGFloat = 30
+    /// Tracks whether the tab bar is expected to be visible
+    private var isTabBarVisible: Bool = true
 
     // F13: Broadcast Input
     @Published var isBroadcastMode: Bool = false
@@ -1061,6 +1063,7 @@ final class OverlayTabsModel: ObservableObject {
         // Direct manipulation of the hosting view causes crashes (EXC_BREAKPOINT).
         if let window = overlayWindow {
             TabBarToolbarDelegate.shared.recreateToolbar(for: window)
+            TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
         }
 
         // NOTE: Do NOT reset lastPreferenceUpdateTime here.
@@ -1084,6 +1087,18 @@ final class OverlayTabsModel: ObservableObject {
     func reportTabBarSize(_ size: CGSize) {
         lastReportedTabBarSize = size
         lastPreferenceUpdateTime = Date()
+    }
+
+    /// Updates visibility state for the tab bar (e.g., window hidden/shown).
+    /// This prevents the watchdog from firing while the window is not visible.
+    func noteTabBarVisibilityChanged(isVisible: Bool) {
+        isTabBarVisible = isVisible
+        watchdogRefreshAttempts = 0
+        if isVisible {
+            // Wait for real preference updates before watchdog checks resume.
+            lastReportedRenderedCount = -1
+            lastPreferenceUpdateTime = Date()
+        }
     }
 
     /// Starts the tab bar watchdog timer.
@@ -1112,6 +1127,10 @@ final class OverlayTabsModel: ObservableObject {
 
     private func checkTabBarHealth() {
         dispatchPrecondition(condition: .onQueue(.main))
+        guard shouldCheckTabBarHealth() else {
+            watchdogRefreshAttempts = 0
+            return
+        }
         let expected = tabs.count
         let rendered = lastReportedRenderedCount
         let size = lastReportedTabBarSize
@@ -1154,6 +1173,9 @@ final class OverlayTabsModel: ObservableObject {
             watchdogRefreshAttempts += 1
             if watchdogRefreshAttempts <= 3 {
                 Log.warn("TabBar watchdog: \(reason), attempt \(watchdogRefreshAttempts), forcing refresh")
+                if let window = overlayWindow {
+                    TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
+                }
                 refreshTabBar()
             } else if watchdogRefreshAttempts == 4 {
                 Log.error("TabBar watchdog: refresh failed after 3 attempts, stopping retries")
@@ -1161,6 +1183,20 @@ final class OverlayTabsModel: ObservableObject {
         } else {
             watchdogRefreshAttempts = 0
         }
+    }
+
+    private func shouldCheckTabBarHealth() -> Bool {
+        guard isTabBarVisible else { return false }
+        guard let window = overlayWindow else { return false }
+        if !window.isVisible || window.isMiniaturized {
+            return false
+        }
+        if #available(macOS 10.9, *) {
+            if !window.occlusionState.contains(.visible) {
+                return false
+            }
+        }
+        return true
     }
 
     // MARK: - Tab Reordering

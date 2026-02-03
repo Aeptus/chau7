@@ -72,6 +72,38 @@ struct ProductivitySettingsView: View {
                 SnippetManager.shared.refreshConfiguration()
             }
 
+            SettingsToggle(
+                label: L("settings.productivity.protectedFolders", "Allow Protected Folders"),
+                help: L(
+                    "settings.productivity.protectedFolders.help",
+                    "Allow background repo detection in Downloads, Desktop, and Documents (may prompt for permissions)"
+                ),
+                isOn: $settings.allowProtectedFolderAccess
+            )
+            .onChange(of: settings.allowProtectedFolderAccess) { _ in
+                if settings.allowProtectedFolderAccess {
+                    ProtectedPathPolicy.resetAccessChecks()
+                }
+                SnippetManager.shared.refreshConfiguration()
+                SnippetManager.shared.refreshContextForCurrentPath()
+            }
+            .padding(.bottom, 4)
+
+            HStack(spacing: 8) {
+                Button(L("settings.productivity.protectedFolders.grant", "Grant Access")) {
+                    ProtectedPathPolicy.resetAccessChecks()
+                    ProtectedPathPolicy.requestAccessToProtectedFolders()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button(L("settings.productivity.protectedFolders.openSettings", "Open System Settings")) {
+                    openFilesAndFoldersSettings()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
             SettingsPicker(
                 label: L("settings.productivity.insertMode", "Insert Mode"),
                 help: L("settings.productivity.insertMode.help", "How snippets are inserted into the terminal"),
@@ -167,6 +199,19 @@ struct ProductivitySettingsView: View {
                     settings.resetProductivityToDefaults()
                 }
             ], alignment: .trailing)
+        }
+    }
+
+    private func openFilesAndFoldersSettings() {
+        let urls = [
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders",
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity"
+        ]
+        for value in urls {
+            if let url = URL(string: value) {
+                NSWorkspace.shared.open(url)
+                return
+            }
         }
     }
 }
