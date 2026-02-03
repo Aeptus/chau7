@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -567,6 +568,10 @@ func newPairingCode() string {
 	_, _ = rand.Read(b)
 	code := binary.LittleEndian.Uint32(b) % 1000000
 	return fmt.Sprintf("%06d", code)
+}
+
+func (a *Agent) nextSeq() uint64 {
+	return atomic.AddUint64(&a.sendSeq, 1) - 1
 }
 
 func fingerprint(pubKey string) string {

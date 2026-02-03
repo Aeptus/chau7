@@ -1,4 +1,5 @@
 {
+  "originHash" : "fe2232c4becbf940da5eb82c54f092925d772959add347d095785cf359a8b91e",
   "pins" : [
     {
       "identity" : "chau7-swiftterm",
@@ -32,7 +33,7 @@
       "location" : "https://github.com/swiftlang/swift-subprocess",
       "state" : {
         "branch" : "main",
-        "revision" : "426790f3f24afa60b418450da0afaa20a8b3bdd4"
+        "revision" : "ba5888ad7758cbcbe7abebac37860b1652af2d9c"
       }
     },
     {
@@ -40,10 +41,10 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-system",
       "state" : {
-        "revision" : "395a77f0aa927f0ff73941d7ac35f2b46d47c9db",
-        "version" : "1.6.3"
+        "revision" : "7c6ad0fc39d0763e0b699210e4124afd5041c5df",
+        "version" : "1.6.4"
       }
     }
   ],
-  "version" : 2
+  "version" : 3
 }

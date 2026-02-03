@@ -157,6 +157,9 @@ extension FeatureSettings {
         SearchableSetting(id: "bell", section: .terminal, title: "Bell",
                          keywords: ["sound", "beep", "alert", "audio"],
                          description: "Terminal bell sound"),
+        SearchableSetting(id: "dangerousCommands", section: .terminal, title: "Dangerous Commands",
+                         keywords: ["dangerous", "risky", "destructive", "rm", "force", "highlight", "safety"],
+                         description: "Highlight risky commands in the terminal"),
 
         // Input
         SearchableSetting(id: "shortcuts", section: .input, title: "Keyboard Shortcuts",
@@ -260,6 +263,7 @@ extension Notification.Name {
     static let terminalColorsChanged = Notification.Name("terminalColorsChanged")
     static let terminalOpacityChanged = Notification.Name("terminalOpacityChanged")
     static let terminalZoomChanged = Notification.Name("terminalZoomChanged")
+    static let terminalDangerousCommandHighlightChanged = Notification.Name("terminalDangerousCommandHighlightChanged")
     static let settingsProfileChanged = Notification.Name("settingsProfileChanged")
     static let appThemeChanged = Notification.Name("appThemeChanged")
     static let fullscreenToolbarSettingChanged = Notification.Name("fullscreenToolbarSettingChanged")

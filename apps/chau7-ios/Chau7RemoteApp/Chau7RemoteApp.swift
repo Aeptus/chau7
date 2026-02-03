@@ -24,6 +24,10 @@ struct RemoteRootView: View {
         return try? JSONDecoder().decode(PairingInfo.self, from: data)
     }
 
+    private var activeError: String? {
+        client.lastError ?? pairingError
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -65,7 +69,7 @@ struct RemoteRootView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
-            if let error = pairingError {
+            if let error = activeError {
                 Text(error)
                     .font(.caption)
                     .foregroundStyle(.red)
@@ -106,7 +110,7 @@ struct RemoteRootView: View {
                     .id("bottom")
             }
             .background(Color(UIColor.systemBackground))
-            .onChange(of: client.outputText) { _ in
+            .onChange(of: client.outputText) { _, _ in
                 withAnimation(.easeOut(duration: 0.2)) {
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }

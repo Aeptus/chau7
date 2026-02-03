@@ -115,15 +115,19 @@ public enum CommandDetection {
         // Claude Code banners - these box-drawing characters are unique to the CLI
         ("╭─ Claude", "Claude"),
         ("╰─ Claude", "Claude"),
+        ("Powered by Anthropic", "Claude"),
         ("claude.ai/", "Claude"),  // URL with slash to avoid partial matches
+        ("claude.ai", "Claude"),
         ("Claude Code", "Claude"),
         // Gemini patterns
+        ("Google AI Studio", "Gemini"),
         ("Gemini Pro", "Gemini"),
         ("gemini.google", "Gemini"),
         ("Google Gemini", "Gemini"),
         // ChatGPT patterns
         ("ChatGPT", "ChatGPT"),
         ("openai.com/", "ChatGPT"),  // URL with slash
+        ("openai.com", "ChatGPT"),
         // Copilot patterns
         ("GitHub Copilot", "Copilot"),
         ("Copilot CLI", "Copilot"),
@@ -136,11 +140,13 @@ public enum CommandDetection {
         ("codex.openai", "Codex"),
         // Aider patterns - use specific identifiers
         ("aider v", "Aider"),  // Version string
+        ("Aider is running", "Aider"),
         ("aider.chat", "Aider"),
         ("Aider v", "Aider"),
         // Cursor patterns - must be very specific, "Cursor" alone is too generic
         ("cursor.sh", "Cursor"),
         ("Cursor IDE", "Cursor"),
+        ("Cursor CLI", "Cursor"),
         ("cursor.com", "Cursor")
     ]
 
@@ -401,8 +407,9 @@ public enum CommandDetection {
     /// - Parameter output: The terminal output string
     /// - Returns: The detected app name, or nil
     public static func detectAppFromOutput(_ output: String) -> String? {
+        let normalizedOutput = output.lowercased()
         for (pattern, appName) in outputDetectionPatterns {
-            if output.contains(pattern) {
+            if normalizedOutput.contains(pattern.lowercased()) {
                 return appName
             }
         }

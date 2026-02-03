@@ -819,6 +819,14 @@
 "settings.terminal.bell.sound.subtle" = "خفيف";
 "settings.terminal.bell.visualBell" = "جرس مرئي";
 "settings.terminal.bell.visualBell.help" = "وميض الشاشة بدلاً من تشغيل الصوت";
+"settings.terminal.dangerousCommands" = "أوامر خطيرة";
+"settings.terminal.dangerousCommands.enabled" = "تمييز الأوامر الخطيرة";
+"settings.terminal.dangerousCommands.enabled.help" = "إبراز الأوامر المحفوفة بالمخاطر في مخرجات الطرفية";
+"settings.terminal.dangerousCommands.help" = "تُظلَّل الأوامر في هذه القائمة عند إدخالها. المطابقة غير حساسة لحالة الأحرف وتتجاهل المسافات الزائدة.";
+"settings.terminal.dangerousCommands.patterns" = "أنماط";
+"settings.terminal.dangerousCommands.patternPlaceholder" = "نمط";
+"settings.terminal.dangerousCommands.add" = "إضافة";
+"settings.terminal.dangerousCommands.remove" = "إزالة النمط";
 
 // قسم الأداء
 "settings.terminal.performance" = "الأداء";
@@ -923,6 +931,12 @@
 "settings.productivity.snippets.description" = "قوالب نصية سريعة مع توسيع اختياري";
 "settings.productivity.snippets.manage" = "إدارة المقتطفات...";
 "settings.productivity.snippets.count" = "%d مقتطفات";
+"settings.productivity.repositorySnippets" = "مقتطفات المستودع";
+"settings.productivity.repositorySnippets.help" = "تحميل المقتطفات من مستودع git الحالي (.chau7/snippets.json)";
+"settings.productivity.protectedFolders" = "السماح بالمجلدات المحمية";
+"settings.productivity.protectedFolders.help" = "السماح باكتشاف المستودع في الخلفية ضمن التنزيلات وسطح المكتب والمستندات (قد يطلب أذونات)";
+"settings.productivity.protectedFolders.grant" = "منح الوصول";
+"settings.productivity.protectedFolders.openSettings" = "فتح إعدادات النظام";
 
 // قسم سجل الحافظة
 "settings.productivity.clipboard" = "سجل الحافظة";

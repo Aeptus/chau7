@@ -71,6 +71,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private var pendingCommandLine: String? = nil
     private var promptSeenForPendingCommand = false
     private var commandFinishedNotified = false
+    private let dangerousCommandTracker = InputLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
 
     private let semanticDetector = SemanticOutputDetector()
     private let devServerMonitor = DevServerMonitor()
@@ -621,6 +622,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         updateActiveAppName(from: trimmed)
         recordInputLineIfNeeded()
         trackSemanticCommand(trimmed)
+        recordDangerousCommandLineIfNeeded(trimmed)
         guard let targetRaw = cdTarget(from: trimmed) else { return }
 
         var target: String
@@ -780,6 +782,15 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         }
     }
 
+    private func recordDangerousCommandLineIfNeeded(_ commandLine: String) {
+        let settings = FeatureSettings.shared
+        guard settings.isDangerousCommandHighlightEnabled else { return }
+        guard CommandRiskDetection.isRisky(commandLine: commandLine, patterns: settings.dangerousCommandPatterns) else { return }
+        guard let row = currentBufferRow() else { return }
+        dangerousCommandTracker.record(row: row)
+        highlightView?.scheduleDisplay()
+    }
+
     private func trackSemanticCommand(_ command: String) {
         guard FeatureSettings.shared.isSemanticSearchEnabled else { return }
         guard let row = currentBufferRow() else { return }
@@ -791,6 +802,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         let terminal = terminalView.getTerminal()
         let cursor = terminal.getCursorLocation()
         return terminal.getTopVisibleRow() + cursor.y
+    }
+
+    func dangerousCommandRowsVisible(top: Int, bottom: Int) -> [Int] {
+        dangerousCommandTracker.visibleRows(top: top, bottom: bottom)
     }
 
     // MARK: - Idle Timer (Issue #5 fix)
@@ -1139,6 +1154,13 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             queue: .main
         ) { [weak self] _ in
             self?.applyDefaultFontSize()
+        })
+        settingsObservers.append(center.addObserver(
+            forName: .terminalDangerousCommandHighlightChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.highlightView?.scheduleDisplay()
         })
     }
 
@@ -1733,6 +1755,13 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         gitCheckWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
+            if ProtectedPathPolicy.shouldSkipAutoAccess(path: path) {
+                DispatchQueue.main.async {
+                    self.isGitRepo = false
+                    self.gitBranch = nil
+                }
+                return
+            }
             let result = self.queryGitStatus(path: path)
             DispatchQueue.main.async {
                 self.isGitRepo = result.isRepo
@@ -1751,6 +1780,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     /// Detects the git root directory for a given path
     /// Returns nil if the path is not within a git repository
     private func detectGitRoot(path: String) -> String? {
+        if ProtectedPathPolicy.shouldSkipAutoAccess(path: path) {
+            return nil
+        }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else {
             return nil
@@ -1780,6 +1812,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     private func queryGitStatus(path: String) -> (isRepo: Bool, branch: String?) {
+        if ProtectedPathPolicy.shouldSkipAutoAccess(path: path) {
+            return (false, nil)
+        }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else {
             return (false, nil)

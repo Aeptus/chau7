@@ -103,7 +103,7 @@ final class RemoteControlManager: ObservableObject {
     private func startAgent() {
         guard !isAgentRunning else { return }
         guard let binaryPath = remoteBinaryPath() else {
-            let error = "Remote agent binary not found."
+            let error = lastError ?? "Remote agent binary not found."
             logger.error("\(error)")
             lastError = error
             return
@@ -318,6 +318,31 @@ final class RemoteControlManager: ObservableObject {
     }
 
     private func remoteBinaryPath() -> URL? {
+        if let bundlePath = bundledRemoteBinaryPath(),
+           FileManager.default.isExecutableFile(atPath: bundlePath.path) {
+            return bundlePath
+        }
+
+        let installedPath = installedRemoteBinaryPath()
+        if FileManager.default.isExecutableFile(atPath: installedPath.path) {
+            return installedPath
+        }
+
+        if let devPath = devRemoteBinaryPath(),
+           FileManager.default.isExecutableFile(atPath: devPath.path) {
+            return devPath
+        }
+
+        if let sourceURL = remoteAgentSourceURL(),
+           buildRemoteAgent(from: sourceURL, outputURL: installedPath),
+           FileManager.default.isExecutableFile(atPath: installedPath.path) {
+            return installedPath
+        }
+
+        return nil
+    }
+
+    private func bundledRemoteBinaryPath() -> URL? {
         if let bundlePath = Bundle.main.url(forResource: "chau7-remote", withExtension: nil) {
             return bundlePath
         }
@@ -329,14 +354,15 @@ final class RemoteControlManager: ObservableObject {
             }
         }
 
-        let projectRoot = URL(fileURLWithPath: #file)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
+        return nil
+    }
 
+    private func installedRemoteBinaryPath() -> URL {
+        dataDirectory().appendingPathComponent("chau7-remote")
+    }
+
+    private func devRemoteBinaryPath() -> URL? {
+        guard let projectRoot = projectRootURL() else { return nil }
         let devPath = projectRoot
             .appendingPathComponent("services/chau7-remote/chau7-remote")
         if FileManager.default.fileExists(atPath: devPath.path) {
@@ -350,6 +376,75 @@ final class RemoteControlManager: ObservableObject {
         }
 
         return nil
+    }
+
+    private func remoteAgentSourceURL() -> URL? {
+        guard let projectRoot = projectRootURL() else { return nil }
+        let sourceURL = projectRoot.appendingPathComponent("services/chau7-remote")
+        let goMod = sourceURL.appendingPathComponent("go.mod")
+        guard FileManager.default.fileExists(atPath: goMod.path) else { return nil }
+        return sourceURL
+    }
+
+    private func projectRootURL() -> URL? {
+        URL(fileURLWithPath: #file)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
+    private func buildRemoteAgent(from sourceURL: URL, outputURL: URL) -> Bool {
+        let outputDir = outputURL.deletingLastPathComponent()
+        do {
+            try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
+        } catch {
+            logger.error("Failed to create remote agent output directory: \(error.localizedDescription)")
+            lastError = "Failed to create remote agent output directory."
+            return false
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["go", "build", "-o", outputURL.path, "./cmd/chau7-remote"]
+        process.currentDirectoryURL = sourceURL
+
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = outputPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            logger.error("Failed to launch go build: \(error.localizedDescription)")
+            lastError = "Failed to launch Go build for remote agent."
+            return false
+        }
+
+        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(data: outputData, encoding: .utf8) ?? ""
+
+        guard process.terminationStatus == 0 else {
+            logger.error("Remote agent build failed: \(output)")
+            let trimmed = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                lastError = "Remote agent build failed. Make sure Go is installed."
+            } else {
+                lastError = "Remote agent build failed. \(trimmed)"
+            }
+            return false
+        }
+
+        do {
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: outputURL.path)
+        } catch {
+            logger.warning("Failed to set remote binary permissions: \(error.localizedDescription)")
+        }
+
+        return true
     }
 }
 

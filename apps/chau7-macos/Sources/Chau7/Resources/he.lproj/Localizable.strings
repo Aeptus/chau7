@@ -819,6 +819,14 @@
 "settings.terminal.bell.sound.subtle" = "עדין";
 "settings.terminal.bell.visualBell" = "פעמון חזותי";
 "settings.terminal.bell.visualBell.help" = "הבהב מסך במקום להשמיע צליל";
+"settings.terminal.dangerousCommands" = "פקודות מסוכנות";
+"settings.terminal.dangerousCommands.enabled" = "הדגשת פקודות מסוכנות";
+"settings.terminal.dangerousCommands.enabled.help" = "הבלטת פקודות מסוכנות בפלט הטרמינל";
+"settings.terminal.dangerousCommands.help" = "פקודות ברשימה זו מודגשות כאשר הן מוזנות. ההתאמה אינה תלויה ברישיות ומתעלמת מרווחים נוספים.";
+"settings.terminal.dangerousCommands.patterns" = "דפוסים";
+"settings.terminal.dangerousCommands.patternPlaceholder" = "דפוס";
+"settings.terminal.dangerousCommands.add" = "הוסף";
+"settings.terminal.dangerousCommands.remove" = "הסר דפוס";
 
 // מקטע ביצועים
 "settings.terminal.performance" = "ביצועים";
@@ -923,6 +931,12 @@
 "settings.productivity.snippets.description" = "תבניות טקסט מהירות עם הרחבה אופציונלית";
 "settings.productivity.snippets.manage" = "נהל קטעי קוד...";
 "settings.productivity.snippets.count" = "%d קטעי קוד";
+"settings.productivity.repositorySnippets" = "קטעי קוד מהמאגר";
+"settings.productivity.repositorySnippets.help" = "טעינת קטעי קוד ממאגר git הנוכחי (.chau7/snippets.json)";
+"settings.productivity.protectedFolders" = "אפשר תיקיות מוגנות";
+"settings.productivity.protectedFolders.help" = "אפשר זיהוי מאגר ברקע בהורדות, שולחן עבודה ומסמכים (ייתכן שתתבקש הרשאה)";
+"settings.productivity.protectedFolders.grant" = "הענק גישה";
+"settings.productivity.protectedFolders.openSettings" = "פתח הגדרות מערכת";
 
 // מקטע היסטוריית לוח
 "settings.productivity.clipboard" = "היסטוריית לוח";

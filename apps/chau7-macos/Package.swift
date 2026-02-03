@@ -5,14 +5,15 @@ let package = Package(
     name: "Chau7",
     defaultLocalization: "en",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v13),
+        .iOS(.v17)
     ],
     products: [
         .executable(name: "Chau7", targets: ["Chau7"]),
         .library(name: "Chau7Core", targets: ["Chau7Core"])
     ],
     dependencies: [
-        .package(url: "https://github.com/schiste/Chau7-SwiftTerm.git", revision: "688a888456c2fc3f09cfeca7cc060b49c8ab9cee"),
+        .package(url: "https://github.com/schiste/Chau7-SwiftTerm.git", revision: "56db442f594d83f98adf0a7c83e5b504ddbece39"),
         .package(url: "https://github.com/apple/swift-atomics.git", from: "1.2.0")
     ],
     targets: [

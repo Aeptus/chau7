@@ -7,6 +7,7 @@ public enum RemoteFrameError: Error {
 
 public struct RemoteFrame: Equatable {
     public static let headerSize = 20
+    public static let flagEncrypted: UInt8 = 0x01
 
     public var version: UInt8
     public var type: UInt8
@@ -44,6 +45,18 @@ public struct RemoteFrame: Equatable {
         data.appendUInt64LE(seq)
         data.appendUInt32LE(UInt32(payload.count))
         data.append(payload)
+        return data
+    }
+
+    public func headerBytes(payloadLen: UInt32) -> Data {
+        var data = Data(capacity: Self.headerSize)
+        data.append(version)
+        data.append(type)
+        data.append(flags)
+        data.append(reserved)
+        data.appendUInt32LE(tabID)
+        data.appendUInt64LE(seq)
+        data.appendUInt32LE(payloadLen)
         return data
     }
 

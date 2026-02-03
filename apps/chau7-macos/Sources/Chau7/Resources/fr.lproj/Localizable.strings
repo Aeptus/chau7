@@ -838,6 +838,14 @@
 "settings.terminal.bell.sound.subtle" = "Subtil";
 "settings.terminal.bell.visualBell" = "Sonnerie visuelle";
 "settings.terminal.bell.visualBell.help" = "Faire clignoter l'écran au lieu de jouer un son";
+"settings.terminal.dangerousCommands" = "Commandes dangereuses";
+"settings.terminal.dangerousCommands.enabled" = "Mettre en évidence les commandes dangereuses";
+"settings.terminal.dangerousCommands.enabled.help" = "Faire ressortir les commandes risquées dans la sortie du terminal";
+"settings.terminal.dangerousCommands.help" = "Les commandes de cette liste sont surlignées lorsqu’elles sont saisies. La correspondance est insensible à la casse et ignore les espaces supplémentaires.";
+"settings.terminal.dangerousCommands.patterns" = "Motifs";
+"settings.terminal.dangerousCommands.patternPlaceholder" = "Motif";
+"settings.terminal.dangerousCommands.add" = "Ajouter";
+"settings.terminal.dangerousCommands.remove" = "Supprimer le motif";
 
 // Section Performance
 "settings.terminal.performance" = "Performance";
@@ -942,6 +950,12 @@
 "settings.productivity.snippets.description" = "Modèles de texte rapides avec expansion optionnelle";
 "settings.productivity.snippets.manage" = "Gérer les snippets...";
 "settings.productivity.snippets.count" = "%d snippets";
+"settings.productivity.repositorySnippets" = "Snippets du dépôt";
+"settings.productivity.repositorySnippets.help" = "Charger les snippets du dépôt git courant (.chau7/snippets.json)";
+"settings.productivity.protectedFolders" = "Autoriser les dossiers protégés";
+"settings.productivity.protectedFolders.help" = "Autoriser la détection du dépôt en arrière‑plan dans Téléchargements, Bureau et Documents (peut demander des autorisations)";
+"settings.productivity.protectedFolders.grant" = "Autoriser l’accès";
+"settings.productivity.protectedFolders.openSettings" = "Ouvrir Réglages système";
 
 // Section Historique du presse-papiers
 "settings.productivity.clipboard" = "Historique du presse-papiers";

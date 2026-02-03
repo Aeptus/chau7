@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import Chau7Core
 
 struct RemoteCryptoSession {
     let key: SymmetricKey
@@ -13,10 +14,10 @@ struct RemoteCryptoSession {
             sharedInfo: Data(),
             outputByteCount: 32
         )
-        let prefixKey = HKDF<SHA256>.deriveKey(
-            inputKeyMaterial: sharedSecret,
+        let prefixKey = sharedSecret.hkdfDerivedSymmetricKey(
+            using: SHA256.self,
             salt: Data(),
-            info: Data("nonce".utf8),
+            sharedInfo: Data("nonce".utf8),
             outputByteCount: 4
         )
         let prefix = prefixKey.withUnsafeBytes { Data($0) }
@@ -30,17 +31,22 @@ struct RemoteCryptoSession {
         let payloadLen = UInt32(frame.payload.count + 16)
         let header = encrypted.headerBytes(payloadLen: payloadLen)
         let sealed = try ChaChaPoly.seal(frame.payload, using: key, nonce: nonce, authenticating: header)
-        guard let combined = sealed.combined else {
-            throw RemoteCryptoError.invalidCiphertext
-        }
+        var combined = sealed.ciphertext
+        combined.append(sealed.tag)
         encrypted.payload = combined
         return encrypted
     }
 
     func decrypt(frame: RemoteFrame) throws -> Data {
-        let nonce = try makeNonce(prefix: noncePrefix, seq: frame.seq)
         let header = frame.headerBytes(payloadLen: UInt32(frame.payload.count))
-        let sealedBox = try ChaChaPoly.SealedBox(combined: frame.payload)
+        guard frame.payload.count >= 16 else {
+            throw RemoteCryptoError.invalidCiphertext
+        }
+        let tagStart = frame.payload.count - 16
+        let ciphertext = Data(frame.payload.prefix(tagStart))
+        let tag = Data(frame.payload.suffix(16))
+        let nonce = try makeNonce(prefix: noncePrefix, seq: frame.seq)
+        let sealedBox = try ChaChaPoly.SealedBox(nonce: nonce, ciphertext: ciphertext, tag: tag)
         return try ChaChaPoly.open(sealedBox, using: key, authenticating: header)
     }
 

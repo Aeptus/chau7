@@ -6,6 +6,7 @@ import AppKit
 struct TerminalSettingsView: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var settings = FeatureSettings.shared
+    @State private var newDangerousPattern: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -107,6 +108,70 @@ struct TerminalSettingsView: View {
                         (value: "none", label: L("settings.terminal.bellVisualOnly", "Visual Only"))
                     ]
                 )
+            }
+
+            Divider()
+                .padding(.vertical, 8)
+
+            // Dangerous Commands
+            SettingsSectionHeader(L("settings.terminal.dangerousCommands", "Dangerous Commands"), icon: "exclamationmark.triangle")
+
+            SettingsToggle(
+                label: L("settings.terminal.dangerousCommands.enabled", "Highlight Dangerous Commands"),
+                help: L("settings.terminal.dangerousCommands.enabled.help", "Make risky commands stand out in the terminal output"),
+                isOn: $settings.isDangerousCommandHighlightEnabled
+            )
+
+            Text(L("settings.terminal.dangerousCommands.help", "Commands in this list are highlighted when entered. Matching is case-insensitive and ignores extra spaces."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            SettingsRow(L("settings.terminal.dangerousCommands.patterns", "Patterns")) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(settings.dangerousCommandPatterns.indices, id: \.self) { index in
+                        HStack(spacing: 8) {
+                            TextField(
+                                L("settings.terminal.dangerousCommands.patternPlaceholder", "Pattern"),
+                                text: Binding(
+                                    get: { settings.dangerousCommandPatterns[index] },
+                                    set: { settings.dangerousCommandPatterns[index] = $0 }
+                                )
+                            )
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 240)
+                            .font(.system(.caption, design: .monospaced))
+
+                            Button {
+                                settings.dangerousCommandPatterns.remove(at: index)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .foregroundStyle(.red)
+                            }
+                            .buttonStyle(.borderless)
+                            .help(L("settings.terminal.dangerousCommands.remove", "Remove pattern"))
+                        }
+                    }
+
+                    HStack(spacing: 8) {
+                        TextField(
+                            L("settings.terminal.dangerousCommands.patternPlaceholder", "Pattern"),
+                            text: $newDangerousPattern
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 240)
+                        .font(.system(.caption, design: .monospaced))
+
+                        Button(L("settings.terminal.dangerousCommands.add", "Add")) {
+                            let trimmed = newDangerousPattern.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !trimmed.isEmpty else { return }
+                            settings.dangerousCommandPatterns.append(trimmed)
+                            newDangerousPattern = ""
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(newDangerousPattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
             }
 
             Divider()

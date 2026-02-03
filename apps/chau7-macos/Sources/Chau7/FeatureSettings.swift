@@ -553,6 +553,204 @@ final class FeatureSettings: ObservableObject {
         return monospacedFonts.filter { fontManager.font(withFamily: $0, traits: [], weight: 5, size: 12) != nil }
     }()
 
+    private static let defaultDangerousCommandPatterns: [String] = [
+        // Filesystem destruction
+        "rm -rf",
+        "rm -r -f",
+        "rm -fr",
+        "rm --no-preserve-root",
+        "rm -rf /",
+        "rm -rf ~",
+        "rm -rf $home",
+        "rm -rf *",
+        "rm -rf .",
+        "rm -rf ..",
+        "rm -rf ./",
+        "rm -rf ../",
+        "find / -delete",
+        "find . -delete",
+        "find .. -delete",
+        "chmod -r 777 /",
+        "chmod -r 777 ~",
+        "chown -r",
+        "chgrp -r",
+        "mv /",
+        "mv ~",
+        "dd if=",
+        "dd of=/dev/",
+        "mkfs",
+        "mkfs.ext",
+        "mkfs.xfs",
+        "mkfs.btrfs",
+        "mkfs.fat",
+        "mkfs.vfat",
+        "mkswap",
+        "wipefs",
+        "blkdiscard",
+        "shred ",
+        "sgdisk --zap-all",
+        "sfdisk",
+        "fdisk",
+        "parted rm",
+        "parted mklabel",
+        "diskutil erasedisk",
+        "diskutil erasevolume",
+        "diskutil partitiondisk",
+        "diskutil apfs deletevolume",
+        "diskutil apfs deletecontainer",
+        "diskutil secureerase",
+        "zpool destroy",
+        "btrfs subvolume delete",
+        "cryptsetup luksformat",
+        "cryptsetup lukserase",
+        "dmsetup remove",
+        "lvremove",
+        "vgremove",
+        "pvremove",
+        "swapoff -a",
+
+        // System power/process
+        "shutdown -r",
+        "shutdown -h",
+        "reboot",
+        "poweroff",
+        "halt",
+        "init 0",
+        "init 6",
+        "kill -9 -1",
+        "kill -kill -1",
+        "killall -9",
+        "pkill -9",
+
+        // Git/VCS
+        "git reset --hard",
+        "git clean -fd",
+        "git clean -fdx",
+        "git clean -ffdx",
+        "git push -f",
+        "git push --force",
+        "git push --force-with-lease",
+        "git push origin :",
+        "git branch -d",
+        "git branch -d -f",
+        "git branch -d --force",
+        "git branch -d -D",
+        "git tag -d",
+        "git reflog expire --expire=now --all",
+        "git gc --prune=now",
+        "git checkout -- .",
+        "git restore --staged",
+        "git rm -r",
+        "svn delete",
+        "hg strip",
+
+        // GitHub CLI
+        "gh repo delete",
+        "gh api repos/ -x delete",
+        "gh codespace delete",
+        "gh release delete",
+        "gh gist delete",
+
+        // Containers & Kubernetes
+        "docker system prune -a",
+        "docker system prune --volumes",
+        "docker volume prune",
+        "docker network prune",
+        "docker container prune",
+        "docker image prune -a",
+        "docker builder prune -a",
+        "docker rm -f",
+        "docker rmi -f",
+        "docker-compose down -v",
+        "docker compose down -v",
+        "kubectl delete namespace",
+        "kubectl delete ns",
+        "kubectl delete all --all",
+        "kubectl delete --all --all-namespaces",
+        "kubectl delete -f",
+        "kubectl delete pods --all",
+        "kubectl delete pvc --all",
+        "kubectl delete pv --all",
+        "helm uninstall",
+
+        // IaC
+        "terraform destroy",
+        "terraform apply -destroy",
+        "pulumi destroy",
+        "cdk destroy",
+
+        // Cloud provider CLIs
+        "aws s3 rm --recursive",
+        "aws s3 rb",
+        "aws s3api delete-bucket",
+        "aws s3api delete-object",
+        "aws s3api delete-objects",
+        "aws ec2 terminate-instances",
+        "aws autoscaling delete-auto-scaling-group",
+        "aws rds delete-db-instance",
+        "aws rds delete-db-cluster",
+        "aws cloudformation delete-stack",
+        "aws dynamodb delete-table",
+        "aws iam delete-user",
+        "aws iam delete-role",
+        "aws kms schedule-key-deletion",
+        "aws eks delete-cluster",
+        "aws ecs delete-cluster",
+        "aws lambda delete-function",
+        "aws logs delete-log-group",
+        "gcloud projects delete",
+        "gcloud compute instances delete",
+        "gcloud compute disks delete",
+        "gcloud sql instances delete",
+        "gcloud sql databases delete",
+        "gcloud container clusters delete",
+        "gcloud storage rm -r",
+        "gcloud storage buckets delete",
+        "gcloud dns managed-zones delete",
+        "az group delete",
+        "az vm delete",
+        "az aks delete",
+        "az storage account delete",
+        "az storage container delete",
+        "az storage blob delete",
+        "az sql db delete",
+        "az cosmosdb delete",
+        "az webapp delete",
+        "doctl compute droplet delete",
+        "doctl k8s cluster delete",
+        "doctl database delete",
+
+        // PaaS/DB services
+        "heroku apps:destroy",
+        "heroku pipelines:destroy",
+        "vercel remove",
+        "vercel project rm",
+        "vercel projects remove",
+        "railway project delete",
+        "fly apps destroy",
+        "supabase projects delete",
+        "supabase db reset",
+        "supabase db drop",
+        "firebase projects:delete",
+        "firebase hosting:delete",
+        "firebase functions:delete",
+        "netlify sites:delete",
+        "cloudflare zones delete",
+
+        // Backup tools
+        "rclone delete",
+        "rclone purge",
+        "restic forget --prune",
+        "restic prune",
+
+        // Databases/SQL
+        "drop database",
+        "drop schema",
+        "drop table",
+        "truncate table",
+        "delete from"
+    ]
+
     // MARK: - Color Scheme Settings (NEW)
 
     @Published var colorSchemeName: String {
@@ -965,6 +1163,10 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(isRepoSnippetsEnabled, forKey: Keys.repoSnippetsEnabled) }
     }
 
+    @Published var allowProtectedFolderAccess: Bool {
+        didSet { UserDefaults.standard.set(allowProtectedFolderAccess, forKey: Keys.allowProtectedFolderAccess) }
+    }
+
     @Published var repoSnippetPath: String {
         didSet {
             let trimmed = repoSnippetPath.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1071,6 +1273,22 @@ final class FeatureSettings: ObservableObject {
 
     @Published var bellSound: String {
         didSet { UserDefaults.standard.set(bellSound, forKey: Keys.bellSound) }
+    }
+
+    @Published var isDangerousCommandHighlightEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(isDangerousCommandHighlightEnabled, forKey: Keys.dangerousCommandHighlightEnabled)
+            NotificationCenter.default.post(name: .terminalDangerousCommandHighlightChanged, object: nil)
+        }
+    }
+
+    @Published var dangerousCommandPatterns: [String] {
+        didSet {
+            if let data = JSONOperations.encode(dangerousCommandPatterns, context: "dangerousCommandPatterns") {
+                UserDefaults.standard.set(data, forKey: Keys.dangerousCommandPatterns)
+            }
+            NotificationCenter.default.post(name: .terminalDangerousCommandHighlightChanged, object: nil)
+        }
     }
 
     @Published var defaultStartDirectory: String {
@@ -1230,6 +1448,7 @@ final class FeatureSettings: ObservableObject {
         // F21
         static let snippetsEnabled = "feature.snippetsEnabled"
         static let repoSnippetsEnabled = "feature.repoSnippetsEnabled"
+        static let allowProtectedFolderAccess = "feature.allowProtectedFolderAccess"
         static let repoSnippetPath = "feature.repoSnippetPath"
         static let snippetInsertMode = "feature.snippetInsertMode"
         static let snippetPlaceholders = "feature.snippetPlaceholders"
@@ -1254,6 +1473,8 @@ final class FeatureSettings: ObservableObject {
         static let scrollbackLines = "terminal.scrollbackLines"
         static let bellEnabled = "terminal.bellEnabled"
         static let bellSound = "terminal.bellSound"
+        static let dangerousCommandHighlightEnabled = "terminal.dangerousCommandHighlightEnabled"
+        static let dangerousCommandPatterns = "terminal.dangerousCommandPatterns"
         static let defaultStartDirectory = "terminal.defaultStartDirectory"
         static let overlayPositionsMap = "overlay.positions.map"
         // API Analytics
@@ -1447,6 +1668,7 @@ final class FeatureSettings: ObservableObject {
         // F21: Snippets (default: enabled)
         self.isSnippetsEnabled = defaults.object(forKey: Keys.snippetsEnabled) as? Bool ?? true
         self.isRepoSnippetsEnabled = defaults.object(forKey: Keys.repoSnippetsEnabled) as? Bool ?? true
+        self.allowProtectedFolderAccess = defaults.object(forKey: Keys.allowProtectedFolderAccess) as? Bool ?? true
         self.repoSnippetPath = defaults.string(forKey: Keys.repoSnippetPath) ?? ".chau7/snippets.json"
         self.snippetInsertMode = defaults.string(forKey: Keys.snippetInsertMode) ?? "expand"
         self.snippetPlaceholdersEnabled = defaults.object(forKey: Keys.snippetPlaceholders) as? Bool ?? true
@@ -1477,6 +1699,13 @@ final class FeatureSettings: ObservableObject {
         self.scrollbackLines = defaults.object(forKey: Keys.scrollbackLines) as? Int ?? 10000
         self.bellEnabled = defaults.object(forKey: Keys.bellEnabled) as? Bool ?? true
         self.bellSound = defaults.string(forKey: Keys.bellSound) ?? "default"
+        self.isDangerousCommandHighlightEnabled = defaults.object(forKey: Keys.dangerousCommandHighlightEnabled) as? Bool ?? true
+        if let data = defaults.data(forKey: Keys.dangerousCommandPatterns),
+           let patterns = JSONOperations.decode([String].self, from: data, context: "dangerousCommandPatterns") {
+            self.dangerousCommandPatterns = patterns
+        } else {
+            self.dangerousCommandPatterns = Self.defaultDangerousCommandPatterns
+        }
         self.defaultStartDirectory = defaults.string(forKey: Keys.defaultStartDirectory) ?? home
 
         // API Analytics (default: disabled)
@@ -1658,6 +1887,8 @@ final class FeatureSettings: ObservableObject {
         var scrollbackLines: Int
         var bellEnabled: Bool
         var bellSound: String
+        var isDangerousCommandHighlightEnabled: Bool?
+        var dangerousCommandPatterns: [String]?
         var defaultStartDirectory: String
         var isAutoTabThemeEnabled: Bool
         var isCopyOnSelectEnabled: Bool
@@ -1677,6 +1908,7 @@ final class FeatureSettings: ObservableObject {
         var maxBookmarksPerTab: Int
         var isSnippetsEnabled: Bool
         var isRepoSnippetsEnabled: Bool
+        var allowProtectedFolderAccess: Bool?
         var repoSnippetPath: String
         var snippetInsertMode: String
         var snippetPlaceholdersEnabled: Bool
@@ -1723,6 +1955,8 @@ final class FeatureSettings: ObservableObject {
             scrollbackLines: scrollbackLines,
             bellEnabled: bellEnabled,
             bellSound: bellSound,
+            isDangerousCommandHighlightEnabled: isDangerousCommandHighlightEnabled,
+            dangerousCommandPatterns: dangerousCommandPatterns,
             defaultStartDirectory: defaultStartDirectory,
             isAutoTabThemeEnabled: isAutoTabThemeEnabled,
             isCopyOnSelectEnabled: isCopyOnSelectEnabled,
@@ -1742,6 +1976,7 @@ final class FeatureSettings: ObservableObject {
             maxBookmarksPerTab: maxBookmarksPerTab,
             isSnippetsEnabled: isSnippetsEnabled,
             isRepoSnippetsEnabled: isRepoSnippetsEnabled,
+            allowProtectedFolderAccess: allowProtectedFolderAccess,
             repoSnippetPath: repoSnippetPath,
             snippetInsertMode: snippetInsertMode,
             snippetPlaceholdersEnabled: snippetPlaceholdersEnabled,
@@ -1818,6 +2053,8 @@ final class FeatureSettings: ObservableObject {
         scrollbackLines = imported.scrollbackLines
         bellEnabled = imported.bellEnabled
         bellSound = imported.bellSound
+        isDangerousCommandHighlightEnabled = imported.isDangerousCommandHighlightEnabled ?? true
+        dangerousCommandPatterns = imported.dangerousCommandPatterns ?? Self.defaultDangerousCommandPatterns
         defaultStartDirectory = imported.defaultStartDirectory
         isAutoTabThemeEnabled = imported.isAutoTabThemeEnabled
         isCopyOnSelectEnabled = imported.isCopyOnSelectEnabled
@@ -1842,6 +2079,7 @@ final class FeatureSettings: ObservableObject {
         maxBookmarksPerTab = imported.maxBookmarksPerTab
         isSnippetsEnabled = imported.isSnippetsEnabled
         isRepoSnippetsEnabled = imported.isRepoSnippetsEnabled
+        allowProtectedFolderAccess = imported.allowProtectedFolderAccess ?? true
         repoSnippetPath = imported.repoSnippetPath
         snippetInsertMode = imported.snippetInsertMode
         snippetPlaceholdersEnabled = imported.snippetPlaceholdersEnabled
@@ -1914,6 +2152,8 @@ final class FeatureSettings: ObservableObject {
         scrollbackLines = 10000
         bellEnabled = true
         bellSound = "default"
+        isDangerousCommandHighlightEnabled = true
+        dangerousCommandPatterns = Self.defaultDangerousCommandPatterns
         defaultStartDirectory = home
 
         // Features
@@ -1935,6 +2175,7 @@ final class FeatureSettings: ObservableObject {
         maxBookmarksPerTab = 20
         isSnippetsEnabled = true
         isRepoSnippetsEnabled = true
+        allowProtectedFolderAccess = true
         repoSnippetPath = ".chau7/snippets.json"
         snippetInsertMode = "expand"
         snippetPlaceholdersEnabled = true
@@ -1969,6 +2210,8 @@ final class FeatureSettings: ObservableObject {
         scrollbackLines = 10000
         bellEnabled = true
         bellSound = "default"
+        isDangerousCommandHighlightEnabled = true
+        dangerousCommandPatterns = Self.defaultDangerousCommandPatterns
         defaultStartDirectory = FileManager.default.homeDirectoryForCurrentUser.path
         shellType = .system
         customShellPath = ""
@@ -1991,6 +2234,7 @@ final class FeatureSettings: ObservableObject {
     func resetProductivityToDefaults() {
         isSnippetsEnabled = true
         isRepoSnippetsEnabled = true
+        allowProtectedFolderAccess = true
         repoSnippetPath = ".chau7/snippets.json"
         snippetInsertMode = "expand"
         snippetPlaceholdersEnabled = true
@@ -2159,6 +2403,7 @@ extension FeatureSettings {
             maxBookmarksPerTab: 20,
             isSnippetsEnabled: true,
             isRepoSnippetsEnabled: true,
+            allowProtectedFolderAccess: true,
             repoSnippetPath: ".chau7/snippets.json",
             snippetInsertMode: "expand",
             snippetPlaceholdersEnabled: true,

@@ -35,4 +35,22 @@ final class RemoteFrameTests: XCTestCase {
 
         XCTAssertThrowsError(try RemoteFrame.decode(from: data))
     }
+
+    func testHeaderBytesMatchesEncodedHeader() {
+        let payload = Data([0xAA, 0xBB, 0xCC])
+        let frame = RemoteFrame(
+            version: 1,
+            type: RemoteFrameType.output.rawValue,
+            flags: RemoteFrame.flagEncrypted,
+            reserved: 0,
+            tabID: 7,
+            seq: 99,
+            payload: payload
+        )
+
+        let header = frame.headerBytes(payloadLen: UInt32(payload.count))
+        let encodedHeader = Data(frame.encode().prefix(RemoteFrame.headerSize))
+
+        XCTAssertEqual(header, encodedHeader)
+    }
 }

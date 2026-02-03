@@ -555,8 +555,14 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
 
         center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if let error {
-                Log.error("Notification permission error: \(error.localizedDescription)")
+            if let error = error as NSError? {
+                // UNErrorCode.notificationsNotAllowed is 1; avoid using UNErrorCode for older SDKs.
+                let isNotAllowed = error.domain == UNErrorDomain && error.code == 1
+                if isNotAllowed {
+                    Log.warn("Notification permission not allowed: \(error.localizedDescription)")
+                } else {
+                    Log.error("Notification permission error: \(error.localizedDescription)")
+                }
             } else {
                 Log.info("Notification permission granted=\(granted)")
             }

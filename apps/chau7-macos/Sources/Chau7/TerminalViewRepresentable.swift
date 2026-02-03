@@ -158,10 +158,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         if nsView.notifyUpdateChanges == isSuspended {
             nsView.notifyUpdateChanges = !isSuspended
         }
-        // Enable cursor line highlighting for any active AI agent (Claude, Codex, etc.)
-        let isAIAgent = model.activeAppName != nil
-        nsView.setCursorLineHighlightEnabled(isAIAgent)
-        nsView.configureCursorLineHighlight(contextLines: isAIAgent, inputHistory: isAIAgent)
+        // Input line highlighting disabled (no AI-specific cursor/input highlighting).
+        nsView.setCursorLineHighlightEnabled(false)
+        nsView.configureCursorLineHighlight(contextLines: false, inputHistory: false)
 
         let desiredFont = terminalFont()
         if nsView.font.fontName != desiredFont.fontName || nsView.font.pointSize != desiredFont.pointSize {

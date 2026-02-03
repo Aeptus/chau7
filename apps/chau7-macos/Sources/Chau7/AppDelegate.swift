@@ -101,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Keep overlay hidden initially
         for host in overlayHosts {
             hiddenWindowNumbers.insert(host.window.windowNumber)
+            host.model.noteTabBarVisibilityChanged(isVisible: false)
             host.window.orderOut(nil)
         }
 
@@ -116,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.splashController = nil
             // Now show the overlay window
             if let host = self?.overlayHosts.first {
+                host.model.noteTabBarVisibilityChanged(isVisible: true)
                 host.window.makeKeyAndOrderFront(nil)
                 NSApp.activate(ignoringOtherApps: true)
                 host.model.focusSelected()
@@ -255,6 +257,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         // If it's an overlay window, hide it instead of closing
         if overlayHosts.contains(where: { $0.window == window }) {
+            if let host = overlayHosts.first(where: { $0.window == window }) {
+                host.model.noteTabBarVisibilityChanged(isVisible: false)
+            }
             hiddenWindowNumbers.insert(window.windowNumber)
             window.orderOut(nil)
             Log.info("Overlay window hidden via Close Window.")
@@ -718,6 +723,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
             Log.info("windowShouldClose: hiding overlay window instead of closing")
             hiddenWindowNumbers.insert(sender.windowNumber)
+            if let host = overlayHosts.first(where: { $0.window == sender }) {
+                host.model.noteTabBarVisibilityChanged(isVisible: false)
+            }
             sender.orderOut(nil)
             return false
         }
@@ -736,12 +744,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             // The NSHostingView in the toolbar can become "stale" after hide/show cycles.
             let wasHidden = hiddenWindowNumbers.remove(window.windowNumber) != nil
             if wasHidden {
+                host.model.noteTabBarVisibilityChanged(isVisible: true)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     Log.info("Proactive tab bar refresh after window show")
                     TabBarToolbarDelegate.shared.recreateToolbar(for: window)
+                    TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
                 }
             }
         }
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        guard overlayHosts.contains(where: { $0.window == window }) else { return }
+        TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
+    }
+
+    func windowWillEnterFullScreen(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        guard overlayHosts.contains(where: { $0.window == window }) else { return }
+        // Keep the toolbar visible during fullscreen to avoid slide-down layout shifts.
+        window.toolbar?.isVisible = true
+        TitlebarBackgroundInstaller.install(for: window)
+    }
+
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        guard overlayHosts.contains(where: { $0.window == window }) else { return }
+        window.toolbar?.isVisible = true
+        TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
+        TitlebarBackgroundInstaller.install(for: window)
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        guard overlayHosts.contains(where: { $0.window == window }) else { return }
+        window.toolbar?.isVisible = true
+        TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
+        TitlebarBackgroundInstaller.install(for: window)
     }
 
     /// Fullscreen with auto-hiding menu bar (appears on hover at top edge)
@@ -826,6 +866,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window.toolbarStyle = .unifiedCompact
             window.titlebarSeparatorStyle = .none
         }
+        TitlebarBackgroundInstaller.install(for: window)
 
         window.isOpaque = false
         window.backgroundColor = .clear
@@ -840,11 +881,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        tabsModel.noteTabBarVisibilityChanged(isVisible: true)
 
         tabsModel.overlayWindow = window
         tabsModel.onCloseLastTab = { [weak self, weak window] in
             guard let window else { return }
             self?.hiddenWindowNumbers.insert(window.windowNumber)
+            tabsModel.noteTabBarVisibilityChanged(isVisible: false)
             window.orderOut(nil)
         }
         tabsModel.focusSelected()

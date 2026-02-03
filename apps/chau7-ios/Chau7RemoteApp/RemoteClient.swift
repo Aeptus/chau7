@@ -2,14 +2,17 @@ import Foundation
 import CryptoKit
 import Security
 import UIKit
+import Combine
+import Chau7Core
 
 @MainActor
-final class RemoteClient: ObservableObject {
+final class RemoteClient: ObservableObject, @unchecked Sendable {
     @Published var outputText: String = ""
     @Published var tabs: [RemoteTab] = []
     @Published var isConnected: Bool = false
     @Published var status: String = "Disconnected"
     @Published var activeTabID: UInt32 = 0
+    @Published var lastError: String?
 
     private var webSocket: URLSessionWebSocketTask?
     private var seqCounter: UInt64 = 1
@@ -26,6 +29,7 @@ final class RemoteClient: ObservableObject {
 
     func connect(pairing: PairingInfo) {
         pairingInfo = pairing
+        lastError = nil
         if let keyData = Data(base64Encoded: pairing.macPub) {
             macPublicKey = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: keyData)
         }
@@ -48,6 +52,7 @@ final class RemoteClient: ObservableObject {
         webSocket = nil
         isConnected = false
         status = "Disconnected"
+        lastError = nil
         crypto = nil
         tabs = []
     }
@@ -122,9 +127,10 @@ final class RemoteClient: ObservableObject {
         case .pairAccept:
             handlePairAccept(workingFrame.payload)
         case .pairReject:
-            status = "Pairing rejected"
+            handlePairReject(workingFrame.payload)
         case .sessionReady:
             status = "Session ready"
+            lastError = nil
         case .tabList:
             handleTabList(workingFrame.payload)
         case .output:
@@ -133,6 +139,8 @@ final class RemoteClient: ObservableObject {
             outputText = String(data: workingFrame.payload, encoding: .utf8) ?? ""
         case .ping:
             sendPong()
+        case .error:
+            handleErrorPayload(workingFrame.payload)
         default:
             break
         }
@@ -149,10 +157,32 @@ final class RemoteClient: ObservableObject {
         guard let payload = try? JSONDecoder().decode(PairAcceptPayload.self, from: data) else { return }
         if let keyData = Data(base64Encoded: payload.macPub) {
             macPublicKey = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: keyData)
-            KeychainStore.save(key: "mac_public_key", data: keyData)
+            _ = KeychainStore.save(key: "mac_public_key", data: keyData)
         }
         sendHello()
         establishSessionIfPossible()
+    }
+
+    private func handlePairReject(_ data: Data) {
+        if let payload = try? JSONDecoder().decode(PairRejectPayload.self, from: data) {
+            lastError = "Pairing rejected (\(payload.reason))"
+        } else if let text = String(data: data, encoding: .utf8), !text.isEmpty {
+            lastError = "Pairing rejected (\(text))"
+        } else {
+            lastError = "Pairing rejected"
+        }
+        status = "Pairing rejected"
+    }
+
+    private func handleErrorPayload(_ data: Data) {
+        if let payload = try? JSONDecoder().decode(RemoteErrorPayload.self, from: data) {
+            lastError = "Remote error (\(payload.code)): \(payload.message)"
+        } else if let text = String(data: data, encoding: .utf8), !text.isEmpty {
+            lastError = "Remote error: \(text)"
+        } else {
+            lastError = "Remote error"
+        }
+        status = "Error"
     }
 
     private func handleTabList(_ data: Data) {
@@ -333,6 +363,15 @@ struct PairAcceptPayload: Codable {
         case macPub = "mac_pub"
         case macName = "mac_name"
     }
+}
+
+struct PairRejectPayload: Codable {
+    let reason: String
+}
+
+struct RemoteErrorPayload: Codable {
+    let code: String
+    let message: String
 }
 
 struct SessionReadyPayload: Codable {
