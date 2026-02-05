@@ -1,8 +1,8 @@
 import XCTest
 @testable import Chau7Core
 
-// Note: These tests are for the public types in the Proxy module.
-// Full integration tests require the Chau7 target.
+// Note: These tests are for the public types in the Chau7Core module.
+// Full integration tests for APICallEvent/APICallStats require the Chau7 target.
 
 final class APICallEventTests: XCTestCase {
 
@@ -15,7 +15,9 @@ final class APICallEventTests: XCTestCase {
 
     func testAllEventSourcesUnique() {
         let sources: [AIEventSource] = [
-            .eventsLog, .historyMonitor, .claudeCode, .app, .apiProxy, .unknown
+            .eventsLog, .terminalSession, .historyMonitor, .app, .apiProxy,
+            .unknown, .shell, .claudeCode, .codex, .cursor, .windsurf,
+            .copilot, .aider, .cline, .continueAI
         ]
         let rawValues = sources.map { $0.rawValue }
         XCTAssertEqual(rawValues.count, Set(rawValues).count, "All event sources should have unique raw values")
@@ -64,150 +66,138 @@ final class APICallEventTests: XCTestCase {
     }
 }
 
-// MARK: - Provider Tests (via string matching since type is in Chau7 module)
+// MARK: - AIEvent Notification Tests
 
-final class ProviderStringTests: XCTestCase {
+final class AIEventNotificationTests: XCTestCase {
 
-    func testKnownProviderStrings() {
-        // These are the raw values used by the Go proxy
-        let knownProviders = ["anthropic", "openai", "gemini"]
-
-        for provider in knownProviders {
-            XCTAssertFalse(provider.isEmpty, "Provider string should not be empty")
-            XCTAssertEqual(provider, provider.lowercased(), "Provider strings should be lowercase")
-        }
+    private func makeEvent(type: String, tool: String = "Claude", message: String = "") -> AIEvent {
+        AIEvent(source: .app, type: type, tool: tool, message: message, ts: "2025-01-14T12:00:00Z")
     }
 
-    func testProviderDisplayNames() {
-        // Map of raw values to expected display names
-        let expectedDisplayNames = [
-            "anthropic": "Anthropic",
-            "openai": "OpenAI",
-            "gemini": "Google",
-            "unknown": "Unknown"
-        ]
+    // MARK: - notificationTitle
 
-        for (rawValue, displayName) in expectedDisplayNames {
-            XCTAssertFalse(displayName.isEmpty, "Display name for \(rawValue) should not be empty")
-            XCTAssertTrue(displayName.first?.isUppercase ?? false, "Display name should be capitalized")
-        }
-    }
-}
-
-// MARK: - Stats Calculation Tests
-
-final class StatsCalculationTests: XCTestCase {
-
-    func testEmptyStatsDefaults() {
-        // Test that default values are reasonable
-        let callCount = 0
-        let inputTokens = 0
-        let outputTokens = 0
-        let cost = 0.0
-        let avgLatency = 0.0
-
-        XCTAssertEqual(callCount, 0)
-        XCTAssertEqual(inputTokens + outputTokens, 0)
-        XCTAssertEqual(cost, 0.0, accuracy: 0.0001)
-        XCTAssertEqual(avgLatency, 0.0, accuracy: 0.0001)
+    func testNotificationTitle_NeedsValidation() {
+        let event = makeEvent(type: "needs_validation")
+        XCTAssertEqual(event.notificationTitle, "Claude: Validation needed")
     }
 
-    func testTokenCalculation() {
-        let inputTokens = 100
-        let outputTokens = 500
-        let totalTokens = inputTokens + outputTokens
-
-        XCTAssertEqual(totalTokens, 600)
+    func testNotificationTitle_Idle() {
+        let event = makeEvent(type: "idle")
+        XCTAssertEqual(event.notificationTitle, "Claude: Possibly waiting for you")
     }
 
-    func testCostFormatting() {
-        // Test cost formatting logic
-        let smallCost = 0.0045
-        let largeCost = 1.23
-
-        // Small costs should show 4 decimal places
-        let smallFormatted = String(format: "$%.4f", smallCost)
-        XCTAssertEqual(smallFormatted, "$0.0045")
-
-        // Large costs should show 2 decimal places
-        let largeFormatted = String(format: "$%.2f", largeCost)
-        XCTAssertEqual(largeFormatted, "$1.23")
+    func testNotificationTitle_Finished() {
+        let event = makeEvent(type: "finished")
+        XCTAssertEqual(event.notificationTitle, "Claude: Task finished")
     }
 
-    func testLatencyFormatting() {
-        // Test latency formatting logic
-        let fastLatency = 250  // ms
-        let slowLatency = 2500  // ms
-
-        // Fast latency in ms
-        XCTAssertEqual("\(fastLatency)ms", "250ms")
-
-        // Slow latency in seconds
-        let slowInSeconds = String(format: "%.1fs", Double(slowLatency) / 1000.0)
-        XCTAssertEqual(slowInSeconds, "2.5s")
+    func testNotificationTitle_Failed() {
+        let event = makeEvent(type: "failed")
+        XCTAssertEqual(event.notificationTitle, "Claude: Task failed")
     }
 
-    func testStatusCodeSuccess() {
-        let successCodes = [200, 201, 204, 299]
-        let failureCodes = [400, 401, 403, 404, 500, 502, 503]
-
-        for code in successCodes {
-            XCTAssertTrue((200..<300).contains(code), "Code \(code) should be success")
-        }
-
-        for code in failureCodes {
-            XCTAssertFalse((200..<300).contains(code), "Code \(code) should be failure")
-        }
+    func testNotificationTitle_UnknownType() {
+        let event = makeEvent(type: "some_custom_type")
+        XCTAssertEqual(event.notificationTitle, "Claude: Update")
     }
 
-    func testAverageLatencyCalculation() {
-        let latencies = [100, 200, 300]
-        let sum = latencies.reduce(0, +)
-        let average = Double(sum) / Double(latencies.count)
+    func testNotificationTitle_CaseInsensitive() {
+        let event = makeEvent(type: "FINISHED")
+        XCTAssertEqual(event.notificationTitle, "Claude: Task finished")
+    }
 
-        XCTAssertEqual(average, 200.0, accuracy: 0.001)
+    func testNotificationTitle_WithToolOverride() {
+        let event = makeEvent(type: "finished", tool: "Original")
+        XCTAssertEqual(event.notificationTitle(toolOverride: "Cursor"), "Cursor: Task finished")
+    }
+
+    func testNotificationTitle_EmptyToolOverrideFallsBackToTool() {
+        let event = makeEvent(type: "finished", tool: "Claude")
+        XCTAssertEqual(event.notificationTitle(toolOverride: ""), "Claude: Task finished")
+    }
+
+    func testNotificationTitle_WhitespaceToolOverrideFallsBackToTool() {
+        let event = makeEvent(type: "finished", tool: "Claude")
+        XCTAssertEqual(event.notificationTitle(toolOverride: "  "), "Claude: Task finished")
+    }
+
+    func testNotificationTitle_NilToolOverrideUsesTool() {
+        let event = makeEvent(type: "idle", tool: "Aider")
+        XCTAssertEqual(event.notificationTitle(toolOverride: nil), "Aider: Possibly waiting for you")
+    }
+
+    // MARK: - notificationBody
+
+    func testNotificationBody_NeedsValidation_EmptyMessage() {
+        let event = makeEvent(type: "needs_validation")
+        XCTAssertEqual(event.notificationBody, "Your input is required.")
+    }
+
+    func testNotificationBody_NeedsValidation_WithMessage() {
+        let event = makeEvent(type: "needs_validation", message: "Please review the diff")
+        XCTAssertEqual(event.notificationBody, "Please review the diff")
+    }
+
+    func testNotificationBody_Idle_EmptyMessage() {
+        let event = makeEvent(type: "idle")
+        XCTAssertEqual(event.notificationBody, "No new history entries for a while.")
+    }
+
+    func testNotificationBody_Finished_EmptyMessage() {
+        let event = makeEvent(type: "finished")
+        XCTAssertEqual(event.notificationBody, "Done.")
+    }
+
+    func testNotificationBody_Finished_WithMessage() {
+        let event = makeEvent(type: "finished", message: "Deployed to production")
+        XCTAssertEqual(event.notificationBody, "Deployed to production")
+    }
+
+    func testNotificationBody_Failed_EmptyMessage() {
+        let event = makeEvent(type: "failed")
+        XCTAssertEqual(event.notificationBody, "Check the logs.")
+    }
+
+    func testNotificationBody_UnknownType_EmptyMessage() {
+        let event = makeEvent(type: "custom_event")
+        XCTAssertEqual(event.notificationBody, "custom_event")
+    }
+
+    func testNotificationBody_UnknownType_WithMessage() {
+        let event = makeEvent(type: "custom_event", message: "Something happened")
+        XCTAssertEqual(event.notificationBody, "custom_event: Something happened")
     }
 }
 
-// MARK: - IPC Message Format Tests
+// MARK: - AIEventSource Extended Tests
 
-final class IPCMessageFormatTests: XCTestCase {
+final class AIEventSourceExtendedTests: XCTestCase {
 
-    func testIPCMessageStructure() {
-        // Test that JSON keys match expected format
-        let expectedKeys = [
-            "session_id",
-            "provider",
-            "model",
-            "endpoint",
-            "input_tokens",
-            "output_tokens",
-            "latency_ms",
-            "status_code",
-            "cost_usd",
-            "timestamp",
-            "error_message"
-        ]
-
-        // Verify all expected keys
-        XCTAssertEqual(expectedKeys.count, 11)
-        XCTAssertTrue(expectedKeys.contains("error_message"), "Should include error_message field")
+    func testCustomSourceViaInit() {
+        let custom = AIEventSource(rawValue: "my_custom_app")
+        XCTAssertEqual(custom.rawValue, "my_custom_app")
     }
 
-    func testTimestampParsing() {
-        let iso8601String = "2025-01-14T12:00:00Z"
-        let formatter = ISO8601DateFormatter()
-        let date = formatter.date(from: iso8601String)
+    func testSourceCodableRoundTrip() throws {
+        let original = AIEventSource.claudeCode
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(AIEventSource.self, from: data)
 
-        XCTAssertNotNil(date, "Should parse ISO8601 timestamp")
+        XCTAssertEqual(decoded, original)
+        XCTAssertEqual(decoded.rawValue, "claude_code")
     }
 
-    func testTimestampParsingWithMilliseconds() {
-        let iso8601String = "2025-01-14T12:00:00.123Z"
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let date = formatter.date(from: iso8601String)
+    func testSourceEquality() {
+        let a = AIEventSource(rawValue: "test")
+        let b = AIEventSource(rawValue: "test")
+        let c = AIEventSource(rawValue: "other")
 
-        XCTAssertNotNil(date, "Should parse ISO8601 timestamp with milliseconds")
+        XCTAssertEqual(a, b)
+        XCTAssertNotEqual(a, c)
+    }
+
+    func testSourceHashable() {
+        let sources: Set<AIEventSource> = [.app, .claudeCode, .app]
+        XCTAssertEqual(sources.count, 2, "Duplicate sources should collapse in a Set")
     }
 }

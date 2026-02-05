@@ -11,22 +11,22 @@ enum SnippetSource: String, Codable, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .global:
-            return "User"  // User-friendly name (stored as "global")
+            return L("snippets.source.user", "User")  // User-friendly name (stored as "global")
         case .profile:
-            return "Profile"
+            return L("snippets.source.profile", "Profile")
         case .repo:
-            return "Repo"
+            return L("snippets.source.repo", "Repo")
         }
     }
 
     var description: String {
         switch self {
         case .global:
-            return "Available everywhere"
+            return L("snippets.source.user.description", "Available everywhere")
         case .profile:
-            return "Profile-specific"
+            return L("snippets.source.profile.description", "Profile-specific")
         case .repo:
-            return "Repository-specific"
+            return L("snippets.source.repo.description", "Repository-specific")
         }
     }
 
@@ -99,6 +99,7 @@ struct SnippetEntry: Identifiable, Equatable {
     var source: SnippetSource
     var sourcePath: String
     var isOverridden: Bool
+    var repoRoot: String?
 }
 
 struct SnippetDraft: Equatable {
@@ -111,6 +112,8 @@ struct SnippetDraft: Equatable {
     /// Quick-select key (single letter a-z, or empty for auto-assign)
     var key: String
     var source: SnippetSource
+    /// Optional repo root for repo-scoped snippets
+    var repoPath: String
 
     init(
         id: String = "",
@@ -120,7 +123,8 @@ struct SnippetDraft: Equatable {
         folder: String = "",
         shellsText: String = "",
         key: String = "",
-        source: SnippetSource = .global
+        source: SnippetSource = .global,
+        repoPath: String = ""
     ) {
         self.id = id
         self.title = title
@@ -130,6 +134,7 @@ struct SnippetDraft: Equatable {
         self.shellsText = shellsText
         self.key = key
         self.source = source
+        self.repoPath = repoPath
     }
 }
 
@@ -241,6 +246,9 @@ final class SnippetManager: ObservableObject {
             DispatchQueue.main.async {
                 if self.repoRoot != root {
                     self.repoRoot = root
+                    if let root {
+                        FeatureSettings.shared.recordRecentRepo(root)
+                    }
                     self.setupMonitors()
                     self.reloadAll()
                 }
@@ -313,7 +321,7 @@ final class SnippetManager: ObservableObject {
     func createSnippet(from draft: SnippetDraft) {
         queue.async { [weak self] in
             guard let self else { return }
-            let sourceURL = self.url(for: draft.source)
+            let sourceURL = self.url(for: draft.source, repoRootOverride: draft.repoPath)
             guard let sourceURL else { return }
 
             var snippets = self.loadSnippets(from: sourceURL)
@@ -343,7 +351,7 @@ final class SnippetManager: ObservableObject {
     func updateSnippet(entry: SnippetEntry, with draft: SnippetDraft) {
         queue.async { [weak self] in
             guard let self else { return }
-            let newSourceURL = self.url(for: draft.source)
+            let newSourceURL = self.url(for: draft.source, repoRootOverride: draft.repoPath)
             guard let newSourceURL else { return }
 
             let now = Date()
@@ -360,7 +368,11 @@ final class SnippetManager: ObservableObject {
                 updatedAt: now
             )
 
-            if entry.source == draft.source {
+            let oldRepo = entry.repoRoot?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let newRepo = draft.repoPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            let sameRepo = entry.source != .repo || draft.source != .repo || oldRepo == newRepo
+
+            if entry.source == draft.source && sameRepo {
                 var snippets = self.loadSnippets(from: newSourceURL)
                 if resolvedID != entry.snippet.id {
                     snippets.removeAll { $0.id == resolvedID }
@@ -372,7 +384,7 @@ final class SnippetManager: ObservableObject {
                 }
                 self.saveSnippets(snippets, to: newSourceURL)
             } else {
-                if let oldURL = self.url(for: entry.source) {
+                if let oldURL = self.url(for: entry.source, repoRootOverride: entry.repoRoot) {
                     var oldSnippets = self.loadSnippets(from: oldURL)
                     oldSnippets.removeAll { $0.id == entry.snippet.id }
                     self.saveSnippets(oldSnippets, to: oldURL)
@@ -393,9 +405,28 @@ final class SnippetManager: ObservableObject {
     func deleteSnippet(_ entry: SnippetEntry) {
         queue.async { [weak self] in
             guard let self else { return }
-            guard let url = self.url(for: entry.source) else { return }
+            guard let url = self.url(for: entry.source, repoRootOverride: entry.repoRoot) else { return }
             var snippets = self.loadSnippets(from: url)
             snippets.removeAll { $0.id == entry.snippet.id }
+            self.saveSnippets(snippets, to: url)
+            self.reloadAll()
+        }
+    }
+
+    func duplicateSnippet(_ entry: SnippetEntry, to target: SnippetSource, repoRootOverride: String? = nil) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            guard let url = self.url(for: target, repoRootOverride: repoRootOverride) else { return }
+            var snippets = self.loadSnippets(from: url)
+
+            let now = Date()
+            var copied = entry.snippet
+            copied.createdAt = now
+            copied.updatedAt = now
+            if snippets.contains(where: { $0.id == copied.id }) {
+                copied.id = self.makeSnippetID(from: copied.title)
+            }
+            snippets.append(copied)
             self.saveSnippets(snippets, to: url)
             self.reloadAll()
         }
@@ -680,7 +711,8 @@ final class SnippetManager: ObservableObject {
                 snippet: $0,
                 source: .global,
                 sourcePath: globalURL().path,
-                isOverridden: highestById[$0.id] != .global
+                isOverridden: highestById[$0.id] != .global,
+                repoRoot: nil
             )
         })
         entries.append(contentsOf: profile.map {
@@ -688,7 +720,8 @@ final class SnippetManager: ObservableObject {
                 snippet: $0,
                 source: .profile,
                 sourcePath: profileURL().path,
-                isOverridden: highestById[$0.id] != .profile
+                isOverridden: highestById[$0.id] != .profile,
+                repoRoot: nil
             )
         })
         if let repoURL = repoURL() {
@@ -697,7 +730,8 @@ final class SnippetManager: ObservableObject {
                     snippet: $0,
                     source: .repo,
                     sourcePath: repoURL.path,
-                    isOverridden: highestById[$0.id] != .repo
+                    isOverridden: highestById[$0.id] != .repo,
+                    repoRoot: repoRoot
                 )
             })
         }
@@ -836,18 +870,26 @@ final class SnippetManager: ObservableObject {
         guard FeatureSettings.shared.isSnippetsEnabled else { return nil }
         guard FeatureSettings.shared.isRepoSnippetsEnabled else { return nil }
         guard let repoRoot else { return nil }
-        let relative = FeatureSettings.shared.repoSnippetPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        let path = relative.isEmpty ? ".chau7/snippets.json" : relative
-        return URL(fileURLWithPath: repoRoot).appendingPathComponent(path)
+        return repoURL(for: repoRoot)
     }
 
-    private func url(for source: SnippetSource) -> URL? {
+    private func repoURL(for root: String) -> URL {
+        let relative = FeatureSettings.shared.repoSnippetPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let path = relative.isEmpty ? ".chau7/snippets.json" : relative
+        return URL(fileURLWithPath: root).appendingPathComponent(path)
+    }
+
+    private func url(for source: SnippetSource, repoRootOverride: String? = nil) -> URL? {
         switch source {
         case .global:
             return globalURL()
         case .profile:
             return profileURL()
         case .repo:
+            let root = repoRootOverride?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let root, !root.isEmpty {
+                return repoURL(for: root)
+            }
             return repoURL()
         }
     }
@@ -882,6 +924,28 @@ final class SnippetManager: ObservableObject {
         }
         guard process.terminationStatus == 0 else {
             nonGitPathCache.insert(path)
+            return nil
+        }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return output.isEmpty ? nil : output
+    }
+
+    static func resolveRepoRoot(at path: String) -> String? {
+        let normalized = URL(fileURLWithPath: path).standardized.path
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", normalized, "rev-parse", "--show-toplevel"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+        guard process.terminationStatus == 0 else {
             return nil
         }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()

@@ -26,7 +26,7 @@ public struct TaskAssessmentView: View {
         VStack(alignment: .leading, spacing: 12) {
             // Header
             HStack {
-                Text("Task Complete?")
+                Text(L("Task Complete?", "Task Complete?"))
                     .font(.system(size: 13, weight: .semibold))
 
                 Spacer()
@@ -45,8 +45,8 @@ public struct TaskAssessmentView: View {
                     .foregroundColor(.primary)
 
                 HStack(spacing: 12) {
-                    Label("\(task.totalAPICalls) calls", systemImage: "arrow.up.arrow.down")
-                    Label("\(task.totalTokens) tokens", systemImage: "text.word.spacing")
+                    Label(String(format: L("task.calls", "%d calls"), task.totalAPICalls), systemImage: "arrow.up.arrow.down")
+                    Label(String(format: L("task.tokens", "%d tokens"), task.totalTokens), systemImage: "text.word.spacing")
                     Label(task.formattedCost, systemImage: "dollarsign.circle")
                     Label(task.formattedDuration, systemImage: "clock")
                 }
@@ -58,7 +58,7 @@ public struct TaskAssessmentView: View {
                     HStack(spacing: 4) {
                         Image(systemName: task.hasSavings ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
                             .foregroundColor(task.hasSavings ? .green : .orange)
-                        Text("\(task.formattedTokensSaved) tokens")
+                        Text(String(format: L("task.tokensSaved", "%@ tokens"), task.formattedTokensSaved))
                             .foregroundColor(task.hasSavings ? .green : .orange)
                     }
                     .font(.system(size: 10, weight: .medium))
@@ -70,7 +70,7 @@ public struct TaskAssessmentView: View {
 
             // Note field (optional)
             if showNoteField {
-                TextField("Add a note (optional)", text: $note)
+                TextField(L("Add a note (optional)", "Add a note (optional)"), text: $note)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 11))
             }
@@ -82,12 +82,12 @@ public struct TaskAssessmentView: View {
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
-                .help("Add a note")
+                .help(L("Add a note", "Add a note"))
 
                 Spacer()
 
                 Button(action: { onFail(note.isEmpty ? nil : note) }) {
-                    Label("Failed", systemImage: "xmark.circle.fill")
+                    Label(L("Failed", "Failed"), systemImage: "xmark.circle.fill")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .buttonStyle(.bordered)
@@ -95,7 +95,7 @@ public struct TaskAssessmentView: View {
                 .controlSize(.small)
 
                 Button(action: { onApprove(note.isEmpty ? nil : note) }) {
-                    Label("Success", systemImage: "checkmark.circle.fill")
+                    Label(L("Success", "Success"), systemImage: "checkmark.circle.fill")
                         .font(.system(size: 12, weight: .medium))
                 }
                 .buttonStyle(.borderedProminent)
@@ -134,13 +134,13 @@ public struct TaskAssessmentBar: View {
 
             // Stats
             HStack(spacing: 6) {
-                Text("\(task.totalTokens)")
+                Text(task.totalTokens.formatted())
                     .font(.system(size: 10).monospacedDigit())
                     .foregroundColor(.secondary)
 
                 // v1.2: Show tokens saved
                 if task.tokensSaved != 0 {
-                    Text("(\(task.formattedTokensSaved))")
+                    Text(String(format: L("task.tokensSaved.parens", "(%@)"), task.formattedTokensSaved))
                         .font(.system(size: 10).monospacedDigit())
                         .foregroundColor(task.hasSavings ? .green : .orange)
                 }
@@ -157,14 +157,14 @@ public struct TaskAssessmentBar: View {
                         .foregroundColor(.green)
                 }
                 .buttonStyle(.plain)
-                .help("Mark as success")
+                .help(L("Mark as success", "Mark as success"))
 
                 Button(action: onFail) {
                     Image(systemName: "xmark.circle")
                         .foregroundColor(.red)
                 }
                 .buttonStyle(.plain)
-                .help("Mark as failed")
+                .help(L("Mark as failed", "Mark as failed"))
             }
         }
         .padding(.horizontal, 8)
@@ -191,13 +191,13 @@ public struct TaskStatusIndicator: View {
                             .stroke(Color.orange.opacity(0.5), lineWidth: 2)
                             .scaleEffect(1.5)
                     )
-                    .help("New task: \(candidate.suggestedName)")
+                    .help(String(format: L("task.candidate.help", "New task: %@"), candidate.suggestedName))
             } else if let task = task, task.state == .active {
                 // Active task
                 Circle()
                     .fill(Color.accentColor)
                     .frame(width: 8, height: 8)
-                    .help("Task: \(task.name)")
+                    .help(String(format: L("task.active.help", "Task: %@"), task.name))
             }
         }
     }
@@ -215,7 +215,7 @@ struct TaskAssessmentView_Previews: PreviewProvider {
                     candidateId: nil,
                     tabId: "tab_1",
                     sessionId: "sess_1",
-                    projectPath: "/Users/dev/project",
+                    projectPath: "~/dev/project",
                     name: "Fix login redirect bug",
                     state: .active,
                     startMethod: .autoConfirmed,
@@ -239,7 +239,7 @@ struct TaskAssessmentView_Previews: PreviewProvider {
                     candidateId: nil,
                     tabId: "tab_1",
                     sessionId: "sess_1",
-                    projectPath: "/Users/dev/project",
+                    projectPath: "~/dev/project",
                     name: "Implement user auth",
                     state: .active,
                     startMethod: .manual,

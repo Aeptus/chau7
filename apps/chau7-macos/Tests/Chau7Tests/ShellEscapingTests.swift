@@ -113,8 +113,10 @@ final class ShellEscapingTests: XCTestCase {
     func testValidateSSHOptionsProxyCommand() {
         let result = ShellEscaping.validateSSHOptions("-o ProxyCommand=nc %h %p")
         XCTAssertFalse(result.isValid)
-        XCTAssertNotNil(result.reason)
-        XCTAssertTrue(result.reason?.contains("ProxyCommand") ?? false)
+        guard case .dangerousOption(let option)? = result.issue else {
+            return XCTFail("Expected dangerous option issue")
+        }
+        XCTAssertTrue(option.contains("ProxyCommand"))
     }
 
     func testValidateSSHOptionsLocalCommand() {
@@ -125,10 +127,11 @@ final class ShellEscapingTests: XCTestCase {
     func testValidateSSHOptionsCommandSubstitution() {
         let result1 = ShellEscaping.validateSSHOptions("-v $(whoami)")
         XCTAssertFalse(result1.isValid)
-        XCTAssertTrue(result1.reason?.contains("Command substitution") ?? false)
+        XCTAssertEqual(result1.issue, .commandSubstitution)
 
         let result2 = ShellEscaping.validateSSHOptions("-v `id`")
         XCTAssertFalse(result2.isValid)
+        XCTAssertEqual(result2.issue, .commandSubstitution)
     }
 
     func testValidateSSHOptionsRedirection() {
@@ -146,7 +149,7 @@ final class ShellEscapingTests: XCTestCase {
     // MARK: - Path Validation Tests
 
     func testIsValidPathSimple() {
-        XCTAssertTrue(ShellEscaping.isValidPath("/Users/test/file.txt"))
+        XCTAssertTrue(ShellEscaping.isValidPath("~/test/file.txt"))
         XCTAssertTrue(ShellEscaping.isValidPath("~/Documents/file"))
         XCTAssertTrue(ShellEscaping.isValidPath("./relative/path"))
     }
@@ -215,5 +218,30 @@ final class ShellEscapingTests: XCTestCase {
         let escaped = ShellEscaping.escapePath(path)
         // Path traversal characters should be preserved but safely quoted
         XCTAssertEqual(escaped, "'../../../etc/passwd'")
+    }
+
+    // MARK: - Path Traversal Validation Tests
+
+    func testIsValidPathRejectsParentTraversal() {
+        XCTAssertFalse(ShellEscaping.isValidPath("../../etc/passwd"))
+        XCTAssertFalse(ShellEscaping.isValidPath("/home/../etc/shadow"))
+        XCTAssertFalse(ShellEscaping.isValidPath("foo/../bar"))
+        XCTAssertFalse(ShellEscaping.isValidPath("/tmp/safe/../../etc/passwd"))
+    }
+
+    func testIsValidPathAllowsSingleDot() {
+        XCTAssertTrue(ShellEscaping.isValidPath("./relative/path"))
+        XCTAssertTrue(ShellEscaping.isValidPath("/path/./to/file"))
+    }
+
+    func testSanitizePathStripsParentTraversal() {
+        let result = ShellEscaping.sanitizePath("../../etc/passwd")
+        XCTAssertFalse(result.contains(".."))
+        XCTAssertTrue(result.contains("etc"))
+    }
+
+    func testSanitizePathStripsEmbeddedTraversal() {
+        let result = ShellEscaping.sanitizePath("/home/../etc/shadow")
+        XCTAssertFalse(result.contains(".."))
     }
 }

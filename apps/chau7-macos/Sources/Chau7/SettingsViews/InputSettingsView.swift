@@ -226,10 +226,10 @@ struct ShortcutEditorSheet: View {
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 16) {
-                Toggle("⌘ Cmd", isOn: $useCmd)
-                Toggle("⇧ Shift", isOn: $useShift)
-                Toggle("⌃ Ctrl", isOn: $useCtrl)
-                Toggle("⌥ Opt", isOn: $useOpt)
+                Toggle(L("⌘ Cmd", "⌘ Cmd"), isOn: $useCmd)
+                Toggle(L("⇧ Shift", "⇧ Shift"), isOn: $useShift)
+                Toggle(L("⌃ Ctrl", "⌃ Ctrl"), isOn: $useCtrl)
+                Toggle(L("⌥ Opt", "⌥ Opt"), isOn: $useOpt)
             }
 
             // Preview

@@ -72,7 +72,13 @@ struct HistoryEntryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             if showTimestamp {
-                Text("\(Formatters.shortTime.string(from: Date(timeIntervalSince1970: entry.timestamp))) - \(entry.sessionId.prefix(8))")
+                Text(
+                    String(
+                        format: L("history.entry.timestamp", "%@ - %@"),
+                        Formatters.shortTime.string(from: Date(timeIntervalSince1970: entry.timestamp)),
+                        String(entry.sessionId.prefix(8))
+                    )
+                )
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.tertiary)
             }

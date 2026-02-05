@@ -192,7 +192,7 @@ private struct TriggerRow: View {
 
                     // Action count badge
                     if !actions.isEmpty {
-                        Text("\(actions.count)")
+                        Text(actions.count.formatted())
                             .font(.caption2)
                             .fontWeight(.medium)
                             .padding(.horizontal, 6)
@@ -599,7 +599,7 @@ private struct ConfigFieldView: View {
                     .font(.caption)
                     .fontWeight(.medium)
                 if field.required {
-                    Text("*")
+                    Text(L("*", "*"))
                         .foregroundColor(.red)
                 }
             }
@@ -664,21 +664,21 @@ private struct ConfigFieldView: View {
 
             case .soundPicker:
                 Picker("", selection: $value) {
-                    Text("Default").tag("default")
-                    Text("Basso").tag("Basso")
-                    Text("Blow").tag("Blow")
-                    Text("Bottle").tag("Bottle")
-                    Text("Frog").tag("Frog")
-                    Text("Funk").tag("Funk")
-                    Text("Glass").tag("Glass")
-                    Text("Hero").tag("Hero")
-                    Text("Morse").tag("Morse")
-                    Text("Ping").tag("Ping")
-                    Text("Pop").tag("Pop")
-                    Text("Purr").tag("Purr")
-                    Text("Sosumi").tag("Sosumi")
-                    Text("Submarine").tag("Submarine")
-                    Text("Tink").tag("Tink")
+                    Text(L("Default", "Default")).tag("default")
+                    Text(L("Basso", "Basso")).tag("Basso")
+                    Text(L("Blow", "Blow")).tag("Blow")
+                    Text(L("Bottle", "Bottle")).tag("Bottle")
+                    Text(L("Frog", "Frog")).tag("Frog")
+                    Text(L("Funk", "Funk")).tag("Funk")
+                    Text(L("Glass", "Glass")).tag("Glass")
+                    Text(L("Hero", "Hero")).tag("Hero")
+                    Text(L("Morse", "Morse")).tag("Morse")
+                    Text(L("Ping", "Ping")).tag("Ping")
+                    Text(L("Pop", "Pop")).tag("Pop")
+                    Text(L("Purr", "Purr")).tag("Purr")
+                    Text(L("Sosumi", "Sosumi")).tag("Sosumi")
+                    Text(L("Submarine", "Submarine")).tag("Submarine")
+                    Text(L("Tink", "Tink")).tag("Tink")
                 }
                 .labelsHidden()
                 .frame(width: 150)

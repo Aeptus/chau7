@@ -211,10 +211,10 @@ final class InlineImageView: NSView {
 
         // Add context menu
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Copy Image", action: #selector(copyImage), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Save Image...", action: #selector(saveImage), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: L("inlineImage.context.copy", "Copy Image"), action: #selector(copyImage), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: L("inlineImage.context.save", "Save Image..."), action: #selector(saveImage), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Open in Preview", action: #selector(openInPreview), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: L("inlineImage.context.preview", "Open in Preview"), action: #selector(openInPreview), keyEquivalent: ""))
         self.menu = menu
     }
 
@@ -233,7 +233,7 @@ final class InlineImageView: NSView {
     @objc private func saveImage() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png, .jpeg, .tiff]
-        panel.nameFieldStringValue = image.args.name ?? "image.png"
+        panel.nameFieldStringValue = image.args.name ?? L("inlineImage.defaultFilename", "image.png")
 
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url, let self = self else { return }

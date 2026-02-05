@@ -59,6 +59,7 @@ enum EnvVars {
 
     // Debug output capture
     static let ptyDumpMaxBytes = "CHAU7_PTY_DUMP_MAX_BYTES"
+    static let remoteOutputBatch = "CHAU7_REMOTE_OUTPUT_BATCH"
 
     // Legacy env var support (for backwards compatibility)
     static let legacyEventsLog = "AI_EVENTS_LOG"

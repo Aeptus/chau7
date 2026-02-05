@@ -1,197 +1,167 @@
 import XCTest
 @testable import Chau7Core
 
-// MARK: - Accessibility Tests
+// MARK: - AIEventParser Tests
 
-/// Tests for accessibility utilities and patterns
-final class AccessibilityTests: XCTestCase {
+final class AIEventParserTests: XCTestCase {
 
-    // MARK: - Dynamic Type Scale Factor Tests
+    // MARK: - Valid Parsing
 
-    func testDynamicTypeScaleFactor_XSmall() {
-        // xSmall should scale down
-        let scale: CGFloat = 0.8
-        XCTAssertEqual(scale, 0.8)
+    func testParseValidJSONAllFields() throws {
+        let json = """
+        {"source":"app","type":"finished","tool":"Claude","message":"All done","ts":"2025-01-14T12:00:00Z"}
+        """
+
+        let event = try AIEventParser.parse(line: json)
+
+        XCTAssertEqual(event.source, .app)
+        XCTAssertEqual(event.type, "finished")
+        XCTAssertEqual(event.tool, "Claude")
+        XCTAssertEqual(event.message, "All done")
+        XCTAssertEqual(event.ts, "2025-01-14T12:00:00Z")
     }
 
-    func testDynamicTypeScaleFactor_Small() {
-        let scale: CGFloat = 0.9
-        XCTAssertEqual(scale, 0.9)
+    func testParseMinimalJSON() throws {
+        // Only the required "type" field
+        let json = """
+        {"type":"idle"}
+        """
+
+        let event = try AIEventParser.parse(line: json)
+
+        XCTAssertEqual(event.type, "idle")
+        XCTAssertEqual(event.source, .eventsLog, "Should default to eventsLog")
+        XCTAssertEqual(event.tool, "CLI", "Should default to CLI")
+        XCTAssertEqual(event.message, "", "Should default to empty string")
+        XCTAssertFalse(event.ts.isEmpty, "Should have a default timestamp")
     }
 
-    func testDynamicTypeScaleFactor_Medium() {
-        let scale: CGFloat = 1.0
-        XCTAssertEqual(scale, 1.0)
+    func testParseDifferentSources() throws {
+        let sources = ["app", "terminal_session", "api_proxy", "claude_code", "shell"]
+
+        for source in sources {
+            let json = """
+            {"source":"\(source)","type":"update"}
+            """
+            let event = try AIEventParser.parse(line: json)
+            XCTAssertEqual(event.source.rawValue, source)
+        }
     }
 
-    func testDynamicTypeScaleFactor_Large() {
-        let scale: CGFloat = 1.0
-        XCTAssertEqual(scale, 1.0)
+    func testParseUnknownSourcePreserved() throws {
+        let json = """
+        {"source":"custom_integration","type":"update"}
+        """
+
+        let event = try AIEventParser.parse(line: json)
+
+        XCTAssertEqual(event.source.rawValue, "custom_integration")
     }
 
-    func testDynamicTypeScaleFactor_XLarge() {
-        let scale: CGFloat = 1.1
-        XCTAssertEqual(scale, 1.1)
+    // MARK: - Error Cases
+
+    func testParseMissingRequiredType() {
+        let json = """
+        {"source":"app","tool":"Claude"}
+        """
+
+        XCTAssertThrowsError(try AIEventParser.parse(line: json)) { error in
+            guard let parseError = error as? AIEventParseError else {
+                XCTFail("Expected AIEventParseError, got \(type(of: error))")
+                return
+            }
+            if case .missingField(let field) = parseError {
+                XCTAssertEqual(field, "type")
+            } else {
+                XCTFail("Expected .missingField(\"type\"), got \(parseError)")
+            }
+        }
     }
 
-    func testDynamicTypeScaleFactor_XXLarge() {
-        let scale: CGFloat = 1.2
-        XCTAssertEqual(scale, 1.2)
+    func testParseInvalidFieldType() {
+        // "type" is an integer instead of a string
+        let json = """
+        {"type": 123}
+        """
+
+        XCTAssertThrowsError(try AIEventParser.parse(line: json)) { error in
+            guard let parseError = error as? AIEventParseError else {
+                XCTFail("Expected AIEventParseError, got \(type(of: error))")
+                return
+            }
+            if case .invalidFieldType(let field) = parseError {
+                XCTAssertEqual(field, "type")
+            } else {
+                XCTFail("Expected .invalidFieldType(\"type\"), got \(parseError)")
+            }
+        }
     }
 
-    func testDynamicTypeScaleFactor_XXXLarge() {
-        let scale: CGFloat = 1.3
-        XCTAssertEqual(scale, 1.3)
+    func testParseJSONArrayThrowsNotJSONObject() {
+        let json = "[1, 2, 3]"
+
+        XCTAssertThrowsError(try AIEventParser.parse(line: json)) { error in
+            XCTAssertTrue(error is AIEventParseError, "Expected AIEventParseError for JSON array")
+        }
     }
 
-    func testDynamicTypeScaleFactor_Accessibility1() {
-        let scale: CGFloat = 1.4
-        XCTAssertEqual(scale, 1.4)
+    func testParseNonJSONStringThrows() {
+        let invalid = "this is not json"
+
+        XCTAssertThrowsError(try AIEventParser.parse(line: invalid))
     }
 
-    func testDynamicTypeScaleFactor_Accessibility2() {
-        let scale: CGFloat = 1.6
-        XCTAssertEqual(scale, 1.6)
+    func testParseEmptyStringThrows() {
+        XCTAssertThrowsError(try AIEventParser.parse(line: ""))
     }
 
-    func testDynamicTypeScaleFactor_Accessibility3() {
-        let scale: CGFloat = 1.8
-        XCTAssertEqual(scale, 1.8)
+    func testParseInvalidSourceFieldType() {
+        // "source" is a number instead of string
+        let json = """
+        {"source": 42, "type": "update"}
+        """
+
+        XCTAssertThrowsError(try AIEventParser.parse(line: json)) { error in
+            guard let parseError = error as? AIEventParseError else {
+                XCTFail("Expected AIEventParseError")
+                return
+            }
+            if case .invalidFieldType(let field) = parseError {
+                XCTAssertEqual(field, "source")
+            } else {
+                XCTFail("Expected .invalidFieldType(\"source\"), got \(parseError)")
+            }
+        }
     }
 
-    func testDynamicTypeScaleFactor_Accessibility4() {
-        let scale: CGFloat = 2.0
-        XCTAssertEqual(scale, 2.0)
+    // MARK: - Edge Cases
+
+    func testParseUnicodeContent() throws {
+        let json = """
+        {"type":"update","message":"Tâche terminée 🎉","tool":"Claude"}
+        """
+
+        let event = try AIEventParser.parse(line: json)
+
+        XCTAssertEqual(event.message, "Tâche terminée 🎉")
     }
 
-    func testDynamicTypeScaleFactor_Accessibility5() {
-        let scale: CGFloat = 2.2
-        XCTAssertEqual(scale, 2.2)
+    func testParseEmptyTypeString() throws {
+        // Empty string is a valid string value — parser doesn't reject it
+        let json = """
+        {"type":""}
+        """
+
+        let event = try AIEventParser.parse(line: json)
+        XCTAssertEqual(event.type, "")
     }
 
-    // MARK: - Scaled Font Size Tests
+    func testParseExtraFieldsIgnored() throws {
+        let json = """
+        {"type":"idle","extra_field":"ignored","nested":{"a":1}}
+        """
 
-    func testScaledFontSize_BaseSize() {
-        let baseSize: CGFloat = 14
-        let scale: CGFloat = 1.0
-        let result = baseSize * scale
-        XCTAssertEqual(result, 14)
-    }
-
-    func testScaledFontSize_LargeScale() {
-        let baseSize: CGFloat = 14
-        let scale: CGFloat = 2.0
-        let result = baseSize * scale
-        XCTAssertEqual(result, 28)
-    }
-
-    func testScaledFontSize_SmallScale() {
-        let baseSize: CGFloat = 14
-        let scale: CGFloat = 0.8
-        let result = baseSize * scale
-        XCTAssertEqual(result, 11.2, accuracy: 0.001)
-    }
-
-    // MARK: - Minimum Touch Target Tests
-
-    func testMinimumTouchTarget_AppleRecommended() {
-        // Apple recommends 44x44 points
-        let minSize: CGFloat = 44
-        XCTAssertEqual(minSize, 44)
-    }
-
-    func testMinimumTouchTarget_LargerIsOK() {
-        let size: CGFloat = 48
-        let minSize: CGFloat = 44
-        XCTAssertGreaterThanOrEqual(size, minSize)
-    }
-
-    func testMinimumTouchTarget_SmallerNotOK() {
-        let size: CGFloat = 32
-        let minSize: CGFloat = 44
-        XCTAssertLessThan(size, minSize)
-    }
-
-    // MARK: - High Contrast Tests
-
-    func testHighContrast_IncreasedOpacity() {
-        // Standard secondary text opacity
-        let normalOpacity: CGFloat = 0.6
-        // High contrast should use higher opacity
-        let highContrastOpacity: CGFloat = 0.8
-        XCTAssertGreaterThan(highContrastOpacity, normalOpacity)
-    }
-
-    func testHighContrast_BackgroundContrast() {
-        // Normal background
-        let normalBg: CGFloat = 0.10
-        // High contrast should be darker
-        let highContrastBg: CGFloat = 0.05
-        XCTAssertLessThan(highContrastBg, normalBg)
-    }
-
-    // MARK: - Accessibility Label Format Tests
-
-    func testAccessibilityLabel_TabButton() {
-        let tabName = "Terminal"
-        let label = "Tab \(tabName)"
-        XCTAssertEqual(label, "Tab Terminal")
-    }
-
-    func testAccessibilityLabel_GitBranch() {
-        let branch = "main"
-        let label = "Git branch: \(branch)"
-        XCTAssertEqual(label, "Git branch: main")
-    }
-
-    func testAccessibilityLabel_SSHConnection() {
-        let name = "Production Server"
-        let label = "SSH connection: \(name)"
-        XCTAssertEqual(label, "SSH connection: Production Server")
-    }
-
-    func testAccessibilityLabel_ClipboardItem() {
-        let preview = "git commit -m \"..."
-        let label = "Clipboard item: \(preview)"
-        XCTAssertTrue(label.hasPrefix("Clipboard item:"))
-    }
-
-    func testAccessibilityLabel_CommandWithCategory() {
-        let title = "New Tab"
-        let category = "File"
-        let label = "\(title), Category: \(category)"
-        XCTAssertEqual(label, "New Tab, Category: File")
-    }
-
-    // MARK: - Accessibility Hint Format Tests
-
-    func testAccessibilityHint_DoubleClick() {
-        let hint = "Double-click to connect"
-        XCTAssertFalse(hint.isEmpty)
-    }
-
-    func testAccessibilityHint_WithShortcut() {
-        let shortcut = "⌘N"
-        let hint = "Shortcut: \(shortcut)"
-        XCTAssertEqual(hint, "Shortcut: ⌘N")
-    }
-
-    func testAccessibilityHint_NoShortcut() {
-        let hint = "No keyboard shortcut"
-        XCTAssertFalse(hint.isEmpty)
-    }
-
-    // MARK: - Toggle State Tests
-
-    func testToggleState_On() {
-        let feature = "Dark Mode"
-        let label = "\(feature) enabled"
-        XCTAssertEqual(label, "Dark Mode enabled")
-    }
-
-    func testToggleState_Off() {
-        let feature = "Dark Mode"
-        let label = "\(feature) disabled"
-        XCTAssertEqual(label, "Dark Mode disabled")
+        let event = try AIEventParser.parse(line: json)
+        XCTAssertEqual(event.type, "idle")
     }
 }

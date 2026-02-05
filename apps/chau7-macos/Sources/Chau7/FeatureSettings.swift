@@ -47,6 +47,7 @@ struct KeyboardShortcut: Codable, Identifiable, Equatable {
         KeyboardShortcut(action: "debugConsole", key: "l", modifiers: ["cmd", "opt"]),
         KeyboardShortcut(action: "splitHorizontal", key: "h", modifiers: ["cmd", "opt"]),
         KeyboardShortcut(action: "splitVertical", key: "v", modifiers: ["cmd", "opt"]),
+        KeyboardShortcut(action: "openTextEditor", key: "e", modifiers: ["cmd", "opt"]),
         // Recovery shortcut
         KeyboardShortcut(action: "refreshTabBar", key: "r", modifiers: ["cmd", "shift"]),
     ]
@@ -83,25 +84,26 @@ struct KeyboardShortcut: Codable, Identifiable, Equatable {
 
     static func actionDisplayName(_ action: String) -> String {
         switch action {
-        case "newTab": return "New Tab"
-        case "closeTab": return "Close Tab"
-        case "nextTab": return "Next Tab"
-        case "previousTab": return "Previous Tab"
-        case "find": return "Find"
-        case "findNext": return "Find Next"
-        case "findPrevious": return "Find Previous"
-        case "copy": return "Copy"
-        case "paste": return "Paste"
-        case "clear": return "Clear Scrollback"
-        case "zoomIn": return "Zoom In"
-        case "zoomOut": return "Zoom Out"
-        case "zoomReset": return "Reset Zoom"
-        case "snippets": return "Open Snippets"
-        case "renameTab": return "Rename Tab"
-        case "debugConsole": return "Debug Console"
-        case "newWindow": return "New Window"
-        case "splitHorizontal": return "Split Horizontal"
-        case "splitVertical": return "Split Vertical"
+        case "newTab": return L("shortcut.action.newTab", "New Tab")
+        case "closeTab": return L("shortcut.action.closeTab", "Close Tab")
+        case "nextTab": return L("shortcut.action.nextTab", "Next Tab")
+        case "previousTab": return L("shortcut.action.previousTab", "Previous Tab")
+        case "find": return L("shortcut.action.find", "Find")
+        case "findNext": return L("shortcut.action.findNext", "Find Next")
+        case "findPrevious": return L("shortcut.action.findPrevious", "Find Previous")
+        case "copy": return L("shortcut.action.copy", "Copy")
+        case "paste": return L("shortcut.action.paste", "Paste")
+        case "clear": return L("shortcut.action.clearScrollback", "Clear Scrollback")
+        case "zoomIn": return L("shortcut.action.zoomIn", "Zoom In")
+        case "zoomOut": return L("shortcut.action.zoomOut", "Zoom Out")
+        case "zoomReset": return L("shortcut.action.zoomReset", "Reset Zoom")
+        case "snippets": return L("shortcut.action.openSnippets", "Open Snippets")
+        case "renameTab": return L("shortcut.action.renameTab", "Rename Tab")
+        case "debugConsole": return L("shortcut.action.debugConsole", "Debug Console")
+        case "newWindow": return L("shortcut.action.newWindow", "New Window")
+        case "splitHorizontal": return L("shortcut.action.splitHorizontal", "Split Horizontal")
+        case "splitVertical": return L("shortcut.action.splitVertical", "Split Vertical")
+        case "openTextEditor": return L("shortcut.action.openTextEditor", "Open Text Editor")
         default: return action
         }
     }
@@ -121,12 +123,12 @@ enum ShellType: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .system: return "System Default"
-        case .zsh: return "Zsh"
-        case .bash: return "Bash"
-        case .fish: return "Fish (Apple Silicon)"
-        case .fishIntel: return "Fish (Intel)"
-        case .custom: return "Custom..."
+        case .system: return L("shell.system", "System Default")
+        case .zsh: return L("shell.zsh", "Zsh")
+        case .bash: return L("shell.bash", "Bash")
+        case .fish: return L("shell.fish.appleSilicon", "Fish (Apple Silicon)")
+        case .fishIntel: return L("shell.fish.intel", "Fish (Intel)")
+        case .custom: return L("shell.custom", "Custom...")
         }
     }
 
@@ -251,9 +253,9 @@ enum LastTabCloseBehavior: String, CaseIterable, Identifiable, Codable {
     var displayName: String {
         switch self {
         case .keepWindow:
-            return "Keep Window Open (New Tab)"
+            return L("tabs.lastTabClose.keepWindow", "Keep Window Open (New Tab)")
         case .closeWindow:
-            return "Close Window"
+            return L("tabs.lastTabClose.closeWindow", "Close Window")
         }
     }
 }
@@ -273,13 +275,13 @@ enum URLHandler: String, CaseIterable, Identifiable, Codable {
 
     var displayName: String {
         switch self {
-        case .system: return "System Default"
-        case .safari: return "Safari"
-        case .chrome: return "Google Chrome"
-        case .firefox: return "Firefox"
-        case .edge: return "Microsoft Edge"
-        case .brave: return "Brave"
-        case .arc: return "Arc"
+        case .system: return L("urlHandler.system", "System Default")
+        case .safari: return L("urlHandler.safari", "Safari")
+        case .chrome: return L("urlHandler.chrome", "Google Chrome")
+        case .firefox: return L("urlHandler.firefox", "Firefox")
+        case .edge: return L("urlHandler.edge", "Microsoft Edge")
+        case .brave: return L("urlHandler.brave", "Brave")
+        case .arc: return L("urlHandler.arc", "Arc")
         }
     }
 
@@ -332,11 +334,11 @@ struct ShellOutputPattern: Codable, Identifiable, Equatable, Hashable {
     var notificationType: String = "pattern_match"  // maps to trigger type
 
     static let defaults: [ShellOutputPattern] = [
-        ShellOutputPattern(name: "Error", pattern: "(?i)\\b(error|failed|failure)\\b", isEnabled: false),
-        ShellOutputPattern(name: "Warning", pattern: "(?i)\\bwarning\\b", isEnabled: false),
-        ShellOutputPattern(name: "Build Success", pattern: "(?i)\\b(build succeeded|compilation successful)\\b", isEnabled: false),
-        ShellOutputPattern(name: "Test Passed", pattern: "(?i)\\b(tests? passed|all tests pass)\\b", isEnabled: false),
-        ShellOutputPattern(name: "Test Failed", pattern: "(?i)\\b(tests? failed|test failure)\\b", isEnabled: false),
+        ShellOutputPattern(name: L("shell.pattern.error", "Error"), pattern: "(?i)\\b(error|failed|failure)\\b", isEnabled: false),
+        ShellOutputPattern(name: L("shell.pattern.warning", "Warning"), pattern: "(?i)\\bwarning\\b", isEnabled: false),
+        ShellOutputPattern(name: L("shell.pattern.buildSuccess", "Build Success"), pattern: "(?i)\\b(build succeeded|compilation successful)\\b", isEnabled: false),
+        ShellOutputPattern(name: L("shell.pattern.testPassed", "Test Passed"), pattern: "(?i)\\b(tests? passed|all tests pass)\\b", isEnabled: false),
+        ShellOutputPattern(name: L("shell.pattern.testFailed", "Test Failed"), pattern: "(?i)\\b(tests? failed|test failure)\\b", isEnabled: false),
     ]
 }
 
@@ -382,6 +384,12 @@ struct CustomAIDetectionRule: Codable, Identifiable, Equatable {
     var tabColor: TabColor {
         TabColor(rawValue: colorName) ?? .gray
     }
+}
+
+enum DangerousCommandHighlightScope: String, CaseIterable, Codable {
+    case none = "none"
+    case aiOutputs = "ai_outputs"
+    case allOutputs = "all_outputs"
 }
 
 // MARK: - Feature Settings (Centralized configuration for all features)
@@ -1167,6 +1175,10 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(allowProtectedFolderAccess, forKey: Keys.allowProtectedFolderAccess) }
     }
 
+    @Published var recentRepoRoots: [String] {
+        didSet { UserDefaults.standard.set(recentRepoRoots, forKey: Keys.recentRepoRoots) }
+    }
+
     @Published var repoSnippetPath: String {
         didSet {
             let trimmed = repoSnippetPath.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1184,6 +1196,16 @@ final class FeatureSettings: ObservableObject {
 
     @Published var snippetPlaceholdersEnabled: Bool {
         didSet { UserDefaults.standard.set(snippetPlaceholdersEnabled, forKey: Keys.snippetPlaceholders) }
+    }
+
+    func recordRecentRepo(_ path: String) {
+        let normalized = URL(fileURLWithPath: path).standardized.path
+        var updated = recentRepoRoots.filter { $0 != normalized }
+        updated.insert(normalized, at: 0)
+        if updated.count > 20 {
+            updated.removeLast(updated.count - 20)
+        }
+        recentRepoRoots = updated
     }
 
     // MARK: - F08: Smart Syntax Highlighting
@@ -1275,9 +1297,9 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(bellSound, forKey: Keys.bellSound) }
     }
 
-    @Published var isDangerousCommandHighlightEnabled: Bool {
+    @Published var dangerousCommandHighlightScope: DangerousCommandHighlightScope {
         didSet {
-            UserDefaults.standard.set(isDangerousCommandHighlightEnabled, forKey: Keys.dangerousCommandHighlightEnabled)
+            UserDefaults.standard.set(dangerousCommandHighlightScope.rawValue, forKey: Keys.dangerousCommandHighlightScope)
             NotificationCenter.default.post(name: .terminalDangerousCommandHighlightChanged, object: nil)
         }
     }
@@ -1287,6 +1309,35 @@ final class FeatureSettings: ObservableObject {
             if let data = JSONOperations.encode(dangerousCommandPatterns, context: "dangerousCommandPatterns") {
                 UserDefaults.standard.set(data, forKey: Keys.dangerousCommandPatterns)
             }
+            NotificationCenter.default.post(name: .terminalDangerousCommandHighlightChanged, object: nil)
+        }
+    }
+
+    @Published var dangerousOutputHighlightIdleDelayMs: Int {
+        didSet {
+            let clamped = max(0, min(dangerousOutputHighlightIdleDelayMs, 5000))
+            if dangerousOutputHighlightIdleDelayMs != clamped {
+                dangerousOutputHighlightIdleDelayMs = clamped
+                return
+            }
+            UserDefaults.standard.set(dangerousOutputHighlightIdleDelayMs, forKey: Keys.dangerousOutputHighlightIdleDelayMs)
+        }
+    }
+
+    @Published var dangerousOutputHighlightMaxIntervalMs: Int {
+        didSet {
+            let clamped = max(250, min(dangerousOutputHighlightMaxIntervalMs, 10000))
+            if dangerousOutputHighlightMaxIntervalMs != clamped {
+                dangerousOutputHighlightMaxIntervalMs = clamped
+                return
+            }
+            UserDefaults.standard.set(dangerousOutputHighlightMaxIntervalMs, forKey: Keys.dangerousOutputHighlightMaxIntervalMs)
+        }
+    }
+
+    @Published var dangerousOutputHighlightLowPowerEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(dangerousOutputHighlightLowPowerEnabled, forKey: Keys.dangerousOutputHighlightLowPowerEnabled)
             NotificationCenter.default.post(name: .terminalDangerousCommandHighlightChanged, object: nil)
         }
     }
@@ -1376,6 +1427,22 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
+    // MARK: - Tmux Integration
+
+    @Published var isTmuxIntegrationEnabled: Bool {
+        didSet { UserDefaults.standard.set(isTmuxIntegrationEnabled, forKey: Keys.tmuxIntegrationEnabled) }
+    }
+
+    @Published var isTmuxAutoAttachEnabled: Bool {
+        didSet { UserDefaults.standard.set(isTmuxAutoAttachEnabled, forKey: Keys.tmuxAutoAttachEnabled) }
+    }
+
+    // MARK: - LLM / Error Explanation
+
+    @Published var errorExplainEnabled: Bool {
+        didSet { UserDefaults.standard.set(errorExplainEnabled, forKey: Keys.errorExplainEnabled) }
+    }
+
     // MARK: - Keys
 
     private enum Keys {
@@ -1449,6 +1516,7 @@ final class FeatureSettings: ObservableObject {
         static let snippetsEnabled = "feature.snippetsEnabled"
         static let repoSnippetsEnabled = "feature.repoSnippetsEnabled"
         static let allowProtectedFolderAccess = "feature.allowProtectedFolderAccess"
+        static let recentRepoRoots = "feature.recentRepoRoots"
         static let repoSnippetPath = "feature.repoSnippetPath"
         static let snippetInsertMode = "feature.snippetInsertMode"
         static let snippetPlaceholders = "feature.snippetPlaceholders"
@@ -1474,7 +1542,11 @@ final class FeatureSettings: ObservableObject {
         static let bellEnabled = "terminal.bellEnabled"
         static let bellSound = "terminal.bellSound"
         static let dangerousCommandHighlightEnabled = "terminal.dangerousCommandHighlightEnabled"
+        static let dangerousCommandHighlightScope = "terminal.dangerousCommandHighlightScope"
         static let dangerousCommandPatterns = "terminal.dangerousCommandPatterns"
+        static let dangerousOutputHighlightIdleDelayMs = "terminal.dangerousOutputHighlightIdleDelayMs"
+        static let dangerousOutputHighlightMaxIntervalMs = "terminal.dangerousOutputHighlightMaxIntervalMs"
+        static let dangerousOutputHighlightLowPowerEnabled = "terminal.dangerousOutputHighlightLowPowerEnabled"
         static let defaultStartDirectory = "terminal.defaultStartDirectory"
         static let overlayPositionsMap = "overlay.positions.map"
         // API Analytics
@@ -1490,6 +1562,11 @@ final class FeatureSettings: ObservableObject {
         static let appEventConfig = "app.eventConfig"
         // Notification Permission (persistent tracking)
         static let hasRequestedNotificationPermission = "notifications.hasRequestedPermission"
+        // Tmux Integration
+        static let tmuxIntegrationEnabled = "feature.tmuxIntegrationEnabled"
+        static let tmuxAutoAttachEnabled = "feature.tmuxAutoAttachEnabled"
+        // LLM / Error Explanation
+        static let errorExplainEnabled = "feature.errorExplainEnabled"
     }
 
     // MARK: - Init
@@ -1669,6 +1746,7 @@ final class FeatureSettings: ObservableObject {
         self.isSnippetsEnabled = defaults.object(forKey: Keys.snippetsEnabled) as? Bool ?? true
         self.isRepoSnippetsEnabled = defaults.object(forKey: Keys.repoSnippetsEnabled) as? Bool ?? true
         self.allowProtectedFolderAccess = defaults.object(forKey: Keys.allowProtectedFolderAccess) as? Bool ?? true
+        self.recentRepoRoots = defaults.stringArray(forKey: Keys.recentRepoRoots) ?? []
         self.repoSnippetPath = defaults.string(forKey: Keys.repoSnippetPath) ?? ".chau7/snippets.json"
         self.snippetInsertMode = defaults.string(forKey: Keys.snippetInsertMode) ?? "expand"
         self.snippetPlaceholdersEnabled = defaults.object(forKey: Keys.snippetPlaceholders) as? Bool ?? true
@@ -1699,13 +1777,22 @@ final class FeatureSettings: ObservableObject {
         self.scrollbackLines = defaults.object(forKey: Keys.scrollbackLines) as? Int ?? 10000
         self.bellEnabled = defaults.object(forKey: Keys.bellEnabled) as? Bool ?? true
         self.bellSound = defaults.string(forKey: Keys.bellSound) ?? "default"
-        self.isDangerousCommandHighlightEnabled = defaults.object(forKey: Keys.dangerousCommandHighlightEnabled) as? Bool ?? true
+        if let raw = defaults.string(forKey: Keys.dangerousCommandHighlightScope),
+           let scope = DangerousCommandHighlightScope(rawValue: raw) {
+            self.dangerousCommandHighlightScope = scope
+        } else {
+            let enabled = defaults.object(forKey: Keys.dangerousCommandHighlightEnabled) as? Bool ?? true
+            self.dangerousCommandHighlightScope = enabled ? .allOutputs : .none
+        }
         if let data = defaults.data(forKey: Keys.dangerousCommandPatterns),
            let patterns = JSONOperations.decode([String].self, from: data, context: "dangerousCommandPatterns") {
             self.dangerousCommandPatterns = patterns
         } else {
             self.dangerousCommandPatterns = Self.defaultDangerousCommandPatterns
         }
+        self.dangerousOutputHighlightIdleDelayMs = defaults.object(forKey: Keys.dangerousOutputHighlightIdleDelayMs) as? Int ?? 500
+        self.dangerousOutputHighlightMaxIntervalMs = defaults.object(forKey: Keys.dangerousOutputHighlightMaxIntervalMs) as? Int ?? 2000
+        self.dangerousOutputHighlightLowPowerEnabled = defaults.object(forKey: Keys.dangerousOutputHighlightLowPowerEnabled) as? Bool ?? false
         self.defaultStartDirectory = defaults.string(forKey: Keys.defaultStartDirectory) ?? home
 
         // API Analytics (default: disabled)
@@ -1735,11 +1822,23 @@ final class FeatureSettings: ObservableObject {
 
         // Notification Permission tracking (persistent)
         self.hasRequestedNotificationPermission = defaults.object(forKey: Keys.hasRequestedNotificationPermission) as? Bool ?? false
+
+        // Tmux Integration
+        self.isTmuxIntegrationEnabled = defaults.object(forKey: Keys.tmuxIntegrationEnabled) as? Bool ?? false
+        self.isTmuxAutoAttachEnabled = defaults.object(forKey: Keys.tmuxAutoAttachEnabled) as? Bool ?? false
+
+        // LLM / Error Explanation
+        self.errorExplainEnabled = defaults.object(forKey: Keys.errorExplainEnabled) as? Bool ?? false
     }
 
     private static func migratedShortcutsIfNeeded(_ shortcuts: [KeyboardShortcut]) -> [KeyboardShortcut] {
         var updated = shortcuts
         var didUpdate = false
+        let hasOpenTextEditor = updated.contains { $0.action == "openTextEditor" }
+        if !hasOpenTextEditor {
+            updated.append(KeyboardShortcut(action: "openTextEditor", key: "e", modifiers: ["cmd", "opt"]))
+            didUpdate = true
+        }
 
         if let debugIndex = updated.firstIndex(where: { $0.action == "debugConsole" }),
            let splitIndex = updated.firstIndex(where: { $0.action == "splitVertical" }) {
@@ -1888,7 +1987,11 @@ final class FeatureSettings: ObservableObject {
         var bellEnabled: Bool
         var bellSound: String
         var isDangerousCommandHighlightEnabled: Bool?
+        var dangerousCommandHighlightScope: String?
         var dangerousCommandPatterns: [String]?
+        var dangerousOutputHighlightIdleDelayMs: Int?
+        var dangerousOutputHighlightMaxIntervalMs: Int?
+        var dangerousOutputHighlightLowPowerEnabled: Bool?
         var defaultStartDirectory: String
         var isAutoTabThemeEnabled: Bool
         var isCopyOnSelectEnabled: Bool
@@ -1909,6 +2012,7 @@ final class FeatureSettings: ObservableObject {
         var isSnippetsEnabled: Bool
         var isRepoSnippetsEnabled: Bool
         var allowProtectedFolderAccess: Bool?
+        var recentRepoRoots: [String]?
         var repoSnippetPath: String
         var snippetInsertMode: String
         var snippetPlaceholdersEnabled: Bool
@@ -1955,8 +2059,12 @@ final class FeatureSettings: ObservableObject {
             scrollbackLines: scrollbackLines,
             bellEnabled: bellEnabled,
             bellSound: bellSound,
-            isDangerousCommandHighlightEnabled: isDangerousCommandHighlightEnabled,
+            isDangerousCommandHighlightEnabled: dangerousCommandHighlightScope != .none,
+            dangerousCommandHighlightScope: dangerousCommandHighlightScope.rawValue,
             dangerousCommandPatterns: dangerousCommandPatterns,
+            dangerousOutputHighlightIdleDelayMs: dangerousOutputHighlightIdleDelayMs,
+            dangerousOutputHighlightMaxIntervalMs: dangerousOutputHighlightMaxIntervalMs,
+            dangerousOutputHighlightLowPowerEnabled: dangerousOutputHighlightLowPowerEnabled,
             defaultStartDirectory: defaultStartDirectory,
             isAutoTabThemeEnabled: isAutoTabThemeEnabled,
             isCopyOnSelectEnabled: isCopyOnSelectEnabled,
@@ -1977,6 +2085,7 @@ final class FeatureSettings: ObservableObject {
             isSnippetsEnabled: isSnippetsEnabled,
             isRepoSnippetsEnabled: isRepoSnippetsEnabled,
             allowProtectedFolderAccess: allowProtectedFolderAccess,
+            recentRepoRoots: recentRepoRoots,
             repoSnippetPath: repoSnippetPath,
             snippetInsertMode: snippetInsertMode,
             snippetPlaceholdersEnabled: snippetPlaceholdersEnabled,
@@ -2053,8 +2162,24 @@ final class FeatureSettings: ObservableObject {
         scrollbackLines = imported.scrollbackLines
         bellEnabled = imported.bellEnabled
         bellSound = imported.bellSound
-        isDangerousCommandHighlightEnabled = imported.isDangerousCommandHighlightEnabled ?? true
+        if let raw = imported.dangerousCommandHighlightScope,
+           let scope = DangerousCommandHighlightScope(rawValue: raw) {
+            dangerousCommandHighlightScope = scope
+        } else if let enabled = imported.isDangerousCommandHighlightEnabled {
+            dangerousCommandHighlightScope = enabled ? .allOutputs : .none
+        } else {
+            dangerousCommandHighlightScope = .allOutputs
+        }
         dangerousCommandPatterns = imported.dangerousCommandPatterns ?? Self.defaultDangerousCommandPatterns
+        if let idleDelay = imported.dangerousOutputHighlightIdleDelayMs {
+            dangerousOutputHighlightIdleDelayMs = idleDelay
+        }
+        if let maxInterval = imported.dangerousOutputHighlightMaxIntervalMs {
+            dangerousOutputHighlightMaxIntervalMs = maxInterval
+        }
+        if let lowPower = imported.dangerousOutputHighlightLowPowerEnabled {
+            dangerousOutputHighlightLowPowerEnabled = lowPower
+        }
         defaultStartDirectory = imported.defaultStartDirectory
         isAutoTabThemeEnabled = imported.isAutoTabThemeEnabled
         isCopyOnSelectEnabled = imported.isCopyOnSelectEnabled
@@ -2080,6 +2205,9 @@ final class FeatureSettings: ObservableObject {
         isSnippetsEnabled = imported.isSnippetsEnabled
         isRepoSnippetsEnabled = imported.isRepoSnippetsEnabled
         allowProtectedFolderAccess = imported.allowProtectedFolderAccess ?? true
+        if let recent = imported.recentRepoRoots {
+            recentRepoRoots = recent
+        }
         repoSnippetPath = imported.repoSnippetPath
         snippetInsertMode = imported.snippetInsertMode
         snippetPlaceholdersEnabled = imported.snippetPlaceholdersEnabled
@@ -2152,8 +2280,11 @@ final class FeatureSettings: ObservableObject {
         scrollbackLines = 10000
         bellEnabled = true
         bellSound = "default"
-        isDangerousCommandHighlightEnabled = true
+        dangerousCommandHighlightScope = .allOutputs
         dangerousCommandPatterns = Self.defaultDangerousCommandPatterns
+        dangerousOutputHighlightIdleDelayMs = 500
+        dangerousOutputHighlightMaxIntervalMs = 2000
+        dangerousOutputHighlightLowPowerEnabled = false
         defaultStartDirectory = home
 
         // Features
@@ -2176,6 +2307,7 @@ final class FeatureSettings: ObservableObject {
         isSnippetsEnabled = true
         isRepoSnippetsEnabled = true
         allowProtectedFolderAccess = true
+        recentRepoRoots = []
         repoSnippetPath = ".chau7/snippets.json"
         snippetInsertMode = "expand"
         snippetPlaceholdersEnabled = true
@@ -2210,8 +2342,11 @@ final class FeatureSettings: ObservableObject {
         scrollbackLines = 10000
         bellEnabled = true
         bellSound = "default"
-        isDangerousCommandHighlightEnabled = true
+        dangerousCommandHighlightScope = .allOutputs
         dangerousCommandPatterns = Self.defaultDangerousCommandPatterns
+        dangerousOutputHighlightIdleDelayMs = 500
+        dangerousOutputHighlightMaxIntervalMs = 2000
+        dangerousOutputHighlightLowPowerEnabled = false
         defaultStartDirectory = FileManager.default.homeDirectoryForCurrentUser.path
         shellType = .system
         customShellPath = ""
@@ -2235,6 +2370,7 @@ final class FeatureSettings: ObservableObject {
         isSnippetsEnabled = true
         isRepoSnippetsEnabled = true
         allowProtectedFolderAccess = true
+        recentRepoRoots = []
         repoSnippetPath = ".chau7/snippets.json"
         snippetInsertMode = "expand"
         snippetPlaceholdersEnabled = true

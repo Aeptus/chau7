@@ -37,6 +37,7 @@
 "settings.general.language.note" = "Le changement de langue mettra immédiatement à jour l'interface. Certains éléments système peuvent nécessiter un redémarrage de l'application.";
 "settings.general.defaultDirectory" = "Répertoire par défaut";
 "settings.general.defaultDirectory.help" = "Répertoire de démarrage pour les nouveaux onglets";
+"settings.general.defaultDirectory.choose" = "Choisir...";
 
 // MARK: - Settings Sections
 "settings.title" = "Réglages";
@@ -472,6 +473,14 @@
 "snippets.source.user" = "Utilisateur";
 "snippets.source.profile" = "Profil";
 "snippets.source.repo" = "Dépôt";
+"snippets.copy.global" = "Copier vers Global";
+"snippets.copy.repo.current" = "Copier vers le dépôt actuel";
+"snippets.copy.repo.choose" = "Copier vers un dépôt...";
+"snippets.repo.choose.message" = "Choisissez un dépôt git";
+"snippets.repo.choose.invalid" = "Ce dossier n'est pas un dépôt git.";
+"snippets.repo.choose.invalid.title" = "Dépôt invalide";
+"snippets.repo.visibility" = "Les extraits du dépôt n'apparaissent que lorsque ce dépôt est actif.";
+"snippets.repo.none" = "Aucun dépôt récent";
 "snippets.count" = "%d extraits";
 "snippets.empty" = "Aucun extrait trouvé";
 "snippets.empty.hint" = "Créez votre premier extrait avec le bouton + ci-dessus, ou importez des extraits depuis un fichier JSON.";
@@ -567,6 +576,20 @@
 "debug.level.info" = "Info";
 "debug.level.warning" = "Avertissement";
 "debug.level.error" = "Erreur";
+"debug.inputLag" = "Latence d'entrée";
+"debug.outputLag" = "Latence de sortie";
+"debug.highlightLag" = "Latence de surbrillance";
+"debug.performanceSummary" = "Résumé des performances";
+"debug.inputP50P95" = "Entrée p50/p95";
+"debug.outputP50P95" = "Sortie p50/p95";
+"debug.highlightP50P95" = "Surbrillance p50/p95";
+"debug.performance" = "Performance";
+"debug.highlightLowPower" = "Surbrillance éco";
+"debug.highlightIdleDelay" = "Délai d'inactivité de surbrillance (ms)";
+"debug.highlightMaxInterval" = "Intervalle max de surbrillance (ms)";
+
+"settings.terminal.dangerousCommands.lowPower" = "Surbrillance éco";
+"settings.terminal.dangerousCommands.lowPower.help" = "Réduit le travail de surbrillance quand le CPU est saturé pour garder le terminal réactif";
 
 // MARK: - Time
 "time.now" = "maintenant";
@@ -841,7 +864,12 @@
 "settings.terminal.dangerousCommands" = "Commandes dangereuses";
 "settings.terminal.dangerousCommands.enabled" = "Mettre en évidence les commandes dangereuses";
 "settings.terminal.dangerousCommands.enabled.help" = "Faire ressortir les commandes risquées dans la sortie du terminal";
-"settings.terminal.dangerousCommands.help" = "Les commandes de cette liste sont surlignées lorsqu’elles sont saisies. La correspondance est insensible à la casse et ignore les espaces supplémentaires.";
+"settings.terminal.dangerousCommands.scope" = "Portée du surlignage";
+"settings.terminal.dangerousCommands.scope.help" = "Choisissez où les motifs risqués sont surlignés";
+"settings.terminal.dangerousCommands.scope.none" = "Aucun";
+"settings.terminal.dangerousCommands.scope.aiOutputs" = "Sorties IA uniquement";
+"settings.terminal.dangerousCommands.scope.allOutputs" = "Toutes les sorties";
+"settings.terminal.dangerousCommands.help" = "Les commandes de cette liste sont surlignées selon la portée choisie. La correspondance est insensible à la casse et ignore les espaces supplémentaires.";
 "settings.terminal.dangerousCommands.patterns" = "Motifs";
 "settings.terminal.dangerousCommands.patternPlaceholder" = "Motif";
 "settings.terminal.dangerousCommands.add" = "Ajouter";
@@ -853,6 +881,8 @@
 "settings.terminal.performance.metalRenderer.help" = "Utiliser l'accélération GPU pour le rendu (recommandé)";
 "settings.terminal.performance.reducedMotion" = "Mouvement réduit";
 "settings.terminal.performance.reducedMotion.help" = "Minimiser les animations pour de meilleures performances";
+"settings.terminal.localEcho" = "Écho local";
+"settings.terminal.localEcho.help" = "Affiche immédiatement les caractères saisis lorsque l'écho PTY est activé (peut réduire la latence perçue)";
 
 // -----------------------------------------------------------------------------
 // MARK: Paramètres des onglets
@@ -1324,3 +1354,18 @@
 "task.error.no_candidate" = "Aucune tâche candidate en attente";
 "task.error.start_failed" = "Échec du démarrage de la tâche";
 "task.error.assess_failed" = "Échec de l'évaluation de la tâche";
+
+// Debug Console - Performance
+"debug.perfTab" = "Perf";
+"debug.perfSlowOnly" = "Lent uniquement";
+"debug.perfUpdated" = "Mis à jour";
+"debug.perfLast10s" = "10 s";
+"debug.perfLast60s" = "60 s";
+"debug.perfEmpty" = "Aucun événement de performance enregistré.";
+"debug.perfFeature" = "Fonction";
+"debug.perfTotal" = "Total";
+"debug.perfAvg" = "Moy.";
+"debug.perfMax" = "Max";
+"debug.perfCount" = "Nb";
+"debug.perfBytes" = "Octets";
+"debug.perfRecent" = "Événements récents";

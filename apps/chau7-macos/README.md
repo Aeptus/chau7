@@ -214,7 +214,7 @@ cp .build/release/Chau7 ~/Applications/Chau7/
 3. Edit `LaunchAgent/com.chau7.plist` and set the binary path to:
 
 ```
-/Users/YOUR_USERNAME/Applications/Chau7/Chau7
+$HOME/Applications/Chau7/Chau7
 ```
 
 4. Install the LaunchAgent:

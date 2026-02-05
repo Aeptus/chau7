@@ -37,6 +37,7 @@
 "settings.general.language.note" = "שינוי השפה יעדכן את הממשק מיד. חלק מרכיבי המערכת עשויים לדרוש הפעלה מחדש.";
 "settings.general.defaultDirectory" = "ספריית ברירת מחדל";
 "settings.general.defaultDirectory.help" = "ספריית התחלה לכרטיסיות מסוף חדשות";
+"settings.general.defaultDirectory.choose" = "בחר...";
 
 // MARK: - Settings Sections
 "settings.title" = "הגדרות";
@@ -470,6 +471,14 @@
 "snippets.source.user" = "משתמש";
 "snippets.source.profile" = "פרופיל";
 "snippets.source.repo" = "מאגר";
+"snippets.copy.global" = "העתק לגלובלי";
+"snippets.copy.repo.current" = "העתק למאגר הנוכחי";
+"snippets.copy.repo.choose" = "העתק למאגר...";
+"snippets.repo.choose.message" = "בחר מאגר git";
+"snippets.repo.choose.invalid" = "התיקייה אינה מאגר git.";
+"snippets.repo.choose.invalid.title" = "מאגר לא תקין";
+"snippets.repo.visibility" = "קטעי מאגר מופיעים רק כשהמאגר פעיל.";
+"snippets.repo.none" = "אין מאגרים אחרונים";
 "snippets.count" = "%d קטעי קוד";
 "snippets.empty" = "לא נמצאו קטעי קוד";
 "snippets.empty.hint" = "צור את קטע הקוד הראשון שלך באמצעות כפתור + למעלה, או ייבא קטעי קוד מקובץ JSON.";
@@ -565,6 +574,20 @@
 "debug.level.info" = "מידע";
 "debug.level.warning" = "אזהרה";
 "debug.level.error" = "שגיאה";
+"debug.inputLag" = "השהיית קלט";
+"debug.outputLag" = "השהיית פלט";
+"debug.highlightLag" = "השהיית הדגשה";
+"debug.performanceSummary" = "סיכום ביצועים";
+"debug.inputP50P95" = "קלט p50/p95";
+"debug.outputP50P95" = "פלט p50/p95";
+"debug.highlightP50P95" = "הדגשה p50/p95";
+"debug.performance" = "ביצועים";
+"debug.highlightLowPower" = "הדגשה חסכונית";
+"debug.highlightIdleDelay" = "השהיית דממה בהדגשה (מ״ש)";
+"debug.highlightMaxInterval" = "מרווח מקסימלי להדגשה (מ״ש)";
+
+"settings.terminal.dangerousCommands.lowPower" = "הדגשה חסכונית";
+"settings.terminal.dangerousCommands.lowPower.help" = "מפחית את עבודת ההדגשה כאשר המעבד עמוס כדי לשמור על תגובתיות הטרמינל";
 
 // MARK: - Time
 "time.now" = "עכשיו";
@@ -822,7 +845,12 @@
 "settings.terminal.dangerousCommands" = "פקודות מסוכנות";
 "settings.terminal.dangerousCommands.enabled" = "הדגשת פקודות מסוכנות";
 "settings.terminal.dangerousCommands.enabled.help" = "הבלטת פקודות מסוכנות בפלט הטרמינל";
-"settings.terminal.dangerousCommands.help" = "פקודות ברשימה זו מודגשות כאשר הן מוזנות. ההתאמה אינה תלויה ברישיות ומתעלמת מרווחים נוספים.";
+"settings.terminal.dangerousCommands.scope" = "טווח הדגשה";
+"settings.terminal.dangerousCommands.scope.help" = "בחר היכן להדגיש דפוסים מסוכנים";
+"settings.terminal.dangerousCommands.scope.none" = "ללא";
+"settings.terminal.dangerousCommands.scope.aiOutputs" = "פלט AI בלבד";
+"settings.terminal.dangerousCommands.scope.allOutputs" = "כל הפלט";
+"settings.terminal.dangerousCommands.help" = "פקודות ברשימה זו מודגשות לפי הטווח שנבחר. ההתאמה אינה תלויה ברישיות ומתעלמת מרווחים נוספים.";
 "settings.terminal.dangerousCommands.patterns" = "דפוסים";
 "settings.terminal.dangerousCommands.patternPlaceholder" = "דפוס";
 "settings.terminal.dangerousCommands.add" = "הוסף";
@@ -834,6 +862,8 @@
 "settings.terminal.performance.metalRenderer.help" = "השתמש בהאצת GPU לעיבוד (מומלץ)";
 "settings.terminal.performance.reducedMotion" = "תנועה מופחתת";
 "settings.terminal.performance.reducedMotion.help" = "צמצם הנפשות לביצועים טובים יותר";
+"settings.terminal.localEcho" = "הד מקומי";
+"settings.terminal.localEcho.help" = "הצג מיד תווים מוקלדים כאשר הד PTY פעיל (עשוי להפחית את השהיית הקלט)";
 
 // -----------------------------------------------------------------------------
 // MARK: הגדרות כרטיסיות
@@ -1289,3 +1319,18 @@
 "task.trigger.idle_gap" = "פסק זמן של חוסר פעילות";
 "task.trigger.new_session" = "הפעלה חדשה";
 "task.trigger.repo_switch" = "שינוי מאגר";
+
+// Debug Console - Performance
+"debug.perfTab" = "ביצועים";
+"debug.perfSlowOnly" = "רק איטי";
+"debug.perfUpdated" = "עודכן";
+"debug.perfLast10s" = "10 שנ׳ אחרונות";
+"debug.perfLast60s" = "60 שנ׳ אחרונות";
+"debug.perfEmpty" = "לא נרשמו אירועי ביצועים עדיין.";
+"debug.perfFeature" = "תכונה";
+"debug.perfTotal" = "סה״כ";
+"debug.perfAvg" = "ממוצע";
+"debug.perfMax" = "מקס׳";
+"debug.perfCount" = "כמות";
+"debug.perfBytes" = "בייט";
+"debug.perfRecent" = "אירועים אחרונים";

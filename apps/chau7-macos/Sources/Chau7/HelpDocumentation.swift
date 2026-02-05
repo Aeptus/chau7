@@ -4,17 +4,18 @@ import AppKit
 // MARK: - Help Topic
 
 struct HelpTopic: Identifiable, Hashable {
-    let id = UUID()
+    let id: String
     let title: String
     let icon: String
     let content: String
-    let relatedTopics: [String]
+    let relatedTopicIDs: [String]
 
-    init(title: String, icon: String, content: String, relatedTopics: [String] = []) {
+    init(id: String, title: String, icon: String, content: String, relatedTopicIDs: [String] = []) {
+        self.id = id
         self.title = title
         self.icon = icon
         self.content = content
-        self.relatedTopics = relatedTopics
+        self.relatedTopicIDs = relatedTopicIDs
     }
 }
 
@@ -24,9 +25,10 @@ enum HelpContent {
     static let topics: [HelpTopic] = [
         // Getting Started
         HelpTopic(
-            title: "Getting Started",
+            id: "getting-started",
+            title: L("help.topic.gettingStarted.title", "Getting Started"),
             icon: "play.circle",
-            content: """
+            content: L("help.topic.gettingStarted.content", """
             # Welcome to Chau7
 
             Chau7 is a modern terminal emulator designed for AI-assisted development. It provides a rich set of features to enhance your command-line workflow.
@@ -45,15 +47,16 @@ enum HelpContent {
             - **SSH Manager**: Manage your SSH connections easily
             - **Split Panes**: Work with multiple terminals side by side
             - **Snippets**: Save and reuse common commands
-            """,
-            relatedTopics: ["Tabs & Windows", "Command Palette", "Settings"]
+            """),
+            relatedTopicIDs: ["tabs-windows", "command-palette", "settings"]
         ),
 
         // Tabs & Windows
         HelpTopic(
-            title: "Tabs & Windows",
+            id: "tabs-windows",
+            title: L("help.topic.tabsWindows.title", "Tabs & Windows"),
             icon: "rectangle.stack",
-            content: """
+            content: L("help.topic.tabsWindows.content", """
             # Working with Tabs & Windows
 
             ## Tab Management
@@ -81,15 +84,16 @@ enum HelpContent {
             ## Tab Colors
 
             Each tab can have a custom color. Right-click a tab or use **⇧⌘R** to change its color. Tabs can also be automatically colored based on the AI CLI you're using.
-            """,
-            relatedTopics: ["Getting Started", "AI Integration"]
+            """),
+            relatedTopicIDs: ["getting-started", "ai-integration"]
         ),
 
         // Command Palette
         HelpTopic(
-            title: "Command Palette",
+            id: "command-palette",
+            title: L("help.topic.commandPalette.title", "Command Palette"),
             icon: "command",
-            content: """
+            content: L("help.topic.commandPalette.content", """
             # Command Palette
 
             The Command Palette provides quick access to all Chau7 commands without memorizing keyboard shortcuts.
@@ -114,15 +118,16 @@ enum HelpContent {
             - Tab management (Navigate, Rename, Move)
             - Window management (Settings, Debug Console)
             - Help (Documentation, About)
-            """,
-            relatedTopics: ["Keyboard Shortcuts", "Getting Started"]
+            """),
+            relatedTopicIDs: ["keyboard-shortcuts", "getting-started"]
         ),
 
         // SSH Manager
         HelpTopic(
-            title: "SSH Manager",
+            id: "ssh-manager",
+            title: L("help.topic.sshManager.title", "SSH Manager"),
             icon: "server.rack",
-            content: """
+            content: L("help.topic.sshManager.content", """
             # SSH Connection Manager
 
             Manage your SSH connections in one place. Save hosts, configure options, and connect with a single click.
@@ -150,15 +155,16 @@ enum HelpContent {
             ## Connecting
 
             Double-click a connection or select it and click "Connect" to open a new tab with the SSH session.
-            """,
-            relatedTopics: ["Tabs & Windows", "Terminal Features"]
+            """),
+            relatedTopicIDs: ["tabs-windows", "terminal-features"]
         ),
 
         // AI Integration
         HelpTopic(
-            title: "AI Integration",
+            id: "ai-integration",
+            title: L("help.topic.aiIntegration.title", "AI Integration"),
             icon: "sparkles",
-            content: """
+            content: L("help.topic.aiIntegration.content", """
             # AI CLI Integration
 
             Chau7 automatically detects when you're using AI CLI tools and provides enhanced features.
@@ -187,15 +193,16 @@ enum HelpContent {
             Add your own detection rules in Settings → AI Integration → Custom Detection Rules.
 
             Enter a command pattern and the tab color to use when that pattern is detected.
-            """,
-            relatedTopics: ["Tabs & Windows", "Settings"]
+            """),
+            relatedTopicIDs: ["tabs-windows", "settings"]
         ),
 
         // Keyboard Shortcuts
         HelpTopic(
-            title: "Keyboard Shortcuts",
+            id: "keyboard-shortcuts",
+            title: L("help.topic.keyboardShortcuts.title", "Keyboard Shortcuts"),
             icon: "keyboard",
-            content: """
+            content: L("help.topic.keyboardShortcuts.content", """
             # Keyboard Shortcuts
 
             Chau7 provides extensive keyboard shortcuts for efficient navigation.
@@ -239,15 +246,16 @@ enum HelpContent {
             - **⇧⌘O**: SSH Connections
             - **⌘;**: Snippets
             - **⇧⌘L**: Debug Console
-            """,
-            relatedTopics: ["Command Palette", "Settings"]
+            """),
+            relatedTopicIDs: ["command-palette", "settings"]
         ),
 
         // Terminal Features
         HelpTopic(
-            title: "Terminal Features",
+            id: "terminal-features",
+            title: L("help.topic.terminalFeatures.title", "Terminal Features"),
             icon: "terminal",
-            content: """
+            content: L("help.topic.terminalFeatures.content", """
             # Terminal Features
 
             ## Mouse Features
@@ -287,15 +295,16 @@ enum HelpContent {
             - Adjustable in Settings → Terminal → Scrollback
             - **Scroll to Top**: Access via Command Palette
             - **Scroll to Bottom**: Access via Command Palette
-            """,
-            relatedTopics: ["Settings", "Keyboard Shortcuts"]
+            """),
+            relatedTopicIDs: ["settings", "keyboard-shortcuts"]
         ),
 
         // Snippets
         HelpTopic(
-            title: "Snippets",
+            id: "snippets",
+            title: L("help.topic.snippets.title", "Snippets"),
             icon: "text.badge.plus",
-            content: """
+            content: L("help.topic.snippets.content", """
             # Snippets
 
             Save and reuse common commands with Snippets. Snippets support dynamic tokens, placeholders with Tab navigation, and can be organized by User (available everywhere) or Repo (project-specific).
@@ -362,15 +371,16 @@ enum HelpContent {
               ]
             }
             ```
-            """,
-            relatedTopics: ["Productivity", "Settings"]
+            """),
+            relatedTopicIDs: ["settings"]
         ),
 
         // Settings
         HelpTopic(
-            title: "Settings",
+            id: "settings",
+            title: L("help.topic.settings.title", "Settings"),
             icon: "gear",
-            content: """
+            content: L("help.topic.settings.content", """
             # Settings
 
             Access settings with **⌘,** or from the menu bar.
@@ -398,13 +408,13 @@ enum HelpContent {
             ## Backup & Sync
 
             Export your settings to a file or enable iCloud sync to share settings across devices.
-            """,
-            relatedTopics: ["Getting Started", "Appearance"]
+            """),
+            relatedTopicIDs: ["getting-started"]
         ),
     ]
 
-    static func topic(titled: String) -> HelpTopic? {
-        topics.first { $0.title == titled }
+    static func topic(id: String) -> HelpTopic? {
+        topics.first { $0.id == id }
     }
 }
 
@@ -433,7 +443,7 @@ struct HelpWindowView: View {
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.secondary)
-                    TextField("Search help...", text: $searchText)
+                    TextField(L("Search help...", "Search help..."), text: $searchText)
                         .textFieldStyle(.plain)
                 }
                 .padding(8)
@@ -477,26 +487,28 @@ struct HelpWindowView: View {
                         MarkdownContentView(content: topic.content)
 
                         // Related topics
-                        if !topic.relatedTopics.isEmpty {
+                        if !topic.relatedTopicIDs.isEmpty {
                             Divider()
                                 .padding(.vertical, 8)
 
-                            Text("Related Topics")
+                            Text(L("Related Topics", "Related Topics"))
                                 .font(.headline)
                                 .foregroundColor(.secondary)
 
                             HStack(spacing: 12) {
-                                ForEach(topic.relatedTopics, id: \.self) { related in
+                                ForEach(topic.relatedTopicIDs, id: \.self) { relatedID in
                                     Button {
-                                        if let relatedTopic = HelpContent.topic(titled: related) {
+                                        if let relatedTopic = HelpContent.topic(id: relatedID) {
                                             selectedTopic = relatedTopic
                                         }
                                     } label: {
                                         HStack {
-                                            if let relatedTopic = HelpContent.topic(titled: related) {
+                                            if let relatedTopic = HelpContent.topic(id: relatedID) {
                                                 Image(systemName: relatedTopic.icon)
+                                                Text(relatedTopic.title)
+                                            } else {
+                                                Text(relatedID)
                                             }
-                                            Text(related)
                                         }
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 6)
@@ -516,7 +528,7 @@ struct HelpWindowView: View {
                     Image(systemName: "questionmark.circle")
                         .font(.system(size: 48))
                         .foregroundColor(.secondary)
-                    Text("Select a topic")
+                    Text(L("Select a topic", "Select a topic"))
                         .font(.headline)
                         .foregroundColor(.secondary)
                 }
@@ -579,7 +591,7 @@ private struct MarkdownContentView: View {
                 ForEach(Array(trimmed.components(separatedBy: "\n").enumerated()), id: \.offset) { _, line in
                     if line.hasPrefix("- ") {
                         HStack(alignment: .top, spacing: 8) {
-                            Text("•")
+                            Text(L("•", "•"))
                             renderInlineText(String(line.dropFirst(2)))
                         }
                     }
@@ -698,7 +710,7 @@ final class HelpWindowController {
             defer: false
         )
         window.isReleasedWhenClosed = false
-        window.title = "Chau7 Help"
+        window.title = L("help.window.title", "Chau7 Help")
         window.contentView = hostingView
         window.center()
         window.makeKeyAndOrderFront(nil)

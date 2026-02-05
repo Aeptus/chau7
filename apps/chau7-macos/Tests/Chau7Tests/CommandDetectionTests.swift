@@ -279,7 +279,7 @@ final class EventParsingTests: XCTestCase {
             "tool_name": "Read",
             "message": "Reading file.swift",
             "session_id": "abc123",
-            "project_path": "/Users/test/project"
+            "project_path": "~/test/project"
         }
         """.data(using: .utf8)!
 
@@ -290,7 +290,7 @@ final class EventParsingTests: XCTestCase {
         XCTAssertEqual(event?.toolName, "Read")
         XCTAssertEqual(event?.message, "Reading file.swift")
         XCTAssertEqual(event?.sessionId, "abc123")
-        XCTAssertEqual(event?.projectPath, "/Users/test/project")
+        XCTAssertEqual(event?.projectPath, "~/test/project")
     }
 
     func testParseInvalidJson() {
@@ -300,7 +300,7 @@ final class EventParsingTests: XCTestCase {
 
     func testExtractSessionId() {
         XCTAssertEqual(
-            EventParsing.extractSessionId(from: "/Users/test/.claude/sessions/abc123.jsonl"),
+            EventParsing.extractSessionId(from: "~/.claude/sessions/abc123.jsonl"),
             "abc123"
         )
         XCTAssertEqual(
@@ -311,7 +311,7 @@ final class EventParsingTests: XCTestCase {
 
     func testExtractProjectName() {
         XCTAssertEqual(
-            EventParsing.extractProjectName(from: "/Users/test/projects/my-app"),
+            EventParsing.extractProjectName(from: "~/projects/my-app"),
             "my-app"
         )
         XCTAssertEqual(

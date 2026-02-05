@@ -149,8 +149,10 @@ final class IntegrationTests: XCTestCase {
         let maliciousSSH = "-o ProxyCommand=evil"
         let validation = ShellEscaping.validateSSHOptions(maliciousSSH)
         XCTAssertFalse(validation.isValid)
-        XCTAssertNotNil(validation.reason)
-        XCTAssertTrue(validation.reason?.contains("ProxyCommand") == true)
+        guard case .dangerousOption(let option)? = validation.issue else {
+            return XCTFail("Expected dangerous option issue")
+        }
+        XCTAssertTrue(option.contains("ProxyCommand"))
 
         // 2. Malicious path should be detected
         let maliciousPath = "/etc/passwd; rm -rf /"

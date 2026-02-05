@@ -17,6 +17,53 @@ enum CommandStatus: String {
 ///   Delegate callbacks from SwiftTerm may arrive on background threads and
 ///   dispatch to main via DispatchQueue.main.async.
 final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTerminalViewDelegate {
+    private struct LatencySampleBuffer {
+        private var buffer: [Int]
+        private var index: Int = 0
+        private(set) var count: Int = 0
+
+        init(capacity: Int) {
+            buffer = Array(repeating: 0, count: max(1, capacity))
+        }
+
+        mutating func append(_ value: Int) {
+            buffer[index] = value
+            index = (index + 1) % buffer.count
+            count = min(count + 1, buffer.count)
+        }
+
+        mutating func reset() {
+            index = 0
+            count = 0
+        }
+
+        func values() -> [Int] {
+            if count >= buffer.count {
+                return buffer
+            }
+            return Array(buffer.prefix(count))
+        }
+    }
+
+    enum LagKind: String, CaseIterable {
+        case input
+        case output
+        case highlight
+    }
+
+    struct LagEvent: Identifiable, Equatable {
+        let id = UUID()
+        let kind: LagKind
+        let elapsedMs: Int
+        let averageMs: Int
+        let p50: Int?
+        let p95: Int?
+        let sampleCount: Int
+        let timestamp: Date
+        let tabTitle: String
+        let appName: String
+        let cwd: String
+    }
     @Published var title: String = "Shell"
     @Published var currentDirectory: String = TerminalSessionModel.defaultStartDirectory()
 
@@ -25,6 +72,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     @Published var status: CommandStatus = .idle
     @Published var isGitRepo: Bool = false
     @Published var gitBranch: String? = nil
+    @Published var gitRootPath: String? = nil
     @Published var activeAppName: String? = nil
     @Published var devServer: DevServerMonitor.DevServerInfo? = nil
     @Published var tabTitleOverride: String? = nil
@@ -40,6 +88,11 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     // The debug console has its own 1-second refresh timer to read these values.
     var inputLatencyMs: Int? = nil
     var inputLatencyAverageMs: Int? = nil
+    var outputLatencyMs: Int? = nil
+    var outputLatencyAverageMs: Int? = nil
+    var dangerousHighlightDelayMs: Int? = nil
+    var dangerousHighlightAverageMs: Int? = nil
+    @Published private(set) var lagTimeline: [LagEvent] = []
 
     private weak var appModel: AppModel?
     private weak var terminalView: Chau7TerminalView?
@@ -63,6 +116,49 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private var pendingInputLatencyAt: CFAbsoluteTime?
     private var inputLatencySampleCount = 0
     private var inputLatencyTotalMs: Double = 0
+    private var pendingOutputLatencyAt: CFAbsoluteTime?
+    private var outputLatencySampleCount = 0
+    private var outputLatencyTotalMs: Double = 0
+    private let inputLagLogThresholdMs: Double = 60
+    private let outputLagLogThresholdMs: Double = 120
+    private let highlightLagLogThresholdMs: Double = 120
+    private let latencyLogCooldownSeconds: TimeInterval = 15
+    private var lastInputLagLogAt: Date?
+    private var lastOutputLagLogAt: Date?
+    private var lastHighlightLagLogAt: Date?
+    private let lagTimelineCapacity = 120
+    private let latencySampleCapacity = 120
+    private var inputLatencySamples: LatencySampleBuffer
+    private var outputLatencySamples: LatencySampleBuffer
+    private var dangerousHighlightSamples: LatencySampleBuffer
+    private var outputBurstStartAt = Date.distantPast
+    private var outputBurstBytes = 0
+    private var outputBurstChunks = 0
+    private var outputBurstActive = false
+    private let outputBurstWindowSeconds: TimeInterval = 2.0
+    private let outputBurstIdleThreshold: TimeInterval = 0.35
+    private let outputBurstBytesThreshold = 64 * 1024
+    private let outputBurstChunksThreshold = 24
+    private var dangerousHighlightSampleCount = 0
+    private var dangerousHighlightTotalMs: Double = 0
+    private var outputRiskCacheVersion: Int = 0
+    private var outputRiskCache: [Int: (version: Int, isRisk: Bool)] = [:]
+    private let outputRiskCacheMaxEntries = 800
+    private var dirtyOutputRange: ClosedRange<Int>?
+    private var outputLatencyFallbackWorkItem: DispatchWorkItem?
+    private let outputLatencyFallbackSeconds: TimeInterval = 0.2
+    private let remoteOutputQueue = DispatchQueue(label: "com.chau7.remoteOutput", qos: .utility)
+    private var pendingRemoteOutput = Data()
+    private var remoteOutputFlushWorkItem: DispatchWorkItem?
+    private let remoteOutputFlushInterval: TimeInterval = 0.05
+    private let remoteOutputMaxBufferBytes = 256 * 1024
+    private let remoteOutputBatchingEnabled: Bool = {
+        if let raw = EnvVars.get(EnvVars.remoteOutputBatch) {
+            let lowered = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return !(lowered == "0" || lowered == "false" || lowered == "off")
+        }
+        return true
+    }()
     private var didClearOnLaunch = false
     private var didApplyShellIntegration = false
     private var shellIntegrationOutputCount = 0
@@ -72,6 +168,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private var promptSeenForPendingCommand = false
     private var commandFinishedNotified = false
     private let dangerousCommandTracker = InputLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
+    private var dangerousOutputHighlightWorkItem: DispatchWorkItem?
+    private var dangerousOutputHighlightLastRun = Date.distantPast
+    private var scrollHighlightWorkItem: DispatchWorkItem?
+    private let scrollHighlightDebounceSeconds: TimeInterval = 0.15
 
     private let semanticDetector = SemanticOutputDetector()
     private let devServerMonitor = DevServerMonitor()
@@ -125,6 +225,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     init(appModel: AppModel) {
         self.appModel = appModel
+        self.inputLatencySamples = LatencySampleBuffer(capacity: latencySampleCapacity)
+        self.outputLatencySamples = LatencySampleBuffer(capacity: latencySampleCapacity)
+        self.dangerousHighlightSamples = LatencySampleBuffer(capacity: latencySampleCapacity)
         super.init()
         applyDefaultFontSize()
         installSettingsObservers()
@@ -230,22 +333,30 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     func handleOutput(_ data: Data) {
-        lastOutputAt = Date()
+        let outputToken = FeatureProfiler.shared.begin(.outputProcessing, bytes: data.count)
+        defer { FeatureProfiler.shared.end(outputToken) }
+        let now = Date()
+        let outputGap = now.timeIntervalSince(lastOutputAt)
+        lastOutputAt = now
+        if !data.isEmpty {
+            updateOutputBurstState(bytes: data.count, outputGap: outputGap, now: now)
+            markOutputLatencyStart()
+            markDirtyOutputRange(for: data)
+        }
         bufferNeedsRefresh = true  // Invalidate buffer cache on new output
         recordInputLatencyIfNeeded()
         TerminalOutputCapture.shared.record(data: data, source: activeAppName ?? title)
-        // Dispatch to main actor since RemoteControlManager is @MainActor
-        let sessionID = tabIdentifier
-        Task { @MainActor in
-            RemoteControlManager.shared.recordOutput(data, sessionIdentifier: sessionID)
-        }
-        if let outputText = String(data: data, encoding: .utf8) {
+        enqueueRemoteOutput(data)
+        let outputText = String(data: data, encoding: .utf8)
+        if let outputText {
             shellEventDetector.processOutput(outputText)
         }
         if FeatureSettings.shared.isSemanticSearchEnabled,
            data.contains(where: { $0 == 0x0A || $0 == 0x0D }),
            let row = currentBufferRow() {
+            let token = FeatureProfiler.shared.begin(.semantic)
             semanticDetector.updateCurrentRow(row)
+            FeatureProfiler.shared.end(token)
         }
         let aiLogResult = processAILogOutput(data)
         if let logData = aiLogResult.loggable, !logData.isEmpty {
@@ -260,6 +371,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         // Try to detect AI app from output if not already detected
         if !sawPromptUpdate {
             maybeDetectAppFromOutput(data)
+        }
+        if outputText != nil {
+            recordDangerousOutputIfNeeded()
         }
         // Check if AI agent is waiting for user input
         maybeDetectAIWaitingForInput(data)
@@ -279,7 +393,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
         // Check output for dev server patterns
         guard devServer == nil else { return }  // Already detected
-        guard let output = String(data: data, encoding: .utf8) else { return }
+        let checkData = data.prefix(2048)
+        guard let output = String(data: checkData, encoding: .utf8) else { return }
         devServerMonitor.checkOutput(output)
     }
 
@@ -287,6 +402,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private func maybeDetectAIWaitingForInput(_ data: Data) {
         guard activeAppName != nil else { return }
         guard let text = String(data: data, encoding: .utf8) else { return }
+
+        let token = FeatureProfiler.shared.begin(.aiDetect, bytes: data.count, metadata: "wait-for-input")
+        defer { FeatureProfiler.shared.end(token) }
 
         // Common AI input waiting patterns
         let waitingPatterns = [
@@ -544,17 +662,172 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         guard let start = pendingInputLatencyAt else { return }
         pendingInputLatencyAt = nil
         let elapsedMs = max(0, (now - start) * 1000)
+        inputLatencySamples.append(Int(elapsedMs.rounded()))
         inputLatencySampleCount += 1
         inputLatencyTotalMs += elapsedMs
         let avg = inputLatencyTotalMs / Double(inputLatencySampleCount)
         inputLatencyMs = Int(elapsedMs.rounded())
         inputLatencyAverageMs = Int(avg.rounded())
+        maybeLogLatencySpike(
+            kind: "input",
+            elapsedMs: elapsedMs,
+            averageMs: inputLatencyAverageMs,
+            samples: inputLatencySamples,
+            thresholdMs: inputLagLogThresholdMs,
+            lastLoggedAt: &lastInputLagLogAt
+        )
+    }
+
+    private func markOutputLatencyStart() {
+        let timestamp = CFAbsoluteTimeGetCurrent()
+        if Thread.isMainThread {
+            if pendingOutputLatencyAt == nil {
+                pendingOutputLatencyAt = timestamp
+                scheduleOutputLatencyFallback()
+            }
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if self.pendingOutputLatencyAt == nil {
+                    self.pendingOutputLatencyAt = timestamp
+                    self.scheduleOutputLatencyFallback()
+                }
+            }
+        }
+    }
+
+    func recordOutputLatencyIfNeeded() {
+        guard pendingOutputLatencyAt != nil else { return }
+        let now = CFAbsoluteTimeGetCurrent()
+        if Thread.isMainThread {
+            recordOutputLatencyIfNeeded(now: now)
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.recordOutputLatencyIfNeeded(now: now)
+            }
+        }
+    }
+
+    private func recordOutputLatencyIfNeeded(now: CFAbsoluteTime) {
+        guard let start = pendingOutputLatencyAt else { return }
+        pendingOutputLatencyAt = nil
+        outputLatencyFallbackWorkItem?.cancel()
+        outputLatencyFallbackWorkItem = nil
+        let elapsedMs = max(0, (now - start) * 1000)
+        outputLatencySamples.append(Int(elapsedMs.rounded()))
+        outputLatencySampleCount += 1
+        outputLatencyTotalMs += elapsedMs
+        let avg = outputLatencyTotalMs / Double(outputLatencySampleCount)
+        outputLatencyMs = Int(elapsedMs.rounded())
+        outputLatencyAverageMs = Int(avg.rounded())
+        maybeLogLatencySpike(
+            kind: "output",
+            elapsedMs: elapsedMs,
+            averageMs: outputLatencyAverageMs,
+            samples: outputLatencySamples,
+            thresholdMs: outputLagLogThresholdMs,
+            lastLoggedAt: &lastOutputLagLogAt
+        )
+    }
+
+    private func scheduleOutputLatencyFallback() {
+        guard outputLatencyFallbackWorkItem == nil else { return }
+        let work = DispatchWorkItem { [weak self] in
+            self?.recordOutputLatencyIfNeeded()
+        }
+        outputLatencyFallbackWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + outputLatencyFallbackSeconds, execute: work)
+    }
+
+    private func markDirtyOutputRange(for data: Data) {
+        guard let endRow = currentBufferRow() else { return }
+        var newlineCount = 0
+        for byte in data where byte == 0x0A {
+            newlineCount += 1
+        }
+        let startRow = max(0, endRow - max(1, newlineCount + 1))
+        let newRange = startRow...endRow
+        if let existing = dirtyOutputRange {
+            dirtyOutputRange = min(existing.lowerBound, newRange.lowerBound)...max(existing.upperBound, newRange.upperBound)
+        } else {
+            dirtyOutputRange = newRange
+        }
+    }
+
+    private func updateOutputBurstState(bytes: Int, outputGap: TimeInterval, now: Date) {
+        if outputGap > outputBurstIdleThreshold {
+            outputBurstStartAt = now
+            outputBurstBytes = 0
+            outputBurstChunks = 0
+            outputBurstActive = false
+        }
+
+        outputBurstBytes += bytes
+        outputBurstChunks += 1
+
+        let window = now.timeIntervalSince(outputBurstStartAt)
+        if !outputBurstActive {
+            if window > outputBurstWindowSeconds {
+                outputBurstStartAt = now
+                outputBurstBytes = bytes
+                outputBurstChunks = 1
+            }
+            let inWindow = now.timeIntervalSince(outputBurstStartAt) <= outputBurstWindowSeconds
+            if inWindow,
+               outputBurstBytes >= outputBurstBytesThreshold || outputBurstChunks >= outputBurstChunksThreshold {
+                outputBurstActive = true
+            }
+        }
+    }
+
+    private func enqueueRemoteOutput(_ data: Data) {
+        guard !data.isEmpty else { return }
+        if !remoteOutputBatchingEnabled {
+            let sessionID = tabIdentifier
+            Task { @MainActor in
+                RemoteControlManager.shared.recordOutput(data, sessionIdentifier: sessionID)
+            }
+            return
+        }
+        remoteOutputQueue.async { [weak self] in
+            guard let self else { return }
+            pendingRemoteOutput.append(data)
+
+            if pendingRemoteOutput.count >= remoteOutputMaxBufferBytes {
+                remoteOutputFlushWorkItem?.cancel()
+                remoteOutputFlushWorkItem = nil
+                flushRemoteOutput()
+                return
+            }
+
+            if remoteOutputFlushWorkItem == nil {
+                let work = DispatchWorkItem { [weak self] in
+                    self?.flushRemoteOutput()
+                }
+                remoteOutputFlushWorkItem = work
+                remoteOutputQueue.asyncAfter(deadline: .now() + remoteOutputFlushInterval, execute: work)
+            }
+        }
+    }
+
+    private func flushRemoteOutput() {
+        let payload = pendingRemoteOutput
+        pendingRemoteOutput.removeAll(keepingCapacity: true)
+        remoteOutputFlushWorkItem = nil
+        guard !payload.isEmpty else { return }
+        let sessionID = tabIdentifier
+        Task { @MainActor in
+            RemoteControlManager.shared.recordOutput(payload, sessionIdentifier: sessionID)
+        }
     }
 
     /// Attempts to detect AI CLI from output patterns when command detection missed it
     private func maybeDetectAppFromOutput(_ data: Data) {
         // Skip if we already detected an app
         guard activeAppName == nil else { return }
+
+        let token = FeatureProfiler.shared.begin(.aiDetect, bytes: data.count, metadata: "output-patterns")
+        defer { FeatureProfiler.shared.end(token) }
 
         // Convert to string for pattern matching (limit to first 500 bytes for performance)
         let checkData = data.prefix(500)
@@ -784,11 +1057,100 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     private func recordDangerousCommandLineIfNeeded(_ commandLine: String) {
         let settings = FeatureSettings.shared
-        guard settings.isDangerousCommandHighlightEnabled else { return }
         guard CommandRiskDetection.isRisky(commandLine: commandLine, patterns: settings.dangerousCommandPatterns) else { return }
         guard let row = currentBufferRow() else { return }
         dangerousCommandTracker.record(row: row)
-        highlightView?.scheduleDisplay()
+        if settings.dangerousCommandHighlightScope == .allOutputs {
+            highlightView?.scheduleDisplay()
+        }
+    }
+
+    private func recordDangerousOutputIfNeeded() {
+        let settings = FeatureSettings.shared
+        let scope = settings.dangerousCommandHighlightScope
+        guard scope != .none else { return }
+        if scope == .aiOutputs, activeAppName == nil { return }
+        scheduleDangerousOutputHighlight()
+    }
+
+    func scheduleHighlightAfterScroll() {
+        guard highlightView != nil else { return }
+        scrollHighlightWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.highlightView?.scheduleDisplay()
+        }
+        scrollHighlightWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + scrollHighlightDebounceSeconds, execute: work)
+    }
+
+    private func scheduleDangerousOutputHighlight() {
+        guard highlightView != nil else { return }
+        let (idleDelay, maxInterval) = dangerousOutputHighlightTiming()
+        let now = Date()
+        let sinceLastRun = now.timeIntervalSince(dangerousOutputHighlightLastRun)
+        let delay: TimeInterval = sinceLastRun >= maxInterval
+            ? 0
+            : idleDelay
+
+        dangerousOutputHighlightWorkItem?.cancel()
+        let scheduledAt = CFAbsoluteTimeGetCurrent()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let elapsedMs = (CFAbsoluteTimeGetCurrent() - scheduledAt) * 1000.0
+            self.dangerousHighlightSamples.append(Int(elapsedMs.rounded()))
+            self.dangerousHighlightSampleCount += 1
+            self.dangerousHighlightTotalMs += elapsedMs
+            let avg = self.dangerousHighlightTotalMs / Double(self.dangerousHighlightSampleCount)
+            self.dangerousHighlightDelayMs = Int(elapsedMs.rounded())
+            self.dangerousHighlightAverageMs = Int(avg.rounded())
+            self.dangerousOutputHighlightLastRun = Date()
+            self.maybeLogLatencySpike(
+                kind: "highlight",
+                elapsedMs: elapsedMs,
+                averageMs: self.dangerousHighlightAverageMs,
+                samples: self.dangerousHighlightSamples,
+                thresholdMs: self.highlightLagLogThresholdMs,
+                lastLoggedAt: &self.lastHighlightLagLogAt
+            )
+            self.highlightView?.scheduleDisplay()
+        }
+        dangerousOutputHighlightWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    private func dangerousOutputHighlightTiming() -> (idleDelay: TimeInterval, maxInterval: TimeInterval) {
+        let settings = FeatureSettings.shared
+        let idleMs = max(0, min(settings.dangerousOutputHighlightIdleDelayMs, 5000))
+        let maxMs = max(250, min(settings.dangerousOutputHighlightMaxIntervalMs, 10000))
+        let maxInterval = max(maxMs, idleMs)
+        var idleDelay = TimeInterval(idleMs) / 1000.0
+        var maxIntervalSeconds = TimeInterval(maxInterval) / 1000.0
+
+        if outputBurstActive {
+            // Cap highlight updates to ~2 Hz during sustained output.
+            idleDelay = max(idleDelay, 0.5)
+            maxIntervalSeconds = max(maxIntervalSeconds, 0.5)
+        }
+        if isCpuSaturated() {
+            // Be more conservative when the UI is already struggling.
+            idleDelay = max(idleDelay, 1.0)
+            maxIntervalSeconds = max(maxIntervalSeconds, 1.0)
+        }
+
+        return (idleDelay, maxIntervalSeconds)
+    }
+
+    private func shouldUseLowPowerHighlights() -> Bool {
+        guard FeatureSettings.shared.dangerousOutputHighlightLowPowerEnabled else { return false }
+        return outputBurstActive || isCpuSaturated()
+    }
+
+    private func isCpuSaturated() -> Bool {
+        let inputLag = inputLatencyAverageMs ?? inputLatencyMs ?? 0
+        let outputLag = outputLatencyAverageMs ?? outputLatencyMs ?? 0
+        let highlightLag = dangerousHighlightAverageMs ?? dangerousHighlightDelayMs ?? 0
+        let maxLag = max(inputLag, max(outputLag, highlightLag))
+        return maxLag >= 80
     }
 
     private func trackSemanticCommand(_ command: String) {
@@ -806,6 +1168,104 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     func dangerousCommandRowsVisible(top: Int, bottom: Int) -> [Int] {
         dangerousCommandTracker.visibleRows(top: top, bottom: bottom)
+    }
+
+    func dangerousOutputRowsVisible(top: Int, bottom: Int) -> [Int] {
+        let settings = FeatureSettings.shared
+        let scope = settings.dangerousCommandHighlightScope
+        guard scope != .none else { return [] }
+        if scope == .aiOutputs, activeAppName == nil { return [] }
+        guard let terminalView else { return [] }
+        let terminal = terminalView.getTerminal()
+        let cols = terminal.cols
+        guard cols > 0 else { return [] }
+
+        let token = FeatureProfiler.shared.begin(.dangerScan, metadata: "rows \(top)-\(bottom)")
+        defer { FeatureProfiler.shared.end(token) }
+
+        let start = max(0, top)
+        let end = max(start, bottom)
+        let visibleCount = end - start + 1
+        let lowPowerActive = shouldUseLowPowerHighlights()
+        let maxComputations: Int
+        if lowPowerActive {
+            maxComputations = min(16, max(6, visibleCount / 3))
+        } else {
+            maxComputations = Int.max
+        }
+        var computedCount = 0
+        var rows: [Int] = []
+        rows.reserveCapacity(min(32, end - start + 1))
+
+        if outputRiskCache.count > outputRiskCacheMaxEntries {
+            outputRiskCache.removeAll(keepingCapacity: true)
+        }
+        let version = outputRiskCacheVersion
+        let dirtyRange = dirtyOutputRange
+
+        func lineText(for row: Int) -> String {
+            let startPos = Position(col: 0, row: row)
+            let endPos = Position(col: max(cols - 1, 0), row: row)
+            return terminal.getText(start: startPos, end: endPos)
+        }
+
+        for row in start...end {
+            let isDirty = dirtyRange?.contains(row) ?? false
+            if !isDirty, let cached = outputRiskCache[row], cached.version == version {
+                if cached.isRisk {
+                    rows.append(row)
+                }
+                continue
+            }
+
+            if lowPowerActive && computedCount >= maxComputations {
+                continue
+            }
+
+            let text = lineText(for: row)
+            let sanitized = EscapeSequenceSanitizer.sanitize(text)
+            var isRisk = CommandRiskDetection.isRisky(commandLine: sanitized, patterns: settings.dangerousCommandPatterns)
+            if isRisk {
+                outputRiskCache[row] = (version: version, isRisk: true)
+                rows.append(row)
+                computedCount += 1
+                continue
+            }
+
+            if !lowPowerActive {
+                let trimmed = sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.count >= cols - 1, row + 1 <= end {
+                    let nextText = lineText(for: row + 1)
+                    let combined = trimmed + EscapeSequenceSanitizer.sanitize(nextText)
+                    if CommandRiskDetection.isRisky(commandLine: combined, patterns: settings.dangerousCommandPatterns) {
+                        isRisk = true
+                        outputRiskCache[row] = (version: version, isRisk: true)
+                        outputRiskCache[row + 1] = (version: version, isRisk: true)
+                        rows.append(row)
+                        rows.append(row + 1)
+                        computedCount += 1
+                        continue
+                    }
+                }
+            }
+
+            outputRiskCache[row] = (version: version, isRisk: isRisk)
+            computedCount += 1
+        }
+
+        if let dirtyRange {
+            if start <= dirtyRange.lowerBound && end >= dirtyRange.upperBound {
+                dirtyOutputRange = nil
+            } else if dirtyRange.lowerBound < start && dirtyRange.upperBound <= end {
+                let newUpper = start - 1
+                dirtyOutputRange = newUpper >= dirtyRange.lowerBound ? dirtyRange.lowerBound...newUpper : nil
+            } else if dirtyRange.lowerBound >= start && dirtyRange.upperBound > end {
+                let newLower = end + 1
+                dirtyOutputRange = newLower <= dirtyRange.upperBound ? newLower...dirtyRange.upperBound : nil
+            }
+        }
+
+        return rows
     }
 
     // MARK: - Idle Timer (Issue #5 fix)
@@ -1160,6 +1620,17 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             object: nil,
             queue: .main
         ) { [weak self] _ in
+            self?.outputRiskCacheVersion &+= 1
+            self?.outputRiskCache.removeAll(keepingCapacity: true)
+            self?.dirtyOutputRange = nil
+            self?.dangerousOutputHighlightWorkItem?.cancel()
+            self?.dangerousOutputHighlightWorkItem = nil
+            self?.dangerousOutputHighlightLastRun = .distantPast
+            self?.dangerousHighlightSampleCount = 0
+            self?.dangerousHighlightTotalMs = 0
+            self?.dangerousHighlightDelayMs = nil
+            self?.dangerousHighlightAverageMs = nil
+            self?.dangerousHighlightSamples.reset()
             self?.highlightView?.scheduleDisplay()
         })
     }
@@ -1401,6 +1872,21 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     func attachHighlightView(_ view: TerminalHighlightView) {
         highlightView = view
         highlightView?.scheduleDisplay()  // Use batched display for better latency
+    }
+
+    func resetDangerousHighlights() {
+        dangerousCommandTracker.reset()
+        outputRiskCache.removeAll(keepingCapacity: true)
+        dirtyOutputRange = nil
+        dangerousOutputHighlightWorkItem?.cancel()
+        dangerousOutputHighlightWorkItem = nil
+        dangerousOutputHighlightLastRun = .distantPast
+        dangerousHighlightSampleCount = 0
+        dangerousHighlightTotalMs = 0
+        dangerousHighlightDelayMs = nil
+        dangerousHighlightAverageMs = nil
+        dangerousHighlightSamples.reset()
+        highlightView?.scheduleDisplay()
     }
 
     // MARK: - Search (Issue #6, #13, #23 fixes - thread-safe buffer access, case sensitivity)
@@ -1727,12 +2213,155 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         return currentDirectory
     }
 
+    func tabPathDisplayName() -> String {
+        if let gitRootPath, !gitRootPath.isEmpty {
+            return URL(fileURLWithPath: gitRootPath).lastPathComponent
+        }
+        return displayPath()
+    }
+
     var inputLatencySummary: String {
         guard let last = inputLatencyMs else { return "n/a" }
         if let avg = inputLatencyAverageMs {
             return "\(last)ms (avg \(avg)ms)"
         }
         return "\(last)ms"
+    }
+
+    var outputLatencySummary: String {
+        guard let last = outputLatencyMs else { return "n/a" }
+        if let avg = outputLatencyAverageMs {
+            return "\(last)ms (avg \(avg)ms)"
+        }
+        return "\(last)ms"
+    }
+
+    var dangerousHighlightLatencySummary: String {
+        guard let last = dangerousHighlightDelayMs else { return "n/a" }
+        if let avg = dangerousHighlightAverageMs {
+            return "\(last)ms (avg \(avg)ms)"
+        }
+        return "\(last)ms"
+    }
+
+    var inputLatencyPercentilesSummary: String {
+        latencyPercentilesSummary(for: inputLatencySamples)
+    }
+
+    var outputLatencyPercentilesSummary: String {
+        latencyPercentilesSummary(for: outputLatencySamples)
+    }
+
+    var dangerousHighlightPercentilesSummary: String {
+        latencyPercentilesSummary(for: dangerousHighlightSamples)
+    }
+
+    private func latencyPercentilesSummary(for buffer: LatencySampleBuffer) -> String {
+        let samples = buffer.values()
+        guard !samples.isEmpty else { return "n/a" }
+        guard let p50 = percentileValue(from: samples, percentile: 0.50),
+              let p95 = percentileValue(from: samples, percentile: 0.95) else {
+            return "n/a"
+        }
+        return "\(p50)ms / \(p95)ms (n=\(samples.count))"
+    }
+
+    private func latencyPercentiles(for buffer: LatencySampleBuffer) -> (p50: Int?, p95: Int?, count: Int) {
+        let samples = buffer.values()
+        guard !samples.isEmpty else { return (nil, nil, 0) }
+        let p50 = percentileValue(from: samples, percentile: 0.50)
+        let p95 = percentileValue(from: samples, percentile: 0.95)
+        return (p50, p95, samples.count)
+    }
+
+    private func maybeLogLatencySpike(
+        kind: String,
+        elapsedMs: Double,
+        averageMs: Int?,
+        samples: LatencySampleBuffer,
+        thresholdMs: Double,
+        lastLoggedAt: inout Date?
+    ) {
+        guard elapsedMs >= thresholdMs else { return }
+        let now = Date()
+        if let last = lastLoggedAt, now.timeIntervalSince(last) < latencyLogCooldownSeconds {
+            return
+        }
+        lastLoggedAt = now
+        let percentiles = latencyPercentilesSummary(for: samples)
+        let tabName = (tabTitleOverride?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false)
+            ? tabTitleOverride!
+            : title
+        let appName = activeAppName ?? "shell"
+        let avg = averageMs ?? -1
+        Log.warn("Latency spike: \(kind)=\(Int(elapsedMs.rounded()))ms avg=\(avg)ms p50/p95=\(percentiles) tab=\(tabName) app=\(appName) cwd=\(tabPathDisplayName())")
+
+        let percentileValues = latencyPercentiles(for: samples)
+        recordLagEvent(
+            kind: LagKind(rawValue: kind) ?? .input,
+            elapsedMs: Int(elapsedMs.rounded()),
+            averageMs: avg,
+            p50: percentileValues.p50,
+            p95: percentileValues.p95,
+            sampleCount: percentileValues.count,
+            tabTitle: tabName,
+            appName: appName,
+            cwd: tabPathDisplayName()
+        )
+    }
+
+    private func recordLagEvent(
+        kind: LagKind,
+        elapsedMs: Int,
+        averageMs: Int,
+        p50: Int?,
+        p95: Int?,
+        sampleCount: Int,
+        tabTitle: String,
+        appName: String,
+        cwd: String
+    ) {
+        let event = LagEvent(
+            kind: kind,
+            elapsedMs: elapsedMs,
+            averageMs: averageMs,
+            p50: p50,
+            p95: p95,
+            sampleCount: sampleCount,
+            timestamp: Date(),
+            tabTitle: tabTitle,
+            appName: appName,
+            cwd: cwd
+        )
+        let append = {
+            self.lagTimeline.append(event)
+            if self.lagTimeline.count > self.lagTimelineCapacity {
+                self.lagTimeline.removeFirst(self.lagTimeline.count - self.lagTimelineCapacity)
+            }
+        }
+        if Thread.isMainThread {
+            append()
+        } else {
+            DispatchQueue.main.async(execute: append)
+        }
+    }
+
+    func clearLagTimeline() {
+        if Thread.isMainThread {
+            lagTimeline.removeAll()
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.lagTimeline.removeAll()
+            }
+        }
+    }
+
+    private func percentileValue(from samples: [Int], percentile: Double) -> Int? {
+        guard !samples.isEmpty else { return nil }
+        let clamped = max(0.0, min(1.0, percentile))
+        let sorted = samples.sorted()
+        let index = Int((Double(sorted.count - 1) * clamped).rounded(.toNearestOrEven))
+        return sorted[index]
     }
 
     /// Updates the current directory and refreshes git status.
@@ -1759,6 +2388,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
                 DispatchQueue.main.async {
                     self.isGitRepo = false
                     self.gitBranch = nil
+                    self.gitRootPath = nil
                 }
                 return
             }
@@ -1767,6 +2397,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
                 self.isGitRepo = result.isRepo
                 let oldBranch = self.gitBranch
                 self.gitBranch = result.branch
+                self.gitRootPath = result.root
                 // Notify shell event detector of branch change
                 if oldBranch != result.branch {
                     self.shellEventDetector.gitBranchChanged(to: result.branch)
@@ -1777,20 +2408,18 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         gitQueue.async(execute: work)
     }
 
-    /// Detects the git root directory for a given path
-    /// Returns nil if the path is not within a git repository
-    private func detectGitRoot(path: String) -> String? {
+    private func queryGitStatus(path: String) -> (isRepo: Bool, branch: String?, root: String?) {
         if ProtectedPathPolicy.shouldSkipAutoAccess(path: path) {
-            return nil
+            return (false, nil, nil)
         }
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else {
-            return nil
+            return (false, nil, nil)
         }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["-C", path, "rev-parse", "--show-toplevel"]
+        process.arguments = ["-C", path, "rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = Pipe()
@@ -1799,48 +2428,24 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             try process.run()
             process.waitUntilExit()
         } catch {
-            return nil
+            return (false, nil, nil)
         }
 
         guard process.terminationStatus == 0 else {
-            return nil
+            return (false, nil, nil)
         }
 
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        return output.isEmpty ? nil : output
-    }
-
-    private func queryGitStatus(path: String) -> (isRepo: Bool, branch: String?) {
-        if ProtectedPathPolicy.shouldSkipAutoAccess(path: path) {
-            return (false, nil)
+        let output = String(decoding: data, as: UTF8.self)
+        let lines = output
+            .split(whereSeparator: \.isNewline)
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard !lines.isEmpty else {
+            return (false, nil, nil)
         }
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir), isDir.boolValue else {
-            return (false, nil)
-        }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = ["-C", path, "rev-parse", "--abbrev-ref", "HEAD"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return (false, nil)
-        }
-
-        guard process.terminationStatus == 0 else {
-            return (false, nil)
-        }
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        let branch = output.isEmpty ? nil : output
-        return (true, branch)
+        let root = lines.first
+        let branch = lines.count > 1 ? lines.last : nil
+        return (true, branch, root)
     }
 }

@@ -26,13 +26,13 @@ public final class ProxyManager: ObservableObject {
 
     /// Path to the bundled proxy binary
     private var proxyBinaryPath: URL? {
-        // Look in the app bundle first
-        if let bundlePath = Bundle.main.url(forResource: "chau7-proxy", withExtension: nil) {
+        // Look in the resource bundle first
+        if let bundlePath = Chau7Resources.bundle.url(forResource: "chau7-proxy", withExtension: nil) {
             return bundlePath
         }
 
         // Fallback to Resources directory
-        if let resourcesURL = Bundle.main.resourceURL {
+        if let resourcesURL = Chau7Resources.bundle.resourceURL {
             let proxyPath = resourcesURL.appendingPathComponent("chau7-proxy")
             if FileManager.default.fileExists(atPath: proxyPath.path) {
                 return proxyPath
@@ -625,4 +625,3 @@ public final class ProxyManager: ObservableObject {
         }
     }
 }
-

@@ -1,6 +1,6 @@
 import Foundation
 
-public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable {
+public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sendable {
     public let rawValue: String
 
     public init(rawValue: String) {
@@ -29,7 +29,7 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable {
     public static let continueAI = AIEventSource(rawValue: "continue_ai")
 }
 
-public struct AIEvent: Identifiable, Equatable {
+public struct AIEvent: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let source: AIEventSource
     public let type: String
@@ -95,13 +95,26 @@ public struct AIEvent: Identifiable, Equatable {
     }
 }
 
-public enum AIEventParseError: Error {
+public enum AIEventParseError: Error, Sendable {
     case notJSONObject
     case missingField(String)
     case invalidFieldType(String)
 }
 
-public final class AIEventParser {
+extension AIEventParseError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .notJSONObject:
+            return "AI event data is not a JSON object"
+        case .missingField(let field):
+            return "AI event missing required field: \(field)"
+        case .invalidFieldType(let field):
+            return "AI event field has invalid type: \(field)"
+        }
+    }
+}
+
+public enum AIEventParser {
     public static func parse(line: String) throws -> AIEvent {
         guard let data = line.data(using: .utf8) else {
             throw AIEventParseError.notJSONObject

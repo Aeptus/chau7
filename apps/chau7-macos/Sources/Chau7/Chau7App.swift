@@ -28,8 +28,7 @@ struct Chau7App: App {
         _ = SnippetManager.shared
         AppIcon.apply()
         NSApplication.shared.setActivationPolicy(.regular)
-        appDelegate.model = model
-        appDelegate.overlayModel = overlayModel
+        appDelegate.configureModels(model: model, overlayModel: overlayModel)
         RemoteControlManager.shared.configure(overlayModel: overlayModel)
     }
 
@@ -41,7 +40,7 @@ struct Chau7App: App {
         .commands {
             // MARK: - App Menu
             CommandGroup(replacing: .appSettings) {
-                Button("Settings...") {
+                Button(L("Settings...", "Settings...")) {
                     appDelegate.showSettings()
                 }
                 .keyboardShortcut(",")
@@ -49,41 +48,41 @@ struct Chau7App: App {
 
             // MARK: - File Menu
             CommandGroup(replacing: .newItem) {
-                Button("New Window") {
+                Button(L("New Window", "New Window")) {
                     appDelegate.newOverlayWindow()
                 }
                 .keyboardShortcut("n")
 
-                Button("New Tab") {
+                Button(L("New Tab", "New Tab")) {
                     appDelegate.newTab()
                 }
                 .keyboardShortcut("t")
 
-                Button("SSH Connections...") {
+                Button(L("SSH Connections...", "SSH Connections...")) {
                     appDelegate.showSSHManager()
                 }
                 .keyboardShortcut("o", modifiers: [.command, .shift])
 
                 Divider()
 
-                Button("Close Tab") {
+                Button(L("Close Tab", "Close Tab")) {
                     appDelegate.closeTab()
                 }
                 .keyboardShortcut("w")
 
-                Button("Close Window") {
+                Button(L("Close Window", "Close Window")) {
                     appDelegate.closeWindow()
                 }
                 .keyboardShortcut("w", modifiers: [.command, .shift])
 
-                Button("Close Other Tabs") {
+                Button(L("Close Other Tabs", "Close Other Tabs")) {
                     appDelegate.closeOtherTabs()
                 }
                 .keyboardShortcut("w", modifiers: [.command, .option])
 
                 Divider()
 
-                Button("Export Text...") {
+                Button(L("Export Text...", "Export Text...")) {
                     appDelegate.exportText()
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
@@ -93,7 +92,7 @@ struct Chau7App: App {
             CommandGroup(replacing: .importExport) { }
 
             CommandGroup(replacing: .printItem) {
-                Button("Print...") {
+                Button(L("Print...", "Print...")) {
                     appDelegate.printTerminal()
                 }
                 .keyboardShortcut("p")
@@ -101,27 +100,27 @@ struct Chau7App: App {
 
             // MARK: - Edit Menu
             CommandGroup(replacing: .pasteboard) {
-                Button("Cut") {
+                Button(L("Cut", "Cut")) {
                     appDelegate.cut()
                 }
                 .keyboardShortcut("x")
 
-                Button("Copy") {
+                Button(L("Copy", "Copy")) {
                     appDelegate.copyOrInterrupt()
                 }
                 .keyboardShortcut("c")
 
-                Button("Paste") {
+                Button(L("Paste", "Paste")) {
                     appDelegate.paste()
                 }
                 .keyboardShortcut("v")
 
-                Button("Paste Escaped") {
+                Button(L("Paste Escaped", "Paste Escaped")) {
                     appDelegate.pasteEscaped()
                 }
                 .keyboardShortcut("v", modifiers: [.command, .option])
 
-                Button("Select All") {
+                Button(L("Select All", "Select All")) {
                     appDelegate.selectAll()
                 }
                 .keyboardShortcut("a")
@@ -129,24 +128,24 @@ struct Chau7App: App {
 
             CommandGroup(replacing: .textEditing) {
                 Menu("Find") {
-                    Button("Find...") {
+                    Button(L("Find...", "Find...")) {
                         appDelegate.toggleSearch()
                     }
                     .keyboardShortcut("f")
 
-                    Button("Find Next") {
+                    Button(L("Find Next", "Find Next")) {
                         appDelegate.nextSearchMatch()
                     }
                     .keyboardShortcut("g")
 
-                    Button("Find Previous") {
+                    Button(L("Find Previous", "Find Previous")) {
                         appDelegate.previousSearchMatch()
                     }
                     .keyboardShortcut("g", modifiers: [.command, .shift])
 
                     Divider()
 
-                    Button("Use Selection for Find") {
+                    Button(L("Use Selection for Find", "Use Selection for Find")) {
                         appDelegate.useSelectionForFind()
                     }
                     .keyboardShortcut("e")
@@ -154,12 +153,12 @@ struct Chau7App: App {
 
                 Divider()
 
-                Button("Snippets...") {
+                Button(L("Snippets...", "Snippets...")) {
                     appDelegate.toggleSnippets()
                 }
                 .keyboardShortcut(";", modifiers: [.command])
 
-                Button("Command Palette...") {
+                Button(L("Command Palette...", "Command Palette...")) {
                     appDelegate.toggleCommandPalette()
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
@@ -167,36 +166,36 @@ struct Chau7App: App {
 
             // MARK: - View Menu
             CommandGroup(after: .toolbar) {
-                Button("Enter Full Screen") {
+                Button(L("Enter Full Screen", "Enter Full Screen")) {
                     appDelegate.toggleFullScreen()
                 }
                 .keyboardShortcut("f", modifiers: [.command, .control])
 
                 Divider()
 
-                Button("Zoom In") {
+                Button(L("Zoom In", "Zoom In")) {
                     appDelegate.zoomIn()
                 }
                 .keyboardShortcut("=")
 
-                Button("Zoom Out") {
+                Button(L("Zoom Out", "Zoom Out")) {
                     appDelegate.zoomOut()
                 }
                 .keyboardShortcut("-")
 
-                Button("Actual Size") {
+                Button(L("Actual Size", "Actual Size")) {
                     appDelegate.zoomReset()
                 }
-                .keyboardShortcut("0")
+                .keyboardShortcut("à")
 
                 Divider()
 
-                Button("Clear Screen") {
+                Button(L("Clear Screen", "Clear Screen")) {
                     appDelegate.clearScreen()
                 }
                 .keyboardShortcut("k")
 
-                Button("Clear Scrollback") {
+                Button(L("Clear Scrollback", "Clear Scrollback")) {
                     appDelegate.clearScrollback()
                 }
                 .keyboardShortcut("k", modifiers: [.command, .shift])
@@ -205,43 +204,43 @@ struct Chau7App: App {
 
                 // MARK: - Panes
                 Menu("Panes") {
-                    Button("Split Horizontally") {
+                    Button(L("Split Horizontally", "Split Horizontally")) {
                         appDelegate.splitHorizontally()
                     }
                     .keyboardShortcut("d")
 
-                    Button("Split Vertically") {
+                    Button(L("Split Vertically", "Split Vertically")) {
                         appDelegate.splitVertically()
                     }
                     .keyboardShortcut("d", modifiers: [.command, .shift])
 
                     Divider()
 
-                    Button("Open Text Editor") {
+                    Button(L("Open Text Editor", "Open Text Editor")) {
                         appDelegate.openTextEditorPane()
                     }
                     .keyboardShortcut("e", modifiers: [.command, .option])
 
-                    Button("Append Selection to Editor") {
+                    Button(L("Append Selection to Editor", "Append Selection to Editor")) {
                         appDelegate.appendSelectionToEditor()
                     }
                     .keyboardShortcut("e", modifiers: [.command, .shift])
 
                     Divider()
 
-                    Button("Close Pane") {
+                    Button(L("Close Pane", "Close Pane")) {
                         appDelegate.closeCurrentPane()
                     }
                     .keyboardShortcut("w", modifiers: [.command, .control])
 
                     Divider()
 
-                    Button("Focus Next Pane") {
+                    Button(L("Focus Next Pane", "Focus Next Pane")) {
                         appDelegate.focusNextPane()
                     }
                     .keyboardShortcut("]", modifiers: [.command, .option])
 
-                    Button("Focus Previous Pane") {
+                    Button(L("Focus Previous Pane", "Focus Previous Pane")) {
                         appDelegate.focusPreviousPane()
                     }
                     .keyboardShortcut("[", modifiers: [.command, .option])
@@ -252,29 +251,29 @@ struct Chau7App: App {
             CommandGroup(after: .windowSize) {
                 Divider()
 
-                Button("Rename Tab...") {
+                Button(L("Rename Tab...", "Rename Tab...")) {
                     appDelegate.beginRenameTab()
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
 
                 Divider()
 
-                Button("Show Next Tab") {
+                Button(L("Show Next Tab", "Show Next Tab")) {
                     appDelegate.nextTab()
                 }
                 .keyboardShortcut("]", modifiers: [.command, .shift])
 
-                Button("Show Previous Tab") {
+                Button(L("Show Previous Tab", "Show Previous Tab")) {
                     appDelegate.previousTab()
                 }
                 .keyboardShortcut("[", modifiers: [.command, .shift])
 
-                Button("Move Tab Right") {
+                Button(L("Move Tab Right", "Move Tab Right")) {
                     appDelegate.moveTabRight()
                 }
                 .keyboardShortcut("]", modifiers: [.command, .option, .shift])
 
-                Button("Move Tab Left") {
+                Button(L("Move Tab Left", "Move Tab Left")) {
                     appDelegate.moveTabLeft()
                 }
                 .keyboardShortcut("[", modifiers: [.command, .option, .shift])
@@ -282,46 +281,46 @@ struct Chau7App: App {
                 Divider()
 
                 Group {
-                    Button("Select Tab 1") { appDelegate.selectTab(number: 1) }
-                        .keyboardShortcut("1")
-                    Button("Select Tab 2") { appDelegate.selectTab(number: 2) }
-                        .keyboardShortcut("2")
-                    Button("Select Tab 3") { appDelegate.selectTab(number: 3) }
-                        .keyboardShortcut("3")
-                    Button("Select Tab 4") { appDelegate.selectTab(number: 4) }
-                        .keyboardShortcut("4")
-                    Button("Select Tab 5") { appDelegate.selectTab(number: 5) }
-                        .keyboardShortcut("5")
+                    Button(L("Select Tab 1", "Select Tab 1")) { appDelegate.selectTab(number: 1) }
+                        .keyboardShortcut("&")
+                    Button(L("Select Tab 2", "Select Tab 2")) { appDelegate.selectTab(number: 2) }
+                        .keyboardShortcut("é")
+                    Button(L("Select Tab 3", "Select Tab 3")) { appDelegate.selectTab(number: 3) }
+                        .keyboardShortcut("\"")
+                    Button(L("Select Tab 4", "Select Tab 4")) { appDelegate.selectTab(number: 4) }
+                        .keyboardShortcut("'")
+                    Button(L("Select Tab 5", "Select Tab 5")) { appDelegate.selectTab(number: 5) }
+                        .keyboardShortcut("(")
                 }
 
                 Group {
-                    Button("Select Tab 6") { appDelegate.selectTab(number: 6) }
-                        .keyboardShortcut("6")
-                    Button("Select Tab 7") { appDelegate.selectTab(number: 7) }
-                        .keyboardShortcut("7")
-                    Button("Select Tab 8") { appDelegate.selectTab(number: 8) }
-                        .keyboardShortcut("8")
-                    Button("Select Tab 9") { appDelegate.selectTab(number: 9) }
-                        .keyboardShortcut("9")
+                    Button(L("Select Tab 6", "Select Tab 6")) { appDelegate.selectTab(number: 6) }
+                        .keyboardShortcut("§")
+                    Button(L("Select Tab 7", "Select Tab 7")) { appDelegate.selectTab(number: 7) }
+                        .keyboardShortcut("è")
+                    Button(L("Select Tab 8", "Select Tab 8")) { appDelegate.selectTab(number: 8) }
+                        .keyboardShortcut("!")
+                    Button(L("Select Tab 9", "Select Tab 9")) { appDelegate.selectTab(number: 9) }
+                        .keyboardShortcut("ç")
                 }
 
                 Divider()
 
-                Button("Debug Console") {
+                Button(L("Debug Console", "Debug Console")) {
                     DebugConsoleController.shared.toggle()
                 }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
 
                 Divider()
 
-                Button("Refresh Tab Bar") {
+                Button(L("Refresh Tab Bar", "Refresh Tab Bar")) {
                     appDelegate.refreshTabBar()
                 }
                 .keyboardShortcut("r", modifiers: [.command, .option])
             }
 
             CommandGroup(after: .help) {
-                Button("Keyboard Shortcuts...") {
+                Button(L("Keyboard Shortcuts...", "Keyboard Shortcuts...")) {
                     appDelegate.showKeyboardShortcuts()
                 }
                 .keyboardShortcut("/", modifiers: [.command])

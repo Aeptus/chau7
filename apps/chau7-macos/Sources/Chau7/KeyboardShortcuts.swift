@@ -21,6 +21,7 @@ import AppKit
 /// - Ctrl+Tab: Next Tab
 /// - Ctrl+Shift+Tab: Previous Tab
 /// - Cmd+/: Keyboard Shortcuts
+/// - Cmd+Option+E: Open Text Editor pane
 ///
 /// ### Edit
 /// - Cmd+C: Copy (or interrupt if no selection)

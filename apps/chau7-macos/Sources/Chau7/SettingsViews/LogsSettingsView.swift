@@ -145,7 +145,7 @@ struct LogsSettingsView: View {
                             Circle()
                                 .fill(status.state == .active ? Color.green : Color.gray)
                                 .frame(width: 8, height: 8)
-                            Text("\(status.tool)")
+                            Text(status.tool)
                                 .fontWeight(.medium)
                             Text(String(status.sessionId.prefix(8)))
                                 .font(.system(.caption, design: .monospaced))

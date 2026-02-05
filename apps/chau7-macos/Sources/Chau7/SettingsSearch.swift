@@ -17,6 +17,13 @@ struct SearchableSetting: Identifiable {
     }
 }
 
+private func localizedKeywords(_ key: String, _ defaultValue: String) -> [String] {
+    L(key, defaultValue)
+        .split(separator: ",")
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+}
+
 enum SettingsSection: String, CaseIterable, Identifiable {
     case general
     case appearance
@@ -90,148 +97,442 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 extension FeatureSettings {
     static let searchableSettings: [SearchableSetting] = [
         // General
-        SearchableSetting(id: "language", section: .general, title: "Language",
-                         keywords: ["langue", "français", "english", "i18n", "localization", "translation"],
-                         description: "Application display language"),
-        SearchableSetting(id: "launch", section: .general, title: "Launch at Login",
-                         keywords: ["startup", "login", "autostart", "boot"],
-                         description: "Automatically start Chau7 when you log in"),
-        SearchableSetting(id: "defaultDir", section: .general, title: "Default Directory",
-                         keywords: ["path", "folder", "start", "working"],
-                         description: "Starting directory for new terminal tabs"),
-        SearchableSetting(id: "icloud", section: .general, title: "iCloud Sync",
-                         keywords: ["cloud", "sync", "backup", "restore"],
-                         description: "Sync settings across Macs via iCloud"),
-        SearchableSetting(id: "profiles", section: .general, title: "Settings Profiles",
-                         keywords: ["profile", "work", "personal", "switch", "preset"],
-                         description: "Create and switch between named setting profiles"),
-        SearchableSetting(id: "export", section: .general, title: "Export/Import Settings",
-                         keywords: ["backup", "restore", "json", "save", "load"],
-                         description: "Export or import settings as JSON"),
-        SearchableSetting(id: "remote", section: .remote, title: "Remote Control",
-                         keywords: ["remote", "ios", "relay", "pairing", "qr"],
-                         description: "Pair an iPhone and view terminal output remotely"),
+        SearchableSetting(
+            id: "language",
+            section: .general,
+            title: L("settings.search.language.title", "Language"),
+            keywords: localizedKeywords(
+                "settings.search.language.keywords",
+                "language,langue,français,english,i18n,localization,translation"
+            ),
+            description: L("settings.search.language.description", "Application display language")
+        ),
+        SearchableSetting(
+            id: "launch",
+            section: .general,
+            title: L("settings.search.launch.title", "Launch at Login"),
+            keywords: localizedKeywords(
+                "settings.search.launch.keywords",
+                "startup,login,autostart,boot"
+            ),
+            description: L("settings.search.launch.description", "Automatically start Chau7 when you log in")
+        ),
+        SearchableSetting(
+            id: "defaultDir",
+            section: .general,
+            title: L("settings.search.defaultDir.title", "Default Directory"),
+            keywords: localizedKeywords(
+                "settings.search.defaultDir.keywords",
+                "path,folder,start,working"
+            ),
+            description: L("settings.search.defaultDir.description", "Starting directory for new terminal tabs")
+        ),
+        SearchableSetting(
+            id: "icloud",
+            section: .general,
+            title: L("settings.search.icloud.title", "iCloud Sync"),
+            keywords: localizedKeywords(
+                "settings.search.icloud.keywords",
+                "cloud,sync,backup,restore"
+            ),
+            description: L("settings.search.icloud.description", "Sync settings across Macs via iCloud")
+        ),
+        SearchableSetting(
+            id: "profiles",
+            section: .general,
+            title: L("settings.search.profiles.title", "Settings Profiles"),
+            keywords: localizedKeywords(
+                "settings.search.profiles.keywords",
+                "profile,work,personal,switch,preset"
+            ),
+            description: L("settings.search.profiles.description", "Create and switch between named setting profiles")
+        ),
+        SearchableSetting(
+            id: "export",
+            section: .general,
+            title: L("settings.search.export.title", "Export/Import Settings"),
+            keywords: localizedKeywords(
+                "settings.search.export.keywords",
+                "backup,restore,json,save,load"
+            ),
+            description: L("settings.search.export.description", "Export or import settings as JSON")
+        ),
+        SearchableSetting(
+            id: "remote",
+            section: .remote,
+            title: L("settings.search.remote.title", "Remote Control"),
+            keywords: localizedKeywords(
+                "settings.search.remote.keywords",
+                "remote,ios,relay,pairing,qr"
+            ),
+            description: L("settings.search.remote.description", "Pair an iPhone and view terminal output remotely")
+        ),
 
         // Appearance
-        SearchableSetting(id: "fontFamily", section: .appearance, title: "Font Family",
-                         keywords: ["typeface", "menlo", "monaco", "monospace", "text"],
-                         description: "Choose the terminal font"),
-        SearchableSetting(id: "fontSize", section: .appearance, title: "Font Size",
-                         keywords: ["text", "size", "big", "small", "zoom"],
-                         description: "Terminal font size in points"),
-        SearchableSetting(id: "defaultZoom", section: .appearance, title: "Default Zoom",
-                         keywords: ["scale", "zoom", "percent", "size"],
-                         description: "Default zoom percentage for new tabs"),
-        SearchableSetting(id: "colorScheme", section: .appearance, title: "Color Scheme",
-                         keywords: ["theme", "colors", "dracula", "solarized", "nord", "dark", "light"],
-                         description: "Terminal color palette"),
-        SearchableSetting(id: "opacity", section: .appearance, title: "Window Opacity",
-                         keywords: ["transparency", "translucent", "see-through", "alpha"],
-                         description: "Terminal window transparency"),
-        SearchableSetting(id: "syntaxHighlight", section: .appearance, title: "Syntax Highlighting",
-                         keywords: ["code", "colors", "highlight"],
-                         description: "Highlight code syntax in output"),
-        SearchableSetting(id: "timestamps", section: .appearance, title: "Line Timestamps",
-                         keywords: ["time", "date", "clock"],
-                         description: "Show timestamps for terminal lines"),
+        SearchableSetting(
+            id: "fontFamily",
+            section: .appearance,
+            title: L("settings.search.fontFamily.title", "Font Family"),
+            keywords: localizedKeywords(
+                "settings.search.fontFamily.keywords",
+                "typeface,menlo,monaco,monospace,text"
+            ),
+            description: L("settings.search.fontFamily.description", "Choose the terminal font")
+        ),
+        SearchableSetting(
+            id: "fontSize",
+            section: .appearance,
+            title: L("settings.search.fontSize.title", "Font Size"),
+            keywords: localizedKeywords(
+                "settings.search.fontSize.keywords",
+                "text,size,big,small,zoom"
+            ),
+            description: L("settings.search.fontSize.description", "Terminal font size in points")
+        ),
+        SearchableSetting(
+            id: "defaultZoom",
+            section: .appearance,
+            title: L("settings.search.defaultZoom.title", "Default Zoom"),
+            keywords: localizedKeywords(
+                "settings.search.defaultZoom.keywords",
+                "scale,zoom,percent,size"
+            ),
+            description: L("settings.search.defaultZoom.description", "Default zoom percentage for new tabs")
+        ),
+        SearchableSetting(
+            id: "colorScheme",
+            section: .appearance,
+            title: L("settings.search.colorScheme.title", "Color Scheme"),
+            keywords: localizedKeywords(
+                "settings.search.colorScheme.keywords",
+                "theme,colors,dracula,solarized,nord,dark,light"
+            ),
+            description: L("settings.search.colorScheme.description", "Terminal color palette")
+        ),
+        SearchableSetting(
+            id: "opacity",
+            section: .appearance,
+            title: L("settings.search.opacity.title", "Window Opacity"),
+            keywords: localizedKeywords(
+                "settings.search.opacity.keywords",
+                "transparency,translucent,see-through,alpha"
+            ),
+            description: L("settings.search.opacity.description", "Terminal window transparency")
+        ),
+        SearchableSetting(
+            id: "syntaxHighlight",
+            section: .appearance,
+            title: L("settings.search.syntaxHighlight.title", "Syntax Highlighting"),
+            keywords: localizedKeywords(
+                "settings.search.syntaxHighlight.keywords",
+                "code,colors,highlight"
+            ),
+            description: L("settings.search.syntaxHighlight.description", "Highlight code syntax in output")
+        ),
+        SearchableSetting(
+            id: "timestamps",
+            section: .appearance,
+            title: L("settings.search.timestamps.title", "Line Timestamps"),
+            keywords: localizedKeywords(
+                "settings.search.timestamps.keywords",
+                "time,date,clock"
+            ),
+            description: L("settings.search.timestamps.description", "Show timestamps for terminal lines")
+        ),
 
         // Terminal
-        SearchableSetting(id: "shell", section: .terminal, title: "Shell",
-                         keywords: ["zsh", "bash", "fish", "terminal", "command"],
-                         description: "Choose which shell to use"),
-        SearchableSetting(id: "startupCommand", section: .terminal, title: "Startup Command",
-                         keywords: ["init", "run", "execute", "neofetch"],
-                         description: "Command to run when terminal starts"),
-        SearchableSetting(id: "lsColors", section: .terminal, title: "ls Colors",
-                         keywords: ["ls", "colors", "colorize", "LSCOLORS", "CLICOLOR"],
-                         description: "Enable colored ls output in new sessions"),
-        SearchableSetting(id: "cursor", section: .terminal, title: "Cursor Style",
-                         keywords: ["block", "underline", "bar", "caret"],
-                         description: "Terminal cursor appearance"),
-        SearchableSetting(id: "cursorBlink", section: .terminal, title: "Cursor Blink",
-                         keywords: ["animate", "flash", "blink"],
-                         description: "Animate cursor with blinking"),
-        SearchableSetting(id: "scrollback", section: .terminal, title: "Scrollback Lines",
-                         keywords: ["history", "buffer", "lines", "scroll"],
-                         description: "Lines to keep in scrollback"),
-        SearchableSetting(id: "bell", section: .terminal, title: "Bell",
-                         keywords: ["sound", "beep", "alert", "audio"],
-                         description: "Terminal bell sound"),
-        SearchableSetting(id: "dangerousCommands", section: .terminal, title: "Dangerous Commands",
-                         keywords: ["dangerous", "risky", "destructive", "rm", "force", "highlight", "safety"],
-                         description: "Highlight risky commands in the terminal"),
+        SearchableSetting(
+            id: "shell",
+            section: .terminal,
+            title: L("settings.search.shell.title", "Shell"),
+            keywords: localizedKeywords(
+                "settings.search.shell.keywords",
+                "zsh,bash,fish,terminal,command"
+            ),
+            description: L("settings.search.shell.description", "Choose which shell to use")
+        ),
+        SearchableSetting(
+            id: "startupCommand",
+            section: .terminal,
+            title: L("settings.search.startupCommand.title", "Startup Command"),
+            keywords: localizedKeywords(
+                "settings.search.startupCommand.keywords",
+                "init,run,execute,neofetch"
+            ),
+            description: L("settings.search.startupCommand.description", "Command to run when terminal starts")
+        ),
+        SearchableSetting(
+            id: "lsColors",
+            section: .terminal,
+            title: L("settings.search.lsColors.title", "ls Colors"),
+            keywords: localizedKeywords(
+                "settings.search.lsColors.keywords",
+                "ls,colors,colorize,LSCOLORS,CLICOLOR"
+            ),
+            description: L("settings.search.lsColors.description", "Enable colored ls output in new sessions")
+        ),
+        SearchableSetting(
+            id: "cursor",
+            section: .terminal,
+            title: L("settings.search.cursor.title", "Cursor Style"),
+            keywords: localizedKeywords(
+                "settings.search.cursor.keywords",
+                "block,underline,bar,caret"
+            ),
+            description: L("settings.search.cursor.description", "Terminal cursor appearance")
+        ),
+        SearchableSetting(
+            id: "cursorBlink",
+            section: .terminal,
+            title: L("settings.search.cursorBlink.title", "Cursor Blink"),
+            keywords: localizedKeywords(
+                "settings.search.cursorBlink.keywords",
+                "animate,flash,blink"
+            ),
+            description: L("settings.search.cursorBlink.description", "Animate cursor with blinking")
+        ),
+        SearchableSetting(
+            id: "scrollback",
+            section: .terminal,
+            title: L("settings.search.scrollback.title", "Scrollback Lines"),
+            keywords: localizedKeywords(
+                "settings.search.scrollback.keywords",
+                "history,buffer,lines,scroll"
+            ),
+            description: L("settings.search.scrollback.description", "Lines to keep in scrollback")
+        ),
+        SearchableSetting(
+            id: "bell",
+            section: .terminal,
+            title: L("settings.search.bell.title", "Bell"),
+            keywords: localizedKeywords(
+                "settings.search.bell.keywords",
+                "sound,beep,alert,audio"
+            ),
+            description: L("settings.search.bell.description", "Terminal bell sound")
+        ),
+        SearchableSetting(
+            id: "dangerousCommands",
+            section: .terminal,
+            title: L("settings.search.dangerousCommands.title", "Dangerous Commands"),
+            keywords: localizedKeywords(
+                "settings.search.dangerousCommands.keywords",
+                "dangerous,risky,destructive,rm,force,highlight,safety"
+            ),
+            description: L("settings.search.dangerousCommands.description", "Highlight risky commands in the terminal")
+        ),
 
         // Input
-        SearchableSetting(id: "shortcuts", section: .input, title: "Keyboard Shortcuts",
-                         keywords: ["hotkey", "keybinding", "key", "command"],
-                         description: "Customize keyboard shortcuts"),
-        SearchableSetting(id: "shortcutHelperHint", section: .input, title: "Shortcut Helper Hint",
-                         keywords: ["hint", "overlay", "helper", "shortcuts", "corner"],
-                         description: "Show the shortcut helper hint in the terminal"),
-        SearchableSetting(id: "copyOnSelect", section: .input, title: "Copy on Select",
-                         keywords: ["clipboard", "copy", "selection"],
-                         description: "Copy text when selected"),
-        SearchableSetting(id: "cmdClick", section: .input, title: "Cmd+Click Paths",
-                         keywords: ["click", "open", "file", "editor"],
-                         description: "Open file paths with Cmd+click"),
-        SearchableSetting(id: "urlHandler", section: .input, title: "URL Handler",
-                         keywords: ["browser", "url", "links", "open"],
-                         description: "Choose which browser opens URLs"),
-        SearchableSetting(id: "broadcast", section: .input, title: "Broadcast Input",
-                         keywords: ["multi", "tabs", "send", "input"],
-                         description: "Send input to all tabs"),
+        SearchableSetting(
+            id: "shortcuts",
+            section: .input,
+            title: L("settings.search.shortcuts.title", "Keyboard Shortcuts"),
+            keywords: localizedKeywords(
+                "settings.search.shortcuts.keywords",
+                "hotkey,keybinding,key,command"
+            ),
+            description: L("settings.search.shortcuts.description", "Customize keyboard shortcuts")
+        ),
+        SearchableSetting(
+            id: "shortcutHelperHint",
+            section: .input,
+            title: L("settings.search.shortcutHelperHint.title", "Shortcut Helper Hint"),
+            keywords: localizedKeywords(
+                "settings.search.shortcutHelperHint.keywords",
+                "hint,overlay,helper,shortcuts,corner"
+            ),
+            description: L("settings.search.shortcutHelperHint.description", "Show the shortcut helper hint in the terminal")
+        ),
+        SearchableSetting(
+            id: "copyOnSelect",
+            section: .input,
+            title: L("settings.search.copyOnSelect.title", "Copy on Select"),
+            keywords: localizedKeywords(
+                "settings.search.copyOnSelect.keywords",
+                "clipboard,copy,selection"
+            ),
+            description: L("settings.search.copyOnSelect.description", "Copy text when selected")
+        ),
+        SearchableSetting(
+            id: "cmdClick",
+            section: .input,
+            title: L("settings.search.cmdClick.title", "Cmd+Click Paths"),
+            keywords: localizedKeywords(
+                "settings.search.cmdClick.keywords",
+                "click,open,file,editor"
+            ),
+            description: L("settings.search.cmdClick.description", "Open file paths with Cmd+click")
+        ),
+        SearchableSetting(
+            id: "urlHandler",
+            section: .input,
+            title: L("settings.search.urlHandler.title", "URL Handler"),
+            keywords: localizedKeywords(
+                "settings.search.urlHandler.keywords",
+                "browser,url,links,open"
+            ),
+            description: L("settings.search.urlHandler.description", "Choose which browser opens URLs")
+        ),
+        SearchableSetting(
+            id: "broadcast",
+            section: .input,
+            title: L("settings.search.broadcast.title", "Broadcast Input"),
+            keywords: localizedKeywords(
+                "settings.search.broadcast.keywords",
+                "multi,tabs,send,input"
+            ),
+            description: L("settings.search.broadcast.description", "Send input to all tabs")
+        ),
 
         // Tabs
-        SearchableSetting(id: "lastTabClose", section: .tabs, title: "Last Tab Close",
-                         keywords: ["close", "window", "behavior", "final"],
-                         description: "What happens when closing the last tab"),
-        SearchableSetting(id: "newTabDirectory", section: .tabs, title: "New Tab Directory",
-                         keywords: ["current", "working", "directory", "folder", "inherit"],
-                         description: "Open new tabs in the active tab's directory"),
+        SearchableSetting(
+            id: "lastTabClose",
+            section: .tabs,
+            title: L("settings.search.lastTabClose.title", "Last Tab Close"),
+            keywords: localizedKeywords(
+                "settings.search.lastTabClose.keywords",
+                "close,window,behavior,final"
+            ),
+            description: L("settings.search.lastTabClose.description", "What happens when closing the last tab")
+        ),
+        SearchableSetting(
+            id: "newTabDirectory",
+            section: .tabs,
+            title: L("settings.search.newTabDirectory.title", "New Tab Directory"),
+            keywords: localizedKeywords(
+                "settings.search.newTabDirectory.keywords",
+                "current,working,directory,folder,inherit"
+            ),
+            description: L("settings.search.newTabDirectory.description", "Open new tabs in the active tab's directory")
+        ),
 
         // Productivity
-        SearchableSetting(id: "snippets", section: .productivity, title: "Snippets",
-                         keywords: ["template", "shortcut", "text", "expansion"],
-                         description: "Reusable text snippets"),
-        SearchableSetting(id: "clipboard", section: .productivity, title: "Clipboard History",
-                         keywords: ["copy", "paste", "history"],
-                         description: "Access previous clipboard items"),
-        SearchableSetting(id: "bookmarks", section: .productivity, title: "Bookmarks",
-                         keywords: ["save", "position", "mark"],
-                         description: "Save terminal positions"),
-        SearchableSetting(id: "search", section: .productivity, title: "Semantic Search",
-                         keywords: ["find", "search", "command"],
-                         description: "Command-aware search"),
-        SearchableSetting(id: "findDefaults", section: .productivity, title: "Find Defaults",
-                         keywords: ["find", "case", "regex", "default"],
-                         description: "Default settings for the find bar"),
+        SearchableSetting(
+            id: "snippets",
+            section: .productivity,
+            title: L("settings.search.snippets.title", "Snippets"),
+            keywords: localizedKeywords(
+                "settings.search.snippets.keywords",
+                "template,shortcut,text,expansion"
+            ),
+            description: L("settings.search.snippets.description", "Reusable text snippets")
+        ),
+        SearchableSetting(
+            id: "clipboard",
+            section: .productivity,
+            title: L("settings.search.clipboard.title", "Clipboard History"),
+            keywords: localizedKeywords(
+                "settings.search.clipboard.keywords",
+                "copy,paste,history"
+            ),
+            description: L("settings.search.clipboard.description", "Access previous clipboard items")
+        ),
+        SearchableSetting(
+            id: "bookmarks",
+            section: .productivity,
+            title: L("settings.search.bookmarks.title", "Bookmarks"),
+            keywords: localizedKeywords(
+                "settings.search.bookmarks.keywords",
+                "save,position,mark"
+            ),
+            description: L("settings.search.bookmarks.description", "Save terminal positions")
+        ),
+        SearchableSetting(
+            id: "search",
+            section: .productivity,
+            title: L("settings.search.search.title", "Semantic Search"),
+            keywords: localizedKeywords(
+                "settings.search.search.keywords",
+                "find,search,command"
+            ),
+            description: L("settings.search.search.description", "Command-aware search")
+        ),
+        SearchableSetting(
+            id: "findDefaults",
+            section: .productivity,
+            title: L("settings.search.findDefaults.title", "Find Defaults"),
+            keywords: localizedKeywords(
+                "settings.search.findDefaults.keywords",
+                "find,case,regex,default"
+            ),
+            description: L("settings.search.findDefaults.description", "Default settings for the find bar")
+        ),
 
         // Windows
-        SearchableSetting(id: "splitPanes", section: .windows, title: "Split Panes",
-                         keywords: ["split", "divide", "pane", "horizontal", "vertical"],
-                         description: "Split terminal into panes"),
+        SearchableSetting(
+            id: "splitPanes",
+            section: .windows,
+            title: L("settings.search.splitPanes.title", "Split Panes"),
+            keywords: localizedKeywords(
+                "settings.search.splitPanes.keywords",
+                "split,divide,pane,horizontal,vertical"
+            ),
+            description: L("settings.search.splitPanes.description", "Split terminal into panes")
+        ),
 
         // AI Integration
-        SearchableSetting(id: "aiDetection", section: .aiIntegration, title: "AI CLI Detection",
-                         keywords: ["claude", "codex", "gemini", "copilot", "detect"],
-                         description: "Detect AI CLIs automatically"),
-        SearchableSetting(id: "aiCustomDetection", section: .aiIntegration, title: "Custom AI Detection",
-                         keywords: ["custom", "pattern", "rules", "detect"],
-                         description: "Add custom AI CLI detection rules"),
-        SearchableSetting(id: "autoTabTheme", section: .aiIntegration, title: "Auto Tab Themes",
-                         keywords: ["color", "tab", "ai", "theme"],
-                         description: "Color tabs by AI model"),
+        SearchableSetting(
+            id: "aiDetection",
+            section: .aiIntegration,
+            title: L("settings.search.aiDetection.title", "AI CLI Detection"),
+            keywords: localizedKeywords(
+                "settings.search.aiDetection.keywords",
+                "claude,codex,gemini,copilot,detect"
+            ),
+            description: L("settings.search.aiDetection.description", "Detect AI CLIs automatically")
+        ),
+        SearchableSetting(
+            id: "aiCustomDetection",
+            section: .aiIntegration,
+            title: L("settings.search.aiCustomDetection.title", "Custom AI Detection"),
+            keywords: localizedKeywords(
+                "settings.search.aiCustomDetection.keywords",
+                "custom,pattern,rules,detect"
+            ),
+            description: L("settings.search.aiCustomDetection.description", "Add custom AI CLI detection rules")
+        ),
+        SearchableSetting(
+            id: "autoTabTheme",
+            section: .aiIntegration,
+            title: L("settings.search.autoTabTheme.title", "Auto Tab Themes"),
+            keywords: localizedKeywords(
+                "settings.search.autoTabTheme.keywords",
+                "color,tab,ai,theme"
+            ),
+            description: L("settings.search.autoTabTheme.description", "Color tabs by AI model")
+        ),
 
         // Notifications
-        SearchableSetting(id: "notificationStatus", section: .notifications, title: "Notification Status",
-                         keywords: ["permission", "alert", "system", "status"],
-                         description: "Notification permission status"),
-        SearchableSetting(id: "notificationFilters", section: .notifications, title: "Notification Filters",
-                         keywords: ["filter", "event", "type", "toggle", "task", "complete", "failed"],
-                         description: "Filter which events trigger notifications"),
-        SearchableSetting(id: "eventMonitoring", section: .notifications, title: "Event Monitoring",
-                         keywords: ["monitor", "watch", "ai", "events", "log"],
-                         description: "Monitor AI CLI events for notifications"),
+        SearchableSetting(
+            id: "notificationStatus",
+            section: .notifications,
+            title: L("settings.search.notificationStatus.title", "Notification Status"),
+            keywords: localizedKeywords(
+                "settings.search.notificationStatus.keywords",
+                "permission,alert,system,status"
+            ),
+            description: L("settings.search.notificationStatus.description", "Notification permission status")
+        ),
+        SearchableSetting(
+            id: "notificationFilters",
+            section: .notifications,
+            title: L("settings.search.notificationFilters.title", "Notification Filters"),
+            keywords: localizedKeywords(
+                "settings.search.notificationFilters.keywords",
+                "filter,event,type,toggle,task,complete,failed"
+            ),
+            description: L("settings.search.notificationFilters.description", "Filter which events trigger notifications")
+        ),
+        SearchableSetting(
+            id: "eventMonitoring",
+            section: .notifications,
+            title: L("settings.search.eventMonitoring.title", "Event Monitoring"),
+            keywords: localizedKeywords(
+                "settings.search.eventMonitoring.keywords",
+                "monitor,watch,ai,events,log"
+            ),
+            description: L("settings.search.eventMonitoring.description", "Monitor AI CLI events for notifications")
+        ),
     ]
 
     static func searchSettings(query: String) -> [(section: SettingsSection, settings: [SearchableSetting])] {

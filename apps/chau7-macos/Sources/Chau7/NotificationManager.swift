@@ -8,12 +8,28 @@ final class NotificationManager {
     /// Tracks whether UNUserNotificationCenter is available and authorized
     /// Access must be synchronized via the serial queue
     private var _useNativeNotifications = true
+    private var loggedAuthorizationStatuses: Set<UNAuthorizationStatus> = []
+    private var didLogNativeError = false
     private let queue = DispatchQueue(label: "com.chau7.notificationManager")
     var tabTitleProvider: ((String) -> String?)?
 
     private var useNativeNotifications: Bool {
         get { queue.sync { _useNativeNotifications } }
         set { queue.sync { _useNativeNotifications = newValue } }
+    }
+
+    func updateAuthorizationStatus(_ status: UNAuthorizationStatus) {
+        switch status {
+        case .authorized, .provisional, .ephemeral:
+            useNativeNotifications = true
+        case .denied:
+            useNativeNotifications = false
+        case .notDetermined:
+            // Leave as-is; we'll fall back per-request.
+            break
+        @unknown default:
+            break
+        }
     }
 
     func notify(for event: AIEvent) {
@@ -81,13 +97,20 @@ final class NotificationManager {
             case .authorized, .provisional, .ephemeral:
                 self?.scheduleNativeNotification(for: event)
             case .denied:
-                Log.info("Native notifications denied, using AppleScript fallback")
+                self?.logAuthorizationOnce(
+                    status: .denied,
+                    message: "Native notifications denied, using AppleScript fallback"
+                )
                 self?.useNativeNotifications = false
                 let title = event.notificationTitle(toolOverride: self?.resolveTabTitle(for: event.tool))
                 self?.sendAppleScriptNotification(title: title, body: event.notificationBody)
             case .notDetermined:
-                // Try to schedule anyway - if it fails, we'll fall back to AppleScript
-                self?.scheduleNativeNotification(for: event)
+                self?.logAuthorizationOnce(
+                    status: .notDetermined,
+                    message: "Notification permission not determined, using AppleScript fallback"
+                )
+                let title = event.notificationTitle(toolOverride: self?.resolveTabTitle(for: event.tool))
+                self?.sendAppleScriptNotification(title: title, body: event.notificationBody)
             @unknown default:
                 Log.warn("Unknown notification authorization status, trying AppleScript")
                 let title = event.notificationTitle(toolOverride: self?.resolveTabTitle(for: event.tool))
@@ -113,7 +136,12 @@ final class NotificationManager {
         let center = UNUserNotificationCenter.current()
         center.add(request) { [weak self] error in
             if let error {
-                Log.error("Native notification error: \(error.localizedDescription)")
+                if self?.didLogNativeError == false {
+                    Log.error("Native notification error: \(error.localizedDescription)")
+                    self?.didLogNativeError = true
+                } else {
+                    Log.warn("Native notification error (suppressed): \(error.localizedDescription)")
+                }
                 // Fall back to AppleScript for future notifications
                 self?.useNativeNotifications = false
                 // Try AppleScript for this notification
@@ -122,6 +150,19 @@ final class NotificationManager {
             } else {
                 Log.info("Native notification scheduled successfully.")
             }
+        }
+    }
+
+    private func logAuthorizationOnce(status: UNAuthorizationStatus, message: String) {
+        let shouldLog = queue.sync { () -> Bool in
+            if loggedAuthorizationStatuses.contains(status) {
+                return false
+            }
+            loggedAuthorizationStatuses.insert(status)
+            return true
+        }
+        if shouldLog {
+            Log.info(message)
         }
     }
 

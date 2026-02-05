@@ -5,7 +5,6 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/schiste/Chau7-SwiftTerm.git",
       "state" : {
-        "branch" : "82b4e5f",
         "revision" : "82b4e5fb327b8724131161402096e598f27c9829"
       }
     },

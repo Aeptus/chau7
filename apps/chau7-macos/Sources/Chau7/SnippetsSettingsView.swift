@@ -14,6 +14,8 @@ struct SnippetsSettingsView: View {
     @State private var isNewSnippet = false
     @State private var showDeleteConfirmation = false
     @State private var snippetToDelete: SnippetEntry?
+    @State private var showRepoCopyError = false
+    @State private var repoCopyErrorMessage = ""
     @State private var showImportExportSheet = false
     @State private var importExportMode: ImportExportMode = .export
 
@@ -67,16 +69,25 @@ struct SnippetsSettingsView: View {
             footerSection
         }
         .frame(minWidth: 700, minHeight: 500)
-        .alert("Delete Snippet", isPresented: $showDeleteConfirmation) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) {
+        .alert(L("snippets.alert.delete.title", "Delete Snippet"), isPresented: $showDeleteConfirmation) {
+            Button(L("Cancel", "Cancel"), role: .cancel) {}
+            Button(L("Delete", "Delete"), role: .destructive) {
                 if let entry = snippetToDelete {
                     snippetManager.deleteSnippet(entry)
                     selectedSnippet = nil
                 }
             }
         } message: {
-            Text("Are you sure you want to delete \"\(snippetToDelete?.snippet.title ?? "")\"? This cannot be undone.")
+            Text(L(
+                "snippets.alert.delete.message",
+                "Are you sure you want to delete \"%@\"? This cannot be undone.",
+                snippetToDelete?.snippet.title ?? ""
+            ))
+        }
+        .alert(L("snippets.repo.choose.invalid.title", "Invalid Repository"), isPresented: $showRepoCopyError) {
+            Button(L("OK", "OK"), role: .cancel) {}
+        } message: {
+            Text(repoCopyErrorMessage)
         }
         .sheet(isPresented: $showImportExportSheet) {
             ImportExportSheet(mode: importExportMode)
@@ -88,9 +99,9 @@ struct SnippetsSettingsView: View {
     private var headerSection: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Snippets")
+                Text(L("Snippets", "Snippets"))
                     .font(.headline)
-                Text("Manage reusable text snippets • Press ⌘; to open snippet picker")
+                Text(L("Manage reusable text snippets • Press ⌘; to open snippet picker", "Manage reusable text snippets • Press ⌘; to open snippet picker"))
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -103,7 +114,7 @@ struct SnippetsSettingsView: View {
                     importExportMode = .import
                     showImportExportSheet = true
                 } label: {
-                    Label("Import", systemImage: "square.and.arrow.down")
+                    Label(L("Import", "Import"), systemImage: "square.and.arrow.down")
                 }
                 .buttonStyle(.bordered)
 
@@ -111,14 +122,14 @@ struct SnippetsSettingsView: View {
                     importExportMode = .export
                     showImportExportSheet = true
                 } label: {
-                    Label("Export", systemImage: "square.and.arrow.up")
+                    Label(L("Export", "Export"), systemImage: "square.and.arrow.up")
                 }
                 .buttonStyle(.bordered)
 
                 Button {
                     createNewSnippet()
                 } label: {
-                    Label("New Snippet", systemImage: "plus")
+                    Label(L("New Snippet", "New Snippet"), systemImage: "plus")
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -139,7 +150,7 @@ struct SnippetsSettingsView: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
-                TextField("Search snippets...", text: $searchText)
+                TextField(L("Search snippets...", "Search snippets..."), text: $searchText)
                     .textFieldStyle(.plain)
                 if !searchText.isEmpty {
                     Button {
@@ -188,7 +199,7 @@ struct SnippetsSettingsView: View {
         HStack(spacing: 4) {
             SourceFilterButton(
                 source: nil,
-                label: "All",
+                label: L("snippets.filter.all", "All"),
                 icon: "tray.full",
                 count: snippetManager.entries.count,
                 isSelected: selectedSource == nil
@@ -198,7 +209,7 @@ struct SnippetsSettingsView: View {
 
             SourceFilterButton(
                 source: .global,
-                label: "User",
+                label: L("snippets.filter.user", "User"),
                 icon: SnippetSource.global.icon,
                 count: snippetManager.entries.filter { $0.source == .global }.count,
                 isSelected: selectedSource == .global
@@ -209,7 +220,7 @@ struct SnippetsSettingsView: View {
             if snippetManager.repoRoot != nil {
                 SourceFilterButton(
                     source: .repo,
-                    label: "Repo",
+                    label: L("snippets.filter.repo", "Repo"),
                     icon: SnippetSource.repo.icon,
                     count: snippetManager.entries.filter { $0.source == .repo }.count,
                     isSelected: selectedSource == .repo
@@ -226,10 +237,14 @@ struct SnippetsSettingsView: View {
             Image(systemName: "text.badge.plus")
                 .font(.system(size: 40))
                 .foregroundColor(.secondary)
-            Text(searchText.isEmpty ? "No snippets yet" : "No matching snippets")
+            Text(searchText.isEmpty
+                 ? L("snippets.empty.none", "No snippets yet")
+                 : L("snippets.empty.noMatches", "No matching snippets"))
                 .font(.headline)
                 .foregroundColor(.secondary)
-            Text(searchText.isEmpty ? "Click \"New Snippet\" to create one" : "Try a different search term")
+            Text(searchText.isEmpty
+                 ? L("snippets.empty.cta", "Click \"New Snippet\" to create one")
+                 : L("snippets.empty.tryDifferent", "Try a different search term"))
                 .font(.caption)
                 .foregroundColor(.secondary)
             Spacer()
@@ -245,7 +260,9 @@ struct SnippetsSettingsView: View {
                 SnippetEditorPanel(
                     draft: $editorDraft,
                     isNew: isNewSnippet,
-                    repoAvailable: snippetManager.repoRoot != nil,
+                    repoSnippetsEnabled: settings.isRepoSnippetsEnabled,
+                    currentRepoRoot: snippetManager.repoRoot,
+                    recentRepoRoots: settings.recentRepoRoots,
                     onCancel: {
                         isEditorPresented = false
                     },
@@ -256,6 +273,7 @@ struct SnippetsSettingsView: View {
             } else if let entry = selectedSnippet {
                 SnippetDetailView(
                     entry: entry,
+                    currentRepoRoot: snippetManager.repoRoot,
                     onEdit: {
                         startEditing(entry)
                     },
@@ -266,6 +284,20 @@ struct SnippetsSettingsView: View {
                     onInsert: {
                         // Insert into terminal if available
                         NSApp.sendAction(#selector(AppDelegate.insertSnippetByID(_:)), to: nil, from: entry.snippet.id)
+                    },
+                    canCopyToCurrentRepo: settings.isRepoSnippetsEnabled && snippetManager.repoRoot != nil,
+                    repoCopyEnabled: settings.isRepoSnippetsEnabled,
+                    onCopyToGlobal: {
+                        copySnippet(entry, to: .global, repoRoot: nil)
+                    },
+                    onCopyToCurrentRepo: {
+                        guard let repoRoot = snippetManager.repoRoot else { return }
+                        copySnippet(entry, to: .repo, repoRoot: repoRoot)
+                    },
+                    onCopyToRepoPicker: {
+                        guard settings.isRepoSnippetsEnabled else { return }
+                        guard let repoRoot = pickRepoRoot() else { return }
+                        copySnippet(entry, to: .repo, repoRoot: repoRoot)
                     }
                 )
             } else {
@@ -280,17 +312,17 @@ struct SnippetsSettingsView: View {
             Image(systemName: "text.badge.plus")
                 .font(.system(size: 50))
                 .foregroundColor(.secondary.opacity(0.5))
-            Text("Select a snippet to view details")
+            Text(L("Select a snippet to view details", "Select a snippet to view details"))
                 .font(.headline)
                 .foregroundColor(.secondary)
-            Text("or create a new one")
+            Text(L("or create a new one", "or create a new one"))
                 .font(.caption)
                 .foregroundColor(.secondary)
 
             Button {
                 createNewSnippet()
             } label: {
-                Label("New Snippet", systemImage: "plus")
+                Label(L("New Snippet", "New Snippet"), systemImage: "plus")
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
@@ -303,14 +335,14 @@ struct SnippetsSettingsView: View {
         HStack {
             // Settings toggles
             HStack(spacing: 16) {
-                Toggle("Enable Snippets", isOn: $settings.isSnippetsEnabled)
+                Toggle(L("Enable Snippets", "Enable Snippets"), isOn: $settings.isSnippetsEnabled)
                     .toggleStyle(.switch)
                     .controlSize(.small)
                     .onChange(of: settings.isSnippetsEnabled) { _ in
                         snippetManager.refreshConfiguration()
                     }
 
-                Toggle("Repo Snippets", isOn: $settings.isRepoSnippetsEnabled)
+                Toggle(L("Repo Snippets", "Repo Snippets"), isOn: $settings.isRepoSnippetsEnabled)
                     .toggleStyle(.switch)
                     .controlSize(.small)
                     .disabled(!settings.isSnippetsEnabled)
@@ -318,7 +350,7 @@ struct SnippetsSettingsView: View {
                         snippetManager.refreshConfiguration()
                     }
 
-                Toggle("Placeholders", isOn: $settings.snippetPlaceholdersEnabled)
+                Toggle(L("Placeholders", "Placeholders"), isOn: $settings.snippetPlaceholdersEnabled)
                     .toggleStyle(.switch)
                     .controlSize(.small)
                     .disabled(!settings.isSnippetsEnabled)
@@ -328,12 +360,12 @@ struct SnippetsSettingsView: View {
 
             // Info
             HStack(spacing: 4) {
-                Text("\(snippetManager.entries.count) snippets")
+                Text(L("snippets.count", "%@ snippets", snippetManager.entries.count.formatted()))
                     .font(.caption)
                     .foregroundColor(.secondary)
 
                 if let repoRoot = snippetManager.repoRoot {
-                    Text("•")
+                    Text(L("•", "•"))
                         .foregroundColor(.secondary)
                     Text(URL(fileURLWithPath: repoRoot).lastPathComponent)
                         .font(.caption)
@@ -347,13 +379,23 @@ struct SnippetsSettingsView: View {
 
     // MARK: - Actions
 
+    private func defaultRepoRoot() -> String {
+        if let current = snippetManager.repoRoot {
+            return current
+        }
+        return settings.recentRepoRoots.first ?? ""
+    }
+
     private func createNewSnippet() {
-        editorDraft = SnippetDraft(source: selectedSource ?? .global)
+        let source = selectedSource ?? .global
+        let repoPath = source == .repo ? defaultRepoRoot() : ""
+        editorDraft = SnippetDraft(source: source, repoPath: repoPath)
         isNewSnippet = true
         isEditorPresented = true
     }
 
     private func startEditing(_ entry: SnippetEntry) {
+        let repoPath = entry.source == .repo ? (entry.repoRoot ?? defaultRepoRoot()) : ""
         editorDraft = SnippetDraft(
             id: entry.snippet.id,
             title: entry.snippet.title,
@@ -362,10 +404,37 @@ struct SnippetsSettingsView: View {
             folder: entry.snippet.folder ?? "",
             shellsText: entry.snippet.shells?.joined(separator: ", ") ?? "",
             key: entry.snippet.key ?? "",
-            source: entry.source
+            source: entry.source,
+            repoPath: repoPath
         )
         isNewSnippet = false
         isEditorPresented = true
+    }
+
+    private func copySnippet(_ entry: SnippetEntry, to target: SnippetSource, repoRoot: String?) {
+        if let repoRoot, !repoRoot.isEmpty {
+            settings.recordRecentRepo(repoRoot)
+        }
+        snippetManager.duplicateSnippet(entry, to: target, repoRootOverride: repoRoot)
+    }
+
+    private func pickRepoRoot() -> String? {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.message = L("snippets.repo.choose.message", "Choose a git repository")
+
+        if panel.runModal() == .OK, let url = panel.url {
+            if let root = SnippetManager.resolveRepoRoot(at: url.path) {
+                settings.recordRecentRepo(root)
+                return root
+            } else {
+                repoCopyErrorMessage = L("snippets.repo.choose.invalid", "That folder is not a git repository.")
+                showRepoCopyError = true
+            }
+        }
+        return nil
     }
 
     private func saveSnippet() {
@@ -401,7 +470,7 @@ private struct SourceFilterButton: View {
                     .font(.system(size: 10))
                 Text(label)
                     .font(.system(size: 11))
-                Text("\(count)")
+                Text(count.formatted())
                     .font(.system(size: 10))
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
@@ -446,7 +515,7 @@ private struct SnippetListRow: View {
             Spacer()
 
             if entry.isOverridden {
-                Text("OVERRIDDEN")
+                Text(L("OVERRIDDEN", "OVERRIDDEN"))
                     .font(.system(size: 8, weight: .bold))
                     .foregroundColor(.orange)
                     .padding(.horizontal, 4)
@@ -466,9 +535,15 @@ private struct SnippetListRow: View {
 
 private struct SnippetDetailView: View {
     let entry: SnippetEntry
+    let currentRepoRoot: String?
     let onEdit: () -> Void
     let onDelete: () -> Void
     let onInsert: () -> Void
+    let canCopyToCurrentRepo: Bool
+    let repoCopyEnabled: Bool
+    let onCopyToGlobal: () -> Void
+    let onCopyToCurrentRepo: () -> Void
+    let onCopyToRepoPicker: () -> Void
 
     var body: some View {
         ScrollView {
@@ -485,7 +560,7 @@ private struct SnippetDetailView: View {
                                 .foregroundColor(.secondary)
 
                             if let key = entry.snippet.validatedKey {
-                                Text("Key: \(String(key))")
+                                Text(L("snippets.key.label", "Key: %@", String(key)))
                                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                                     .foregroundColor(.accentColor)
                                     .padding(.horizontal, 6)
@@ -495,7 +570,7 @@ private struct SnippetDetailView: View {
                             }
 
                             if entry.isOverridden {
-                                Text("OVERRIDDEN")
+                                Text(L("OVERRIDDEN", "OVERRIDDEN"))
                                     .font(.system(size: 9, weight: .bold))
                                     .foregroundColor(.orange)
                                     .padding(.horizontal, 4)
@@ -510,17 +585,32 @@ private struct SnippetDetailView: View {
 
                     HStack(spacing: 8) {
                         Button(action: onInsert) {
-                            Label("Insert", systemImage: "arrow.down.doc")
+                            Label(L("Insert", "Insert"), systemImage: "arrow.down.doc")
+                        }
+                        .buttonStyle(.bordered)
+
+                        Menu {
+                            if entry.source != .global {
+                                Button(L("snippets.copy.global", "Copy to Global"), action: onCopyToGlobal)
+                            }
+                            if repoCopyEnabled {
+                                if canCopyToCurrentRepo, currentRepoRoot != nil {
+                                    Button(L("snippets.copy.repo.current", "Copy to Current Repo"), action: onCopyToCurrentRepo)
+                                }
+                                Button(L("snippets.copy.repo.choose", "Copy to Repo..."), action: onCopyToRepoPicker)
+                            }
+                        } label: {
+                            Label(L("Copy", "Copy"), systemImage: "doc.on.doc")
                         }
                         .buttonStyle(.bordered)
 
                         Button(action: onEdit) {
-                            Label("Edit", systemImage: "pencil")
+                            Label(L("Edit", "Edit"), systemImage: "pencil")
                         }
                         .buttonStyle(.bordered)
 
                         Button(action: onDelete) {
-                            Label("Delete", systemImage: "trash")
+                            Label(L("Delete", "Delete"), systemImage: "trash")
                         }
                         .buttonStyle(.bordered)
                         .foregroundColor(.red)
@@ -531,7 +621,7 @@ private struct SnippetDetailView: View {
 
                 // Body
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Content")
+                    Text(L("Content", "Content"))
                         .font(.headline)
 
                     Text(entry.snippet.body)
@@ -546,13 +636,13 @@ private struct SnippetDetailView: View {
                 // Metadata
                 if !entry.snippet.tags.isEmpty || entry.snippet.folder != nil || entry.snippet.shells != nil {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Metadata")
+                        Text(L("Metadata", "Metadata"))
                             .font(.headline)
 
                         HStack(spacing: 16) {
                             if !entry.snippet.tags.isEmpty {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("Tags")
+                                    Text(L("Tags", "Tags"))
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                     HStack(spacing: 4) {
@@ -570,7 +660,7 @@ private struct SnippetDetailView: View {
 
                             if let folder = entry.snippet.folder {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("Folder")
+                                    Text(L("Folder", "Folder"))
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                     Text(folder)
@@ -580,7 +670,7 @@ private struct SnippetDetailView: View {
 
                             if let shells = entry.snippet.shells, !shells.isEmpty {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("Shells")
+                                    Text(L("Shells", "Shells"))
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                     Text(shells.joined(separator: ", "))
@@ -593,17 +683,17 @@ private struct SnippetDetailView: View {
 
                 // Tokens help
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Available Tokens")
+                    Text(L("Available Tokens", "Available Tokens"))
                         .font(.headline)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        TokenHelpRow(token: "${cwd}", description: "Current working directory")
-                        TokenHelpRow(token: "${home}", description: "User home directory")
-                        TokenHelpRow(token: "${date}", description: "Current date (yyyy-MM-dd)")
-                        TokenHelpRow(token: "${time}", description: "Current time (HH:mm:ss)")
-                        TokenHelpRow(token: "${clip}", description: "Clipboard content")
-                        TokenHelpRow(token: "${env:VAR}", description: "Environment variable")
-                        TokenHelpRow(token: "${1:default}", description: "Placeholder with Tab navigation")
+                        TokenHelpRow(token: "${cwd}", description: L("snippets.token.cwd", "Current working directory"))
+                        TokenHelpRow(token: "${home}", description: L("snippets.token.home", "User home directory"))
+                        TokenHelpRow(token: "${date}", description: L("snippets.token.date", "Current date (yyyy-MM-dd)"))
+                        TokenHelpRow(token: "${time}", description: L("snippets.token.time", "Current time (HH:mm:ss)"))
+                        TokenHelpRow(token: "${clip}", description: L("snippets.token.clip", "Clipboard content"))
+                        TokenHelpRow(token: "${env:VAR}", description: L("snippets.token.env", "Environment variable"))
+                        TokenHelpRow(token: "${1:default}", description: L("snippets.token.placeholder", "Placeholder with Tab navigation"))
                     }
                     .padding(12)
                     .background(Color(NSColor.controlBackgroundColor))
@@ -612,50 +702,50 @@ private struct SnippetDetailView: View {
 
                 // Input variables help
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Input Variables")
+                    Text(L("Input Variables", "Input Variables"))
                         .font(.headline)
 
-                    Text("Prompt for values when inserting a snippet")
+                    Text(L("Prompt for values when inserting a snippet", "Prompt for values when inserting a snippet"))
                         .font(.caption)
                         .foregroundColor(.secondary)
 
                     VStack(alignment: .leading, spacing: 12) {
                         // Text input
                         InputVariableHelpSection(
-                            title: "Text Input",
+                            title: L("snippets.input.text.title", "Text Input"),
                             icon: "character.cursor.ibeam",
                             color: .blue,
                             examples: [
-                                ("${input:name}", "Text field, no default"),
-                                ("${input:port:8080}", "Text field with default value")
+                                ("${input:name}", L("snippets.input.text.example.basic", "Text field, no default")),
+                                ("${input:port:8080}", L("snippets.input.text.example.default", "Text field with default value"))
                             ],
-                            description: "Shows a text field. Use colon to set a default value."
+                            description: L("snippets.input.text.description", "Shows a text field. Use colon to set a default value.")
                         )
 
                         Divider()
 
                         // Single select
                         InputVariableHelpSection(
-                            title: "Single Select",
+                            title: L("snippets.input.single.title", "Single Select"),
                             icon: "list.bullet",
                             color: .green,
                             examples: [
-                                ("${input:env:dev|staging|prod}", "Dropdown picker")
+                                ("${input:env:dev|staging|prod}", L("snippets.input.single.example", "Dropdown picker"))
                             ],
-                            description: "Options separated by | create a dropdown picker. User selects one option."
+                            description: L("snippets.input.single.description", "Options separated by | create a dropdown picker. User selects one option.")
                         )
 
                         Divider()
 
                         // Multi select
                         InputVariableHelpSection(
-                            title: "Multi Select",
+                            title: L("snippets.input.multi.title", "Multi Select"),
                             icon: "checklist",
                             color: .orange,
                             examples: [
-                                ("${multiselect:flags:--verbose|--dry-run|--force}", "Checkbox list")
+                                ("${multiselect:flags:--verbose|--dry-run|--force}", L("snippets.input.multi.example", "Checkbox list"))
                             ],
-                            description: "Checkboxes for each option. Selected values joined with spaces."
+                            description: L("snippets.input.multi.description", "Checkboxes for each option. Selected values joined with spaces.")
                         )
                     }
                     .padding(12)
@@ -665,7 +755,7 @@ private struct SnippetDetailView: View {
 
                 // Source path
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Source")
+                    Text(L("Source", "Source"))
                         .font(.caption)
                         .foregroundColor(.secondary)
                     Text(entry.sourcePath)
@@ -746,27 +836,62 @@ private struct InputVariableHelpSection: View {
 private struct SnippetEditorPanel: View {
     @Binding var draft: SnippetDraft
     let isNew: Bool
-    let repoAvailable: Bool
+    let repoSnippetsEnabled: Bool
+    let currentRepoRoot: String?
+    let recentRepoRoots: [String]
     let onCancel: () -> Void
     let onSave: () -> Void
+    @State private var repoSelectionError = ""
+
+    private var repoOptions: [String] {
+        var options: [String] = []
+        if let currentRepoRoot {
+            options.append(currentRepoRoot)
+        }
+        for path in recentRepoRoots where path != currentRepoRoot {
+            options.append(path)
+        }
+        if !draft.repoPath.isEmpty && !options.contains(draft.repoPath) {
+            options.insert(draft.repoPath, at: 0)
+        }
+        return options
+    }
+
+    private func pickRepoRoot() {
+        repoSelectionError = ""
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.message = L("snippets.repo.choose.message", "Choose a git repository")
+
+        if panel.runModal() == .OK, let url = panel.url {
+            if let root = SnippetManager.resolveRepoRoot(at: url.path) {
+                draft.repoPath = root
+                FeatureSettings.shared.recordRecentRepo(root)
+            } else {
+                repoSelectionError = L("snippets.repo.choose.invalid", "That folder is not a git repository.")
+            }
+        }
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 // Header
                 HStack {
-                    Text(isNew ? "New Snippet" : "Edit Snippet")
+                    Text(isNew ? L("snippets.editor.newTitle", "New Snippet") : L("snippets.editor.editTitle", "Edit Snippet"))
                         .font(.title2.weight(.semibold))
 
                     Spacer()
 
                     HStack(spacing: 8) {
-                        Button("Cancel", action: onCancel)
+                        Button(L("Cancel", "Cancel"), action: onCancel)
                             .buttonStyle(.bordered)
 
-                        Button("Save", action: onSave)
+                        Button(L("Save", "Save"), action: onSave)
                             .buttonStyle(.borderedProminent)
-                            .disabled(draft.title.isEmpty || draft.body.isEmpty)
+                            .disabled(draft.title.isEmpty || draft.body.isEmpty || (draft.source == .repo && draft.repoPath.isEmpty))
                     }
                 }
 
@@ -775,38 +900,38 @@ private struct SnippetEditorPanel: View {
                 // Title, ID, and Key
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Title")
+                        Text(L("Title", "Title"))
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        TextField("Snippet title", text: $draft.title)
+                        TextField(L("Snippet title", "Snippet title"), text: $draft.title)
                             .textFieldStyle(.roundedBorder)
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("ID (auto-generated if empty)")
+                        Text(L("ID (auto-generated if empty)", "ID (auto-generated if empty)"))
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        TextField("snippet-id", text: $draft.id)
+                        TextField(L("snippet-id", "snippet-id"), text: $draft.id)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(size: 12, design: .monospaced))
                     }
                     .frame(width: 180)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Key (a-z)")
+                        Text(L("Key (a-z)", "Key (a-z)"))
                             .font(.caption)
                             .foregroundColor(.secondary)
                         TextField("", text: $draft.key)
                             .textFieldStyle(.roundedBorder)
                             .font(.system(size: 12, design: .monospaced))
-                            .help("Quick-select key for snippet picker (single letter a-z)")
+                            .help(L("Quick-select key for snippet picker (single letter a-z)", "Quick-select key for snippet picker (single letter a-z)"))
                     }
                     .frame(width: 60)
                 }
 
                 // Body
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Content")
+                    Text(L("Content", "Content"))
                         .font(.caption)
                         .foregroundColor(.secondary)
                     TextEditor(text: $draft.body)
@@ -821,9 +946,9 @@ private struct SnippetEditorPanel: View {
                         )
 
                     HStack(spacing: 16) {
-                        Label("Text: ${input:name}", systemImage: "character.cursor.ibeam")
-                        Label("Picker: ${input:name:a|b|c}", systemImage: "list.bullet")
-                        Label("Multi: ${multiselect:name:a|b|c}", systemImage: "checklist")
+                        Label(L("Text: ${input:name}", "Text: ${input:name}"), systemImage: "character.cursor.ibeam")
+                        Label(L("Picker: ${input:name:a|b|c}", "Picker: ${input:name:a|b|c}"), systemImage: "list.bullet")
+                        Label(L("Multi: ${multiselect:name:a|b|c}", "Multi: ${multiselect:name:a|b|c}"), systemImage: "checklist")
                     }
                     .font(.caption)
                     .foregroundColor(.secondary)
@@ -831,7 +956,7 @@ private struct SnippetEditorPanel: View {
 
                 // Location picker
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Location")
+                    Text(L("Location", "Location"))
                         .font(.caption)
                         .foregroundColor(.secondary)
 
@@ -840,7 +965,7 @@ private struct SnippetEditorPanel: View {
                             .tag(SnippetSource.global)
                         Label(SnippetSource.profile.displayName, systemImage: SnippetSource.profile.icon)
                             .tag(SnippetSource.profile)
-                        if repoAvailable {
+                        if repoSnippetsEnabled {
                             Label(SnippetSource.repo.displayName, systemImage: SnippetSource.repo.icon)
                                 .tag(SnippetSource.repo)
                         }
@@ -852,21 +977,79 @@ private struct SnippetEditorPanel: View {
                         .foregroundColor(.secondary)
                 }
 
+                if draft.source == .repo && repoSnippetsEnabled {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(L("Repository", "Repository"))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        HStack(spacing: 8) {
+                            Picker("", selection: $draft.repoPath) {
+                                if repoOptions.isEmpty {
+                                    Text(L("snippets.repo.none", "No recent repos")).tag("")
+                                } else {
+                                    ForEach(repoOptions, id: \.self) { path in
+                                        Text(URL(fileURLWithPath: path).lastPathComponent).tag(path)
+                                    }
+                                }
+                            }
+                            .frame(maxWidth: 240)
+
+                            Button(L("snippets.repo.choose", "Choose...")) {
+                                pickRepoRoot()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+
+                        if !draft.repoPath.isEmpty {
+                            Text(draft.repoPath)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .textSelection(.enabled)
+                        }
+
+                        Text(L("snippets.repo.visibility", "Repo snippets appear only when that repo is active."))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        if !repoSelectionError.isEmpty {
+                            Text(repoSelectionError)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                    }
+                    .onChange(of: draft.source) { newValue in
+                        if newValue == .repo && draft.repoPath.isEmpty, let first = repoOptions.first {
+                            draft.repoPath = first
+                        }
+                    }
+                    .onChange(of: draft.repoPath) { newValue in
+                        if !newValue.isEmpty {
+                            FeatureSettings.shared.recordRecentRepo(newValue)
+                        }
+                    }
+                    .onAppear {
+                        if draft.repoPath.isEmpty, let first = repoOptions.first {
+                            draft.repoPath = first
+                        }
+                    }
+                }
+
                 // Tags and Folder
                 HStack(spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Tags (comma separated)")
+                        Text(L("Tags (comma separated)", "Tags (comma separated)"))
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        TextField("git, docker, aws", text: $draft.tagsText)
+                        TextField(L("git, docker, aws", "git, docker, aws"), text: $draft.tagsText)
                             .textFieldStyle(.roundedBorder)
                     }
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Folder")
+                        Text(L("Folder", "Folder"))
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        TextField("Optional folder", text: $draft.folder)
+                        TextField(L("Optional folder", "Optional folder"), text: $draft.folder)
                             .textFieldStyle(.roundedBorder)
                     }
                     .frame(width: 150)
@@ -874,10 +1057,10 @@ private struct SnippetEditorPanel: View {
 
                 // Shells
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Shells (leave empty for all)")
+                    Text(L("Shells (leave empty for all)", "Shells (leave empty for all)"))
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    TextField("zsh, bash, fish", text: $draft.shellsText)
+                    TextField(L("zsh, bash, fish", "zsh, bash, fish"), text: $draft.shellsText)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 200)
                 }
@@ -885,6 +1068,12 @@ private struct SnippetEditorPanel: View {
                 Spacer()
             }
             .padding()
+        }
+        .onChange(of: repoSnippetsEnabled) { enabled in
+            if !enabled && draft.source == .repo {
+                draft.source = .global
+                draft.repoPath = ""
+            }
         }
     }
 }
@@ -898,15 +1087,18 @@ private struct ImportExportSheet: View {
     @State private var importText = ""
     @State private var exportText = ""
     @State private var statusMessage = ""
+    @State private var statusIsError = false
     @State private var isProcessing = false
 
     var body: some View {
         VStack(spacing: 16) {
-            Text(mode == .import ? "Import Snippets" : "Export Snippets")
+            Text(mode == .import
+                 ? L("snippets.import.title", "Import Snippets")
+                 : L("snippets.export.title", "Export Snippets"))
                 .font(.headline)
 
             if mode == .export {
-                Picker("Source", selection: $selectedSource) {
+                Picker(L("Source", "Source"), selection: $selectedSource) {
                     Text(SnippetSource.global.displayName).tag(SnippetSource.global)
                     Text(SnippetSource.profile.displayName).tag(SnippetSource.profile)
                     Text(SnippetSource.repo.displayName).tag(SnippetSource.repo)
@@ -922,14 +1114,15 @@ private struct ImportExportSheet: View {
                     .border(Color.secondary.opacity(0.3))
 
                 HStack {
-                    Button("Copy to Clipboard") {
+                    Button(L("Copy to Clipboard", "Copy to Clipboard")) {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(exportText, forType: .string)
-                        statusMessage = "Copied to clipboard!"
+                        statusMessage = L("snippets.export.copied", "Copied to clipboard!")
+                        statusIsError = false
                     }
                     .disabled(exportText.isEmpty)
 
-                    Button("Save to File...") {
+                    Button(L("Save to File...", "Save to File...")) {
                         saveToFile()
                     }
                     .disabled(exportText.isEmpty)
@@ -939,11 +1132,11 @@ private struct ImportExportSheet: View {
                     if !statusMessage.isEmpty {
                         Text(statusMessage)
                             .font(.caption)
-                            .foregroundColor(.green)
+                            .foregroundColor(statusIsError ? .red : .green)
                     }
                 }
             } else {
-                Text("Paste JSON snippet data below:")
+                Text(L("Paste JSON snippet data below:", "Paste JSON snippet data below:"))
                     .font(.caption)
                     .foregroundColor(.secondary)
 
@@ -952,18 +1145,18 @@ private struct ImportExportSheet: View {
                     .frame(height: 300)
                     .border(Color.secondary.opacity(0.3))
 
-                Picker("Import to", selection: $selectedSource) {
+                Picker(L("Import to", "Import to"), selection: $selectedSource) {
                     Text(SnippetSource.global.displayName).tag(SnippetSource.global)
                     Text(SnippetSource.profile.displayName).tag(SnippetSource.profile)
                 }
                 .pickerStyle(.segmented)
 
                 HStack {
-                    Button("Load from File...") {
+                    Button(L("Load from File...", "Load from File...")) {
                         loadFromFile()
                     }
 
-                    Button("Import") {
+                    Button(L("Import", "Import")) {
                         performImport()
                     }
                     .buttonStyle(.borderedProminent)
@@ -974,7 +1167,7 @@ private struct ImportExportSheet: View {
                     if !statusMessage.isEmpty {
                         Text(statusMessage)
                             .font(.caption)
-                            .foregroundColor(statusMessage.contains("Error") ? .red : .green)
+                            .foregroundColor(statusIsError ? .red : .green)
                     }
                 }
             }
@@ -983,7 +1176,7 @@ private struct ImportExportSheet: View {
 
             HStack {
                 Spacer()
-                Button("Done") {
+                Button(L("Done", "Done")) {
                     dismiss()
                 }
                 .keyboardShortcut(.escape)
@@ -1011,21 +1204,27 @@ private struct ImportExportSheet: View {
            let json = String(data: data, encoding: .utf8) {
             exportText = json
         } else {
-            exportText = "Error generating export"
+            exportText = L("snippets.export.error.generate", "Error generating export")
         }
     }
 
     private func saveToFile() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "\(selectedSource.displayName.lowercased())-snippets.json"
+        panel.nameFieldStringValue = L(
+            "snippets.export.filename",
+            "%@-snippets.json",
+            selectedSource.displayName.lowercased()
+        )
 
         if panel.runModal() == .OK, let url = panel.url {
             do {
                 try exportText.write(to: url, atomically: true, encoding: .utf8)
-                statusMessage = "Saved!"
+                statusMessage = L("snippets.export.saved", "Saved!")
+                statusIsError = false
             } catch {
-                statusMessage = "Error: \(error.localizedDescription)"
+                statusMessage = L("snippets.status.error", "Error: %@", error.localizedDescription)
+                statusIsError = true
             }
         }
     }
@@ -1037,9 +1236,11 @@ private struct ImportExportSheet: View {
         if panel.runModal() == .OK, let url = panel.url {
             do {
                 importText = try String(contentsOf: url, encoding: .utf8)
-                statusMessage = "File loaded"
+                statusMessage = L("snippets.import.fileLoaded", "File loaded")
+                statusIsError = false
             } catch {
-                statusMessage = "Error: \(error.localizedDescription)"
+                statusMessage = L("snippets.status.error", "Error: %@", error.localizedDescription)
+                statusIsError = true
             }
         }
     }
@@ -1047,9 +1248,11 @@ private struct ImportExportSheet: View {
     private func performImport() {
         isProcessing = true
         statusMessage = ""
+        statusIsError = false
 
         guard let data = importText.data(using: .utf8) else {
-            statusMessage = "Error: Invalid text"
+            statusMessage = L("snippets.import.invalidText", "Error: Invalid text")
+            statusIsError = true
             isProcessing = false
             return
         }
@@ -1074,10 +1277,16 @@ private struct ImportExportSheet: View {
                 SnippetManager.shared.createSnippet(from: draft)
             }
 
-            statusMessage = "Imported \(file.snippets.count) snippets!"
+            statusMessage = L(
+                "snippets.import.success",
+                "Imported %@ snippets!",
+                file.snippets.count.formatted()
+            )
+            statusIsError = false
             importText = ""
         } catch {
-            statusMessage = "Error: \(error.localizedDescription)"
+            statusMessage = L("snippets.status.error", "Error: %@", error.localizedDescription)
+            statusIsError = true
         }
 
         isProcessing = false
@@ -1121,7 +1330,7 @@ final class SnippetsSettingsWindowController: NSObject {
             backing: .buffered,
             defer: false
         )
-        newWindow.title = "Snippets"
+        newWindow.title = L("snippets.window.title", "Snippets")
         newWindow.contentView = hosting
         newWindow.contentMinSize = NSSize(width: 700, height: 500)
         newWindow.isReleasedWhenClosed = false

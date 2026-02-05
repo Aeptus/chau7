@@ -15,7 +15,7 @@ struct SplashView: View {
                     .cornerRadius(24)
                     .shadow(color: .white.opacity(0.1), radius: 20)
 
-                Text("Chau7")
+                Text(L("Chau7", "Chau7"))
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundColor(.white)
 

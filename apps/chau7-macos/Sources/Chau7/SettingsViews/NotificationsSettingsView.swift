@@ -256,7 +256,13 @@ private struct CategorySection: View {
                             .font(.caption)
                             .fontWeight(.semibold)
 
-                        Text("(\(enabledCount)/\(totalCount))")
+                        Text(
+                            String(
+                                format: L("notifications.enabledCount", "(%d/%d)"),
+                                enabledCount,
+                                totalCount
+                            )
+                        )
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -338,7 +344,13 @@ private struct SourceSection: View {
                         .font(.caption)
                         .fontWeight(.medium)
 
-                    Text("(\(enabledCount)/\(group.triggers.count))")
+                    Text(
+                        String(
+                            format: L("notifications.enabledCount", "(%d/%d)"),
+                            enabledCount,
+                            group.triggers.count
+                        )
+                    )
                         .font(.caption2)
                         .foregroundStyle(.secondary)
 
@@ -419,7 +431,7 @@ private struct EventDetectionThresholdsSection: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L("settings.notifications.longRunningThreshold", "Long-Running (seconds)"))
                             .font(.caption)
-                        TextField("60", value: Binding(
+                        TextField(L("60", "60"), value: Binding(
                             get: { settings.shellEventConfig.longRunningThresholdSeconds },
                             set: {
                                 var config = settings.shellEventConfig
@@ -471,7 +483,7 @@ private struct EventDetectionThresholdsSection: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L("settings.notifications.inactivityThreshold", "Inactivity (minutes)"))
                             .font(.caption)
-                        TextField("0", value: Binding(
+                        TextField(L("0", "0"), value: Binding(
                             get: { settings.appEventConfig.inactivityThresholdMinutes },
                             set: {
                                 var config = settings.appEventConfig
@@ -481,7 +493,7 @@ private struct EventDetectionThresholdsSection: View {
                         ), formatter: NumberFormatter())
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
-                        Text("0 = disabled")
+                        Text(L("0 = disabled", "0 = disabled"))
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }
@@ -489,7 +501,7 @@ private struct EventDetectionThresholdsSection: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L("settings.notifications.memoryThreshold", "Memory (MB)"))
                             .font(.caption)
-                        TextField("0", value: Binding(
+                        TextField(L("0", "0"), value: Binding(
                             get: { settings.appEventConfig.memoryThresholdMB },
                             set: {
                                 var config = settings.appEventConfig
@@ -499,7 +511,7 @@ private struct EventDetectionThresholdsSection: View {
                         ), formatter: NumberFormatter())
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
-                        Text("0 = disabled")
+                        Text(L("0 = disabled", "0 = disabled"))
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                     }

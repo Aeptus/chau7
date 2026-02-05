@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+LOGGING="$ROOT_DIR/apps/chau7-macos/Scripts/logging.sh"
+
+if [[ -f "$LOGGING" ]]; then
+  export CHAU7_LOG_ROOT="$ROOT_DIR"
+  CHAU7_LOG_NAME="order66-mono"
+  export CHAU7_LOG_NAME
+  # shellcheck disable=SC1090
+  source "$LOGGING"
+else
+  log_init() { :; }
+  log_info() { printf '%s\n' "$*"; }
+  log_warn() { printf 'WARN: %s\n' "$*"; }
+  log_error() { printf 'ERROR: %s\n' "$*" >&2; }
+  log_step() { printf '%s\n' "$*"; }
+  log_ok() { printf '%s\n' "$*"; }
+  run_cmd() { "$@"; }
+fi
+
+usage() {
+  cat <<'USAGE'
+Usage: ./Scripts/order66 <target> [args]
+
+Targets:
+  macos   Clean build and bundle the macOS app (delegates to apps/chau7-macos/Scripts/order66)
+  ios     Clean build the iOS app via xcodebuild
+  all     Build macOS then iOS
+
+iOS env overrides:
+  IOS_SCHEME=Chau7RemoteApp
+  IOS_CONFIGURATION=Release
+  IOS_SDK=iphonesimulator
+  IOS_DESTINATION='generic/platform=iOS Simulator'
+  IOS_DERIVED_DATA='<repo>/build/DerivedData/iOS'
+  IOS_CLEAN=1   (set to 0 to skip clean)
+
+Examples:
+  ./Scripts/order66 macos
+  ./Scripts/order66 ios
+  ./Scripts/order66 all
+USAGE
+}
+
+run_macos() {
+  local script="$ROOT_DIR/apps/chau7-macos/Scripts/order66"
+  if [[ ! -x "$script" ]]; then
+    log_error "macOS build script not found or not executable: $script"
+    return 1
+  fi
+  (cd "$ROOT_DIR/apps/chau7-macos" && "$script" "$@")
+}
+
+run_ios() {
+  local project_dir="$ROOT_DIR/apps/chau7-ios/Chau7RemoteApp"
+  local project="$project_dir/Chau7RemoteApp.xcodeproj"
+  if [[ ! -d "$project" ]]; then
+    log_error "iOS project not found at $project"
+    return 1
+  fi
+  if ! command -v xcodebuild >/dev/null 2>&1; then
+    log_error "xcodebuild not found in PATH. Install Xcode first."
+    return 1
+  fi
+
+  local scheme="${IOS_SCHEME:-Chau7RemoteApp}"
+  local configuration="${IOS_CONFIGURATION:-Release}"
+  local sdk="${IOS_SDK:-iphonesimulator}"
+  local destination="${IOS_DESTINATION:-generic/platform=iOS Simulator}"
+  local derived_data="${IOS_DERIVED_DATA:-$ROOT_DIR/build/DerivedData/iOS}"
+  local actions=()
+
+  if [[ "${IOS_CLEAN:-1}" == "1" ]]; then
+    actions+=(clean)
+  fi
+  actions+=(build)
+
+  run_cmd xcodebuild \
+    -project "$project" \
+    -scheme "$scheme" \
+    -configuration "$configuration" \
+    -sdk "$sdk" \
+    -destination "$destination" \
+    -derivedDataPath "$derived_data" \
+    "${actions[@]}" \
+    "$@"
+}
+
+main() {
+  local target="${1:-}"
+  shift || true
+
+  case "$target" in
+    macos)
+      log_init "Order66 macOS"
+      run_macos "$@"
+      ;;
+    ios)
+      log_init "Order66 iOS"
+      run_ios "$@"
+      ;;
+    all)
+      log_init "Order66 All"
+      run_macos
+      run_ios
+      ;;
+    -h|--help|help|"")
+      usage
+      ;;
+    *)
+      log_error "Unknown target: $target"
+      usage
+      return 1
+      ;;
+  esac
+}
+
+main "$@"

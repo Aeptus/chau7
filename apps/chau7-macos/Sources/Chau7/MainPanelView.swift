@@ -58,7 +58,7 @@ struct MenuBarPanelView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("Chau7")
+            Text(L("Chau7", "Chau7"))
                 .font(.headline)
 
             Circle()
@@ -68,12 +68,12 @@ struct MenuBarPanelView: View {
 
             Spacer()
 
-            Button("Show Overlay") {
+            Button(L("Show Overlay", "Show Overlay")) {
                 (NSApp.delegate as? AppDelegate)?.showOverlay()
             }
             .controlSize(.small)
 
-            Button("Settings...") {
+            Button(L("Settings...", "Settings...")) {
                 (NSApp.delegate as? AppDelegate)?.showSettings()
             }
             .controlSize(.small)
@@ -83,7 +83,7 @@ struct MenuBarPanelView: View {
     private var notificationsSection: some View {
         let isBundled = Bundle.main.bundleIdentifier != nil
         return VStack(alignment: .leading, spacing: 6) {
-            Text("Notifications")
+            Text(L("Notifications", "Notifications"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
@@ -97,8 +97,8 @@ struct MenuBarPanelView: View {
             }
 
             HStack(spacing: 8) {
-                Button("Request Permission") { model.requestNotificationPermission() }
-                Button("Test") { model.sendTestNotification() }
+                Button(L("Request Permission", "Request Permission")) { model.requestNotificationPermission() }
+                Button(L("Test", "Test")) { model.sendTestNotification() }
             }
             .controlSize(.small)
             .disabled(!isBundled)
@@ -108,16 +108,16 @@ struct MenuBarPanelView: View {
     private var activitySection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Activity")
+                Text(L("Activity", "Activity"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Clear") { model.recentEvents.removeAll() }
+                Button(L("Clear", "Clear")) { model.recentEvents.removeAll() }
                     .controlSize(.mini)
             }
 
             if displayableRecentEvents.isEmpty {
-                Text("No recent events")
+                Text(L("No recent events", "No recent events"))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             } else {
@@ -159,11 +159,11 @@ struct MenuBarPanelView: View {
 
     private var streamSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Streams")
+            Text(L("Streams", "Streams"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            Picker("Stream", selection: $streamSelection) {
+            Picker(L("Stream", "Stream"), selection: $streamSelection) {
                 ForEach(StreamSelection.allCases) { selection in
                     Text(selection.title).tag(selection)
                 }
@@ -177,21 +177,21 @@ struct MenuBarPanelView: View {
 
     private var quickToggles: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Quick Toggles")
+            Text(L("Quick Toggles", "Quick Toggles"))
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
-            Toggle("Monitor AI events", isOn: $model.isMonitoring)
+            Toggle(L("Monitor AI events", "Monitor AI events"), isOn: $model.isMonitoring)
                 .onChange(of: model.isMonitoring) { _ in
                     model.applyMonitoringState()
                 }
 
-            Toggle("Monitor history logs", isOn: $model.isIdleMonitoring)
+            Toggle(L("Monitor history logs", "Monitor history logs"), isOn: $model.isIdleMonitoring)
                 .onChange(of: model.isIdleMonitoring) { _ in
                     model.applyIdleMonitoringState()
                 }
 
-            Toggle("Monitor terminal logs", isOn: $model.isTerminalMonitoring)
+            Toggle(L("Monitor terminal logs", "Monitor terminal logs"), isOn: $model.isTerminalMonitoring)
                 .onChange(of: model.isTerminalMonitoring) { _ in
                     model.applyTerminalMonitoringState()
                 }
@@ -207,10 +207,10 @@ struct MenuBarPanelView: View {
                 .truncationMode(.middle)
 
             HStack(spacing: 8) {
-                Button("Reveal Log") { model.revealLogFile() }
+                Button(L("Reveal Log", "Reveal Log")) { model.revealLogFile() }
                     .controlSize(.small)
                 Spacer()
-                Button("Quit Chau7") { NSApplication.shared.terminate(nil) }
+                Button(L("Quit Chau7", "Quit Chau7")) { NSApplication.shared.terminate(nil) }
                     .controlSize(.small)
             }
         }
@@ -244,7 +244,7 @@ struct StreamView: View {
     @ViewBuilder
     private func historyList(entries: [HistoryEntry]) -> some View {
         if entries.isEmpty {
-            Text("No history yet.")
+            Text(L("No history yet.", "No history yet."))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         } else {
@@ -254,7 +254,13 @@ struct StreamView: View {
                         let entry = entries[index]
                         let date = Date(timeIntervalSince1970: entry.timestamp)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(Self.timeFormatter.string(from: date)) - \(entry.sessionId.prefix(8))")
+                            Text(
+                                String(
+                                    format: L("history.entry.timestamp", "%@ - %@"),
+                                    Self.timeFormatter.string(from: date),
+                                    String(entry.sessionId.prefix(8))
+                                )
+                            )
                                 .font(.system(size: 11, weight: .semibold))
                             Text(entry.summary)
                                 .font(.system(size: 12))
@@ -272,7 +278,7 @@ struct StreamView: View {
     @ViewBuilder
     private func logList(lines: [String]) -> some View {
         if lines.isEmpty {
-            Text("No logs yet.")
+            Text(L("No logs yet.", "No logs yet."))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         } else {
@@ -291,7 +297,7 @@ struct StreamView: View {
     @ViewBuilder
     private func terminalLogView(lines: [String]) -> some View {
         if lines.isEmpty {
-            Text("No logs yet.")
+            Text(L("No logs yet.", "No logs yet."))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         } else if model.isTerminalAnsi {
@@ -394,7 +400,7 @@ struct SettingsSearchBar: View {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
 
-            TextField("Search settings...", text: $searchQuery)
+            TextField(L("Search settings...", "Search settings..."), text: $searchQuery)
                 .textFieldStyle(.plain)
                 .focused($isFocused)
 
@@ -428,7 +434,7 @@ struct SettingsSidebarRow: View {
 
             if matchCount > 0 {
                 Spacer()
-                Text("\(matchCount)")
+                Text(matchCount.formatted())
                     .font(.caption2)
                     .fontWeight(.semibold)
                     .foregroundColor(.white)
@@ -528,7 +534,13 @@ struct SearchResultsHint: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                Text("Found \(matchingSettings.count) matching setting\(matchingSettings.count == 1 ? "" : "s") for \"\(query)\"")
+                Text(
+                    String(
+                        format: L("settings.searchResults", "Found %d matching settings for \"%@\""),
+                        matchingSettings.count,
+                        query
+                    )
+                )
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -541,7 +553,7 @@ struct SearchResultsHint: View {
                     Text(setting.title)
                         .font(.caption)
                         .foregroundColor(.accentColor)
-                    Text("– \(setting.description)")
+                    Text(String(format: L("settings.searchResultDetail", "– %@"), setting.description))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -68,7 +68,11 @@ if [[ "$RUN_BIN" == "1" ]]; then
     CHAU7_TRACE="${CHAU7_RUN_BIN_TRACE:-0}" \
     "$BIN_PATH"
 else
-  run_cmd open "${ROOT_DIR}/build/Chau7.app"
+  if [[ "$DO_BUNDLE" == "1" ]]; then
+    run_cmd open "${ROOT_DIR}/build/Chau7.app"
+  else
+    log_warn "Skipping app launch: --no-bundle set (use --run-bin to execute the binary)."
+  fi
 fi
 
 log_ok "Done."

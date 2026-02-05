@@ -32,18 +32,18 @@ struct RemoteSettingsView: View {
     private var statusRow: some View {
         SettingsRow(L("settings.remote.agent", "Remote Agent")) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(remote.isAgentRunning ? "Running" : "Stopped")
+                Text(remote.isAgentRunning ? L("status.running", "Running") : L("status.stopped", "Stopped"))
                     .fontWeight(.semibold)
                 if let error = remote.lastError, !error.isEmpty {
                     Text(error)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else if let status = remote.sessionStatus, !status.isEmpty {
-                    Text("Session: \(status)")
+                    Text(String(format: L("remote.sessionStatus", "Session: %@"), status))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
-                    Text(remote.isIPCConnected ? "IPC connected" : "IPC not connected")
+                    Text(remote.isIPCConnected ? L("remote.ipc.connected", "IPC connected") : L("remote.ipc.disconnected", "IPC not connected"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -57,26 +57,26 @@ struct RemoteSettingsView: View {
             let payload = info.qrPayloadString()
             HStack(alignment: .top, spacing: 16) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Device ID: \(info.deviceID)")
+                    Text(String(format: L("remote.deviceId", "Device ID: %@"), info.deviceID))
                         .font(.system(size: 12, design: .monospaced))
-                    Text("Pairing Code: \(info.pairingCode)")
+                    Text(String(format: L("remote.pairingCode", "Pairing Code: %@"), info.pairingCode))
                         .font(.system(size: 16, design: .monospaced))
                         .fontWeight(.semibold)
-                    Text("Expires: \(info.expiresAt)")
+                    Text(String(format: L("remote.expiresAt", "Expires: %@"), info.expiresAt))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("Relay: \(info.relayURL)")
+                    Text(String(format: L("remote.relayUrl", "Relay: %@"), info.relayURL))
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
                     HStack(spacing: 12) {
-                        Button("Copy Pairing JSON") {
+                        Button(L("Copy Pairing JSON", "Copy Pairing JSON")) {
                             guard let payload else { return }
                             let pasteboard = NSPasteboard.general
                             pasteboard.clearContents()
                             pasteboard.setString(payload, forType: .string)
                         }
-                        Button("Copy Pairing Code") {
+                        Button(L("Copy Pairing Code", "Copy Pairing Code")) {
                             let pasteboard = NSPasteboard.general
                             pasteboard.clearContents()
                             pasteboard.setString(info.pairingCode, forType: .string)
@@ -88,7 +88,7 @@ struct RemoteSettingsView: View {
                 Spacer()
             }
         } else {
-            Text("Pairing info will appear once the remote agent connects.")
+            Text(L("Pairing info will appear once the remote agent connects.", "Pairing info will appear once the remote agent connects."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

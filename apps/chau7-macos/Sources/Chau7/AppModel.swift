@@ -504,6 +504,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 badgeSetting: settings.badgeSetting,
                 alertStyle: settings.alertStyle
             )
+            NotificationManager.shared.updateAuthorizationStatus(settings.authorizationStatus)
             let status: String
             switch settings.authorizationStatus {
             case .authorized:
@@ -550,8 +551,12 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         Log.info("Requesting notification permissions (force=\(force)).")
 
         // Mark as requested BEFORE the async callback to prevent duplicate requests
-        DispatchQueue.main.async {
+        if Thread.isMainThread {
             FeatureSettings.shared.hasRequestedNotificationPermission = true
+        } else {
+            DispatchQueue.main.async {
+                FeatureSettings.shared.hasRequestedNotificationPermission = true
+            }
         }
 
         center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in

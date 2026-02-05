@@ -44,6 +44,7 @@ enum OverlayLayout {
 
     // Tab bar
     static let tabBarHeight: CGFloat = 28
+    static let tabChipHeight: CGFloat = 22
 }
 
 // MARK: - Safari-style Unified Toolbar Delegate
@@ -59,7 +60,7 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
 
     /// Cached hosting views to prevent recreation on toolbar reload.
     /// This is critical for stability - macOS may request toolbar items multiple times.
-    private var cachedHostingViews: [NSToolbar.Identifier: NSHostingView<ToolbarTabBarView>] = [:]
+    private var cachedHostingViews: [NSToolbar.Identifier: TabBarHostingView] = [:]
 
     private override init() {
         super.init()
@@ -102,7 +103,7 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         // Create new hosting view only if not cached
         Log.info("TabBarToolbarDelegate: creating new hosting view for \(toolbar.identifier)")
         let tabBarView = ToolbarTabBarView(overlayModel: tabsModel)
-        let hostingView = NSHostingView(rootView: tabBarView)
+        let hostingView = TabBarHostingView(rootView: tabBarView)
 
         // Cache for future requests
         cachedHostingViews[toolbar.identifier] = hostingView
@@ -181,16 +182,35 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
             maxWidth = max(800, minWidth)
             height = OverlayLayout.tabBarHeight
         }
-        item.minSize = NSSize(width: minWidth, height: height)
-        item.maxSize = NSSize(width: maxWidth, height: height)
-        if let view = item.view {
-            var frame = view.frame
-            frame.size.width = maxWidth
-            frame.size.height = height
-            view.frame = frame
-            view.needsLayout = true
+        guard let view = item.view as? TabBarHostingView else { return }
+
+        if view.translatesAutoresizingMaskIntoConstraints {
+            view.translatesAutoresizingMaskIntoConstraints = false
         }
+
+        if let minConstraint = view.minWidthConstraint,
+           let maxConstraint = view.maxWidthConstraint,
+           let heightConstraint = view.heightConstraint {
+            minConstraint.constant = minWidth
+            maxConstraint.constant = maxWidth
+            heightConstraint.constant = height
+            return
+        }
+
+        let minConstraint = view.widthAnchor.constraint(greaterThanOrEqualToConstant: minWidth)
+        let maxConstraint = view.widthAnchor.constraint(lessThanOrEqualToConstant: maxWidth)
+        let heightConstraint = view.heightAnchor.constraint(equalToConstant: height)
+        view.minWidthConstraint = minConstraint
+        view.maxWidthConstraint = maxConstraint
+        view.heightConstraint = heightConstraint
+        NSLayoutConstraint.activate([minConstraint, maxConstraint, heightConstraint])
     }
+}
+
+private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
+    var minWidthConstraint: NSLayoutConstraint?
+    var maxWidthConstraint: NSLayoutConstraint?
+    var heightConstraint: NSLayoutConstraint?
 }
 
 private struct TabDropIndicator: Equatable {
@@ -262,11 +282,12 @@ private struct ToolbarTabBarView: View {
                     .buttonStyle(.plain)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 3)
+                    .frame(height: OverlayLayout.tabChipHeight, alignment: .center)
                     .background(Color.black.opacity(0.18))
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .contentShape(Rectangle())
-                    .accessibilityLabel("New tab")
-                    .accessibilityHint("Opens a new terminal tab")
+                    .accessibilityLabel(L("New tab", "New tab"))
+                    .accessibilityHint(L("Opens a new terminal tab", "Opens a new terminal tab"))
                 }
                 .onPreferenceChange(TabWidthPreferenceKey.self) { widths in
                     tabWidths = widths
@@ -289,13 +310,13 @@ private struct ToolbarTabBarView: View {
                 }
             }
             }
-            .frame(height: OverlayLayout.tabBarHeight, alignment: .top)
+            .frame(height: OverlayLayout.tabBarHeight, alignment: .center)
             // Keep a minimal background on the actual tab row only.
             .background(Color.black.opacity(0.001))
         }
         .padding(.trailing, 8)
         .frame(minWidth: 180)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .background(ToolbarBackgroundView())
         // Report actual rendered size for visibility-based recovery
         .background(
@@ -452,17 +473,18 @@ private struct GitBranchBadge: View {
 
     var body: some View {
         if session.isGitRepo {
+            let branchName = session.gitBranch ?? L("status.unknown", "unknown")
             HStack(spacing: 6) {
                 Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 11, weight: .semibold))
-                Text(session.gitBranch ?? "Git")
+                Text(branchName.isEmpty ? L("git.label", "Git") : branchName)
                     .font(.custom("Avenir Next", size: 11).weight(.semibold))
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
             .background(Color.black.opacity(0.20))
             .clipShape(Capsule())
-            .accessibilityLabel("Git branch: \(session.gitBranch ?? "unknown")")
+            .accessibilityLabel(String(format: L("accessibility.gitBranch", "Git branch: %@"), branchName))
         }
     }
 }
@@ -479,7 +501,7 @@ private struct DevServerBadge: View {
                 Text(server.name)
                     .font(.custom("Avenir Next", size: 11).weight(.semibold))
                 if let port = server.port {
-                    Text(":\(port)")
+                    Text(String(format: L("devServer.portSuffix", ":%d"), port))
                         .font(.custom("Avenir Next", size: 10).weight(.medium))
                         .foregroundColor(.secondary)
                 }
@@ -488,7 +510,13 @@ private struct DevServerBadge: View {
             .padding(.vertical, 4)
             .background(Color.green.opacity(0.25))
             .clipShape(Capsule())
-            .accessibilityLabel("Dev server: \(server.name) on port \(server.port ?? 0)")
+            .accessibilityLabel(
+                String(
+                    format: L("accessibility.devServer", "Dev server: %@ on port %d"),
+                    server.name,
+                    server.port ?? 0
+                )
+            )
             .onTapGesture {
                 // Open the dev server URL in browser
                 if let url = server.url, let nsURL = URL(string: url) {
@@ -523,7 +551,7 @@ struct CursorPlaceholderView: View {
 
                         HStack(spacing: 0) {
                             // Show abbreviated path as prompt
-                            Text("$ ")
+                            Text(L("$ ", "$ "))
                                 .font(.system(size: 13, design: .monospaced))
                                 .foregroundColor(.green.opacity(0.8))
 
@@ -790,7 +818,13 @@ private struct ShortcutHelperHintView: View {
         .padding(.vertical, 4)
         .background(Color.black.opacity(0.18))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .accessibilityLabel("\(L("shortcut.helper.label", "Keyboard Shortcuts")) \(shortcut)")
+        .accessibilityLabel(
+            String(
+                format: L("accessibility.shortcutHelper", "%@ %@"),
+                L("shortcut.helper.label", "Keyboard Shortcuts"),
+                shortcut
+            )
+        )
         .accessibilityHint(L("shortcut.helper.hint", "Show the keyboard shortcuts window"))
     }
 }
@@ -855,26 +889,28 @@ struct UnifiedTabButton: View {
     }
 
     private var resolvedTitle: String {
-        if let customTitle = tab.customTitle,
-           !customTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return customTitle
-        }
-        if let activeName = tab.session?.activeAppName, !activeName.isEmpty {
-            return activeName
-        }
-        if tab.splitController.root.allTerminalIDs.isEmpty {
-            return "Editor"
-        }
-        return "Shell"
+        tab.displayTitle
     }
 
     private var resolvedPath: String {
+        tab.session?.tabPathDisplayName() ?? ""
+    }
+
+    private var resolvedPathTooltip: String {
         tab.session?.displayPath() ?? ""
     }
 
     private var aiProductLogo: Image? {
         guard let appName = tab.session?.activeAppName else { return nil }
         return AIAgentLogo.image(forAppName: appName)
+    }
+
+    private var devServerIconName: String? {
+        guard let devName = tab.session?.devServer?.name,
+              devName.compare("Vite", options: .caseInsensitive) == .orderedSame else {
+            return nil
+        }
+        return "bolt.fill"
     }
 
     private var isGitRepo: Bool {
@@ -895,6 +931,11 @@ struct UnifiedTabButton: View {
                     .resizable()
                     .frame(width: 14, height: 14)
                     .accessibilityHidden(true)
+            } else if let devIcon = devServerIconName {
+                Image(systemName: devIcon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.yellow)
+                    .accessibilityHidden(true)
             }
 
             Text(resolvedTitle)
@@ -904,7 +945,7 @@ struct UnifiedTabButton: View {
 
             // Path (only show if we have a session with path info)
             if !resolvedPath.isEmpty {
-                Text("- \(resolvedPath)")
+                Text(String(format: L("tab.path.prefix", "- %@"), resolvedPath))
                     .font(.custom("Avenir Next", size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -915,7 +956,7 @@ struct UnifiedTabButton: View {
                 Image(systemName: "pause.circle.fill")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .help("Rendering suspended")
+                    .help(L("tab.renderingSuspended", "Rendering suspended"))
             }
 
             // F20: Command badge
@@ -947,10 +988,11 @@ struct UnifiedTabButton: View {
                     .font(.system(size: 10, weight: .bold))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Close tab")
+            .accessibilityLabel(L("tab.close", "Close tab"))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 3)
+        .frame(height: OverlayLayout.tabChipHeight, alignment: .center)
         .background(
             isSelected
                 ? tab.effectiveColor.color.opacity(0.25)
@@ -958,10 +1000,21 @@ struct UnifiedTabButton: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(notificationBorderOverlay)
+        .help(resolvedPathTooltip)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(resolvedTitle) tab" + (resolvedPath.isEmpty ? "" : ", \(resolvedPath)"))
-        .accessibilityHint(isSelected ? "Selected. Double-tap to rename" : "Double-tap to select, then double-tap to rename")
+        .accessibilityLabel(
+            String(
+                format: L("accessibility.tabWithPath", "%@ tab%@"),
+                resolvedTitle,
+                resolvedPath.isEmpty ? "" : ", \(resolvedPath)"
+            )
+        )
+        .accessibilityHint(
+            isSelected
+                ? L("accessibility.tabRenameSelected", "Selected. Double-tap to rename")
+                : L("accessibility.tabRename", "Double-tap to select, then double-tap to rename")
+        )
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         // Use simultaneousGesture for taps so they don't block drag recognition
         // Double-tap has higher count so it naturally takes precedence over single-tap
@@ -1024,10 +1077,14 @@ struct TabButton: View {
         if let activeName = session.activeAppName, !activeName.isEmpty {
             return activeName
         }
-        return "Shell"
+        return L("tab.shell", "Shell")
     }
 
     private var resolvedPath: String {
+        session.tabPathDisplayName()
+    }
+
+    private var resolvedPathTooltip: String {
         session.displayPath()
     }
 
@@ -1050,7 +1107,7 @@ struct TabButton: View {
             Text(resolvedTitle)
                 .font(.custom("Avenir Next", size: 12).weight(.semibold))
                 .lineLimit(1)
-            Text("- \(resolvedPath)")
+            Text(String(format: L("tab.path.prefix", "- %@"), resolvedPath))
                 .font(.custom("Avenir Next", size: 11))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -1060,7 +1117,7 @@ struct TabButton: View {
                 Image(systemName: "pause.circle.fill")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .help("Rendering suspended")
+                    .help(L("tab.renderingSuspended", "Rendering suspended"))
             }
 
             // F20: Command badge (duration + exit status)
@@ -1091,7 +1148,7 @@ struct TabButton: View {
                     .font(.system(size: 10, weight: .bold))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Close tab")
+            .accessibilityLabel(L("tab.close", "Close tab"))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 3)
@@ -1101,10 +1158,17 @@ struct TabButton: View {
                 : Color.black.opacity(0.18)
         )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .help(resolvedPathTooltip)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(resolvedTitle) tab, \(resolvedPath)")
-        .accessibilityHint(isSelected ? "Selected. Double-tap to rename" : "Double-tap to select, then double-tap to rename")
+        .accessibilityLabel(
+            String(format: L("accessibility.tabWithPathLegacy", "%@ tab, %@"), resolvedTitle, resolvedPath)
+        )
+        .accessibilityHint(
+            isSelected
+                ? L("accessibility.tabRenameSelected", "Selected. Double-tap to rename")
+                : L("accessibility.tabRename", "Double-tap to select, then double-tap to rename")
+        )
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .highPriorityGesture(
             TapGesture(count: 2).onEnded {
@@ -1159,7 +1223,7 @@ struct TabButtonFallback: View {
                     .font(.system(size: 10, weight: .bold))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Close tab")
+            .accessibilityLabel(L("Close tab", "Close tab"))
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 3)
@@ -1171,7 +1235,7 @@ struct TabButtonFallback: View {
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(title) tab")
+        .accessibilityLabel(String(format: L("accessibility.tabTitle", "%@ tab"), title))
         .accessibilityHint(isSelected ? "Selected. Double-tap to rename" : "Double-tap to select, then double-tap to rename")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .highPriorityGesture(
@@ -1238,11 +1302,11 @@ struct SearchOverlayView: View {
         DraggableOverlay(id: "search", workspace: model.overlayWorkspaceIdentifier) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    TextField("Search terminal", text: $model.searchQuery)
+                    TextField(L("Search terminal", "Search terminal"), text: $model.searchQuery)
                         .textFieldStyle(.roundedBorder)
                         .focused($isFocused)
-                        .accessibilityLabel("Search terminal")
-                        .accessibilityHint("Enter text to search in terminal output")
+                        .accessibilityLabel(L("Search terminal", "Search terminal"))
+                        .accessibilityHint(L("Enter text to search in terminal output", "Enter text to search in terminal output"))
                         .onChange(of: model.searchQuery) { _ in
                             model.refreshSearch()
                         }
@@ -1250,35 +1314,45 @@ struct SearchOverlayView: View {
                             model.nextMatch()
                         }
 
-                    Text("\(model.searchMatchCount) matches")
+                    Text(String(format: L("search.matches", "%d matches"), model.searchMatchCount))
                         .font(.custom("Avenir Next", size: 11))
                         .foregroundStyle(.secondary)
-                        .accessibilityLabel("\(model.searchMatchCount) matches found")
+                        .accessibilityLabel(
+                            String(format: L("search.matches.found", "%d matches found"), model.searchMatchCount)
+                        )
 
                     // Case sensitivity toggle (Issue #23 fix)
                     Toggle(isOn: $model.isCaseSensitive) {
-                        Text("Aa")
+                        Text(L("Aa", "Aa"))
                             .font(.custom("Avenir Next", size: 11).weight(.semibold))
                     }
                     .toggleStyle(.button)
                     .controlSize(.small)
-                    .help("Case sensitive search")
-                    .accessibilityLabel("Case sensitive")
-                    .accessibilityHint(model.isCaseSensitive ? "Currently enabled" : "Currently disabled")
+                    .help(L("Case sensitive search", "Case sensitive search"))
+                    .accessibilityLabel(L("Case sensitive", "Case sensitive"))
+                    .accessibilityHint(
+                        model.isCaseSensitive
+                            ? L("status.currentlyEnabled", "Currently enabled")
+                            : L("status.currentlyDisabled", "Currently disabled")
+                    )
                     .onChange(of: model.isCaseSensitive) { _ in
                         model.refreshSearch()
                     }
                     .disabled(model.isSemanticSearch)
 
                     Toggle(isOn: $model.isRegexSearch) {
-                        Text(".*")
+                        Text(L(".*", ".*"))
                             .font(.custom("Avenir Next", size: 11).weight(.semibold))
                     }
                     .toggleStyle(.button)
                     .controlSize(.small)
-                    .help("Regex search")
-                    .accessibilityLabel("Regular expression search")
-                    .accessibilityHint(model.isRegexSearch ? "Currently enabled" : "Currently disabled")
+                    .help(L("Regex search", "Regex search"))
+                    .accessibilityLabel(L("Regular expression search", "Regular expression search"))
+                    .accessibilityHint(
+                        model.isRegexSearch
+                            ? L("status.currentlyEnabled", "Currently enabled")
+                            : L("status.currentlyDisabled", "Currently disabled")
+                    )
                     .onChange(of: model.isRegexSearch) { _ in
                         model.refreshSearch()
                     }
@@ -1286,19 +1360,19 @@ struct SearchOverlayView: View {
 
                     if settings.isSemanticSearchEnabled {
                         Toggle(isOn: $model.isSemanticSearch) {
-                            Text("Cmd")
+                            Text(L("Cmd", "Cmd"))
                                 .font(.custom("Avenir Next", size: 11).weight(.semibold))
                         }
                         .toggleStyle(.button)
                         .controlSize(.small)
-                        .help("Semantic command search")
-                        .accessibilityLabel("Semantic command search")
+                        .help(L("Semantic command search", "Semantic command search"))
+                        .accessibilityLabel(L("Semantic command search", "Semantic command search"))
                         .onChange(of: model.isSemanticSearch) { _ in
                             model.refreshSearch()
                         }
                     }
 
-                    Button("Close") {
+                    Button(L("Close", "Close")) {
                         model.toggleSearch()
                     }
                     .controlSize(.small)
@@ -1310,7 +1384,7 @@ struct SearchOverlayView: View {
                         .font(.custom("Avenir Next", size: 11))
                         .foregroundStyle(.orange)
                 } else if model.searchResults.isEmpty && !model.searchQuery.isEmpty {
-                    Text("No results")
+                    Text(L("No results", "No results"))
                         .font(.custom("Avenir Next", size: 11))
                         .foregroundStyle(.secondary)
                 } else if !model.searchResults.isEmpty {
@@ -1328,15 +1402,15 @@ struct SearchOverlayView: View {
                 }
 
                 HStack(spacing: 8) {
-                    Button("Prev") { model.previousMatch() }
+                    Button(L("Prev", "Prev")) { model.previousMatch() }
                         .controlSize(.small)
-                        .accessibilityLabel("Previous match")
-                        .accessibilityHint("Go to previous search result")
+                        .accessibilityLabel(L("Previous match", "Previous match"))
+                        .accessibilityHint(L("Go to previous search result", "Go to previous search result"))
                         // Note: Cmd+Shift+G is in menu commands
-                    Button("Next") { model.nextMatch() }
+                    Button(L("Next", "Next")) { model.nextMatch() }
                         .controlSize(.small)
-                        .accessibilityLabel("Next match")
-                        .accessibilityHint("Go to next search result")
+                        .accessibilityLabel(L("Next match", "Next match"))
+                        .accessibilityHint(L("Go to next search result", "Go to next search result"))
                         // Note: Cmd+G is in menu commands
                 }
             }
@@ -1393,7 +1467,7 @@ struct RenameOverlayView: View {
         DraggableOverlay(id: "rename", workspace: model.overlayWorkspaceIdentifier) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    TextField("Tab name", text: $model.renameText)
+                    TextField(L("Tab name", "Tab name"), text: $model.renameText)
                         .textFieldStyle(.roundedBorder)
                         .frame(minWidth: OverlayLayout.commandListMinWidth)
                         .focused($isFocused)
@@ -1402,16 +1476,16 @@ struct RenameOverlayView: View {
                             model.commitRename()
                         }
 
-                    Button("Cancel") { model.cancelRename() }
+                    Button(L("Cancel", "Cancel")) { model.cancelRename() }
                         .controlSize(.small)
                         // Note: Escape is handled by AppDelegate.handleKeyEvent()
-                    Button("Save") { model.commitRename() }
+                    Button(L("Save", "Save")) { model.commitRename() }
                         .controlSize(.small)
                         // Note: Enter triggers onSubmit on the TextField
                 }
 
                 HStack(spacing: 8) {
-                    Text("Color:")
+                    Text(L("Color:", "Color:"))
                         .font(.custom("Avenir Next", size: 11))
                         .foregroundStyle(.secondary)
                     ForEach(TabColor.allCases) { color in
@@ -1457,21 +1531,21 @@ struct ClipboardHistoryOverlayView: View {
         DraggableOverlay(id: "clipboard", workspace: model.overlayWorkspaceIdentifier) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Clipboard History")
+                    Text(L("Clipboard History", "Clipboard History"))
                         .font(.custom("Avenir Next", size: 12).weight(.semibold))
                     Spacer()
-                    Button("Clear") {
+                    Button(L("Clear", "Clear")) {
                         clipboardManager.clear()
                     }
                     .controlSize(.small)
-                    Button("Close") {
+                    Button(L("Close", "Close")) {
                         model.toggleClipboardHistory()
                     }
                     .controlSize(.small)
                 }
 
                 if clipboardManager.items.isEmpty {
-                    Text("No clipboard history yet.")
+                    Text(L("No clipboard history yet.", "No clipboard history yet."))
                         .font(.custom("Avenir Next", size: 11))
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 8)
@@ -1492,7 +1566,7 @@ struct ClipboardHistoryOverlayView: View {
                     .frame(maxHeight: OverlayLayout.commandListMaxHeight)
                 }
 
-                Text("Click to paste • ⌘V to paste selected")
+                Text(L("Click to paste • ⌘V to paste selected", "Click to paste • ⌘V to paste selected"))
                     .font(.custom("Avenir Next", size: 10))
                     .foregroundStyle(.tertiary)
             }
@@ -1550,7 +1624,7 @@ struct ClipboardItemRow: View {
                         .font(.system(size: 10))
                 }
                 .buttonStyle(.plain)
-                .help("Remove")
+                .help(L("Remove", "Remove"))
             }
         }
         .padding(.horizontal, 8)
@@ -1559,7 +1633,7 @@ struct ClipboardItemRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Clipboard item: \(item.preview)")
+        .accessibilityLabel(String(format: L("accessibility.clipboardItem", "Clipboard item: %@"), item.preview))
         .accessibilityHint(item.isPinned ? "Pinned. Tap to paste" : "Tap to paste")
         .onTapGesture {
             onPaste()
@@ -1578,29 +1652,29 @@ struct BookmarkListOverlayView: View {
         DraggableOverlay(id: "bookmarks", workspace: model.overlayWorkspaceIdentifier) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Bookmarks")
+                    Text(L("Bookmarks", "Bookmarks"))
                         .font(.custom("Avenir Next", size: 12).weight(.semibold))
                     Spacer()
-                    Button("Add") {
+                    Button(L("Add", "Add")) {
                         model.addBookmark(label: newBookmarkLabel.isEmpty ? nil : newBookmarkLabel)
                         newBookmarkLabel = ""
                     }
                     .controlSize(.small)
-                    Button("Close") {
+                    Button(L("Close", "Close")) {
                         model.toggleBookmarkList()
                     }
                     .controlSize(.small)
                 }
 
                 HStack(spacing: 8) {
-                    TextField("Bookmark label (optional)", text: $newBookmarkLabel)
+                    TextField(L("Bookmark label (optional)", "Bookmark label (optional)"), text: $newBookmarkLabel)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 11))
                 }
 
                 let bookmarks = model.getBookmarksForCurrentTab()
                 if bookmarks.isEmpty {
-                    Text("No bookmarks for this tab.")
+                    Text(L("No bookmarks for this tab.", "No bookmarks for this tab."))
                         .font(.custom("Avenir Next", size: 11))
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 8)
@@ -1619,7 +1693,7 @@ struct BookmarkListOverlayView: View {
                     .frame(maxHeight: OverlayLayout.snippetPreviewMaxHeight)
                 }
 
-                Text("⌘B to add bookmark • Click to jump")
+                Text(L("⌘B to add bookmark • Click to jump", "⌘B to add bookmark • Click to jump"))
                     .font(.custom("Avenir Next", size: 10))
                     .foregroundStyle(.tertiary)
             }
@@ -1673,7 +1747,7 @@ struct BookmarkRow: View {
                     .font(.system(size: 10))
             }
             .buttonStyle(.plain)
-            .help("Remove")
+            .help(L("Remove", "Remove"))
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -1681,8 +1755,13 @@ struct BookmarkRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Bookmark: \(bookmark.label ?? bookmark.linePreview)")
-        .accessibilityHint("Tap to jump to this location")
+        .accessibilityLabel(
+            String(
+                format: L("accessibility.bookmark", "Bookmark: %@"),
+                bookmark.label ?? bookmark.linePreview
+            )
+        )
+        .accessibilityHint(L("Tap to jump to this location", "Tap to jump to this location"))
         .onTapGesture {
             onJump()
         }
@@ -1785,22 +1864,22 @@ struct SnippetManagerOverlayView: View {
         DraggableOverlay(id: "snippets", workspace: model.overlayWorkspaceIdentifier) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Snippets")
+                    Text(L("Snippets", "Snippets"))
                         .font(.custom("Avenir Next", size: 12).weight(.semibold))
                     Spacer()
-                    Button("New") {
+                    Button(L("New", "New")) {
                         startCreate()
                     }
                     .controlSize(.small)
                     .disabled(!settings.isSnippetsEnabled)
-                    Button("Close") {
+                    Button(L("Close", "Close")) {
                         model.toggleSnippetManager()
                     }
                     .controlSize(.small)
                 }
 
                 if !settings.isSnippetsEnabled {
-                    Text("Snippets are disabled in Settings.")
+                    Text(L("Snippets are disabled in Settings.", "Snippets are disabled in Settings."))
                         .font(.custom("Avenir Next", size: 11))
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 8)
@@ -1841,7 +1920,7 @@ struct SnippetManagerOverlayView: View {
                         )
                     } else {
                         if filtered.isEmpty {
-                            Text("No snippets found.")
+                            Text(L("No snippets found.", "No snippets found."))
                                 .font(.custom("Avenir Next", size: 11))
                                 .foregroundStyle(.secondary)
                                 .padding(.vertical, 8)
@@ -1865,7 +1944,7 @@ struct SnippetManagerOverlayView: View {
                             .frame(maxHeight: OverlayLayout.snippetListMaxHeight)
 
                             if query.isEmpty {
-                                Text("Press a letter to quick-insert")
+                                Text(L("Press a letter to quick-insert", "Press a letter to quick-insert"))
                                     .font(.custom("Avenir Next", size: 10))
                                     .foregroundStyle(.tertiary)
                             }
@@ -1874,7 +1953,7 @@ struct SnippetManagerOverlayView: View {
                 }
 
                 if let root = manager.repoRoot, settings.isRepoSnippetsEnabled {
-                    Text("Repo: \(root)")
+                    Text(String(format: L("snippet.repo", "Repo: %@"), root))
                         .font(.custom("Avenir Next", size: 9))
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
@@ -1893,9 +1972,9 @@ struct SnippetManagerOverlayView: View {
             }
             .alert(item: $deleteTarget) { entry in
                 Alert(
-                    title: Text("Delete snippet?"),
+                    title: Text(L("Delete snippet?", "Delete snippet?")),
                     message: Text(entry.snippet.title),
-                    primaryButton: .destructive(Text("Delete")) {
+                    primaryButton: .destructive(Text(L("Delete", "Delete"))) {
                         manager.deleteSnippet(entry)
                     },
                     secondaryButton: .cancel()
@@ -1905,7 +1984,8 @@ struct SnippetManagerOverlayView: View {
     }
 
     private func startCreate() {
-        draft = SnippetDraft(source: preferredSource)
+        let repoPath = preferredSource == .repo ? (manager.repoRoot ?? "") : ""
+        draft = SnippetDraft(source: preferredSource, repoPath: repoPath)
         editingEntry = nil
         isEditorVisible = true
     }
@@ -1919,7 +1999,8 @@ struct SnippetManagerOverlayView: View {
             folder: entry.snippet.folder ?? "",
             shellsText: entry.snippet.shells?.joined(separator: ", ") ?? "",
             key: entry.snippet.key ?? "",
-            source: entry.source
+            source: entry.source,
+            repoPath: entry.repoRoot ?? ""
         )
         editingEntry = entry
         isEditorVisible = true
@@ -1999,7 +2080,14 @@ struct SnippetRowView: View {
                     .frame(width: 18, height: 18)
                     .background(Color.orange.opacity(0.8))
                     .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .help(Text("Key '\(String(conflictKey))' is used by multiple snippets"))
+                    .help(
+                        Text(
+                            String(
+                                format: L("snippets.conflictKey", "Key '%@' is used by multiple snippets"),
+                                String(conflictKey)
+                            )
+                        )
+                    )
             }
 
             VStack(alignment: .leading, spacing: 4) {
@@ -2015,13 +2103,13 @@ struct SnippetRowView: View {
                         .clipShape(Capsule())
 
                     if entry.isOverridden {
-                        Text("OVERRIDDEN")
+                        Text(L("OVERRIDDEN", "OVERRIDDEN"))
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(.secondary)
                     }
 
                     if hasKeyConflict {
-                        Text("KEY CONFLICT")
+                        Text(L("KEY CONFLICT", "KEY CONFLICT"))
                             .font(.system(size: 8, weight: .semibold))
                             .foregroundStyle(.orange)
                     }
@@ -2047,21 +2135,21 @@ struct SnippetRowView: View {
                         .font(.system(size: 10))
                 }
                 .buttonStyle(.plain)
-                .help("Insert")
+                .help(L("Insert", "Insert"))
 
                 Button(action: onEdit) {
                     Image(systemName: "pencil")
                         .font(.system(size: 10))
                 }
                 .buttonStyle(.plain)
-                .help("Edit")
+                .help(L("Edit", "Edit"))
 
                 Button(action: onDelete) {
                     Image(systemName: "trash")
                         .font(.system(size: 10))
                 }
                 .buttonStyle(.plain)
-                .help("Delete")
+                .help(L("Delete", "Delete"))
             }
         }
         .padding(.horizontal, 8)
@@ -2070,8 +2158,8 @@ struct SnippetRowView: View {
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Snippet: \(entry.snippet.title)")
-        .accessibilityHint("Tap to insert into terminal")
+        .accessibilityLabel(String(format: L("accessibility.snippet", "Snippet: %@"), entry.snippet.title))
+        .accessibilityHint(L("Tap to insert into terminal", "Tap to insert into terminal"))
         .onTapGesture {
             onInsert()
         }
@@ -2091,18 +2179,18 @@ struct SnippetEditorView: View {
                 .font(.custom("Avenir Next", size: 11).weight(.semibold))
 
             HStack(spacing: 8) {
-                TextField("Title", text: $draft.title)
+                TextField(L("Title", "Title"), text: $draft.title)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 11))
-                TextField("ID (optional)", text: $draft.id)
+                TextField(L("ID (optional)", "ID (optional)"), text: $draft.id)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 10, design: .monospaced))
                     .frame(maxWidth: 120)
-                TextField("Key", text: $draft.key)
+                TextField(L("Key", "Key"), text: $draft.key)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 10, design: .monospaced))
                     .frame(width: 40)
-                    .help("Quick-select key (single letter a-z)")
+                    .help(L("Quick-select key (single letter a-z)", "Quick-select key (single letter a-z)"))
             }
 
             TextEditor(text: $draft.body)
@@ -2113,25 +2201,25 @@ struct SnippetEditorView: View {
                         .stroke(Color.white.opacity(0.1), lineWidth: 1)
                 )
 
-            Text("Variables: ${input:Name} or ${input:Name:default}")
+            Text(L("Variables: ${input:Name} or ${input:Name:default}", "Variables: ${input:Name} or ${input:Name:default}"))
                 .font(.custom("Avenir Next", size: 9))
                 .foregroundStyle(.tertiary)
 
             HStack(spacing: 8) {
-                TextField("Tags (comma separated)", text: $draft.tagsText)
+                TextField(L("Tags (comma separated)", "Tags (comma separated)"), text: $draft.tagsText)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 10))
-                TextField("Folder", text: $draft.folder)
+                TextField(L("Folder", "Folder"), text: $draft.folder)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 10))
             }
 
             HStack(spacing: 8) {
-                TextField("Shells (zsh, bash, fish)", text: $draft.shellsText)
+                TextField(L("Shells (zsh, bash, fish)", "Shells (zsh, bash, fish)"), text: $draft.shellsText)
                     .textFieldStyle(.roundedBorder)
                     .font(.system(size: 10))
 
-                Picker("Location", selection: $draft.source) {
+                Picker(L("Location", "Location"), selection: $draft.source) {
                     Text(SnippetSource.global.displayName).tag(SnippetSource.global)
                     Text(SnippetSource.profile.displayName).tag(SnippetSource.profile)
                     if repoAvailable {
@@ -2143,9 +2231,9 @@ struct SnippetEditorView: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { onCancel() }
+                Button(L("Cancel", "Cancel")) { onCancel() }
                     .controlSize(.small)
-                Button("Save") { onSave() }
+                Button(L("Save", "Save")) { onSave() }
                     .controlSize(.small)
             }
         }
@@ -2200,7 +2288,7 @@ struct SnippetVariableDialog: View {
             HStack {
                 Image(systemName: "doc.text.fill")
                     .foregroundStyle(.secondary)
-                Text("Fill in variables")
+                Text(L("Fill in variables", "Fill in variables"))
                     .font(.custom("Avenir Next", size: 12).weight(.semibold))
                 Spacer()
                 Text(snippetTitle)
@@ -2230,15 +2318,15 @@ struct SnippetVariableDialog: View {
 
             HStack {
                 Spacer()
-                Button("Cancel") { onCancel() }
+                Button(L("Cancel", "Cancel")) { onCancel() }
                     .controlSize(.small)
                     .keyboardShortcut(.cancelAction)
-                Button("Insert") { onInsert() }
+                Button(L("Insert", "Insert")) { onInsert() }
                     .controlSize(.small)
                     .keyboardShortcut(.defaultAction)
             }
 
-            Text("Tab to next field • Enter to insert")
+            Text(L("Tab to next field • Enter to insert", "Tab to next field • Enter to insert"))
                 .font(.custom("Avenir Next", size: 9))
                 .foregroundStyle(.tertiary)
         }
@@ -2283,7 +2371,7 @@ private struct SnippetVariableRow: View {
             case .singleSelect:
                 if variable.options.isEmpty {
                     // Fallback to text field if options array is empty (defensive)
-                    TextField("Enter value...", text: $valueBinding)
+                    TextField(L("Enter value...", "Enter value..."), text: $valueBinding)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 11))
                 } else {
@@ -2300,7 +2388,7 @@ private struct SnippetVariableRow: View {
             case .multiSelect:
                 if variable.options.isEmpty {
                     // Fallback to text field if options array is empty (defensive)
-                    TextField("Enter values (space-separated)...", text: $valueBinding)
+                    TextField(L("Enter values (space-separated)...", "Enter values (space-separated)..."), text: $valueBinding)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 11))
                 } else {

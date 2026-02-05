@@ -26,13 +26,14 @@ struct GeneralSettingsView: View {
                 isOn: $settings.launchAtLogin
             )
 
-            SettingsTextField(
+            SettingsDirectoryField(
                 label: L("settings.general.defaultDirectory", "Default Directory"),
                 help: L("settings.general.defaultDirectory.help", "Starting directory for new terminal sessions"),
                 placeholder: "~",
                 text: $settings.defaultStartDirectory,
                 width: 280,
-                monospaced: true
+                monospaced: true,
+                buttonTitle: L("settings.general.defaultDirectory.choose", "Choose...")
             )
 
             Divider()

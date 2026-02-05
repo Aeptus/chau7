@@ -103,6 +103,10 @@ struct OverlayTab: Identifiable, Equatable {
         if let activeName = session?.activeAppName, !activeName.isEmpty {
             return activeName
         }
+        if let devName = session?.devServer?.name,
+           devName.compare("Vite", options: .caseInsensitive) == .orderedSame {
+            return devName
+        }
         // If no terminals exist, show "Editor" instead of "Shell"
         if splitController.root.allTerminalIDs.isEmpty {
             return "Editor"
@@ -200,7 +204,13 @@ final class OverlayTabsModel: ObservableObject {
     /// Timestamp of last preference update from the view (for staleness detection)
     private var lastPreferenceUpdateTime: Date = Date()
     /// How long without a preference update before considering the view stale
-    private let stalenessThreshold: TimeInterval = 5.0
+    private let stalenessThreshold: TimeInterval = 20.0
+    private let refreshCooldown: TimeInterval = 10.0
+    private var lastForcedRefreshAt: Date = .distantPast
+    private var watchdogRecoveryCount: Int = 0
+    private var watchdogSkipCount: Int = 0
+    private var lastWatchdogSummaryAt: Date = Date()
+    private var lastWatchdogReason: String = ""
     /// Timer for watchdog that checks tab bar health
     private var tabBarWatchdogTimer: DispatchSourceTimer?
     /// Counter to limit consecutive watchdog refresh attempts
@@ -236,6 +246,7 @@ final class OverlayTabsModel: ObservableObject {
     private var isRenderSuspensionEnabled = false
     private var renderSuspensionDelay: TimeInterval = 5.0
     private var needsFreshTabOnShow: Bool = false
+    private var isDiagnosticsLoggingEnabled: Bool = false
 
     weak var overlayWindow: NSWindow?
     var onCloseLastTab: (() -> Void)?
@@ -258,6 +269,11 @@ final class OverlayTabsModel: ObservableObject {
         // This ensures the watchdog runs regardless of view lifecycle events
         DispatchQueue.main.async { [weak self] in
             self?.startTabBarWatchdog()
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.isDiagnosticsLoggingEnabled = true
+            self?.logVisualState(reason: "init")
         }
     }
 
@@ -330,6 +346,7 @@ final class OverlayTabsModel: ObservableObject {
 
         // 3. Signal that terminal needs time to render (for snapshot swap)
         isTerminalReady = false
+        logVisualState(reason: "selectTab: terminalReady=false")
 
         // 4. Batch all state changes to minimize SwiftUI diff passes
         // Using direct assignment is faster than withTransaction for simple cases
@@ -341,7 +358,9 @@ final class OverlayTabsModel: ObservableObject {
 
         // 5. Pre-cancel suspension before focus (optimization)
         cancelSuspension(for: id)
-        suspendedTabIDs.remove(id)
+        if suspendedTabIDs.remove(id) != nil {
+            logVisualState(reason: "selectTab: unsuspended selected tab")
+        }
 
         focusSelected()
         updateSuspensionState()
@@ -359,6 +378,7 @@ final class OverlayTabsModel: ObservableObject {
         // 6. Mark terminal as ready after a brief delay (allows snapshot to display first)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
             self?.isTerminalReady = true
+            self?.logVisualState(reason: "selectTab: terminalReady=true")
         }
     }
 
@@ -368,11 +388,13 @@ final class OverlayTabsModel: ObservableObject {
     private func captureCurrentTabSnapshot() {
         guard let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }),
               let terminalView = tabs[currentIndex].session?.existingTerminalView else {
+            logVisualState(reason: "snapshot: skipped (no terminal view)")
             return
         }
 
         // Capture the terminal view as an image
         guard let bitmapRep = terminalView.bitmapImageRepForCachingDisplay(in: terminalView.bounds) else {
+            logVisualState(reason: "snapshot: skipped (no bitmap rep)")
             return
         }
         terminalView.cacheDisplay(in: terminalView.bounds, to: bitmapRep)
@@ -708,7 +730,7 @@ final class OverlayTabsModel: ObservableObject {
             Log.info("closeTab: tabs.count after=\(tabs.count)")
 
             if selectedTabID == id {
-                let newIndex = min(index, tabs.count - 1)
+                let newIndex = max(0, index - 1)
                 selectedTabID = tabs[newIndex].id
                 Log.info("closeTab: selected new tab at index=\(newIndex), id=\(selectedTabID)")
             }
@@ -1134,6 +1156,7 @@ final class OverlayTabsModel: ObservableObject {
         let expected = tabs.count
         let rendered = lastReportedRenderedCount
         let size = lastReportedTabBarSize
+        let now = Date()
 
         // Skip check if view hasn't reported yet
         if rendered < 0 {
@@ -1159,19 +1182,29 @@ final class OverlayTabsModel: ObservableObject {
             }
         }
 
-        // Check 3: Staleness - if preference updates stopped, the view may have disconnected
-        // This catches cases where NSHostingView becomes stale and preference keys stop firing
-        if !needsRecovery && expected > 0 {
-            let timeSinceLastUpdate = Date().timeIntervalSince(lastPreferenceUpdateTime)
+        // Check 3: Rendered count mismatch after a quiet period (stale view without updates).
+        if !needsRecovery && expected > 0 && rendered > 0 && rendered != expected {
+            let timeSinceLastUpdate = now.timeIntervalSince(lastPreferenceUpdateTime)
             if timeSinceLastUpdate > stalenessThreshold {
                 needsRecovery = true
-                reason = "stale: no preference update in \(Int(timeSinceLastUpdate))s (threshold: \(Int(stalenessThreshold))s)"
+                reason = "rendered mismatch: rendered=\(rendered), expected=\(expected), lastUpdate=\(Int(timeSinceLastUpdate))s"
             }
         }
 
         if needsRecovery {
+            let timeSinceLastRefresh = now.timeIntervalSince(lastForcedRefreshAt)
+            if timeSinceLastRefresh < refreshCooldown {
+                watchdogSkipCount += 1
+                lastWatchdogReason = reason
+                Log.info("TabBar watchdog: skipping refresh (cooldown \(Int(refreshCooldown))s, reason=\(reason))")
+                emitWatchdogSummaryIfNeeded(now: now)
+                return
+            }
+            lastForcedRefreshAt = now
             watchdogRefreshAttempts += 1
             if watchdogRefreshAttempts <= 3 {
+                watchdogRecoveryCount += 1
+                lastWatchdogReason = reason
                 Log.warn("TabBar watchdog: \(reason), attempt \(watchdogRefreshAttempts), forcing refresh")
                 if let window = overlayWindow {
                     TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
@@ -1180,9 +1213,19 @@ final class OverlayTabsModel: ObservableObject {
             } else if watchdogRefreshAttempts == 4 {
                 Log.error("TabBar watchdog: refresh failed after 3 attempts, stopping retries")
             }
+            emitWatchdogSummaryIfNeeded(now: now)
         } else {
             watchdogRefreshAttempts = 0
         }
+    }
+
+    private func emitWatchdogSummaryIfNeeded(now: Date) {
+        let elapsed = now.timeIntervalSince(lastWatchdogSummaryAt)
+        guard elapsed >= 60 else { return }
+        Log.info("TabBar watchdog summary: refreshes=\(watchdogRecoveryCount) skips=\(watchdogSkipCount) lastReason=\(lastWatchdogReason)")
+        watchdogRecoveryCount = 0
+        watchdogSkipCount = 0
+        lastWatchdogSummaryAt = now
     }
 
     private func shouldCheckTabBarHealth() -> Bool {
@@ -1267,6 +1310,7 @@ final class OverlayTabsModel: ObservableObject {
 
     func toggleSearch() {
         isSearchVisible.toggle()
+        logVisualState(reason: "toggleSearch: \(isSearchVisible)")
         if isSearchVisible {
             isRenameVisible = false
             isSnippetManagerVisible = false
@@ -1339,6 +1383,7 @@ final class OverlayTabsModel: ObservableObject {
         renameOriginalTitle = renameText
         renameOriginalColor = renameColor
         isRenameVisible = true
+        logVisualState(reason: "beginRenameSelected")
     }
 
     func beginRename(tabID: UUID) {
@@ -1385,6 +1430,7 @@ final class OverlayTabsModel: ObservableObject {
         renameTabID = nil
         renameOriginalTitle = ""
         renameOriginalColor = renameColor
+        logVisualState(reason: "renameCleared")
         if shouldFocus {
             focusSelected()
         }
@@ -1398,6 +1444,7 @@ final class OverlayTabsModel: ObservableObject {
         suspendWorkItems.values.forEach { $0.cancel() }
         suspendWorkItems.removeAll()
         updateSuspensionState()
+        logVisualState(reason: "renderSuspension: enabled=\(enabled) delay=\(renderSuspensionDelay)")
     }
 
     func isTabSuspended(_ id: UUID) -> Bool {
@@ -1405,6 +1452,7 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     private func updateSuspensionState() {
+        let previousSuspended = suspendedTabIDs
         let validIDs = Set(tabs.map { $0.id })
 
         suspendWorkItems
@@ -1417,6 +1465,9 @@ final class OverlayTabsModel: ObservableObject {
             suspendWorkItems.values.forEach { $0.cancel() }
             suspendWorkItems.removeAll()
             suspendedTabIDs.removeAll()
+            if previousSuspended != suspendedTabIDs {
+                logVisualState(reason: "renderSuspension: cleared")
+            }
             return
         }
 
@@ -1426,6 +1477,10 @@ final class OverlayTabsModel: ObservableObject {
 
         for tab in tabs where tab.id != selectedTabID {
             scheduleSuspension(for: tab.id)
+        }
+
+        if previousSuspended != suspendedTabIDs {
+            logVisualState(reason: "renderSuspension: updated")
         }
     }
 
@@ -1438,8 +1493,11 @@ final class OverlayTabsModel: ObservableObject {
                 guard let self else { return }
                 guard self.isRenderSuspensionEnabled else { return }
                 guard self.selectedTabID != id else { return }
-                self.suspendedTabIDs.insert(id)
+                let inserted = self.suspendedTabIDs.insert(id).inserted
                 self.suspendWorkItems.removeValue(forKey: id)
+                if inserted {
+                    self.logVisualState(reason: "renderSuspension: suspended tab \(id)")
+                }
             }
         }
         suspendWorkItems[id] = item
@@ -1519,6 +1577,7 @@ final class OverlayTabsModel: ObservableObject {
 
     func toggleClipboardHistory() {
         isClipboardHistoryVisible.toggle()
+        logVisualState(reason: "toggleClipboardHistory: \(isClipboardHistoryVisible)")
         if isClipboardHistoryVisible {
             isSearchVisible = false
             isRenameVisible = false
@@ -1537,6 +1596,7 @@ final class OverlayTabsModel: ObservableObject {
 
     func toggleBookmarkList() {
         isBookmarkListVisible.toggle()
+        logVisualState(reason: "toggleBookmarkList: \(isBookmarkListVisible)")
         if isBookmarkListVisible {
             isSearchVisible = false
             isRenameVisible = false
@@ -1550,6 +1610,7 @@ final class OverlayTabsModel: ObservableObject {
     func toggleSnippetManager() {
         guard FeatureSettings.shared.isSnippetsEnabled else { return }
         isSnippetManagerVisible.toggle()
+        logVisualState(reason: "toggleSnippetManager: \(isSnippetManagerVisible)")
         if isSnippetManagerVisible {
             isSearchVisible = false
             isRenameVisible = false
@@ -1579,6 +1640,17 @@ final class OverlayTabsModel: ObservableObject {
         }
     }
 
+    func logVisualState(reason: String) {
+        guard isDiagnosticsLoggingEnabled else { return }
+        let selectedIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) ?? -1
+        let selectedSession = selectedTab?.session
+        let activeApp = selectedSession?.activeAppName ?? "nil"
+        let displayPath = selectedSession?.displayPath() ?? ""
+        let selectedSuspended = suspendedTabIDs.contains(selectedTabID)
+        let overlayFlags = "search=\(isSearchVisible) rename=\(isRenameVisible) clipboard=\(isClipboardHistoryVisible) bookmarks=\(isBookmarkListVisible) snippets=\(isSnippetManagerVisible) candidate=\(currentCandidate != nil) task=\(currentTask != nil) assessment=\(isTaskAssessmentVisible)"
+        Log.info("Overlay visual state (\(reason)): tabs=\(tabs.count) selectedIndex=\(selectedIndex) selectedID=\(selectedTabID) activeApp=\(activeApp) path=\(displayPath) terminalReady=\(isTerminalReady) suspended=\(suspendedTabIDs.count) selectedSuspended=\(selectedSuspended) renderSuspension=\(isRenderSuspensionEnabled) delay=\(renderSuspensionDelay) overlays[\(overlayFlags)]")
+    }
+
     func insertSnippet(_ entry: SnippetEntry) {
         guard let session = selectedTab?.session else { return }
         session.insertSnippet(entry)
@@ -1599,7 +1671,8 @@ final class OverlayTabsModel: ObservableObject {
             snippet: modifiedSnippet,
             source: entry.source,
             sourcePath: entry.sourcePath,
-            isOverridden: entry.isOverridden
+            isOverridden: entry.isOverridden,
+            repoRoot: entry.repoRoot
         )
         session.insertSnippet(modifiedEntry)
         isSnippetManagerVisible = false

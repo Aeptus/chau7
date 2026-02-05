@@ -301,21 +301,24 @@ public enum CommandDetection {
         return nil
     }
 
+    // MARK: - Cached URL/Port Patterns
+
+    private static let devServerURLPatterns: [NSRegularExpression] = [
+        "http://localhost:\\d+",
+        "http://127\\.0\\.0\\.1:\\d+",
+        "https://localhost:\\d+",
+        "http://0\\.0\\.0\\.0:\\d+"
+    ].compactMap { try? NSRegularExpression(pattern: $0) }
+
+    private static let portRegex = try! NSRegularExpression(pattern: ":(\\d{4,5})(?:/|\\s|$)")
+
     /// Extracts a URL from dev server output (e.g., "http://localhost:3000")
     /// - Parameter output: The terminal output string
     /// - Returns: The URL string if found, or nil
     public static func extractDevServerURL(from output: String) -> String? {
-        // Match http://localhost:PORT or http://127.0.0.1:PORT patterns
-        let patterns = [
-            "http://localhost:\\d+",
-            "http://127\\.0\\.0\\.1:\\d+",
-            "https://localhost:\\d+",
-            "http://0\\.0\\.0\\.0:\\d+"
-        ]
-
-        for pattern in patterns {
-            if let regex = try? NSRegularExpression(pattern: pattern, options: []),
-               let match = regex.firstMatch(in: output, range: NSRange(output.startIndex..., in: output)),
+        let nsRange = NSRange(output.startIndex..., in: output)
+        for regex in devServerURLPatterns {
+            if let match = regex.firstMatch(in: output, range: nsRange),
                let range = Range(match.range, in: output) {
                 return String(output[range])
             }
@@ -327,8 +330,8 @@ public enum CommandDetection {
     /// - Parameter text: Text containing a port number
     /// - Returns: The port number if found
     public static func extractPort(from text: String) -> Int? {
-        if let regex = try? NSRegularExpression(pattern: ":(\\d{4,5})(?:/|\\s|$)", options: []),
-           let match = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+        let nsRange = NSRange(text.startIndex..., in: text)
+        if let match = portRegex.firstMatch(in: text, range: nsRange),
            match.numberOfRanges > 1,
            let range = Range(match.range(at: 1), in: text) {
             return Int(text[range])
@@ -561,7 +564,7 @@ public enum CommandDetection {
 public enum EventParsing {
 
     /// Event types from hooks
-    public enum EventType: String, Codable, CaseIterable {
+    public enum EventType: String, Codable, CaseIterable, Sendable {
         case userPrompt = "user_prompt"
         case toolStart = "tool_start"
         case toolComplete = "tool_complete"
@@ -592,7 +595,7 @@ public enum EventParsing {
     }
 
     /// Parsed event data
-    public struct ParsedEvent {
+    public struct ParsedEvent: Sendable {
         public let type: EventType
         public let hook: String
         public let toolName: String

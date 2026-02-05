@@ -29,7 +29,7 @@ public struct TaskCandidateView: View {
 
             // Task info
             VStack(alignment: .leading, spacing: 2) {
-                Text("New task detected")
+                Text(L("New task detected", "New task detected"))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.secondary)
 
@@ -43,7 +43,7 @@ public struct TaskCandidateView: View {
 
             // Grace period countdown
             if graceRemaining > 0 {
-                Text("\(graceRemaining / 1000)s")
+                Text(String(format: L("task.graceSeconds", "%ds"), graceRemaining / 1000))
                     .font(.system(size: 11, weight: .medium).monospacedDigit())
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 6)
@@ -55,14 +55,14 @@ public struct TaskCandidateView: View {
             // Action buttons
             HStack(spacing: 8) {
                 Button(action: onConfirm) {
-                    Label("Confirm", systemImage: "checkmark")
+                    Label(L("Confirm", "Confirm"), systemImage: "checkmark")
                         .font(.system(size: 11, weight: .medium))
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
 
                 Button(action: onDismiss) {
-                    Label("Dismiss", systemImage: "xmark")
+                    Label(L("Dismiss", "Dismiss"), systemImage: "xmark")
                         .font(.system(size: 11, weight: .medium))
                 }
                 .buttonStyle(.bordered)
@@ -158,7 +158,7 @@ struct TaskCandidateView_Previews: PreviewProvider {
                     id: "cand_preview",
                     tabId: "tab_1",
                     sessionId: "sess_1",
-                    projectPath: "/Users/dev/project",
+                    projectPath: "~/dev/project",
                     suggestedName: "Fix login redirect bug",
                     trigger: .idleGap,
                     confidence: 0.85,
@@ -175,7 +175,7 @@ struct TaskCandidateView_Previews: PreviewProvider {
                     id: "cand_preview",
                     tabId: "tab_1",
                     sessionId: "sess_1",
-                    projectPath: "/Users/dev/project",
+                    projectPath: "~/dev/project",
                     suggestedName: "Implement user authentication",
                     trigger: .newSession,
                     confidence: 0.9,

@@ -5,7 +5,7 @@
 Chau7 uses a forked version of [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) for terminal emulation.
 
 **Fork Repository**: https://github.com/schiste/Chau7-SwiftTerm
-**Pinned Revision**: `7a6f4acd84c152170336832db4b2fda87722f3ef`
+**Pinned Revision**: `b97d811b04a20b42d66f2bae35740ab17903ee0a`
 
 ## Why a Fork?
 
@@ -115,4 +115,5 @@ SwiftTerm is licensed under the MIT License. The fork maintains the same license
 
 | Date | Revision | Changes |
 |------|----------|---------|
+| 2026-02-03 | b97d811 | Fix defaultLineHeight call for macOS |
 | Initial | 7a6f4ac | Initial fork for Chau7 |

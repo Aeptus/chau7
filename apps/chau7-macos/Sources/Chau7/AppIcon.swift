@@ -10,13 +10,6 @@ enum AppIcon {
             return image
         }
 
-        #if SWIFT_PACKAGE
-        if let url = Bundle.module.url(forResource: "AppDockIcon", withExtension: "png"),
-           let image = NSImage(contentsOf: url) {
-            return image
-        }
-        #endif
-
         // For debug builds, look relative to executable location
         // .build/debug/Chau7 -> ../../Resources/AppDockIcon.png
         let executableURL = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])

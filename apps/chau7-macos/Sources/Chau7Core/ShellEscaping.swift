@@ -65,13 +65,20 @@ public enum ShellEscaping {
     /// Allows only common safe SSH options, rejecting potentially dangerous ones.
     /// - Parameter options: The SSH options string to validate
     /// - Returns: ValidationResult with status and reason
+    public enum SSHValidationIssue: Equatable {
+        case dangerousOption(String)
+        case commandSubstitution
+        case shellRedirection
+        case shellControlChars
+    }
+
     public struct SSHValidationResult: Equatable {
         public let isValid: Bool
-        public let reason: String?
+        public let issue: SSHValidationIssue?
 
-        public init(isValid: Bool, reason: String? = nil) {
+        public init(isValid: Bool, issue: SSHValidationIssue? = nil) {
             self.isValid = isValid
-            self.reason = reason
+            self.issue = issue
         }
     }
 
@@ -103,7 +110,7 @@ public enum ShellEscaping {
             if lowercased.contains(dangerous.lowercased()) {
                 return SSHValidationResult(
                     isValid: false,
-                    reason: "Option '\(dangerous)' is not allowed for security reasons"
+                    issue: .dangerousOption(dangerous)
                 )
             }
         }
@@ -112,7 +119,7 @@ public enum ShellEscaping {
         if trimmed.contains("$(") || trimmed.contains("`") {
             return SSHValidationResult(
                 isValid: false,
-                reason: "Command substitution is not allowed"
+                issue: .commandSubstitution
             )
         }
 
@@ -120,7 +127,7 @@ public enum ShellEscaping {
         if trimmed.contains(">") || trimmed.contains("<") || trimmed.contains("|") {
             return SSHValidationResult(
                 isValid: false,
-                reason: "Shell redirection is not allowed"
+                issue: .shellRedirection
             )
         }
 
@@ -128,7 +135,7 @@ public enum ShellEscaping {
         if trimmed.contains(";") || trimmed.contains("&") || trimmed.contains("\n") || trimmed.contains("\r") {
             return SSHValidationResult(
                 isValid: false,
-                reason: "Shell control characters are not allowed"
+                issue: .shellControlChars
             )
         }
 
@@ -152,6 +159,10 @@ public enum ShellEscaping {
         // Must not contain command substitution
         guard !trimmed.contains("$(") && !trimmed.contains("`") else { return false }
 
+        // Must not contain path traversal components
+        let components = trimmed.components(separatedBy: "/")
+        guard !components.contains("..") else { return false }
+
         return true
     }
 
@@ -167,6 +178,11 @@ public enum ShellEscaping {
         // Remove command substitution attempts
         result = result.replacingOccurrences(of: "$(", with: "")
         result = result.replacingOccurrences(of: "`", with: "")
+
+        // Strip path traversal components
+        result = result.components(separatedBy: "/")
+            .filter { $0 != ".." }
+            .joined(separator: "/")
 
         return result
     }

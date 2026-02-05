@@ -263,7 +263,7 @@ public final class PredictiveRenderer {
                 "Changes not staged for commit:"
             ],
             "git branch": ["* main", "  develop", "  feature/"],
-            "pwd": ["/Users/", "/home/"],
+            "pwd": ["$HOME/"],
             "whoami": [NSUserName()],
             "cd": [],  // No output
             "echo": [],  // Variable output
