@@ -26,6 +26,13 @@ public enum EscapeSequenceSanitizer {
     /// - Parameter text: The input text potentially containing escape sequences
     /// - Returns: Clean text with all escape sequences removed
     public static func sanitize(_ text: String) -> String {
+        if let rust = RustEscapeSanitizer.shared.sanitize(text) {
+            return rust
+        }
+        return swiftSanitize(text)
+    }
+
+    private static func swiftSanitize(_ text: String) -> String {
         var result = text
 
         // Order matters: process from most specific to most general

@@ -53,6 +53,13 @@ enum AnsiParser {
         let token = FeatureProfiler.shared.begin(.ansiParse, bytes: line.utf8.count)
         defer { FeatureProfiler.shared.end(token) }
         let input = TerminalNormalizer.applyBackspacesOnly(line)
+        if let segments = RustAnsiParser.shared.parse(input) {
+            return attributedString(from: segments, baseFont: baseFont, baseFg: baseFg, baseBg: baseBg)
+        }
+        return swiftAttributedString(for: input, baseFont: baseFont, baseFg: baseFg, baseBg: baseBg)
+    }
+
+    private static func swiftAttributedString(for input: String, baseFont: NSFont, baseFg: NSColor, baseBg: NSColor) -> NSAttributedString {
         let result = NSMutableAttributedString()
         var currentStyle = Style.default
         var buffer = ""
@@ -102,6 +109,47 @@ enum AnsiParser {
 
         flushBuffer()
         return result
+    }
+
+    private static func attributedString(from segments: [RustAnsiParsedSegment], baseFont: NSFont, baseFg: NSColor, baseBg: NSColor) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        for segment in segments {
+            guard !segment.text.isEmpty else { continue }
+            let style = style(from: segment)
+            let attrs = attributes(for: style, baseFont: baseFont, baseFg: baseFg, baseBg: baseBg)
+            result.append(NSAttributedString(string: segment.text, attributes: attrs))
+        }
+        return result
+    }
+
+    private static func style(from segment: RustAnsiParsedSegment) -> Style {
+        var style = Style.default
+        let flags = segment.flags
+        style.bold = (flags & 1) != 0
+        style.dim = (flags & 2) != 0
+        style.underline = (flags & 4) != 0
+        style.inverse = (flags & 8) != 0
+        style.italic = (flags & 16) != 0
+        style.fg = color(from: segment.fg)
+        style.bg = color(from: segment.bg)
+        return style
+    }
+
+    private static func color(from spec: RustAnsiColorSpec) -> NSColor? {
+        switch spec.kind {
+        case 1:
+            let idx = Int(spec.index)
+            return ansiColor(idx % 8, bright: idx >= 8)
+        case 2:
+            return ansi256Color(Int(spec.index))
+        case 3:
+            return NSColor(calibratedRed: CGFloat(spec.r) / 255.0,
+                           green: CGFloat(spec.g) / 255.0,
+                           blue: CGFloat(spec.b) / 255.0,
+                           alpha: 1.0)
+        default:
+            return nil
+        }
     }
 
     private static func skipEscapeSequence(in input: String, start: String.Index) -> String.Index? {
