@@ -425,8 +425,14 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         ]
 
         let lowercased = text.lowercased()
-        let isWaiting = waitingPatterns.contains { pattern in
-            lowercased.contains(pattern.lowercased())
+        let loweredPatterns = waitingPatterns.map { $0.lowercased() }
+        let isWaiting: Bool
+        if let rustMatch = RustPatternMatcher.waitPatterns.containsAny(haystack: lowercased, patterns: loweredPatterns) {
+            isWaiting = rustMatch
+        } else {
+            isWaiting = waitingPatterns.contains { pattern in
+                lowercased.contains(pattern.lowercased())
+            }
         }
 
         if isWaiting {
@@ -833,7 +839,21 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         let checkData = data.prefix(500)
         guard let outputString = String(data: checkData, encoding: .utf8) else { return }
 
-        for (pattern, appName) in outputDetectionPatterns() {
+        let patterns = outputDetectionPatterns()
+        let patternStrings = patterns.map { $0.pattern }
+        if let index = RustPatternMatcher.outputPatterns.firstMatchIndex(haystack: outputString, patterns: patternStrings) {
+            if index >= 0, index < patterns.count {
+                let match = patterns[index]
+                DispatchQueue.main.async { [weak self] in
+                    self?.activeAppName = match.appName
+                    self?.startAILoggingIfNeeded(toolName: match.appName, commandLine: nil)
+                    Log.trace("Detected \(match.appName) from output pattern: \(match.pattern)")
+                }
+                return
+            }
+        }
+
+        for (pattern, appName) in patterns {
             if outputString.contains(pattern) {
                 DispatchQueue.main.async { [weak self] in
                     self?.activeAppName = appName
