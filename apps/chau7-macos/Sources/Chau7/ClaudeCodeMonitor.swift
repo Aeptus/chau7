@@ -40,12 +40,19 @@ final class ClaudeCodeMonitor: ObservableObject {
     private let eventsFilePath: String
     private let maxRecentEvents = 50
     private let idleThreshold: TimeInterval = 5.0
+    private let permissionRequestCooldown: TimeInterval = 20.0
 
     // MARK: - Internal State
 
     private var eventTailer: FileTailer<ClaudeCodeEvent>?
     private var idleTimer: DispatchSourceTimer?
     private let queue = DispatchQueue(label: "com.chau7.claudeMonitor")
+    private var lastPermissionRequestBySession: [String: PermissionRequestState] = [:]
+
+    private struct PermissionRequestState {
+        let tool: String
+        let timestamp: Date
+    }
 
     // MARK: - Callbacks
 
@@ -136,7 +143,9 @@ final class ClaudeCodeMonitor: ObservableObject {
                 self.onResponseComplete?(event)
                 self.notifyResponseComplete(event)
             case .permissionRequest:
-                self.notifyPermissionRequest(event)
+                if self.shouldNotifyPermissionRequest(event) {
+                    self.notifyPermissionRequest(event)
+                }
             case .sessionEnd:
                 self.markSessionClosed(event.sessionId)
             default:
@@ -255,6 +264,23 @@ final class ClaudeCodeMonitor: ObservableObject {
             ts: DateFormatters.nowISO8601()
         )
         NotificationManager.shared.notify(for: aiEvent)
+    }
+
+    private func shouldNotifyPermissionRequest(_ event: ClaudeCodeEvent) -> Bool {
+        let sessionId = event.sessionId
+        guard !sessionId.isEmpty else { return true }
+        let tool = event.toolName
+        let now = event.timestamp
+
+        if let last = lastPermissionRequestBySession[sessionId],
+           last.tool == tool,
+           now.timeIntervalSince(last.timestamp) < permissionRequestCooldown {
+            Log.trace("Skipping duplicate permission request: session=\(event.shortSessionId) tool=\(tool)")
+            return false
+        }
+
+        lastPermissionRequestBySession[sessionId] = PermissionRequestState(tool: tool, timestamp: now)
+        return true
     }
 
     private func notifySessionIdle(_ session: ClaudeSessionInfo, idleFor: TimeInterval) {

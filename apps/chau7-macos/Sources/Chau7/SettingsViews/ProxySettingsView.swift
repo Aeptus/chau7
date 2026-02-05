@@ -10,31 +10,31 @@ struct ProxySettingsView: View {
         Form {
             // Main Toggle Section
             Section {
-                Toggle("Enable API Analytics", isOn: $settings.isAPIAnalyticsEnabled)
+                Toggle(L("Enable API Analytics", "Enable API Analytics"), isOn: $settings.isAPIAnalyticsEnabled)
 
                 HStack {
-                    Text("Status:")
+                    Text(L("Status:", "Status:"))
                     statusIndicator
                 }
             } header: {
-                Text("API Call Tracking")
+                Text(L("API Call Tracking", "API Call Tracking"))
             } footer: {
-                Text("Routes LLM API calls through a local proxy to capture token usage, costs, and latency metrics. Authentication is handled by CLI tools — no API keys are stored by Chau7.")
+                Text(L("Routes LLM API calls through a local proxy to capture token usage, costs, and latency metrics. Authentication is handled by CLI tools — no API keys are stored by Chau7.", "Routes LLM API calls through a local proxy to capture token usage, costs, and latency metrics. Authentication is handled by CLI tools — no API keys are stored by Chau7."))
             }
 
             // Privacy Section
             Section {
-                Toggle("Log prompt previews", isOn: $settings.apiAnalyticsLogPrompts)
+                Toggle(L("Log prompt previews", "Log prompt previews"), isOn: $settings.apiAnalyticsLogPrompts)
             } header: {
-                Text("Privacy")
+                Text(L("Privacy", "Privacy"))
             } footer: {
-                Text("When enabled, stores the first 500 characters of prompts and responses for debugging. Disable for maximum privacy.")
+                Text(L("When enabled, stores the first 500 characters of prompts and responses for debugging. Disable for maximum privacy.", "When enabled, stores the first 500 characters of prompts and responses for debugging. Disable for maximum privacy."))
             }
 
             // Advanced Section
             Section {
                 HStack {
-                    Text("Port")
+                    Text(L("Port", "Port"))
                     Spacer()
                     TextField("", value: $settings.apiAnalyticsPort, format: .number)
                         .frame(width: 80)
@@ -43,20 +43,20 @@ struct ProxySettingsView: View {
                 }
 
                 HStack {
-                    Button("Open Database Folder") {
+                    Button(L("Open Database Folder", "Open Database Folder")) {
                         openDatabaseFolder()
                     }
                     .buttonStyle(.borderless)
 
                     Spacer()
 
-                    Button("Clear All Data", role: .destructive) {
+                    Button(L("Clear All Data", "Clear All Data"), role: .destructive) {
                         showingClearConfirmation = true
                     }
                     .buttonStyle(.borderless)
                 }
             } header: {
-                Text("Advanced")
+                Text(L("Advanced", "Advanced"))
             }
 
             // Supported Tools Section
@@ -68,19 +68,19 @@ struct ProxySettingsView: View {
                     supportedToolRow(name: "Aider", supported: .full)
                     supportedToolRow(name: "Cursor", supported: .full)
 
-                    Text("Gemini CLI support is partial — may not work when Google OAuth session is cached.")
+                    Text(L("Gemini CLI support is partial — may not work when Google OAuth session is cached.", "Gemini CLI support is partial — may not work when Google OAuth session is cached."))
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .padding(.top, 4)
                 }
             } header: {
-                Text("Supported Tools")
+                Text(L("Supported Tools", "Supported Tools"))
             }
 
             // How It Works Section
             Section {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("When enabled, Chau7 sets environment variables to route API calls:")
+                    Text(L("When enabled, Chau7 sets environment variables to route API calls:", "When enabled, Chau7 sets environment variables to route API calls:"))
                         .font(.caption)
                         .foregroundColor(.secondary)
 
@@ -91,16 +91,16 @@ struct ProxySettingsView: View {
                     }
                     .padding(.vertical, 4)
 
-                    Text("OpenAI SDKs expect OPENAI_BASE_URL to include /v1. Chau7 sets this automatically.")
+                    Text(L("OpenAI SDKs expect OPENAI_BASE_URL to include /v1. Chau7 sets this automatically.", "OpenAI SDKs expect OPENAI_BASE_URL to include /v1. Chau7 sets this automatically."))
                         .font(.caption)
                         .foregroundColor(.secondary)
 
-                    Text("The proxy logs metadata (model, tokens, latency) then forwards requests to the real APIs. Auth headers pass through unchanged.")
+                    Text(L("The proxy logs metadata (model, tokens, latency) then forwards requests to the real APIs. Auth headers pass through unchanged.", "The proxy logs metadata (model, tokens, latency) then forwards requests to the real APIs. Auth headers pass through unchanged."))
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
             } header: {
-                Text("How It Works")
+                Text(L("How It Works", "How It Works"))
             }
         }
         .formStyle(.grouped)
@@ -114,12 +114,12 @@ struct ProxySettingsView: View {
             updateStatus()
         }
         .alert("Clear Analytics Data", isPresented: $showingClearConfirmation) {
-            Button("Cancel", role: .cancel) {}
-            Button("Clear All", role: .destructive) {
+            Button(L("Cancel", "Cancel"), role: .cancel) {}
+            Button(L("Clear All", "Clear All"), role: .destructive) {
                 clearAnalyticsData()
             }
         } message: {
-            Text("This will delete all captured API call data. This action cannot be undone.")
+            Text(L("This will delete all captured API call data. This action cannot be undone.", "This will delete all captured API call data. This action cannot be undone."))
         }
     }
 
@@ -133,14 +133,14 @@ struct ProxySettingsView: View {
                 Circle()
                     .fill(Color.secondary)
                     .frame(width: 8, height: 8)
-                Text("Disabled")
+                Text(L("Disabled", "Disabled"))
                     .foregroundColor(.secondary)
             }
         case .starting:
             HStack(spacing: 4) {
                 ProgressView()
                     .scaleEffect(0.6)
-                Text("Starting...")
+                Text(L("Starting...", "Starting..."))
                     .foregroundColor(.orange)
             }
         case .running(let port):
@@ -148,7 +148,7 @@ struct ProxySettingsView: View {
                 Circle()
                     .fill(Color.green)
                     .frame(width: 8, height: 8)
-                Text("Running on port \(port)")
+                Text(String(format: L("proxy.runningOnPort", "Running on port %d"), port))
                     .foregroundColor(.green)
             }
         case .error(let message):

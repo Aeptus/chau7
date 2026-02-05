@@ -247,7 +247,7 @@ struct SSHConnectionView: View {
                 HStack {
                     Image(systemName: "magnifyingglass")
                         .foregroundColor(.secondary)
-                    TextField("Search connections...", text: $searchText)
+                    TextField(L("Search connections...", "Search connections..."), text: $searchText)
                         .textFieldStyle(.plain)
                 }
                 .padding(8)
@@ -258,7 +258,7 @@ struct SSHConnectionView: View {
                 // Recent connections
                 if searchText.isEmpty && !manager.recentConnections.isEmpty {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Recent")
+                        Text(L("Recent", "Recent"))
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 12)
@@ -293,11 +293,11 @@ struct SSHConnectionView: View {
                         connect(to: connection)
                     }
                     .contextMenu {
-                        Button("Connect") { connect(to: connection) }
-                        Button("Edit...") { editConnection(connection) }
+                        Button(L("Connect", "Connect")) { connect(to: connection) }
+                        Button(L("Edit...", "Edit...")) { editConnection(connection) }
                         Divider()
-                        Button("Duplicate") { duplicateConnection(connection) }
-                        Button("Delete", role: .destructive) { deleteConnection(connection) }
+                        Button(L("Duplicate", "Duplicate")) { duplicateConnection(connection) }
+                        Button(L("Delete", "Delete"), role: .destructive) { deleteConnection(connection) }
                     }
                 }
                 .listStyle(.sidebar)
@@ -312,7 +312,7 @@ struct SSHConnectionView: View {
                         Image(systemName: "plus")
                     }
                     .buttonStyle(.plain)
-                    .help("Add Connection")
+                    .help(L("Add Connection", "Add Connection"))
 
                     Button {
                         if let selected = selectedConnection {
@@ -323,12 +323,12 @@ struct SSHConnectionView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(selectedConnection == nil)
-                    .help("Remove Connection")
+                    .help(L("Remove Connection", "Remove Connection"))
 
                     Spacer()
 
                     Menu {
-                        Button("Import from ~/.ssh/config") {
+                        Button(L("Import from ~/.ssh/config", "Import from ~/.ssh/config")) {
                             let count = manager.importFromSSHConfig()
                             if count > 0 {
                                 // Show success message
@@ -357,10 +357,10 @@ struct SSHConnectionView: View {
                         Image(systemName: "server.rack")
                             .font(.system(size: 48))
                             .foregroundColor(.secondary)
-                        Text("No Connection Selected")
+                        Text(L("No Connection Selected", "No Connection Selected"))
                             .font(.headline)
                             .foregroundColor(.secondary)
-                        Text("Select a connection from the list or create a new one.")
+                        Text(L("Select a connection from the list or create a new one.", "Select a connection from the list or create a new one."))
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
@@ -460,8 +460,8 @@ private struct ConnectionRow: View {
         .cornerRadius(4)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("SSH connection: \(connection.displayName), host: \(connection.host)")
-        .accessibilityHint("Double-tap to connect")
+        .accessibilityLabel(L("ssh.connection.accessibilityLabel", "SSH connection: %@, host: %@", connection.displayName, connection.host))
+        .accessibilityHint(L("ssh.connection.accessibilityHint", "Double-tap to connect"))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -506,7 +506,7 @@ private struct ConnectionDetailView: View {
 
                 Spacer()
 
-                Button("Connect") {
+                Button(L("Connect", "Connect")) {
                     onConnect()
                 }
                 .buttonStyle(.borderedProminent)
@@ -517,21 +517,21 @@ private struct ConnectionDetailView: View {
             // Details
             Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
                 GridRow {
-                    Text("Host:")
+                    Text(L("Host:", "Host:"))
                         .foregroundColor(.secondary)
                     Text(connection.host)
                         .textSelection(.enabled)
                 }
 
                 GridRow {
-                    Text("Port:")
+                    Text(L("Port:", "Port:"))
                         .foregroundColor(.secondary)
-                    Text("\(connection.port)")
+                    Text(connection.port.formatted())
                 }
 
                 if !connection.user.isEmpty {
                     GridRow {
-                        Text("User:")
+                        Text(L("User:", "User:"))
                             .foregroundColor(.secondary)
                         Text(connection.user)
                             .textSelection(.enabled)
@@ -540,7 +540,7 @@ private struct ConnectionDetailView: View {
 
                 if !connection.identityFile.isEmpty {
                     GridRow {
-                        Text("Identity:")
+                        Text(L("Identity:", "Identity:"))
                             .foregroundColor(.secondary)
                         Text(connection.identityFile)
                             .textSelection(.enabled)
@@ -549,7 +549,7 @@ private struct ConnectionDetailView: View {
 
                 if !connection.jumpHost.isEmpty {
                     GridRow {
-                        Text("Jump Host:")
+                        Text(L("Jump Host:", "Jump Host:"))
                             .foregroundColor(.secondary)
                         Text(connection.jumpHost)
                             .textSelection(.enabled)
@@ -558,7 +558,7 @@ private struct ConnectionDetailView: View {
 
                 if let lastConnected = connection.lastConnected {
                     GridRow {
-                        Text("Last Connected:")
+                        Text(L("Last Connected:", "Last Connected:"))
                             .foregroundColor(.secondary)
                         Text(lastConnected, style: .relative)
                     }
@@ -570,7 +570,7 @@ private struct ConnectionDetailView: View {
 
             // Command preview
             VStack(alignment: .leading, spacing: 8) {
-                Text("SSH Command")
+                Text(L("SSH Command", "SSH Command"))
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.secondary)
 
@@ -587,7 +587,7 @@ private struct ConnectionDetailView: View {
 
             // Footer
             HStack {
-                Button("Edit...") {
+                Button(L("Edit...", "Edit...")) {
                     onEdit()
                 }
 
@@ -612,7 +612,7 @@ private struct ConnectionEditorView: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                Text(isNew ? "New Connection" : "Edit Connection")
+                Text(isNew ? L("ssh.editor.newTitle", "New Connection") : L("ssh.editor.editTitle", "Edit Connection"))
                     .font(.headline)
                 Spacer()
             }
@@ -623,40 +623,40 @@ private struct ConnectionEditorView: View {
 
             // Form
             Form {
-                Section("Connection") {
-                    TextField("Name (optional)", text: $connection.name)
-                    TextField("Host", text: $connection.host)
-                    TextField("Port", value: $connection.port, format: .number)
-                    TextField("Username", text: $connection.user)
+                Section(L("Connection", "Connection")) {
+                    TextField(L("Name (optional)", "Name (optional)"), text: $connection.name)
+                    TextField(L("Host", "Host"), text: $connection.host)
+                    TextField(L("Port", "Port"), value: $connection.port, format: .number)
+                    TextField(L("Username", "Username"), text: $connection.user)
                 }
 
-                Section("Authentication") {
-                    TextField("Identity File (e.g., ~/.ssh/id_rsa)", text: $connection.identityFile)
+                Section(L("Authentication", "Authentication")) {
+                    TextField(L("Identity File (e.g., ~/.ssh/id_rsa)", "Identity File (e.g., ~/.ssh/id_rsa)"), text: $connection.identityFile)
                 }
 
-                Section("Advanced") {
-                    TextField("Jump Host (ProxyJump)", text: $connection.jumpHost)
-                    TextField("Extra SSH Options", text: $connection.extraOptions)
+                Section(L("Advanced", "Advanced")) {
+                    TextField(L("Jump Host (ProxyJump)", "Jump Host (ProxyJump)"), text: $connection.jumpHost)
+                    TextField(L("Extra SSH Options", "Extra SSH Options"), text: $connection.extraOptions)
 
                     // Show validation warning for dangerous options
                     if !connection.extraOptions.isEmpty {
                         let validation = connection.extraOptionsValidation
                         if !validation.isValid {
-                            Label(validation.reason ?? "Invalid options", systemImage: "exclamationmark.triangle.fill")
+                            Label(validationMessage(for: validation.issue), systemImage: "exclamationmark.triangle.fill")
                                 .foregroundColor(.orange)
                                 .font(.caption)
                         }
                     }
                 }
 
-                Section("Appearance") {
-                    Picker("Tab Color", selection: $connection.colorTag) {
+                Section(L("Appearance", "Appearance")) {
+                    Picker(L("Tab Color", "Tab Color"), selection: $connection.colorTag) {
                         ForEach(colorOptions, id: \.self) { color in
                             HStack {
                                 Circle()
                                     .fill(colorForTag(color))
                                     .frame(width: 12, height: 12)
-                                Text(color.capitalized)
+                                Text(localizedColorName(color))
                             }
                             .tag(color)
                         }
@@ -670,14 +670,14 @@ private struct ConnectionEditorView: View {
 
             // Footer
             HStack {
-                Button("Cancel") {
+                Button(L("Cancel", "Cancel")) {
                     onCancel()
                 }
                 .keyboardShortcut(.cancelAction)
 
                 Spacer()
 
-                Button("Save") {
+                Button(L("Save", "Save")) {
                     onSave(connection)
                 }
                 .keyboardShortcut(.defaultAction)
@@ -698,6 +698,35 @@ private struct ConnectionEditorView: View {
         case "purple": return .purple
         case "pink": return .pink
         default: return .blue
+        }
+    }
+
+    private func validationMessage(for issue: ShellEscaping.SSHValidationIssue?) -> String {
+        guard let issue else {
+            return L("ssh.validation.invalidOptions", "Invalid options")
+        }
+        switch issue {
+        case .dangerousOption(let option):
+            return L("ssh.validation.dangerousOption", "Option \"%@\" is not allowed for security reasons", option)
+        case .commandSubstitution:
+            return L("ssh.validation.commandSubstitution", "Command substitution is not allowed")
+        case .shellRedirection:
+            return L("ssh.validation.shellRedirection", "Shell redirection is not allowed")
+        case .shellControlChars:
+            return L("ssh.validation.shellControlChars", "Shell control characters are not allowed")
+        }
+    }
+
+    private func localizedColorName(_ color: String) -> String {
+        switch color {
+        case "red": return L("color.red", "Red")
+        case "orange": return L("color.orange", "Orange")
+        case "yellow": return L("color.yellow", "Yellow")
+        case "green": return L("color.green", "Green")
+        case "blue": return L("color.blue", "Blue")
+        case "purple": return L("color.purple", "Purple")
+        case "pink": return L("color.pink", "Pink")
+        default: return color.capitalized
         }
     }
 }
@@ -731,7 +760,7 @@ final class SSHConnectionWindowController {
             defer: false
         )
         window.isReleasedWhenClosed = false
-        window.title = "SSH Connections"
+        window.title = L("ssh.window.title", "SSH Connections")
         window.contentView = hostingView
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -754,4 +783,5 @@ final class SSHConnectionWindowController {
             }
         }
     }
+
 }

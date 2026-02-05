@@ -27,7 +27,7 @@ struct KeyboardShortcutsEditorView: View {
             ("Tabs", ["newTab", "closeTab", "nextTab", "previousTab", "renameTab"]),
             ("Edit", ["copy", "paste", "find", "findNext", "findPrevious", "snippets"]),
             ("View", ["zoomIn", "zoomOut", "zoomReset", "clear"]),
-            ("Window", ["newWindow", "splitHorizontal", "splitVertical", "debugConsole"])
+            ("Window", ["newWindow", "splitHorizontal", "splitVertical", "openTextEditor", "debugConsole"])
         ]
 
         return groups.compactMap { (name, actions) in
@@ -46,12 +46,12 @@ struct KeyboardShortcutsEditorView: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                Text("Keyboard Shortcuts")
+                Text(L("Keyboard Shortcuts", "Keyboard Shortcuts"))
                     .font(.headline)
 
                 Spacer()
 
-                Button("Reset to Defaults") {
+                Button(L("Reset to Defaults", "Reset to Defaults")) {
                     settings.resetShortcutsToDefaults()
                 }
                 .buttonStyle(.link)
@@ -62,7 +62,7 @@ struct KeyboardShortcutsEditorView: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
-                TextField("Search shortcuts...", text: $searchText)
+                TextField(L("Search shortcuts...", "Search shortcuts..."), text: $searchText)
                     .textFieldStyle(.plain)
             }
             .padding(8)
@@ -95,7 +95,7 @@ struct KeyboardShortcutsEditorView: View {
             HStack {
                 Image(systemName: "info.circle")
                     .foregroundColor(.secondary)
-                Text("Click a shortcut to edit. Press the new key combination to change it.")
+                Text(L("Click a shortcut to edit. Press the new key combination to change it.", "Click a shortcut to edit. Press the new key combination to change it."))
                     .font(.caption)
                     .foregroundColor(.secondary)
                 Spacer()
@@ -103,11 +103,11 @@ struct KeyboardShortcutsEditorView: View {
             .padding()
             .background(Color(NSColor.controlBackgroundColor))
         }
-        .alert("Shortcut Conflict", isPresented: $showConflictAlert) {
-            Button("OK", role: .cancel) {}
+        .alert(L("shortcuts.conflict.title", "Shortcut Conflict"), isPresented: $showConflictAlert) {
+            Button(L("OK", "OK"), role: .cancel) {}
         } message: {
             let names = conflictingShortcuts.map { KeyboardShortcut.actionDisplayName($0.action) }.joined(separator: ", ")
-            Text("This shortcut is already used by: \(names)")
+            Text(String(format: L("shortcuts.conflict.message", "This shortcut is already used by: %@"), names))
         }
     }
 
@@ -198,7 +198,7 @@ private struct ShortcutRowView: View {
                             }
                         )
 
-                        Button("Save") {
+                        Button(L("Save", "Save")) {
                             if let key = recordedKey {
                                 var updated = shortcut
                                 updated.key = key
@@ -210,7 +210,7 @@ private struct ShortcutRowView: View {
                         .controlSize(.small)
                         .disabled(recordedKey == nil)
 
-                        Button("Cancel") {
+                        Button(L("Cancel", "Cancel")) {
                             onCancel()
                         }
                         .buttonStyle(.bordered)
@@ -240,7 +240,7 @@ private struct ShortcutRowView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundColor(.orange)
-                    Text("Conflict: \(conflictNames)")
+                    Text(String(format: L("shortcuts.conflict.inline", "Conflict: %@"), conflictNames))
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }

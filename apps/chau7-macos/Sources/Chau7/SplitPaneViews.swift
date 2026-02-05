@@ -203,7 +203,7 @@ struct TextEditorPaneView: View {
                         .font(.system(size: 11))
                 }
                 .buttonStyle(.plain)
-                .help("Open File")
+                .help(L("Open File", "Open File"))
 
                 // Save button
                 Button {
@@ -218,7 +218,7 @@ struct TextEditorPaneView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!editor.isDirty && editor.filePath != nil)
-                .help("Save")
+                .help(L("Save", "Save"))
 
                 // Close button
                 Button {
@@ -228,7 +228,7 @@ struct TextEditorPaneView: View {
                         .font(.system(size: 10, weight: .semibold))
                 }
                 .buttonStyle(.plain)
-                .help("Close Pane")
+                .help(L("Close Pane", "Close Pane"))
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -277,7 +277,7 @@ struct TextEditorPaneView: View {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.plainText]
         panel.canCreateDirectories = true
-        panel.nameFieldStringValue = "untitled.txt"
+        panel.nameFieldStringValue = L("editor.defaultFilename", "untitled.txt")
 
         if panel.runModal() == .OK, let url = panel.url {
             editor.saveAs(to: url.path)
@@ -307,7 +307,7 @@ struct TextEditorPaneView: View {
                     let panel = NSSavePanel()
                     panel.allowedContentTypes = [.plainText]
                     panel.canCreateDirectories = true
-                    panel.nameFieldStringValue = "untitled.txt"
+                    panel.nameFieldStringValue = L("editor.defaultFilename", "untitled.txt")
 
                     if panel.runModal() == .OK, let url = panel.url {
                         if editor.saveAs(to: url.path) {

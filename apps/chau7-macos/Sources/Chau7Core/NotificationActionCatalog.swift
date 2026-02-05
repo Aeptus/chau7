@@ -3,7 +3,7 @@ import Foundation
 // MARK: - Action Types
 
 /// All available notification actions
-public enum NotificationActionType: String, Codable, CaseIterable, Identifiable {
+public enum NotificationActionType: String, Codable, CaseIterable, Identifiable, Sendable {
     // Basic actions
     case showNotification = "show_notification"
     case playSound = "play_sound"
@@ -48,7 +48,7 @@ public enum NotificationActionType: String, Codable, CaseIterable, Identifiable 
 
 // MARK: - Action Metadata
 
-public struct NotificationActionInfo: Identifiable, Equatable {
+public struct NotificationActionInfo: Identifiable, Equatable, Sendable {
     public let type: NotificationActionType
     public let labelKey: String
     public let labelFallback: String
@@ -84,7 +84,7 @@ public struct NotificationActionInfo: Identifiable, Equatable {
     }
 }
 
-public enum ActionCategory: String, Codable, CaseIterable {
+public enum ActionCategory: String, Codable, CaseIterable, Sendable {
     case basic = "basic"
     case automation = "automation"
     case integration = "integration"
@@ -120,7 +120,7 @@ public enum ActionCategory: String, Codable, CaseIterable {
 
 // MARK: - Action Configuration
 
-public struct ActionConfigField: Identifiable, Equatable {
+public struct ActionConfigField: Identifiable, Equatable, Sendable {
     public let id: String
     public let labelKey: String
     public let labelFallback: String
@@ -151,7 +151,7 @@ public struct ActionConfigField: Identifiable, Equatable {
     }
 }
 
-public enum ConfigFieldType: String, Codable {
+public enum ConfigFieldType: String, Codable, Sendable {
     case text
     case textArea
     case number
@@ -162,7 +162,7 @@ public enum ConfigFieldType: String, Codable {
     case secretText
 }
 
-public struct ConfigOption: Identifiable, Equatable {
+public struct ConfigOption: Identifiable, Equatable, Sendable {
     public let id: String
     public let label: String
 
@@ -174,7 +174,7 @@ public struct ConfigOption: Identifiable, Equatable {
 
 // MARK: - Action Instance Configuration
 
-public struct NotificationActionConfig: Codable, Equatable, Identifiable {
+public struct NotificationActionConfig: Codable, Equatable, Identifiable, Sendable {
     public let id: UUID
     public let actionType: NotificationActionType
     public var enabled: Bool
@@ -209,7 +209,7 @@ public struct NotificationActionConfig: Codable, Equatable, Identifiable {
 
 // MARK: - Trigger Action Binding
 
-public struct TriggerActionBinding: Codable, Equatable, Identifiable {
+public struct TriggerActionBinding: Codable, Equatable, Identifiable, Sendable {
     public let id: UUID
     public let triggerId: String
     public var actions: [NotificationActionConfig]

@@ -30,7 +30,7 @@ final class StatusBarController: NSObject {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem?.button {
-            button.image = NSImage(systemSymbolName: "bell", accessibilityDescription: "Chau7")
+            button.image = NSImage(systemSymbolName: "bell", accessibilityDescription: L("app.name", "Chau7"))
             button.action = #selector(togglePopover(_:))
             button.target = self
         }
@@ -108,7 +108,7 @@ final class StatusBarController: NSObject {
         guard let button = statusItem?.button else { return }
         let isMonitoring = model?.isMonitoring ?? false
         let iconName = isMonitoring ? "bell.badge.fill" : "bell"
-        button.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "Chau7")
+        button.image = NSImage(systemSymbolName: iconName, accessibilityDescription: L("app.name", "Chau7"))
     }
 
     @objc private func togglePopover(_ sender: Any?) {
@@ -169,7 +169,7 @@ struct StatusBarPanelView: View {
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.secondary)
 
-            Text("Chau7")
+            Text(L("Chau7", "Chau7"))
                 .font(.system(size: 14, weight: .semibold))
 
             statusIndicator
@@ -180,7 +180,7 @@ struct StatusBarPanelView: View {
                 (NSApp.delegate as? AppDelegate)?.showOverlay()
                 onClose()
             } label: {
-                Label("Open Terminal", systemImage: "macwindow")
+                Label(L("Open Terminal", "Open Terminal"), systemImage: "macwindow")
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.small)
@@ -194,12 +194,17 @@ struct StatusBarPanelView: View {
             Circle()
                 .fill(model.isMonitoring ? Color.green : Color.gray)
                 .frame(width: 8, height: 8)
-            Text(model.isMonitoring ? "Active" : "Paused")
+            Text(model.isMonitoring ? L("status.active", "Active") : L("status.paused", "Paused"))
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Monitoring status: \(model.isMonitoring ? "Active" : "Paused")")
+        .accessibilityLabel(
+            String(
+                format: L("accessibility.monitoringStatus", "Monitoring status: %@"),
+                model.isMonitoring ? L("status.active", "Active") : L("status.paused", "Paused")
+            )
+        )
     }
 
     // MARK: - Scrollable Content
@@ -220,7 +225,7 @@ struct StatusBarPanelView: View {
 
     private var claudeSessionsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Active Sessions", systemImage: "bubble.left.and.bubble.right")
+            Label(L("Active Sessions", "Active Sessions"), systemImage: "bubble.left.and.bubble.right")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
 
@@ -228,7 +233,7 @@ struct StatusBarPanelView: View {
                 HStack {
                     Image(systemName: "moon.zzz")
                         .foregroundStyle(.tertiary)
-                    Text("No active Claude Code sessions")
+                    Text(L("No active Claude Code sessions", "No active Claude Code sessions"))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -249,12 +254,12 @@ struct StatusBarPanelView: View {
     private var recentActivitySection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label("Recent Activity", systemImage: "clock")
+                Label(L("Recent Activity", "Recent Activity"), systemImage: "clock")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
                 if !model.claudeCodeEvents.isEmpty {
-                    Button("Clear") {
+                    Button(L("Clear", "Clear")) {
                         model.claudeCodeEvents.removeAll()
                     }
                     .buttonStyle(.plain)
@@ -264,7 +269,7 @@ struct StatusBarPanelView: View {
             }
 
             if model.claudeCodeEvents.isEmpty {
-                Text("No recent events")
+                Text(L("No recent events", "No recent events"))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 4)
@@ -283,7 +288,7 @@ struct StatusBarPanelView: View {
 
     private var quickActionsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Quick Settings", systemImage: "slider.horizontal.3")
+            Label(L("Quick Settings", "Quick Settings"), systemImage: "slider.horizontal.3")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
 
@@ -337,7 +342,7 @@ struct StatusBarPanelView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 20)
 
-                Text("Opacity")
+                Text(L("Opacity", "Opacity"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
 
@@ -351,7 +356,12 @@ struct StatusBarPanelView: View {
                 )
                 .controlSize(.small)
 
-                Text("\(Int(FeatureSettings.shared.windowOpacity * 100))%")
+                Text(
+                    String(
+                        format: L("status.opacityPercent", "%d%%"),
+                        Int(FeatureSettings.shared.windowOpacity * 100)
+                    )
+                )
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.tertiary)
                     .frame(width: 32)
@@ -364,7 +374,7 @@ struct StatusBarPanelView: View {
                 Button {
                     model.sendTestNotification()
                 } label: {
-                    Label("Test Alert", systemImage: "bell.badge")
+                    Label(L("Test Alert", "Test Alert"), systemImage: "bell.badge")
                 }
                 .controlSize(.small)
 
@@ -374,7 +384,7 @@ struct StatusBarPanelView: View {
                     (NSApp.delegate as? AppDelegate)?.showSettings()
                     onClose()
                 } label: {
-                    Label("All Settings", systemImage: "gearshape")
+                    Label(L("All Settings", "All Settings"), systemImage: "gearshape")
                 }
                 .controlSize(.small)
             }
@@ -388,13 +398,13 @@ struct StatusBarPanelView: View {
 
     private var footerSection: some View {
         HStack {
-            Text("v1.0")
+            Text(L("v1.0", "v1.0"))
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
 
             Spacer()
 
-            Button("Quit Chau7") {
+            Button(L("Quit Chau7", "Quit Chau7")) {
                 NSApplication.shared.terminate(nil)
             }
             .buttonStyle(.plain)
@@ -441,7 +451,7 @@ private struct SessionRow: View {
                     Text(stateDescription)
                         .font(.system(size: 10))
                     if let tool = session.lastToolName, showTool {
-                        Text("(\(tool))")
+                        Text(String(format: L("status.toolSuffix", "(%@)"), tool))
                             .font(.system(size: 9))
                             .foregroundStyle(.tertiary)
                     }
@@ -457,7 +467,14 @@ private struct SessionRow: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(session.projectName) session, \(stateDescription), last active \(timeAgo(session.lastActivity))")
+        .accessibilityLabel(
+            String(
+                format: L("accessibility.sessionSummary", "%@ session, %@, last active %@"),
+                session.projectName,
+                stateDescription,
+                timeAgo(session.lastActivity)
+            )
+        )
     }
 
     private var isAnimated: Bool {
@@ -682,9 +699,9 @@ private struct QuickSettingToggle: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(label)")
-        .accessibilityValue(isOn ? "On" : "Off")
-        .accessibilityHint("Double-tap to toggle")
+        .accessibilityLabel(label)
+        .accessibilityValue(isOn ? L("status.on", "On") : L("status.off", "Off"))
+        .accessibilityHint(L("Double-tap to toggle", "Double-tap to toggle"))
         .accessibilityAddTraits(.isButton)
     }
 }

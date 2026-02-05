@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 import SwiftTerm
 
@@ -30,6 +31,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var nextOverlayWindowNumber: Int = 1
     /// Tracks windows that were hidden via orderOut - used to trigger tab bar refresh only when needed
     private var hiddenWindowNumbers: Set<Int> = []
+    /// Tracks windows that have been shown at least once
+    private var shownWindowNumbers: Set<Int> = []
+    private var didFinishLaunching: Bool = false
+    private var didPerformInitialSetup: Bool = false
 
     // MARK: - App Nap Prevention
     // Activity token to prevent App Nap from throttling the terminal
@@ -37,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.info("AppDelegate did finish launching.")
+        didFinishLaunching = true
 
         // CRITICAL: Prevent App Nap from throttling the terminal
         // This eliminates the "first keystroke lag" issue
@@ -75,28 +81,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         splashController = SplashWindowController()
         splashController?.show()
 
-        model?.bootstrap()
         applyAppTheme()
         installKeyMonitor()
-
-        // Initialize status bar controller (replaces MenuBarExtra for multi-monitor support)
-        if let model {
-            StatusBarController.shared.setup(model: model)
-        }
-
-        // Create overlay window hidden behind splash - this starts the shell
-        setupOverlayWindow()
-
-        // Initialize debug console controller
-        if let model, let overlayModel {
-            DebugConsoleController.shared.configure(appModel: model, overlayModel: overlayModel)
-        }
 
         // Initialize command palette controller
         CommandPaletteController.shared.setup(appDelegate: self)
 
         // Initialize SSH connection manager
         SSHConnectionWindowController.shared.appDelegate = self
+
+        attemptInitialSetupIfReady()
+    }
+
+    func configureModels(model: AppModel, overlayModel: OverlayTabsModel) {
+        self.model = model
+        self.overlayModel = overlayModel
+        attemptInitialSetupIfReady()
+    }
+
+    private func attemptInitialSetupIfReady() {
+        guard didFinishLaunching else { return }
+        guard !didPerformInitialSetup else { return }
+        guard let model, let overlayModel else {
+            Log.warn("Launch deferred: models not ready yet.")
+            return
+        }
+        didPerformInitialSetup = true
+
+        model.bootstrap()
+
+        // Initialize status bar controller (replaces MenuBarExtra for multi-monitor support)
+        StatusBarController.shared.setup(model: model)
+
+        // Create overlay window (initially hidden behind splash) - this starts the shell
+        setupOverlayWindow()
+
+        // Initialize debug console controller
+        DebugConsoleController.shared.configure(appModel: model, overlayModel: overlayModel)
+
+        // Ensure theme is applied after windows exist
+        applyAppTheme()
 
         // Keep overlay hidden initially
         for host in overlayHosts {
@@ -117,10 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             self?.splashController = nil
             // Now show the overlay window
             if let host = self?.overlayHosts.first {
-                host.model.noteTabBarVisibilityChanged(isVisible: true)
-                host.window.makeKeyAndOrderFront(nil)
-                NSApp.activate(ignoringOtherApps: true)
-                host.model.focusSelected()
+                self?.showOverlayWindow(host, reason: "finishLaunching")
             }
         }
     }
@@ -172,13 +193,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func showOverlay() {
         if let active = activeOverlayModel,
            let host = overlayHosts.first(where: { $0.model === active }) {
-            host.window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            host.model.focusSelected()
+            showOverlayWindow(host, reason: "showOverlay")
         } else if let host = overlayHosts.first {
-            host.window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-            host.model.focusSelected()
+            showOverlayWindow(host, reason: "showOverlay")
         } else {
             newOverlayWindow()
         }
@@ -209,7 +226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             defer: false
         )
 
-        window.title = "Chau7 Settings"
+        window.title = L("window.settings.title", "Chau7 Settings")
         window.center()
         window.contentView = hostingView
         window.isReleasedWhenClosed = false
@@ -227,6 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
         overlayHosts.append(OverlayHost(window: window, model: tabsModel))
         activeOverlayModel = tabsModel
+        showOverlayWindow(overlayHosts.last!, reason: "newWindow")
     }
 
     func newTab() {
@@ -367,9 +385,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             Log.trace("Clear scrollback: no active terminal found.")
             return
         }
-        // Clear scrollback buffer and screen
-        terminalView.getTerminal().resetToInitialState()
-        terminalView.clearSelection()
+        terminalView.clearScrollbackBuffer()
         Log.info("Scrollback cleared.")
     }
 
@@ -390,7 +406,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // MARK: - App Menu Actions
 
     func showAbout() {
-        let credits = """
+        let credits = L("about.credits", """
         A modern terminal emulator designed for AI-assisted development.
 
         Features:
@@ -404,7 +420,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Built with SwiftUI and SwiftTerm.
 
         Copyright \u{00a9} 2024-2025
-        """
+        """)
 
         let attributedCredits = NSMutableAttributedString(string: credits)
         attributedCredits.addAttributes(
@@ -413,7 +429,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
 
         NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: "Chau7",
+            .applicationName: L("app.name", "Chau7"),
             .applicationVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0",
             .version: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1",
             .credits: attributedCredits
@@ -424,11 +440,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func openLocation() {
         let alert = NSAlert()
-        alert.messageText = "Open Location"
-        alert.informativeText = "Enter a directory path to open in a new tab:"
+        alert.messageText = L("alert.openLocation.title", "Open Location")
+        alert.informativeText = L("alert.openLocation.message", "Enter a directory path to open in a new tab:")
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "Open")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L("button.open", "Open"))
+        alert.addButton(withTitle: L("button.cancel", "Cancel"))
 
         let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
         textField.stringValue = FileManager.default.homeDirectoryForCurrentUser.path
@@ -455,8 +471,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = [.plainText]
-        savePanel.nameFieldStringValue = "terminal-output.txt"
-        savePanel.title = "Export Terminal Text"
+        savePanel.nameFieldStringValue = L("export.terminalText.filename", "terminal-output.txt")
+        savePanel.title = L("export.terminalText.title", "Export Terminal Text")
 
         if savePanel.runModal() == .OK, let url = savePanel.url {
             // Select all text and get it
@@ -660,29 +676,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func showReleaseNotes() {
         let alert = NSAlert()
-        alert.messageText = "What's New in Chau7"
-        alert.informativeText = """
-        Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        alert.messageText = L("alert.whatsNew.title", "What's New in Chau7")
+        alert.informativeText = String(
+            format: L("alert.whatsNew.message", """
+            Version %@
 
-        Recent Updates:
-        - Command Palette (⇧⌘P)
-        - SSH Connection Manager
-        - Inline Image Support (imgcat)
-        - Keyboard Shortcuts Editor
-        - Built-in Help Documentation
-        - Option+Click cursor positioning
-        - Auto-focus on new tabs
-        - Improved menu bar organization
-        """
+            Recent Updates:
+            - Command Palette (⇧⌘P)
+            - SSH Connection Manager
+            - Inline Image Support (imgcat)
+            - Keyboard Shortcuts Editor
+            - Built-in Help Documentation
+            - Option+Click cursor positioning
+            - Auto-focus on new tabs
+            - Improved menu bar organization
+            """),
+            version
+        )
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: L("button.ok", "OK"))
         alert.runModal()
     }
 
     func reportIssue() {
         let alert = NSAlert()
-        alert.messageText = "Report an Issue"
-        alert.informativeText = """
+        alert.messageText = L("alert.reportIssue.title", "Report an Issue")
+        alert.informativeText = L("alert.reportIssue.message", """
         To report a bug or request a feature:
 
         1. Open Debug Console (⇧⌘L) to capture logs
@@ -690,10 +710,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         3. Include your macOS version and Chau7 version
 
         You can export logs from Debug Console → Export Logs.
-        """
+        """)
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "Open Debug Console")
-        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: L("button.openDebugConsole", "Open Debug Console"))
+        alert.addButton(withTitle: L("button.cancel", "Cancel"))
 
         if alert.runModal() == .alertFirstButtonReturn {
             DebugConsoleController.shared.toggle()
@@ -711,6 +731,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let window = createOverlayWindow(tabsModel: overlayModel, windowNumber: windowNumber)
         overlayHosts.append(OverlayHost(window: window, model: overlayModel))
         activeOverlayModel = overlayModel
+        logOverlayDiagnostics(reason: "setup", window: window)
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -743,7 +764,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             // This prevents unnecessary refreshes on every focus change (e.g., Command-Tab).
             // The NSHostingView in the toolbar can become "stale" after hide/show cycles.
             let wasHidden = hiddenWindowNumbers.remove(window.windowNumber) != nil
-            if wasHidden {
+            let wasShownBefore = shownWindowNumbers.contains(window.windowNumber)
+            if !wasShownBefore {
+                shownWindowNumbers.insert(window.windowNumber)
+            }
+            if wasHidden && wasShownBefore {
                 host.model.noteTabBarVisibilityChanged(isVisible: true)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     Log.info("Proactive tab bar refresh after window show")
@@ -752,6 +777,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             }
         }
+        logOverlayDiagnostics(reason: "didBecomeKey", window: window)
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        logOverlayDiagnostics(reason: "didResignKey", window: window)
+    }
+
+    func windowDidBecomeMain(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        logOverlayDiagnostics(reason: "didBecomeMain", window: window)
+    }
+
+    func windowDidResignMain(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        logOverlayDiagnostics(reason: "didResignMain", window: window)
+    }
+
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        logOverlayDiagnostics(reason: "didChangeOcclusion", window: window)
+    }
+
+    func windowDidMiniaturize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        logOverlayDiagnostics(reason: "didMiniaturize", window: window)
+    }
+
+    func windowDidDeminiaturize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        logOverlayDiagnostics(reason: "didDeminiaturize", window: window)
     }
 
     func windowDidResize(_ notification: Notification) {
@@ -849,7 +905,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         blur.addSubview(hostingView)
         hostingView.frame = window.contentLayoutRect
 
-        window.title = "Chau7 - Window \(windowNumber)"
+        window.title = String(format: L("window.overlay.title", "Chau7 - Window %d"), windowNumber)
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
 
@@ -879,10 +935,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.delegate = self
         window.contentView = blur
 
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        tabsModel.noteTabBarVisibilityChanged(isVisible: true)
-
         tabsModel.overlayWindow = window
         tabsModel.onCloseLastTab = { [weak self, weak window] in
             guard let window else { return }
@@ -890,9 +942,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             tabsModel.noteTabBarVisibilityChanged(isVisible: false)
             window.orderOut(nil)
         }
-        tabsModel.focusSelected()
-        Log.info("Overlay window created and shown.")
+        Log.info("Overlay window created.")
         return window
+    }
+
+    private func showOverlayWindow(_ host: OverlayHost, reason: String) {
+        host.model.noteTabBarVisibilityChanged(isVisible: true)
+        host.window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        host.model.focusSelected()
+        logOverlayDiagnostics(reason: reason, window: host.window)
+        Log.info("Overlay window shown (\(reason)).")
     }
 
     private func applyWindowOpacity() {
@@ -900,6 +960,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         for host in overlayHosts {
             host.window.alphaValue = opacity
         }
+        Log.info("Overlay window opacity updated: \(opacity)")
+    }
+
+    private func logOverlayDiagnostics(reason: String, window: NSWindow) {
+        guard let host = overlayHosts.first(where: { $0.window == window }) else { return }
+        let occlusionVisible = window.occlusionState.contains(.visible)
+        let appearance = window.effectiveAppearance.name.rawValue
+        let blurView = window.contentView as? NSVisualEffectView
+        let blurDesc: String
+        if let blurView {
+            blurDesc = "material=\(blurView.material) blending=\(blurView.blendingMode) state=\(blurView.state)"
+        } else {
+            blurDesc = "none"
+        }
+        Log.info("Overlay window state (\(reason)): key=\(window.isKeyWindow) main=\(window.isMainWindow) visible=\(window.isVisible) onActiveSpace=\(window.isOnActiveSpace) mini=\(window.isMiniaturized) occlusionVisible=\(occlusionVisible) occlusion=\(window.occlusionState) alpha=\(window.alphaValue) level=\(window.level.rawValue) appearance=\(appearance) blur[\(blurDesc)]")
+        host.model.logVisualState(reason: "window:\(reason)")
     }
 
     private func applyAppTheme() {
@@ -1016,6 +1092,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let isOverlayWindow = overlayHosts.contains(where: { $0.window == window })
         let overlayModel = isOverlayWindow ? activeOverlayModel : nil
 
+        if isOverlayWindow,
+           flags == [.command],
+           let tabNumber = tabNumberForKeyCode(event.keyCode) {
+            selectTab(number: tabNumber)
+            return nil
+        }
+
         if flags == [.command], normalizedKeyEquivalent(from: event) == ";" {
             toggleSnippets()
             return nil
@@ -1077,6 +1160,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
 
         return event
+    }
+
+    private func tabNumberForKeyCode(_ keyCode: UInt16) -> Int? {
+        switch keyCode {
+        case UInt16(kVK_ANSI_1):
+            return 1
+        case UInt16(kVK_ANSI_2):
+            return 2
+        case UInt16(kVK_ANSI_3):
+            return 3
+        case UInt16(kVK_ANSI_4):
+            return 4
+        case UInt16(kVK_ANSI_5):
+            return 5
+        case UInt16(kVK_ANSI_6):
+            return 6
+        case UInt16(kVK_ANSI_7):
+            return 7
+        case UInt16(kVK_ANSI_8):
+            return 8
+        case UInt16(kVK_ANSI_9):
+            return 9
+        default:
+            return nil
+        }
     }
 
     private func allocateOverlayWindowNumber() -> Int {

@@ -95,7 +95,7 @@ struct SettingsToggle: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(label)
         .accessibilityHint(help)
-        .accessibilityValue(isOn ? "enabled" : "disabled")
+        .accessibilityValue(isOn ? L("status.enabled", "Enabled") : L("status.disabled", "Disabled"))
         .accessibilityAddTraits(.isButton)
     }
 }
@@ -178,7 +178,7 @@ struct SettingsStepper: View {
             .frame(width: SettingsLayout.labelWidth, alignment: .leading)
 
             Stepper(value: $value, in: range) {
-                Text("\(value)\(suffix)")
+                Text(value.formatted() + suffix)
                     .font(.system(.body, design: .monospaced))
                     .frame(width: 60, alignment: .trailing)
             }
@@ -190,7 +190,7 @@ struct SettingsStepper: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(label)
         .accessibilityHint(help ?? "")
-        .accessibilityValue("\(value)\(suffix)")
+        .accessibilityValue(value.formatted() + suffix)
     }
 }
 
@@ -230,6 +230,100 @@ struct SettingsTextField: View {
             Spacer()
         }
         .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Settings Directory Field
+
+struct SettingsDirectoryField: View {
+    let label: String
+    let help: String?
+    let placeholder: String
+    @Binding var text: String
+    var width: CGFloat = 200
+    var monospaced: Bool = false
+    var disabled: Bool = false
+    var buttonTitle: String = "Choose..."
+    var buttonIcon: String? = "folder"
+    var onSubmit: (() -> Void)?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                if let help {
+                    Text(help)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
+
+            HStack(spacing: 8) {
+                TextField(placeholder, text: $text)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: width)
+                    .font(monospaced ? .system(size: 12, design: .monospaced) : .body)
+                    .disabled(disabled)
+                    .onSubmit { onSubmit?() }
+                    .accessibilityLabel(label)
+                    .accessibilityHint(help ?? "")
+
+                Button(action: chooseDirectory) {
+                    if let buttonIcon {
+                        Label(buttonTitle, systemImage: buttonIcon)
+                    } else {
+                        Text(buttonTitle)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(disabled)
+                .accessibilityLabel(buttonTitle)
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func chooseDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.resolvesAliases = true
+        panel.prompt = buttonTitle.replacingOccurrences(of: "...", with: "")
+
+        if let directoryURL = currentDirectoryURL() {
+            panel.directoryURL = directoryURL
+        }
+
+        if panel.runModal() == .OK, let url = panel.url {
+            text = compactPath(url.path)
+        }
+    }
+
+    private func currentDirectoryURL() -> URL? {
+        guard !text.isEmpty else { return nil }
+        let expanded = (text as NSString).expandingTildeInPath
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: expanded, isDirectory: &isDirectory), isDirectory.boolValue {
+            return URL(fileURLWithPath: expanded)
+        }
+        return nil
+    }
+
+    private func compactPath(_ path: String) -> String {
+        let home = NSHomeDirectory()
+        if path == home {
+            return "~"
+        }
+        let homePrefix = home + "/"
+        if path.hasPrefix(homePrefix) {
+            return "~/" + String(path.dropFirst(homePrefix.count))
+        }
+        return path
     }
 }
 
@@ -332,7 +426,7 @@ struct SettingsInfoRow: View {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(label): \(value)")
+        .accessibilityLabel(String(format: L("accessibility.labelValue", "%@: %@"), label, value))
     }
 }
 
@@ -460,6 +554,9 @@ struct SettingsHint: View {
 struct SettingsDescription: View {
     let text: String
 
+    init(text: String) { self.text = text }
+    init(_ text: String) { self.text = text }
+
     var body: some View {
         Text(text)
             .font(.caption)
@@ -490,7 +587,13 @@ struct SettingsShortcutRow: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(label), keyboard shortcut: \(shortcut)")
+        .accessibilityLabel(
+            String(
+                format: L("accessibility.shortcutLabel", "%@, keyboard shortcut: %@"),
+                label,
+                shortcut
+            )
+        )
     }
 }
 
@@ -517,8 +620,8 @@ struct SettingsDetectionRow: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(name) AI detection")
-        .accessibilityHint("Commands: \(commands)")
+        .accessibilityLabel(String(format: L("accessibility.aiDetection", "%@ AI detection"), name))
+        .accessibilityHint(String(format: L("accessibility.commands", "Commands: %@"), commands))
     }
 }
 

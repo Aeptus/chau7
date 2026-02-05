@@ -116,13 +116,25 @@ struct TerminalSettingsView: View {
             // Dangerous Commands
             SettingsSectionHeader(L("settings.terminal.dangerousCommands", "Dangerous Commands"), icon: "exclamationmark.triangle")
 
-            SettingsToggle(
-                label: L("settings.terminal.dangerousCommands.enabled", "Highlight Dangerous Commands"),
-                help: L("settings.terminal.dangerousCommands.enabled.help", "Make risky commands stand out in the terminal output"),
-                isOn: $settings.isDangerousCommandHighlightEnabled
+            SettingsPicker(
+                label: L("settings.terminal.dangerousCommands.scope", "Highlight Scope"),
+                help: L("settings.terminal.dangerousCommands.scope.help", "Choose where risky patterns are highlighted"),
+                selection: $settings.dangerousCommandHighlightScope,
+                options: [
+                    (value: .none, label: L("settings.terminal.dangerousCommands.scope.none", "None")),
+                    (value: .aiOutputs, label: L("settings.terminal.dangerousCommands.scope.aiOutputs", "Only AI Outputs")),
+                    (value: .allOutputs, label: L("settings.terminal.dangerousCommands.scope.allOutputs", "All Outputs"))
+                ],
+                width: 200
             )
 
-            Text(L("settings.terminal.dangerousCommands.help", "Commands in this list are highlighted when entered. Matching is case-insensitive and ignores extra spaces."))
+            SettingsToggle(
+                label: L("settings.terminal.dangerousCommands.lowPower", "Low-Power Highlighting"),
+                help: L("settings.terminal.dangerousCommands.lowPower.help", "Reduce highlight work when CPU is saturated to keep the terminal responsive"),
+                isOn: $settings.dangerousOutputHighlightLowPowerEnabled
+            )
+
+            Text(L("settings.terminal.dangerousCommands.help", "Commands in this list are highlighted based on the selected scope. Matching is case-insensitive and ignores extra spaces."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -179,6 +191,12 @@ struct TerminalSettingsView: View {
 
             // Performance
             SettingsSectionHeader(L("settings.terminal.performance", "Performance"), icon: "gauge.with.dots.needle.33percent")
+
+            SettingsToggle(
+                label: L("settings.terminal.localEcho", "Local Echo"),
+                help: L("settings.terminal.localEcho.help", "Render typed characters immediately when the PTY has echo enabled (can reduce perceived input lag)"),
+                isOn: $settings.isLocalEchoEnabled
+            )
 
             SettingsToggle(
                 label: L("settings.terminal.suspendBackgroundRendering", "Suspend Background Rendering"),

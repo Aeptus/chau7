@@ -37,6 +37,7 @@
 "settings.general.language.note" = "سيؤدي تغيير اللغة إلى تحديث الواجهة فوراً. قد تتطلب بعض عناصر النظام إعادة تشغيل التطبيق.";
 "settings.general.defaultDirectory" = "المجلد الافتراضي";
 "settings.general.defaultDirectory.help" = "مجلد البدء لعلامات تبويب الطرفية الجديدة";
+"settings.general.defaultDirectory.choose" = "اختيار...";
 
 // MARK: - Settings Sections
 "settings.title" = "الإعدادات";
@@ -470,6 +471,14 @@
 "snippets.source.user" = "مستخدم";
 "snippets.source.profile" = "ملف تعريف";
 "snippets.source.repo" = "مستودع";
+"snippets.copy.global" = "نسخ إلى عام";
+"snippets.copy.repo.current" = "نسخ إلى المستودع الحالي";
+"snippets.copy.repo.choose" = "نسخ إلى مستودع...";
+"snippets.repo.choose.message" = "اختر مستودع git";
+"snippets.repo.choose.invalid" = "هذا المجلد ليس مستودع git.";
+"snippets.repo.choose.invalid.title" = "مستودع غير صالح";
+"snippets.repo.visibility" = "تظهر قصاصات المستودع فقط عندما يكون ذلك المستودع نشطًا.";
+"snippets.repo.none" = "لا توجد مستودعات حديثة";
 "snippets.count" = "%d قصاصة";
 "snippets.empty" = "لا توجد قصاصات";
 "snippets.empty.hint" = "أنشئ أول قصاصة باستخدام زر + أعلاه، أو استورد قصاصات من ملف JSON.";
@@ -565,6 +574,20 @@
 "debug.level.info" = "معلومات";
 "debug.level.warning" = "تحذير";
 "debug.level.error" = "خطأ";
+"debug.inputLag" = "تأخر الإدخال";
+"debug.outputLag" = "تأخر الإخراج";
+"debug.highlightLag" = "تأخر التمييز";
+"debug.performanceSummary" = "ملخص الأداء";
+"debug.inputP50P95" = "الإدخال p50/p95";
+"debug.outputP50P95" = "الإخراج p50/p95";
+"debug.highlightP50P95" = "التمييز p50/p95";
+"debug.performance" = "الأداء";
+"debug.highlightLowPower" = "تمييز وضع الطاقة المنخفضة";
+"debug.highlightIdleDelay" = "تأخير خمول التمييز (مللي ثانية)";
+"debug.highlightMaxInterval" = "أقصى فترة للتمييز (مللي ثانية)";
+
+"settings.terminal.dangerousCommands.lowPower" = "تمييز وضع الطاقة المنخفضة";
+"settings.terminal.dangerousCommands.lowPower.help" = "يقلل عمل التمييز عندما يكون المعالج مثقلاً للحفاظ على استجابة الطرفية";
 
 // MARK: - Time
 "time.now" = "الآن";
@@ -822,7 +845,12 @@
 "settings.terminal.dangerousCommands" = "أوامر خطيرة";
 "settings.terminal.dangerousCommands.enabled" = "تمييز الأوامر الخطيرة";
 "settings.terminal.dangerousCommands.enabled.help" = "إبراز الأوامر المحفوفة بالمخاطر في مخرجات الطرفية";
-"settings.terminal.dangerousCommands.help" = "تُظلَّل الأوامر في هذه القائمة عند إدخالها. المطابقة غير حساسة لحالة الأحرف وتتجاهل المسافات الزائدة.";
+"settings.terminal.dangerousCommands.scope" = "نطاق التمييز";
+"settings.terminal.dangerousCommands.scope.help" = "اختر أين يتم تمييز الأنماط الخطرة";
+"settings.terminal.dangerousCommands.scope.none" = "لا شيء";
+"settings.terminal.dangerousCommands.scope.aiOutputs" = "مخرجات الذكاء الاصطناعي فقط";
+"settings.terminal.dangerousCommands.scope.allOutputs" = "كل المخرجات";
+"settings.terminal.dangerousCommands.help" = "تُظلَّل الأوامر في هذه القائمة وفق النطاق المحدد. المطابقة غير حساسة لحالة الأحرف وتتجاهل المسافات الزائدة.";
 "settings.terminal.dangerousCommands.patterns" = "أنماط";
 "settings.terminal.dangerousCommands.patternPlaceholder" = "نمط";
 "settings.terminal.dangerousCommands.add" = "إضافة";
@@ -834,6 +862,8 @@
 "settings.terminal.performance.metalRenderer.help" = "استخدام تسريع GPU للعرض (موصى به)";
 "settings.terminal.performance.reducedMotion" = "حركة مخفضة";
 "settings.terminal.performance.reducedMotion.help" = "تقليل الحركات لأداء أفضل";
+"settings.terminal.localEcho" = "صدى محلي";
+"settings.terminal.localEcho.help" = "اعرض الأحرف المكتوبة فورًا عندما يكون صدى PTY مفعّلًا (قد يقلل تأخر الإدخال)";
 
 // -----------------------------------------------------------------------------
 // MARK: إعدادات التبويبات
@@ -1289,3 +1319,18 @@
 "task.trigger.idle_gap" = "مهلة الخمول";
 "task.trigger.new_session" = "جلسة جديدة";
 "task.trigger.repo_switch" = "تغيير المستودع";
+
+// Debug Console - Performance
+"debug.perfTab" = "Perf";
+"debug.perfSlowOnly" = "البطيء فقط";
+"debug.perfUpdated" = "تم التحديث";
+"debug.perfLast10s" = "آخر 10 ث";
+"debug.perfLast60s" = "آخر 60 ث";
+"debug.perfEmpty" = "لا توجد أحداث أداء مسجلة بعد.";
+"debug.perfFeature" = "الميزة";
+"debug.perfTotal" = "الإجمالي";
+"debug.perfAvg" = "المتوسط";
+"debug.perfMax" = "الحد الأقصى";
+"debug.perfCount" = "العدد";
+"debug.perfBytes" = "بايت";
+"debug.perfRecent" = "الأحداث الأخيرة";

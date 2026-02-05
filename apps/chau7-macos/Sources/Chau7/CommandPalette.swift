@@ -19,6 +19,25 @@ struct PaletteCommand: Identifiable {
         case tabs = "Tabs"
         case window = "Window"
         case help = "Help"
+
+        var localizedTitle: String {
+            switch self {
+            case .file:
+                return L("command.category.file", "File")
+            case .edit:
+                return L("command.category.edit", "Edit")
+            case .view:
+                return L("command.category.view", "View")
+            case .terminal:
+                return L("command.category.terminal", "Terminal")
+            case .tabs:
+                return L("command.category.tabs", "Tabs")
+            case .window:
+                return L("command.category.window", "Window")
+            case .help:
+                return L("command.category.help", "Help")
+            }
+        }
     }
 }
 
@@ -40,7 +59,7 @@ struct CommandPaletteView: View {
         let query = searchText.lowercased()
         return commands.filter { command in
             command.title.lowercased().contains(query) ||
-            command.category.rawValue.lowercased().contains(query)
+            command.category.localizedTitle.lowercased().contains(query)
         }
     }
 
@@ -65,8 +84,8 @@ struct CommandPaletteView: View {
                     onEscape: { dismiss() }
                 )
                 .frame(maxWidth: .infinity)
-                .accessibilityLabel("Search commands")
-                .accessibilityHint("Type to filter commands, press Return to execute selected command")
+                .accessibilityLabel(L("Search commands", "Search commands"))
+                .accessibilityHint(L("Type to filter commands, press Return to execute selected command", "Type to filter commands, press Return to execute selected command"))
 
                 if !searchText.isEmpty {
                     Button {
@@ -76,7 +95,7 @@ struct CommandPaletteView: View {
                             .foregroundColor(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Clear search")
+                    .accessibilityLabel(L("Clear search", "Clear search"))
                 }
             }
             .padding(.horizontal, 12)
@@ -113,20 +132,22 @@ struct CommandPaletteView: View {
 
             // Footer
             HStack {
-                Text("\(filteredCommands.count) commands")
+                Text(String(format: L("command.count", "%d commands"), filteredCommands.count))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
-                    .accessibilityLabel("\(filteredCommands.count) commands available")
+                    .accessibilityLabel(
+                        String(format: L("command.count.available", "%d commands available"), filteredCommands.count)
+                    )
 
                 Spacer()
 
                 HStack(spacing: 12) {
-                    KeyHint(keys: ["↑", "↓"], label: "navigate")
-                    KeyHint(keys: ["↵"], label: "select")
-                    KeyHint(keys: ["esc"], label: "close")
+                    KeyHint(keys: ["↑", "↓"], label: L("command.hint.navigate", "navigate"))
+                    KeyHint(keys: ["↵"], label: L("command.hint.select", "select"))
+                    KeyHint(keys: ["esc"], label: L("command.hint.close", "close"))
                 }
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Use arrow keys to navigate, Return to select, Escape to close")
+                .accessibilityLabel(L("Use arrow keys to navigate, Return to select, Escape to close", "Use arrow keys to navigate, Return to select, Escape to close"))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -183,7 +204,7 @@ private struct CommandRow: View {
                     .font(.system(size: 13))
                     .foregroundColor(isSelected ? .white : .primary)
 
-                Text(command.category.rawValue)
+                Text(command.category.localizedTitle)
                     .font(.system(size: 10))
                     .foregroundColor(isSelected ? .white.opacity(0.7) : .secondary)
             }
@@ -207,8 +228,13 @@ private struct CommandRow: View {
         .background(isSelected ? Color.accentColor : Color.clear)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(command.title), \(command.category.rawValue)")
-        .accessibilityHint(command.shortcut.map { "Shortcut: \($0)" } ?? "No keyboard shortcut")
+        .accessibilityLabel(
+            String(format: L("command.accessibility.label", "%@, %@"), command.title, command.category.localizedTitle)
+        )
+        .accessibilityHint(
+            command.shortcut.map { String(format: L("command.accessibility.shortcut", "Shortcut: %@"), $0) }
+                ?? L("command.accessibility.noShortcut", "No keyboard shortcut")
+        )
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
@@ -252,7 +278,7 @@ private struct CommandPaletteSearchField: NSViewRepresentable {
 
     func makeNSView(context: Context) -> KeyHandlingTextField {
         let field = KeyHandlingTextField()
-        field.placeholderString = "Type a command..."
+        field.placeholderString = L("command.search.placeholder", "Type a command...")
         field.font = NSFont.systemFont(ofSize: 14)
         field.isEditable = true
         field.isSelectable = true
@@ -371,178 +397,178 @@ final class CommandPaletteProvider {
 
         return [
             // File commands
-            PaletteCommand(title: "New Window", shortcut: "⌘N", category: .file, icon: "macwindow.badge.plus") {
+            PaletteCommand(title: L("commandPalette.command.newWindow", "New Window"), shortcut: "⌘N", category: .file, icon: "macwindow.badge.plus") {
                 delegate.newOverlayWindow()
             },
-            PaletteCommand(title: "New Tab", shortcut: "⌘T", category: .file, icon: "plus.square") {
+            PaletteCommand(title: L("commandPalette.command.newTab", "New Tab"), shortcut: "⌘T", category: .file, icon: "plus.square") {
                 delegate.newTab()
             },
-            PaletteCommand(title: "Close Tab", shortcut: "⌘W", category: .file, icon: "xmark.square") {
+            PaletteCommand(title: L("commandPalette.command.closeTab", "Close Tab"), shortcut: "⌘W", category: .file, icon: "xmark.square") {
                 delegate.closeTab()
             },
-            PaletteCommand(title: "Close Window", shortcut: "⇧⌘W", category: .file, icon: "xmark.rectangle") {
+            PaletteCommand(title: L("commandPalette.command.closeWindow", "Close Window"), shortcut: "⇧⌘W", category: .file, icon: "xmark.rectangle") {
                 delegate.closeWindow()
             },
-            PaletteCommand(title: "Close Other Tabs", shortcut: "⌥⌘W", category: .file, icon: "xmark.square.fill") {
+            PaletteCommand(title: L("commandPalette.command.closeOtherTabs", "Close Other Tabs"), shortcut: "⌥⌘W", category: .file, icon: "xmark.square.fill") {
                 delegate.closeOtherTabs()
             },
-            PaletteCommand(title: "Export Text...", shortcut: "⇧⌘S", category: .file, icon: "square.and.arrow.up") {
+            PaletteCommand(title: L("commandPalette.command.exportText", "Export Text..."), shortcut: "⇧⌘S", category: .file, icon: "square.and.arrow.up") {
                 delegate.exportText()
             },
-            PaletteCommand(title: "Print...", shortcut: "⌘P", category: .file, icon: "printer") {
+            PaletteCommand(title: L("commandPalette.command.print", "Print..."), shortcut: "⌘P", category: .file, icon: "printer") {
                 delegate.printTerminal()
             },
 
             // Edit commands
-            PaletteCommand(title: "Cut", shortcut: "⌘X", category: .edit, icon: "scissors") {
+            PaletteCommand(title: L("commandPalette.command.cut", "Cut"), shortcut: "⌘X", category: .edit, icon: "scissors") {
                 delegate.cut()
             },
-            PaletteCommand(title: "Copy", shortcut: "⌘C", category: .edit, icon: "doc.on.doc") {
+            PaletteCommand(title: L("commandPalette.command.copy", "Copy"), shortcut: "⌘C", category: .edit, icon: "doc.on.doc") {
                 delegate.copyOrInterrupt()
             },
-            PaletteCommand(title: "Paste", shortcut: "⌘V", category: .edit, icon: "doc.on.clipboard") {
+            PaletteCommand(title: L("commandPalette.command.paste", "Paste"), shortcut: "⌘V", category: .edit, icon: "doc.on.clipboard") {
                 delegate.paste()
             },
-            PaletteCommand(title: "Paste Escaped", shortcut: "⌥⌘V", category: .edit, icon: "doc.on.clipboard.fill") {
+            PaletteCommand(title: L("commandPalette.command.pasteEscaped", "Paste Escaped"), shortcut: "⌥⌘V", category: .edit, icon: "doc.on.clipboard.fill") {
                 delegate.pasteEscaped()
             },
-            PaletteCommand(title: "Select All", shortcut: "⌘A", category: .edit, icon: "selection.pin.in.out") {
+            PaletteCommand(title: L("commandPalette.command.selectAll", "Select All"), shortcut: "⌘A", category: .edit, icon: "selection.pin.in.out") {
                 delegate.selectAll()
             },
-            PaletteCommand(title: "Find...", shortcut: "⌘F", category: .edit, icon: "magnifyingglass") {
+            PaletteCommand(title: L("commandPalette.command.find", "Find..."), shortcut: "⌘F", category: .edit, icon: "magnifyingglass") {
                 delegate.toggleSearch()
             },
-            PaletteCommand(title: "Find Next", shortcut: "⌘G", category: .edit, icon: "arrow.down.circle") {
+            PaletteCommand(title: L("commandPalette.command.findNext", "Find Next"), shortcut: "⌘G", category: .edit, icon: "arrow.down.circle") {
                 delegate.nextSearchMatch()
             },
-            PaletteCommand(title: "Find Previous", shortcut: "⇧⌘G", category: .edit, icon: "arrow.up.circle") {
+            PaletteCommand(title: L("commandPalette.command.findPrevious", "Find Previous"), shortcut: "⇧⌘G", category: .edit, icon: "arrow.up.circle") {
                 delegate.previousSearchMatch()
             },
-            PaletteCommand(title: "Use Selection for Find", shortcut: "⌘E", category: .edit, icon: "text.magnifyingglass") {
+            PaletteCommand(title: L("commandPalette.command.useSelectionForFind", "Use Selection for Find"), shortcut: "⌘E", category: .edit, icon: "text.magnifyingglass") {
                 delegate.useSelectionForFind()
             },
-            PaletteCommand(title: "Snippets...", shortcut: "⌘;", category: .edit, icon: "text.badge.plus") {
+            PaletteCommand(title: L("commandPalette.command.snippets", "Snippets..."), shortcut: "⌘;", category: .edit, icon: "text.badge.plus") {
                 delegate.toggleSnippets()
             },
-            PaletteCommand(title: "Manage Snippets...", shortcut: nil, category: .edit, icon: "text.badge.checkmark") {
+            PaletteCommand(title: L("commandPalette.command.manageSnippets", "Manage Snippets..."), shortcut: nil, category: .edit, icon: "text.badge.checkmark") {
                 delegate.showSnippetsSettings()
             },
 
             // View commands
-            PaletteCommand(title: "Toggle Full Screen", shortcut: "⌃⌘F", category: .view, icon: "arrow.up.left.and.arrow.down.right") {
+            PaletteCommand(title: L("commandPalette.command.toggleFullScreen", "Toggle Full Screen"), shortcut: "⌃⌘F", category: .view, icon: "arrow.up.left.and.arrow.down.right") {
                 delegate.toggleFullScreen()
             },
-            PaletteCommand(title: "Zoom In", shortcut: "⌘=", category: .view, icon: "plus.magnifyingglass") {
+            PaletteCommand(title: L("commandPalette.command.zoomIn", "Zoom In"), shortcut: "⌘=", category: .view, icon: "plus.magnifyingglass") {
                 delegate.zoomIn()
             },
-            PaletteCommand(title: "Zoom Out", shortcut: "⌘-", category: .view, icon: "minus.magnifyingglass") {
+            PaletteCommand(title: L("commandPalette.command.zoomOut", "Zoom Out"), shortcut: "⌘-", category: .view, icon: "minus.magnifyingglass") {
                 delegate.zoomOut()
             },
-            PaletteCommand(title: "Actual Size", shortcut: "⌘0", category: .view, icon: "1.magnifyingglass") {
+            PaletteCommand(title: L("commandPalette.command.actualSize", "Actual Size"), shortcut: "⌘0", category: .view, icon: "1.magnifyingglass") {
                 delegate.zoomReset()
             },
 
             // Terminal commands
-            PaletteCommand(title: "Open Text Editor", shortcut: "⌥⌘E", category: .terminal, icon: "doc.text") {
+            PaletteCommand(title: L("commandPalette.command.openTextEditor", "Open Text Editor"), shortcut: "⌥⌘E", category: .terminal, icon: "doc.text") {
                 delegate.openTextEditorPane()
             },
-            PaletteCommand(title: "Append Selection to Editor", shortcut: "⇧⌘E", category: .terminal, icon: "text.append") {
+            PaletteCommand(title: L("commandPalette.command.appendSelectionToEditor", "Append Selection to Editor"), shortcut: "⇧⌘E", category: .terminal, icon: "text.append") {
                 delegate.appendSelectionToEditor()
             },
-            PaletteCommand(title: "Split Horizontal", shortcut: "⌘D", category: .terminal, icon: "rectangle.split.1x2") {
+            PaletteCommand(title: L("commandPalette.command.splitHorizontal", "Split Horizontal"), shortcut: "⌘D", category: .terminal, icon: "rectangle.split.1x2") {
                 delegate.splitHorizontally()
             },
-            PaletteCommand(title: "Split Vertical", shortcut: "⇧⌘D", category: .terminal, icon: "rectangle.split.2x1") {
+            PaletteCommand(title: L("commandPalette.command.splitVertical", "Split Vertical"), shortcut: "⇧⌘D", category: .terminal, icon: "rectangle.split.2x1") {
                 delegate.splitVertically()
             },
-            PaletteCommand(title: "Close Pane", shortcut: "⌃⌘W", category: .terminal, icon: "xmark.rectangle") {
+            PaletteCommand(title: L("commandPalette.command.closePane", "Close Pane"), shortcut: "⌃⌘W", category: .terminal, icon: "xmark.rectangle") {
                 delegate.closeCurrentPane()
             },
-            PaletteCommand(title: "Focus Next Pane", shortcut: "⌥⌘]", category: .terminal, icon: "arrow.right.square") {
+            PaletteCommand(title: L("commandPalette.command.focusNextPane", "Focus Next Pane"), shortcut: "⌥⌘]", category: .terminal, icon: "arrow.right.square") {
                 delegate.focusNextPane()
             },
-            PaletteCommand(title: "Focus Previous Pane", shortcut: "⌥⌘[", category: .terminal, icon: "arrow.left.square") {
+            PaletteCommand(title: L("commandPalette.command.focusPreviousPane", "Focus Previous Pane"), shortcut: "⌥⌘[", category: .terminal, icon: "arrow.left.square") {
                 delegate.focusPreviousPane()
             },
-            PaletteCommand(title: "Clear Screen", shortcut: "⌘K", category: .terminal, icon: "clear") {
+            PaletteCommand(title: L("commandPalette.command.clearScreen", "Clear Screen"), shortcut: "⌘K", category: .terminal, icon: "clear") {
                 delegate.clearScreen()
             },
-            PaletteCommand(title: "Clear Scrollback", shortcut: "⇧⌘K", category: .terminal, icon: "clear.fill") {
+            PaletteCommand(title: L("commandPalette.command.clearScrollback", "Clear Scrollback"), shortcut: "⇧⌘K", category: .terminal, icon: "clear.fill") {
                 delegate.clearScrollback()
             },
-            PaletteCommand(title: "Scroll to Top", shortcut: nil, category: .terminal, icon: "arrow.up.to.line") {
+            PaletteCommand(title: L("commandPalette.command.scrollToTop", "Scroll to Top"), shortcut: nil, category: .terminal, icon: "arrow.up.to.line") {
                 delegate.scrollToTop()
             },
-            PaletteCommand(title: "Scroll to Bottom", shortcut: nil, category: .terminal, icon: "arrow.down.to.line") {
+            PaletteCommand(title: L("commandPalette.command.scrollToBottom", "Scroll to Bottom"), shortcut: nil, category: .terminal, icon: "arrow.down.to.line") {
                 delegate.scrollToBottom()
             },
 
             // Tab commands
-            PaletteCommand(title: "Show Next Tab", shortcut: "⇧⌘]", category: .tabs, icon: "arrow.right.square") {
+            PaletteCommand(title: L("commandPalette.command.showNextTab", "Show Next Tab"), shortcut: "⇧⌘]", category: .tabs, icon: "arrow.right.square") {
                 delegate.nextTab()
             },
-            PaletteCommand(title: "Show Previous Tab", shortcut: "⇧⌘[", category: .tabs, icon: "arrow.left.square") {
+            PaletteCommand(title: L("commandPalette.command.showPreviousTab", "Show Previous Tab"), shortcut: "⇧⌘[", category: .tabs, icon: "arrow.left.square") {
                 delegate.previousTab()
             },
-            PaletteCommand(title: "Move Tab Right", shortcut: "⇧⌥⌘]", category: .tabs, icon: "arrow.right.to.line") {
+            PaletteCommand(title: L("commandPalette.command.moveTabRight", "Move Tab Right"), shortcut: "⇧⌥⌘]", category: .tabs, icon: "arrow.right.to.line") {
                 delegate.moveTabRight()
             },
-            PaletteCommand(title: "Move Tab Left", shortcut: "⇧⌥⌘[", category: .tabs, icon: "arrow.left.to.line") {
+            PaletteCommand(title: L("commandPalette.command.moveTabLeft", "Move Tab Left"), shortcut: "⇧⌥⌘[", category: .tabs, icon: "arrow.left.to.line") {
                 delegate.moveTabLeft()
             },
-            PaletteCommand(title: "Rename Tab...", shortcut: "⇧⌘R", category: .tabs, icon: "pencil") {
+            PaletteCommand(title: L("commandPalette.command.renameTab", "Rename Tab..."), shortcut: "⇧⌘R", category: .tabs, icon: "pencil") {
                 delegate.beginRenameTab()
             },
-            PaletteCommand(title: "Select Tab 1", shortcut: "⌘1", category: .tabs, icon: "1.circle") {
+            PaletteCommand(title: L("commandPalette.command.selectTab1", "Select Tab 1"), shortcut: "⌘1", category: .tabs, icon: "1.circle") {
                 delegate.selectTab(number: 1)
             },
-            PaletteCommand(title: "Select Tab 2", shortcut: "⌘2", category: .tabs, icon: "2.circle") {
+            PaletteCommand(title: L("commandPalette.command.selectTab2", "Select Tab 2"), shortcut: "⌘2", category: .tabs, icon: "2.circle") {
                 delegate.selectTab(number: 2)
             },
-            PaletteCommand(title: "Select Tab 3", shortcut: "⌘3", category: .tabs, icon: "3.circle") {
+            PaletteCommand(title: L("commandPalette.command.selectTab3", "Select Tab 3"), shortcut: "⌘3", category: .tabs, icon: "3.circle") {
                 delegate.selectTab(number: 3)
             },
-            PaletteCommand(title: "Select Tab 4", shortcut: "⌘4", category: .tabs, icon: "4.circle") {
+            PaletteCommand(title: L("commandPalette.command.selectTab4", "Select Tab 4"), shortcut: "⌘4", category: .tabs, icon: "4.circle") {
                 delegate.selectTab(number: 4)
             },
-            PaletteCommand(title: "Select Tab 5", shortcut: "⌘5", category: .tabs, icon: "5.circle") {
+            PaletteCommand(title: L("commandPalette.command.selectTab5", "Select Tab 5"), shortcut: "⌘5", category: .tabs, icon: "5.circle") {
                 delegate.selectTab(number: 5)
             },
-            PaletteCommand(title: "Select Tab 6", shortcut: "⌘6", category: .tabs, icon: "6.circle") {
+            PaletteCommand(title: L("commandPalette.command.selectTab6", "Select Tab 6"), shortcut: "⌘6", category: .tabs, icon: "6.circle") {
                 delegate.selectTab(number: 6)
             },
-            PaletteCommand(title: "Select Tab 7", shortcut: "⌘7", category: .tabs, icon: "7.circle") {
+            PaletteCommand(title: L("commandPalette.command.selectTab7", "Select Tab 7"), shortcut: "⌘7", category: .tabs, icon: "7.circle") {
                 delegate.selectTab(number: 7)
             },
-            PaletteCommand(title: "Select Tab 8", shortcut: "⌘8", category: .tabs, icon: "8.circle") {
+            PaletteCommand(title: L("commandPalette.command.selectTab8", "Select Tab 8"), shortcut: "⌘8", category: .tabs, icon: "8.circle") {
                 delegate.selectTab(number: 8)
             },
-            PaletteCommand(title: "Select Tab 9", shortcut: "⌘9", category: .tabs, icon: "9.circle") {
+            PaletteCommand(title: L("commandPalette.command.selectTab9", "Select Tab 9"), shortcut: "⌘9", category: .tabs, icon: "9.circle") {
                 delegate.selectTab(number: 9)
             },
 
             // Window commands
-            PaletteCommand(title: "Settings...", shortcut: "⌘,", category: .window, icon: "gear") {
+            PaletteCommand(title: L("commandPalette.command.settings", "Settings..."), shortcut: "⌘,", category: .window, icon: "gear") {
                 delegate.showSettings()
             },
-            PaletteCommand(title: "Debug Console", shortcut: "⇧⌘L", category: .window, icon: "terminal") {
+            PaletteCommand(title: L("commandPalette.command.debugConsole", "Debug Console"), shortcut: "⇧⌘L", category: .window, icon: "terminal") {
                 DebugConsoleController.shared.toggle()
             },
-            PaletteCommand(title: "SSH Connections...", shortcut: "⇧⌘O", category: .window, icon: "server.rack") {
+            PaletteCommand(title: L("commandPalette.command.sshConnections", "SSH Connections..."), shortcut: "⇧⌘O", category: .window, icon: "server.rack") {
                 delegate.showSSHManager()
             },
-            PaletteCommand(title: "Keyboard Shortcuts...", shortcut: "⌘/", category: .window, icon: "keyboard") {
+            PaletteCommand(title: L("commandPalette.command.keyboardShortcuts", "Keyboard Shortcuts..."), shortcut: "⌘/", category: .window, icon: "keyboard") {
                 delegate.showKeyboardShortcuts()
             },
 
             // Help commands
-            PaletteCommand(title: "About Chau7", shortcut: nil, category: .help, icon: "info.circle") {
+            PaletteCommand(title: L("commandPalette.command.about", "About Chau7"), shortcut: nil, category: .help, icon: "info.circle") {
                 delegate.showAbout()
             },
-            PaletteCommand(title: "Documentation", shortcut: nil, category: .help, icon: "book") {
+            PaletteCommand(title: L("commandPalette.command.documentation", "Documentation"), shortcut: nil, category: .help, icon: "book") {
                 delegate.showHelp()
             },
-            PaletteCommand(title: "Report Issue", shortcut: nil, category: .help, icon: "exclamationmark.bubble") {
+            PaletteCommand(title: L("commandPalette.command.reportIssue", "Report Issue"), shortcut: nil, category: .help, icon: "exclamationmark.bubble") {
                 delegate.reportIssue()
             },
         ]

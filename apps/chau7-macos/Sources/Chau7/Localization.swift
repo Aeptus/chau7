@@ -62,7 +62,7 @@ enum AppLanguage: String, CaseIterable, Identifiable, Codable {
 
     /// Returns the bundle for this language, or nil for system default
     var bundle: Bundle? {
-        bundle(from: Bundle.main)
+        bundle(from: Chau7Resources.bundle)
     }
 
     /// Returns the bundle for this language from a specific base bundle
@@ -96,13 +96,9 @@ final class LocalizationManager: ObservableObject {
 
     private(set) var bundle: Bundle
 
-    /// The resource bundle for localized strings (Bundle.module for SPM packages)
+    /// The resource bundle for localized strings (SPM bundle or main bundle)
     private static let resourceBundle: Bundle = {
-        #if SWIFT_PACKAGE
-        return Bundle.module
-        #else
-        return Bundle.main
-        #endif
+        Chau7Resources.bundle
     }()
 
     private init() {

@@ -38,6 +38,8 @@ final class TerminalHighlightView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let terminalView, let session else { return }
+        let token = FeatureProfiler.shared.begin(.highlightDraw)
+        defer { FeatureProfiler.shared.end(token) }
         let terminal = terminalView.getTerminal()
         let rows = terminal.rows
         let cols = terminal.cols
@@ -66,17 +68,27 @@ final class TerminalHighlightView: NSView {
             )
         }
 
-        let dangerEnabled = FeatureSettings.shared.isDangerousCommandHighlightEnabled
-        let dangerRows = dangerEnabled
-            ? session.dangerousCommandRowsVisible(top: yDisp, bottom: yDisp + rows - 1)
-            : []
+        let scope = FeatureSettings.shared.dangerousCommandHighlightScope
+        let dangerInputRows = session.dangerousCommandRowsVisible(top: yDisp, bottom: yDisp + rows - 1)
+        let dangerOutputRows = scope == .none
+            ? []
+            : session.dangerousOutputRowsVisible(top: yDisp, bottom: yDisp + rows - 1)
+        let dangerRows: Set<Int>
+        switch scope {
+        case .allOutputs:
+            dangerRows = Set(dangerInputRows).union(dangerOutputRows)
+        case .aiOutputs:
+            dangerRows = Set(dangerOutputRows).subtracting(dangerInputRows)
+        case .none:
+            dangerRows = []
+        }
 
         guard !cachedVisibleMatches.isEmpty || !dangerRows.isEmpty else { return }
 
         let highlightColor = NSColor.systemYellow.withAlphaComponent(0.28)
         let activeColor = NSColor.systemOrange.withAlphaComponent(0.45)
-        let dangerFill = NSColor.systemRed.withAlphaComponent(0.32)
-        let dangerStroke = NSColor.systemRed.withAlphaComponent(0.60)
+        let dangerFill = NSColor.systemRed.withAlphaComponent(0.50)
+        let dangerStroke = NSColor.systemRed.withAlphaComponent(0.85)
 
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
@@ -84,7 +96,7 @@ final class TerminalHighlightView: NSView {
         if !dangerRows.isEmpty {
             context.setFillColor(dangerFill.cgColor)
             context.setStrokeColor(dangerStroke.cgColor)
-            context.setLineWidth(1.0)
+            context.setLineWidth(1.5)
             for row in dangerRows {
                 let visibleRow = row - yDisp
                 if visibleRow < 0 || visibleRow >= rows {

@@ -1,6 +1,6 @@
 import Foundation
 
-public struct HistoryEntry: Equatable {
+public struct HistoryEntry: Equatable, Sendable {
     public let sessionId: String
     public let timestamp: TimeInterval
     public let summary: String
@@ -14,13 +14,26 @@ public struct HistoryEntry: Equatable {
     }
 }
 
-public enum HistoryEntryParseError: Error {
+public enum HistoryEntryParseError: Error, Sendable {
     case notJSONObject
     case missingField(String)
     case invalidFieldType(String)
 }
 
-public final class HistoryEntryParser {
+extension HistoryEntryParseError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .notJSONObject:
+            return "History entry data is not a JSON object"
+        case .missingField(let field):
+            return "History entry missing required field: \(field)"
+        case .invalidFieldType(let field):
+            return "History entry field has invalid type: \(field)"
+        }
+    }
+}
+
+public enum HistoryEntryParser {
     public static func parse(line: String) throws -> HistoryEntry {
         guard let data = line.data(using: .utf8) else {
             throw HistoryEntryParseError.notJSONObject

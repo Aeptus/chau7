@@ -14,7 +14,7 @@ struct AboutSettingsView: View {
                     .foregroundStyle(.orange)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Chau7")
+                    Text(L("Chau7", "Chau7"))
                         .font(.title)
                         .fontWeight(.bold)
                     Text(L("settings.about.tagline", "AI CLI Terminal Companion"))
@@ -54,7 +54,7 @@ struct AboutSettingsView: View {
 
             HStack(spacing: 16) {
                 Link(destination: URL(string: "https://github.com/anthropics/chau7")!) {
-                    Label("GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
+                    Label(L("GitHub", "GitHub"), systemImage: "chevron.left.forwardslash.chevron.right")
                 }
 
                 Link(destination: URL(string: "https://github.com/anthropics/chau7/issues")!) {

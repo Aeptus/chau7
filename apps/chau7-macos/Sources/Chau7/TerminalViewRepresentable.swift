@@ -48,6 +48,12 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             // When enabled, hold Shift to force text selection in apps like vim/tmux.
             existingView.allowMouseReporting = settings.isMouseReportingEnabled
             existingView.onFilePathClicked = onFilePathClicked  // F03: Update callback
+            existingView.onScrollbackCleared = { [weak model] in
+                model?.resetDangerousHighlights()
+            }
+            existingView.onScrollChanged = { [weak model] in
+                model?.scheduleHighlightAfterScroll()
+            }
             existingView.tabIdentifier = model.tabIdentifier
             existingView.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
             existingView.installHistoryKeyMonitor()
@@ -89,8 +95,15 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.onBufferChanged = { [weak model] in
             model?.scheduleSearchRefresh()
             model?.highlightView?.scheduleDisplay()  // Use batched display for better latency
+            model?.recordOutputLatencyIfNeeded()
+        }
+        view.onScrollChanged = { [weak model] in
+            model?.scheduleHighlightAfterScroll()
         }
         view.onFilePathClicked = onFilePathClicked
+        view.onScrollbackCleared = { [weak model] in
+            model?.resetDangerousHighlights()
+        }
         view.tabIdentifier = model.tabIdentifier
         view.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
         view.installHistoryKeyMonitor()

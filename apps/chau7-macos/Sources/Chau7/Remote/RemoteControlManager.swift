@@ -82,7 +82,9 @@ final class RemoteControlManager: ObservableObject {
     func recordOutput(_ data: Data, sessionIdentifier: String) {
         guard isIPCConnected else { return }
         guard let tabID = tabIDBySessionIdentifier[sessionIdentifier] else { return }
+        let token = FeatureProfiler.shared.begin(.remoteOutput, bytes: data.count)
         sendFrame(type: .output, tabID: tabID, payload: data)
+        FeatureProfiler.shared.end(token)
     }
 
     func sendSnapshot(for tabID: UInt32) {
@@ -343,11 +345,11 @@ final class RemoteControlManager: ObservableObject {
     }
 
     private func bundledRemoteBinaryPath() -> URL? {
-        if let bundlePath = Bundle.main.url(forResource: "chau7-remote", withExtension: nil) {
+        if let bundlePath = Chau7Resources.bundle.url(forResource: "chau7-remote", withExtension: nil) {
             return bundlePath
         }
 
-        if let resourcesURL = Bundle.main.resourceURL {
+        if let resourcesURL = Chau7Resources.bundle.resourceURL {
             let candidate = resourcesURL.appendingPathComponent("chau7-remote")
             if FileManager.default.fileExists(atPath: candidate.path) {
                 return candidate

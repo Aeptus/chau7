@@ -8,13 +8,15 @@
   <key>ProgramArguments</key>
   <array>
     <!-- EDIT THIS PATH to where you place the built binary -->
-    <string>/Users/YOUR_USERNAME/Applications/Chau7/Chau7</string>
+    <string>/bin/sh</string>
+    <string>-lc</string>
+    <string>$HOME/Applications/Chau7/Chau7</string>
   </array>
 
   <key>EnvironmentVariables</key>
   <dict>
     <!-- Optional: override log path -->
-    <!-- <key>AI_EVENTS_LOG</key><string>/Users/YOUR_USERNAME/.ai-events.log</string> -->
+    <!-- <key>AI_EVENTS_LOG</key><string>$HOME/.ai-events.log</string> -->
   </dict>
 
   <key>RunAtLoad</key>

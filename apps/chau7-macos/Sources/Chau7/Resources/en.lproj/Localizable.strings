@@ -37,6 +37,7 @@
 "settings.general.language.note" = "Changing the language will update the interface immediately. Some system elements may require an app restart.";
 "settings.general.defaultDirectory" = "Default Directory";
 "settings.general.defaultDirectory.help" = "Starting directory for new terminal tabs";
+"settings.general.defaultDirectory.choose" = "Choose...";
 
 // MARK: - Settings Sections
 "settings.title" = "Settings";
@@ -472,6 +473,14 @@
 "snippets.source.user" = "User";
 "snippets.source.profile" = "Profile";
 "snippets.source.repo" = "Repo";
+"snippets.copy.global" = "Copy to Global";
+"snippets.copy.repo.current" = "Copy to Current Repo";
+"snippets.copy.repo.choose" = "Copy to Repo...";
+"snippets.repo.choose.message" = "Choose a git repository";
+"snippets.repo.choose.invalid" = "That folder is not a git repository.";
+"snippets.repo.choose.invalid.title" = "Invalid Repository";
+"snippets.repo.visibility" = "Repo snippets appear only when that repo is active.";
+"snippets.repo.none" = "No recent repos";
 "snippets.count" = "%d snippets";
 "snippets.empty" = "No snippets found";
 "snippets.empty.hint" = "Create your first snippet using the + button above, or import snippets from a JSON file.";
@@ -567,6 +576,20 @@
 "debug.level.info" = "Info";
 "debug.level.warning" = "Warning";
 "debug.level.error" = "Error";
+"debug.inputLag" = "Input Lag";
+"debug.outputLag" = "Output Lag";
+"debug.highlightLag" = "Highlight Lag";
+"debug.performanceSummary" = "Performance Summary";
+"debug.inputP50P95" = "Input p50/p95";
+"debug.outputP50P95" = "Output p50/p95";
+"debug.highlightP50P95" = "Highlight p50/p95";
+"debug.performance" = "Performance";
+"debug.highlightLowPower" = "Low-Power Highlighting";
+"debug.highlightIdleDelay" = "Highlight Idle Delay (ms)";
+"debug.highlightMaxInterval" = "Highlight Max Interval (ms)";
+
+"settings.terminal.dangerousCommands.lowPower" = "Low-Power Highlighting";
+"settings.terminal.dangerousCommands.lowPower.help" = "Reduce highlight work when CPU is saturated to keep the terminal responsive";
 
 // MARK: - Time
 "time.now" = "now";
@@ -843,7 +866,12 @@
 "settings.terminal.dangerousCommands" = "Dangerous Commands";
 "settings.terminal.dangerousCommands.enabled" = "Highlight Dangerous Commands";
 "settings.terminal.dangerousCommands.enabled.help" = "Make risky commands stand out in the terminal output";
-"settings.terminal.dangerousCommands.help" = "Commands in this list are highlighted when entered. Matching is case-insensitive and ignores extra spaces.";
+"settings.terminal.dangerousCommands.scope" = "Highlight Scope";
+"settings.terminal.dangerousCommands.scope.help" = "Choose where risky patterns are highlighted";
+"settings.terminal.dangerousCommands.scope.none" = "None";
+"settings.terminal.dangerousCommands.scope.aiOutputs" = "Only AI Outputs";
+"settings.terminal.dangerousCommands.scope.allOutputs" = "All Outputs";
+"settings.terminal.dangerousCommands.help" = "Commands in this list are highlighted based on the selected scope. Matching is case-insensitive and ignores extra spaces.";
 "settings.terminal.dangerousCommands.patterns" = "Patterns";
 "settings.terminal.dangerousCommands.patternPlaceholder" = "Pattern";
 "settings.terminal.dangerousCommands.add" = "Add";
@@ -855,6 +883,8 @@
 "settings.terminal.performance.metalRenderer.help" = "Use GPU acceleration for rendering (recommended)";
 "settings.terminal.performance.reducedMotion" = "Reduced Motion";
 "settings.terminal.performance.reducedMotion.help" = "Minimize animations for better performance";
+"settings.terminal.localEcho" = "Local Echo";
+"settings.terminal.localEcho.help" = "Render typed characters immediately when the PTY has echo enabled (can reduce perceived input lag)";
 
 // -----------------------------------------------------------------------------
 // MARK: Tabs Settings
@@ -1322,3 +1352,18 @@
 "task.error.no_candidate" = "No pending candidate";
 "task.error.start_failed" = "Failed to start task";
 "task.error.assess_failed" = "Failed to assess task";
+
+// Debug Console - Performance
+"debug.perfTab" = "Perf";
+"debug.perfSlowOnly" = "Slow only";
+"debug.perfUpdated" = "Updated";
+"debug.perfLast10s" = "Last 10s";
+"debug.perfLast60s" = "Last 60s";
+"debug.perfEmpty" = "No performance events recorded yet.";
+"debug.perfFeature" = "Feature";
+"debug.perfTotal" = "Total";
+"debug.perfAvg" = "Avg";
+"debug.perfMax" = "Max";
+"debug.perfCount" = "Count";
+"debug.perfBytes" = "Bytes";
+"debug.perfRecent" = "Recent Events";

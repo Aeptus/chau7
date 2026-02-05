@@ -112,15 +112,12 @@ final class RemoteIPCServer: ObservableObject {
 
     func send(_ frame: RemoteFrame) {
         guard clientFD >= 0 else { return }
-        let payload = frame.encode()
-        var lengthPrefix = Data()
-        lengthPrefix.appendUInt32LE(UInt32(payload.count))
-        let data = lengthPrefix + payload
+        let fd = clientFD
+        let data = FrameParser.packForTransport(frame)
 
-        queue.async { [weak self] in
-            guard let self else { return }
+        queue.async {
             data.withUnsafeBytes { rawBuffer in
-                _ = write(self.clientFD, rawBuffer.baseAddress, rawBuffer.count)
+                _ = write(fd, rawBuffer.baseAddress, rawBuffer.count)
             }
         }
     }
@@ -181,45 +178,16 @@ final class RemoteIPCServer: ObservableObject {
     }
 
     private func processBuffer() {
-        while buffer.count >= 4 {
-            let frameLen = Int(buffer.readUInt32LE(at: 0))
-            if frameLen <= 0 || frameLen > maxFrameSize {
-                logger.warning("Dropping IPC frame with invalid length: \(frameLen)")
-                buffer.removeAll()
-                return
-            }
+        let result = FrameParser.parseFrames(from: &buffer, maxFrameSize: maxFrameSize)
 
-            let totalNeeded = 4 + frameLen
-            guard buffer.count >= totalNeeded else { return }
+        for error in result.errors {
+            logger.warning("Frame error: \(error.localizedDescription)")
+        }
 
-            let frameData = buffer.subdata(in: 4..<totalNeeded)
-            buffer.removeSubrange(0..<totalNeeded)
-
-            do {
-                let frame = try RemoteFrame.decode(from: frameData)
-                DispatchQueue.main.async { [weak self] in
-                    self?.onFrame?(frame)
-                }
-            } catch {
-                logger.warning("Failed to decode remote IPC frame: \(error.localizedDescription)")
+        for frame in result.frames {
+            DispatchQueue.main.async { [weak self] in
+                self?.onFrame?(frame)
             }
         }
-    }
-}
-
-private extension Data {
-    mutating func appendUInt32LE(_ value: UInt32) {
-        append(UInt8(truncatingIfNeeded: value))
-        append(UInt8(truncatingIfNeeded: value >> 8))
-        append(UInt8(truncatingIfNeeded: value >> 16))
-        append(UInt8(truncatingIfNeeded: value >> 24))
-    }
-
-    func readUInt32LE(at offset: Int) -> UInt32 {
-        let b0 = UInt32(self[offset])
-        let b1 = UInt32(self[offset + 1]) << 8
-        let b2 = UInt32(self[offset + 2]) << 16
-        let b3 = UInt32(self[offset + 3]) << 24
-        return b0 | b1 | b2 | b3
     }
 }

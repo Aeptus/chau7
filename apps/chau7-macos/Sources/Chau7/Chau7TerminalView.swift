@@ -8,6 +8,8 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     var onOutput: ((Data) -> Void)?
     var onInput: ((String) -> Void)?
     var onBufferChanged: (() -> Void)?
+    var onScrollChanged: (() -> Void)?
+    var onScrollbackCleared: (() -> Void)?
     var onFilePathClicked: ((String, Int?, Int?) -> Void)?  // F03: Internal editor callback (path, line, column)
     var currentDirectory: String = FileManager.default.homeDirectoryForCurrentUser.path
     private weak var cursorLineView: TerminalCursorLineView?
@@ -16,9 +18,6 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     private var highlightInputHistory = false
     private var isCursorLineHighlightEnabled = false
     private var snippetState: SnippetNavigationState?
-    private var dimPatchRemainderBytes: [UInt8] = []
-    private let dimSequence: [UInt8] = [0x1b, 0x5b, 0x32, 0x6d] // ESC [ 2 m
-    private let dimResetSequence: [UInt8] = [0x1b, 0x5b, 0x32, 0x32, 0x6d] // ESC [ 22 m
     private let dimReplacement: [UInt8] = [0x1b, 0x5b, 0x33, 0x38, 0x3b, 0x35, 0x3b, 0x32, 0x34, 0x36, 0x6d] // ESC [ 38 ; 5 ; 246 m
     private let dimResetReplacement: [UInt8] = [0x1b, 0x5b, 0x33, 0x39, 0x6d] // ESC [ 39 m
 
@@ -58,6 +57,8 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     var tabIdentifier: String = ""
     var isAtPrompt: (() -> Bool)?
     private var historyMonitor: Any?
+    private var lastHistoryCommand: String?
+    private var lastHistoryWasUp: Bool = false
 
     // Smart Scroll: Track whether user is at the bottom of the terminal
     // When smart scroll is enabled and user has scrolled up, new output won't auto-scroll
@@ -659,6 +660,13 @@ final class Chau7TerminalView: LocalProcessTerminalView {
 
         guard let cmd = command else { return true }  // No more history, consume anyway
 
+        // Avoid re-injecting the same command on key repeat (can spam the line)
+        if event.isARepeat, cmd == lastHistoryCommand, lastHistoryWasUp == isUp {
+            return true
+        }
+        lastHistoryCommand = cmd
+        lastHistoryWasUp = isUp
+
         // Clear current input line: Ctrl+A (start of line) + Ctrl+K (kill to end)
         send(txt: "\u{01}\u{0B}")
         if !cmd.isEmpty {
@@ -1014,9 +1022,14 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     }
 
     @objc private func contextClearScrollback(_ sender: Any?) {
+        clearScrollbackBuffer()
+        Log.trace("Clear scrollback executed from context menu.")
+    }
+
+    func clearScrollbackBuffer() {
         getTerminal().resetToInitialState()
         clearSelection()
-        Log.trace("Clear scrollback executed from context menu.")
+        onScrollbackCleared?()
     }
 
     // MARK: - Selection Helpers
@@ -1345,60 +1358,60 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     // MARK: - Data Flow Callbacks
     // Note: dataReceived is overridden below with local echo support
 
-    private func patchDimSequences(_ incoming: [UInt8]) -> [UInt8] {
-        let buffer: [UInt8] = dimPatchRemainderBytes + incoming
-        dimPatchRemainderBytes = []
+    /// Returns true if the slice contains ESC [ 2 (0x1b 0x5b 0x32) — the shared
+    /// 3-byte prefix of both ESC[2m (dim) and ESC[22m (dim reset).
+    private func sliceContainsDimPrefix(_ slice: ArraySlice<UInt8>) -> Bool {
+        guard slice.count >= 3 else { return false }
+        let start = slice.startIndex
+        let limit = slice.endIndex - 2
+        var i = start
+        while i < limit {
+            if slice[i] == 0x1b && slice[i + 1] == 0x5b && slice[i + 2] == 0x32 {
+                return true
+            }
+            i += 1
+        }
+        return false
+    }
 
+    /// Replaces complete ESC[2m → ESC[38;5;246m and ESC[22m → ESC[39m in-chunk.
+    /// Partial sequences at end of buffer pass through unchanged — SwiftTerm
+    /// handles split sequences natively and renders them as actual dim.
+    private func patchDimSequences(_ slice: ArraySlice<UInt8>) -> [UInt8] {
         var output: [UInt8] = []
-        output.reserveCapacity(buffer.count)
+        output.reserveCapacity(slice.count)
 
-        var i = 0
-        while i < buffer.count {
-            let remaining = buffer.count - i
-            if remaining >= dimResetSequence.count,
-               matches(sequence: dimResetSequence, in: buffer, at: i) {
+        let end = slice.endIndex
+        var i = slice.startIndex
+
+        while i < end {
+            let remaining = end - i
+
+            // Check ESC[22m (5 bytes, dim reset) before ESC[2m (4 bytes) to avoid prefix collision
+            if remaining >= 5
+                && slice[i] == 0x1b && slice[i + 1] == 0x5b
+                && slice[i + 2] == 0x32 && slice[i + 3] == 0x32
+                && slice[i + 4] == 0x6d
+            {
                 output.append(contentsOf: dimResetReplacement)
-                i += dimResetSequence.count
+                i += 5
                 continue
             }
-            if remaining >= dimSequence.count,
-               matches(sequence: dimSequence, in: buffer, at: i) {
+
+            if remaining >= 4
+                && slice[i] == 0x1b && slice[i + 1] == 0x5b
+                && slice[i + 2] == 0x32 && slice[i + 3] == 0x6d
+            {
                 output.append(contentsOf: dimReplacement)
-                i += dimSequence.count
+                i += 4
                 continue
             }
 
-            if buffer[i] == 0x1b, isPrefix(in: buffer, at: i, of: dimResetSequence) || isPrefix(in: buffer, at: i, of: dimSequence) {
-                dimPatchRemainderBytes = Array(buffer[i...])
-                break
-            }
-
-            output.append(buffer[i])
+            output.append(slice[i])
             i += 1
         }
 
         return output
-    }
-
-    private func matches(sequence: [UInt8], in buffer: [UInt8], at index: Int) -> Bool {
-        guard index + sequence.count <= buffer.count else { return false }
-        for offset in 0..<sequence.count {
-            if buffer[index + offset] != sequence[offset] {
-                return false
-            }
-        }
-        return true
-    }
-
-    private func isPrefix(in buffer: [UInt8], at index: Int, of sequence: [UInt8]) -> Bool {
-        let remaining = buffer.count - index
-        guard remaining < sequence.count else { return false }
-        for offset in 0..<remaining {
-            if buffer[index + offset] != sequence[offset] {
-                return false
-            }
-        }
-        return true
     }
 
     // MARK: - Local Echo State
@@ -1439,6 +1452,8 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         // LOCAL ECHO: Show printable characters IMMEDIATELY before PTY round-trip.
         // The PTY will echo the same character back, which we'll suppress in dataReceived.
         if localEchoEnabled {
+            let token = FeatureProfiler.shared.begin(.localEcho, bytes: data.count)
+            defer { FeatureProfiler.shared.end(token) }
             for byte in data {
                 // Only local echo printable ASCII (0x20-0x7E)
                 if byte >= 0x20 && byte <= 0x7E {
@@ -1529,17 +1544,15 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         let data = Data(filteredSlice)
         onOutput?(data)
 
-        // Fast path: no escape sequences AND no pending partial sequence
-        if dimPatchRemainderBytes.isEmpty && !filteredSlice.contains(0x1b) {
+        // Fast path: skip dim patching unless chunk contains ESC[2 prefix
+        let renderToken = FeatureProfiler.shared.begin(.terminalRender, bytes: filteredSlice.count)
+        if sliceContainsDimPrefix(filteredSlice) {
+            let patched = patchDimSequences(filteredSlice)
+            super.dataReceived(slice: patched[...])
+        } else {
             super.dataReceived(slice: filteredSlice)
-            // Smart Scroll: Restore scroll position if user wasn't at bottom
-            restoreSmartScrollIfNeeded(smartScrollEnabled: smartScrollEnabled, wasAtBottom: wasAtBottom, savedPosition: savedScrollPosition)
-            return
         }
-
-        // Slow path: needs patching
-        let patched = patchDimSequences(Array(filteredSlice))
-        super.dataReceived(slice: patched[...])
+        FeatureProfiler.shared.end(renderToken)
         // Smart Scroll: Restore scroll position if user wasn't at bottom
         restoreSmartScrollIfNeeded(smartScrollEnabled: smartScrollEnabled, wasAtBottom: wasAtBottom, savedPosition: savedScrollPosition)
     }
@@ -1583,7 +1596,6 @@ final class Chau7TerminalView: LocalProcessTerminalView {
 
             // Check for CSI sequences: ESC [
             if i + 1 < data.count && data[i + 1] == 0x5b {
-                let seqStart = i
                 i += 2
                 var seqBytes: [UInt8] = [0x1b, 0x5b]
 
@@ -1626,7 +1638,6 @@ final class Chau7TerminalView: LocalProcessTerminalView {
             }
             // Check for OSC sequences: ESC ]
             else if i + 1 < data.count && data[i + 1] == 0x5d {
-                let seqStart = i
                 i += 2
                 var seqBytes: [UInt8] = [0x1b, 0x5d]
 
@@ -1668,7 +1679,7 @@ final class Chau7TerminalView: LocalProcessTerminalView {
 
     override func scrolled(source: TerminalView, position: Double) {
         super.scrolled(source: source, position: position)
-        onBufferChanged?()
+        onScrollChanged?()
         updateCursorLineHighlight()
 
         // Smart Scroll: Track if user is at or near the bottom

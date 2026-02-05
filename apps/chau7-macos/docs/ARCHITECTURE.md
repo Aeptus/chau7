@@ -283,7 +283,7 @@ extension View {
 
 | Dependency | Purpose | Version |
 |------------|---------|---------|
-| SwiftTerm | Terminal emulation | Fork @ 7a6f4ac |
+| SwiftTerm | Terminal emulation | Fork @ b97d811 |
 
 ### System Frameworks
 

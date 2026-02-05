@@ -315,6 +315,12 @@ extension View {
     func accessibleListItem(index: Int, total: Int, label: String) -> some View {
         self
             .accessibilityLabel(label)
-            .accessibilityHint("Item \(index + 1) of \(total). Use arrow keys to navigate.")
+            .accessibilityHint(
+                String(
+                    format: L("accessibility.listItem", "Item %d of %d. Use arrow keys to navigate."),
+                    index + 1,
+                    total
+                )
+            )
     }
 }

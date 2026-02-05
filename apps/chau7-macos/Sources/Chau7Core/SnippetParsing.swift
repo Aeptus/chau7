@@ -32,18 +32,20 @@ public enum SnippetParsing {
         }
     }
 
+    // MARK: - Cached compiled patterns
+
+    private static let placeholderRegex = try! NSRegularExpression(pattern: #"\$\{(\d+)(?::([^}]*))?\}"#)
+    private static let envTokenRegex = try! NSRegularExpression(pattern: #"\$\{env:([A-Za-z0-9_]+)\}"#)
+    private static let hasPlaceholderRegex = try! Regex(#"\$\{\d+"#)
+
     // MARK: - Placeholder Expansion
 
     /// Expands placeholders in the format ${1}, ${2:default}, ${0} (final cursor)
     /// - Parameter input: The snippet text with placeholders
     /// - Returns: Expansion result with processed text and placeholder info
     public static func expandPlaceholders(in input: String) -> ExpansionResult {
-        guard let regex = try? NSRegularExpression(pattern: #"\$\{(\d+)(?::([^}]*))?\}"#) else {
-            return ExpansionResult(text: input, placeholders: [], finalCursorOffset: nil)
-        }
-
         let range = NSRange(input.startIndex..<input.endIndex, in: input)
-        let matches = regex.matches(in: input, range: range)
+        let matches = placeholderRegex.matches(in: input, range: range)
 
         guard !matches.isEmpty else {
             return ExpansionResult(text: input, placeholders: [], finalCursorOffset: nil)
@@ -103,13 +105,9 @@ public enum SnippetParsing {
     ///   - provider: Function that returns value for an environment variable name
     /// - Returns: Text with environment variables expanded
     public static func replaceEnvTokens(in input: String, provider: (String) -> String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: #"\$\{env:([A-Za-z0-9_]+)\}"#) else {
-            return input
-        }
-
         let range = NSRange(input.startIndex..<input.endIndex, in: input)
         var output = input
-        let matches = regex.matches(in: input, range: range).reversed()
+        let matches = envTokenRegex.matches(in: input, range: range).reversed()
 
         for match in matches {
             guard match.numberOfRanges == 2,
@@ -149,8 +147,6 @@ public enum SnippetParsing {
 
     /// Checks if text contains placeholder syntax
     public static func containsPlaceholders(_ text: String) -> Bool {
-        guard let regex = try? NSRegularExpression(pattern: #"\$\{\d+"#) else { return false }
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
-        return regex.firstMatch(in: text, range: range) != nil
+        text.contains(hasPlaceholderRegex)
     }
 }

@@ -7,7 +7,7 @@ import Foundation
 public enum ColorParsing {
 
     /// RGB color components
-    public struct RGB: Equatable {
+    public struct RGB: Equatable, Sendable {
         public let red: Double
         public let green: Double
         public let blue: Double
@@ -64,9 +64,9 @@ public enum ColorParsing {
     /// - Parameter rgb: RGB color components
     /// - Returns: Hex color string with # prefix
     public static func toHex(_ rgb: RGB) -> String {
-        let r = Int(rgb.red * 255)
-        let g = Int(rgb.green * 255)
-        let b = Int(rgb.blue * 255)
+        let r = Int(min(1.0, max(0.0, rgb.red)) * 255)
+        let g = Int(min(1.0, max(0.0, rgb.green)) * 255)
+        let b = Int(min(1.0, max(0.0, rgb.blue)) * 255)
         return String(format: "#%02X%02X%02X", r, g, b)
     }
 

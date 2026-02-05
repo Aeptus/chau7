@@ -76,7 +76,7 @@ final class PerformanceTests: XCTestCase {
 
     func testPerformance_PathValidation() {
         let paths = [
-            "/Users/test/file.txt",
+            "~/test/file.txt",
             "./relative/path.swift",
             "../parent/file.md",
             "/var/log/system.log",

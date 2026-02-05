@@ -50,6 +50,8 @@ enum AnsiParser {
     ///   - baseBg: Default background color
     /// - Returns: Styled attributed string with colors and formatting applied
     static func attributedString(for line: String, baseFont: NSFont, baseFg: NSColor, baseBg: NSColor) -> NSAttributedString {
+        let token = FeatureProfiler.shared.begin(.ansiParse, bytes: line.utf8.count)
+        defer { FeatureProfiler.shared.end(token) }
         let input = TerminalNormalizer.applyBackspacesOnly(line)
         let result = NSMutableAttributedString()
         var currentStyle = Style.default

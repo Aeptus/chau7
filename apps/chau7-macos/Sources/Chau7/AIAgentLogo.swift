@@ -65,7 +65,14 @@ enum AIAgentLogo {
 
     /// Attempts to load logo from bundle resources
     private static func loadFromFile(agent: AIAgent) -> NSImage? {
-        // Try bundle first (for .app builds)
+        // Try resource bundle first (for SwiftPM resources)
+        if let url = Chau7Resources.bundle.url(forResource: agent.logoFileName, withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            image.size = logoSize
+            return image
+        }
+
+        // Try main bundle next (for .app builds with direct resources)
         if let url = Bundle.main.url(forResource: agent.logoFileName, withExtension: "png"),
            let image = NSImage(contentsOf: url) {
             image.size = logoSize

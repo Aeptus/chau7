@@ -1,21 +1,35 @@
 import Foundation
 
-public enum RemoteFrameError: Error {
+public enum RemoteFrameError: Error, Sendable {
     case insufficientData
     case invalidLength
+    case unsupportedVersion(UInt8)
 }
 
-public struct RemoteFrame: Equatable {
+extension RemoteFrameError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .insufficientData:
+            return "Insufficient data to decode remote frame"
+        case .invalidLength:
+            return "Remote frame payload length does not match available data"
+        case .unsupportedVersion(let v):
+            return "Unsupported remote frame version: \(v)"
+        }
+    }
+}
+
+public struct RemoteFrame: Equatable, Sendable {
     public static let headerSize = 20
     public static let flagEncrypted: UInt8 = 0x01
 
-    public var version: UInt8
-    public var type: UInt8
-    public var flags: UInt8
-    public var reserved: UInt8
-    public var tabID: UInt32
-    public var seq: UInt64
-    public var payload: Data
+    public let version: UInt8
+    public let type: UInt8
+    public let flags: UInt8
+    public let reserved: UInt8
+    public let tabID: UInt32
+    public let seq: UInt64
+    public let payload: Data
 
     public init(
         version: UInt8 = 1,
@@ -34,6 +48,9 @@ public struct RemoteFrame: Equatable {
         self.seq = seq
         self.payload = payload
     }
+
+    /// Typed frame type accessor.
+    public var frameType: RemoteFrameType? { RemoteFrameType(rawValue: type) }
 
     public func encode() -> Data {
         var data = Data(capacity: Self.headerSize + payload.count)
@@ -66,12 +83,16 @@ public struct RemoteFrame: Equatable {
         }
 
         let version = data[0]
+        guard version == 1 else {
+            throw RemoteFrameError.unsupportedVersion(version)
+        }
+
         let type = data[1]
         let flags = data[2]
         let reserved = data[3]
-        let tabID = data.readUInt32LE(at: 4)
-        let seq = data.readUInt64LE(at: 8)
-        let payloadLen = Int(data.readUInt32LE(at: 16))
+        let tabID = try data.readUInt32LE(at: 4)
+        let seq = try data.readUInt64LE(at: 8)
+        let payloadLen = try Int(data.readUInt32LE(at: 16))
 
         let expectedSize = headerSize + payloadLen
         guard data.count >= expectedSize else {
@@ -91,7 +112,7 @@ public struct RemoteFrame: Equatable {
     }
 }
 
-public enum RemoteFrameType: UInt8 {
+public enum RemoteFrameType: UInt8, CaseIterable, Sendable {
     case hello = 0x01
     case pairRequest = 0x02
     case pairAccept = 0x03
@@ -109,7 +130,7 @@ public enum RemoteFrameType: UInt8 {
     case error = 0x7F
 }
 
-private extension Data {
+extension Data {
     mutating func appendUInt32LE(_ value: UInt32) {
         append(UInt8(truncatingIfNeeded: value))
         append(UInt8(truncatingIfNeeded: value >> 8))
@@ -128,7 +149,8 @@ private extension Data {
         append(UInt8(truncatingIfNeeded: value >> 56))
     }
 
-    func readUInt32LE(at offset: Int) -> UInt32 {
+    func readUInt32LE(at offset: Int) throws -> UInt32 {
+        guard count >= offset + 4 else { throw RemoteFrameError.insufficientData }
         let b0 = UInt32(self[offset])
         let b1 = UInt32(self[offset + 1]) << 8
         let b2 = UInt32(self[offset + 2]) << 16
@@ -136,7 +158,8 @@ private extension Data {
         return b0 | b1 | b2 | b3
     }
 
-    func readUInt64LE(at offset: Int) -> UInt64 {
+    func readUInt64LE(at offset: Int) throws -> UInt64 {
+        guard count >= offset + 8 else { throw RemoteFrameError.insufficientData }
         let b0 = UInt64(self[offset])
         let b1 = UInt64(self[offset + 1]) << 8
         let b2 = UInt64(self[offset + 2]) << 16

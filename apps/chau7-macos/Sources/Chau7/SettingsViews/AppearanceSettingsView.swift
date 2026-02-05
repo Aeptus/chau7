@@ -184,9 +184,9 @@ struct ColorSchemePreview: View {
         VStack(alignment: .leading, spacing: 4) {
             // Background with foreground text
             HStack(spacing: 0) {
-                Text("user@host:~ $ ")
+                Text(L("user@host:~ $ ", "user@host:~ $ "))
                     .foregroundColor(Color(scheme.nsColor(for: scheme.green)))
-                Text("ls -la")
+                Text(L("ls -la", "ls -la"))
                     .foregroundColor(Color(scheme.nsColor(for: scheme.foreground)))
             }
             .font(.system(size: 12, design: .monospaced))
@@ -230,7 +230,7 @@ struct LiveTerminalPreview: View {
                 Circle().fill(Color.yellow.opacity(0.8)).frame(width: 10, height: 10)
                 Circle().fill(Color.green.opacity(0.8)).frame(width: 10, height: 10)
                 Spacer()
-                Text("Terminal Preview — zsh")
+                Text(L("Terminal Preview — zsh", "Terminal Preview — zsh"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -279,11 +279,11 @@ struct LiveTerminalPreview: View {
         HStack(spacing: 0) {
             Text(user)
                 .foregroundColor(Color(scheme.nsColor(for: scheme.green)))
-            Text(":")
+            Text(L(":", ":"))
                 .foregroundColor(Color(scheme.nsColor(for: scheme.foreground)))
             Text(path)
                 .foregroundColor(Color(scheme.nsColor(for: scheme.blue)))
-            Text("$ ")
+            Text(L("$ ", "$ "))
                 .foregroundColor(Color(scheme.nsColor(for: scheme.foreground)))
         }
         .font(.custom(settings.fontFamily, size: CGFloat(settings.fontSize) * 0.85))

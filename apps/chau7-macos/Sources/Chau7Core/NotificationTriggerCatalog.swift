@@ -1,6 +1,6 @@
 import Foundation
 
-public struct NotificationTriggerDisplay: OptionSet {
+public struct NotificationTriggerDisplay: OptionSet, Sendable {
     public let rawValue: Int
 
     public init(rawValue: Int) {
@@ -12,7 +12,7 @@ public struct NotificationTriggerDisplay: OptionSet {
     public static let debug = NotificationTriggerDisplay(rawValue: 1 << 2)
 }
 
-public struct NotificationTriggerSourceInfo: Identifiable, Equatable {
+public struct NotificationTriggerSourceInfo: Identifiable, Equatable, Sendable {
     public let id: AIEventSource
     public let labelKey: String
     public let labelFallback: String
@@ -26,7 +26,7 @@ public struct NotificationTriggerSourceInfo: Identifiable, Equatable {
     }
 }
 
-public struct NotificationTrigger: Identifiable, Equatable {
+public struct NotificationTrigger: Identifiable, Equatable, Sendable {
     public let id: String
     public let source: AIEventSource
     public let type: String
@@ -64,7 +64,7 @@ public struct NotificationTrigger: Identifiable, Equatable {
     }
 }
 
-public struct NotificationTriggerState: Codable, Equatable {
+public struct NotificationTriggerState: Codable, Equatable, Sendable {
     public var overrides: [String: Bool]
 
     public init(overrides: [String: Bool] = [:]) {
