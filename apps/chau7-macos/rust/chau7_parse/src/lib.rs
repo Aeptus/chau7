@@ -1,5 +1,6 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use std::collections::VecDeque;
 
 #[repr(C)]
 pub struct PatternSet {
@@ -8,7 +9,113 @@ pub struct PatternSet {
 
 #[repr(C)]
 pub struct MatchPatternSet {
-    patterns: Vec<String>,
+    matcher: AhoAutomaton,
+    min_empty_index: Option<usize>,
+}
+
+struct AhoAutomaton {
+    nodes: Vec<AhoNode>,
+}
+
+struct AhoNode {
+    next: [i32; 256],
+    fail: i32,
+    output: Vec<usize>,
+}
+
+impl AhoNode {
+    fn new() -> Self {
+        AhoNode {
+            next: [-1; 256],
+            fail: 0,
+            output: Vec::new(),
+        }
+    }
+}
+
+impl AhoAutomaton {
+    fn from_patterns(patterns: Vec<(usize, Vec<u8>)>) -> Self {
+        let mut nodes = Vec::new();
+        nodes.push(AhoNode::new());
+
+        for (pattern_index, bytes) in patterns {
+            let mut state = 0usize;
+            for &b in &bytes {
+                let idx = b as usize;
+                let next = nodes[state].next[idx];
+                if next == -1 {
+                    nodes.push(AhoNode::new());
+                    let new_index = (nodes.len() - 1) as i32;
+                    nodes[state].next[idx] = new_index;
+                    state = new_index as usize;
+                } else {
+                    state = next as usize;
+                }
+            }
+            nodes[state].output.push(pattern_index);
+        }
+
+        let mut queue = VecDeque::new();
+        for b in 0..256usize {
+            let next = nodes[0].next[b];
+            if next != -1 {
+                nodes[next as usize].fail = 0;
+                queue.push_back(next as usize);
+            } else {
+                nodes[0].next[b] = 0;
+            }
+        }
+
+        while let Some(r) = queue.pop_front() {
+            for b in 0..256usize {
+                let s = nodes[r].next[b];
+                if s != -1 {
+                    queue.push_back(s as usize);
+                    let fail_state = nodes[r].fail as usize;
+                    let next_fail = nodes[fail_state].next[b] as usize;
+                    nodes[s as usize].fail = next_fail as i32;
+                    let inherited = nodes[next_fail].output.clone();
+                    nodes[s as usize].output.extend(inherited);
+                } else {
+                    let fail_state = nodes[r].fail as usize;
+                    nodes[r].next[b] = nodes[fail_state].next[b];
+                }
+            }
+        }
+
+        AhoAutomaton { nodes }
+    }
+
+    fn match_min_index(&self, haystack: &str) -> Option<usize> {
+        let mut state = 0usize;
+        let mut best: Option<usize> = None;
+        for b in haystack.bytes() {
+            state = self.nodes[state].next[b as usize] as usize;
+            if !self.nodes[state].output.is_empty() {
+                for &idx in &self.nodes[state].output {
+                    best = Some(match best {
+                        Some(current) => current.min(idx),
+                        None => idx,
+                    });
+                    if best == Some(0) {
+                        return best;
+                    }
+                }
+            }
+        }
+        best
+    }
+
+    fn is_match(&self, haystack: &str) -> bool {
+        let mut state = 0usize;
+        for b in haystack.bytes() {
+            state = self.nodes[state].next[b as usize] as usize;
+            if !self.nodes[state].output.is_empty() {
+                return true;
+            }
+        }
+        false
+    }
 }
 
 #[repr(C)]
@@ -522,7 +629,8 @@ pub extern "C" fn chau7_match_patterns_create(
     if patterns.is_null() {
         return std::ptr::null_mut();
     }
-    let mut list: Vec<String> = Vec::with_capacity(count);
+    let mut pattern_list: Vec<(usize, Vec<u8>)> = Vec::new();
+    let mut min_empty_index: Option<usize> = None;
     for i in 0..count {
         unsafe {
             let ptr = *patterns.add(i);
@@ -530,13 +638,16 @@ pub extern "C" fn chau7_match_patterns_create(
                 continue;
             }
             if let Ok(raw) = CStr::from_ptr(ptr).to_str() {
-                if !raw.is_empty() {
-                    list.push(raw.to_string());
+                if raw.is_empty() {
+                    min_empty_index = Some(min_empty_index.map_or(i, |current| current.min(i)));
+                } else {
+                    pattern_list.push((i, raw.as_bytes().to_vec()));
                 }
             }
         }
     }
-    let set = MatchPatternSet { patterns: list };
+    let matcher = AhoAutomaton::from_patterns(pattern_list);
+    let set = MatchPatternSet { matcher, min_empty_index };
     Box::into_raw(Box::new(set))
 }
 
@@ -558,18 +669,30 @@ pub extern "C" fn chau7_match_first(handle: *const MatchPatternSet, haystack: *c
     let Ok(haystack) = (unsafe { CStr::from_ptr(haystack).to_str() }) else {
         return -1;
     };
-    let patterns = unsafe { &(*handle).patterns };
-    for (idx, pattern) in patterns.iter().enumerate() {
-        if haystack.contains(pattern) {
-            return idx as i32;
-        }
+    let set = unsafe { &(*handle) };
+    let mut best_index: Option<usize> = set.min_empty_index;
+    if let Some(found) = set.matcher.match_min_index(haystack) {
+        best_index = Some(match best_index {
+            Some(current) => current.min(found),
+            None => found,
+        });
     }
-    -1
+    best_index.map(|idx| idx as i32).unwrap_or(-1)
 }
 
 #[no_mangle]
 pub extern "C" fn chau7_match_any(handle: *const MatchPatternSet, haystack: *const c_char) -> bool {
-    chau7_match_first(handle, haystack) >= 0
+    if handle.is_null() || haystack.is_null() {
+        return false;
+    }
+    let Ok(haystack) = (unsafe { CStr::from_ptr(haystack).to_str() }) else {
+        return false;
+    };
+    let set = unsafe { &(*handle) };
+    if set.min_empty_index.is_some() {
+        return true;
+    }
+    set.matcher.is_match(haystack)
 }
 
 #[no_mangle]
@@ -644,5 +767,13 @@ mod tests {
         let input = "hi\u{1b}[31mred\u{1b}[0m";
         let segments = parse_ansi_segments(input);
         assert_eq!(segments.len(), 2);
+    }
+
+    #[test]
+    fn match_first_respects_pattern_order() {
+        let patterns = vec![(0usize, b"world".to_vec()), (1usize, b"hello".to_vec())];
+        let matcher = AhoAutomaton::from_patterns(patterns);
+        let found = matcher.match_min_index("hello world");
+        assert_eq!(found, Some(0));
     }
 }
