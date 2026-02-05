@@ -4,6 +4,9 @@ public enum CommandRiskDetection {
     /// Returns true if the command line matches any configured risky patterns.
     /// Matching is case-insensitive and whitespace-normalized.
     public static func isRisky(commandLine: String, patterns: [String]) -> Bool {
+        if let rust = RustCommandRisk.shared.isRisky(command: commandLine, patterns: patterns) {
+            return rust
+        }
         let normalizedCommand = normalize(commandLine)
         guard !normalizedCommand.isEmpty else { return false }
         for rawPattern in patterns {
