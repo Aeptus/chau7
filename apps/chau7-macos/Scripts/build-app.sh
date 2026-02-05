@@ -2,10 +2,10 @@
 set -euo pipefail
 
 APP_NAME="Chau7"
-BUILD_DIR="${1:-.build/release}"
-OUT_DIR="${2:-./build}"
-SHOW_DOCK_ICON="${SHOW_DOCK_ICON:-1}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BUILD_DIR="${1:-$ROOT_DIR/.build/release}"
+OUT_DIR="${2:-$ROOT_DIR/build}"
+SHOW_DOCK_ICON="${SHOW_DOCK_ICON:-1}"
 
 export CHAU7_LOG_ROOT="$ROOT_DIR"
 CHAU7_LOG_NAME="build-app"
@@ -33,7 +33,7 @@ trap finish EXIT
 
 if [[ ! -f "$BIN" ]]; then
   log_error "Binary not found at $BIN"
-  log_error "Run: swift build -c release"
+  log_error "Run: swift build -c release --package-path \"$ROOT_DIR\""
   exit 1
 fi
 
@@ -69,6 +69,8 @@ cat <<PLIST > "$CONTENTS/Info.plist"
   <string>1</string>
   <key>LSUIElement</key>
   $LSUI_ELEMENT_VALUE
+  <key>LSMultipleInstancesProhibited</key>
+  <true/>
   <key>NSHighResolutionCapable</key>
   <true/>
   <key>NSHumanReadableCopyright</key>
@@ -81,6 +83,36 @@ run_cmd cp "$BIN" "$CONTENTS/MacOS/$APP_NAME"
 
 if [[ -f "$ROOT_DIR/Resources/AppDockIcon.png" ]]; then
   run_cmd cp "$ROOT_DIR/Resources/AppDockIcon.png" "$CONTENTS/Resources/AppDockIcon.png"
+fi
+
+RESOURCE_BUNDLE=""
+if [[ -d "$BUILD_DIR/${APP_NAME}_${APP_NAME}.bundle" ]]; then
+  RESOURCE_BUNDLE="$BUILD_DIR/${APP_NAME}_${APP_NAME}.bundle"
+elif [[ -d "$BUILD_DIR/${APP_NAME}.bundle" ]]; then
+  RESOURCE_BUNDLE="$BUILD_DIR/${APP_NAME}.bundle"
+else
+  RESOURCE_BUNDLE="$(find "$BUILD_DIR" -maxdepth 1 -type d -name "${APP_NAME}_*.bundle" -print -quit || true)"
+fi
+
+if [[ -n "$RESOURCE_BUNDLE" ]]; then
+  run_cmd cp -R "$RESOURCE_BUNDLE" "$CONTENTS/Resources/"
+  log_ok "Copied resource bundle: $(basename "$RESOURCE_BUNDLE")"
+else
+  log_warn "Resource bundle not found in $BUILD_DIR (falling back to raw Resources/ copy)."
+  if [[ -d "$ROOT_DIR/Resources" ]]; then
+    run_cmd cp -R "$ROOT_DIR/Resources/"* "$CONTENTS/Resources/"
+    log_ok "Copied raw resources from Resources/ into app bundle."
+  else
+    log_warn "Resources directory not found at $ROOT_DIR/Resources."
+  fi
+fi
+
+RUST_LIB_PATH="${CHAU7_RUST_LIB_PATH:-$ROOT_DIR/rust/chau7_parse/target/release/libchau7_parse.dylib}"
+if [[ -f "$RUST_LIB_PATH" ]]; then
+  run_cmd cp "$RUST_LIB_PATH" "$CONTENTS/Resources/libchau7_parse.dylib"
+  log_ok "Copied Rust parser library: $(basename "$RUST_LIB_PATH")"
+else
+  log_warn "Rust parser library not found at $RUST_LIB_PATH (optional)."
 fi
 
 log_ok "Built app bundle at $APP_DIR"
