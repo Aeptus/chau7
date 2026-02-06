@@ -23,6 +23,7 @@ final class Chau7TerminalView: LocalProcessTerminalView {
 
     // F18: Copy-on-select tracking
     private var lastSelectionText: String?
+    private var copyOnSelectWorkItem: DispatchWorkItem?
 
     // Click-to-position cursor tracking (like modern text editors)
     private var mouseDownLocation: NSPoint?
@@ -564,47 +565,59 @@ final class Chau7TerminalView: LocalProcessTerminalView {
 
     // MARK: - F18: Copy-on-Select
 
+    /// Called by SwiftTerm whenever selection state changes (start, extend, clear).
+    /// This is the primary copy-on-select trigger — fires synchronously from SelectionService,
+    /// far more reliable than the mouseUp monitor with async delay.
+    override func selectionChanged(source: Terminal) {
+        super.selectionChanged(source: source)
+        scheduleCopyOnSelect()
+    }
+
     private func handleMouseUp(event: NSEvent) {
-        // Check if copy-on-select is enabled
+        // Secondary trigger: catches edge cases the selectionChanged callback might miss
+        guard FeatureSettings.shared.isCopyOnSelectEnabled else { return }
+        if event.modifierFlags.contains(.option) { return }
+        scheduleCopyOnSelect()
+    }
+
+    /// Debounced copy-on-select: waits for selection to stabilize (e.g. during drag)
+    /// then copies the final result. 50ms debounce avoids rapid clipboard writes.
+    private func scheduleCopyOnSelect() {
         guard FeatureSettings.shared.isCopyOnSelectEnabled else { return }
 
-        // Option key disables copy-on-select temporarily
-        if event.modifierFlags.contains(.option) { return }
+        copyOnSelectWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.performCopyOnSelect()
+        }
+        copyOnSelectWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.050, execute: workItem)
+    }
 
-        // Check for selection and copy if present (with delay to let selection finalize)
-        // Using 30ms for reliability while keeping good perceived responsiveness
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.030) { [weak self] in
-            guard let self = self else { return }
-
-            // Try the public getSelection() API first (simpler, more stable)
-            if let text = self.getSelection(), !text.isEmpty {
-                // Only copy if text is different from last copied text
-                // But always update lastSelectionText to track current selection
-                if text != self.lastSelectionText {
-                    self.copyToClipboard(text)
-                    Log.trace("Copy-on-select: copied \(text.count) chars via getSelection().")
-                }
-                self.lastSelectionText = text
-                return
+    private func performCopyOnSelect() {
+        // Try the public getSelection() API first
+        if let text = getSelection(), !text.isEmpty {
+            if text != lastSelectionText {
+                copyToClipboard(text)
+                Log.trace("Copy-on-select: copied \(text.count) chars via getSelection().")
             }
+            lastSelectionText = text
+            return
+        }
 
-            // Fallback: use coordinate-based extraction if getSelection() fails
-            if let (startPos, endPos) = self.getSelectionCoordinates() {
-                let terminal = self.getTerminal()
-                let text = terminal.getText(start: startPos, end: endPos)
-
-                if !text.isEmpty {
-                    if text != self.lastSelectionText {
-                        self.copyToClipboard(text)
-                        Log.trace("Copy-on-select: copied \(text.count) chars via coordinates.")
-                    }
-                    self.lastSelectionText = text
+        // Fallback: coordinate-based extraction
+        if let (startPos, endPos) = getSelectionCoordinates() {
+            let terminal = getTerminal()
+            let text = terminal.getText(start: startPos, end: endPos)
+            if !text.isEmpty {
+                if text != lastSelectionText {
+                    copyToClipboard(text)
+                    Log.trace("Copy-on-select: copied \(text.count) chars via coordinates.")
                 }
-            } else {
-                // No selection exists - clear lastSelectionText so the same text
-                // can be copied again if user re-selects it
-                self.lastSelectionText = nil
+                lastSelectionText = text
             }
+        } else {
+            // Selection cleared — reset so same text can be re-copied
+            lastSelectionText = nil
         }
     }
 

@@ -1696,8 +1696,8 @@ final class FeatureSettings: ObservableObject {
         // F05: Auto Tab Theme (default: enabled)
         self.isAutoTabThemeEnabled = defaults.object(forKey: Keys.autoTabTheme) as? Bool ?? true
 
-        // F18: Copy on Select (default: disabled)
-        self.isCopyOnSelectEnabled = defaults.object(forKey: Keys.copyOnSelect) as? Bool ?? false
+        // F18: Copy on Select (default: enabled)
+        self.isCopyOnSelectEnabled = defaults.object(forKey: Keys.copyOnSelect) as? Bool ?? true
 
         // F19: Line Timestamps (default: disabled)
         self.isLineTimestampsEnabled = defaults.object(forKey: Keys.lineTimestamps) as? Bool ?? false
