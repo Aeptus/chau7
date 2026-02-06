@@ -1716,15 +1716,13 @@ final class RustTerminalView: NSView {
     /// Note: NSView uses bottom-left origin, but terminals use top-left (row 0 = top).
     /// We flip the Y coordinate so row 0 is at the top of the view.
     var caretFrame: CGRect {
+        // Use bounds.height consistently (same as RustGridView.drawCursor)
+        let renderHeight = bounds.height
         guard let rust = rustTerminal else {
-            // Return default position at top-left when no terminal
-            let renderHeight = gridView?.bounds.height ?? bounds.height
             return CGRect(x: 0, y: renderHeight - cellHeight, width: cellWidth, height: cellHeight)
         }
         let cursor = rust.cursorPosition
         let x = CGFloat(cursor.col) * cellWidth
-        // Standard macOS coordinates: y=0 at bottom, row 0 at top of terminal
-        let renderHeight = overlayContainer?.bounds.height ?? (gridView?.bounds.height ?? bounds.height)
         let y = renderHeight - CGFloat(cursor.row + 1) * cellHeight
         return CGRect(x: x, y: y, width: cellWidth, height: cellHeight)
     }
@@ -1893,6 +1891,8 @@ final class RustTerminalView: NSView {
 
         if window != nil {
             Log.trace("RustTerminalView[\(viewId)]: viewDidMoveToWindow - Added to window")
+            // Recalculate cell dimensions now that window?.backingScaleFactor is available
+            updateCellDimensions()
             if isEventMonitoringEnabled {
                 Log.trace("RustTerminalView[\(viewId)]: viewDidMoveToWindow - Setting up event monitors")
                 setupEventMonitors()

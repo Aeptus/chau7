@@ -50,6 +50,9 @@ final class RustTerminalContainerView: NSView {
         terminalView.frame = bounds
         if !didRunFirstLayout && bounds.width > 0 && bounds.height > 0 {
             didRunFirstLayout = true
+            // Force the terminal view to recalculate dimensions from the new bounds
+            // before the callback fires (otherwise renderCols is stale from zero-frame init)
+            terminalView.layoutSubtreeIfNeeded()
             onFirstLayout?(terminalView)
         }
     }
