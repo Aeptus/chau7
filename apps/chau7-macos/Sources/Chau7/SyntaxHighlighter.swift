@@ -3,6 +3,15 @@ import AppKit
 
 // MARK: - F08: Smart Syntax Highlighting
 
+/// Helper to create regex with clear error messages (Fix #10: safe regex initialization)
+private func makeRegex(_ pattern: String, options: NSRegularExpression.Options = [], name: String) -> NSRegularExpression {
+    do {
+        return try NSRegularExpression(pattern: pattern, options: options)
+    } catch {
+        fatalError("SyntaxHighlighter.\(name): Invalid pattern '\(pattern)' - \(error.localizedDescription)")
+    }
+}
+
 /// Provides syntax highlighting for terminal output with caching and background processing.
 final class SyntaxHighlighter {
     static let shared = SyntaxHighlighter()
@@ -17,66 +26,71 @@ final class SyntaxHighlighter {
     /// Background queue for expensive highlighting operations
     private let highlightQueue = DispatchQueue(label: "com.chau7.highlight", qos: .userInitiated)
 
-    // MARK: - Pattern Definitions
+    // MARK: - Pattern Definitions (Fix #10: safe regex initialization)
 
     /// URL pattern for clickable links
-    private static let urlPattern = try! NSRegularExpression(
-        pattern: #"https?://[^\s<>\[\]{}|\\^`"']+"#,
-        options: [.caseInsensitive]
+    private static let urlPattern = makeRegex(
+        #"https?://[^\s<>\[\]{}|\\^`"']+"#,
+        options: [.caseInsensitive],
+        name: "urlPattern"
     )
 
     /// File path pattern (Unix-style)
-    private static let pathPattern = try! NSRegularExpression(
-        pattern: #"(?:^|[\s])([/~][\w./-]+)"#,
-        options: []
+    private static let pathPattern = makeRegex(
+        #"(?:^|[\s])([/~][\w./-]+)"#,
+        name: "pathPattern"
     )
 
     /// Error keywords pattern
-    private static let errorPattern = try! NSRegularExpression(
-        pattern: #"\b(error|failed|failure|exception|fatal|critical|panic)\b"#,
-        options: [.caseInsensitive]
+    private static let errorPattern = makeRegex(
+        #"\b(error|failed|failure|exception|fatal|critical|panic)\b"#,
+        options: [.caseInsensitive],
+        name: "errorPattern"
     )
 
     /// Warning keywords pattern
-    private static let warningPattern = try! NSRegularExpression(
-        pattern: #"\b(warning|warn|deprecated|caution)\b"#,
-        options: [.caseInsensitive]
+    private static let warningPattern = makeRegex(
+        #"\b(warning|warn|deprecated|caution)\b"#,
+        options: [.caseInsensitive],
+        name: "warningPattern"
     )
 
     /// Success keywords pattern
-    private static let successPattern = try! NSRegularExpression(
-        pattern: #"\b(success|passed|ok|done|complete|completed)\b"#,
-        options: [.caseInsensitive]
+    private static let successPattern = makeRegex(
+        #"\b(success|passed|ok|done|complete|completed)\b"#,
+        options: [.caseInsensitive],
+        name: "successPattern"
     )
 
     /// Number pattern (integers, floats, hex)
-    private static let numberPattern = try! NSRegularExpression(
-        pattern: #"\b(0x[0-9a-fA-F]+|\d+\.?\d*)\b"#,
-        options: []
+    private static let numberPattern = makeRegex(
+        #"\b(0x[0-9a-fA-F]+|\d+\.?\d*)\b"#,
+        name: "numberPattern"
     )
 
     /// Quoted string pattern
-    private static let stringPattern = try! NSRegularExpression(
-        pattern: #"([\"'])(?:(?!\1)[^\\]|\\.)*\1"#,
-        options: []
+    private static let stringPattern = makeRegex(
+        #"([\"'])(?:(?!\1)[^\\]|\\.)*\1"#,
+        name: "stringPattern"
     )
 
     /// JSON key pattern
-    private static let jsonKeyPattern = try! NSRegularExpression(
-        pattern: #"\"(\w+)\"\s*:"#,
-        options: []
+    private static let jsonKeyPattern = makeRegex(
+        #"\"(\w+)\"\s*:"#,
+        name: "jsonKeyPattern"
     )
 
     /// Git branch/commit pattern
-    private static let gitPattern = try! NSRegularExpression(
-        pattern: #"\b([a-f0-9]{7,40})\b|(?:origin/|HEAD\s*->?\s*)(\S+)"#,
-        options: []
+    private static let gitPattern = makeRegex(
+        #"\b([a-f0-9]{7,40})\b|(?:origin/|HEAD\s*->?\s*)(\S+)"#,
+        name: "gitPattern"
     )
 
     /// Command prompt pattern
-    private static let promptPattern = try! NSRegularExpression(
-        pattern: #"^[\w@.-]+[:#$%>]\s"#,
-        options: [.anchorsMatchLines]
+    private static let promptPattern = makeRegex(
+        #"^[\w@.-]+[:#$%>]\s"#,
+        options: [.anchorsMatchLines],
+        name: "promptPattern"
     )
 
     // MARK: - Highlight Colors

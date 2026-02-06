@@ -1,0 +1,3 @@
+[workspace]
+members = ["chau7_parse", "chau7_terminal"]
+resolver = "2"

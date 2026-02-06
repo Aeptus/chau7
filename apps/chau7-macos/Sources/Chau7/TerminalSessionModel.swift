@@ -98,6 +98,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private weak var terminalView: Chau7TerminalView?
     /// Strong reference to keep the terminal view alive across SwiftUI view recreations (e.g., when splitting)
     private var retainedTerminalView: Chau7TerminalView?
+    /// Rust terminal view (when using Rust backend)
+    private weak var rustTerminalView: RustTerminalView?
+    /// Strong reference to keep the Rust terminal view alive across SwiftUI view recreations
+    private var retainedRustTerminalView: RustTerminalView?
     private var settingsObservers: [NSObjectProtocol] = []
     private var idleTimer: DispatchSourceTimer?
     private var lastInputAt = Date.distantPast
@@ -148,6 +152,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private var outputLatencyFallbackWorkItem: DispatchWorkItem?
     private let outputLatencyFallbackSeconds: TimeInterval = 0.2
     private let remoteOutputQueue = DispatchQueue(label: "com.chau7.remoteOutput", qos: .utility)
+    /// Queue for heavy output processing to avoid blocking main thread (Fix #6)
+    private let outputProcessingQueue = DispatchQueue(label: "com.chau7.outputProcessing", qos: .userInitiated)
     private var pendingRemoteOutput = Data()
     private var remoteOutputFlushWorkItem: DispatchWorkItem?
     private let remoteOutputFlushInterval: TimeInterval = 0.05
@@ -187,6 +193,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         let logPath: String
     }
 
+    /// Serial queue for synchronizing AI log state access.
+    /// Required because `processAILogOutput` runs on outputProcessingQueue while
+    /// `finishAILogging` and `startAILoggingIfNeeded` run on the main thread.
+    private let aiLogQueue = DispatchQueue(label: "com.chau7.terminal.ailog")
     private var aiLogSession: AITerminalLogSession?
     private var aiLogContext: AILogContext?
     private var aiLogPrefixBuffer = Data()
@@ -265,6 +275,26 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         retainedTerminalView
     }
 
+    /// Returns the existing Rust terminal view if one exists
+    var existingRustTerminalView: RustTerminalView? {
+        retainedRustTerminalView
+    }
+
+    /// Unified accessor for the active terminal view (either SwiftTerm or Rust backend)
+    /// This enables backend-agnostic code in session-level operations
+    private var activeTerminalView: (any TerminalViewLike)? {
+        // Prefer Rust view if attached, fall back to SwiftTerm
+        if let rust = rustTerminalView {
+            return rust
+        }
+        return terminalView
+    }
+
+    /// Whether we're currently using the Rust backend
+    private var isUsingRustBackend: Bool {
+        rustTerminalView != nil
+    }
+
     func attachTerminal(_ view: Chau7TerminalView) {
         terminalView = view
         retainedTerminalView = view  // Keep strong reference to survive view recreation
@@ -283,6 +313,73 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
                 guard let view = view, let window = view.window else { return }
                 window.makeFirstResponder(view)
                 Log.trace("Auto-focused terminal view on attach")
+            }
+        }
+    }
+
+    func attachRustTerminal(_ view: RustTerminalView) {
+        rustTerminalView = view
+        retainedRustTerminalView = view  // Keep strong reference to survive view recreation
+        view.currentDirectory = currentDirectory
+
+        // Configure scrollback buffer size from settings
+        let scrollbackLines = FeatureSettings.shared.scrollbackLines
+        view.applyScrollbackLines(scrollbackLines)
+        Log.trace("Configured Rust terminal scrollback: \(scrollbackLines) lines")
+
+        // Wire up title change callback (equivalent to LocalProcessTerminalViewDelegate.setTerminalTitle)
+        view.onTitleChanged = { [weak self] title in
+            DispatchQueue.main.async {
+                self?.title = title.isEmpty ? "Shell" : title
+            }
+        }
+
+        // Wire up process termination callback (equivalent to LocalProcessTerminalViewDelegate.processTerminated)
+        view.onProcessTerminated = { [weak self] (exitCode: Int32?) in
+            guard let self = self else { return }
+            DispatchQueue.main.async {
+                self.status = .exited
+                self.devServer = nil
+            }
+            self.devServerMonitor.stop()
+            // finishAILogging is idempotent and has internal synchronization
+            self.finishAILogging(exitCode: nil)
+            let type: String
+            let message: String
+            if let exitCode {
+                type = exitCode == 0 ? "finished" : "failed"
+                message = "Shell exited with code \(exitCode)."
+            } else {
+                type = "failed"
+                message = "Shell exited."
+            }
+            self.appModel?.recordEvent(source: .terminalSession, type: type, tool: self.notificationTabName, message: message, notify: true)
+        }
+
+        // Wire up directory change callback (equivalent to LocalProcessTerminalViewDelegate.hostCurrentDirectoryUpdate)
+        view.onDirectoryChanged = { [weak self] (directory: String) in
+            guard let self = self else { return }
+            DispatchQueue.main.async {
+                self.updateCurrentDirectory(directory)
+            }
+            self.handlePromptDetected()
+            if self.activeAppName != nil {
+                Log.trace("Clearing active app after shell prompt update.")
+                DispatchQueue.main.async {
+                    self.activeAppName = nil
+                }
+            }
+            // finishAILogging is idempotent and has internal synchronization
+            self.finishAILogging(exitCode: nil)
+        }
+
+        // Auto-focus on attach for newly created tabs
+        if shouldAutoFocusOnAttach {
+            shouldAutoFocusOnAttach = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak view] in
+                guard let view = view, let window = view.window else { return }
+                window.makeFirstResponder(view)
+                Log.trace("Auto-focused Rust terminal view on attach")
             }
         }
     }
@@ -321,8 +418,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             markInputLatencyStart()
         }
         inputBuffer.append(text)
-        if let aiLogSession {
-            aiLogSession.recordInput(text)
+        aiLogQueue.sync {
+            aiLogSession?.recordInput(text)
         }
         if text.contains("\n") || text.contains("\r") {
             processInputBuffer()
@@ -333,61 +430,118 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     func handleOutput(_ data: Data) {
+        // Fix #6: Split output processing - light work inline, heavy work on background queue
         let outputToken = FeatureProfiler.shared.begin(.outputProcessing, bytes: data.count)
-        defer { FeatureProfiler.shared.end(outputToken) }
         let now = Date()
         let outputGap = now.timeIntervalSince(lastOutputAt)
         lastOutputAt = now
+
+        // Light operations that need immediate execution (timing-sensitive)
         if !data.isEmpty {
             updateOutputBurstState(bytes: data.count, outputGap: outputGap, now: now)
             markOutputLatencyStart()
             markDirtyOutputRange(for: data)
         }
-        bufferNeedsRefresh = true  // Invalidate buffer cache on new output
+        bufferNeedsRefresh = true
         recordInputLatencyIfNeeded()
-        TerminalOutputCapture.shared.record(data: data, source: activeAppName ?? title)
+
+        // Remote output enqueueing (already uses its own queue internally)
         enqueueRemoteOutput(data)
-        let outputText = String(data: data, encoding: .utf8)
-        if let outputText {
-            shellEventDetector.processOutput(outputText)
+
+        // Capture source for background processing
+        let source = activeAppName ?? title
+
+        // Heavy processing on background queue to avoid blocking UI
+        outputProcessingQueue.async { [weak self] in
+            guard let self = self else { return }
+
+            // Terminal output capture (thread-safe singleton)
+            TerminalOutputCapture.shared.record(data: data, source: source)
+
+            // Convert to text once for reuse
+            let outputText = String(data: data, encoding: .utf8)
+
+            // Shell event detection
+            if let outputText {
+                self.shellEventDetector.processOutput(outputText)
+            }
+
+            // Semantic detection (expensive)
+            if FeatureSettings.shared.isSemanticSearchEnabled,
+               data.contains(where: { $0 == 0x0A || $0 == 0x0D }) {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    if let row = self.currentBufferRow() {
+                        let token = FeatureProfiler.shared.begin(.semantic)
+                        self.semanticDetector.updateCurrentRow(row)
+                        FeatureProfiler.shared.end(token)
+                    }
+                }
+            }
+
+            // AI log processing (synchronized to prevent race with finishAILogging)
+            var aiExitCode: Int?
+            self.aiLogQueue.sync {
+                let aiLogResult = self.processAILogOutput(data)
+                if let logData = aiLogResult.loggable, !logData.isEmpty {
+                    self.aiLogSession?.recordOutput(logData)
+                }
+                aiExitCode = aiLogResult.exitCode
+            }
+
+            // UI-related updates need main thread
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                FeatureProfiler.shared.end(outputToken)
+
+                if let exitCode = aiExitCode {
+                    self.finishAILogging(exitCode: exitCode)
+                }
+
+                // Shell integration check
+                self.maybeApplyShellIntegration()
+
+                // Prompt update handling
+                let sawPromptUpdate = self.maybeHandlePromptUpdate(data)
+
+                // AI app detection
+                if !sawPromptUpdate {
+                    self.maybeDetectAppFromOutput(data)
+                }
+
+                // Dangerous output recording
+                if outputText != nil {
+                    self.recordDangerousOutputIfNeeded()
+                }
+
+                // AI waiting detection
+                self.maybeDetectAIWaitingForInput(data)
+
+                // Dev server detection
+                self.maybeDetectDevServer(data)
+            }
         }
-        if FeatureSettings.shared.isSemanticSearchEnabled,
-           data.contains(where: { $0 == 0x0A || $0 == 0x0D }),
-           let row = currentBufferRow() {
-            let token = FeatureProfiler.shared.begin(.semantic)
-            semanticDetector.updateCurrentRow(row)
-            FeatureProfiler.shared.end(token)
-        }
-        let aiLogResult = processAILogOutput(data)
-        if let logData = aiLogResult.loggable, !logData.isEmpty {
-            aiLogSession?.recordOutput(logData)
-        }
-        if let exitCode = aiLogResult.exitCode {
-            finishAILogging(exitCode: exitCode)
-        }
-        // Check if we should apply shell integration
-        maybeApplyShellIntegration()
-        let sawPromptUpdate = maybeHandlePromptUpdate(data)
-        // Try to detect AI app from output if not already detected
-        if !sawPromptUpdate {
-            maybeDetectAppFromOutput(data)
-        }
-        if outputText != nil {
-            recordDangerousOutputIfNeeded()
-        }
-        // Check if AI agent is waiting for user input
-        maybeDetectAIWaitingForInput(data)
-        // Check for dev server output patterns
-        maybeDetectDevServer(data)
     }
 
     private func maybeDetectDevServer(_ data: Data) {
         // Start the dev server monitor if not already started
-        if !didStartDevServerMonitor, let view = terminalView {
-            let pid = view.process.shellPid
+        if !didStartDevServerMonitor {
+            var pid: pid_t = 0
+
+            // Try Rust backend first
+            if let rustView = rustTerminalView {
+                pid = rustView.shellPid
+                Log.trace("TerminalSessionModel: Got shell PID from Rust backend: \(pid)")
+            } else if let view = terminalView {
+                // Fall back to SwiftTerm
+                pid = view.process.shellPid
+                Log.trace("TerminalSessionModel: Got shell PID from SwiftTerm: \(pid)")
+            }
+
             if pid > 0 {
                 didStartDevServerMonitor = true
                 devServerMonitor.start(shellPID: pid)
+                Log.info("TerminalSessionModel: Started dev server monitor with PID \(pid)")
             }
         }
 
@@ -489,73 +643,80 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     private func startAILoggingIfNeeded(toolName: String, commandLine: String?) {
-        guard aiLogSession == nil else { return }
-        let logPath = terminalLogPath(for: toolName)
-        aiLogSession = AITerminalLogSession(toolName: toolName, logPath: logPath)
-        let trimmedCommand = commandLine?.trimmingCharacters(in: .whitespacesAndNewlines)
-        aiLogContext = AILogContext(toolName: toolName, commandLine: trimmedCommand, logPath: logPath)
-        aiLogPrefixBuffer.removeAll(keepingCapacity: true)
+        // Synchronized access to AI log state
+        aiLogQueue.sync {
+            guard aiLogSession == nil else { return }
+            let logPath = terminalLogPath(for: toolName)
+            aiLogSession = AITerminalLogSession(toolName: toolName, logPath: logPath)
+            let trimmedCommand = commandLine?.trimmingCharacters(in: .whitespacesAndNewlines)
+            aiLogContext = AILogContext(toolName: toolName, commandLine: trimmedCommand, logPath: logPath)
+            aiLogPrefixBuffer.removeAll(keepingCapacity: true)
 
-        let message: String
-        if let trimmedCommand, !trimmedCommand.isEmpty {
-            message = "Started: \(trimmedCommand)"
-        } else {
-            message = "Started (detected from output)"
+            let message: String
+            if let trimmedCommand, !trimmedCommand.isEmpty {
+                message = "Started: \(trimmedCommand)"
+            } else {
+                message = "Started (detected from output)"
+            }
+            AIEventLogWriter.appendEvent(
+                type: "info",
+                tool: toolName,
+                message: message,
+                source: .terminalSession,
+                logPath: eventsLogPath()
+            )
         }
-        AIEventLogWriter.appendEvent(
-            type: "info",
-            tool: toolName,
-            message: message,
-            source: .terminalSession,
-            logPath: eventsLogPath()
-        )
     }
 
     private func finishAILogging(exitCode: Int?) {
-        // Notify shell event detector
+        // Notify shell event detector (outside lock to avoid potential deadlock)
         commandFinishedNotified = true
         promptSeenForPendingCommand = true
-        shellEventDetector.commandFinished(exitCode: exitCode, command: aiLogContext?.commandLine)
 
-        guard let context = aiLogContext else {
+        // Synchronized access to AI log state
+        aiLogQueue.sync {
+            shellEventDetector.commandFinished(exitCode: exitCode, command: aiLogContext?.commandLine)
+
+            guard let context = aiLogContext else {
+                aiLogSession?.close()
+                aiLogSession = nil
+                aiLogPrefixBuffer.removeAll(keepingCapacity: true)
+                return
+            }
+
+            let type: String
+            if let exitCode, exitCode != 0 {
+                type = "failed"
+            } else {
+                type = "finished"
+            }
+
+            let message: String
+            if let command = context.commandLine, !command.isEmpty {
+                if let exitCode {
+                    message = "\(type.capitalized) (exit \(exitCode)): \(command)"
+                } else {
+                    message = "\(type.capitalized): \(command)"
+                }
+            } else if let exitCode {
+                message = "\(type.capitalized) (exit \(exitCode))"
+            } else {
+                message = "\(type.capitalized)"
+            }
+
+            AIEventLogWriter.appendEvent(
+                type: type,
+                tool: context.toolName,
+                message: message,
+                source: .terminalSession,
+                logPath: eventsLogPath()
+            )
+
             aiLogSession?.close()
             aiLogSession = nil
+            aiLogContext = nil
             aiLogPrefixBuffer.removeAll(keepingCapacity: true)
-            return
         }
-
-        let type: String
-        if let exitCode, exitCode != 0 {
-            type = "failed"
-        } else {
-            type = "finished"
-        }
-
-        let message: String
-        if let command = context.commandLine, !command.isEmpty {
-            if let exitCode {
-                message = "\(type.capitalized) (exit \(exitCode)): \(command)"
-            } else {
-                message = "\(type.capitalized): \(command)"
-            }
-        } else if let exitCode {
-            message = "\(type.capitalized) (exit \(exitCode))"
-        } else {
-            message = "\(type.capitalized)"
-        }
-
-        AIEventLogWriter.appendEvent(
-            type: type,
-            tool: context.toolName,
-            message: message,
-            source: .terminalSession,
-            logPath: eventsLogPath()
-        )
-
-        aiLogSession?.close()
-        aiLogSession = nil
-        aiLogContext = nil
-        aiLogPrefixBuffer.removeAll(keepingCapacity: true)
     }
 
     private func eventsLogPath() -> String {
@@ -626,9 +787,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             Log.trace("Clearing active app after OSC 7 prompt update.")
             activeAppName = nil
         }
-        if aiLogSession != nil {
-            finishAILogging(exitCode: nil)
-        }
+        // finishAILogging is idempotent and has internal synchronization
+        finishAILogging(exitCode: nil)
     }
 
     private func handlePromptDetected() {
@@ -1180,8 +1340,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     private func currentBufferRow() -> Int? {
-        guard let terminalView else { return nil }
-        let terminal = terminalView.getTerminal()
+        guard let view = activeTerminalView else { return nil }
+        let terminal = view.getTerminal()
         let cursor = terminal.getCursorLocation()
         return terminal.getTopVisibleRow() + cursor.y
     }
@@ -1195,8 +1355,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         let scope = settings.dangerousCommandHighlightScope
         guard scope != .none else { return [] }
         if scope == .aiOutputs, activeAppName == nil { return [] }
-        guard let terminalView else { return [] }
-        let terminal = terminalView.getTerminal()
+        guard let view = activeTerminalView else { return [] }
+        let terminal = view.getTerminal()
         let cols = terminal.cols
         guard cols > 0 else { return [] }
 
@@ -1325,6 +1485,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         # Chau7 wrapper - source user's real .zshrc first
         export ZDOTDIR="\(home)"
         [ -f "\(home)/.zshrc" ] && source "\(home)/.zshrc"
+
+        # Disable PROMPT_CR - prevents the 143 spaces + CRs before each prompt
+        # that can cause visual artifacts in some terminals
+        setopt NO_PROMPT_CR
 
         # Chau7 default start directory
         if [ -n "$CHAU7_START_DIR" ] && [ -d "$CHAU7_START_DIR" ]; then
@@ -1480,8 +1644,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             Log.info("Clear-on-launch disabled via CHAU7_CLEAR_ON_LAUNCH.")
             return
         }
-        guard let terminalView else { return }
-        terminalView.send(txt: "\u{0C}")
+        guard let view = activeTerminalView else { return }
+        view.send(txt: "\u{0C}")
         Log.trace("Cleared terminal on launch.")
     }
 
@@ -1509,9 +1673,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
                 Log.trace("Clearing active app after shell prompt update.")
                 self.activeAppName = nil
             }
-            if self.aiLogSession != nil {
-                self.finishAILogging(exitCode: nil)
-            }
+            // finishAILogging is idempotent and has internal synchronization
+            self.finishAILogging(exitCode: nil)
             // Note: Don't clear devServer here - it persists until the server actually stops
             // The DevServerMonitor will detect when the server is no longer listening
         }
@@ -1523,9 +1686,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             self.devServer = nil
         }
         devServerMonitor.stop()
-        if aiLogSession != nil {
-            finishAILogging(exitCode: nil)
-        }
+        // finishAILogging is idempotent and has internal synchronization
+        finishAILogging(exitCode: nil)
         let type: String
         let message: String
         if let exitCode {
@@ -1547,36 +1709,50 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         gitCheckWorkItem?.cancel()
         searchUpdateWorkItem?.cancel()
 
-        // Send exit to the shell
-        terminalView?.send(txt: "exit\n")
+        // Send exit to the shell (works with both backends)
+        activeTerminalView?.send(txt: "exit\n")
         Log.trace("Sent exit command to shell session.")
     }
 
     func copyOrInterrupt() {
-        guard let terminalView else { return }
-        terminalView.window?.makeFirstResponder(terminalView)
+        // Handle both backends - SwiftTerm has copy() method, Rust uses getSelection + pasteboard
+        if let rustView = rustTerminalView {
+            rustView.window?.makeFirstResponder(rustView)
+            if let text = rustView.getSelectedText(), !text.isEmpty {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+            }
+        } else if let swiftView = terminalView {
+            swiftView.window?.makeFirstResponder(swiftView)
+            swiftView.copy(swiftView)
+        }
         Log.trace("Copy/interrupt requested from session model.")
-        terminalView.copy(terminalView)
     }
 
     func getSelectedText() -> String? {
-        terminalView?.getSelectedText()
+        activeTerminalView?.getSelectedText()
     }
 
     // MARK: - Paste (Issue #10 fix - delegate to terminal view)
 
     func paste() {
-        guard let terminalView else { return }
-        terminalView.window?.makeFirstResponder(terminalView)
-        terminalView.paste(terminalView)
+        // Handle both backends - SwiftTerm has paste() method, Rust handles via send()
+        if let rustView = rustTerminalView {
+            rustView.window?.makeFirstResponder(rustView)
+            if let text = NSPasteboard.general.string(forType: .string) {
+                rustView.send(txt: text)
+            }
+        } else if let swiftView = terminalView {
+            swiftView.window?.makeFirstResponder(swiftView)
+            swiftView.paste(swiftView)
+        }
     }
 
     // MARK: - F13: Broadcast Input Support
 
     /// Sends text input to the terminal (used for broadcast mode)
     func sendInput(_ text: String) {
-        guard let terminalView else { return }
-        terminalView.send(txt: text)
+        activeTerminalView?.send(txt: text)
     }
 
     // MARK: - F21: Snippet Insertion
@@ -1587,7 +1763,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             snippet: entry.snippet,
             currentDirectory: currentDirectory
         )
-        terminalView?.insertSnippet(insertion)
+        activeTerminalView?.insertSnippet(insertion)
     }
 
     // MARK: - Zoom (Issue #11 fix - only update @Published, let SwiftUI sync)
@@ -1779,13 +1955,17 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             dict["CHAU7_STARTUP_CMD"] = startupCmd
         }
 
-        // Present as Terminal.app for better CLI theming parity.
-        dict["TERM_PROGRAM"] = "Apple_Terminal"
-        if let version = Self.terminalAppVersion {
-            dict["TERM_PROGRAM_VERSION"] = version
-        }
+        // Use Chau7 as TERM_PROGRAM to avoid sourcing /etc/zshrc_Apple_Terminal
+        // which adds duplicate precmd hooks and can cause display issues.
+        // CLI tools that check TERM_PROGRAM for theming will still work fine.
+        dict["TERM_PROGRAM"] = "Chau7"
+        dict["TERM_PROGRAM_VERSION"] = "1.0"
         dict["TERM_SESSION_ID"] = UUID().uuidString
         dict["SHELL"] = defaultShell()
+
+        // Disable macOS shell session save/restore (avoids "Restored session" message and % marker)
+        // Chau7 manages its own session state; macOS session restoration is designed for Terminal.app
+        dict["SHELL_SESSIONS_DISABLE"] = "1"
 
         if FeatureSettings.shared.isLsColorsEnabled {
             dict["CLICOLOR"] = dict["CLICOLOR"] ?? "1"
@@ -1916,10 +2096,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     /// Returns cached buffer data or fetches fresh data if needed (memory optimization)
     private func getBufferData() -> Data? {
-        guard let terminalView else { return nil }
+        guard let view = activeTerminalView else { return nil }
 
         if bufferNeedsRefresh || cachedBufferData == nil {
-            cachedBufferData = terminalView.getTerminal().getBufferAsData()
+            cachedBufferData = view.getTerminal().getBufferAsData()
             bufferNeedsRefresh = false
             if let data = cachedBufferData {
                 updateBufferLineCount(from: data)
@@ -1929,8 +2109,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     func captureRemoteSnapshot() -> Data? {
-        guard let terminalView else { return nil }
-        let data = terminalView.getTerminal().getBufferAsData()
+        guard let view = activeTerminalView else { return nil }
+        let data = view.getTerminal().getBufferAsData()
         cachedBufferData = data
         bufferNeedsRefresh = false
         updateBufferLineCount(from: data)
@@ -2097,13 +2277,13 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     private func scrollToActiveMatch() {
-        guard let terminalView, let match = currentMatch() else { return }
-        let terminal = terminalView.getTerminal()
+        guard let view = activeTerminalView, let match = currentMatch() else { return }
+        let terminal = view.getTerminal()
         let visibleRows = max(1, terminal.rows)
         let maxScrollback = max(1, bufferLineCount - visibleRows)
         let clampedRow = max(0, min(match.row, maxScrollback))
         let position = Double(clampedRow) / Double(maxScrollback)
-        terminalView.scroll(toPosition: position)
+        view.scroll(toPosition: position)
     }
 
     /// Computes search matches from pre-captured buffer data (thread-safe).
@@ -2390,7 +2570,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         let normalized = URL(fileURLWithPath: path).standardized.path
         guard currentDirectory != normalized else { return }
         currentDirectory = normalized
+        // Update both backends (only one will be active)
         terminalView?.currentDirectory = normalized
+        rustTerminalView?.currentDirectory = normalized
         // Notify shell event detector of directory change
         shellEventDetector.directoryChanged(to: normalized)
         if title == "Shell" {

@@ -288,10 +288,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func printTerminal() {
-        guard let window = NSApp.keyWindow,
-              overlayHosts.contains(where: { $0.window == window }),
-              let terminalView = window.firstResponder as? Chau7TerminalView
-        else {
+        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else {
             Log.trace("Print: no active terminal found.")
             return
         }
@@ -302,6 +299,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         printInfo.isHorizontallyCentered = true
         printInfo.isVerticallyCentered = false
 
+        // TerminalViewLike conforms to NSView, so we can use it directly
         let printOp = NSPrintOperation(view: terminalView, printInfo: printInfo)
         printOp.showsPrintPanel = true
         printOp.showsProgressPanel = true
@@ -324,6 +322,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func copyOrInterrupt() {
         Log.info("copyOrInterrupt called - first responder: \(String(describing: NSApp.keyWindow?.firstResponder))")
 
+        if let window = NSApp.keyWindow,
+           overlayHosts.contains(where: { $0.window == window }),
+           !isTextInputFocused(in: window) {
+            if let terminal = activeTerminalView(in: window) {
+                terminal.window?.makeFirstResponder(terminal)
+                if let rustView = terminal as? RustTerminalView {
+                    rustView.copy(nil)
+                } else if let swiftView = terminal as? Chau7TerminalView {
+                    swiftView.copy(swiftView)
+                }
+                return
+            }
+            ensureActiveOverlayModel()?.copyOrInterrupt()
+            return
+        }
+
         if NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil) {
             Log.info("Copy action sent via responder chain.")
             return
@@ -333,6 +347,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func paste() {
+        if let window = NSApp.keyWindow,
+           overlayHosts.contains(where: { $0.window == window }),
+           !isTextInputFocused(in: window) {
+            if let terminal = activeTerminalView(in: window) {
+                terminal.window?.makeFirstResponder(terminal)
+                if let rustView = terminal as? RustTerminalView {
+                    rustView.paste(nil)
+                } else if let swiftView = terminal as? Chau7TerminalView {
+                    swiftView.paste(swiftView)
+                }
+                return
+            }
+            ensureActiveOverlayModel()?.paste()
+            return
+        }
+
         if NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: nil) {
             Log.trace("Paste handled by responder chain.")
             return
@@ -378,10 +408,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func clearScrollback() {
-        guard let window = NSApp.keyWindow,
-              overlayHosts.contains(where: { $0.window == window }),
-              let terminalView = window.firstResponder as? Chau7TerminalView
-        else {
+        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else {
             Log.trace("Clear scrollback: no active terminal found.")
             return
         }
@@ -390,10 +417,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func clearScreen() {
-        guard let window = NSApp.keyWindow,
-              overlayHosts.contains(where: { $0.window == window }),
-              let terminalView = window.firstResponder as? Chau7TerminalView
-        else {
+        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else {
             Log.trace("Clear screen: no active terminal found.")
             return
         }
@@ -461,10 +485,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func exportText() {
-        guard let window = NSApp.keyWindow,
-              overlayHosts.contains(where: { $0.window == window }),
-              let terminalView = window.firstResponder as? Chau7TerminalView
-        else {
+        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else {
             Log.trace("Export text: no active terminal found.")
             return
         }
@@ -475,10 +496,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         savePanel.title = L("export.terminalText.title", "Export Terminal Text")
 
         if savePanel.runModal() == .OK, let url = savePanel.url {
-            // Select all text and get it
-            terminalView.selectAll(nil)
-            let text = terminalView.getSelectedText() ?? ""
-            terminalView.clearSelection()
+            // Get all text from terminal buffer
+            let terminal = terminalView.getTerminal()
+            var text = ""
+            for row in 0..<terminal.rows {
+                text += terminal.getLine(row: row).debugDescription + "\n"
+            }
             do {
                 try text.write(to: url, atomically: true, encoding: .utf8)
                 Log.info("Terminal text exported to \(url.path)")
@@ -503,12 +526,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let string = NSPasteboard.general.string(forType: .string) else { return }
         let escaped = PasteEscaper.escape(string)
 
-        guard let window = NSApp.keyWindow,
-              overlayHosts.contains(where: { $0.window == window }),
-              let terminalView = window.firstResponder as? Chau7TerminalView
-        else { return }
+        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else { return }
 
-        terminalView.insertText(escaped, replacementRange: NSRange(location: NSNotFound, length: 0))
+        terminalView.send(txt: escaped)
         Log.info("Pasted escaped text.")
     }
 
@@ -518,21 +538,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func selectAll() {
         guard let window = NSApp.keyWindow else { return }
-        if let terminalView = window.firstResponder as? Chau7TerminalView,
-           overlayHosts.contains(where: { $0.window == window }) {
+        if let terminalView = activeTerminalView(in: window) {
             let now = Date()
 
             // Check if this is a double-tap (Cmd+A Cmd+A)
             if let lastTime = lastSelectAllTime,
                now.timeIntervalSince(lastTime) < doubleTapThreshold {
                 // Double-tap: Select entire terminal buffer
-                terminalView.selectAll(nil)
+                // Use SwiftTerm's selectAll if available, otherwise clear state
+                if let swiftTerm = terminalView as? Chau7TerminalView {
+                    swiftTerm.selectAll(nil)
+                } else if let rustView = terminalView as? RustTerminalView {
+                    rustView.selectAll(nil)
+                }
                 terminalView.clearCommandSelectionState()
                 Log.info("Cmd+A Cmd+A: Selected all terminal buffer.")
                 lastSelectAllTime = nil  // Reset for next sequence
             } else {
                 // Single tap: Select current command (including wrapped rows)
-                selectCurrentInputLine(in: terminalView)
+                terminalView.selectCurrentCommand()
                 Log.info("Cmd+A: Selected current command.")
                 lastSelectAllTime = now
             }
@@ -545,7 +569,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    private func selectCurrentInputLine(in terminalView: Chau7TerminalView) {
+    private func selectCurrentInputLine(in terminalView: TerminalViewLike) {
         terminalView.selectCurrentCommand()
     }
 
@@ -555,10 +579,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func useSelectionForFind() {
-        guard let window = NSApp.keyWindow,
-              overlayHosts.contains(where: { $0.window == window }),
-              let terminalView = window.firstResponder as? Chau7TerminalView
-        else { return }
+        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else { return }
 
         if let selection = terminalView.getSelectedText() {
             if let tabsModel = activeOverlayModel {
@@ -587,21 +608,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func scrollToTop() {
-        guard let window = NSApp.keyWindow,
-              overlayHosts.contains(where: { $0.window == window }),
-              let terminalView = window.firstResponder as? Chau7TerminalView
-        else { return }
-
+        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else { return }
         terminalView.scrollToTop()
         Log.info("Scrolled to top.")
     }
 
     func scrollToBottom() {
-        guard let window = NSApp.keyWindow,
-              overlayHosts.contains(where: { $0.window == window }),
-              let terminalView = window.firstResponder as? Chau7TerminalView
-        else { return }
-
+        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else { return }
         terminalView.scrollToBottom()
         Log.info("Scrolled to bottom.")
     }
@@ -1040,6 +1053,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return true
         }
         return false
+    }
+
+    /// Returns the active terminal view (either SwiftTerm or Rust) if one is first responder
+    private func activeTerminalView(in window: NSWindow?) -> TerminalViewLike? {
+        guard let window = window,
+              overlayHosts.contains(where: { $0.window == window }),
+              let responder = window.firstResponder else { return nil }
+
+        if let swiftTermView = responder as? Chau7TerminalView {
+            return swiftTermView
+        }
+        if let rustView = responder as? RustTerminalView {
+            return rustView
+        }
+        return nil
     }
 
     private func shouldUseAlternateTabNavigationShortcuts() -> Bool {

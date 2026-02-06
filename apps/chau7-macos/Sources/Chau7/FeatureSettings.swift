@@ -1097,6 +1097,13 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(isMouseReportingEnabled, forKey: Keys.mouseReporting) }
     }
 
+    /// Use the experimental Rust terminal backend instead of SwiftTerm.
+    /// This uses alacritty_terminal for VT emulation with a native grid renderer.
+    /// Requires app restart to take effect.
+    @Published var isRustTerminalEnabled: Bool {
+        didSet { UserDefaults.standard.set(isRustTerminalEnabled, forKey: Keys.rustTerminalEnabled) }
+    }
+
     /// Click on input line to position cursor (like modern text editors).
     /// Single click moves cursor, click+drag selects text.
     @Published var isClickToPositionEnabled: Bool {
@@ -1500,6 +1507,7 @@ final class FeatureSettings: ObservableObject {
         static let cmdClickOpensInternalEditor = "feature.cmdClickOpensInternalEditor"
         static let optionClickCursor = "feature.optionClickCursor"
         static let mouseReporting = "feature.mouseReporting"
+        static let rustTerminalEnabled = "feature.rustTerminalEnabled"
         static let clickToPosition = "feature.clickToPosition"
         static let defaultEditor = "feature.defaultEditor"
         static let urlHandler = "feature.urlHandler"
@@ -1713,6 +1721,8 @@ final class FeatureSettings: ObservableObject {
         // Mouse reporting: disabled by default so text selection always works
         // Users can enable if they want vim/tmux mouse support (hold Shift to bypass)
         self.isMouseReportingEnabled = defaults.object(forKey: Keys.mouseReporting) as? Bool ?? false
+        // Rust terminal: disabled by default (experimental, enable in Settings > Terminal)
+        self.isRustTerminalEnabled = defaults.object(forKey: Keys.rustTerminalEnabled) as? Bool ?? false
         // Click-to-position: enabled by default (like modern text editors)
         self.isClickToPositionEnabled = defaults.object(forKey: Keys.clickToPosition) as? Bool ?? true
         self.defaultEditor = defaults.string(forKey: Keys.defaultEditor) ?? ""  // Empty = use $EDITOR or system default

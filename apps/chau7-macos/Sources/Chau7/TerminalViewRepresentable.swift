@@ -29,6 +29,83 @@ final class TerminalContainerView: NSView {
     }
 }
 
+/// Container view for the Rust terminal backend
+final class RustTerminalContainerView: NSView {
+    let terminalView: RustTerminalView
+    var onFirstLayout: ((RustTerminalView) -> Void)?
+    private var didRunFirstLayout = false
+
+    init(terminalView: RustTerminalView) {
+        self.terminalView = terminalView
+        super.init(frame: .zero)
+        addSubview(terminalView)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) not implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        terminalView.frame = bounds
+        if !didRunFirstLayout && bounds.width > 0 && bounds.height > 0 {
+            didRunFirstLayout = true
+            onFirstLayout?(terminalView)
+        }
+    }
+}
+
+/// Unified container that holds either SwiftTerm or Rust terminal
+final class UnifiedTerminalContainerView: NSView {
+    private var swiftTermContainer: TerminalContainerView?
+    private var rustContainer: RustTerminalContainerView?
+
+    /// Whether this container uses the Rust backend
+    let usesRustBackend: Bool
+
+    init(swiftTermView: Chau7TerminalView) {
+        self.usesRustBackend = false
+        self.swiftTermContainer = TerminalContainerView(terminalView: swiftTermView)
+        super.init(frame: .zero)
+        addSubview(swiftTermContainer!)
+    }
+
+    init(rustView: RustTerminalView) {
+        self.usesRustBackend = true
+        self.rustContainer = RustTerminalContainerView(terminalView: rustView)
+        super.init(frame: .zero)
+        addSubview(rustContainer!)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) not implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        swiftTermContainer?.frame = bounds
+        rustContainer?.frame = bounds
+    }
+
+    var swiftTerminalView: Chau7TerminalView? {
+        swiftTermContainer?.terminalView
+    }
+
+    var rustTerminalView: RustTerminalView? {
+        rustContainer?.terminalView
+    }
+
+    var onFirstSwiftTermLayout: ((Chau7TerminalView) -> Void)? {
+        get { swiftTermContainer?.onFirstLayout }
+        set { swiftTermContainer?.onFirstLayout = newValue }
+    }
+
+    var onFirstRustLayout: ((RustTerminalView) -> Void)? {
+        get { rustContainer?.onFirstLayout }
+        set { rustContainer?.onFirstLayout = newValue }
+    }
+}
+
 struct TerminalViewRepresentable: NSViewRepresentable {
     @ObservedObject var model: TerminalSessionModel
     var isSuspended: Bool
@@ -36,18 +113,36 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     var onFilePathClicked: ((String, Int?, Int?) -> Void)?  // F03: Internal editor callback
     @ObservedObject private var settings = FeatureSettings.shared
 
-    func makeNSView(context: Context) -> TerminalContainerView {
+    func makeNSView(context: Context) -> UnifiedTerminalContainerView {
+        // Rust is the default backend when the library is available.
+        // SwiftTerm serves as a fallback for builds without the Rust dylib.
+        // The setting provides an opt-out for users who prefer SwiftTerm.
+        let useRust = RustTerminalView.isAvailable && settings.isRustTerminalEnabled
+
+        if useRust {
+            Log.info("Using Rust terminal backend (default)")
+            return makeRustTerminalView()
+        } else {
+            if !RustTerminalView.isAvailable {
+                Log.info("Using SwiftTerm fallback (Rust library not available)")
+            } else {
+                Log.info("Using SwiftTerm backend (Rust disabled by user setting)")
+            }
+            return makeSwiftTermView()
+        }
+    }
+
+    // MARK: - SwiftTerm Backend (fallback)
+
+    private func makeSwiftTermView() -> UnifiedTerminalContainerView {
         // Reuse existing terminal view if available (preserves shell session across SwiftUI view recreations)
         if let existingView = model.existingTerminalView {
-            Log.trace("Reusing existing terminal view for session")
+            Log.trace("Reusing existing SwiftTerm view for session")
             existingView.notifyUpdateChanges = !isSuspended
             existingView.isHidden = isSuspended
             existingView.setEventMonitoringEnabled(isActive && !isSuspended)
-            // Configure mouse reporting based on user setting.
-            // When disabled (default), text selection always works.
-            // When enabled, hold Shift to force text selection in apps like vim/tmux.
             existingView.allowMouseReporting = settings.isMouseReportingEnabled
-            existingView.onFilePathClicked = onFilePathClicked  // F03: Update callback
+            existingView.onFilePathClicked = onFilePathClicked
             existingView.onScrollbackCleared = { [weak model] in
                 model?.resetDangerousHighlights()
             }
@@ -57,22 +152,12 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.tabIdentifier = model.tabIdentifier
             existingView.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
             existingView.installHistoryKeyMonitor()
-            // Wrap in container if not already
-            if let container = existingView.superview as? TerminalContainerView {
-                return container
-            }
-            return TerminalContainerView(terminalView: existingView)
+            return UnifiedTerminalContainerView(swiftTermView: existingView)
         }
 
         // Create new terminal view and start shell process
         let view = Chau7TerminalView(frame: .zero)
-
-        // CRITICAL: Disable Big Sur's full-redraw behavior.
-        // Starting with Big Sur, macOS redraws the ENTIRE view even when only
-        // a small region is marked dirty. This adds significant latency.
-        // Setting this to true enables incremental/partial redraws.
         view.disableFullRedrawOnAnyChanges = true
-
         view.processDelegate = model
         view.font = terminalFont()
         view.applyColorScheme(settings.currentColorScheme)
@@ -82,9 +167,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.notifyUpdateChanges = !isSuspended
         view.isHidden = isSuspended
         view.setEventMonitoringEnabled(isActive && !isSuspended)
-        // Configure mouse reporting based on user setting.
-        // When disabled (default), text selection always works.
-        // When enabled, hold Shift to force text selection in apps like vim/tmux.
         view.allowMouseReporting = settings.isMouseReportingEnabled
         view.onInput = { [weak model] text in
             model?.handleInput(text)
@@ -94,7 +176,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         }
         view.onBufferChanged = { [weak model] in
             model?.scheduleSearchRefresh()
-            model?.highlightView?.scheduleDisplay()  // Use batched display for better latency
+            model?.highlightView?.scheduleDisplay()
             model?.recordOutputLatencyIfNeeded()
         }
         view.onScrollChanged = { [weak model] in
@@ -108,9 +190,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
         view.installHistoryKeyMonitor()
 
-        // MARK: - Disable Implicit Animations (Latency Optimization)
-        // Implicit CALayer animations can add 250ms+ to rendering. Disable them
-        // for all terminal-related views to ensure immediate display updates.
         view.wantsLayer = true
         view.layer?.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
 
@@ -132,10 +211,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         highlightView.frame = view.bounds
         model.attachHighlightView(highlightView)
 
-        let container = TerminalContainerView(terminalView: view)
-        container.onFirstLayout = { [weak model, weak view] terminalView in
+        let container = UnifiedTerminalContainerView(swiftTermView: view)
+        container.onFirstSwiftTermLayout = { [weak model, weak view] terminalView in
             guard let model, let view else { return }
-            // Show a random power user tip while the shell is starting
             let tip = PowerUserTips.randomFormattedTip()
             if let headerBox = terminalHeaderBox(cols: terminalView.getTerminal().cols, message: tip) {
                 terminalView.feed(text: headerBox)
@@ -144,23 +222,140 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             let shell = model.defaultShell()
             let execName = "-" + URL(fileURLWithPath: shell).lastPathComponent
             let env = model.buildEnvironment()
-            // Note: Do NOT change process-wide CWD here - it affects all tabs.
-            // The shell process starts with its own CWD from the environment.
             let args = model.shellArguments()
             terminalView.startProcess(executable: shell, args: args, environment: env, execName: execName)
 
             model.attachTerminal(view)
             model.applyFontSize()
-
-            // Apply shell integration after shell is ready.
-            // We detect readiness by watching for the first output (prompt).
             model.scheduleShellIntegration(for: view)
         }
         return container
     }
 
-    func updateNSView(_ container: TerminalContainerView, context: Context) {
-        let nsView = container.terminalView
+    // MARK: - Rust Backend (experimental)
+
+    private func makeRustTerminalView() -> UnifiedTerminalContainerView {
+        // Reuse existing Rust terminal view if available
+        if let existingView = model.existingRustTerminalView {
+            Log.trace("Reusing existing Rust terminal view for session")
+            existingView.notifyUpdateChanges = !isSuspended
+            existingView.isHidden = isSuspended
+            existingView.setEventMonitoringEnabled(isActive && !isSuspended)
+            existingView.allowMouseReporting = settings.isMouseReportingEnabled
+            existingView.onFilePathClicked = onFilePathClicked
+            existingView.onScrollbackCleared = { [weak model] in
+                model?.resetDangerousHighlights()
+            }
+            existingView.onScrollChanged = { [weak model] in
+                model?.scheduleHighlightAfterScroll()
+            }
+            existingView.tabIdentifier = model.tabIdentifier
+            existingView.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
+            existingView.installHistoryKeyMonitor()
+            return UnifiedTerminalContainerView(rustView: existingView)
+        }
+
+        // Create new Rust terminal view
+        Log.info("Creating new Rust terminal view")
+        let view = RustTerminalView(frame: .zero)
+
+        // Configure shell and environment before terminal starts (must be before first layout)
+        let shell = model.defaultShell()
+        let environmentArray = model.buildEnvironment()
+        // Convert [String] ("KEY=VALUE") to [String: String] for Rust FFI
+        var environmentDict: [String: String] = [:]
+        for entry in environmentArray {
+            if let idx = entry.firstIndex(of: "=") {
+                let key = String(entry[..<idx])
+                let value = String(entry[entry.index(after: idx)...])
+                environmentDict[key] = value
+            }
+        }
+        view.configureShell(shell)
+        view.configureEnvironment(environmentDict)
+        Log.info("Configured Rust terminal with shell: \(shell), env vars: \(environmentDict.count)")
+
+        view.font = terminalFont()
+        view.applyColorScheme(settings.currentColorScheme)
+        view.applyCursorStyle(style: settings.cursorStyle, blink: settings.cursorBlink)
+        view.applyBellSettings(enabled: settings.bellEnabled, sound: settings.bellSound)
+        view.applyScrollbackLines(settings.scrollbackLines)
+        view.notifyUpdateChanges = !isSuspended
+        view.isHidden = isSuspended
+        view.setEventMonitoringEnabled(isActive && !isSuspended)
+        view.allowMouseReporting = settings.isMouseReportingEnabled
+        view.onInput = { [weak model] text in
+            model?.handleInput(text)
+        }
+        view.onOutput = { [weak model] data in
+            model?.handleOutput(data)
+        }
+        view.onBufferChanged = { [weak model] in
+            model?.scheduleSearchRefresh()
+            model?.highlightView?.scheduleDisplay()
+            model?.recordOutputLatencyIfNeeded()
+        }
+        view.onScrollChanged = { [weak model] in
+            model?.scheduleHighlightAfterScroll()
+        }
+        view.onFilePathClicked = onFilePathClicked
+        view.onScrollbackCleared = { [weak model] in
+            model?.resetDangerousHighlights()
+        }
+        view.tabIdentifier = model.tabIdentifier
+        view.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
+        view.installHistoryKeyMonitor()
+
+        view.wantsLayer = true
+        view.layer?.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
+
+        // Set up cursor line view for Rust terminal
+        let cursorLineView = TerminalCursorLineView(frame: .zero)
+        cursorLineView.autoresizingMask = [.width, .height]
+        cursorLineView.wantsLayer = true
+        cursorLineView.layer?.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull(), "opacity": NSNull()]
+        view.addSubview(cursorLineView)
+        view.attachCursorLineView(cursorLineView)
+
+        // Set up highlight view for Rust terminal
+        let highlightView = TerminalHighlightView(frame: .zero)
+        highlightView.rustTerminalView = view
+        highlightView.session = model
+        highlightView.autoresizingMask = [.width, .height]
+        highlightView.wantsLayer = true
+        highlightView.layer?.actions = ["contents": NSNull(), "bounds": NSNull(), "position": NSNull()]
+        highlightView.layer?.backgroundColor = NSColor.clear.cgColor
+        view.addSubview(highlightView)
+        highlightView.frame = view.bounds
+        model.attachHighlightView(highlightView)
+
+        let container = UnifiedTerminalContainerView(rustView: view)
+        container.onFirstRustLayout = { [weak model, weak view] rustView in
+            guard let model, let view else { return }
+
+            // Display power user tip directly in the terminal output (parity with SwiftTerm path)
+            let tip = PowerUserTips.randomFormattedTip()
+            let headerBox = terminalHeaderBox(cols: rustView.renderCols, message: tip)
+
+            // Start the Rust terminal now that we have proper dimensions
+            rustView.startTerminal(initialOutput: headerBox)
+
+            model.attachRustTerminal(view)
+            model.applyFontSize()
+        }
+        return container
+    }
+
+    func updateNSView(_ container: UnifiedTerminalContainerView, context: Context) {
+        if container.usesRustBackend {
+            updateRustTerminalView(container)
+        } else {
+            updateSwiftTermView(container)
+        }
+    }
+
+    private func updateSwiftTermView(_ container: UnifiedTerminalContainerView) {
+        guard let nsView = container.swiftTerminalView else { return }
         nsView.setEventMonitoringEnabled(isActive && !isSuspended)
         if nsView.isHidden != isSuspended {
             nsView.isHidden = isSuspended
@@ -171,7 +366,31 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         if nsView.notifyUpdateChanges == isSuspended {
             nsView.notifyUpdateChanges = !isSuspended
         }
-        // Input line highlighting disabled (no AI-specific cursor/input highlighting).
+        nsView.setCursorLineHighlightEnabled(false)
+        nsView.configureCursorLineHighlight(contextLines: false, inputHistory: false)
+
+        let desiredFont = terminalFont()
+        if nsView.font.fontName != desiredFont.fontName || nsView.font.pointSize != desiredFont.pointSize {
+            nsView.font = desiredFont
+        }
+        nsView.applyColorScheme(settings.currentColorScheme)
+        nsView.applyCursorStyle(style: settings.cursorStyle, blink: settings.cursorBlink)
+        nsView.applyBellSettings(enabled: settings.bellEnabled, sound: settings.bellSound)
+        nsView.applyScrollbackLines(settings.scrollbackLines)
+    }
+
+    private func updateRustTerminalView(_ container: UnifiedTerminalContainerView) {
+        guard let nsView = container.rustTerminalView else { return }
+        nsView.setEventMonitoringEnabled(isActive && !isSuspended)
+        if nsView.isHidden != isSuspended {
+            nsView.isHidden = isSuspended
+            if !isSuspended {
+                nsView.needsDisplay = true
+            }
+        }
+        if nsView.notifyUpdateChanges == isSuspended {
+            nsView.notifyUpdateChanges = !isSuspended
+        }
         nsView.setCursorLineHighlightEnabled(false)
         nsView.configureCursorLineHighlight(contextLines: false, inputHistory: false)
 
@@ -196,7 +415,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
 private func terminalHeaderBox(cols: Int, message: String) -> String? {
     let sideMargin = 2
     let boxWidth = cols - (sideMargin * 2)
-    let interiorWidth = boxWidth - 2
+    let interiorWidth = boxWidth - 18
     guard interiorWidth >= 4 else { return nil }
     let prefix = String(repeating: " ", count: sideMargin)
     let top = prefix + "+" + String(repeating: "-", count: interiorWidth) + "+"
