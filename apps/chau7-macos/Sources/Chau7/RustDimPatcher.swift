@@ -1,15 +1,22 @@
 import Foundation
 import Darwin
 
-final class RustEscapeSanitizer {
-    static let shared = RustEscapeSanitizer()
+final class RustDimPatcher {
+    static let shared = RustDimPatcher()
 
-    private typealias Sanitize = @convention(c) (UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>?
-    private typealias FreeString = @convention(c) (UnsafeMutablePointer<CChar>?) -> Void
+    private struct PatchedBuffer {
+        var data: UnsafeMutablePointer<UInt8>?
+        var len: Int
+        var capacity: Int
+        var changed: Bool
+    }
+
+    private typealias PatchDim = @convention(c) (UnsafePointer<UInt8>?, Int) -> UnsafeMutableRawPointer?
+    private typealias PatchDimFree = @convention(c) (UnsafeMutableRawPointer?) -> Void
 
     private struct Functions {
-        let sanitize: Sanitize
-        let freeString: FreeString
+        let patchDim: PatchDim
+        let patchDimFree: PatchDimFree
     }
 
     private let lock = NSLock()
@@ -19,14 +26,32 @@ final class RustEscapeSanitizer {
 
     private init() {}
 
-    func sanitize(_ text: String) -> String? {
+    deinit {
+        if let handle = dylibHandle {
+            dlclose(handle)
+        }
+    }
+
+    /// Patches dim sequences in the given byte slice.
+    /// Returns the patched bytes if changes were made, or nil if no dim sequences found
+    /// (caller should use original data).
+    func patchDim(_ slice: ArraySlice<UInt8>) -> [UInt8]? {
         lock.lock()
         defer { lock.unlock() }
         guard ensureLoadedUnlocked() else { return nil }
-        return text.withCString { cText in
-            guard let raw = functions?.sanitize(cText) else { return nil }
-            defer { functions?.freeString(raw) }
-            return String(cString: raw)
+
+        return slice.withUnsafeBufferPointer { buffer -> [UInt8]? in
+            guard let baseAddress = buffer.baseAddress else { return nil }
+            guard let raw = functions?.patchDim(baseAddress, buffer.count) else { return nil }
+            defer { functions?.patchDimFree(raw) }
+
+            let result = raw.assumingMemoryBound(to: PatchedBuffer.self)
+            guard result.pointee.changed, let data = result.pointee.data else {
+                return nil // No changes needed — caller uses original
+            }
+
+            let len = result.pointee.len
+            return Array(UnsafeBufferPointer(start: data, count: len))
         }
     }
 
@@ -70,13 +95,13 @@ final class RustEscapeSanitizer {
     }
 
     private func loadFunctions(from handle: UnsafeMutableRawPointer) -> Functions? {
-        guard let sanitizeSym = dlsym(handle, "chau7_escape_sanitize"),
-              let freeSym = dlsym(handle, "chau7_escape_string_free")
+        guard let patchSym = dlsym(handle, "chau7_patch_dim"),
+              let freeSym = dlsym(handle, "chau7_patch_dim_free")
         else {
             return nil
         }
-        let sanitize = unsafeBitCast(sanitizeSym, to: Sanitize.self)
-        let freeString = unsafeBitCast(freeSym, to: FreeString.self)
-        return Functions(sanitize: sanitize, freeString: freeString)
+        let patchDim = unsafeBitCast(patchSym, to: PatchDim.self)
+        let patchDimFree = unsafeBitCast(freeSym, to: PatchDimFree.self)
+        return Functions(patchDim: patchDim, patchDimFree: patchDimFree)
     }
 }

@@ -2,12 +2,10 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::collections::VecDeque;
 
-#[repr(C)]
 pub struct PatternSet {
     patterns: Vec<String>,
 }
 
-#[repr(C)]
 pub struct MatchPatternSet {
     matcher: AhoAutomaton,
     min_empty_index: Option<usize>,
@@ -178,7 +176,7 @@ fn sanitize_text(input: &str) -> String {
                 if next == b'[' {
                     i += 2;
                     while i < bytes.len()
-                        && (bytes[i].is_ascii_digit() || bytes[i] == b';' || bytes[i] == b'?')
+                        && (bytes[i].is_ascii_digit() || bytes[i] == b';' || bytes[i] == b':' || bytes[i] == b'?')
                     {
                         i += 1;
                     }
@@ -220,47 +218,6 @@ fn sanitize_text(input: &str) -> String {
                 && bytes[i + 4] == b'~'
             {
                 i += 5;
-                continue;
-            }
-            let mut j = i + 1;
-            while j < bytes.len()
-                && (bytes[j].is_ascii_digit() || bytes[j] == b';' || bytes[j] == b'?')
-            {
-                j += 1;
-            }
-            if j < bytes.len()
-                && ((bytes[j] >= b'A' && bytes[j] <= b'Z')
-                    || (bytes[j] >= b'a' && bytes[j] <= b'z'))
-            {
-                i = j + 1;
-                continue;
-            }
-        }
-
-        if b == b']' {
-            if i + 1 < bytes.len()
-                && (bytes[i + 1].is_ascii_digit() || bytes[i + 1] == b';')
-            {
-                let mut j = i + 1;
-                while j < bytes.len()
-                    && (bytes[j].is_ascii_digit() || bytes[j] == b';')
-                {
-                    j += 1;
-                }
-                while j < bytes.len() {
-                    if bytes[j] == 0x07 {
-                        j += 1;
-                        break;
-                    }
-                    if bytes[j] == 0x1b {
-                        if j + 1 < bytes.len() && bytes[j + 1] == b'\\' {
-                            j += 2;
-                        }
-                        break;
-                    }
-                    j += 1;
-                }
-                i = j;
                 continue;
             }
         }
@@ -310,6 +267,10 @@ struct StyleSpec {
     underline: bool,
     inverse: bool,
     italic: bool,
+    blink: bool,
+    conceal: bool,
+    strikethrough: bool,
+    overline: bool,
     fg: ColorSpec,
     bg: ColorSpec,
 }
@@ -330,6 +291,10 @@ impl Default for StyleSpec {
             underline: false,
             inverse: false,
             italic: false,
+            blink: false,
+            conceal: false,
+            strikethrough: false,
+            overline: false,
             fg: ColorSpec::Default,
             bg: ColorSpec::Default,
         }
@@ -343,6 +308,10 @@ fn style_to_flags(style: &StyleSpec) -> u32 {
     if style.underline { flags |= 4; }
     if style.inverse { flags |= 8; }
     if style.italic { flags |= 16; }
+    if style.blink { flags |= 32; }
+    if style.conceal { flags |= 64; }
+    if style.strikethrough { flags |= 128; }
+    if style.overline { flags |= 256; }
     flags
 }
 
@@ -365,11 +334,20 @@ fn apply_sgr(params: &[i32], style: &mut StyleSpec) {
             2 => { style.dim = true; style.bold = false; }
             3 => style.italic = true,
             4 => style.underline = true,
+            5 | 6 => style.blink = true,
             7 => style.inverse = true,
+            8 => style.conceal = true,
+            9 => style.strikethrough = true,
+            21 => style.underline = true,
             22 => { style.bold = false; style.dim = false; }
             23 => style.italic = false,
             24 => style.underline = false,
+            25 => style.blink = false,
             27 => style.inverse = false,
+            28 => style.conceal = false,
+            29 => style.strikethrough = false,
+            53 => style.overline = true,
+            55 => style.overline = false,
             30..=37 => style.fg = ColorSpec::Ansi((code - 30) as u8),
             90..=97 => style.fg = ColorSpec::Ansi((code - 90 + 8) as u8),
             39 => style.fg = ColorSpec::Default,
@@ -404,7 +382,7 @@ fn apply_sgr(params: &[i32], style: &mut StyleSpec) {
 fn parse_csi_params(param_bytes: &[u8]) -> Vec<i32> {
     let param_str = String::from_utf8_lossy(param_bytes);
     let mut params: Vec<i32> = Vec::new();
-    for part in param_str.split(';') {
+    for part in param_str.split(|c: char| c == ';' || c == ':') {
         if let Ok(val) = part.parse::<i32>() {
             params.push(val);
         }
@@ -730,9 +708,124 @@ pub extern "C" fn chau7_ansi_segments_free(ptr: *mut AnsiSegments) {
     }
 }
 
+#[repr(C)]
+pub struct PatchedBuffer {
+    data: *mut u8,
+    len: usize,
+    capacity: usize,
+    changed: bool,
+}
+
+/// Checks if buffer contains ESC[2 prefix (0x1b 0x5b 0x32).
+/// Returns false quickly if no dim sequences present.
+fn contains_dim_prefix(input: &[u8]) -> bool {
+    if input.len() < 3 {
+        return false;
+    }
+    for i in 0..input.len() - 2 {
+        if input[i] == 0x1b && input[i + 1] == 0x5b && input[i + 2] == 0x32 {
+            return true;
+        }
+    }
+    false
+}
+
+/// Replaces ESC[2m -> ESC[38;5;246m and ESC[22m -> ESC[39m in the input buffer.
+fn patch_dim_sequences(input: &[u8]) -> Vec<u8> {
+    // ESC[38;5;246m = dim grey replacement
+    let dim_replacement: &[u8] = b"\x1b[38;5;246m";
+    // ESC[39m = reset foreground (dim off)
+    let dim_reset_replacement: &[u8] = b"\x1b[39m";
+
+    let mut output: Vec<u8> = Vec::with_capacity(input.len() + 64);
+    let mut i = 0;
+
+    while i < input.len() {
+        let remaining = input.len() - i;
+
+        // Check ESC[22m (5 bytes) BEFORE ESC[2m (4 bytes) to avoid prefix collision
+        if remaining >= 5
+            && input[i] == 0x1b
+            && input[i + 1] == 0x5b
+            && input[i + 2] == 0x32
+            && input[i + 3] == 0x32
+            && input[i + 4] == 0x6d
+        {
+            output.extend_from_slice(dim_reset_replacement);
+            i += 5;
+            continue;
+        }
+
+        // Check ESC[2m (4 bytes)
+        if remaining >= 4
+            && input[i] == 0x1b
+            && input[i + 1] == 0x5b
+            && input[i + 2] == 0x32
+            && input[i + 3] == 0x6d
+        {
+            output.extend_from_slice(dim_replacement);
+            i += 4;
+            continue;
+        }
+
+        output.push(input[i]);
+        i += 1;
+    }
+
+    output
+}
+
+#[no_mangle]
+pub extern "C" fn chau7_patch_dim(
+    data: *const u8,
+    len: usize,
+) -> *mut PatchedBuffer {
+    if data.is_null() || len == 0 {
+        return std::ptr::null_mut();
+    }
+    let input = unsafe { std::slice::from_raw_parts(data, len) };
+
+    if !contains_dim_prefix(input) {
+        let result = PatchedBuffer {
+            data: std::ptr::null_mut(),
+            len: 0,
+            capacity: 0,
+            changed: false,
+        };
+        return Box::into_raw(Box::new(result));
+    }
+
+    let mut patched = patch_dim_sequences(input);
+    let patched_len = patched.len();
+    let patched_cap = patched.capacity();
+    let ptr = patched.as_mut_ptr();
+    std::mem::forget(patched);
+
+    let result = PatchedBuffer {
+        data: ptr,
+        len: patched_len,
+        capacity: patched_cap,
+        changed: true,
+    };
+    Box::into_raw(Box::new(result))
+}
+
+#[no_mangle]
+pub extern "C" fn chau7_patch_dim_free(ptr: *mut PatchedBuffer) {
+    if ptr.is_null() {
+        return;
+    }
+    unsafe {
+        let result = Box::from_raw(ptr);
+        if result.changed && !result.data.is_null() {
+            let _ = Vec::from_raw_parts(result.data, result.len, result.capacity);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{normalize, sanitize_text, parse_ansi_segments};
+    use super::*;
 
     #[test]
     fn normalize_collapses_whitespace() {
@@ -742,6 +835,12 @@ mod tests {
     #[test]
     fn normalize_lowercases() {
         assert_eq!(normalize("Sudo RM"), "sudo rm");
+    }
+
+    #[test]
+    fn normalize_empty() {
+        assert_eq!(normalize(""), "");
+        assert_eq!(normalize("   "), "");
     }
 
     #[test]
@@ -763,10 +862,40 @@ mod tests {
     }
 
     #[test]
+    fn sanitize_preserves_brackets_in_text() {
+        // Bare brackets in normal text should NOT be stripped
+        assert_eq!(sanitize_text("array[32]"), "array[32]");
+        assert_eq!(sanitize_text("config]value"), "config]value");
+        assert_eq!(sanitize_text("fn(x[0])"), "fn(x[0])");
+    }
+
+    #[test]
+    fn sanitize_strips_bracketed_paste() {
+        // Only strip the specific [200~ and [201~ sequences
+        assert_eq!(sanitize_text("[200~pasted text[201~"), "pasted text");
+    }
+
+    #[test]
     fn ansi_parse_segments() {
         let input = "hi\u{1b}[31mred\u{1b}[0m";
         let segments = parse_ansi_segments(input);
         assert_eq!(segments.len(), 2);
+    }
+
+    #[test]
+    fn ansi_parse_colon_rgb() {
+        // ITU T.416 colon-delimited RGB
+        let input = "\u{1b}[38:2:255:0:0mred text\u{1b}[0m";
+        let segments = parse_ansi_segments(input);
+        assert!(segments.len() >= 1);
+    }
+
+    #[test]
+    fn ansi_parse_strikethrough() {
+        let input = "\u{1b}[9mstruck\u{1b}[29m";
+        let segments = parse_ansi_segments(input);
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].flags & 128, 128, "strikethrough flag bit 128 must be set");
     }
 
     #[test]
@@ -775,5 +904,38 @@ mod tests {
         let matcher = AhoAutomaton::from_patterns(patterns);
         let found = matcher.match_min_index("hello world");
         assert_eq!(found, Some(0));
+    }
+
+    #[test]
+    fn match_empty_haystack() {
+        let patterns = vec![(0usize, b"test".to_vec())];
+        let matcher = AhoAutomaton::from_patterns(patterns);
+        assert_eq!(matcher.match_min_index(""), None);
+        assert!(!matcher.is_match(""));
+    }
+
+    #[test]
+    fn dim_patch_replaces_correctly() {
+        let input = b"\x1b[2mDim text\x1b[22m";
+        assert!(contains_dim_prefix(input));
+        let patched = patch_dim_sequences(input);
+        // ESC[2m (4 bytes) -> ESC[38;5;246m (11 bytes)
+        assert!(patched.starts_with(b"\x1b[38;5;246m"));
+        // ESC[22m (5 bytes) -> ESC[39m (4 bytes)
+        assert!(patched.ends_with(b"\x1b[39m"));
+    }
+
+    #[test]
+    fn dim_patch_no_change() {
+        let input = b"Hello world, no dim here";
+        assert!(!contains_dim_prefix(input));
+    }
+
+    #[test]
+    fn dim_patch_preserves_other_escapes() {
+        let input = b"\x1b[31mRed\x1b[2mDim\x1b[0m";
+        let patched = patch_dim_sequences(input);
+        // Should preserve ESC[31m and ESC[0m, only replace ESC[2m
+        assert!(patched.starts_with(b"\x1b[31mRed"));
     }
 }

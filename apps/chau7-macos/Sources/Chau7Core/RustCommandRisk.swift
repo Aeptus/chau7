@@ -23,6 +23,15 @@ final class RustCommandRisk {
 
     private init() {}
 
+    deinit {
+        lock.lock()
+        defer { lock.unlock() }
+        if let handle = patternsHandle {
+            functions?.free(handle)
+            patternsHandle = nil
+        }
+    }
+
     func isRisky(command: String, patterns: [String]) -> Bool? {
         guard !patterns.isEmpty else { return false }
         guard ensureLoaded() else { return nil }

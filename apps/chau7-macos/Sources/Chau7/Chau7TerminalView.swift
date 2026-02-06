@@ -1417,6 +1417,7 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     // MARK: - Local Echo State
     // Track pending local echo to suppress PTY duplicates
     private var pendingLocalEcho: [UInt8] = []
+    private var pendingLocalEchoOffset: Int = 0
     // Track pending backspaces to suppress PTY's backspace response
     private var pendingLocalBackspaces: Int = 0
 
@@ -1440,12 +1441,14 @@ final class Chau7TerminalView: LocalProcessTerminalView {
 
         if data.contains(0x03) || data.contains(0x15) {
             pendingLocalEcho.removeAll()
+            pendingLocalEchoOffset = 0
             pendingLocalBackspaces = 0
         }
 
         let localEchoEnabled = FeatureSettings.shared.isLocalEchoEnabled && isPtyEchoEnabled
         if !localEchoEnabled {
             pendingLocalEcho.removeAll()
+            pendingLocalEchoOffset = 0
             pendingLocalBackspaces = 0
         }
 
@@ -1491,7 +1494,7 @@ final class Chau7TerminalView: LocalProcessTerminalView {
 
         // Suppress characters/sequences that we already local-echoed
         var filteredSlice = slice
-        if !pendingLocalEcho.isEmpty || pendingLocalBackspaces > 0 {
+        if pendingLocalEchoOffset < pendingLocalEcho.count || pendingLocalBackspaces > 0 {
             var filtered: [UInt8] = []
             var i = slice.startIndex
 
@@ -1514,9 +1517,9 @@ final class Chau7TerminalView: LocalProcessTerminalView {
                 }
 
                 // Check for local echo character match
-                if !pendingLocalEcho.isEmpty && byte == pendingLocalEcho[0] {
+                if pendingLocalEchoOffset < pendingLocalEcho.count && byte == pendingLocalEcho[pendingLocalEchoOffset] {
                     // This byte matches our local echo - suppress it
-                    pendingLocalEcho.removeFirst()
+                    pendingLocalEchoOffset += 1
                     i += 1
                     continue
                 }
@@ -1526,9 +1529,19 @@ final class Chau7TerminalView: LocalProcessTerminalView {
                 i += 1
             }
 
-            // Clear stale pending state (timeout protection)
-            if pendingLocalEcho.count > 100 {
+            // Compact the pendingLocalEcho buffer after suppression
+            if pendingLocalEchoOffset > 0 && pendingLocalEchoOffset >= pendingLocalEcho.count {
                 pendingLocalEcho.removeAll()
+                pendingLocalEchoOffset = 0
+            } else if pendingLocalEchoOffset > 64 && pendingLocalEchoOffset <= pendingLocalEcho.count {
+                pendingLocalEcho.removeFirst(pendingLocalEchoOffset)
+                pendingLocalEchoOffset = 0
+            }
+
+            // Clear stale pending state (timeout protection)
+            if (pendingLocalEcho.count - pendingLocalEchoOffset) > 100 {
+                pendingLocalEcho.removeAll()
+                pendingLocalEchoOffset = 0
                 pendingLocalBackspaces = 0
             }
 
@@ -1546,7 +1559,9 @@ final class Chau7TerminalView: LocalProcessTerminalView {
 
         // Fast path: skip dim patching unless chunk contains ESC[2 prefix
         let renderToken = FeatureProfiler.shared.begin(.terminalRender, bytes: filteredSlice.count)
-        if sliceContainsDimPrefix(filteredSlice) {
+        if let rustPatched = RustDimPatcher.shared.patchDim(filteredSlice) {
+            super.dataReceived(slice: rustPatched[...])
+        } else if sliceContainsDimPrefix(filteredSlice) {
             let patched = patchDimSequences(filteredSlice)
             super.dataReceived(slice: patched[...])
         } else {
