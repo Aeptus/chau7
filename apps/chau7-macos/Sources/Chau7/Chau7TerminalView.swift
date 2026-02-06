@@ -1481,6 +1481,11 @@ final class Chau7TerminalView: LocalProcessTerminalView {
     override func dataReceived(slice: ArraySlice<UInt8>) {
         guard !slice.isEmpty else { return }
 
+        // SIMD pre-scan: classify incoming data for downstream optimization (zero-copy)
+        let simdScanResult: SIMDTerminalParser.ScanResult? = slice.withUnsafeBufferPointer { buffer in
+            SIMDTerminalParser.scan(buffer)
+        }
+
         // DEBUG: Log suspicious escape sequences that might appear as artifacts
         #if DEBUG
         logSuspiciousSequences(slice)
@@ -1493,8 +1498,11 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         let savedScrollPosition = scrollPosition
 
         // Suppress characters/sequences that we already local-echoed
+        // Guard: skip entirely when local echo is disabled (default) — avoids per-byte overhead during AI streaming
         var filteredSlice = slice
-        if pendingLocalEchoOffset < pendingLocalEcho.count || pendingLocalBackspaces > 0 {
+        if !FeatureSettings.shared.isLocalEchoEnabled {
+            // Local echo disabled — no pending state possible, skip suppression entirely
+        } else if pendingLocalEchoOffset < pendingLocalEcho.count || pendingLocalBackspaces > 0 {
             var filtered: [UInt8] = []
             var i = slice.startIndex
 
@@ -1557,9 +1565,12 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         let data = Data(filteredSlice)
         onOutput?(data)
 
-        // Fast path: skip dim patching unless chunk contains ESC[2 prefix
+        // SIMD-accelerated render path: skip dim patching when no escape sequences present
         let renderToken = FeatureProfiler.shared.begin(.terminalRender, bytes: filteredSlice.count)
-        if let rustPatched = RustDimPatcher.shared.patchDim(filteredSlice) {
+        if let scan = simdScanResult, scan.isPureASCII && !scan.hasEscapeSequences {
+            // Fast path: pure ASCII, no escape sequences — skip all dim patching
+            super.dataReceived(slice: filteredSlice)
+        } else if let rustPatched = RustDimPatcher.shared.patchDim(filteredSlice) {
             super.dataReceived(slice: rustPatched[...])
         } else if sliceContainsDimPrefix(filteredSlice) {
             let patched = patchDimSequences(filteredSlice)
