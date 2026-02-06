@@ -197,7 +197,7 @@ enum InlineImageDimension {
 /// A view that displays an inline image in the terminal
 final class InlineImageView: NSView {
     private let imageView: NSImageView
-    private let image: InlineImage
+    private var image: InlineImage
 
     init(image: InlineImage, frame: NSRect) {
         self.image = image
@@ -216,6 +216,11 @@ final class InlineImageView: NSView {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: L("inlineImage.context.preview", "Open in Preview"), action: #selector(openInPreview), keyEquivalent: ""))
         self.menu = menu
+    }
+
+    func setImage(_ image: NSImage) {
+        self.image = InlineImage(image: image, args: self.image.args)
+        imageView.image = image
     }
 
     required init?(coder: NSCoder) {

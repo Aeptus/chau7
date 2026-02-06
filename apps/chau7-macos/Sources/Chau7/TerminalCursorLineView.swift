@@ -1,7 +1,11 @@
 import AppKit
+import SwiftTerm
+
+// MARK: - Terminal Cursor Line View
 
 final class TerminalCursorLineView: NSView {
-    weak var terminalView: Chau7TerminalView?
+    /// Terminal view reference - uses unified TerminalViewLike protocol
+    private weak var _terminalView: (any TerminalViewLike)?
     var showsContextLines: Bool = false
     var showsInputHistory: Bool = false
     var isFocused: Bool = false
@@ -13,6 +17,7 @@ final class TerminalCursorLineView: NSView {
         nil
     }
 
+    /// Update with Chau7TerminalView (for backwards compatibility)
     func update(
         with terminalView: Chau7TerminalView,
         isFocused: Bool,
@@ -20,7 +25,41 @@ final class TerminalCursorLineView: NSView {
         showsInputHistory: Bool,
         inputLineTracker: InputLineTracker?
     ) {
-        self.terminalView = terminalView
+        updateInternal(
+            with: terminalView,
+            isFocused: isFocused,
+            showsContextLines: showsContextLines,
+            showsInputHistory: showsInputHistory,
+            inputLineTracker: inputLineTracker
+        )
+    }
+
+    /// Update with RustTerminalView
+    func update(
+        with terminalView: RustTerminalView,
+        isFocused: Bool,
+        showsContextLines: Bool,
+        showsInputHistory: Bool,
+        inputLineTracker: InputLineTracker?
+    ) {
+        updateInternal(
+            with: terminalView,
+            isFocused: isFocused,
+            showsContextLines: showsContextLines,
+            showsInputHistory: showsInputHistory,
+            inputLineTracker: inputLineTracker
+        )
+    }
+
+    /// Internal update method that works with any TerminalViewLike
+    private func updateInternal(
+        with terminalView: any TerminalViewLike,
+        isFocused: Bool,
+        showsContextLines: Bool,
+        showsInputHistory: Bool,
+        inputLineTracker: InputLineTracker?
+    ) {
+        self._terminalView = terminalView
         self.isFocused = isFocused
         self.showsContextLines = showsContextLines
         self.showsInputHistory = showsInputHistory
@@ -35,14 +74,24 @@ final class TerminalCursorLineView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        guard let terminalView else { return }
+        guard let terminalView = _terminalView else { return }
         let caret = terminalView.caretFrame
         guard caret.height > 0 else { return }
 
-        let terminal = terminalView.getTerminal()
-        let cursor = terminal.getCursorLocation()
-        let topRow = terminal.getTopVisibleRow()
-        let cursorRow = topRow + cursor.y
+        let cursorRow: Int
+        let topRow: Int
+        let totalRows: Int
+        if let rustView = terminalView as? RustTerminalView {
+            topRow = rustView.renderTopVisibleRow
+            cursorRow = topRow + rustView.renderCursorRow
+            totalRows = rustView.renderRows
+        } else {
+            let terminal = terminalView.getTerminal()
+            let cursor = terminal.getCursorLocation()
+            topRow = terminal.getTopVisibleRow()
+            cursorRow = topRow + cursor.y
+            totalRows = terminal.rows
+        }
         let lineHeight = caret.height
         let baseY = caret.origin.y
         let width = terminalView.bounds.width
@@ -56,7 +105,7 @@ final class TerminalCursorLineView: NSView {
             rows.append((cursorRow + 1, highlight))
         }
         if showsInputHistory, let tracker = inputLineTracker {
-            let bottomRow = topRow + max(terminal.rows - 1, 0)
+            let bottomRow = topRow + max(totalRows - 1, 0)
             for row in tracker.visibleRows(top: topRow, bottom: bottomRow) {
                 if row == cursorRow {
                     continue

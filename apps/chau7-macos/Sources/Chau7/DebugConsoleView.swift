@@ -725,16 +725,11 @@ struct DebugConsoleView: View {
 
             Divider()
 
-            // Logs content
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(filteredLogs, id: \.self) { line in
-                        logLine(line)
-                    }
-                }
-                .padding(8)
-            }
-            .font(.system(size: 10, design: .monospaced))
+            // Logs content - Use TextEditor for proper text selection
+            TextEditor(text: .constant(filteredLogs.joined(separator: "\n")))
+                .font(.system(size: 10, design: .monospaced))
+                .scrollContentBackground(.hidden)
+                .background(Color.clear)
 
             // Status bar
             HStack {

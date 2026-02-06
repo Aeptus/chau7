@@ -217,6 +217,33 @@ struct TerminalSettingsView: View {
             Divider()
                 .padding(.vertical, 8)
 
+            // Backend
+            SettingsSectionHeader("Terminal Backend", icon: "cpu")
+
+            SettingsToggle(
+                label: "Use Rust Terminal (Experimental)",
+                help: "Use the Rust-based terminal renderer instead of SwiftTerm. " +
+                      "Changes take effect for new tabs only.",
+                isOn: $settings.isRustTerminalEnabled
+            )
+
+            if settings.isRustTerminalEnabled {
+                if RustTerminalView.isAvailable {
+                    Text("New tabs will use the Rust terminal backend. Existing tabs are not affected.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .padding(.leading, 20)
+                } else {
+                    Text("Rust terminal library not found. The SwiftTerm backend will be used.")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .padding(.leading, 20)
+                }
+            }
+
+            Divider()
+                .padding(.vertical, 8)
+
             // Reset Button
             SettingsButtonRow(buttons: [
                 .init(title: L("settings.terminal.resetToDefaults", "Reset Terminal to Defaults"), style: .plain) {

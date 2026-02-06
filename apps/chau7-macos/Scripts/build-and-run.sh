@@ -62,7 +62,24 @@ if [[ ! -f "$ROOT_DIR/Package.swift" ]]; then
   exit 1
 fi
 
-LAST_STEP="Build"
+# Build Rust libraries (optional but recommended for Rust terminal backend)
+LAST_STEP="Rust Libraries"
+if command -v cargo >/dev/null 2>&1; then
+  RUST_BUILD_FLAG="--release"
+  if [[ "$BUILD_MODE" == "debug" ]]; then
+    RUST_BUILD_FLAG="--debug"
+  fi
+  log_info "Building Rust libraries ($BUILD_MODE mode)..."
+  if "$ROOT_DIR/Scripts/build-rust.sh" $RUST_BUILD_FLAG; then
+    log_ok "Rust libraries built successfully"
+  else
+    log_warn "Rust library build failed (Rust terminal backend will be unavailable)"
+  fi
+else
+  log_warn "cargo not found; skipping Rust library build (Rust terminal backend will be unavailable)"
+fi
+
+LAST_STEP="Swift Build"
 run_cmd swift build -c "$BUILD_MODE" --package-path "$ROOT_DIR"
 
 BIN_PATH="$ROOT_DIR/.build/$BUILD_MODE/$APP_NAME"

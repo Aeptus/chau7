@@ -166,11 +166,15 @@ final class Chau7TerminalView: LocalProcessTerminalView {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         guard event.window === window else { return nil }
-        if allowMouseReporting, !event.modifierFlags.contains(.control) {
-            return nil
-        }
         let location = convert(event.locationInWindow, from: nil)
         guard bounds.contains(location) else { return nil }
+
+        // Shift forces context menu to appear (standard in iTerm2, Terminal.app)
+        // When mouse reporting is active and Shift not held, don't show menu
+        let forceMenu = event.modifierFlags.contains(.shift)
+        if allowMouseReporting && !forceMenu {
+            return nil
+        }
 
         window?.makeFirstResponder(self)
 

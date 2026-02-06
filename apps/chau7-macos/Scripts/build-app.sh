@@ -107,12 +107,24 @@ else
   fi
 fi
 
-RUST_LIB_PATH="${CHAU7_RUST_LIB_PATH:-$ROOT_DIR/rust/chau7_parse/target/release/libchau7_parse.dylib}"
-if [[ -f "$RUST_LIB_PATH" ]]; then
-  run_cmd cp "$RUST_LIB_PATH" "$CONTENTS/Resources/libchau7_parse.dylib"
-  log_ok "Copied Rust parser library: $(basename "$RUST_LIB_PATH")"
+# Copy Rust libraries from Libraries/ directory (built by build-rust.sh)
+# Both libraries are optional but recommended for full functionality
+RUST_LIBS_DIR="$ROOT_DIR/Libraries"
+
+RUST_PARSE_LIB="$RUST_LIBS_DIR/libchau7_parse.dylib"
+if [[ -f "$RUST_PARSE_LIB" ]]; then
+  run_cmd cp "$RUST_PARSE_LIB" "$CONTENTS/Resources/libchau7_parse.dylib"
+  log_ok "Copied Rust parser library"
 else
-  log_warn "Rust parser library not found at $RUST_LIB_PATH (optional)."
+  log_warn "Rust parser library not found at $RUST_PARSE_LIB (run ./Scripts/build-rust.sh first)"
+fi
+
+RUST_TERMINAL_LIB="$RUST_LIBS_DIR/libchau7_terminal.dylib"
+if [[ -f "$RUST_TERMINAL_LIB" ]]; then
+  run_cmd cp "$RUST_TERMINAL_LIB" "$CONTENTS/Resources/libchau7_terminal.dylib"
+  log_ok "Copied Rust terminal library"
+else
+  log_warn "Rust terminal library not found at $RUST_TERMINAL_LIB (Rust backend will be unavailable)"
 fi
 
 log_ok "Built app bundle at $APP_DIR"

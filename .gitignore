@@ -4,3 +4,5 @@ build/
 .claude/
 .swiftpm/
 apps/chau7-macos/rust/chau7_parse/target/
+apps/chau7-macos/rust/chau7_terminal/target/
+apps/chau7-macos/Libraries/

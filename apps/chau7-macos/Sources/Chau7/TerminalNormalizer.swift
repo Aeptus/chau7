@@ -12,10 +12,14 @@ import Foundation
 /// Used to convert raw terminal output to clean, displayable text.
 enum TerminalNormalizer {
     // MARK: - Pre-compiled Regex (Memory Optimization)
-    // Compiled once at startup instead of on every call
+    // Compiled once at startup instead of on every call (Fix #10: safe regex initialization)
 
     private static let ansiPattern: NSRegularExpression = {
-        try! NSRegularExpression(pattern: "\\u001B\\[[0-9;?]*[ -/]*[@-~]")
+        do {
+            return try NSRegularExpression(pattern: "\\u001B\\[[0-9;?]*[ -/]*[@-~]")
+        } catch {
+            fatalError("TerminalNormalizer.ansiPattern: Invalid pattern - \(error.localizedDescription)")
+        }
     }()
 
     /// Fully normalizes terminal text by applying backspaces, stripping ANSI codes, and removing control characters.

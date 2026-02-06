@@ -1,8 +1,29 @@
 import AppKit
 import SwiftTerm
 
+// MARK: - Terminal Highlight View
+
 final class TerminalHighlightView: NSView {
-    weak var terminalView: Chau7TerminalView?
+    /// Terminal view reference - uses unified TerminalViewLike protocol
+    private weak var _terminalView: (any TerminalViewLike)?
+
+    /// Set the terminal view (supports both Chau7TerminalView and RustTerminalView)
+    var terminalView: Chau7TerminalView? {
+        get { _terminalView as? Chau7TerminalView }
+        set { _terminalView = newValue }
+    }
+
+    /// Set the terminal view for RustTerminalView
+    var rustTerminalView: RustTerminalView? {
+        get { _terminalView as? RustTerminalView }
+        set { _terminalView = newValue }
+    }
+
+    /// Set any TerminalViewLike conforming view
+    func setTerminalView(_ view: any TerminalViewLike) {
+        _terminalView = view
+    }
+
     weak var session: TerminalSessionModel?
 
     // Cached visible matches to avoid recomputation on every draw (Issue #14 fix)
@@ -37,24 +58,40 @@ final class TerminalHighlightView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard let terminalView, let session else { return }
+        guard let terminalView = _terminalView, let session else { return }
         let token = FeatureProfiler.shared.begin(.highlightDraw)
         defer { FeatureProfiler.shared.end(token) }
         let terminal = terminalView.getTerminal()
-        let rows = terminal.rows
-        let cols = terminal.cols
+        let rows: Int
+        let cols: Int
+        if let rustView = terminalView as? RustTerminalView {
+            rows = rustView.renderRows
+            cols = rustView.renderCols
+        } else {
+            rows = terminal.rows
+            cols = terminal.cols
+        }
         if rows <= 0 || cols <= 0 { return }
 
         // Use cached font metrics to avoid recalculating on every draw (Latency optimization)
         let font = terminalView.font
         let cellWidth: CGFloat
-        if cachedFont !== font {
-            cachedFont = font
-            let sampleChar: NSString = "M"
-            cachedCellWidth = sampleChar.size(withAttributes: [.font: font]).width
+        if let rustView = terminalView as? RustTerminalView {
+            cellWidth = rustView.renderCellSize.width
+        } else {
+            if cachedFont !== font {
+                cachedFont = font
+                let sampleChar: NSString = "M"
+                cachedCellWidth = sampleChar.size(withAttributes: [.font: font]).width
+            }
+            cellWidth = cachedCellWidth
         }
-        cellWidth = cachedCellWidth
-        let cellHeight = terminalView.bounds.height / CGFloat(rows)
+        let cellHeight: CGFloat
+        if let rustView = terminalView as? RustTerminalView {
+            cellHeight = rustView.renderCellSize.height
+        } else {
+            cellHeight = terminalView.bounds.height / CGFloat(rows)
+        }
 
         let yDisp = terminal.buffer.yDisp
 
