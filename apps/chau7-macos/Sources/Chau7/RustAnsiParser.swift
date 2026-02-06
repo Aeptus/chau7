@@ -47,7 +47,9 @@ final class RustAnsiParser {
     private init() {}
 
     func parse(_ text: String) -> [RustAnsiParsedSegment]? {
-        guard ensureLoaded() else { return nil }
+        lock.lock()
+        defer { lock.unlock() }
+        guard ensureLoadedUnlocked() else { return nil }
         return text.withCString { cText in
             guard let raw = functions?.parse(cText) else { return nil }
             defer { functions?.freeSegments(raw) }
@@ -65,9 +67,8 @@ final class RustAnsiParser {
         }
     }
 
-    private func ensureLoaded() -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
+    /// Must be called with lock already held.
+    private func ensureLoadedUnlocked() -> Bool {
         if functions != nil { return true }
         if loadAttempted { return false }
         loadAttempted = true

@@ -26,6 +26,15 @@ public final class RustPatternMatcher {
 
     private init() {}
 
+    deinit {
+        lock.lock()
+        defer { lock.unlock() }
+        if let handle = patternsHandle {
+            functions?.free(handle)
+            patternsHandle = nil
+        }
+    }
+
     public func firstMatchIndex(haystack: String, patterns: [String]) -> Int? {
         guard !patterns.isEmpty else { return -1 }
         guard ensureLoaded() else { return nil }
