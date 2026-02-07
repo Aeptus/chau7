@@ -94,14 +94,14 @@ final class ScriptingAPI: ObservableObject {
             return
         }
 
-        listeningSource = DispatchSource.makeReadSource(fileDescriptor: socketFD, queue: socketQueue)
+        // Capture fd by value so cancel handler closes the correct descriptor.
+        let listeningFD = socketFD
+        listeningSource = DispatchSource.makeReadSource(fileDescriptor: listeningFD, queue: socketQueue)
         listeningSource?.setEventHandler { [weak self] in
             self?.acceptConnection()
         }
         listeningSource?.setCancelHandler { [weak self] in
-            if let fd = self?.socketFD, fd >= 0 {
-                close(fd)
-            }
+            close(listeningFD)
             self?.socketFD = -1
         }
         listeningSource?.resume()
@@ -112,16 +112,18 @@ final class ScriptingAPI: ObservableObject {
     }
 
     func stopServer() {
-        for (fd, handler) in clientHandlers {
+        // Client handlers: disconnect() cancels their read source whose
+        // cancel handler calls close(fd) — don't double-close here.
+        for (_, handler) in clientHandlers {
             handler.disconnect()
-            close(fd)
         }
         clientHandlers.removeAll()
 
-        listeningSource?.cancel()
-        listeningSource = nil
-
-        if socketFD >= 0 {
+        // Cancel handler owns close(socketFD) — don't double-close.
+        if let ls = listeningSource {
+            ls.cancel()
+            listeningSource = nil
+        } else if socketFD >= 0 {
             close(socketFD)
             socketFD = -1
         }

@@ -37,6 +37,7 @@ private struct RustGridSnapshot {
     var rows: UInt16
     var scrollback_rows: UInt32
     var display_offset: UInt32
+    var capacity: Int  // Must match Rust's usize (8 bytes on 64-bit)
 }
 
 // MARK: - Native Rust Grid Renderer
@@ -170,7 +171,6 @@ private final class RustGridView: NSView {
         }
     }
 
-    private static var drawDebugLogged = false
     override func draw(_ dirtyRect: NSRect) {
         guard cols > 0, rows > 0, !cells.isEmpty else {
             backgroundColor.setFill()
@@ -182,25 +182,40 @@ private final class RustGridView: NSView {
         ctx.saveGState()
         ctx.textMatrix = .identity
 
+        // Match SwiftTerm: set sRGB color space for consistent color reproduction
+        if let srgb = CGColorSpace(name: CGColorSpace.sRGB) {
+            ctx.setFillColorSpace(srgb)
+            ctx.setStrokeColorSpace(srgb)
+        }
+
         backgroundColor.setFill()
         dirtyRect.fill()
 
-        ctx.setShouldAntialias(false)
-        ctx.setAllowsAntialiasing(false)
-
         let cellHeight = cellSize.height
         let cellWidth = cellSize.width
-        let lineHeight = font.ascender - font.descender + font.leading
-        let baselineOffset = (cellHeight - lineHeight) / 2.0 + font.ascender
+        // Use CTFont metrics for consistency with SwiftTerm.
+        // CTFontGetDescent returns a POSITIVE value (unlike NSFont.descender which is negative).
+        let ctFont = font as CTFont
+        let ascent = CTFontGetAscent(ctFont)
+        let descent = CTFontGetDescent(ctFont)
+        let leading = CTFontGetLeading(ctFont)
+        let lineHeight = ascent + descent + leading
+        // Position baseline so text is vertically centered in the cell.
+        // In macOS coords (y=0 at bottom), baseline = cell_y + descent + vertical_padding/2
+        let baselineOffset = (cellHeight - lineHeight) / 2.0 + descent
 
         // Standard macOS coordinates: y=0 at bottom, row 0 at top of terminal
         let rowStart = max(0, Int((bounds.height - dirtyRect.maxY) / cellHeight))
         let rowEnd = min(rows - 1, Int((bounds.height - dirtyRect.minY) / cellHeight))
+
         if rowStart > rowEnd {
             ctx.restoreGState()
             return
         }
 
+        // Phase 1: Fill all cell backgrounds with AA off (sharp cell edges)
+        ctx.setShouldAntialias(false)
+        ctx.setAllowsAntialiasing(false)
         for row in rowStart...rowEnd {
             let y = bounds.height - CGFloat(row + 1) * cellHeight
             for col in 0..<cols {
@@ -209,19 +224,27 @@ private final class RustGridView: NSView {
                 let x = CGFloat(col) * cellWidth
                 let rect = CGRect(x: x, y: y, width: cellWidth, height: cellHeight)
 
-                let (fg, bg) = resolveColors(for: cell)
+                let (_, bg) = resolveColors(for: cell)
                 ctx.setFillColor(bg.cgColor)
                 ctx.fill(rect)
+            }
+        }
+
+        // Phase 2: Draw all text with AA on (smooth glyphs)
+        ctx.setShouldAntialias(true)
+        ctx.setAllowsAntialiasing(true)
+        for row in rowStart...rowEnd {
+            let y = bounds.height - CGFloat(row + 1) * cellHeight
+            for col in 0..<cols {
+                let idx = row * cols + col
+                let cell = overlayCells[idx] ?? cells[idx]
 
                 guard cell.character > 0, cell.character != 0xFFFF else { continue }
                 guard let scalar = UnicodeScalar(cell.character) else { continue }
+                if cell.flags & CellFlags.hidden != 0 { continue }
 
-                if cell.flags & CellFlags.hidden != 0 {
-                    continue
-                }
-
-                ctx.setShouldAntialias(true)
-                ctx.setAllowsAntialiasing(true)
+                let x = CGFloat(col) * cellWidth
+                let (fg, _) = resolveColors(for: cell)
                 let drawFont = fontForCell(cell.flags)
                 var textColor = fg
                 if cell.flags & CellFlags.dim != 0 {
@@ -254,13 +277,9 @@ private final class RustGridView: NSView {
                     ctx.addLine(to: CGPoint(x: x + cellWidth, y: strikeY))
                     ctx.strokePath()
                 }
-                ctx.setShouldAntialias(false)
-                ctx.setAllowsAntialiasing(false)
             }
         }
 
-        ctx.setShouldAntialias(true)
-        ctx.setAllowsAntialiasing(true)
         drawCursor(in: ctx, cellWidth: cellWidth, cellHeight: cellHeight, baselineOffset: baselineOffset)
 
         ctx.restoreGState()
@@ -337,8 +356,10 @@ private final class RustGridView: NSView {
     }
 
     private func resolveColors(for cell: RustCellData) -> (NSColor, NSColor) {
-        var fg = NSColor(calibratedRed: CGFloat(cell.fg_r) / 255.0, green: CGFloat(cell.fg_g) / 255.0, blue: CGFloat(cell.fg_b) / 255.0, alpha: 1.0)
-        var bg = NSColor(calibratedRed: CGFloat(cell.bg_r) / 255.0, green: CGFloat(cell.bg_g) / 255.0, blue: CGFloat(cell.bg_b) / 255.0, alpha: 1.0)
+        // Use deviceRed to match SwiftTerm's color creation (NSColor.make uses deviceRed).
+        // The CGContext is set to sRGB color space in draw() for consistent rendering.
+        var fg = NSColor(deviceRed: CGFloat(cell.fg_r) / 255.0, green: CGFloat(cell.fg_g) / 255.0, blue: CGFloat(cell.fg_b) / 255.0, alpha: 1.0)
+        var bg = NSColor(deviceRed: CGFloat(cell.bg_r) / 255.0, green: CGFloat(cell.bg_g) / 255.0, blue: CGFloat(cell.bg_b) / 255.0, alpha: 1.0)
         if cell.flags & CellFlags.inverse != 0 {
             swap(&fg, &bg)
         }
@@ -426,6 +447,14 @@ private final class RustTerminalFFI {
     private typealias GetPendingTitleFn = @convention(c) (OpaquePointer?) -> UnsafeMutablePointer<CChar>?
     private typealias GetPendingExitCodeFn = @convention(c) (OpaquePointer?) -> Int32
     private typealias IsPtyClosedFn = @convention(c) (OpaquePointer?) -> Bool
+    // Echo detection via termios (Phase 2: reliable password prompt detection)
+    private typealias IsEchoDisabledFn = @convention(c) (OpaquePointer?) -> Bool
+
+    // Graphics protocol FFI types (Phase 4)
+    private typealias GetPendingImagesFn = @convention(c) (OpaquePointer?) -> UnsafeMutableRawPointer?
+    private typealias FreeImagesFn = @convention(c) (UnsafeMutableRawPointer?) -> Void
+    private typealias SetImageProtocolsFn = @convention(c) (OpaquePointer?, Bool, Bool, Bool) -> Void
+    private typealias HasPendingImagesFn = @convention(c) (OpaquePointer?) -> Bool
 
     private struct Functions {
         let create: CreateFn
@@ -476,6 +505,13 @@ private final class RustTerminalFFI {
         let getPendingTitle: GetPendingTitleFn?  // Optional - for terminal title updates
         let getPendingExitCode: GetPendingExitCodeFn?  // Optional - for process exit detection
         let isPtyClosed: IsPtyClosedFn?  // Optional - for PTY close detection
+        // Echo detection via termios (Phase 2)
+        let isEchoDisabled: IsEchoDisabledFn?  // Optional - for reliable password detection
+        // Graphics protocol support (Phase 4)
+        let getPendingImages: GetPendingImagesFn?  // Optional - for image protocol support
+        let freeImages: FreeImagesFn?  // Optional - for image protocol support
+        let setImageProtocols: SetImageProtocolsFn?  // Optional - for image protocol support
+        let hasPendingImages: HasPendingImagesFn?  // Optional - for image protocol support
     }
 
     private static let lock = NSLock()
@@ -736,6 +772,21 @@ private final class RustTerminalFFI {
             Log.info("RustTerminalFFI: is_pty_closed symbol not found (optional)")
         }
 
+        // Echo detection via termios (Phase 2: reliable password prompt detection)
+        let isEchoDisabledSym = loadSymbol("chau7_terminal_is_echo_disabled")
+        if isEchoDisabledSym == nil {
+            Log.info("RustTerminalFFI: is_echo_disabled symbol not found (optional, falling back to heuristic)")
+        }
+
+        // Graphics protocol support (Phase 4: image protocol pre-processor)
+        let getPendingImagesSym = loadSymbol("chau7_terminal_get_pending_images")
+        let freeImagesSym = loadSymbol("chau7_terminal_free_images")
+        let setImageProtocolsSym = loadSymbol("chau7_terminal_set_image_protocols")
+        let hasPendingImagesSym = loadSymbol("chau7_terminal_has_pending_images")
+        if getPendingImagesSym == nil {
+            Log.info("RustTerminalFFI: graphics protocol symbols not found (optional)")
+        }
+
         Log.info("RustTerminalFFI: All 15 required symbols loaded successfully")
 
         return Functions(
@@ -777,7 +828,13 @@ private final class RustTerminalFFI {
             resetMetrics: resetMetricsSym.map { unsafeBitCast($0, to: ResetMetricsFn.self) },
             getPendingTitle: getPendingTitleSym.map { unsafeBitCast($0, to: GetPendingTitleFn.self) },
             getPendingExitCode: getPendingExitCodeSym.map { unsafeBitCast($0, to: GetPendingExitCodeFn.self) },
-            isPtyClosed: isPtyClosedSym.map { unsafeBitCast($0, to: IsPtyClosedFn.self) }
+            isPtyClosed: isPtyClosedSym.map { unsafeBitCast($0, to: IsPtyClosedFn.self) },
+            isEchoDisabled: isEchoDisabledSym.map { unsafeBitCast($0, to: IsEchoDisabledFn.self) },
+            // Graphics protocol support (Phase 4)
+            getPendingImages: getPendingImagesSym.map { unsafeBitCast($0, to: GetPendingImagesFn.self) },
+            freeImages: freeImagesSym.map { unsafeBitCast($0, to: FreeImagesFn.self) },
+            setImageProtocols: setImageProtocolsSym.map { unsafeBitCast($0, to: SetImageProtocolsFn.self) },
+            hasPendingImages: hasPendingImagesSym.map { unsafeBitCast($0, to: HasPendingImagesFn.self) }
         )
     }
 
@@ -1430,6 +1487,86 @@ private final class RustTerminalFFI {
         }
         return isPtyClosedFn(terminal)
     }
+
+    /// Check if PTY has echo disabled via termios tcgetattr.
+    /// Returns true when the terminal is in password/secret input mode.
+    /// Falls back to nil if the FFI function is not available (caller uses heuristic).
+    func isEchoDisabledViaTermios() -> Bool? {
+        guard let isEchoDisabledFn = Self.functions?.isEchoDisabled else {
+            return nil  // Signal to caller: FFI not available, use heuristic
+        }
+        return isEchoDisabledFn(terminal)
+    }
+
+    // MARK: - Graphics Protocol Methods (Phase 4)
+
+    /// C-compatible image data layout matching Rust's FFIImageData.
+    /// Field order must match Rust #[repr(C)] exactly (ordered by descending alignment).
+    struct FFIImageData {
+        let id: UInt64
+        let data: UnsafeMutablePointer<UInt8>?
+        let data_len: Int
+        let data_capacity: Int
+        let anchor_row: Int32
+        let anchor_col: UInt16
+        let protocolType: UInt8  // 0=iTerm2, 1=Sixel, 2=Kitty
+    }
+
+    /// C-compatible image array layout matching Rust's FFIImageArray.
+    struct FFIImageArray {
+        let images: UnsafeMutablePointer<FFIImageData>?
+        let count: Int
+        let capacity: Int
+    }
+
+    /// Check if there are pending images from the Rust graphics interceptor.
+    func hasPendingImages() -> Bool {
+        guard let fn = Self.functions?.hasPendingImages else { return false }
+        return fn(terminal)
+    }
+
+    /// Retrieve pending images from the Rust graphics interceptor.
+    /// Returns an array of (protocol, data, anchorRow, anchorCol) tuples.
+    /// Call this during pollAndSync to pick up intercepted image sequences.
+    func getPendingImages() -> [(protocol: UInt8, data: Data, anchorRow: Int32, anchorCol: UInt16)]? {
+        guard let getPendingFn = Self.functions?.getPendingImages,
+              let freeFn = Self.functions?.freeImages else {
+            return nil
+        }
+
+        guard let arrayPtr = getPendingFn(terminal) else {
+            return nil  // No pending images
+        }
+        // Ensure Rust memory is always freed, even if Data() allocation fails
+        defer { freeFn(arrayPtr) }
+
+        let array = arrayPtr.assumingMemoryBound(to: FFIImageArray.self).pointee
+        guard let imagesPtr = array.images, array.count > 0 else {
+            return nil
+        }
+
+        var results: [(protocol: UInt8, data: Data, anchorRow: Int32, anchorCol: UInt16)] = []
+        for i in 0..<array.count {
+            let img = imagesPtr[i]
+            if let dataPtr = img.data, img.data_len > 0 {
+                let data = Data(bytes: dataPtr, count: img.data_len)
+                results.append((
+                    protocol: img.protocolType,
+                    data: data,
+                    anchorRow: img.anchor_row,
+                    anchorCol: img.anchor_col
+                ))
+            }
+        }
+
+        return results.isEmpty ? nil : results
+    }
+
+    /// Configure which image protocols the Rust interceptor should handle.
+    func setImageProtocols(sixel: Bool, kitty: Bool, iterm2: Bool) {
+        guard let fn = Self.functions?.setImageProtocols else { return }
+        fn(terminal, sixel, kitty, iterm2)
+    }
 }
 
 // MARK: - Rust Debug State Layout
@@ -1559,7 +1696,9 @@ final class RustTerminalView: NSView {
     private var inlineImages: [InlineImagePlacement] = []
     private var lastDisplayOffset: Int = 0
 
-    /// HeadlessTerminal for buffer-dependent features (search, highlights, etc.)
+    /// HeadlessTerminal stub for getTerminal() protocol conformance.
+    /// Phase 3b: No longer fed PTY data — buffer features use native Rust FFI.
+    /// Kept as lightweight empty terminal for callers that still require a Terminal object.
     private var headlessTerminal: HeadlessTerminal!
 
     /// Display link for polling and rendering at 60fps
@@ -1683,6 +1822,17 @@ final class RustTerminalView: NSView {
     /// This approach handles 95%+ of real-world cases without direct termios access.
     private var isPtyEchoLikelyEnabled: Bool = true
 
+    /// Returns true when the PTY echo is likely disabled (password prompt detected).
+    /// Exposes the heuristic echo state for history filtering.
+    var isPtyEchoDisabled: Bool {
+        // Primary: Use reliable termios-based detection via Rust FFI (100% accurate)
+        if let termiosResult = rustTerminal?.isEchoDisabledViaTermios() {
+            return termiosResult
+        }
+        // Fallback: Heuristic-based detection (older libraries without FFI support)
+        return !isPtyEchoLikelyEnabled
+    }
+
     /// Timestamp when echo was last disabled (for timeout recovery)
     private var echoDisabledTime: CFAbsoluteTime = 0
 
@@ -1732,7 +1882,20 @@ final class RustTerminalView: NSView {
     var renderRows: Int { rows }
     var renderCellSize: CGSize { CGSize(width: cellWidth, height: cellHeight) }
     var renderCursorRow: Int { Int(rustTerminal?.cursorPosition.row ?? 0) }
-    var renderTopVisibleRow: Int { headlessTerminal.terminal.getTopVisibleRow() }
+    /// Top visible row in absolute buffer coordinates.
+    /// Equivalent to SwiftTerm's getTopVisibleRow() but using native Rust data.
+    /// When at bottom (displayOffset=0), this equals the history size.
+    /// When scrolled up, it equals historySize - displayOffset.
+    var renderTopVisibleRow: Int {
+        guard let rust = rustTerminal else { return 0 }
+        let offset = Int(rust.displayOffset)
+        return cachedScrollbackRows - offset
+    }
+
+    /// Cached scrollback row count from the last grid snapshot.
+    /// Updated every sync cycle in syncGridToRenderer() — lightweight access
+    /// without fetching a full grid snapshot just for history size.
+    private var cachedScrollbackRows: Int = 0
 
     // MARK: - Static Check
 
@@ -1862,11 +2025,26 @@ final class RustTerminalView: NSView {
             Log.warn("RustTerminalView[\(viewId)]: startTerminal - Failed to create Rust terminal")
         } else {
             Log.info("RustTerminalView[\(viewId)]: startTerminal - Rust terminal created successfully")
+
+            // Phase 4: Configure image protocol interceptor based on user settings.
+            // iTerm2 is enabled by default (matches FeatureSettings.isInlineImagesEnabled).
+            // Sixel/Kitty are gated by SixelKittyBridge toggles.
+            let iterm2Enabled = FeatureSettings.shared.isInlineImagesEnabled
+            let sixelEnabled = SixelKittyBridge.shared.isSixelEnabled
+            let kittyEnabled = SixelKittyBridge.shared.isKittyGraphicsEnabled
+            rustTerminal?.setImageProtocols(sixel: sixelEnabled, kitty: kittyEnabled, iterm2: iterm2Enabled)
+            Log.info("RustTerminalView[\(viewId)]: Image protocols configured - iTerm2=\(iterm2Enabled), Sixel=\(sixelEnabled), Kitty=\(kittyEnabled)")
         }
 
         if let initialOutput, !initialOutput.isEmpty {
             injectOutput(initialOutput)
         }
+
+        // Force an initial grid sync on the next poll cycle.
+        // Without this, the first pollAndSync() finds poll()==false (no PTY data yet)
+        // and needsGridSync==false, so syncGridToRenderer() never runs and the screen
+        // stays blank until a resize or PTY data arrives.
+        needsGridSync = true
 
         // Start polling loop now that terminal exists
         setupPollingLoop()
@@ -1944,14 +2122,37 @@ final class RustTerminalView: NSView {
     // MARK: - Cell Dimensions
 
     private func updateCellDimensions() {
-        // Calculate cell size from font
-        let attrs: [NSAttributedString.Key: Any] = [.font: font]
-        let size = ("W" as NSString).size(withAttributes: attrs)
-        let scale = window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 1
+        // Match SwiftTerm's computeFontDimensions():
+        // - Width: measure all ASCII printable chars, take max advance, ceil()
+        // - Height: max of (ascent+descent+leading) and NSLayoutManager.defaultLineHeight, ceil()
+        let ctFont = font as CTFont
         let oldWidth = cellWidth
         let oldHeight = cellHeight
-        cellWidth = max(1, floor(size.width * scale) / scale)
-        cellHeight = max(1, floor((font.ascender - font.descender + font.leading) * scale) / scale)
+
+        // Cell width: max advance width of all printable ASCII characters
+        var characters = (32...126).map { UniChar($0) }
+        var glyphs = [CGGlyph](repeating: 0, count: characters.count)
+        let mapped = CTFontGetGlyphsForCharacters(ctFont, &characters, &glyphs, characters.count)
+        var maxWidth: CGFloat = 0
+        if mapped {
+            var advances = [CGSize](repeating: .zero, count: characters.count)
+            CTFontGetAdvancesForGlyphs(ctFont, .horizontal, glyphs, &advances, glyphs.count)
+            for idx in 0..<glyphs.count where glyphs[idx] != 0 {
+                maxWidth = max(maxWidth, advances[idx].width)
+            }
+        }
+        cellWidth = max(1, ceil(maxWidth))
+
+        // Cell height: match SwiftTerm which uses max of CTFont metrics and layout manager
+        let lineAscent = CTFontGetAscent(ctFont)
+        let lineDescent = CTFontGetDescent(ctFont)
+        let lineLeading = CTFontGetLeading(ctFont)
+        let baseLineHeight = lineAscent + lineDescent + lineLeading
+        // Also check NSLayoutManager's defaultLineHeight for consistent sizing
+        let layoutManager = NSLayoutManager()
+        let defaultLineHeight = layoutManager.defaultLineHeight(for: font)
+        cellHeight = max(1, ceil(max(baseLineHeight, defaultLineHeight)))
+
         if cellWidth != oldWidth || cellHeight != oldHeight {
             Log.trace("RustTerminalView[\(viewId)]: updateCellDimensions - Cell size changed from \(oldWidth)x\(oldHeight) to \(cellWidth)x\(cellHeight)")
         }
@@ -2111,6 +2312,21 @@ final class RustTerminalView: NSView {
                 renderInlineImages(extraction.1)
             }
 
+            // Phase 4: Check for Rust-intercepted image sequences (Sixel, Kitty).
+            // iTerm2 images are still handled by the Swift extractInlineImages path above,
+            // since the raw bytes pass through last_output before the Rust interceptor.
+            // Sixel/Kitty images only come through this Rust path.
+            if let images = rust.getPendingImages() {
+                for img in images {
+                    let protocolName = img.protocol == 0 ? "iTerm2" : img.protocol == 1 ? "Sixel" : "Kitty"
+                    Log.info("RustTerminalView[\(viewId)]: Received \(protocolName) image (\(img.data.count) bytes) at row=\(img.anchorRow), col=\(img.anchorCol)")
+                    // TODO: Sixel decoding → RGBA → InlineImageView (Phase 4 future)
+                    // TODO: Kitty protocol state management (Phase 4 future)
+                    // For now, images are intercepted and logged. The infrastructure is in place
+                    // for Sixel/Kitty rendering when decoders are added.
+                }
+            }
+
             // Parse OSC 7 (current working directory) before processing
             // OSC 7 format: ESC ] 7 ; file://hostname/path BEL
             parseOSC7(from: outputData)
@@ -2121,9 +2337,10 @@ final class RustTerminalView: NSView {
             let wasAtBottom = isUserAtBottom
             let savedScrollPosition = scrollPosition
 
-            // Feed to headlessTerminal for buffer-dependent features (search, dangerous command detection)
-            let bytes = Array(outputData)
-            headlessTerminal?.terminal.feed(byteArray: bytes)
+            // HeadlessTerminal feed removed (Phase 3b): Buffer-dependent features
+            // (search, dangerous command detection) now use native Rust FFI via
+            // getBufferAsData(), terminalRows, terminalCols, currentAbsoluteRow.
+            // This eliminates 2x memory usage from the HeadlessTerminal mirror.
 
             // Smart Scroll: Restore position if user wasn't at bottom
             restoreSmartScrollIfNeeded(smartScrollEnabled: smartScrollEnabled, wasAtBottom: wasAtBottom, savedPosition: savedScrollPosition)
@@ -2155,6 +2372,28 @@ final class RustTerminalView: NSView {
         if now - Self.lastPollAndSyncLogTime > 10.0 {  // Log every 10 seconds
             Log.trace("RustTerminalView[\(viewId)]: pollAndSync - Status: \(Self.pollAndSyncCounter) polls, \(Self.syncCount) syncs")
             Self.lastPollAndSyncLogTime = now
+        }
+    }
+
+    // MARK: - Metal GPU Rendering Support
+
+    /// Creates a grid provider closure for the RustMetalDisplayCoordinator.
+    /// Returns nil if the Rust terminal is not available (library not loaded).
+    /// The closure captures the FFI instance and provides grid snapshot + cursor + free.
+    func makeGridProvider() -> RustGridProvider? {
+        guard let rust = rustTerminal else {
+            Log.warn("RustTerminalView[\(viewId)]: makeGridProvider - No Rust terminal available")
+            return nil
+        }
+
+        return { [weak rust] in
+            guard let rust = rust else { return nil }
+            guard let (grid, freeGrid) = rust.getGrid() else { return nil }
+
+            let cursor = rust.cursorPosition
+            // grid is UnsafeMutablePointer<RustGridSnapshot>, cast to raw for the generic provider
+            let rawPtr = UnsafeMutableRawPointer(grid)
+            return (grid: rawPtr, cursor: cursor, free: freeGrid)
         }
     }
 
@@ -2198,6 +2437,9 @@ final class RustTerminalView: NSView {
         let gridRows = Int(snapshot.rows)
         let totalCells = gridCols * gridRows
         let cursor = rust.cursorPosition
+
+        // Cache scrollback size for renderTopVisibleRow (lightweight access)
+        cachedScrollbackRows = Int(snapshot.scrollback_rows)
 
         // Fast path: Check if grid dimensions changed (requires full rebuild)
         let dimensionsChanged = gridCols != previousGridCols || gridRows != previousGridRows
@@ -3180,7 +3422,7 @@ final class RustTerminalView: NSView {
         guard !data.isEmpty else { return }
         Log.trace("RustTerminalView[\(viewId)]: injectOutput - Injecting \(data.count) bytes")
         rustTerminal.injectOutput(data)
-        headlessTerminal?.terminal.feed(byteArray: Array(data))
+        // HeadlessTerminal feed removed (Phase 3b) — Rust is the sole source of truth
         needsGridSync = true
     }
 
@@ -3197,6 +3439,51 @@ final class RustTerminalView: NSView {
     func getTerminal() -> Terminal {
         Log.trace("RustTerminalView[\(viewId)]: getTerminal - Returning HeadlessTerminal")
         return headlessTerminal.terminal
+    }
+
+    /// Returns the full terminal buffer (screen + scrollback) as UTF-8 Data.
+    /// Uses native Rust FFI when available, falling back to HeadlessTerminal.
+    func getBufferAsData() -> Data? {
+        // Prefer native Rust FFI — avoids HeadlessTerminal dependency
+        if let text = rustTerminal?.fullBufferText() {
+            return text.data(using: .utf8)
+        }
+        // Fallback to HeadlessTerminal mirror
+        return headlessTerminal.terminal.getBufferAsData()
+    }
+
+    var terminalRows: Int { rows }
+    var terminalCols: Int { cols }
+
+    /// Current cursor row in absolute buffer coordinates.
+    /// Uses native Rust data: topVisibleRow (history - displayOffset) + cursor.row
+    var currentAbsoluteRow: Int {
+        guard let rust = rustTerminal else { return 0 }
+        let cursor = rust.cursorPosition
+        return renderTopVisibleRow + Int(cursor.row)
+    }
+
+    /// Get the text of a specific row in absolute buffer coordinates.
+    /// Converts to Rust grid coordinates (where negative = scrollback, 0 = top of viewport).
+    func getLineText(absoluteRow: Int) -> String {
+        guard let rust = rustTerminal else { return "" }
+        // Convert absolute row to Rust grid coordinates:
+        // gridRow = absoluteRow - historySize
+        // (e.g., row 0 → -historySize, row historySize → 0)
+        let gridRow = absoluteRow - cachedScrollbackRows
+        // Use the grid snapshot-based getLineText for visible rows (0..<rows)
+        // For scrollback rows (negative), we need the FFI approach.
+        // The FFI getLineText reads from grid snapshot (visible only, 0-indexed).
+        // For rows outside the visible viewport, fall back to buffer text.
+        if gridRow >= 0 && gridRow < rows {
+            return rust.getLineText(row: gridRow) ?? ""
+        }
+        // For scrollback rows, use the full buffer text (cached when possible)
+        guard let data = getBufferAsData() else { return "" }
+        let text = String(decoding: data, as: UTF8.self)
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: false)
+        guard absoluteRow >= 0 && absoluteRow < lines.count else { return "" }
+        return String(lines[absoluteRow])
     }
 
     /// Configure colors
@@ -3607,11 +3894,13 @@ final class RustTerminalView: NSView {
         cursorLineView?.needsDisplay = true
     }
 
-    /// Record the current input line for history tracking
+    /// Record the current input line for history tracking.
+    /// Uses native Rust cursor + scroll data (no HeadlessTerminal dependency).
     func recordInputLine() {
-        let terminal = getTerminal()
-        let cursor = terminal.getCursorLocation()
-        let row = terminal.getTopVisibleRow() + cursor.y
+        guard let rust = rustTerminal else { return }
+        let cursor = rust.cursorPosition
+        let topRow = renderTopVisibleRow
+        let row = topRow + Int(cursor.row)
         inputLineTracker.record(row: row)
         updateCursorLineHighlight()
     }

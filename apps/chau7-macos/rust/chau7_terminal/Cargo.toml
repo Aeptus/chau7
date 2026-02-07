@@ -1,7 +1,7 @@
 [package]
 name = "chau7_terminal"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lib]
 crate-type = ["cdylib", "staticlib"]
@@ -9,12 +9,13 @@ crate-type = ["cdylib", "staticlib"]
 [dependencies]
 alacritty_terminal = "0.25"
 portable-pty = "0.9"
-anyhow = "1.0"
+thiserror = "2"
 libc = "0.2"
 log = "0.4"
 env_logger = "0.11"
 parking_lot = "0.12"
 crossbeam-channel = "0.5"
+memchr = "2"
 
 [build-dependencies]
 cbindgen = "0.29"

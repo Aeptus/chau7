@@ -49,7 +49,9 @@ final class SplashWindowController {
         window.isReleasedWhenClosed = false  // Prevent premature deallocation
         window.center()
         window.contentView = hostingView
-        window.makeKeyAndOrderFront(nil)
+        // Borderless windows can't become key — use orderFront to avoid
+        // the AppKit warning about makeKeyWindow on an ineligible window.
+        window.orderFront(nil)
 
         self.window = window
     }

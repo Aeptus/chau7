@@ -129,8 +129,10 @@ final class ConfigFileWatcher: ObservableObject {
         fileDescriptor = open(path, O_EVTONLY)
         guard fileDescriptor >= 0 else { return }
 
+        // Capture fd by value so cancel handler closes the correct descriptor.
+        let fd = fileDescriptor
         let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fileDescriptor,
+            fileDescriptor: fd,
             eventMask: [.write, .rename],
             queue: .global(qos: .utility)
         )
@@ -143,7 +145,8 @@ final class ConfigFileWatcher: ObservableObject {
         }
 
         source.setCancelHandler { [weak self] in
-            if let fd = self?.fileDescriptor, fd >= 0 { close(fd) }
+            close(fd)
+            self?.fileDescriptor = -1
         }
 
         source.resume()
@@ -152,7 +155,12 @@ final class ConfigFileWatcher: ObservableObject {
     }
 
     func stopWatching() {
-        fileMonitorSource?.cancel()
-        fileMonitorSource = nil
+        if let source = fileMonitorSource {
+            source.cancel()
+            fileMonitorSource = nil
+        } else if fileDescriptor >= 0 {
+            close(fileDescriptor)
+            fileDescriptor = -1
+        }
     }
 }

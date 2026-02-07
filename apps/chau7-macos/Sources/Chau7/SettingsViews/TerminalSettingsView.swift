@@ -241,6 +241,21 @@ struct TerminalSettingsView: View {
                 }
             }
 
+            SettingsToggle(
+                label: "Metal Renderer (Experimental)",
+                help: "Use GPU-accelerated Metal rendering for the SwiftTerm backend. " +
+                      "Falls back to standard rendering if Metal is unavailable. " +
+                      "Changes take effect for new tabs only.",
+                isOn: $settings.useMetalRenderer
+            )
+
+            if settings.useMetalRenderer {
+                Text("New SwiftTerm tabs will use Metal GPU rendering. The terminal still processes via SwiftTerm — Metal only handles display.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.leading, 20)
+            }
+
             Divider()
                 .padding(.vertical, 8)
 

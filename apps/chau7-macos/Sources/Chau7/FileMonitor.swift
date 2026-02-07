@@ -19,8 +19,12 @@ final class FileMonitor {
         descriptor = open(url.path, O_EVTONLY)
         guard descriptor != -1 else { return }
 
+        // Capture the fd by value so the cancel handler always closes the
+        // correct descriptor, even if start() is called again before the
+        // cancel handler fires.
+        let fd = descriptor
         let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: descriptor,
+            fileDescriptor: fd,
             eventMask: [.write, .delete, .rename],
             queue: queue
         )
@@ -35,23 +39,22 @@ final class FileMonitor {
                 }
             }
         }
-        source.setCancelHandler { [weak self] in
-            guard let self else { return }
-            if self.descriptor != -1 {
-                close(self.descriptor)
-                self.descriptor = -1
-            }
+        source.setCancelHandler {
+            close(fd)
         }
         self.source = source
         source.resume()
     }
 
     func stop() {
-        source?.cancel()
-        source = nil
-        if descriptor != -1 {
+        if let source {
+            // The cancel handler owns close(fd) — no double-close race.
+            source.cancel()
+            self.source = nil
+        } else if descriptor != -1 {
+            // No source was created (e.g. open succeeded but source setup failed).
             close(descriptor)
-            descriptor = -1
         }
+        descriptor = -1
     }
 }

@@ -9,6 +9,12 @@ final class TerminalContainerView: NSView {
     var onFirstLayout: ((Chau7TerminalView) -> Void)?
     private var didRunFirstLayout = false
 
+    /// Metal display coordinator (nil when Metal rendering is disabled)
+    private(set) var metalCoordinator: MetalDisplayCoordinator?
+
+    /// Original onBufferChanged callback saved before Metal chaining, restored on disable.
+    private var preMetalBufferChangedCallback: (() -> Void)?
+
     init(terminalView: Chau7TerminalView) {
         self.terminalView = terminalView
         super.init(frame: .zero)
@@ -22,10 +28,91 @@ final class TerminalContainerView: NSView {
     override func layout() {
         super.layout()
         terminalView.frame = bounds
+        metalCoordinator?.metalView.frame = bounds
+
+        // Propagate terminal resize to the Metal coordinator
+        if let coordinator = metalCoordinator {
+            let terminal = terminalView.getTerminal()
+            coordinator.resize(rows: terminal.rows, cols: terminal.cols)
+        }
+
         if !didRunFirstLayout && bounds.width > 0 && bounds.height > 0 {
             didRunFirstLayout = true
             onFirstLayout?(terminalView)
         }
+    }
+
+    /// Enables Metal GPU rendering overlay.
+    /// SwiftTerm remains fully visible and interactive (handles mouse events, selection).
+    /// Metal view sits on top as an opaque display layer with event passthrough.
+    /// HighlightView (if present) is moved above Metal so highlights remain visible.
+    func enableMetalRendering() {
+        guard metalCoordinator == nil else { return }
+        guard let coordinator = MetalDisplayCoordinator(terminalView: terminalView) else {
+            Log.warn("TerminalContainerView: Metal rendering unavailable, keeping SwiftTerm display")
+            return
+        }
+
+        metalCoordinator = coordinator
+
+        // Add Metal view on top of SwiftTerm. Metal is opaque and covers SwiftTerm's
+        // cell rendering. Mouse events pass through Metal to SwiftTerm (hitTest returns nil).
+        let metalView = coordinator.metalView
+        metalView.frame = bounds
+        metalView.autoresizingMask = [.width, .height]
+        addSubview(metalView, positioned: .above, relativeTo: terminalView)
+
+        // Move HighlightView above Metal view so search/danger highlights remain visible.
+        for subview in terminalView.subviews {
+            if subview is TerminalHighlightView {
+                subview.removeFromSuperview()
+                subview.frame = bounds
+                addSubview(subview, positioned: .above, relativeTo: metalView)
+                break
+            }
+        }
+
+        // Save the original callback before wrapping it with Metal sync.
+        preMetalBufferChangedCallback = terminalView.onBufferChanged
+        chainMetalSync(coordinator: coordinator)
+
+        Log.info("TerminalContainerView: Metal rendering enabled")
+    }
+
+    /// Re-chains the Metal sync wrapper onto the current onBufferChanged callback.
+    /// Called from enableMetalRendering() and after updateNSView resets the callback.
+    func chainMetalSync(coordinator: MetalDisplayCoordinator) {
+        let baseCallback = terminalView.onBufferChanged
+        terminalView.onBufferChanged = { [weak coordinator] in
+            baseCallback?()
+            coordinator?.setNeedsSync()
+        }
+    }
+
+    /// Disables Metal rendering, showing SwiftTerm's native display again.
+    func disableMetalRendering() {
+        guard let coordinator = metalCoordinator else { return }
+        coordinator.stop()
+
+        // Restore the original onBufferChanged callback (before Metal chaining)
+        if let original = preMetalBufferChangedCallback {
+            terminalView.onBufferChanged = original
+        }
+        preMetalBufferChangedCallback = nil
+
+        // Move HighlightView back into the terminal view
+        for subview in subviews {
+            if subview is TerminalHighlightView {
+                subview.removeFromSuperview()
+                terminalView.addSubview(subview)
+                subview.frame = terminalView.bounds
+                break
+            }
+        }
+
+        coordinator.metalView.removeFromSuperview()
+        metalCoordinator = nil
+        Log.info("TerminalContainerView: Metal rendering disabled")
     }
 }
 
@@ -34,6 +121,12 @@ final class RustTerminalContainerView: NSView {
     let terminalView: RustTerminalView
     var onFirstLayout: ((RustTerminalView) -> Void)?
     private var didRunFirstLayout = false
+
+    /// Rust Metal display coordinator (nil when Metal rendering is disabled)
+    private(set) var rustMetalCoordinator: RustMetalDisplayCoordinator?
+
+    /// Original onBufferChanged callback saved before Metal chaining, restored on disable.
+    private var preMetalBufferChangedCallback: (() -> Void)?
 
     init(terminalView: RustTerminalView) {
         self.terminalView = terminalView
@@ -48,13 +141,111 @@ final class RustTerminalContainerView: NSView {
     override func layout() {
         super.layout()
         terminalView.frame = bounds
+        rustMetalCoordinator?.metalView.frame = bounds
+
+        // Propagate terminal resize to the Metal coordinator
+        if let coordinator = rustMetalCoordinator {
+            coordinator.resize(rows: terminalView.renderRows, cols: terminalView.renderCols)
+        }
+
         if !didRunFirstLayout && bounds.width > 0 && bounds.height > 0 {
             didRunFirstLayout = true
-            // Force the terminal view to recalculate dimensions from the new bounds
-            // before the callback fires (otherwise renderCols is stale from zero-frame init)
-            terminalView.layoutSubtreeIfNeeded()
-            onFirstLayout?(terminalView)
+            // Defer the first-layout callback to the next runloop pass so that
+            // this layout cycle finishes first — avoids the AppKit warning about
+            // calling layoutSubtreeIfNeeded inside an active layout pass.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.terminalView.layoutSubtreeIfNeeded()
+                self.onFirstLayout?(self.terminalView)
+            }
         }
+    }
+
+    /// Enables Metal GPU rendering overlay for the Rust terminal.
+    /// The RustGridView (CPU renderer) stays in place as a fallback.
+    /// Metal view sits on top as an opaque display layer with event passthrough.
+    /// HighlightView (if present) is moved above Metal so highlights remain visible.
+    func enableMetalRendering() {
+        guard rustMetalCoordinator == nil else { return }
+
+        // Create a grid provider closure that reads from the Rust terminal FFI
+        guard let gridProvider = terminalView.makeGridProvider() else {
+            Log.warn("RustTerminalContainerView: Cannot create grid provider, keeping CPU rendering")
+            return
+        }
+
+        guard let coordinator = RustMetalDisplayCoordinator(
+            terminalView: terminalView,
+            gridProvider: gridProvider
+        ) else {
+            Log.warn("RustTerminalContainerView: Metal rendering unavailable, keeping CPU rendering")
+            return
+        }
+
+        rustMetalCoordinator = coordinator
+
+        // Add Metal view on top of RustGridView. Metal is opaque and covers the CPU renderer.
+        // Mouse events pass through Metal to the terminal view (hitTest returns nil).
+        let metalView = coordinator.metalView
+        metalView.frame = bounds
+        metalView.autoresizingMask = [.width, .height]
+        addSubview(metalView, positioned: .above, relativeTo: terminalView)
+
+        // Move HighlightView above Metal view so search/danger highlights remain visible.
+        for subview in terminalView.subviews {
+            if subview is TerminalHighlightView {
+                subview.removeFromSuperview()
+                subview.frame = bounds
+                addSubview(subview, positioned: .above, relativeTo: metalView)
+                break
+            }
+        }
+
+        // Save the original callback before wrapping it with Metal sync.
+        preMetalBufferChangedCallback = terminalView.onBufferChanged
+        chainMetalSync(coordinator: coordinator)
+
+        // Force an immediate Metal render so the first frame isn't blank.
+        // The Metal view sits on top of the CPU renderer, so if we don't
+        // trigger a draw now, the user sees nothing until the next pollAndSync().
+        coordinator.setNeedsSync()
+
+        Log.info("RustTerminalContainerView: Metal rendering enabled")
+    }
+
+    /// Re-chains the Metal sync wrapper onto the current onBufferChanged callback.
+    func chainMetalSync(coordinator: RustMetalDisplayCoordinator) {
+        let baseCallback = terminalView.onBufferChanged
+        terminalView.onBufferChanged = { [weak coordinator] in
+            baseCallback?()
+            coordinator?.setNeedsSync()
+        }
+    }
+
+    /// Disables Metal rendering, showing the CPU RustGridView again.
+    func disableMetalRendering() {
+        guard let coordinator = rustMetalCoordinator else { return }
+        coordinator.stop()
+
+        // Restore the original onBufferChanged callback (before Metal chaining)
+        if let original = preMetalBufferChangedCallback {
+            terminalView.onBufferChanged = original
+        }
+        preMetalBufferChangedCallback = nil
+
+        // Move HighlightView back into the terminal view
+        for subview in subviews {
+            if subview is TerminalHighlightView {
+                subview.removeFromSuperview()
+                terminalView.addSubview(subview)
+                subview.frame = terminalView.bounds
+                break
+            }
+        }
+
+        coordinator.metalView.removeFromSuperview()
+        rustMetalCoordinator = nil
+        Log.info("RustTerminalContainerView: Metal rendering disabled")
     }
 }
 
@@ -65,6 +256,9 @@ final class UnifiedTerminalContainerView: NSView {
 
     /// Whether this container uses the Rust backend
     let usesRustBackend: Bool
+
+    /// Tracks the last applied color scheme for Metal coordinator notifications.
+    var lastMetalColorSchemeSignature: String?
 
     init(swiftTermView: Chau7TerminalView) {
         self.usesRustBackend = false
@@ -106,6 +300,39 @@ final class UnifiedTerminalContainerView: NSView {
     var onFirstRustLayout: ((RustTerminalView) -> Void)? {
         get { rustContainer?.onFirstLayout }
         set { rustContainer?.onFirstLayout = newValue }
+    }
+
+    /// Enables Metal GPU rendering for the active backend.
+    func enableMetalRendering() {
+        if usesRustBackend {
+            rustContainer?.enableMetalRendering()
+        } else {
+            swiftTermContainer?.enableMetalRendering()
+        }
+    }
+
+    /// Disables Metal GPU rendering, restoring the native CPU display.
+    func disableMetalRendering() {
+        if usesRustBackend {
+            rustContainer?.disableMetalRendering()
+        } else {
+            swiftTermContainer?.disableMetalRendering()
+        }
+    }
+
+    /// The active SwiftTerm Metal coordinator, if Metal rendering is enabled.
+    var metalCoordinator: MetalDisplayCoordinator? {
+        swiftTermContainer?.metalCoordinator
+    }
+
+    /// The active Rust Metal coordinator, if Metal rendering is enabled.
+    var rustMetalCoordinator: RustMetalDisplayCoordinator? {
+        rustContainer?.rustMetalCoordinator
+    }
+
+    /// Whether Metal rendering is active on either backend.
+    var isMetalActive: Bool {
+        metalCoordinator != nil || rustMetalCoordinator != nil
     }
 }
 
@@ -215,7 +442,8 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         model.attachHighlightView(highlightView)
 
         let container = UnifiedTerminalContainerView(swiftTermView: view)
-        container.onFirstSwiftTermLayout = { [weak model, weak view] terminalView in
+        let useMetalRenderer = settings.useMetalRenderer
+        container.onFirstSwiftTermLayout = { [weak model, weak view, weak container] terminalView in
             guard let model, let view else { return }
             let tip = PowerUserTips.randomFormattedTip()
             if let headerBox = terminalHeaderBox(cols: terminalView.getTerminal().cols, message: tip) {
@@ -231,6 +459,11 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             model.attachTerminal(view)
             model.applyFontSize()
             model.scheduleShellIntegration(for: view)
+
+            // Enable Metal GPU rendering if the setting is on
+            if useMetalRenderer {
+                container?.enableMetalRendering()
+            }
         }
         return container
     }
@@ -333,7 +566,8 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         model.attachHighlightView(highlightView)
 
         let container = UnifiedTerminalContainerView(rustView: view)
-        container.onFirstRustLayout = { [weak model, weak view] rustView in
+        let useMetalRenderer = settings.useMetalRenderer
+        container.onFirstRustLayout = { [weak model, weak view, weak container] rustView in
             guard let model, let view else { return }
 
             // Display power user tip directly in the terminal output (parity with SwiftTerm path)
@@ -345,6 +579,11 @@ struct TerminalViewRepresentable: NSViewRepresentable {
 
             model.attachRustTerminal(view)
             model.applyFontSize()
+
+            // Enable Metal GPU rendering if the setting is on
+            if useMetalRenderer {
+                container?.enableMetalRendering()
+            }
         }
         return container
     }
@@ -360,11 +599,20 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     private func updateSwiftTermView(_ container: UnifiedTerminalContainerView) {
         guard let nsView = container.swiftTerminalView else { return }
         nsView.setEventMonitoringEnabled(isActive && !isSuspended)
+
+        // SwiftTerm stays visible even when Metal is active (Metal covers it visually
+        // but SwiftTerm handles mouse events, selection, and draws underneath).
+        let metalActive = container.metalCoordinator != nil
         if nsView.isHidden != isSuspended {
             nsView.isHidden = isSuspended
             if !isSuspended {
                 nsView.needsDisplay = true
             }
+        }
+
+        // Suspend/resume Metal view alongside the terminal
+        if metalActive {
+            container.metalCoordinator?.metalView.isHidden = isSuspended
         }
         if nsView.notifyUpdateChanges == isSuspended {
             nsView.notifyUpdateChanges = !isSuspended
@@ -373,10 +621,24 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         nsView.configureCursorLineHighlight(contextLines: false, inputHistory: false)
 
         let desiredFont = terminalFont()
-        if nsView.font.fontName != desiredFont.fontName || nsView.font.pointSize != desiredFont.pointSize {
+        let fontChanged = nsView.font.fontName != desiredFont.fontName || nsView.font.pointSize != desiredFont.pointSize
+        if fontChanged {
             nsView.font = desiredFont
+            container.metalCoordinator?.fontChanged()
         }
-        nsView.applyColorScheme(settings.currentColorScheme)
+
+        let scheme = settings.currentColorScheme
+        nsView.applyColorScheme(scheme)
+
+        // Notify Metal coordinator only when the color scheme actually changes
+        if metalActive {
+            let sig = scheme.signature
+            if container.lastMetalColorSchemeSignature != sig {
+                container.lastMetalColorSchemeSignature = sig
+                container.metalCoordinator?.colorSchemeChanged()
+            }
+        }
+
         nsView.applyCursorStyle(style: settings.cursorStyle, blink: settings.cursorBlink)
         nsView.applyBellSettings(enabled: settings.bellEnabled, sound: settings.bellSound)
         nsView.applyScrollbackLines(settings.scrollbackLines)
@@ -385,11 +647,18 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     private func updateRustTerminalView(_ container: UnifiedTerminalContainerView) {
         guard let nsView = container.rustTerminalView else { return }
         nsView.setEventMonitoringEnabled(isActive && !isSuspended)
+
+        let rustMetalActive = container.rustMetalCoordinator != nil
         if nsView.isHidden != isSuspended {
             nsView.isHidden = isSuspended
             if !isSuspended {
                 nsView.needsDisplay = true
             }
+        }
+
+        // Suspend/resume Metal view alongside the terminal
+        if rustMetalActive {
+            container.rustMetalCoordinator?.metalView.isHidden = isSuspended
         }
         if nsView.notifyUpdateChanges == isSuspended {
             nsView.notifyUpdateChanges = !isSuspended
@@ -398,10 +667,24 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         nsView.configureCursorLineHighlight(contextLines: false, inputHistory: false)
 
         let desiredFont = terminalFont()
-        if nsView.font.fontName != desiredFont.fontName || nsView.font.pointSize != desiredFont.pointSize {
+        let fontChanged = nsView.font.fontName != desiredFont.fontName || nsView.font.pointSize != desiredFont.pointSize
+        if fontChanged {
             nsView.font = desiredFont
+            container.rustMetalCoordinator?.fontChanged()
         }
-        nsView.applyColorScheme(settings.currentColorScheme)
+
+        let scheme = settings.currentColorScheme
+        nsView.applyColorScheme(scheme)
+
+        // Notify Rust Metal coordinator only when the color scheme actually changes
+        if rustMetalActive {
+            let sig = scheme.signature
+            if container.lastMetalColorSchemeSignature != sig {
+                container.lastMetalColorSchemeSignature = sig
+                container.rustMetalCoordinator?.colorSchemeChanged()
+            }
+        }
+
         nsView.applyCursorStyle(style: settings.cursorStyle, blink: settings.cursorBlink)
         nsView.applyBellSettings(enabled: settings.bellEnabled, sound: settings.bellSound)
         nsView.applyScrollbackLines(settings.scrollbackLines)

@@ -11,6 +11,7 @@ enum FeatureMetric: String, CaseIterable, Identifiable {
     case semantic = "Semantic"
     case aiDetect = "AI Detect"
     case remoteOutput = "Remote Output"
+    case metalRender = "Metal Render"
 
     var id: String { rawValue }
 
@@ -27,6 +28,7 @@ enum FeatureMetric: String, CaseIterable, Identifiable {
         case .semantic: return "Semantic"
         case .aiDetect: return "AIDetect"
         case .remoteOutput: return "RemoteOutput"
+        case .metalRender: return "MetalRender"
         }
     }
 }

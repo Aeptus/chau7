@@ -48,6 +48,10 @@ public final class OptimalMetalView: MTKView {
 
     // MARK: - Initialization
 
+    /// When true, all mouse events pass through to the view underneath.
+    /// Used in coexistence mode where SwiftTerm handles input and Metal handles display.
+    public var isEventPassthrough: Bool = false
+
     public init(frame: CGRect, device: MTLDevice) {
         super.init(frame: frame, device: device)
         configureForLowLatency()
@@ -56,6 +60,13 @@ public final class OptimalMetalView: MTKView {
     required init(coder: NSCoder) {
         super.init(coder: coder)
         configureForLowLatency()
+    }
+
+    // MARK: - Event Passthrough
+
+    public override func hitTest(_ point: NSPoint) -> NSView? {
+        if isEventPassthrough { return nil }
+        return super.hitTest(point)
     }
 
     deinit {

@@ -1104,6 +1104,13 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(isRustTerminalEnabled, forKey: Keys.rustTerminalEnabled) }
     }
 
+    /// Use Metal GPU rendering for the SwiftTerm terminal.
+    /// Renders terminal cells on the GPU instead of CoreGraphics.
+    /// Changes take effect for new tabs only.
+    @Published var useMetalRenderer: Bool {
+        didSet { UserDefaults.standard.set(useMetalRenderer, forKey: Keys.useMetalRenderer) }
+    }
+
     /// Click on input line to position cursor (like modern text editors).
     /// Single click moves cursor, click+drag selects text.
     @Published var isClickToPositionEnabled: Bool {
@@ -1507,6 +1514,7 @@ final class FeatureSettings: ObservableObject {
         static let cmdClickOpensInternalEditor = "feature.cmdClickOpensInternalEditor"
         static let optionClickCursor = "feature.optionClickCursor"
         static let mouseReporting = "feature.mouseReporting"
+        static let useMetalRenderer = "feature.useMetalRenderer"
         static let rustTerminalEnabled = "feature.rustTerminalEnabled"
         static let clickToPosition = "feature.clickToPosition"
         static let defaultEditor = "feature.defaultEditor"
@@ -1723,6 +1731,8 @@ final class FeatureSettings: ObservableObject {
         self.isMouseReportingEnabled = defaults.object(forKey: Keys.mouseReporting) as? Bool ?? false
         // Rust terminal: disabled by default (experimental, enable in Settings > Terminal)
         self.isRustTerminalEnabled = defaults.object(forKey: Keys.rustTerminalEnabled) as? Bool ?? false
+        // Metal renderer: disabled by default (experimental GPU rendering path)
+        self.useMetalRenderer = defaults.object(forKey: Keys.useMetalRenderer) as? Bool ?? false
         // Click-to-position: enabled by default (like modern text editors)
         self.isClickToPositionEnabled = defaults.object(forKey: Keys.clickToPosition) as? Bool ?? true
         self.defaultEditor = defaults.string(forKey: Keys.defaultEditor) ?? ""  // Empty = use $EDITOR or system default

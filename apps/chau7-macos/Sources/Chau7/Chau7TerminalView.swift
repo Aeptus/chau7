@@ -1440,15 +1440,15 @@ final class Chau7TerminalView: LocalProcessTerminalView {
 
     /// Checks if the PTY has echo enabled (safe for local echo).
     /// Returns false for password prompts, vim, etc. where echo is disabled.
-    private var isPtyEchoEnabled: Bool {
-        // Access the PTY file descriptor from LocalProcessTerminalView's process
-        guard let proc = process, proc.childfd >= 0 else { return true }
+    private var isPtyEchoEnabled: Bool { !isPtyEchoDisabled }
 
+    /// Returns true when the PTY's ECHO termios flag is off (password prompt, passphrase, etc.).
+    /// Used to suppress history recording for sensitive input.
+    var isPtyEchoDisabled: Bool {
+        guard let proc = process, proc.childfd >= 0 else { return false }
         var termios = Darwin.termios()
-        guard tcgetattr(proc.childfd, &termios) == 0 else { return true }
-
-        // Check if ECHO flag is set in local modes
-        return (termios.c_lflag & UInt(ECHO)) != 0
+        guard tcgetattr(proc.childfd, &termios) == 0 else { return false }
+        return (termios.c_lflag & UInt(ECHO)) == 0
     }
 
     override func send(source: TerminalView, data: ArraySlice<UInt8>) {
