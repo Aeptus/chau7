@@ -173,6 +173,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private var pendingCommandLine: String? = nil
     private var promptSeenForPendingCommand = false
     private var commandFinishedNotified = false
+    private let terminationStateQueue = DispatchQueue(label: "com.chau7.terminal.termination")
+    private var didHandleProcessTermination = false
+    private var closeSessionRequested = false
     private let dangerousCommandTracker = InputLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
     private var dangerousOutputHighlightWorkItem: DispatchWorkItem?
     private var dangerousOutputHighlightLastRun = Date.distantPast
@@ -336,24 +339,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
         // Wire up process termination callback (equivalent to LocalProcessTerminalViewDelegate.processTerminated)
         view.onProcessTerminated = { [weak self] (exitCode: Int32?) in
-            guard let self = self else { return }
-            DispatchQueue.main.async {
-                self.status = .exited
-                self.devServer = nil
-            }
-            self.devServerMonitor.stop()
-            // finishAILogging is idempotent and has internal synchronization
-            self.finishAILogging(exitCode: nil)
-            let type: String
-            let message: String
-            if let exitCode {
-                type = exitCode == 0 ? "finished" : "failed"
-                message = "Shell exited with code \(exitCode)."
-            } else {
-                type = "failed"
-                message = "Shell exited."
-            }
-            self.appModel?.recordEvent(source: .terminalSession, type: type, tool: self.notificationTabName, message: message, notify: true)
+            self?.handleProcessTermination(exitCode: exitCode)
         }
 
         // Wire up directory change callback (equivalent to LocalProcessTerminalViewDelegate.hostCurrentDirectoryUpdate)
@@ -1680,29 +1666,17 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     func processTerminated(source: TerminalView, exitCode: Int32?) {
-        DispatchQueue.main.async {
-            self.status = .exited
-            self.devServer = nil
-        }
-        devServerMonitor.stop()
-        // finishAILogging is idempotent and has internal synchronization
-        finishAILogging(exitCode: nil)
-        let type: String
-        let message: String
-        if let exitCode {
-            type = exitCode == 0 ? "finished" : "failed"
-            message = "Shell exited with code \(exitCode)."
-        } else {
-            type = "failed"
-            message = "Shell exited."
-        }
-        appModel?.recordEvent(source: .terminalSession, type: type, tool: notificationTabName, message: message, notify: true)
+        handleProcessTermination(exitCode: exitCode)
     }
 
     // MARK: - Session Control (Issue #5, #15 fixes)
 
     /// Closes the session by sending exit command and cleaning up resources.
     func closeSession() {
+        terminationStateQueue.sync {
+            closeSessionRequested = true
+        }
+
         // Stop all background work
         stopIdleTimer()
         gitCheckWorkItem?.cancel()
@@ -1711,6 +1685,62 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         // Send exit to the shell (works with both backends)
         activeTerminalView?.send(txt: "exit\n")
         Log.trace("Sent exit command to shell session.")
+    }
+
+    private func handleProcessTermination(exitCode: Int32?) {
+        var shouldEmit = false
+        var requestedByClose = false
+        terminationStateQueue.sync {
+            requestedByClose = closeSessionRequested
+            if didHandleProcessTermination {
+                shouldEmit = false
+            } else {
+                didHandleProcessTermination = true
+                shouldEmit = true
+            }
+        }
+
+        guard shouldEmit else {
+            Log.trace("Ignoring duplicate process termination callback (exitCode=\(String(describing: exitCode))).")
+            return
+        }
+
+        DispatchQueue.main.async {
+            self.status = .exited
+            self.devServer = nil
+        }
+        devServerMonitor.stop()
+        // finishAILogging is idempotent and has internal synchronization
+        finishAILogging(exitCode: nil)
+
+        let type: String
+        let message: String
+        let shouldNotify: Bool
+        if requestedByClose {
+            type = "finished"
+            if let exitCode {
+                message = "Shell closed with code \(exitCode)."
+            } else {
+                message = "Shell closed."
+            }
+            shouldNotify = false
+        } else if let exitCode {
+            type = exitCode == 0 ? "finished" : "failed"
+            message = "Shell exited with code \(exitCode)."
+            shouldNotify = true
+        } else {
+            type = "failed"
+            message = "Shell exited."
+            shouldNotify = true
+        }
+
+        appModel?.recordEvent(
+            source: .terminalSession,
+            type: type,
+            tool: notificationTabName,
+            message: message,
+            notify: shouldNotify
+        )
     }
 
     func copyOrInterrupt() {

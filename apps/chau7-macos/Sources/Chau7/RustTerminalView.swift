@@ -1921,6 +1921,9 @@ final class RustTerminalView: NSView {
     /// Whether the Rust terminal has been started
     private var isTerminalStarted = false
 
+    /// Ensures process termination callback is emitted only once per terminal lifecycle.
+    private var didEmitProcessTermination = false
+
     override init(frame frameRect: NSRect) {
         Self.viewCounter += 1
         self.viewId = Self.viewCounter
@@ -2003,6 +2006,7 @@ final class RustTerminalView: NSView {
             return
         }
         isTerminalStarted = true
+        didEmitProcessTermination = false
 
         // Recalculate dimensions with actual bounds
         cols = max(1, Int(bounds.width / cellWidth))
@@ -2116,6 +2120,36 @@ final class RustTerminalView: NSView {
 
     override func becomeFirstResponder() -> Bool {
         Log.trace("RustTerminalView[\(viewId)]: becomeFirstResponder")
+        return true
+    }
+
+    override func validRequestor(forSendType sendType: NSPasteboard.PasteboardType?, returnType: NSPasteboard.PasteboardType?) -> Any? {
+        if sendType == .string {
+            if let selection = getSelection(), !selection.isEmpty {
+                return self
+            }
+        }
+        if returnType == .string {
+            return self
+        }
+        return super.validRequestor(forSendType: sendType, returnType: returnType)
+    }
+
+    @objc(writeSelectionToPasteboard:types:)
+    func writeSelectionToPasteboard(_ pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]) -> Bool {
+        guard types.contains(.string), let selection = getSelection(), !selection.isEmpty else {
+            return false
+        }
+        pboard.clearContents()
+        return pboard.setString(selection, forType: .string)
+    }
+
+    @objc(readSelectionFromPasteboard:)
+    func readSelectionFromPasteboard(_ pboard: NSPasteboard) -> Bool {
+        guard let text = pboard.string(forType: .string), !text.isEmpty else {
+            return false
+        }
+        pasteText(text)
         return true
     }
 
@@ -2240,6 +2274,15 @@ final class RustTerminalView: NSView {
     private static var lastPollAndSyncLogTime: CFAbsoluteTime = 0
     private static var syncCount: UInt64 = 0
 
+    private func emitProcessTerminatedOnce(exitCode: Int32?, reason: String) {
+        guard !didEmitProcessTermination else { return }
+        didEmitProcessTermination = true
+        Log.info("RustTerminalView[\(viewId)]: Process terminated (\(reason), exitCode=\(String(describing: exitCode)))")
+        DispatchQueue.main.async { [weak self] in
+            self?.onProcessTerminated?(exitCode)
+        }
+    }
+
     private func pollAndSync() {
         // Safety: Check if view is being deallocated (CVDisplayLink callback protection)
         guard !isBeingDeallocated else { return }
@@ -2265,18 +2308,12 @@ final class RustTerminalView: NSView {
 
         // Check for child process exit
         if let exitCode = rust.getPendingExitCode() {
-            Log.info("RustTerminalView[\(viewId)]: Shell process exited with code \(exitCode)")
-            DispatchQueue.main.async { [weak self] in
-                self?.onProcessTerminated?(exitCode)
-            }
+            emitProcessTerminatedOnce(exitCode: exitCode, reason: "exit-code")
         }
 
         // Check for PTY closed (without exit code - e.g., connection lost)
         if rust.isPtyClosed() {
-            Log.info("RustTerminalView[\(viewId)]: PTY closed")
-            DispatchQueue.main.async { [weak self] in
-                self?.onProcessTerminated?(nil)
-            }
+            emitProcessTerminatedOnce(exitCode: nil, reason: "pty-closed")
         }
 
         // Update application cursor mode (DECCKM) from terminal state
@@ -4535,7 +4572,10 @@ final class RustTerminalView: NSView {
         }
 
         Log.info("RustTerminalView[\(viewId)]: paste - Pasting \(text.count) chars")
+        pasteText(text)
+    }
 
+    private func pasteText(_ text: String) {
         // Check for bracketed paste mode from Rust terminal (not headlessTerminal which is display-only)
         // This fixes bracketed paste for vim, zsh, and other programs that enable it
         if rustTerminal?.isBracketedPasteMode() == true {
@@ -4614,6 +4654,8 @@ final class RustTerminalView: NSView {
         let menu = NSMenu(title: "Terminal")
         let canCopy = hasSelection
         let canPaste = NSPasteboard.general.string(forType: .string) != nil
+        let insertFromPasswordsSelector = NSSelectorFromString("_handleInsertFromPasswordsCommand:")
+        let canAutoFillFromPasswords = NSApp.target(forAction: insertFromPasswordsSelector, to: nil, from: self) != nil
 
         let copyItem = NSMenuItem(title: "Copy", action: #selector(contextCopy), keyEquivalent: "")
         copyItem.target = self
@@ -4622,6 +4664,14 @@ final class RustTerminalView: NSView {
         let pasteItem = NSMenuItem(title: "Paste", action: #selector(contextPaste), keyEquivalent: "")
         pasteItem.target = self
         pasteItem.isEnabled = canPaste
+
+        let autoFillItem = NSMenuItem(
+            title: L("terminal.context.autofillPasswords", "AutoFill from Passwords..."),
+            action: #selector(contextAutoFillFromPasswords),
+            keyEquivalent: ""
+        )
+        autoFillItem.target = self
+        autoFillItem.isEnabled = canAutoFillFromPasswords
 
         let pasteEscapedItem = NSMenuItem(
             title: L("terminal.context.pasteEscaped", "Paste Escaped"),
@@ -4642,6 +4692,7 @@ final class RustTerminalView: NSView {
 
         menu.addItem(copyItem)
         menu.addItem(pasteItem)
+        menu.addItem(autoFillItem)
         menu.addItem(pasteEscapedItem)
         menu.addItem(.separator())
         menu.addItem(selectAllItem)
@@ -4660,6 +4711,16 @@ final class RustTerminalView: NSView {
     @objc private func contextPaste(_ sender: Any?) {
         Log.trace("RustTerminalView[\(viewId)]: contextPaste")
         paste(self)
+    }
+
+    @objc private func contextAutoFillFromPasswords(_ sender: Any?) {
+        window?.makeFirstResponder(self)
+        let selector = NSSelectorFromString("_handleInsertFromPasswordsCommand:")
+        if NSApp.sendAction(selector, to: nil, from: self) {
+            Log.info("RustTerminalView[\(viewId)]: Invoked Password AutoFill command")
+        } else {
+            Log.warn("RustTerminalView[\(viewId)]: Password AutoFill command unavailable in responder chain")
+        }
     }
 
     @objc private func contextPasteEscaped(_ sender: Any?) {
