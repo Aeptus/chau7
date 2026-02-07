@@ -14,6 +14,7 @@ private final class OverlayBlurView: NSVisualEffectView {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    private static let passwordAutofillSelector = NSSelectorFromString("_handleInsertFromPasswordsCommand:")
     var model: AppModel?
     var overlayModel: OverlayTabsModel?
     private struct OverlayHost {
@@ -530,6 +531,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         terminalView.send(txt: escaped)
         Log.info("Pasted escaped text.")
+    }
+
+    func autofillFromPasswords() {
+        guard let window = NSApp.keyWindow else { return }
+        if let terminalView = activeTerminalView(in: window) {
+            window.makeFirstResponder(terminalView)
+        }
+
+        if NSApp.sendAction(Self.passwordAutofillSelector, to: nil, from: nil) {
+            Log.info("Invoked Password AutoFill from Edit menu.")
+        } else {
+            Log.warn("Password AutoFill command unavailable in responder chain.")
+        }
     }
 
     // MARK: - Smart Select All (Cmd+A / Cmd+A Cmd+A)

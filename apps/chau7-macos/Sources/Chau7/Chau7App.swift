@@ -115,6 +115,10 @@ struct Chau7App: App {
                 }
                 .keyboardShortcut("v")
 
+                Button(L("AutoFill from Passwords...", "AutoFill from Passwords...")) {
+                    appDelegate.autofillFromPasswords()
+                }
+
                 Button(L("Paste Escaped", "Paste Escaped")) {
                     appDelegate.pasteEscaped()
                 }

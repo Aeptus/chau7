@@ -6,6 +6,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${1:-$ROOT_DIR/.build/release}"
 OUT_DIR="${2:-$ROOT_DIR/build}"
 SHOW_DOCK_ICON="${SHOW_DOCK_ICON:-1}"
+BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER:-com.chau7.app.dev}"
 
 export CHAU7_LOG_ROOT="$ROOT_DIR"
 CHAU7_LOG_NAME="build-app"
@@ -22,6 +23,7 @@ if [[ "${CHAU7_LOG_SUPPRESS_HEADER:-0}" != "1" ]]; then
   log_info "Build dir: $BUILD_DIR"
   log_info "Output dir: $OUT_DIR"
   log_info "Show dock icon: $SHOW_DOCK_ICON"
+  log_info "Bundle identifier: $BUNDLE_IDENTIFIER"
 fi
 
 finish() {
@@ -54,7 +56,7 @@ cat <<PLIST > "$CONTENTS/Info.plist"
   <key>CFBundleExecutable</key>
   <string>Chau7</string>
   <key>CFBundleIdentifier</key>
-  <string>com.chau7.app</string>
+  <string>$BUNDLE_IDENTIFIER</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>

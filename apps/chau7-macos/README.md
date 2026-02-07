@@ -63,6 +63,9 @@ swift build -c release
 open ./build/Chau7.app
 ```
 
+`build-app.sh` now defaults to a development bundle identifier (`com.chau7.app.dev`) to avoid
+macOS TCC permission collisions with the Launchpad app.
+
 Quick install one-liner:
 
 ```bash
@@ -79,6 +82,33 @@ SHOW_DOCK_ICON=0 ./Scripts/build-app.sh
 
 ```bash
 ./Scripts/build-and-run.sh
+```
+
+`build-and-run.sh` now defaults to a dev bundle identifier (`com.chau7.app.dev`) to avoid
+macOS permission collisions with `/Applications/Chau7.app`.
+When ad-hoc signing is used, it now applies a stable designated requirement
+(`designated => identifier "<bundle-id>"`) so TCC permissions do not churn on every rebuild.
+Override when needed:
+
+```bash
+BUNDLE_IDENTIFIER=com.chau7.app ./Scripts/build-and-run.sh
+```
+
+### Install / update the Launchpad app
+
+To install the production Launchpad app (`com.chau7.app`) into `/Applications`:
+
+```bash
+./Scripts/install-launchpad-app.sh
+```
+
+Note: this script refuses to replace `/Applications/Chau7.app` while it is running.
+Replacing a running app causes TCC code-requirement mismatches and repeated permission prompts.
+
+Optional: launch it after install:
+
+```bash
+OPEN_AFTER_INSTALL=1 ./Scripts/install-launchpad-app.sh
 ```
 
 You can also run the bundled binary directly with verbose logs:
