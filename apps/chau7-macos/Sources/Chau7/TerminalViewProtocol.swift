@@ -66,7 +66,33 @@ protocol TerminalViewLike: NSView {
 
     /// Returns the underlying SwiftTerm Terminal for buffer access
     /// Note: For RustTerminalView, this returns a HeadlessTerminal that mirrors Rust state
+    /// Prefer the backend-native properties (terminalRows, terminalCols, etc.) where possible.
     func getTerminal() -> Terminal
+
+    // MARK: - Backend-Native Data Access
+
+    /// Number of visible rows in the terminal viewport.
+    var terminalRows: Int { get }
+
+    /// Number of columns in the terminal viewport.
+    var terminalCols: Int { get }
+
+    /// Current cursor row in absolute buffer coordinates (accounting for scrollback).
+    /// This is the row index counting from the top of history (row 0 = first history line).
+    var currentAbsoluteRow: Int { get }
+
+    /// Returns the full terminal buffer (screen + scrollback) as UTF-8 Data.
+    /// Each line is newline-terminated. Trailing spaces on each line are trimmed.
+    ///
+    /// This is the preferred method for search and text extraction.
+    /// - SwiftTerm: delegates to Terminal.getBufferAsData()
+    /// - Rust: calls native FFI (no HeadlessTerminal mirror needed)
+    func getBufferAsData() -> Data?
+
+    /// Get the text content of a specific row in absolute buffer coordinates.
+    /// Row 0 is the first line in scrollback history.
+    /// Returns empty string if the row is out of range.
+    func getLineText(absoluteRow: Int) -> String
 
     // MARK: - Input Methods
 
@@ -158,6 +184,12 @@ protocol TerminalViewLike: NSView {
 
     /// Clear the scrollback buffer
     func clearScrollbackBuffer()
+
+    // MARK: - Security
+
+    /// Returns true when the PTY has echo disabled (e.g., password prompt, passphrase entry).
+    /// Commands entered while echo is disabled should NOT be recorded in history.
+    var isPtyEchoDisabled: Bool { get }
 }
 
 // MARK: - Chau7TerminalView Conformance
@@ -168,6 +200,27 @@ extension Chau7TerminalView: TerminalViewLike {
     func send(data bytes: [UInt8]) {
         // Call the parent class method by converting array to slice
         send(data: bytes[...])
+    }
+
+    var terminalRows: Int { getTerminal().rows }
+    var terminalCols: Int { getTerminal().cols }
+
+    var currentAbsoluteRow: Int {
+        let terminal = getTerminal()
+        let cursor = terminal.getCursorLocation()
+        return terminal.getTopVisibleRow() + cursor.y
+    }
+
+    func getBufferAsData() -> Data? {
+        getTerminal().getBufferAsData()
+    }
+
+    func getLineText(absoluteRow: Int) -> String {
+        let terminal = getTerminal()
+        let cols = terminal.cols
+        let startPos = Position(col: 0, row: absoluteRow)
+        let endPos = Position(col: max(cols - 1, 0), row: absoluteRow)
+        return terminal.getText(start: startPos, end: endPos)
     }
 }
 

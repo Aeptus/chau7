@@ -36,7 +36,22 @@
 #define CELL_FLAG_HIDDEN (1 << 6)
 
 /*
- The main terminal emulator structure
+ The main terminal emulator structure.
+
+ # Lock Ordering
+
+ Acquire locks in ascending order to prevent deadlocks:
+
+ 1. `pty_handle`           (Mutex)  — PTY writer for input/resize
+ 2. `term`                 (Mutex)  — alacritty terminal state
+ 3. `processor`            (Mutex)  — VTE processor (always acquired with #2)
+ 4. `theme_colors`         (RwLock) — theme for rendering (read-heavy)
+ 5. `last_output`          (Mutex)  — raw output buffer
+ 6. `pending_title`        (Mutex)  — title change
+ 7. `pending_exit_code`    (Mutex)  — exit code
+ 8. `graphics_interceptor` (Mutex)  — image pre-filter
+ 9. `image_store`          (Mutex)  — decoded images
+ 10. `child`               (Mutex)  — child process (Drop only)
  */
 typedef struct Chau7Terminal Chau7Terminal;
 
@@ -97,7 +112,7 @@ typedef struct GridSnapshot {
 } GridSnapshot;
 
 /*
- Pool statistics returned by chau7_terminal_pool_stats
+ Pool statistics for debugging
  */
 typedef struct PoolStats {
     uint64_t acquired;
@@ -213,6 +228,59 @@ typedef struct DebugState {
 } DebugState;
 
 /*
+ C-compatible image data for FFI transfer to Swift.
+ Fields ordered by descending alignment to minimize padding.
+ */
+typedef struct FFIImageData {
+    /*
+     Image ID (unique per terminal instance).
+     */
+    uint64_t id;
+    /*
+     Pointer to raw image data (base64 for iTerm2, raw bytes for Sixel/Kitty).
+     */
+    uint8_t *data;
+    /*
+     Length of the data buffer.
+     */
+    size_t data_len;
+    /*
+     Capacity of the data buffer (must match original Vec allocation for safe free).
+     */
+    size_t data_capacity;
+    /*
+     Cursor row when image was received (grid-relative).
+     */
+    int32_t anchor_row;
+    /*
+     Cursor column when image was received.
+     */
+    uint16_t anchor_col;
+    /*
+     Protocol that produced this image (0=iTerm2, 1=Sixel, 2=Kitty).
+     */
+    uint8_t protocol;
+} FFIImageData;
+
+/*
+ C-compatible array of pending images.
+ */
+typedef struct FFIImageArray {
+    /*
+     Pointer to array of FFIImageData structs.
+     */
+    struct FFIImageData *images;
+    /*
+     Number of images in the array.
+     */
+    size_t count;
+    /*
+     Capacity of the images array (must match original Vec allocation for safe free).
+     */
+    size_t capacity;
+} FFIImageArray;
+
+/*
  Create a new terminal with the specified dimensions and shell
 
  # Safety
@@ -242,7 +310,6 @@ struct Chau7Terminal *chau7_terminal_create_with_env(uint16_t cols,
 
  # Safety
  - `term` must be a valid pointer returned by `chau7_terminal_create`
- - The pointer must not be used after this call
  */
 void chau7_terminal_destroy(struct Chau7Terminal *term);
 
@@ -277,7 +344,6 @@ void chau7_terminal_resize(struct Chau7Terminal *term, uint16_t cols, uint16_t r
 
  # Safety
  - `term` must be a valid pointer
- - Returns null on failure
  - The returned GridSnapshot must be freed with `chau7_terminal_free_grid`
  */
 struct GridSnapshot *chau7_terminal_get_grid(struct Chau7Terminal *term);
@@ -287,17 +353,11 @@ struct GridSnapshot *chau7_terminal_get_grid(struct Chau7Terminal *term);
 
  # Safety
  - `grid` must be a valid pointer returned by `chau7_terminal_get_grid`
- - The pointer must not be used after this call
  */
 void chau7_terminal_free_grid(struct GridSnapshot *grid);
 
 /*
- Get cell buffer pool statistics for debugging/monitoring
- Returns: (acquired, returned, allocated, pooled)
- - acquired: total buffers acquired from pool
- - returned: total buffers returned to pool
- - allocated: new allocations (pool misses)
- - pooled: current buffers in pool
+ Get cell buffer pool statistics
  */
 struct PoolStats chau7_terminal_pool_stats(void);
 
@@ -330,7 +390,6 @@ void chau7_terminal_scroll_lines(struct Chau7Terminal *term, int32_t lines);
 
  # Safety
  - `term` must be a valid pointer
- - Returns null if no selection or on failure
  - The returned string must be freed with `chau7_terminal_free_string`
  */
 char *chau7_terminal_selection_text(struct Chau7Terminal *term);
@@ -345,11 +404,6 @@ void chau7_terminal_selection_clear(struct Chau7Terminal *term);
 
 /*
  Start a new selection at the given position
-
- # Arguments
- - `col`: Column position (0-indexed)
- - `row`: Row position (can be negative for scrollback)
- - `selection_type`: 0 = Simple (character), 1 = Block, 2 = Semantic (word), 3 = Lines
 
  # Safety
  - `term` must be a valid pointer
@@ -380,21 +434,15 @@ void chau7_terminal_selection_all(struct Chau7Terminal *term);
 
  # Safety
  - `s` must be a valid pointer returned by `chau7_terminal_selection_text` or similar
- - The pointer must not be used after this call
  */
 void chau7_terminal_free_string(char *s);
 
 /*
- Get the text of a specific line in the terminal grid.
-
- The `row` index is in grid coordinates where 0 is the top of the visible
- viewport. Negative rows refer to scrollback when available.
-
- Returns a null-terminated UTF-8 string. The caller must free it with
- `chau7_terminal_free_string`.
+ Get the text of a specific line in the terminal grid
 
  # Safety
  - `term` must be a valid pointer
+ - The returned string must be freed with `chau7_terminal_free_string`
  */
 char *chau7_terminal_get_line_text(struct Chau7Terminal *term, int32_t row);
 
@@ -418,24 +466,20 @@ void chau7_terminal_cursor_position(struct Chau7Terminal *term, uint16_t *col, u
 bool chau7_terminal_poll(struct Chau7Terminal *term, uint32_t timeout_ms);
 
 /*
- Get raw output bytes from the last poll.
- Returns a pointer to the byte data and the length.
- Each call returns a new allocation that must be freed via chau7_terminal_free_output.
+ Get raw output bytes from the last poll
 
  # Safety
  - `term` must be a valid pointer
  - `out_len` must be a valid pointer to a usize
  - The returned pointer must be freed via chau7_terminal_free_output
- - Returns null if no output is available
  */
 uint8_t *chau7_terminal_get_last_output(struct Chau7Terminal *term, size_t *out_len);
 
 /*
- Inject output bytes directly into the terminal (without sending to PTY).
- This is used for UI-only content like the power user tip header.
+ Inject output bytes directly into the terminal (without sending to PTY)
 
  # Safety
- - `term` must be a valid pointer returned by `chau7_terminal_create`
+ - `term` must be a valid pointer
  - `data` must be a valid pointer to at least `len` bytes (unless `len` is 0)
  */
 void chau7_terminal_inject_output(struct Chau7Terminal *term, const uint8_t *data, size_t len);
@@ -446,7 +490,6 @@ void chau7_terminal_inject_output(struct Chau7Terminal *term, const uint8_t *dat
  # Safety
  - `data` must be a pointer returned by `chau7_terminal_get_last_output`
  - `len` must be the length returned with that pointer
- - The pointer must not be used after this call
  */
 void chau7_terminal_free_output(uint8_t *data, size_t len);
 
@@ -472,9 +515,6 @@ void chau7_terminal_set_colors(struct Chau7Terminal *term,
 /*
  Clear the scrollback history buffer
 
- This removes all lines from the scrollback buffer, freeing memory.
- The visible screen content is preserved.
-
  # Safety
  - `term` must be a valid pointer
  */
@@ -482,9 +522,6 @@ void chau7_terminal_clear_scrollback(struct Chau7Terminal *term);
 
 /*
  Set the scrollback buffer size (number of lines)
-
- This updates the maximum number of lines that can be stored in the scrollback buffer.
- If the new size is smaller than the current history, older lines will be discarded.
 
  # Safety
  - `term` must be a valid pointer
@@ -494,45 +531,13 @@ void chau7_terminal_set_scrollback_size(struct Chau7Terminal *term, uint32_t lin
 /*
  Get the current display offset (scroll position in lines)
 
- Returns:
- - 0 if at the bottom (showing current output)
- - >0 if scrolled up (viewing history)
-
- This is useful for implementing smart scroll behavior: only auto-scroll
- to bottom if display_offset is 0.
-
  # Safety
  - `term` must be a valid pointer
  */
 uint32_t chau7_terminal_display_offset(struct Chau7Terminal *term);
 
 /*
- Get the current mouse mode as a bitfield.
-
- Returns a u32 with the following bits:
- - Bit 0 (0x01): MOUSE_REPORT_CLICK - Mouse mode 1000 (report button press/release)
- - Bit 1 (0x02): MOUSE_DRAG - Mouse mode 1002 (also report motion while button down)
- - Bit 2 (0x04): MOUSE_MOTION - Mouse mode 1003 (report all motion)
- - Bit 3 (0x08): FOCUS_IN_OUT - Focus in/out reporting (mode 1004)
- - Bit 4 (0x10): SGR_MOUSE - Mouse mode 1006 (use SGR encoding for coordinates >223)
-
- To check if any mouse reporting is active, check if (result & 0x07) != 0.
- To check if SGR mode should be used, check if (result & 0x10) != 0.
-
- # Safety
- - `term` must be a valid pointer
- */
-uint32_t chau7_terminal_mouse_mode(struct Chau7Terminal *term);
-
-/*
  Check if bracketed paste mode is enabled
-
- Returns true if the terminal has bracketed paste mode enabled.
- This is typically set by programs like vim, zsh, or any readline-based
- application via the escape sequence ESC[?2004h.
-
- When enabled, pasted text should be wrapped with ESC[200~ and ESC[201~
- to distinguish it from typed input.
 
  # Safety
  - `term` must be a valid pointer
@@ -542,13 +547,6 @@ bool chau7_terminal_is_bracketed_paste_mode(struct Chau7Terminal *term);
 /*
  Check if application cursor mode (DECCKM) is enabled
 
- Returns true if the terminal has application cursor mode enabled.
- This is typically set by programs like vim, less, tmux via the escape
- sequence ESC[?1h (DECCKM - DEC Cursor Key Mode).
-
- When enabled, arrow keys should send SS3 sequences (ESC O A/B/C/D)
- instead of CSI sequences (ESC [ A/B/C/D).
-
  # Safety
  - `term` must be a valid pointer
  */
@@ -557,27 +555,13 @@ bool chau7_terminal_is_application_cursor_mode(struct Chau7Terminal *term);
 /*
  Check if a bell event has occurred since the last check
 
- Returns true if a bell (BEL, 0x07) was received by the terminal since
- the last call to this function. The flag is automatically cleared.
-
- This allows Swift to poll for bell events and trigger audio/visual feedback.
-
  # Safety
  - `term` must be a valid pointer
  */
 bool chau7_terminal_check_bell(struct Chau7Terminal *term);
 
 /*
- Get the current mouse mode as a bitmask
-
- Returns a u32 representing which mouse modes are active:
- - Bit 0 (1): MOUSE_REPORT_CLICK - Basic mouse click reporting (mode 1000)
- - Bit 1 (2): MOUSE_DRAG - Mouse drag reporting (mode 1002)
- - Bit 2 (4): MOUSE_MOTION - All mouse motion reporting (mode 1003)
- - Bit 3 (8): FOCUS_IN_OUT - Focus in/out reporting (mode 1004)
- - Bit 4 (16): SGR_MOUSE - SGR extended coordinates (mode 1006)
-
- Returns 0 if no mouse modes are active or if term is null.
+ Get the current mouse mode as a bitmask (alias for chau7_terminal_mouse_mode)
 
  # Safety
  - `term` must be a valid pointer
@@ -585,12 +569,7 @@ bool chau7_terminal_check_bell(struct Chau7Terminal *term);
 uint32_t chau7_terminal_get_mouse_mode(struct Chau7Terminal *term);
 
 /*
- Check if any mouse tracking mode is active (click, drag, or motion reporting)
-
- This is a convenience function that returns true if any of the mouse
- tracking modes (MOUSE_REPORT_CLICK, MOUSE_DRAG, or MOUSE_MOTION) are enabled.
- These modes indicate that mouse events should be reported to the running
- application (e.g., vim, tmux, htop) rather than handled by the terminal.
+ Check if any mouse tracking mode is active
 
  # Safety
  - `term` must be a valid pointer
@@ -600,10 +579,6 @@ bool chau7_terminal_is_mouse_reporting_active(struct Chau7Terminal *term);
 /*
  Get the shell process ID
 
- Returns the PID of the shell process running in this terminal.
- This is useful for dev server monitoring which needs to find child processes.
- Returns 0 if the terminal is invalid or PID is not available.
-
  # Safety
  - `term` must be a valid pointer
  */
@@ -612,9 +587,6 @@ uint64_t chau7_terminal_get_shell_pid(struct Chau7Terminal *term);
 /*
  Get a comprehensive debug state snapshot
 
- Returns a pointer to a DebugState struct containing terminal state and metrics.
- The caller must free this with `chau7_terminal_free_debug_state`.
-
  # Safety
  - `term` must be a valid pointer
  - The returned pointer must be freed with `chau7_terminal_free_debug_state`
@@ -622,19 +594,15 @@ uint64_t chau7_terminal_get_shell_pid(struct Chau7Terminal *term);
 struct DebugState *chau7_terminal_get_debug_state(struct Chau7Terminal *term);
 
 /*
- Free a debug state returned by `chau7_terminal_get_debug_state`
+ Free a debug state
 
  # Safety
  - `state` must be a valid pointer returned by `chau7_terminal_get_debug_state`
- - The pointer must not be used after this call
  */
 void chau7_terminal_free_debug_state(struct DebugState *state);
 
 /*
  Get the full buffer text (visible + scrollback) for debugging
-
- Returns a null-terminated string containing the entire terminal buffer.
- The caller must free this with `chau7_terminal_free_string`.
 
  # Safety
  - `term` must be a valid pointer
@@ -645,8 +613,6 @@ char *chau7_terminal_get_full_buffer_text(struct Chau7Terminal *term);
 /*
  Reset performance metrics
 
- Clears all performance counters (poll count, timing, etc.)
-
  # Safety
  - `term` must be a valid pointer
  */
@@ -654,9 +620,6 @@ void chau7_terminal_reset_metrics(struct Chau7Terminal *term);
 
 /*
  Get current activity level (0-100)
-
- Returns the terminal's current activity level as a percentage.
- 100 = very active (lots of output), 0 = completely idle
 
  # Safety
  - `term` must be a valid pointer
@@ -666,19 +629,13 @@ uint8_t chau7_terminal_activity_level(struct Chau7Terminal *term);
 /*
  Check if poll should be skipped (power saving)
 
- Returns true if the terminal has been idle long enough that the next
- poll cycle can be skipped to save power. Use this for adaptive polling.
-
  # Safety
  - `term` must be a valid pointer
  */
 bool chau7_terminal_should_skip_poll(struct Chau7Terminal *term);
 
 /*
- Get count of dirty rows (for partial update optimization)
-
- Returns the number of rows that have changed since the last clear.
- Use this to determine if a partial or full update is needed.
+ Get count of dirty rows
 
  # Safety
  - `term` must be a valid pointer
@@ -688,8 +645,6 @@ uint32_t chau7_terminal_dirty_row_count(struct Chau7Terminal *term);
 /*
  Clear dirty row tracking
 
- Call this after syncing the grid to Swift to reset the dirty state.
-
  # Safety
  - `term` must be a valid pointer
  */
@@ -697,10 +652,6 @@ void chau7_terminal_clear_dirty_rows(struct Chau7Terminal *term);
 
 /*
  Get pending title change from OSC 0/1/2 escape sequences
-
- Returns the pending title as a C string, or null if no title change pending.
- The caller must free this string with `chau7_terminal_free_string`.
- After this call, the pending title is cleared.
 
  # Safety
  - `term` must be a valid pointer
@@ -711,26 +662,61 @@ char *chau7_terminal_get_pending_title(struct Chau7Terminal *term);
 /*
  Get pending child exit code
 
- Returns the exit code if the child process has exited, or -1 if still running.
- After this call, the pending exit code is cleared.
- Note: Exit code is only set when alacritty_terminal fires the ChildExit event.
-
  # Safety
  - `term` must be a valid pointer
  */
 int32_t chau7_terminal_get_pending_exit_code(struct Chau7Terminal *term);
 
 /*
- Check if the PTY has closed (Exit event received)
-
- Returns true if the PTY has closed. This can happen when:
- - The shell exits naturally (exit command)
- - The shell process crashes
- - The terminal connection is terminated
+ Check if the PTY has closed
 
  # Safety
  - `term` must be a valid pointer
  */
 bool chau7_terminal_is_pty_closed(struct Chau7Terminal *term);
+
+/*
+ Check if the PTY has echo disabled (password mode)
+
+ # Safety
+ - `term` must be a valid pointer
+ */
+bool chau7_terminal_is_echo_disabled(struct Chau7Terminal *term);
+
+/*
+ Get pending images from the graphics interceptor
+
+ # Safety
+ - `term` must be a valid pointer
+ - The returned FFIImageArray must be freed with `chau7_terminal_free_images`
+ */
+struct FFIImageArray *chau7_terminal_get_pending_images(struct Chau7Terminal *term);
+
+/*
+ Free an FFIImageArray returned by chau7_terminal_get_pending_images
+
+ # Safety
+ - `array` must be a valid pointer returned by `chau7_terminal_get_pending_images`
+ */
+void chau7_terminal_free_images(struct FFIImageArray *array);
+
+/*
+ Set which image protocols the graphics interceptor should detect
+
+ # Safety
+ - `term` must be a valid pointer
+ */
+void chau7_terminal_set_image_protocols(struct Chau7Terminal *term,
+                                        bool sixel,
+                                        bool kitty,
+                                        bool iterm2);
+
+/*
+ Check if there are pending images
+
+ # Safety
+ - `term` must be a valid pointer
+ */
+bool chau7_terminal_has_pending_images(struct Chau7Terminal *term);
 
 #endif  /* CHAU7_TERMINAL_H */

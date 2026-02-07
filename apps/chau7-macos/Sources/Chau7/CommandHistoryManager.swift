@@ -4,6 +4,9 @@ import Foundation
 /// - Arrow ↑/↓: per-tab history
 /// - Option+Arrow ↑/↓: global (cross-tab) history
 ///
+/// Security: Commands entered during password prompts (echo disabled) are
+/// never recorded. Commands containing inline secrets are also filtered.
+///
 /// All access must be on the main queue (callers are UI event handlers
 /// and terminal session callbacks which both run on main).
 final class CommandHistoryManager {
@@ -23,11 +26,68 @@ final class CommandHistoryManager {
 
     private init() {}
 
+    // MARK: - Sensitive Command Detection
+
+    /// Patterns that indicate a command contains inline secrets.
+    /// These commands are safe to type but should NOT be stored in history
+    /// because they contain credentials as arguments.
+    private static let sensitiveArgumentPatterns: [String] = [
+        // Inline password arguments
+        "-p ", "-p=", "--password=", "--password ",
+        "--token=", "--token ",
+        "--secret=", "--secret ",
+        "--api-key=", "--api-key ",
+        "--apikey=", "--apikey ",
+        "--auth-token=",
+        // HTTP auth headers
+        "authorization: bearer", "authorization:bearer",
+        "authorization: basic", "authorization:basic",
+        "-H 'Authorization", "-H \"Authorization",
+        // Environment variable assignment with secrets
+        "PASSWORD=", "TOKEN=", "SECRET=", "API_KEY=",
+        "AWS_SECRET_ACCESS_KEY=",
+        "GITHUB_TOKEN=", "GH_TOKEN=",
+    ]
+
+    /// Returns true if the command appears to contain inline secrets.
+    static func containsInlineSecrets(_ command: String) -> Bool {
+        let lowered = command.lowercased()
+        for pattern in sensitiveArgumentPatterns {
+            if lowered.contains(pattern.lowercased()) {
+                return true
+            }
+        }
+        return false
+    }
+
     // MARK: - Recording
 
-    func recordCommand(_ command: String, tabID: String) {
+    /// Records a command in history.
+    /// - Parameters:
+    ///   - command: The command text
+    ///   - tabID: Tab identifier for per-tab history
+    ///   - isSensitive: If true, the command was entered during a password prompt
+    ///     or other echo-disabled context and should NOT be recorded.
+    func recordCommand(_ command: String, tabID: String, isSensitive: Bool = false) {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+
+        // Security: never record commands entered during password prompts
+        if isSensitive {
+            Log.trace("CommandHistoryManager: Skipping sensitive command (echo disabled)")
+            // Still reset cursors so navigation state is clean
+            tabCursors[tabID] = -1
+            globalCursor = -1
+            return
+        }
+
+        // Security: filter commands containing inline secrets
+        if Self.containsInlineSecrets(trimmed) {
+            Log.trace("CommandHistoryManager: Skipping command with inline secrets")
+            tabCursors[tabID] = -1
+            globalCursor = -1
+            return
+        }
 
         // Per-tab: skip consecutive duplicates
         if tabHistory[tabID]?.last != trimmed {

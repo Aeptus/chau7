@@ -1070,7 +1070,11 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         promptSeenForPendingCommand = false
         commandFinishedNotified = false
         isAtPrompt = false
-        CommandHistoryManager.shared.recordCommand(trimmed, tabID: tabIdentifier)
+
+        // Security: check if the PTY has echo disabled (password prompt, passphrase, etc.)
+        // If so, mark as sensitive to prevent recording in history.
+        let echoDisabled = activeTerminalView?.isPtyEchoDisabled ?? false
+        CommandHistoryManager.shared.recordCommand(trimmed, tabID: tabIdentifier, isSensitive: echoDisabled)
         shellEventDetector.commandStarted(command: trimmed, in: currentDirectory)
         updateActiveAppName(from: trimmed)
         recordInputLineIfNeeded()
@@ -1341,9 +1345,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     private func currentBufferRow() -> Int? {
         guard let view = activeTerminalView else { return nil }
-        let terminal = view.getTerminal()
-        let cursor = terminal.getCursorLocation()
-        return terminal.getTopVisibleRow() + cursor.y
+        return view.currentAbsoluteRow
     }
 
     func dangerousCommandRowsVisible(top: Int, bottom: Int) -> [Int] {
@@ -1356,8 +1358,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         guard scope != .none else { return [] }
         if scope == .aiOutputs, activeAppName == nil { return [] }
         guard let view = activeTerminalView else { return [] }
-        let terminal = view.getTerminal()
-        let cols = terminal.cols
+        let cols = view.terminalCols
         guard cols > 0 else { return [] }
 
         let token = FeatureProfiler.shared.begin(.dangerScan, metadata: "rows \(top)-\(bottom)")
@@ -1384,9 +1385,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         let dirtyRange = dirtyOutputRange
 
         func lineText(for row: Int) -> String {
-            let startPos = Position(col: 0, row: row)
-            let endPos = Position(col: max(cols - 1, 0), row: row)
-            return terminal.getText(start: startPos, end: endPos)
+            return view.getLineText(absoluteRow: row)
         }
 
         for row in start...end {
@@ -2095,11 +2094,13 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private var searchRegexEnabled: Bool = false
 
     /// Returns cached buffer data or fetches fresh data if needed (memory optimization)
+    /// Uses the backend-native getBufferAsData() protocol method, which avoids the
+    /// HeadlessTerminal mirror when the Rust backend is active.
     private func getBufferData() -> Data? {
         guard let view = activeTerminalView else { return nil }
 
         if bufferNeedsRefresh || cachedBufferData == nil {
-            cachedBufferData = view.getTerminal().getBufferAsData()
+            cachedBufferData = view.getBufferAsData()
             bufferNeedsRefresh = false
             if let data = cachedBufferData {
                 updateBufferLineCount(from: data)
@@ -2110,10 +2111,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     func captureRemoteSnapshot() -> Data? {
         guard let view = activeTerminalView else { return nil }
-        let data = view.getTerminal().getBufferAsData()
+        let data = view.getBufferAsData()
         cachedBufferData = data
         bufferNeedsRefresh = false
-        updateBufferLineCount(from: data)
+        if let data { updateBufferLineCount(from: data) }
         return data
     }
 
@@ -2278,8 +2279,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     private func scrollToActiveMatch() {
         guard let view = activeTerminalView, let match = currentMatch() else { return }
-        let terminal = view.getTerminal()
-        let visibleRows = max(1, terminal.rows)
+        let visibleRows = max(1, view.terminalRows)
         let maxScrollback = max(1, bufferLineCount - visibleRows)
         let clampedRow = max(0, min(match.row, maxScrollback))
         let position = Double(clampedRow) / Double(maxScrollback)

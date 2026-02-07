@@ -75,14 +75,14 @@ final class RemoteIPCServer: ObservableObject {
             return
         }
 
-        listeningSource = DispatchSource.makeReadSource(fileDescriptor: socketFD, queue: queue)
+        // Capture fd by value so cancel handler closes the correct descriptor.
+        let listeningFD = socketFD
+        listeningSource = DispatchSource.makeReadSource(fileDescriptor: listeningFD, queue: queue)
         listeningSource?.setEventHandler { [weak self] in
             self?.acceptConnection()
         }
         listeningSource?.setCancelHandler { [weak self] in
-            if let fd = self?.socketFD, fd >= 0 {
-                close(fd)
-            }
+            close(listeningFD)
             self?.socketFD = -1
         }
         listeningSource?.resume()
@@ -92,16 +92,19 @@ final class RemoteIPCServer: ObservableObject {
     }
 
     func stop() {
-        clientSource?.cancel()
-        clientSource = nil
-        listeningSource?.cancel()
-        listeningSource = nil
-
-        if clientFD >= 0 {
+        // Cancel handlers own close(fd) — don't double-close here.
+        if let cs = clientSource {
+            cs.cancel()
+            clientSource = nil
+        } else if clientFD >= 0 {
             close(clientFD)
             clientFD = -1
         }
-        if socketFD >= 0 {
+
+        if let ls = listeningSource {
+            ls.cancel()
+            listeningSource = nil
+        } else if socketFD >= 0 {
             close(socketFD)
             socketFD = -1
         }
@@ -136,22 +139,24 @@ final class RemoteIPCServer: ObservableObject {
             return
         }
 
-        if clientFD >= 0 {
-            clientSource?.cancel()
+        // Close previous client if any — cancel handler owns close(fd)
+        if let cs = clientSource {
+            cs.cancel()
+            clientSource = nil
+        } else if clientFD >= 0 {
             close(clientFD)
         }
 
         clientFD = newClientFD
         buffer.removeAll(keepingCapacity: true)
 
+        // Capture fd by value so cancel handler closes the correct descriptor.
         clientSource = DispatchSource.makeReadSource(fileDescriptor: newClientFD, queue: queue)
         clientSource?.setEventHandler { [weak self] in
             self?.readFromClient()
         }
         clientSource?.setCancelHandler { [weak self] in
-            if let fd = self?.clientFD, fd >= 0 {
-                close(fd)
-            }
+            close(newClientFD)
             self?.clientFD = -1
         }
         clientSource?.resume()
