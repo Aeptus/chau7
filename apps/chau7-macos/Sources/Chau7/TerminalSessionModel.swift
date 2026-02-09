@@ -102,6 +102,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private weak var rustTerminalView: RustTerminalView?
     /// Strong reference to keep the Rust terminal view alive across SwiftUI view recreations
     private var retainedRustTerminalView: RustTerminalView?
+    /// Cached snapshot of the last rendered terminal frame, used for instant tab-switch visuals
+    /// when the actual NSView has been removed from the hierarchy (distant-tab optimization).
+    var lastRenderedSnapshot: NSImage?
     private var settingsObservers: [NSObjectProtocol] = []
     private var idleTimer: DispatchSourceTimer?
     private var lastInputAt = Date.distantPast
@@ -333,7 +336,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         // Wire up title change callback (equivalent to LocalProcessTerminalViewDelegate.setTerminalTitle)
         view.onTitleChanged = { [weak self] title in
             DispatchQueue.main.async {
-                self?.title = title.isEmpty ? "Shell" : title
+                let newTitle = title.isEmpty ? "Shell" : title
+                guard self?.title != newTitle else { return }
+                self?.title = newTitle
             }
         }
 
@@ -370,9 +375,27 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         }
     }
 
-    func focusTerminal(in window: NSWindow?) {
-        guard let view = terminalView, let window else { return }
-        window.makeFirstResponder(view)
+    func focusTerminal(in window: NSWindow?, retryCount: Int = 0) {
+        guard let window else { return }
+        // Use activeTerminalView to support both SwiftTerm and Rust backends.
+        // Previously only checked `terminalView` (SwiftTerm), which silently failed
+        // for the Rust backend, causing focus to never land on the terminal after
+        // tab switches, and keystrokes to leak into inputs.
+        if let rust = rustTerminalView {
+            window.makeFirstResponder(rust)
+        } else if let swiftTerm = terminalView {
+            window.makeFirstResponder(swiftTerm)
+        } else if retryCount < 3 {
+            // The terminal view may not be attached yet (SwiftUI makeNSView is async).
+            // Retry after a short delay to allow the view lifecycle to complete.
+            let attempt = retryCount + 1
+            Log.trace("focusTerminal: backends nil for '\(self.title)', retry \(attempt)/3 in 100ms")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.focusTerminal(in: window, retryCount: attempt)
+            }
+        } else {
+            Log.warn("focusTerminal: no terminal view available (both backends nil) for tab '\(self.title)' after 3 retries")
+        }
     }
 
     // MARK: - Shell Integration (Issue #8 fix)
@@ -1642,7 +1665,11 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
         DispatchQueue.main.async {
-            self.title = title.isEmpty ? "Shell" : title
+            let newTitle = title.isEmpty ? "Shell" : title
+            // Guard against redundant @Published updates — each fires objectWillChange
+            // and triggers SwiftUI tab bar re-diff even when the value hasn't changed.
+            guard self.title != newTitle else { return }
+            self.title = newTitle
         }
     }
 

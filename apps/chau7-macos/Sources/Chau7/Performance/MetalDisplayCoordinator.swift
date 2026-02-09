@@ -76,8 +76,7 @@ final class MetalDisplayCoordinator: NSObject {
         let scaleFactor = view.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
 
         renderer.setFont(
-            name: font.fontName,
-            size: font.pointSize,
+            nsFont: font,
             scaleFactor: scaleFactor
         )
 

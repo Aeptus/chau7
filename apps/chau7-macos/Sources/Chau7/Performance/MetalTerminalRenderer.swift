@@ -98,6 +98,8 @@ public final class MetalTerminalRenderer: NSObject {
     private var italicFont: CTFont!
     private var boldItalicFont: CTFont!
     private var cellSize: CGSize = .zero
+    private var fontAscent: CGFloat = 0
+    private var fontDescent: CGFloat = 0
     private var fontSize: CGFloat = 13
     private var scaleFactor: CGFloat = 1.0
 
@@ -111,12 +113,26 @@ public final class MetalTerminalRenderer: NSObject {
     var cursorVisible: Bool = true
     var cursorColor: SIMD4<Float> = SIMD4(1, 1, 1, 0.7)
 
-    // Uniforms
+    // MARK: - Blink State
+
+    /// Current cursor blink phase (true = visible)
+    var cursorBlinkPhase: Bool = true
+    /// Whether cursor blink is enabled
+    var cursorBlinkEnabled: Bool = true
+    /// Current text blink phase (true = visible) — for cells with blink flag (bit 4)
+    var textBlinkPhase: Bool = true
+    /// Whether any cell in the current frame has the blink flag
+    var hasBlinkingCells: Bool = false
+
+    // Uniforms — include blinkVisible and scaleFactor for the fragment shader
     struct Uniforms {
         var projectionMatrix: simd_float4x4
         var atlasSize: SIMD2<Float>
         var cellSize: SIMD2<Float>
         var viewportSize: SIMD2<Float>
+        var scaleFactor: Float
+        var blinkVisible: Float  // 1.0 = show blinking text, 0.0 = hide
+        var _pad: SIMD2<Float> = .zero  // alignment padding
     }
 
     // MARK: - Initialization
@@ -222,14 +238,19 @@ public final class MetalTerminalRenderer: NSObject {
     // MARK: - Font Configuration
 
     /// Configures fonts and rebuilds the base glyph atlas for ASCII.
-    public func setFont(name: String, size: CGFloat, scaleFactor: CGFloat = 1.0) {
-        self.fontSize = size
+    /// Accepts an NSFont directly to avoid issues with private system font names
+    /// (e.g. ".SFMono-Regular") that CTFontCreateWithName may not resolve correctly.
+    public func setFont(nsFont: NSFont, scaleFactor: CGFloat = 1.0) {
+        self.fontSize = nsFont.pointSize
         self.scaleFactor = scaleFactor
 
-        // Scale font for Retina rasterization
-        let scaledSize = size * scaleFactor
-
-        regularFont = CTFontCreateWithName(name as CFString, scaledSize, nil)
+        // Scale font for Retina rasterization.
+        // NSFont is toll-free bridged to CTFont on macOS, so we can cast directly
+        // and then create a scaled copy. This preserves the exact font identity
+        // including private system fonts like .SFMono-Regular.
+        let scaledSize = nsFont.pointSize * scaleFactor
+        let baseCTFont = nsFont as CTFont
+        regularFont = CTFontCreateCopyWithAttributes(baseCTFont, scaledSize, nil, nil)
 
         // Derive bold, italic, bold+italic variants
         let boldTraits: CTFontSymbolicTraits = .boldTrait
@@ -248,6 +269,8 @@ public final class MetalTerminalRenderer: NSObject {
         let ascent = CTFontGetAscent(regularFont)
         let descent = CTFontGetDescent(regularFont)
         let leading = CTFontGetLeading(regularFont)
+        self.fontAscent = ascent
+        self.fontDescent = descent
 
         // Width: max advance of all printable ASCII (32-126), not just "M"
         var characters = (32...126).map { UniChar($0) }
@@ -272,10 +295,19 @@ public final class MetalTerminalRenderer: NSObject {
             height: ceil(ascent + descent + leading)
         )
 
+        Log.info("MetalRenderer: Font configured — \(CTFontCopyFullName(regularFont)), scaledSize=\(scaledSize), cellSize=\(cellSize), ascent=\(ascent), descent=\(descent)")
+
+        // Guard against zero cell size (would make nothing visible)
+        guard cellSize.width > 0 && cellSize.height > 0 else {
+            Log.error("MetalRenderer: Zero cell size from font \(CTFontCopyFullName(regularFont))")
+            return
+        }
+
         // Reset atlas and rebuild for ASCII baseline
         resetAtlas()
         prerasterizeASCII()
         uploadAtlasTexture()
+        Log.info("MetalRenderer: Atlas populated with \(glyphCache.count) glyphs")
     }
 
     /// Clears glyph atlas and cache, resetting the packing cursor.
@@ -343,28 +375,42 @@ public final class MetalTerminalRenderer: NSObject {
             packRowHeight = 0
         }
 
-        // Check if atlas is full
+        // Check if atlas is full — recover by clearing and rebuilding
         if packY + slotHeight > CGFloat(atlasHeight) {
-            Log.warn("MetalRenderer: Glyph atlas full, cannot rasterize U+\(String(codePoint, radix: 16))")
-            return nil
+            Log.warn("MetalRenderer: Glyph atlas full, resetting and rebuilding ASCII baseline")
+            resetAtlas()
+            prerasterizeASCII()
+            uploadAtlasTexture()
+            // Re-check after reset — the glyph we want should now fit
+            if packY + slotHeight > CGFloat(atlasHeight) {
+                Log.error("MetalRenderer: Atlas still full after reset, cannot rasterize U+\(String(codePoint, radix: 16))")
+                return nil
+            }
         }
 
         packRowHeight = max(packRowHeight, slotHeight)
 
-        // Draw glyph into atlas bitmap
+        // Draw glyph into atlas bitmap.
+        // CTFontDrawGlyphs positions glyphs at the baseline. We place the
+        // baseline at a fixed offset within each slot: descent from the slot's
+        // bottom edge (equivalently, ascent below the slot's top edge).
+        // In CG coordinates (origin bottom-left, Y up):
+        //   slot bottom = atlasHeight - packY - slotHeight
+        //   baseline    = slot bottom + fontDescent
         context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
         var boundingRect = CGRect.zero
         CTFontGetBoundingRectsForGlyphs(font, .horizontal, glyphs, &boundingRect, 1)
-
-        let drawX = packX - boundingRect.origin.x
-        let drawY = CGFloat(atlasHeight) - (packY + slotHeight) + boundingRect.origin.y
-        var position = CGPoint(x: drawX, y: drawY)
+        let baselineY = CGFloat(atlasHeight) - packY - slotHeight + fontDescent
+        var position = CGPoint(x: packX, y: baselineY)
         CTFontDrawGlyphs(font, glyphs, &position, 1, context)
 
-        // UV coordinates (normalized)
+        // UV coordinates (normalized).
+        // CGContext has origin at bottom-left but bitmap data is stored top-down.
+        // Metal texture y=0 is the top row. The glyph slot at packY occupies
+        // Metal texture y from packY/atlasHeight to (packY+slotHeight)/atlasHeight.
         let texRect = CGRect(
             x: packX / CGFloat(atlasWidth),
-            y: (CGFloat(atlasHeight) - (packY + slotHeight)) / CGFloat(atlasHeight),
+            y: packY / CGFloat(atlasHeight),
             width: slotWidth / CGFloat(atlasWidth),
             height: slotHeight / CGFloat(atlasHeight)
         )
@@ -468,6 +514,7 @@ public final class MetalTerminalRenderer: NSObject {
         // Pass 2: Glyphs + decorations (flags handled in fragment shader)
         encoder.setRenderPipelineState(pipelineState)
         encoder.setFragmentTexture(glyphAtlas, index: 0)
+        encoder.setFragmentBuffer(uniformBuffer, offset: 0, index: 2)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: cellCount)
 
         encoder.endEncoding()
@@ -482,6 +529,8 @@ public final class MetalTerminalRenderer: NSObject {
         let cw = Float(cellSize.width / scaleFactor)
         let ch = Float(cellSize.height / scaleFactor)
 
+        var foundBlinkingCells = false
+
         for i in 0..<count {
             let cell = cells[i]
             let row = i / cols
@@ -489,6 +538,11 @@ public final class MetalTerminalRenderer: NSObject {
 
             let isBold = (cell.flags & 1) != 0
             let isItalic = (cell.flags & 2) != 0
+
+            // Track if any cell has the blink flag (bit 4)
+            if (cell.flags & 16) != 0 {
+                foundBlinkingCells = true
+            }
 
             let glyphInfo = lookupGlyph(codePoint: cell.character, bold: isBold, italic: isItalic)
 
@@ -513,8 +567,12 @@ public final class MetalTerminalRenderer: NSObject {
             )
         }
 
+        hasBlinkingCells = foundBlinkingCells
+
         // Cursor: overwrite the cursor cell's flags to signal the shader
-        if cursorVisible && cols > 0 {
+        // Only show cursor when blink phase is on (or blink is disabled)
+        let showCursor = cursorVisible && (!cursorBlinkEnabled || cursorBlinkPhase)
+        if showCursor && cols > 0 {
             let cursorIndex = cursorRow * cols + cursorCol
             if cursorIndex >= 0 && cursorIndex < count {
                 // Encode cursor type in upper bits: bit 5=cursor present, bits 6-7=style
@@ -547,7 +605,9 @@ public final class MetalTerminalRenderer: NSObject {
             projectionMatrix: projectionMatrix,
             atlasSize: SIMD2(Float(atlasWidth), Float(atlasHeight)),
             cellSize: SIMD2(Float(cellSize.width / scaleFactor), Float(cellSize.height / scaleFactor)),
-            viewportSize: SIMD2(Float(viewportSize.width), Float(viewportSize.height))
+            viewportSize: SIMD2(Float(viewportSize.width), Float(viewportSize.height)),
+            scaleFactor: Float(scaleFactor),
+            blinkVisible: textBlinkPhase ? 1.0 : 0.0
         )
     }
 
@@ -604,6 +664,9 @@ extension MetalTerminalRenderer {
         float2 atlasSize;
         float2 cellSize;
         float2 viewportSize;
+        float scaleFactor;
+        float blinkVisible;  // 1.0 = show blinking text, 0.0 = hide
+        float2 _pad;
     };
 
     struct VertexOut {
@@ -673,10 +736,17 @@ extension MetalTerminalRenderer {
 
     fragment float4 fragmentShader(
         VertexOut in [[stage_in]],
-        texture2d<float> glyphAtlas [[texture(0)]]
+        texture2d<float> glyphAtlas [[texture(0)]],
+        constant Uniforms& uniforms [[buffer(2)]]
     ) {
         constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
         float4 texColor = glyphAtlas.sample(textureSampler, in.texCoord);
+
+        // Text blink: hide text when blink flag (bit 4) is set and blink phase is off
+        bool isBlink = (in.flags & 16u) != 0;
+        if (isBlink && uniforms.blinkVisible < 0.5) {
+            return float4(0, 0, 0, 0); // transparent — shows background only
+        }
 
         // Base glyph color
         float4 color = float4(in.foreground.rgb, texColor.a * in.foreground.a);
@@ -701,16 +771,62 @@ extension MetalTerminalRenderer {
             }
         }
 
-        // Underline decoration (bit 2)
+        // Decoration thickness scaled for Retina: ~2 device pixels
+        float thickness = 2.0 / (uniforms.cellSize.y * uniforms.scaleFactor);
+
+        // Underline decoration (bit 2) — variant in bits 8-10
+        // 0/1=single, 2=double, 3=curl/wavy, 4=dotted, 5=dashed
         if ((in.flags & 4u) != 0) {
-            if (in.cellLocalPos.y > 0.88 && in.cellLocalPos.y < 0.94) {
-                return float4(in.foreground.rgb, 1.0);
+            uint ulVariant = (in.flags >> 8) & 7u;
+            float underlineY = 1.0 - 0.12; // ~88% from top
+
+            if (ulVariant == 2u) {
+                // Double underline: two thin lines separated by a gap
+                float gap = thickness * 1.5;
+                float line1Y = underlineY;
+                float line2Y = underlineY + thickness + gap;
+                bool onLine1 = (in.cellLocalPos.y > line1Y && in.cellLocalPos.y < line1Y + thickness);
+                bool onLine2 = (in.cellLocalPos.y > line2Y && in.cellLocalPos.y < line2Y + thickness);
+                if (onLine1 || onLine2) {
+                    return float4(in.foreground.rgb, 1.0);
+                }
+            } else if (ulVariant == 3u) {
+                // Curl/wavy underline: sine wave
+                float amplitude = thickness * 2.0;
+                float freq = 3.14159 * 4.0; // ~2 full waves per cell
+                float wave = underlineY + amplitude * sin(in.cellLocalPos.x * freq);
+                float dist = abs(in.cellLocalPos.y - wave);
+                if (dist < thickness) {
+                    return float4(in.foreground.rgb, 1.0);
+                }
+            } else if (ulVariant == 4u) {
+                // Dotted underline: alternating dots
+                bool onY = (in.cellLocalPos.y > underlineY && in.cellLocalPos.y < underlineY + thickness);
+                float dotPeriod = 0.08; // width of each dot+gap cycle
+                bool onDot = fmod(in.cellLocalPos.x, dotPeriod) < (dotPeriod * 0.5);
+                if (onY && onDot) {
+                    return float4(in.foreground.rgb, 1.0);
+                }
+            } else if (ulVariant == 5u) {
+                // Dashed underline: longer dashes with gaps
+                bool onY = (in.cellLocalPos.y > underlineY && in.cellLocalPos.y < underlineY + thickness);
+                float dashPeriod = 0.2; // width of each dash+gap cycle
+                bool onDash = fmod(in.cellLocalPos.x, dashPeriod) < (dashPeriod * 0.7);
+                if (onY && onDash) {
+                    return float4(in.foreground.rgb, 1.0);
+                }
+            } else {
+                // Single underline (variant 0 or 1): solid line
+                if (in.cellLocalPos.y > underlineY && in.cellLocalPos.y < underlineY + thickness) {
+                    return float4(in.foreground.rgb, 1.0);
+                }
             }
         }
 
-        // Strikethrough decoration (bit 3)
+        // Strikethrough decoration (bit 3) — positioned at vertical center
         if ((in.flags & 8u) != 0) {
-            if (in.cellLocalPos.y > 0.46 && in.cellLocalPos.y < 0.52) {
+            float strikeY = 0.5 - thickness / 2.0;
+            if (in.cellLocalPos.y > strikeY && in.cellLocalPos.y < strikeY + thickness) {
                 return float4(in.foreground.rgb, 1.0);
             }
         }

@@ -38,6 +38,8 @@ final class RustTermBridge {
         var bg_g: UInt8
         var bg_b: UInt8
         var flags: UInt8
+        var _pad: UInt8
+        var link_id: UInt16  // OSC 8 hyperlink ID (0 = no link)
     }
 
     /// C-compatible grid snapshot matching Rust's GridSnapshot
@@ -145,7 +147,11 @@ final class RustTermBridge {
         }
 
         // Map Rust style flags to Metal TerminalCell flags.
-        // Metal flags: bold=1, italic=2, underline=4, strikethrough=8, blink=16
+        // Metal flags layout:
+        //   bits 0-4:  bold=1, italic=2, underline=4, strikethrough=8, blink=16
+        //   bit  5:    cursor present
+        //   bits 6-7:  cursor style
+        //   bits 8-10: underline variant (0=none, 1=single, 2=double, 3=curl, 4=dotted, 5=dashed)
         // Rust flags:  bold=1, italic=2, underline=4, strikethrough=8 (same bit positions!)
         // Inverse/dim/hidden are handled above in color conversion, not passed through.
         var metalFlags: UInt32 = 0
@@ -153,7 +159,8 @@ final class RustTermBridge {
         if flags & RustFlags.italic != 0     { metalFlags |= 2 }
         if flags & RustFlags.underline != 0  { metalFlags |= 4 }
         if flags & RustFlags.strikethrough != 0 { metalFlags |= 8 }
-        // Note: Rust CellData doesn't have a blink flag (alacritty_terminal doesn't track blink per-cell)
+        // Encode underline variant in bits 8-10 (from _pad byte)
+        metalFlags |= UInt32(cell._pad & 0x07) << 8
 
         return TerminalCell(
             character: cell.character,

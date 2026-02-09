@@ -39,6 +39,12 @@ final class RustMetalDisplayCoordinator: NSObject {
     private var cols: Int
     private var fontConfigured = false
 
+    // MARK: - Blink Timer
+
+    private var blinkTimer: Timer?
+    /// Time of last keyboard/PTY activity (used to pause cursor blink during typing)
+    private var lastActivityTime: Date = Date()
+
     // MARK: - Init
 
     /// Creates a coordinator for the given Rust terminal view.
@@ -83,6 +89,13 @@ final class RustMetalDisplayCoordinator: NSObject {
         bridge.colorSchemeChanged()
 
         Log.info("RustMetalDisplayCoordinator: Initialized (\(cols)x\(rows))")
+
+        // Start blink timer (500ms interval, matching standard terminal blink rate)
+        startBlinkTimer()
+    }
+
+    deinit {
+        blinkTimer?.invalidate()
     }
 
     // MARK: - Font
@@ -94,8 +107,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         let scaleFactor = view.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0
 
         renderer.setFont(
-            name: font.fontName,
-            size: font.pointSize,
+            nsFont: font,
             scaleFactor: scaleFactor
         )
 
@@ -113,6 +125,9 @@ final class RustMetalDisplayCoordinator: NSObject {
     /// Dispatches to main thread if called from a background thread.
     func setNeedsSync() {
         needsSync = true
+        // Record activity — this pauses cursor blink for 1 second after typing
+        lastActivityTime = Date()
+        renderer.cursorBlinkPhase = true  // Show cursor immediately on activity
         if Thread.isMainThread {
             metalView.draw()
         } else {
@@ -147,8 +162,43 @@ final class RustMetalDisplayCoordinator: NSObject {
         needsSync = true
     }
 
+    // MARK: - Blink
+
+    /// Starts the blink timer (cursor and text blink on 500ms cycle).
+    private func startBlinkTimer() {
+        blinkTimer?.invalidate()
+        blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.handleBlinkTick()
+        }
+    }
+
+    /// Called every 500ms to toggle blink phases.
+    private func handleBlinkTick() {
+        // Cursor blink: pause for 1 second after keyboard activity
+        let timeSinceActivity = Date().timeIntervalSince(lastActivityTime)
+        if timeSinceActivity < 1.0 {
+            // Recent activity — keep cursor visible, don't blink
+            renderer.cursorBlinkPhase = true
+        } else {
+            renderer.cursorBlinkPhase.toggle()
+        }
+
+        // Text blink: always toggles (independent of keyboard activity)
+        renderer.textBlinkPhase.toggle()
+
+        // Only trigger a redraw if cursor or blinking cells need update
+        let needsRedraw = renderer.cursorBlinkEnabled || renderer.hasBlinkingCells
+        if needsRedraw {
+            needsSync = true
+            metalView.draw()
+        }
+    }
+
     /// Stops rendering (call when the tab is suspended or removed).
     func stop() {
+        blinkTimer?.invalidate()
+        blinkTimer = nil
         metalView.isPaused = true
     }
 }
@@ -161,18 +211,26 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         // Handled by resize() from the container
     }
 
+    private static var drawCallCount: UInt64 = 0
+    private static var lastDrawLogTime: CFAbsoluteTime = 0
+
     func draw(in view: MTKView) {
+        Self.drawCallCount += 1
         guard needsSync else { return }
         needsSync = false
 
         // Ensure font is configured (may not be ready at init if window isn't available yet)
         if !fontConfigured { configureFont() }
-        guard fontConfigured else { return }
+        guard fontConfigured else {
+            Log.warn("RustMetalDisplayCoordinator: draw skipped — font not configured")
+            return
+        }
 
         let token = FeatureProfiler.shared.begin(.metalRender)
 
         // 1. Get grid snapshot from Rust via the provider closure
         guard let snapshot = gridProvider?() else {
+            Log.warn("RustMetalDisplayCoordinator: draw skipped — gridProvider returned nil")
             FeatureProfiler.shared.end(token)
             return
         }
@@ -216,6 +274,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
 
         // 4. Get drawable
         guard let drawable = (view.layer as? CAMetalLayer)?.nextDrawable() else {
+            Log.warn("RustMetalDisplayCoordinator: draw skipped — no drawable available (layer=\(String(describing: view.layer is CAMetalLayer)), bounds=\(view.bounds))")
             FeatureProfiler.shared.end(token)
             return
         }
@@ -224,8 +283,16 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         let renderBuf = tripleBuffer.renderBuffer
         let cellCount = rows * cols
         guard cellCount > 0 else {
+            Log.warn("RustMetalDisplayCoordinator: draw skipped — cellCount is 0 (rows=\(rows), cols=\(cols))")
             FeatureProfiler.shared.end(token)
             return
+        }
+
+        // Periodic logging to confirm Metal is actively rendering
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - Self.lastDrawLogTime > 5.0 {
+            Self.lastDrawLogTime = now
+            Log.trace("RustMetalDisplayCoordinator: Metal render — \(cols)x\(rows) (\(cellCount) cells), drawCalls=\(Self.drawCallCount), viewport=\(view.bounds.size)")
         }
 
         let cellsPtr = UnsafeBufferPointer(renderBuf.cells)

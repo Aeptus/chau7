@@ -17,6 +17,14 @@ pub const CELL_FLAG_INVERSE: u8 = 1 << 4;
 pub const CELL_FLAG_DIM: u8 = 1 << 5;
 pub const CELL_FLAG_HIDDEN: u8 = 1 << 6;
 
+/// Underline style variants (stored in CellData._pad byte, formerly unused).
+/// 0 = no underline (or simple single), 1 = single, 2 = double, 3 = curl, 4 = dotted, 5 = dashed.
+pub const UNDERLINE_SINGLE: u8 = 1;
+pub const UNDERLINE_DOUBLE: u8 = 2;
+pub const UNDERLINE_CURL: u8 = 3;
+pub const UNDERLINE_DOTTED: u8 = 4;
+pub const UNDERLINE_DASHED: u8 = 5;
+
 // ============================================================================
 // Core cell data
 // ============================================================================
@@ -36,6 +44,10 @@ pub struct CellData {
     pub bg_b: u8,
     /// Cell attribute flags (bold, italic, underline, etc.)
     pub flags: u8,
+    /// Padding byte for natural alignment of link_id
+    pub _pad: u8,
+    /// Hyperlink ID (OSC 8). 0 = no link. Use chau7_terminal_get_link_url() to resolve.
+    pub link_id: u16,
 }
 
 impl Default for CellData {
@@ -49,6 +61,8 @@ impl Default for CellData {
             bg_g: 0,
             bg_b: 0,
             flags: 0,
+            _pad: 0,
+            link_id: 0,
         }
     }
 }
@@ -244,6 +258,24 @@ pub fn cell_flags_to_u8(flags: CellFlags) -> u8 {
         result |= CELL_FLAG_HIDDEN;
     }
     result
+}
+
+/// Extract the specific underline variant from CellFlags.
+/// Returns 0 if no underline is present.
+pub fn underline_style(flags: CellFlags) -> u8 {
+    if flags.contains(CellFlags::UNDERCURL) {
+        UNDERLINE_CURL
+    } else if flags.contains(CellFlags::DOUBLE_UNDERLINE) {
+        UNDERLINE_DOUBLE
+    } else if flags.contains(CellFlags::DOTTED_UNDERLINE) {
+        UNDERLINE_DOTTED
+    } else if flags.contains(CellFlags::DASHED_UNDERLINE) {
+        UNDERLINE_DASHED
+    } else if flags.contains(CellFlags::UNDERLINE) {
+        UNDERLINE_SINGLE
+    } else {
+        0
+    }
 }
 
 // ============================================================================

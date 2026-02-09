@@ -205,6 +205,10 @@ final class RustTerminalContainerView: NSView {
         preMetalBufferChangedCallback = terminalView.onBufferChanged
         chainMetalSync(coordinator: coordinator)
 
+        // Suppress CPU rendering — Metal handles display now.
+        // This skips syncGridToRenderer(), tickCursorBlink(), and RustGridView.draw().
+        terminalView.isMetalRenderingActive = true
+
         // Force an immediate Metal render so the first frame isn't blank.
         // The Metal view sits on top of the CPU renderer, so if we don't
         // trigger a draw now, the user sees nothing until the next pollAndSync().
@@ -226,6 +230,9 @@ final class RustTerminalContainerView: NSView {
     func disableMetalRendering() {
         guard let coordinator = rustMetalCoordinator else { return }
         coordinator.stop()
+
+        // Re-enable CPU rendering path
+        terminalView.isMetalRenderingActive = false
 
         // Restore the original onBufferChanged callback (before Metal chaining)
         if let original = preMetalBufferChangedCallback {
@@ -350,13 +357,13 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         let useRust = RustTerminalView.isAvailable && settings.isRustTerminalEnabled
 
         if useRust {
-            Log.info("Using Rust terminal backend (default)")
+            Log.trace("TerminalViewRepresentable: makeNSView — Rust backend")
             return makeRustTerminalView()
         } else {
             if !RustTerminalView.isAvailable {
-                Log.info("Using SwiftTerm fallback (Rust library not available)")
+                Log.trace("TerminalViewRepresentable: makeNSView — SwiftTerm fallback (Rust library not available)")
             } else {
-                Log.info("Using SwiftTerm backend (Rust disabled by user setting)")
+                Log.trace("TerminalViewRepresentable: makeNSView — SwiftTerm (Rust disabled by user setting)")
             }
             return makeSwiftTermView()
         }

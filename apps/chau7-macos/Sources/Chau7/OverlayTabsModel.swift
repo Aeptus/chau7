@@ -244,7 +244,9 @@ final class OverlayTabsModel: ObservableObject {
     private var renameOriginalColor: TabColor = .blue
     private var suspendWorkItems: [UUID: DispatchWorkItem] = [:]
     private var isRenderSuspensionEnabled = false
-    private var renderSuspensionDelay: TimeInterval = 5.0
+    // Reduced from 5.0s to 2.0s — combined with CVDisplayLink pausing, this
+    // means background tabs stop rendering 3 seconds sooner, saving significant CPU.
+    private var renderSuspensionDelay: TimeInterval = 2.0
     private var needsFreshTabOnShow: Bool = false
     private var isDiagnosticsLoggingEnabled: Bool = false
 
@@ -386,22 +388,32 @@ final class OverlayTabsModel: ObservableObject {
 
     /// Captures a screenshot of the current terminal view for instant display during tab switch
     private func captureCurrentTabSnapshot() {
-        guard let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }),
-              let terminalView = tabs[currentIndex].session?.existingTerminalView else {
-            logVisualState(reason: "snapshot: skipped (no terminal view)")
+        guard let currentIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) else {
             return
         }
 
-        // Capture the terminal view as an image
-        guard let bitmapRep = terminalView.bitmapImageRepForCachingDisplay(in: terminalView.bounds) else {
-            logVisualState(reason: "snapshot: skipped (no bitmap rep)")
+        if let terminalView = tabs[currentIndex].session?.existingTerminalView {
+            // Live capture from the terminal view
+            guard let bitmapRep = terminalView.bitmapImageRepForCachingDisplay(in: terminalView.bounds) else {
+                logVisualState(reason: "snapshot: skipped (no bitmap rep)")
+                return
+            }
+            terminalView.cacheDisplay(in: terminalView.bounds, to: bitmapRep)
+
+            let image = NSImage(size: terminalView.bounds.size)
+            image.addRepresentation(bitmapRep)
+            tabs[currentIndex].cachedSnapshot = image
+            // Also cache on the session for when the view is torn down later
+            tabs[currentIndex].session?.lastRenderedSnapshot = image
+        } else if let cached = tabs[currentIndex].session?.lastRenderedSnapshot {
+            // View is not in the hierarchy (distant-tab optimization removed it),
+            // but we have a previously cached frame from the session.
+            tabs[currentIndex].cachedSnapshot = cached
+            Log.trace("snapshot: used session-cached frame for tab \(selectedTabID)")
+        } else {
+            logVisualState(reason: "snapshot: skipped (no terminal view, no cached frame)")
             return
         }
-        terminalView.cacheDisplay(in: terminalView.bounds, to: bitmapRep)
-
-        let image = NSImage(size: terminalView.bounds.size)
-        image.addRepresentation(bitmapRep)
-        tabs[currentIndex].cachedSnapshot = image
 
         // Also capture cursor position and prompt for cursor-first rendering
         if let session = tabs[currentIndex].session {
@@ -477,6 +489,10 @@ final class OverlayTabsModel: ObservableObject {
             tabs.append(tab)
             Log.trace("newTab: appended, tabs.count=\(tabs.count)")
         }
+
+        // Reset rendered count so the watchdog doesn't see a stale count vs new expected
+        lastReportedRenderedCount = -1
+        lastPreferenceUpdateTime = Date()
 
         selectedTabID = tab.id
         Log.trace("newTab: selectedTabID=\(tab.id)")
@@ -727,16 +743,38 @@ final class OverlayTabsModel: ObservableObject {
             // Multiple tabs - just remove this one
             Log.info("closeTab: removing tab at index=\(index), tabs.count before=\(tabs.count)")
             tabs.remove(at: index)
+            // Reset the rendered count so the watchdog doesn't compare the stale
+            // pre-close count against the new (smaller) expected count.  The next
+            // preference update from the re-rendered tab bar will set it correctly.
+            lastReportedRenderedCount = -1
+            lastPreferenceUpdateTime = Date()
             Log.info("closeTab: tabs.count after=\(tabs.count)")
 
             if selectedTabID == id {
-                let newIndex = max(0, index - 1)
+                // Prefer the tab that was to the left (index - 1), falling back to index 0
+                let newIndex = min(max(0, index - 1), tabs.count - 1)
                 selectedTabID = tabs[newIndex].id
                 Log.info("closeTab: selected new tab at index=\(newIndex), id=\(selectedTabID)")
+            } else if !tabs.contains(where: { $0.id == selectedTabID }) {
+                // Safety: selectedTabID references a non-existent tab (should never happen, but recover)
+                Log.warn("closeTab: selectedTabID \(selectedTabID) not found in tabs — recovering")
+                selectedTabID = tabs[max(0, min(index, tabs.count - 1))].id
+            }
+
+            // Unsuspend the newly selected tab so its terminal view is available for focus
+            cancelSuspension(for: selectedTabID)
+            if suspendedTabIDs.remove(selectedTabID) != nil {
+                Log.info("closeTab: unsuspended newly selected tab \(selectedTabID)")
             }
         }
 
         focusSelected()
+
+        // Schedule a retry of focusSelected() after a short delay, in case the terminal
+        // view from an unsuspended tab hasn't been attached yet.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.focusSelected()
+        }
         updateSuspensionState()
         updateSnippetContextForSelection()
         if isSearchVisible {
@@ -853,7 +891,15 @@ final class OverlayTabsModel: ObservableObject {
         }
         let nextIndex = (index + 1) % tabs.count
         Log.trace("selectNextTab: \(index) -> \(nextIndex), tabs.count=\(tabs.count)")
-        selectedTabID = tabs[nextIndex].id
+        let targetID = tabs[nextIndex].id
+        selectedTabID = targetID
+
+        // Unsuspend target tab so its terminal view is available for focus
+        cancelSuspension(for: targetID)
+        if suspendedTabIDs.remove(targetID) != nil {
+            Log.info("selectNextTab: unsuspended tab \(targetID)")
+        }
+
         focusSelected()
         updateSuspensionState()
         updateSnippetContextForSelection()
@@ -869,7 +915,15 @@ final class OverlayTabsModel: ObservableObject {
         }
         let prevIndex = (index - 1 + tabs.count) % tabs.count
         Log.trace("selectPreviousTab: \(index) -> \(prevIndex), tabs.count=\(tabs.count)")
-        selectedTabID = tabs[prevIndex].id
+        let targetID = tabs[prevIndex].id
+        selectedTabID = targetID
+
+        // Unsuspend target tab so its terminal view is available for focus
+        cancelSuspension(for: targetID)
+        if suspendedTabIDs.remove(targetID) != nil {
+            Log.info("selectPreviousTab: unsuspended tab \(targetID)")
+        }
+
         focusSelected()
         updateSuspensionState()
         updateSnippetContextForSelection()
@@ -909,7 +963,21 @@ final class OverlayTabsModel: ObservableObject {
     func selectTab(number: Int) {
         let index = max(0, number - 1)
         guard index < tabs.count else { return }
-        selectedTabID = tabs[index].id
+        let targetID = tabs[index].id
+        if selectedTabID == targetID {
+            // Already on this tab — just re-focus the terminal (handles the case
+            // where focus moved to a non-terminal UI element like the search bar)
+            focusSelected()
+            return
+        }
+        selectedTabID = targetID
+
+        // Unsuspend target tab so its terminal view is available for focus
+        cancelSuspension(for: targetID)
+        if suspendedTabIDs.remove(targetID) != nil {
+            Log.info("selectTab(number:): unsuspended tab \(targetID)")
+        }
+
         focusSelected()
         updateSuspensionState()
         updateSnippetContextForSelection()

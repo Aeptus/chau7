@@ -462,7 +462,7 @@ struct SettingsDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
+        ScrollView(.vertical, showsIndicators: true) {
             VStack(alignment: .leading, spacing: 0) {
                 // Section header with description
                 sectionHeader
@@ -507,6 +507,7 @@ struct SettingsDetailView: View {
             }
             .padding(24)
         }
+        .id(selection)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 

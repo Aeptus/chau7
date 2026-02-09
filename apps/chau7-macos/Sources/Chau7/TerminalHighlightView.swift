@@ -93,7 +93,16 @@ final class TerminalHighlightView: NSView {
             cellHeight = terminalView.bounds.height / CGFloat(rows)
         }
 
-        let yDisp = terminal.buffer.yDisp
+        // For RustTerminalView, use the native renderTopVisibleRow instead of the
+        // headless terminal's yDisp (which is always 0 since the headless terminal
+        // isn't fed PTY data in Phase 3b). Using yDisp=0 would cause every visible
+        // row to fall into the expensive scrollback path in getLineText().
+        let yDisp: Int
+        if let rustView = terminalView as? RustTerminalView {
+            yDisp = rustView.renderTopVisibleRow
+        } else {
+            yDisp = terminal.buffer.yDisp
+        }
 
         // Update cache if needed (Issue #14 fix - performance optimization)
         let allMatches = session.searchMatches
