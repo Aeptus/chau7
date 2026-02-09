@@ -1729,10 +1729,10 @@ final class FeatureSettings: ObservableObject {
         // Mouse reporting: disabled by default so text selection always works
         // Users can enable if they want vim/tmux mouse support (hold Shift to bypass)
         self.isMouseReportingEnabled = defaults.object(forKey: Keys.mouseReporting) as? Bool ?? false
-        // Rust terminal: disabled by default (experimental, enable in Settings > Terminal)
-        self.isRustTerminalEnabled = defaults.object(forKey: Keys.rustTerminalEnabled) as? Bool ?? false
-        // Metal renderer: disabled by default (experimental GPU rendering path)
-        self.useMetalRenderer = defaults.object(forKey: Keys.useMetalRenderer) as? Bool ?? false
+        // Rust terminal: enabled by default (production-ready with OSC 52/8, Sixel, Kitty support)
+        self.isRustTerminalEnabled = defaults.object(forKey: Keys.rustTerminalEnabled) as? Bool ?? true
+        // Metal renderer: enabled by default (GPU-accelerated with cursor/text blink, Retina scaling)
+        self.useMetalRenderer = defaults.object(forKey: Keys.useMetalRenderer) as? Bool ?? true
         // Click-to-position: enabled by default (like modern text editors)
         self.isClickToPositionEnabled = defaults.object(forKey: Keys.clickToPosition) as? Bool ?? true
         self.defaultEditor = defaults.string(forKey: Keys.defaultEditor) ?? ""  // Empty = use $EDITOR or system default

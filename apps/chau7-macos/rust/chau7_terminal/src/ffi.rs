@@ -978,13 +978,27 @@ pub unsafe extern "C" fn chau7_terminal_get_pending_title(term: *mut Chau7Termin
         return std::ptr::null_mut();
     }
     let terminal = &*term;
+    // Fast path: check atomic flag before locking the Mutex.
+    // Title changes are rare (once per command), but this is called 60x/sec.
+    if !terminal.has_pending_title.load(std::sync::atomic::Ordering::Acquire) {
+        return std::ptr::null_mut();
+    }
     let mut pending = terminal.pending_title.lock();
-    match pending.take() {
+    let title = pending.take();
+    // Clear flag *after* lock to avoid TOCTOU: producer could set a new title
+    // between flag-clear and lock-acquire, leaving it stranded.
+    if title.is_some() {
+        terminal.has_pending_title.store(false, std::sync::atomic::Ordering::Release);
+    }
+    match title {
         Some(title) => {
             debug!("chau7_terminal_get_pending_title: returning title {:?}", title);
             match CString::new(title) {
                 Ok(cstr) => cstr.into_raw(),
-                Err(_) => std::ptr::null_mut(),
+                Err(e) => {
+                    warn!("chau7_terminal_get_pending_title: title contains null byte at pos {}", e.nul_position());
+                    std::ptr::null_mut()
+                }
             }
         }
         None => std::ptr::null_mut(),
@@ -1041,6 +1055,111 @@ pub unsafe extern "C" fn chau7_terminal_is_echo_disabled(term: *mut Chau7Termina
     }
     let terminal = &*term;
     terminal.is_echo_disabled()
+}}
+
+// ============================================================================
+// Hyperlink (OSC 8) FFI
+// ============================================================================
+
+/// Get the URL for a hyperlink ID from the most recent grid snapshot.
+/// Returns null if the ID is 0 or invalid.
+///
+/// # Safety
+/// - `term` must be a valid pointer
+/// - The returned string must be freed with `chau7_terminal_free_string`
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_get_link_url(term: *mut Chau7Terminal, link_id: u16) -> *mut c_char { unsafe {
+    trace!("chau7_terminal_get_link_url({:p}, {})", term, link_id);
+    if term.is_null() {
+        warn!("chau7_terminal_get_link_url: term is null");
+        return std::ptr::null_mut();
+    }
+    let terminal = &*term;
+    match terminal.get_link_url(link_id) {
+        Some(url) => {
+            trace!("chau7_terminal_get_link_url: link_id={} -> {:?}", link_id, url);
+            match CString::new(url) {
+                Ok(cstr) => cstr.into_raw(),
+                Err(e) => {
+                    warn!("chau7_terminal_get_link_url: URL contains null byte at pos {}", e.nul_position());
+                    std::ptr::null_mut()
+                }
+            }
+        }
+        None => std::ptr::null_mut(),
+    }
+}}
+
+// ============================================================================
+// Clipboard (OSC 52) FFI
+// ============================================================================
+
+/// Get pending clipboard store text (OSC 52 write to system clipboard).
+/// Returns a C string that must be freed with `chau7_terminal_free_string`,
+/// or null if no clipboard store is pending.
+///
+/// # Safety
+/// - `term` must be a valid pointer
+/// - The returned string must be freed with `chau7_terminal_free_string`
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_get_pending_clipboard(term: *mut Chau7Terminal) -> *mut c_char { unsafe {
+    trace!("chau7_terminal_get_pending_clipboard({:p})", term);
+    if term.is_null() {
+        warn!("chau7_terminal_get_pending_clipboard: term is null");
+        return std::ptr::null_mut();
+    }
+    let terminal = &*term;
+    match terminal.take_pending_clipboard_store() {
+        Some(text) => {
+            debug!("chau7_terminal_get_pending_clipboard: returning {} chars", text.len());
+            match CString::new(text) {
+                Ok(cstr) => cstr.into_raw(),
+                Err(e) => {
+                    warn!("chau7_terminal_get_pending_clipboard: text contains null byte at pos {}", e.nul_position());
+                    std::ptr::null_mut()
+                }
+            }
+        }
+        None => std::ptr::null_mut(),
+    }
+}}
+
+/// Check if the terminal has a pending clipboard load request (OSC 52 read).
+///
+/// # Safety
+/// - `term` must be a valid pointer
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_has_clipboard_request(term: *mut Chau7Terminal) -> bool { unsafe {
+    trace!("chau7_terminal_has_clipboard_request({:p})", term);
+    if term.is_null() {
+        warn!("chau7_terminal_has_clipboard_request: term is null");
+        return false;
+    }
+    let terminal = &*term;
+    terminal.has_pending_clipboard_load()
+}}
+
+/// Respond to a pending clipboard load request by providing the current system clipboard text.
+/// The text is wrapped in the proper OSC 52 response sequence and written to the PTY.
+///
+/// # Safety
+/// - `term` must be a valid pointer
+/// - `text` must be a valid null-terminated C string
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_respond_clipboard(term: *mut Chau7Terminal, text: *const c_char) { unsafe {
+    trace!("chau7_terminal_respond_clipboard({:p}, {:p})", term, text);
+    if term.is_null() {
+        warn!("chau7_terminal_respond_clipboard: term is null");
+        return;
+    }
+    if text.is_null() {
+        warn!("chau7_terminal_respond_clipboard: text is null");
+        return;
+    }
+    let terminal = &*term;
+    let clipboard_text = CStr::from_ptr(text).to_string_lossy();
+    debug!("chau7_terminal_respond_clipboard: responding with {} chars", clipboard_text.len());
+    terminal.respond_clipboard_load(&clipboard_text);
 }}
 
 // ============================================================================

@@ -36,6 +36,20 @@
 #define CELL_FLAG_HIDDEN (1 << 6)
 
 /*
+ Underline style variants (stored in CellData._pad byte, formerly unused).
+ 0 = no underline (or simple single), 1 = single, 2 = double, 3 = curl, 4 = dotted, 5 = dashed.
+ */
+#define UNDERLINE_SINGLE 1
+
+#define UNDERLINE_DOUBLE 2
+
+#define UNDERLINE_CURL 3
+
+#define UNDERLINE_DOTTED 4
+
+#define UNDERLINE_DASHED 5
+
+/*
  The main terminal emulator structure.
 
  # Lock Ordering
@@ -79,6 +93,14 @@ typedef struct CellData {
      Cell attribute flags (bold, italic, underline, etc.)
      */
     uint8_t flags;
+    /*
+     Padding byte for natural alignment of link_id
+     */
+    uint8_t _pad;
+    /*
+     Hyperlink ID (OSC 8). 0 = no link. Use chau7_terminal_get_link_url() to resolve.
+     */
+    uint16_t link_id;
 } CellData;
 
 /*
@@ -682,6 +704,45 @@ bool chau7_terminal_is_pty_closed(struct Chau7Terminal *term);
  - `term` must be a valid pointer
  */
 bool chau7_terminal_is_echo_disabled(struct Chau7Terminal *term);
+
+/*
+ Get the URL for a hyperlink ID from the most recent grid snapshot.
+ Returns null if the ID is 0 or invalid.
+
+ # Safety
+ - `term` must be a valid pointer
+ - The returned string must be freed with `chau7_terminal_free_string`
+ */
+char *chau7_terminal_get_link_url(struct Chau7Terminal *term, uint16_t link_id);
+
+/*
+ Get pending clipboard store text (OSC 52 write to system clipboard).
+ Returns a C string that must be freed with `chau7_terminal_free_string`,
+ or null if no clipboard store is pending.
+
+ # Safety
+ - `term` must be a valid pointer
+ - The returned string must be freed with `chau7_terminal_free_string`
+ */
+char *chau7_terminal_get_pending_clipboard(struct Chau7Terminal *term);
+
+/*
+ Check if the terminal has a pending clipboard load request (OSC 52 read).
+
+ # Safety
+ - `term` must be a valid pointer
+ */
+bool chau7_terminal_has_clipboard_request(struct Chau7Terminal *term);
+
+/*
+ Respond to a pending clipboard load request by providing the current system clipboard text.
+ The text is wrapped in the proper OSC 52 response sequence and written to the PTY.
+
+ # Safety
+ - `term` must be a valid pointer
+ - `text` must be a valid null-terminated C string
+ */
+void chau7_terminal_respond_clipboard(struct Chau7Terminal *term, const char *text);
 
 /*
  Get pending images from the graphics interceptor

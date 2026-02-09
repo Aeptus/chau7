@@ -1,5 +1,6 @@
 //! Core terminal emulator: Chau7Terminal struct, PTY management, and terminal operations.
 
+use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -11,7 +12,8 @@ use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line, Point, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
 use alacritty_terminal::term::{Config as TermConfig, Term, TermMode};
-use alacritty_terminal::vte::ansi::Processor;
+use alacritty_terminal::term::cell::Flags as CellFlags;
+use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor, Processor};
 use crossbeam_channel::{bounded, Receiver, TryRecvError};
 use log::{debug, error, info, trace, warn};
 use parking_lot::{Mutex, RwLock};
@@ -22,7 +24,7 @@ use crate::graphics;
 use crate::metrics::{AdaptivePoller, DirtyRowTracker, OutputBatcher};
 use crate::pool::get_cell_buffer_pool;
 use crate::pty::{Chau7EventListener, PtyHandle, PtyMessage, SizeInfo};
-use crate::types::{CellData, DebugState, GridSnapshot, PerformanceMetrics, cell_flags_to_u8};
+use crate::types::{CellData, DebugState, GridSnapshot, PerformanceMetrics, cell_flags_to_u8, underline_style};
 
 /// Static counter for terminal IDs (for logging)
 static TERMINAL_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -117,10 +119,28 @@ pub struct Chau7Terminal {
     pub(crate) metrics: PerformanceMetrics,
     /// Pending terminal title change (from OSC 0/1/2)
     pub(crate) pending_title: Mutex<Option<String>>,
+    /// Fast check flag — avoids locking pending_title Mutex on every poll (99% empty).
+    pub(crate) has_pending_title: AtomicBool,
     /// Pending child exit code (from Event::ChildExit)
     pub(crate) pending_exit_code: Mutex<Option<i32>>,
     /// Flag indicating PTY has closed
     pub(crate) pty_closed: AtomicBool,
+
+    // Hyperlink support (OSC 8)
+    /// Map of link_id → URL for the most recent grid snapshot.
+    /// Index 0 is unused (link_id 0 = no link). Rebuilt each grid snapshot.
+    pub(crate) link_urls: Mutex<Vec<String>>,
+
+    // Clipboard support (OSC 52)
+    /// Pending clipboard store request from the terminal (OSC 52 write)
+    pub(crate) pending_clipboard_store: Mutex<Option<String>>,
+    /// Fast check flag — avoids locking pending_clipboard_store Mutex on every poll.
+    pub(crate) has_pending_clipboard_store: AtomicBool,
+    /// Pending clipboard load formatter — terminal wants us to read clipboard and
+    /// send the response back via PTY. The Arc<dyn Fn> wraps the text in OSC 52 response.
+    pub(crate) pending_clipboard_load: Mutex<Option<Arc<dyn Fn(&str) -> String + Sync + Send>>>,
+    /// Fast check flag — avoids locking pending_clipboard_load Mutex on every poll.
+    pub(crate) has_pending_clipboard_load: AtomicBool,
 
     // Performance optimization structures
     /// Adaptive polling rate controller
@@ -136,6 +156,8 @@ pub struct Chau7Terminal {
     pub(crate) graphics_interceptor: Mutex<graphics::GraphicsInterceptor>,
     /// Store for decoded images pending pickup by Swift
     pub(crate) image_store: Mutex<graphics::ImageStore>,
+    /// Kitty multi-chunk accumulator
+    pub(crate) kitty_accumulator: Mutex<graphics::KittyAccumulator>,
 }
 
 // ============================================================================
@@ -364,8 +386,16 @@ impl Chau7Terminal {
             bell_pending,
             metrics: PerformanceMetrics::default(),
             pending_title: Mutex::new(None),
+            has_pending_title: AtomicBool::new(false),
             pending_exit_code: Mutex::new(None),
             pty_closed: AtomicBool::new(false),
+            // Hyperlinks (OSC 8) — index 0 reserved for "no link"
+            link_urls: Mutex::new(vec![String::new()]),
+            // Clipboard (OSC 52)
+            pending_clipboard_store: Mutex::new(None),
+            has_pending_clipboard_store: AtomicBool::new(false),
+            pending_clipboard_load: Mutex::new(None),
+            has_pending_clipboard_load: AtomicBool::new(false),
             // Performance optimizations
             adaptive_poller: AdaptivePoller::new(),
             dirty_rows: DirtyRowTracker::new(rows as usize),
@@ -373,6 +403,7 @@ impl Chau7Terminal {
             // Graphics protocol support
             graphics_interceptor: Mutex::new(graphics::GraphicsInterceptor::new()),
             image_store: Mutex::new(graphics::ImageStore::new()),
+            kitty_accumulator: Mutex::new(graphics::KittyAccumulator::new()),
         })
     }
 
@@ -391,6 +422,7 @@ impl Chau7Terminal {
         theme.bg = bg;
         theme.cursor = cursor;
         theme.palette = palette;
+        theme.rebuild_lut();
         // Mark grid dirty so it gets re-rendered with new colors
         self.grid_dirty.store(true, Ordering::Release);
     }
@@ -417,6 +449,62 @@ impl Chau7Terminal {
                 // tcgetattr failed (PTY might be closed)
                 trace!("[terminal-{}] tcgetattr failed, assuming echo enabled", self.id);
                 false
+            }
+        }
+    }
+
+    /// Get the URL for a hyperlink ID from the most recent grid snapshot.
+    /// Returns None if the ID is invalid or 0 (no link).
+    pub fn get_link_url(&self, link_id: u16) -> Option<String> {
+        if link_id == 0 {
+            return None;
+        }
+        let urls = self.link_urls.lock();
+        urls.get(link_id as usize).cloned()
+    }
+
+    /// Takes pending clipboard store text (OSC 52 write).
+    /// Returns the text to place on the system clipboard, or None.
+    pub fn take_pending_clipboard_store(&self) -> Option<String> {
+        // Fast path: skip Mutex lock when no clipboard event pending
+        if !self.has_pending_clipboard_store.load(Ordering::Acquire) {
+            return None;
+        }
+        let value = self.pending_clipboard_store.lock().take();
+        // Clear flag *after* lock to avoid TOCTOU: a producer setting a new
+        // value between flag-clear and lock-acquire would be invisible to polls.
+        if value.is_some() {
+            self.has_pending_clipboard_store.store(false, Ordering::Release);
+        }
+        value
+    }
+
+    /// Takes pending clipboard load request (OSC 52 read).
+    /// Returns true if a clipboard read was requested.
+    /// Caller must then provide the clipboard text via `respond_clipboard_load()`.
+    pub fn has_pending_clipboard_load(&self) -> bool {
+        // Fast path: skip Mutex lock when no clipboard load pending
+        if !self.has_pending_clipboard_load.load(Ordering::Acquire) {
+            return false;
+        }
+        self.pending_clipboard_load.lock().is_some()
+    }
+
+    /// Respond to a pending clipboard load request.
+    /// The formatter closure wraps the text in the proper OSC 52 response sequence
+    /// and we write it to the PTY.
+    pub fn respond_clipboard_load(&self, clipboard_text: &str) {
+        let formatter = self.pending_clipboard_load.lock().take();
+        // Clear flag *after* lock to avoid TOCTOU race with producer
+        self.has_pending_clipboard_load.store(false, Ordering::Release);
+        if let Some(fmt) = formatter {
+            let response = fmt(clipboard_text);
+            trace!("[terminal-{}] OSC 52 clipboard load response: {} bytes", self.id, response.len());
+            let mut handle = self.pty_handle.lock();
+            if let Err(e) = handle.writer.write_all(response.as_bytes()) {
+                warn!("[terminal-{}] Failed to write OSC 52 response: {}", self.id, e);
+            } else if let Err(e) = handle.writer.flush() {
+                warn!("[terminal-{}] Failed to flush OSC 52 response: {}", self.id, e);
             }
         }
     }
@@ -566,10 +654,21 @@ impl Chau7Terminal {
                 Event::Title(title) => {
                     trace!("[terminal-{}] Title change: {}", self.id, title);
                     *self.pending_title.lock() = Some(title);
+                    self.has_pending_title.store(true, Ordering::Release);
                 }
                 Event::ChildExit(code) => {
                     debug!("[terminal-{}] Child exit with code: {}", self.id, code);
                     *self.pending_exit_code.lock() = Some(code);
+                }
+                Event::ClipboardStore(_clipboard_type, text) => {
+                    debug!("[terminal-{}] OSC 52 clipboard store: {} chars", self.id, text.len());
+                    *self.pending_clipboard_store.lock() = Some(text);
+                    self.has_pending_clipboard_store.store(true, Ordering::Release);
+                }
+                Event::ClipboardLoad(_clipboard_type, formatter) => {
+                    debug!("[terminal-{}] OSC 52 clipboard load request", self.id);
+                    *self.pending_clipboard_load.lock() = Some(formatter);
+                    self.has_pending_clipboard_load.store(true, Ordering::Release);
                 }
                 _ => {}
             }
@@ -619,16 +718,16 @@ impl Chau7Terminal {
     pub fn process_pty_data(&self, data: &[u8]) {
         trace!("[terminal-{}] Processing {} bytes of PTY data", self.id, data.len());
 
-        let (passthrough_copy, events) = {
+        let (passthrough_owned, events) = {
             let mut interceptor = self.graphics_interceptor.lock();
-            let (passthrough, events) = interceptor.feed(data);
-            (passthrough.to_vec(), events)
+            interceptor.feed_owned(data)
+            // Lock dropped here — passthrough_owned is an owned Vec, no borrow.
         };
 
-        if !passthrough_copy.is_empty() {
+        if !passthrough_owned.is_empty() {
             let mut term = self.term.lock();
             let mut processor = self.processor.lock();
-            processor.advance(&mut *term, &passthrough_copy);
+            processor.advance(&mut *term, &passthrough_owned);
         }
 
         if !events.is_empty() {
@@ -654,34 +753,55 @@ impl Chau7Terminal {
                             protocol: graphics::ImageProtocol::ITerm2,
                         }
                     }
-                    graphics::GraphicsEvent::Sixel { params, data } => {
-                        let mut combined = params;
-                        combined.push(b'q');
-                        combined.extend_from_slice(&data);
-                        graphics::DecodedImage {
-                            id: 0,
-                            width: 0,
-                            height: 0,
-                            rgba: combined,
-                            anchor_row: cursor_row,
-                            anchor_col: cursor_col,
-                            protocol: graphics::ImageProtocol::Sixel,
+                    graphics::GraphicsEvent::Sixel { params: _, data } => {
+                        match graphics::decode_sixel(&data) {
+                            Some((rgba, width, height)) => {
+                                debug!("[terminal-{}] Sixel decoded: {}x{} ({} bytes RGBA)",
+                                       self.id, width, height, rgba.len());
+                                graphics::DecodedImage {
+                                    id: 0,
+                                    width,
+                                    height,
+                                    rgba,
+                                    anchor_row: cursor_row,
+                                    anchor_col: cursor_col,
+                                    protocol: graphics::ImageProtocol::Sixel,
+                                }
+                            }
+                            None => {
+                                warn!("[terminal-{}] Sixel decode failed, skipping image", self.id);
+                                continue;
+                            }
                         }
                     }
                     graphics::GraphicsEvent::Kitty { control, payload } => {
-                        let mut combined = control.into_bytes();
-                        if !payload.is_empty() {
-                            combined.push(b';');
-                            combined.extend_from_slice(&payload);
-                        }
-                        graphics::DecodedImage {
-                            id: 0,
-                            width: 0,
-                            height: 0,
-                            rgba: combined,
-                            anchor_row: cursor_row,
-                            anchor_col: cursor_col,
-                            protocol: graphics::ImageProtocol::Kitty,
+                        let mut accum = self.kitty_accumulator.lock();
+                        match accum.feed(&control, &payload) {
+                            graphics::KittyAction::Display { rgba, width, height } => {
+                                debug!("[terminal-{}] Kitty decoded: {}x{} ({} bytes)",
+                                       self.id, width, height, rgba.len());
+                                graphics::DecodedImage {
+                                    id: 0,
+                                    width,
+                                    height,
+                                    rgba,
+                                    anchor_row: cursor_row,
+                                    anchor_col: cursor_col,
+                                    protocol: graphics::ImageProtocol::Kitty,
+                                }
+                            }
+                            graphics::KittyAction::Continue => {
+                                trace!("[terminal-{}] Kitty: accumulating chunk", self.id);
+                                continue;
+                            }
+                            graphics::KittyAction::Delete { id } => {
+                                debug!("[terminal-{}] Kitty delete image id={}", self.id, id);
+                                // TODO: Implement image deletion from store
+                                continue;
+                            }
+                            graphics::KittyAction::Noop => {
+                                continue;
+                            }
                         }
                     }
                 };
@@ -707,67 +827,134 @@ impl Chau7Terminal {
         debug!("[terminal-{}] Creating grid snapshot", self.id);
         let start = Instant::now();
 
-        let term = self.term.lock();
-        let theme = self.theme_colors.read();
-        let grid = term.grid();
+        // Clone theme to release the RwLock before the cell loop.
+        // ThemeColors is ~2KB — cloning is negligible vs. holding the lock
+        // for 3000+ cell iterations.
+        let theme = self.theme_colors.read().clone();
 
-        let cols = grid.columns();
-        let rows = grid.screen_lines();
-        let display_offset = grid.display_offset();
-        let history_size = grid.history_size();
+        // ── Phase 1: Extract cell data under term lock ──────────────
+        // We hold the term lock only for grid iteration. Color conversion
+        // uses the cloned theme (no lock). Hyperlink URI extraction must
+        // happen here since it references grid cell data.
+        let (mut cells, cols, rows, display_offset, history_size, link_url_vec) = {
+            let term = self.term.lock();
+            let grid = term.grid();
 
-        let total_cells = cols * rows;
-        trace!("[terminal-{}] Grid snapshot: {}x{}, {} total cells, history={}, offset={}",
-               self.id, cols, rows, total_cells, history_size, display_offset);
+            let cols = grid.columns();
+            let rows = grid.screen_lines();
+            let display_offset = grid.display_offset();
+            let history_size = grid.history_size();
+            let total_cells = cols * rows;
 
-        let selection_range = term.selection.as_ref().map(|sel| {
-            sel.to_range(&*term)
-        }).flatten();
+            trace!("[terminal-{}] Grid snapshot: {}x{}, {} total cells, history={}, offset={}",
+                   self.id, cols, rows, total_cells, history_size, display_offset);
 
-        let mut cells: Vec<CellData> = get_cell_buffer_pool().acquire(total_cells);
+            let selection_range = term.selection.as_ref().and_then(|sel| {
+                sel.to_range(&*term)
+            });
 
-        // Iterate over the VIEWPORT, not the active screen.
-        // Like Alacritty's display_iter(), we offset by -display_offset so that
-        // when the user scrolls up, we read scrollback history lines (negative
-        // Line values) instead of the active screen.
-        //
-        // Coordinate mapping:
-        //   viewport row 0 → grid Line(-display_offset)     (top of what user sees)
-        //   viewport row N → grid Line(N - display_offset)
-        //   When display_offset == 0, this simplifies to Line(0)..Line(rows-1).
-        for line_idx in 0..rows {
-            let line = Line(line_idx as i32 - display_offset as i32);
-            for col_idx in 0..cols {
-                let point = Point::new(line, Column(col_idx));
-                let cell = &grid[point];
+            let mut cells: Vec<CellData> = get_cell_buffer_pool().acquire(total_cells);
 
-                let character = cell.c as u32;
-                let (mut fg_r, mut fg_g, mut fg_b) = color_to_rgb_with_theme(cell.fg, true, &theme);
-                let (mut bg_r, mut bg_g, mut bg_b) = color_to_rgb_with_theme(cell.bg, false, &theme);
-                let flags = cell_flags_to_u8(cell.flags);
+            // Hyperlink tracking: map URI → link_id for deduplication.
+            // Index 0 is reserved (no link). IDs start at 1.
+            let mut uri_to_id: HashMap<String, u16> = HashMap::new();
+            let mut link_url_vec: Vec<String> = vec![String::new()]; // index 0 = no link
 
-                // Selection uses grid-absolute coordinates (Line value already
-                // accounts for display_offset via the subtraction above).
-                if let Some(ref range) = selection_range {
-                    if range.contains(point) {
-                        std::mem::swap(&mut fg_r, &mut bg_r);
-                        std::mem::swap(&mut fg_g, &mut bg_g);
-                        std::mem::swap(&mut fg_b, &mut bg_b);
+            // Iterate over the VIEWPORT, not the active screen.
+            // Like Alacritty's display_iter(), we offset by -display_offset so that
+            // when the user scrolls up, we read scrollback history lines (negative
+            // Line values) instead of the active screen.
+            //
+            // Coordinate mapping:
+            //   viewport row 0 → grid Line(-display_offset)     (top of what user sees)
+            //   viewport row N → grid Line(N - display_offset)
+            //   When display_offset == 0, this simplifies to Line(0)..Line(rows-1).
+            for line_idx in 0..rows {
+                let line = Line(line_idx as i32 - display_offset as i32);
+                for col_idx in 0..cols {
+                    let point = Point::new(line, Column(col_idx));
+                    let cell = &grid[point];
+
+                    let character = cell.c as u32;
+                    let is_bold = cell.flags.contains(CellFlags::BOLD);
+
+                    // Bold brightening: when a cell is bold and has a standard
+                    // ANSI foreground color (indices 0-7), promote it to the
+                    // corresponding bright variant (8-15).  This matches the
+                    // traditional xterm convention used by SwiftTerm and most
+                    // other terminals.  Without this, CLI tools that rely on
+                    // bold+color (e.g. Claude Code, Codex) appear too dim.
+                    let fg_color = if is_bold {
+                        match cell.fg {
+                            AnsiColor::Indexed(idx) if idx < 8 => AnsiColor::Indexed(idx + 8),
+                            AnsiColor::Named(named) => match named {
+                                NamedColor::Black   => AnsiColor::Named(NamedColor::BrightBlack),
+                                NamedColor::Red     => AnsiColor::Named(NamedColor::BrightRed),
+                                NamedColor::Green   => AnsiColor::Named(NamedColor::BrightGreen),
+                                NamedColor::Yellow  => AnsiColor::Named(NamedColor::BrightYellow),
+                                NamedColor::Blue    => AnsiColor::Named(NamedColor::BrightBlue),
+                                NamedColor::Magenta => AnsiColor::Named(NamedColor::BrightMagenta),
+                                NamedColor::Cyan    => AnsiColor::Named(NamedColor::BrightCyan),
+                                NamedColor::White   => AnsiColor::Named(NamedColor::BrightWhite),
+                                _ => cell.fg,
+                            },
+                            _ => cell.fg,
+                        }
+                    } else {
+                        cell.fg
+                    };
+
+                    let (mut fg_r, mut fg_g, mut fg_b) = color_to_rgb_with_theme(fg_color, true, &theme);
+                    let (mut bg_r, mut bg_g, mut bg_b) = color_to_rgb_with_theme(cell.bg, false, &theme);
+                    let flags = cell_flags_to_u8(cell.flags);
+
+                    // Extract hyperlink URL (OSC 8)
+                    let link_id = if let Some(hyperlink) = cell.hyperlink() {
+                        let uri = hyperlink.uri().to_string();
+                        *uri_to_id.entry(uri.clone()).or_insert_with(|| {
+                            let id = link_url_vec.len() as u16;
+                            link_url_vec.push(uri);
+                            id
+                        })
+                    } else {
+                        0
+                    };
+
+                    // Selection uses grid-absolute coordinates (Line value already
+                    // accounts for display_offset via the subtraction above).
+                    if let Some(ref range) = selection_range {
+                        if range.contains(point) {
+                            std::mem::swap(&mut fg_r, &mut bg_r);
+                            std::mem::swap(&mut fg_g, &mut bg_g);
+                            std::mem::swap(&mut fg_b, &mut bg_b);
+                        }
                     }
-                }
 
-                cells.push(CellData {
-                    character,
-                    fg_r,
-                    fg_g,
-                    fg_b,
-                    bg_r,
-                    bg_g,
-                    bg_b,
-                    flags,
-                });
+                    cells.push(CellData {
+                        character,
+                        fg_r,
+                        fg_g,
+                        fg_b,
+                        bg_r,
+                        bg_g,
+                        bg_b,
+                        flags,
+                        _pad: underline_style(cell.flags),
+                        link_id,
+                    });
+                }
             }
+
+            // term lock is dropped at the end of this block
+            (cells, cols, rows, display_offset, history_size, link_url_vec)
+        };
+        // ── Phase 2: Post-processing without any lock ───────────────
+
+        // Store link URLs for FFI retrieval
+        if link_url_vec.len() > 1 {
+            debug!("[terminal-{}] Grid snapshot has {} unique hyperlinks", self.id, link_url_vec.len() - 1);
         }
+        *self.link_urls.lock() = link_url_vec;
 
         // Convert to raw pointer - preserve Vec capacity for proper deallocation.
         // Do NOT use into_boxed_slice() — it shrinks the allocation, making
@@ -1218,42 +1405,81 @@ impl Drop for Chau7Terminal {
         self.running.store(false, Ordering::Release);
         debug!("[terminal-{}] Signaled reader thread to stop", self.id);
 
-        // Kill the child process to unblock the reader thread
+        // Kill the child process to unblock the reader thread.
+        // CRITICAL: Do NOT block indefinitely on child.wait() — this runs on
+        // whatever thread triggers deallocation (often the main thread via
+        // SwiftUI view responder cleanup). A blocking wait here freezes the UI.
         if let Some(mut child) = self.child.lock().take() {
             debug!("[terminal-{}] Killing child process", self.id);
             if let Err(e) = child.kill() {
                 debug!("[terminal-{}] Child kill returned: {}", self.id, e);
             }
-            match child.wait() {
-                Ok(status) => {
-                    info!("[terminal-{}] Child process exited with status: {:?}", self.id, status);
+
+            // Try a non-blocking check first (try_wait returns immediately)
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    info!("[terminal-{}] Child process already exited: {:?}", self.id, status);
+                }
+                Ok(None) => {
+                    // Child hasn't exited yet after kill — wait on a background thread
+                    // with a timeout so we never block the caller indefinitely.
+                    let id = self.id;
+                    std::thread::Builder::new()
+                        .name(format!("term-{}-reap", id))
+                        .spawn(move || {
+                            let start = Instant::now();
+                            let timeout = Duration::from_secs(3);
+                            loop {
+                                match child.try_wait() {
+                                    Ok(Some(status)) => {
+                                        info!("[terminal-{}] Child reaped after {:?}: {:?}", id, start.elapsed(), status);
+                                        return;
+                                    }
+                                    Ok(None) => {
+                                        if start.elapsed() > timeout {
+                                            warn!("[terminal-{}] Child did not exit within {:?} after kill, abandoning", id, timeout);
+                                            // Let the OS reap it when it eventually exits.
+                                            // std::mem::forget(child) would leak — instead just drop
+                                            // and let the destructor handle it however it can.
+                                            return;
+                                        }
+                                        std::thread::sleep(Duration::from_millis(10));
+                                    }
+                                    Err(e) => {
+                                        warn!("[terminal-{}] try_wait error: {}", id, e);
+                                        return;
+                                    }
+                                }
+                            }
+                        })
+                        .ok(); // If thread spawn fails, just abandon the child
                 }
                 Err(e) => {
-                    warn!("[terminal-{}] Failed to wait for child: {}", self.id, e);
+                    warn!("[terminal-{}] Failed to check child status: {}", self.id, e);
                 }
             }
         }
 
-        // Wait for reader thread to finish with timeout
+        // Join the reader thread on a background thread so we don't block the caller.
+        // The reader should exit promptly since we set running=false and killed the child,
+        // but we won't risk blocking the main thread if it doesn't.
         if let Some(handle) = self.reader_thread.take() {
-            debug!("[terminal-{}] Waiting for reader thread to finish...", self.id);
-
-            let start = Instant::now();
-            let timeout = Duration::from_secs(2);
-
-            match handle.join() {
-                Ok(()) => {
-                    debug!("[terminal-{}] Reader thread joined in {:?}", self.id, start.elapsed());
-                }
-                Err(e) => {
-                    error!("[terminal-{}] Reader thread panicked: {:?}", self.id, e);
-                }
-            }
-
-            if start.elapsed() > timeout {
-                warn!("[terminal-{}] Reader thread took {:?} to join (expected < {:?})",
-                      self.id, start.elapsed(), timeout);
-            }
+            let id = self.id;
+            debug!("[terminal-{}] Spawning background thread to join reader", id);
+            std::thread::Builder::new()
+                .name(format!("term-{}-join", id))
+                .spawn(move || {
+                    let start = Instant::now();
+                    match handle.join() {
+                        Ok(()) => {
+                            debug!("[terminal-{}] Reader thread joined in {:?}", id, start.elapsed());
+                        }
+                        Err(e) => {
+                            error!("[terminal-{}] Reader thread panicked: {:?}", id, e);
+                        }
+                    }
+                })
+                .ok();
         }
 
         info!("[terminal-{}] Terminal destroyed", self.id);

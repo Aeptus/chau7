@@ -83,8 +83,12 @@ PLIST
 
 run_cmd cp "$BIN" "$CONTENTS/MacOS/$APP_NAME"
 
-if [[ -f "$ROOT_DIR/Resources/AppDockIcon.png" ]]; then
+if [[ -f "$ROOT_DIR/Resources/AppDockIcon.icns" ]]; then
+  run_cmd cp "$ROOT_DIR/Resources/AppDockIcon.icns" "$CONTENTS/Resources/AppDockIcon.icns"
+  log_ok "Copied app icon (.icns)"
+elif [[ -f "$ROOT_DIR/Resources/AppDockIcon.png" ]]; then
   run_cmd cp "$ROOT_DIR/Resources/AppDockIcon.png" "$CONTENTS/Resources/AppDockIcon.png"
+  log_warn "Using PNG icon (Launchpad may not show icon — generate .icns for full support)"
 fi
 
 RESOURCE_BUNDLE=""
@@ -128,5 +132,11 @@ if [[ -f "$RUST_TERMINAL_LIB" ]]; then
 else
   log_warn "Rust terminal library not found at $RUST_TERMINAL_LIB (Rust backend will be unavailable)"
 fi
+
+# Ad-hoc codesign the app bundle so macOS doesn't SIGKILL on dlopen().
+# Without this, replacing the Rust dylib invalidates the kernel's cached
+# code signature, causing EXC_BAD_ACCESS (Code Signature Invalid) on launch.
+run_cmd codesign --force --sign - --deep "$APP_DIR"
+log_ok "Ad-hoc signed app bundle"
 
 log_ok "Built app bundle at $APP_DIR"

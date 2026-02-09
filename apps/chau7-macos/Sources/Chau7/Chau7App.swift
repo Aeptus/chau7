@@ -157,10 +157,14 @@ struct Chau7App: App {
 
                 Divider()
 
-                Button(L("Snippets...", "Snippets...")) {
+                // Shortcut ⌘; is handled by the AppDelegate local event monitor.
+                // Do NOT add .keyboardShortcut here — SwiftUI menu shortcuts and
+                // local monitors are separate dispatch paths; both fire, causing
+                // toggleSnippets to be called twice (on→off) and triggering
+                // fullscreen exit on macOS autoHideMenuBar windows.
+                Button(L("Snippets...\t⌘;", "Snippets...\t⌘;")) {
                     appDelegate.toggleSnippets()
                 }
-                .keyboardShortcut(";", modifiers: [.command])
 
                 Button(L("Command Palette...", "Command Palette...")) {
                     appDelegate.toggleCommandPalette()

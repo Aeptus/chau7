@@ -12,7 +12,10 @@ use crate::types::CellData;
 static CELL_BUFFER_POOL: OnceLock<CellBufferPool> = OnceLock::new();
 
 pub fn get_cell_buffer_pool() -> &'static CellBufferPool {
-    CELL_BUFFER_POOL.get_or_init(|| CellBufferPool::new(4))
+    // 16 buffers covers heavy multi-tab usage (5+ tabs with Metal rendering).
+    // Each buffer is ~36KB (3000 cells × 12 bytes) → max ~576KB pool overhead.
+    // Previously 4 buffers caused 98% miss rate in multi-tab scenarios.
+    CELL_BUFFER_POOL.get_or_init(|| CellBufferPool::new(16))
 }
 
 /// Memory pool for CellData buffers to reduce allocation overhead.
@@ -86,6 +89,6 @@ impl CellBufferPool {
 
 impl Default for CellBufferPool {
     fn default() -> Self {
-        Self::new(4)  // Keep up to 4 buffers pooled
+        Self::new(16)  // Keep up to 16 buffers pooled (multi-tab friendly)
     }
 }
