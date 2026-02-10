@@ -177,6 +177,7 @@ final class LocalizationTests: XCTestCase {
         let root = fileURL.deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
+            .deletingLastPathComponent()
         let stringsURL = root
             .appendingPathComponent("Sources/Chau7/Resources")
             .appendingPathComponent("\(locale).lproj/Localizable.strings")
