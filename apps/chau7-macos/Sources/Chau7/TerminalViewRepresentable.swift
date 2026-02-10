@@ -389,7 +389,16 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.tabIdentifier = model.tabIdentifier
             existingView.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
             existingView.installHistoryKeyMonitor()
-            return UnifiedTerminalContainerView(swiftTermView: existingView)
+            let container = UnifiedTerminalContainerView(swiftTermView: existingView)
+            // Re-enable Metal rendering — the previous container (and its Metal
+            // coordinator) was torn down when the tab went out of nearby range.
+            // SwiftTerm's CPU rendering still works (unlike Rust, it has no
+            // isMetalRenderingActive gate), but we want GPU acceleration back.
+            if settings.useMetalRenderer {
+                container.enableMetalRendering()
+                Log.trace("Re-enabled Metal rendering for reused SwiftTerm view")
+            }
+            return container
         }
 
         // Create new terminal view and start shell process
@@ -495,7 +504,19 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             existingView.tabIdentifier = model.tabIdentifier
             existingView.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
             existingView.installHistoryKeyMonitor()
-            return UnifiedTerminalContainerView(rustView: existingView)
+            let container = UnifiedTerminalContainerView(rustView: existingView)
+            // Re-enable Metal rendering — the previous container (and its Metal
+            // coordinator) was torn down when the tab went out of nearby range.
+            // Without this, isMetalRenderingActive stays true on the view (skipping
+            // CPU rendering) while no Metal coordinator exists (no GPU rendering
+            // either), leaving the tab blank/grey.
+            if settings.useMetalRenderer {
+                // Reset the flag so enableMetalRendering() can re-attach
+                existingView.isMetalRenderingActive = false
+                container.enableMetalRendering()
+                Log.trace("Re-enabled Metal rendering for reused Rust terminal view")
+            }
+            return container
         }
 
         // Create new Rust terminal view

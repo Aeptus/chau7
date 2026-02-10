@@ -182,7 +182,16 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
             maxWidth = max(800, minWidth)
             height = OverlayLayout.tabBarHeight
         }
+
+        // NSToolbar's layout engine uses minSize/maxSize on the ITEM (not Auto Layout
+        // constraints on the view) to decide how much space to give a toolbar item.
+        // Without these, the toolbar asks the view for its fittingSize, which returns
+        // the SwiftUI minimum (180px) — causing the tab bar to stay tiny after refresh.
+        item.minSize = NSSize(width: minWidth, height: height)
+        item.maxSize = NSSize(width: maxWidth, height: height)
+
         guard let view = item.view as? TabBarHostingView else { return }
+        view.desiredSize = NSSize(width: maxWidth, height: height)
 
         if view.translatesAutoresizingMaskIntoConstraints {
             view.translatesAutoresizingMaskIntoConstraints = false
@@ -211,6 +220,25 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
     var minWidthConstraint: NSLayoutConstraint?
     var maxWidthConstraint: NSLayoutConstraint?
     var heightConstraint: NSLayoutConstraint?
+
+    /// The size the toolbar delegate wants this view to be.
+    /// Used by intrinsicContentSize so NSToolbar's layout engine allocates
+    /// the correct width instead of falling back to SwiftUI's minimum (180px).
+    var desiredSize: NSSize = NSSize(width: 800, height: OverlayLayout.tabBarHeight) {
+        didSet {
+            if desiredSize != oldValue {
+                invalidateIntrinsicContentSize()
+            }
+        }
+    }
+
+    override var intrinsicContentSize: NSSize {
+        desiredSize
+    }
+
+    override var fittingSize: NSSize {
+        desiredSize
+    }
 }
 
 private struct TabDropIndicator: Equatable {
@@ -256,6 +284,10 @@ private struct ToolbarTabBarView: View {
     // Gesture-based drag state for tab reordering (Chrome/Safari style live reorder)
     @State private var dragOffset: CGFloat = 0
     @State private var dragAccumulatedOffset: CGFloat = 0  // Cumulative adjustment from swaps
+    /// Target accumulated offset — animated towards by dragOffset to smooth out swap jumps.
+    @State private var dragTargetAccumulatedOffset: CGFloat = 0
+    /// Cooldown: ignore swaps for a few frames after one fires, preventing rapid bouncing.
+    @State private var swapCooldownUntil: Date = .distantPast
 
     var body: some View {
         let selected = overlayModel.selectedTab
@@ -410,57 +442,96 @@ private struct ToolbarTabBarView: View {
         if draggingTabID == nil {
             draggingTabID = tab.id
             dragAccumulatedOffset = 0
+            dragTargetAccumulatedOffset = 0
+            swapCooldownUntil = .distantPast
             Log.info("Tab drag started (gesture): tabID=\(tab.id)")
         }
 
-        // Visual offset = raw translation + accumulated adjustments from swaps
+        // Smoothly interpolate accumulated offset towards the target.
+        // After a swap, dragTargetAccumulatedOffset jumps instantly but
+        // dragAccumulatedOffset lerps towards it, smoothing the visual snap.
+        let lerpFactor: CGFloat = 0.45
+        let diff = dragTargetAccumulatedOffset - dragAccumulatedOffset
+        if abs(diff) < 0.5 {
+            dragAccumulatedOffset = dragTargetAccumulatedOffset
+        } else {
+            dragAccumulatedOffset += diff * lerpFactor
+        }
+
+        // Visual offset = raw translation + smoothed accumulated adjustments
         dragOffset = translation + dragAccumulatedOffset
 
-        // Chrome/Safari style: live reorder when crossing 50% threshold
-        guard let currentIndex = overlayModel.tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        // Snapshot the tab array locally to avoid race conditions —
+        // if a tab is closed/created via keyboard during the drag,
+        // the array can mutate between index lookup and element access.
+        let snapshot = overlayModel.tabs
+        guard let currentIndex = snapshot.firstIndex(where: { $0.id == tab.id }) else {
+            // Tab was closed during drag — abort cleanly
+            Log.warn("Tab drag aborted: tab \(tab.id) no longer in tabs array")
+            draggingTabID = nil
+            dragOffset = 0
+            dragAccumulatedOffset = 0
+            dragTargetAccumulatedOffset = 0
+            return
+        }
+
+        // Cooldown: skip swap checks for a short period after each swap
+        // to prevent rapid bouncing when hovering near the threshold.
+        let now = Date()
+        guard now >= swapCooldownUntil else { return }
 
         let tabSpacing: CGFloat = 8
 
         // Check if we should swap with the next tab (dragging right)
-        if dragOffset > 0, currentIndex < overlayModel.tabs.count - 1 {
-            let neighborID = overlayModel.tabs[currentIndex + 1].id
+        if dragOffset > 0, currentIndex < snapshot.count - 1 {
+            let neighborID = snapshot[currentIndex + 1].id
             let neighborWidth = tabWidths[neighborID] ?? 100
-            let moveThreshold = (neighborWidth + tabSpacing) / 2
+            // Threshold at 55% of the neighbor width — slightly past center
+            // prevents accidental triggers while still feeling responsive.
+            let moveThreshold = (neighborWidth + tabSpacing) * 0.55
 
             if dragOffset > moveThreshold {
-                withAnimation(.easeInOut(duration: 0.15)) {
+                // Disable animation for the model swap — the dragged tab is
+                // already visually positioned via dragOffset, and neighbor tabs
+                // reflow naturally.  Wrapping the swap in withAnimation forces
+                // SwiftUI to animate the full ForEach diff, including
+                // NSViewRepresentable terminals; that triggers an AppKit crash.
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) {
                     overlayModel.swapTabWithNeighbor(id: tab.id, direction: 1)
                 }
-                // Adjust accumulated offset to account for the swap
-                dragAccumulatedOffset -= (neighborWidth + tabSpacing)
-                dragOffset = translation + dragAccumulatedOffset
+                // Set target — will be lerped smoothly in next onChanged call
+                dragTargetAccumulatedOffset -= (neighborWidth + tabSpacing)
+                swapCooldownUntil = now.addingTimeInterval(0.15)
             }
         }
         // Check if we should swap with the previous tab (dragging left)
-        // Using else if ensures we don't use stale index after a swap
         else if dragOffset < 0, currentIndex > 0 {
-            let neighborID = overlayModel.tabs[currentIndex - 1].id
+            let neighborID = snapshot[currentIndex - 1].id
             let neighborWidth = tabWidths[neighborID] ?? 100
-            let moveThreshold = (neighborWidth + tabSpacing) / 2
+            let moveThreshold = (neighborWidth + tabSpacing) * 0.55
 
             if dragOffset < -moveThreshold {
-                withAnimation(.easeInOut(duration: 0.15)) {
+                var t = Transaction()
+                t.disablesAnimations = true
+                withTransaction(t) {
                     overlayModel.swapTabWithNeighbor(id: tab.id, direction: -1)
                 }
-                // Adjust accumulated offset to account for the swap
-                dragAccumulatedOffset += (neighborWidth + tabSpacing)
-                dragOffset = translation + dragAccumulatedOffset
+                dragTargetAccumulatedOffset += (neighborWidth + tabSpacing)
+                swapCooldownUntil = now.addingTimeInterval(0.15)
             }
         }
     }
 
     private func handleTabDragEnd(tab: OverlayTab, translation: CGFloat) {
-        // Tab is already in the correct position from live reordering
-        // Just animate the dragged tab back to its slot
-        withAnimation(.easeOut(duration: 0.15)) {
+        // Tab is already in the correct position from live reordering.
+        // Animate the dragged tab smoothly back to its slot position.
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
             draggingTabID = nil
             dragOffset = 0
             dragAccumulatedOffset = 0
+            dragTargetAccumulatedOffset = 0
         }
         Log.info("Tab drag ended: tabID=\(tab.id)")
     }
@@ -721,10 +792,13 @@ struct Chau7OverlayView: View {
 
             // F21: Snippets
             if overlayModel.isSnippetManagerVisible {
-                SnippetManagerOverlayView(model: overlayModel)
-                    .padding(.top, 12)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(10)
+                GeometryReader { geo in
+                    SnippetManagerOverlayView(model: overlayModel, containerSize: geo.size)
+                        .padding(.top, 12)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(10)
             }
 
             // Task Lifecycle (v1.1) - Candidate banner at top
@@ -1772,6 +1846,7 @@ struct BookmarkRow: View {
 
 struct SnippetManagerOverlayView: View {
     @ObservedObject var model: OverlayTabsModel
+    let containerSize: CGSize
     @ObservedObject private var manager = SnippetManager.shared
     @ObservedObject private var settings = FeatureSettings.shared
     @State private var query: String = ""
@@ -1786,6 +1861,16 @@ struct SnippetManagerOverlayView: View {
 
     /// All available letters for quick selection (a-z)
     private static let allLetters = Set("abcdefghijklmnopqrstuvwxyz")
+
+    /// Dynamic panel max width: ~50% of container, clamped between 420–700
+    private var dynamicMaxWidth: CGFloat {
+        min(700, max(420, containerSize.width * 0.50))
+    }
+
+    /// Dynamic list max height: ~50% of container, clamped between 200–500
+    private var dynamicListMaxHeight: CGFloat {
+        min(500, max(200, containerSize.height * 0.50))
+    }
 
     private var repoAvailable: Bool {
         FeatureSettings.shared.isRepoSnippetsEnabled && manager.repoRoot != nil
@@ -1936,12 +2021,13 @@ struct SnippetManagerOverlayView: View {
                                             hasKeyConflict: hasConflict,
                                             onInsert: { attemptInsert(entry) },
                                             onEdit: { startEdit(entry) },
-                                            onDelete: { deleteTarget = entry }
+                                            onDelete: { deleteTarget = entry },
+                                            onTogglePin: { manager.togglePin(entry) }
                                         )
                                     }
                                 }
                             }
-                            .frame(maxHeight: OverlayLayout.snippetListMaxHeight)
+                            .frame(maxHeight: dynamicListMaxHeight)
 
                             if query.isEmpty {
                                 Text(L("Press a letter to quick-insert", "Press a letter to quick-insert"))
@@ -1964,7 +2050,7 @@ struct SnippetManagerOverlayView: View {
             .background(overlayPanelBackground)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .padding(.horizontal, 16)
-            .frame(maxWidth: OverlayLayout.snippetPanelMaxWidth)
+            .frame(maxWidth: dynamicMaxWidth)
             .onAppear {
                 // Focus is now handled by SnippetSearchField.focusWithRetry() in makeNSView
                 // This just resets query state on reopen
@@ -2061,6 +2147,7 @@ struct SnippetRowView: View {
     let onInsert: () -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
+    let onTogglePin: () -> Void
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -2092,6 +2179,12 @@ struct SnippetRowView: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
+                    if entry.snippet.isPinned {
+                        Image(systemName: "pin.fill")
+                            .font(.system(size: 8))
+                            .foregroundStyle(Color.accentColor)
+                    }
+
                     Text(entry.snippet.title)
                         .font(.custom("Avenir Next", size: 11).weight(.semibold))
 
@@ -2130,6 +2223,14 @@ struct SnippetRowView: View {
             Spacer()
 
             HStack(spacing: 4) {
+                Button(action: onTogglePin) {
+                    Image(systemName: entry.snippet.isPinned ? "pin.fill" : "pin")
+                        .font(.system(size: 10))
+                        .foregroundStyle(entry.snippet.isPinned ? Color.accentColor : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(entry.snippet.isPinned ? L("Unpin", "Unpin") : L("Pin to top", "Pin to top"))
+
                 Button(action: onInsert) {
                     Image(systemName: "arrow.down.doc")
                         .font(.system(size: 10))

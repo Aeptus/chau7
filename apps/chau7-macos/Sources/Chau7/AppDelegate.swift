@@ -152,6 +152,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Save tab state for restoration on next launch
+        for host in overlayHosts {
+            host.model.saveTabState()
+        }
+        Log.info("Saved tab state for restoration")
+
         // Stop API analytics proxy
         Task { @MainActor in
             ProxyManager.shared.stop()
@@ -634,6 +640,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Log.info("Scrolled to bottom.")
     }
 
+    func scrollToPreviousInputLine() {
+        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else { return }
+        terminalView.scrollToPreviousInputLine()
+    }
+
+    func scrollToNextInputLine() {
+        guard let terminalView = activeTerminalView(in: NSApp.keyWindow) else { return }
+        terminalView.scrollToNextInputLine()
+    }
+
     // MARK: - Window Menu Actions
 
     func showTabColorPicker() {
@@ -650,6 +666,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func refreshTabBar() {
         ensureActiveOverlayModel()?.refreshTabBar()
+    }
+
+    func forceRefreshTab() {
+        ensureActiveOverlayModel()?.forceRefreshSelectedTab()
     }
 
     // MARK: - Pane Actions
@@ -1142,10 +1162,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return nil
         }
 
-        if flags == [.command], normalizedKeyEquivalent(from: event) == ";" {
-            toggleSnippets()
-            return nil
-        }
+        // ⌘; (Snippets) is now handled by OverlayWindow.performKeyEquivalent
+        // which fires before the local monitor.  No duplicate handling here.
 
         // Handle Escape key to close search/rename overlays
         if event.keyCode == KeyboardShortcuts.escapeKeyCode, let model = overlayModel {

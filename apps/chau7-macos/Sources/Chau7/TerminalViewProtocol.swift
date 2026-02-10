@@ -139,6 +139,15 @@ protocol TerminalViewLike: NSView {
     /// Scroll to bottom (current)
     func scrollToBottom()
 
+    /// Scroll so that `absoluteRow` is at the top of the viewport.
+    func scrollToRow(absoluteRow: Int)
+
+    /// Scroll to the nearest input line above the current viewport top.
+    func scrollToPreviousInputLine()
+
+    /// Scroll to the nearest input line below the current viewport top.
+    func scrollToNextInputLine()
+
     // MARK: - Configuration Methods
 
     /// Apply a color scheme

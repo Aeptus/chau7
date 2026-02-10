@@ -166,6 +166,20 @@ struct OverlayTab: Identifiable, Equatable {
     }
 }
 
+// MARK: - Tab State Persistence
+
+/// Lightweight Codable snapshot of a tab's restorable state.
+/// Terminal scrollback and process state cannot be restored, but working
+/// directory, title, and color give the user a familiar starting point.
+struct SavedTabState: Codable {
+    let customTitle: String?
+    let color: String  // TabColor.rawValue
+    let directory: String
+    let selectedIndex: Int?  // non-nil only for the selected tab
+
+    static let userDefaultsKey = "com.chau7.savedTabState"
+}
+
 /// Manages terminal tabs, search, and broadcast mode for the overlay window.
 /// - Note: Thread Safety - @Published properties must be modified on main thread.
 ///   All methods assume main thread execution.
@@ -190,6 +204,9 @@ final class OverlayTabsModel: ObservableObject {
     @Published var previousTabIndex: Int = 0
     /// Whether the terminal content is ready to display (for snapshot swap)
     @Published var isTerminalReady: Bool = true
+    /// Generation counter for isTerminalReady — prevents stale asyncAfter
+    /// callbacks from clobbering the state after rapid tab switches.
+    private var terminalReadyGeneration: UInt64 = 0
     /// Set of tab IDs currently being pre-warmed (on hover)
     private var prewarmingTabIDs: Set<UUID> = []
 
@@ -249,6 +266,8 @@ final class OverlayTabsModel: ObservableObject {
     private var renderSuspensionDelay: TimeInterval = 2.0
     private var needsFreshTabOnShow: Bool = false
     private var isDiagnosticsLoggingEnabled: Bool = false
+    /// Periodic auto-save timer so tab state survives crashes (SIGABRT etc.)
+    private var autoSaveTimer: DispatchSourceTimer?
 
     weak var overlayWindow: NSWindow?
     var onCloseLastTab: (() -> Void)?
@@ -257,12 +276,21 @@ final class OverlayTabsModel: ObservableObject {
 
     init(appModel: AppModel) {
         self.appModel = appModel
-        var first = OverlayTab(appModel: appModel)
-        if let firstColor = TabColor.allCases.first {
-            first.color = firstColor
+
+        // Try to restore saved tab state from a previous session
+        if let restoredTabs = Self.restoreSavedTabs(appModel: appModel) {
+            self.tabs = restoredTabs.tabs
+            self.selectedTabID = restoredTabs.selectedID
+            Log.info("Restored \(restoredTabs.tabs.count) tab(s) from saved state")
+        } else {
+            // Fallback: create a single fresh tab
+            var first = OverlayTab(appModel: appModel)
+            if let firstColor = TabColor.allCases.first {
+                first.color = firstColor
+            }
+            self.tabs = [first]
+            self.selectedTabID = first.id
         }
-        self.tabs = [first]
-        self.selectedTabID = first.id
 
         // Setup task lifecycle observers (v1.1)
         setupTaskObservers()
@@ -277,10 +305,99 @@ final class OverlayTabsModel: ObservableObject {
             self?.isDiagnosticsLoggingEnabled = true
             self?.logVisualState(reason: "init")
         }
+
+        // Auto-save tab state every 30 seconds so it survives crashes
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 30, repeating: 30)
+        timer.setEventHandler { [weak self] in
+            self?.saveTabState()
+        }
+        timer.resume()
+        autoSaveTimer = timer
     }
 
     deinit {
         stopTabBarWatchdog()
+        autoSaveTimer?.cancel()
+        autoSaveTimer = nil
+    }
+
+    // MARK: - Tab State Persistence
+
+    /// Saves current tab state to UserDefaults. Call from applicationWillTerminate
+    /// and periodically during normal operation.
+    func saveTabState() {
+        let selectedID = selectedTabID
+        var states: [SavedTabState] = []
+        for (i, tab) in tabs.enumerated() {
+            let dir = tab.session?.currentDirectory
+                ?? TerminalSessionModel.defaultStartDirectory()
+            let isSelected = tab.id == selectedID
+            states.append(SavedTabState(
+                customTitle: tab.customTitle,
+                color: tab.color.rawValue,
+                directory: dir,
+                selectedIndex: isSelected ? i : nil
+            ))
+        }
+        guard !states.isEmpty else { return }
+        do {
+            let data = try JSONEncoder().encode(states)
+            UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
+            Log.trace("Saved \(states.count) tab state(s)")
+        } catch {
+            Log.warn("Failed to save tab state: \(error)")
+        }
+    }
+
+    /// Restores tabs from saved state. Returns nil if no saved state exists
+    /// or if decoding fails.
+    private static func restoreSavedTabs(appModel: AppModel) -> (tabs: [OverlayTab], selectedID: UUID)? {
+        guard let data = UserDefaults.standard.data(forKey: SavedTabState.userDefaultsKey) else {
+            return nil
+        }
+        // Clear saved state immediately so a crash during restoration
+        // doesn't cause an infinite crash loop
+        UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
+
+        guard let states = try? JSONDecoder().decode([SavedTabState].self, from: data),
+              !states.isEmpty else {
+            return nil
+        }
+
+        let colors = TabColor.allCases
+        var restoredTabs: [OverlayTab] = []
+        var selectedID: UUID?
+
+        for (i, state) in states.enumerated() {
+            var tab = OverlayTab(appModel: appModel)
+            tab.customTitle = state.customTitle
+            tab.color = TabColor(rawValue: state.color) ?? colors[i % colors.count]
+
+            // Set the working directory on the session once it's ready
+            let directory = state.directory
+            if !directory.isEmpty {
+                // The terminal shell starts asynchronously. We set the initial
+                // directory by sending a `cd` command after a short delay to
+                // let the shell initialize.
+                let session = tab.session
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    // Single-quote the path for safe shell escaping
+                    let escaped = "'" + directory.replacingOccurrences(of: "'", with: "'\\''") + "'"
+                    session?.sendInput("cd \(escaped) && clear\n")
+                }
+            }
+
+            if state.selectedIndex != nil {
+                selectedID = tab.id
+            }
+
+            restoredTabs.append(tab)
+        }
+
+        guard !restoredTabs.isEmpty else { return nil }
+        let finalSelectedID = selectedID ?? restoredTabs[0].id
+        return (tabs: restoredTabs, selectedID: finalSelectedID)
     }
 
     var selectedTab: OverlayTab? {
@@ -378,9 +495,14 @@ final class OverlayTabsModel: ObservableObject {
         }
 
         // 6. Mark terminal as ready after a brief delay (allows snapshot to display first)
+        //    Use a generation counter so stale callbacks (from rapid tab switching)
+        //    don't clobber a newer false → true cycle.
+        terminalReadyGeneration &+= 1
+        let expectedGeneration = terminalReadyGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
-            self?.isTerminalReady = true
-            self?.logVisualState(reason: "selectTab: terminalReady=true")
+            guard let self, self.terminalReadyGeneration == expectedGeneration else { return }
+            self.isTerminalReady = true
+            self.logVisualState(reason: "selectTab: terminalReady=true")
         }
     }
 
@@ -392,7 +514,10 @@ final class OverlayTabsModel: ObservableObject {
             return
         }
 
-        if let terminalView = tabs[currentIndex].session?.existingTerminalView {
+        // Try Rust backend first (primary), then SwiftTerm fallback
+        let snapshotView: NSView? = (tabs[currentIndex].session?.existingRustTerminalView as NSView?)
+            ?? (tabs[currentIndex].session?.existingTerminalView as NSView?)
+        if let terminalView = snapshotView {
             // Live capture from the terminal view
             guard let bitmapRep = terminalView.bitmapImageRepForCachingDisplay(in: terminalView.bounds) else {
                 logVisualState(reason: "snapshot: skipped (no bitmap rep)")
@@ -768,6 +893,9 @@ final class OverlayTabsModel: ObservableObject {
             }
         }
 
+        // Ensure terminal is visible (recover from stuck isTerminalReady=false)
+        isTerminalReady = true
+
         focusSelected()
 
         // Schedule a retry of focusSelected() after a short delay, in case the terminal
@@ -894,6 +1022,9 @@ final class OverlayTabsModel: ObservableObject {
         let targetID = tabs[nextIndex].id
         selectedTabID = targetID
 
+        // Ensure terminal is visible (recover from stuck isTerminalReady=false)
+        isTerminalReady = true
+
         // Unsuspend target tab so its terminal view is available for focus
         cancelSuspension(for: targetID)
         if suspendedTabIDs.remove(targetID) != nil {
@@ -917,6 +1048,9 @@ final class OverlayTabsModel: ObservableObject {
         Log.trace("selectPreviousTab: \(index) -> \(prevIndex), tabs.count=\(tabs.count)")
         let targetID = tabs[prevIndex].id
         selectedTabID = targetID
+
+        // Ensure terminal is visible (recover from stuck isTerminalReady=false)
+        isTerminalReady = true
 
         // Unsuspend target tab so its terminal view is available for focus
         cancelSuspension(for: targetID)
@@ -967,10 +1101,14 @@ final class OverlayTabsModel: ObservableObject {
         if selectedTabID == targetID {
             // Already on this tab — just re-focus the terminal (handles the case
             // where focus moved to a non-terminal UI element like the search bar)
+            isTerminalReady = true
             focusSelected()
             return
         }
         selectedTabID = targetID
+
+        // Ensure terminal is visible (recover from stuck isTerminalReady=false)
+        isTerminalReady = true
 
         // Unsuspend target tab so its terminal view is available for focus
         cancelSuspension(for: targetID)
@@ -1165,6 +1303,66 @@ final class OverlayTabsModel: ObservableObject {
         Log.info("refreshTabBar: token updated \(oldToken) -> \(tabBarRefreshToken), tabs=\(tabs.count)")
     }
 
+    // MARK: - Force Refresh Terminal
+
+    /// Forces the selected tab's terminal view to re-render.
+    /// Recovers from stuck isHidden, disabled Metal views, or stale display state.
+    func forceRefreshSelectedTab() {
+        dispatchPrecondition(condition: .onQueue(.main))
+
+        // 1. Reset model-level gates
+        isTerminalReady = true
+        cancelSuspension(for: selectedTabID)
+        suspendedTabIDs.remove(selectedTabID)
+
+        guard let session = selectedTab?.session else {
+            Log.warn("forceRefreshSelectedTab: no session for selectedTabID=\(selectedTabID)")
+            return
+        }
+
+        // 2. Unhide and kick the Rust terminal view + Metal coordinator
+        //    Hierarchy: UnifiedTerminalContainerView → RustTerminalContainerView → RustTerminalView
+        if let rustView = session.existingRustTerminalView {
+            rustView.isHidden = false
+            rustView.notifyUpdateChanges = true
+            rustView.needsDisplay = true
+            rustView.setEventMonitoringEnabled(true)
+            // Unhide container + Metal view
+            if let container = rustView.superview as? RustTerminalContainerView {
+                container.isHidden = false
+                if let metalView = container.rustMetalCoordinator?.metalView {
+                    metalView.isHidden = false
+                    metalView.needsDisplay = true
+                }
+            }
+            Log.info("forceRefreshSelectedTab: unhid Rust view + Metal for tab \(selectedTabID)")
+        }
+        // 3. Same for SwiftTerm fallback
+        //    Hierarchy: UnifiedTerminalContainerView → TerminalContainerView → Chau7TerminalView
+        if let swiftView = session.existingTerminalView {
+            swiftView.isHidden = false
+            swiftView.notifyUpdateChanges = true
+            swiftView.needsDisplay = true
+            swiftView.setEventMonitoringEnabled(true)
+            if let container = swiftView.superview as? TerminalContainerView {
+                container.isHidden = false
+                if let metalView = container.metalCoordinator?.metalView {
+                    metalView.isHidden = false
+                    metalView.needsDisplay = true
+                }
+            }
+            Log.info("forceRefreshSelectedTab: unhid SwiftTerm view + Metal for tab \(selectedTabID)")
+        }
+
+        // 4. Trigger SwiftUI re-render
+        objectWillChange.send()
+
+        // 5. Re-focus
+        focusSelected()
+
+        logVisualState(reason: "forceRefreshSelectedTab")
+    }
+
     /// Called by the view to report how many tabs were actually rendered.
     /// Used by the watchdog to detect render failures.
     func reportRenderedTabCount(_ count: Int) {
@@ -1279,7 +1477,13 @@ final class OverlayTabsModel: ObservableObject {
                 }
                 refreshTabBar()
             } else if watchdogRefreshAttempts == 4 {
-                Log.error("TabBar watchdog: refresh failed after 3 attempts, stopping retries")
+                Log.error("TabBar watchdog: refresh failed after 3 attempts, pausing retries for 60s")
+            } else if watchdogRefreshAttempts >= 24 {
+                // After ~60s pause (20 cycles × 3s), reset and try again.
+                // The underlying issue may have resolved (e.g., window resized,
+                // space switched, or hot-swapped binary with fix).
+                watchdogRefreshAttempts = 0
+                Log.info("TabBar watchdog: resetting attempt counter, will retry")
             }
             emitWatchdogSummaryIfNeeded(now: now)
         } else {

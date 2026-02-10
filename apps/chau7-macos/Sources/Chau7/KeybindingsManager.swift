@@ -135,6 +135,10 @@ enum KeyAction: String, CaseIterable {
     case splitVertical
     case openTextEditor
 
+    // Navigation
+    case previousInputLine
+    case nextInputLine
+
     // Window
     case closeWindow
     case newWindow
@@ -181,6 +185,8 @@ enum KeyAction: String, CaseIterable {
         case .splitHorizontal: return "Split Horizontal"
         case .splitVertical: return "Split Vertical"
         case .openTextEditor: return "Open Text Editor"
+        case .previousInputLine: return "Previous Input Line"
+        case .nextInputLine: return "Next Input Line"
         case .closeWindow: return "Close Window"
         case .newWindow: return "New Window"
         }
@@ -209,6 +215,8 @@ enum KeyAction: String, CaseIterable {
         case "splitHorizontal": return .splitHorizontal
         case "splitVertical": return .splitVertical
         case "openTextEditor": return .openTextEditor
+        case "previousInputLine": return .previousInputLine
+        case "nextInputLine": return .nextInputLine
         default: return nil
         }
     }
@@ -365,6 +373,12 @@ final class KeybindingsManager: ObservableObject {
             delegate?.splitVertically()
         case .openTextEditor:
             delegate?.openTextEditorPane()
+
+        // Navigation
+        case .previousInputLine:
+            delegate?.scrollToPreviousInputLine()
+        case .nextInputLine:
+            delegate?.scrollToNextInputLine()
 
         // Window
         case .closeWindow:

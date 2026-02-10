@@ -120,6 +120,15 @@ typedef struct GridSnapshot {
      */
     uint16_t rows;
     /*
+     Whether the terminal cursor should be visible (DECTCEM / ESC[?25l/h).
+     0 = hidden, 1 = visible. u8 for FFI safety (matches grid_dirty, running, etc.)
+     */
+    uint8_t cursor_visible;
+    /*
+     Padding for alignment (3 bytes to fill to next u32 boundary)
+     */
+    uint8_t _pad[3];
+    /*
      Number of scrollback rows available
      */
     uint32_t scrollback_rows;

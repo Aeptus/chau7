@@ -15,6 +15,7 @@ import MetalKit
 typealias RustGridProvider = () -> (
     grid: UnsafeMutableRawPointer,  // Points to RustTermBridge.GridSnapshot
     cursor: (col: UInt16, row: UInt16),
+    cursorVisible: Bool,            // DECTCEM: false when app hides cursor (ESC[?25l)
     free: () -> Void
 )?
 
@@ -258,7 +259,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         renderer.cursorRow = Int(snapshot.cursor.row)
         renderer.cursorCol = Int(snapshot.cursor.col)
         renderer.cursorStyle = FeatureSettings.shared.cursorStyle
-        renderer.cursorVisible = true
+        renderer.cursorVisible = snapshot.cursorVisible
 
         // Set cursor color from the current color scheme
         let scheme = FeatureSettings.shared.currentColorScheme

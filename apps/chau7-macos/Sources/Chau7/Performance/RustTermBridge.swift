@@ -47,6 +47,8 @@ final class RustTermBridge {
         var cells: UnsafeMutablePointer<CellData>?
         var cols: UInt16
         var rows: UInt16
+        var cursor_visible: UInt8  // DECTCEM: 0 = hidden, 1 = visible
+        var _pad: (UInt8, UInt8, UInt8)  // Alignment padding to next UInt32
         var scrollback_rows: UInt32
         var display_offset: UInt32
         var capacity: Int  // Must match Rust's usize (8 bytes on 64-bit)

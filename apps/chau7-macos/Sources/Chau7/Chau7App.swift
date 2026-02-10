@@ -210,6 +210,18 @@ struct Chau7App: App {
 
                 Divider()
 
+                Button(L("Previous Input Line", "Previous Input Line")) {
+                    appDelegate.scrollToPreviousInputLine()
+                }
+                .keyboardShortcut(.upArrow, modifiers: .command)
+
+                Button(L("Next Input Line", "Next Input Line")) {
+                    appDelegate.scrollToNextInputLine()
+                }
+                .keyboardShortcut(.downArrow, modifiers: .command)
+
+                Divider()
+
                 // MARK: - Panes
                 Menu("Panes") {
                     Button(L("Split Horizontally", "Split Horizontally")) {
