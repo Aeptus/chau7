@@ -37,7 +37,22 @@ public enum CommandDetection {
         "aider": "Aider",
         "aider-chat": "Aider",
         // Cursor
-        "cursor": "Cursor"
+        "cursor": "Cursor",
+        // Sourcegraph Cody
+        "cody": "Cody",
+        // Amazon Q (formerly CodeWhisperer)
+        "amazon-q": "Amazon Q",
+        "q": "Amazon Q",
+        // Devin
+        "devin": "Devin",
+        // Continue.dev
+        "continue": "Continue",
+        // Goose (Block)
+        "goose": "Goose",
+        // Mentat
+        "mentat": "Mentat",
+        // amp
+        "amp": "Amp"
     ]
 
     /// Map of dev server command names to their display names
@@ -108,58 +123,84 @@ public enum CommandDetection {
         19002: "Expo"
     ]
 
-    /// Output patterns that indicate a specific AI CLI is running
-    /// IMPORTANT: Patterns must be specific enough to avoid false positives.
-    /// Generic words like "Cursor" will match unrelated output (e.g., "cursor position").
+    /// Output patterns that indicate a specific AI CLI is running.
+    /// IMPORTANT: All patterns are stored **lowercased** so the matcher can do a
+    /// single case-insensitive comparison by lowercasing the haystack once.
+    /// Generic words like "cursor" are avoided — use specific identifiers only.
     public static let outputDetectionPatterns: [(pattern: String, appName: String)] = [
-        // Claude Code banners - these box-drawing characters are unique to the CLI
-        ("╭─ Claude", "Claude"),
-        ("╰─ Claude", "Claude"),
-        ("Powered by Anthropic", "Claude"),
-        ("claude.ai/", "Claude"),  // URL with slash to avoid partial matches
+        // Claude Code banners — box-drawing characters are unique to the CLI
+        ("╭─ claude", "Claude"),
+        ("╰─ claude", "Claude"),
+        ("powered by anthropic", "Claude"),
+        ("claude.ai/", "Claude"),
         ("claude.ai", "Claude"),
-        ("Claude Code", "Claude"),
+        ("claude code", "Claude"),
+        ("anthropic's claude", "Claude"),
         // Gemini patterns
-        ("Google AI Studio", "Gemini"),
-        ("Gemini Pro", "Gemini"),
+        ("google ai studio", "Gemini"),
+        ("gemini pro", "Gemini"),
         ("gemini.google", "Gemini"),
-        ("Google Gemini", "Gemini"),
+        ("google gemini", "Gemini"),
+        ("gemini cli", "Gemini"),
         // ChatGPT patterns
-        ("ChatGPT", "ChatGPT"),
-        ("openai.com/", "ChatGPT"),  // URL with slash
+        ("chatgpt", "ChatGPT"),
+        ("openai.com/", "ChatGPT"),
         ("openai.com", "ChatGPT"),
         // Copilot patterns
-        ("GitHub Copilot", "Copilot"),
-        ("Copilot CLI", "Copilot"),
+        ("github copilot", "Copilot"),
+        ("copilot cli", "Copilot"),
         ("gh copilot", "Copilot"),
-        // Codex patterns - box-drawing characters are unique to the CLI
-        ("╭─ Codex", "Codex"),
-        ("╰─ Codex", "Codex"),
-        ("OpenAI Codex", "Codex"),
-        ("Codex CLI", "Codex"),
+        // Codex patterns — box-drawing characters are unique to the CLI
+        ("╭─ codex", "Codex"),
+        ("╰─ codex", "Codex"),
+        ("openai codex", "Codex"),
+        ("codex cli", "Codex"),
         ("codex.openai", "Codex"),
-        // Aider patterns - use specific identifiers
-        ("aider v", "Aider"),  // Version string
-        ("Aider is running", "Aider"),
+        // Aider patterns — use specific identifiers
+        ("aider v", "Aider"),
+        ("aider is running", "Aider"),
         ("aider.chat", "Aider"),
-        ("Aider v", "Aider"),
-        // Cursor patterns - must be very specific, "Cursor" alone is too generic
+        // Cursor patterns — must be very specific, "cursor" alone is too generic
         ("cursor.sh", "Cursor"),
-        ("Cursor IDE", "Cursor"),
-        ("Cursor CLI", "Cursor"),
-        ("cursor.com", "Cursor")
+        ("cursor ide", "Cursor"),
+        ("cursor cli", "Cursor"),
+        ("cursor.com", "Cursor"),
+        // Sourcegraph Cody
+        ("sourcegraph cody", "Cody"),
+        ("cody cli", "Cody"),
+        ("cody.dev", "Cody"),
+        // Amazon Q (formerly CodeWhisperer)
+        ("amazon q developer", "Amazon Q"),
+        ("amazon q cli", "Amazon Q"),
+        ("codewhisperer", "Amazon Q"),
+        // Goose (Block)
+        ("goose v", "Goose"),
+        ("goose.ai", "Goose"),
+        ("block goose", "Goose"),
+        // Mentat
+        ("mentat v", "Mentat"),
+        ("mentat.ai", "Mentat"),
+        // Amp
+        ("amp.dev", "Amp"),
+        ("amp cli", "Amp"),
+        // Devin
+        ("devin cli", "Devin"),
+        ("devin.ai", "Devin"),
+        // Continue.dev
+        ("continue.dev", "Continue")
     ]
 
     /// Output patterns that indicate a dev server is running
     public static let devServerOutputPatterns: [(pattern: String, appName: String)] = [
-        // Vite
+        // Vite — the banner is "  VITE v6.x.x  ready in Nms"
         ("VITE v", "Vite"),
         ("vite v", "Vite"),
-        ("➜  Local:   http://localhost:5173", "Vite"),
+        ("localhost:5173", "Vite"),     // Vite default port
+        ("localhost:5174", "Vite"),     // Vite secondary port
         // Next.js
         ("ready started server on", "Next.js"),
         ("▲ Next.js", "Next.js"),
-        ("- Local:        http://localhost:3000", "Next.js"),
+        ("Next.js", "Next.js"),
         // Nuxt
         ("Nuxt", "Nuxt"),
         ("Nitro", "Nuxt"),
@@ -406,13 +447,15 @@ public enum CommandDetection {
         return nil
     }
 
-    /// Detects an AI app from terminal output
+    /// Detects an AI app from terminal output (case-insensitive).
+    /// Patterns in `outputDetectionPatterns` are already lowercased, so we only
+    /// need to lowercase the haystack once.
     /// - Parameter output: The terminal output string
     /// - Returns: The detected app name, or nil
     public static func detectAppFromOutput(_ output: String) -> String? {
-        let normalizedOutput = output.lowercased()
+        let lowered = output.lowercased()
         for (pattern, appName) in outputDetectionPatterns {
-            if normalizedOutput.contains(pattern.lowercased()) {
+            if lowered.contains(pattern) {
                 return appName
             }
         }

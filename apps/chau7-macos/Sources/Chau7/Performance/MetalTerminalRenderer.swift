@@ -91,6 +91,9 @@ public final class MetalTerminalRenderer: NSObject {
     /// Cache miss count for profiling
     private(set) var glyphCacheMisses: Int = 0
 
+    /// Diagnostic frame counter for throttled logging
+    private var diagFrameCounter: Int = 0
+
     // MARK: - Font
 
     private var regularFont: CTFont!
@@ -357,11 +360,36 @@ public final class MetalTerminalRenderer: NSObject {
         let charStr = String(Character(scalar))
         var unichars = [UniChar](charStr.utf16)
         var glyphs = [CGGlyph](repeating: 0, count: unichars.count)
-        CTFontGetGlyphsForCharacters(font, &unichars, &glyphs, unichars.count)
+
+        // Try the primary font first
+        var drawFont = font
+        let found = CTFontGetGlyphsForCharacters(font, &unichars, &glyphs, unichars.count)
+
+        // Font cascade fallback: if the primary font doesn't have this glyph
+        // (returns false or glyph ID 0 / .notdef), ask CoreText to find a font that does.
+        // This is what CTLine does automatically in the CPU renderer — we replicate
+        // it here so box-drawing chars (U+2500–U+257F), emoji, and other symbols render.
+        //
+        // Note: CTFontGetGlyphsForCharacters returns false if ANY character couldn't be
+        // mapped. We also check glyph[0]==0 for the single-char case.
+        if !found || glyphs[0] == 0 {
+            let fallback = CTFontCreateForString(font, charStr as CFString, CFRangeMake(0, charStr.utf16.count))
+            CTFontGetGlyphsForCharacters(fallback, &unichars, &glyphs, unichars.count)
+            if glyphs[0] != 0 {
+                drawFont = fallback
+            }
+        }
+
+        // Diagnostic: log box-drawing glyph resolution
+        let isBoxDraw = codePoint >= 0x2500 && codePoint <= 0x257F
+        if isBoxDraw {
+            let fontName = CTFontCopyPostScriptName(drawFont) as String
+            Log.info("[DIAG-SWIFT] rasterizeGlyph U+\(String(codePoint, radix: 16, uppercase: true)) '\(charStr)' found=\(found) glyph=\(glyphs[0]) font=\(fontName) bold=\(bold)")
+        }
 
         // Determine if this is a wide character
         var advanceSize = CGSize.zero
-        CTFontGetAdvancesForGlyphs(font, .horizontal, &glyphs, &advanceSize, 1)
+        CTFontGetAdvancesForGlyphs(drawFont, .horizontal, &glyphs, &advanceSize, 1)
         let isWide = advanceSize.width > cellSize.width * 1.3
 
         let slotWidth = isWide ? cellSize.width * 2 : cellSize.width
@@ -399,10 +427,40 @@ public final class MetalTerminalRenderer: NSObject {
         //   baseline    = slot bottom + fontDescent
         context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
         var boundingRect = CGRect.zero
-        CTFontGetBoundingRectsForGlyphs(font, .horizontal, glyphs, &boundingRect, 1)
+        CTFontGetBoundingRectsForGlyphs(drawFont, .horizontal, glyphs, &boundingRect, 1)
         let baselineY = CGFloat(atlasHeight) - packY - slotHeight + fontDescent
         var position = CGPoint(x: packX, y: baselineY)
-        CTFontDrawGlyphs(font, glyphs, &position, 1, context)
+        CTFontDrawGlyphs(drawFont, glyphs, &position, 1, context)
+
+        // Diagnostic: check if box-drawing glyph produced visible pixels
+        if isBoxDraw, let data = context.data {
+            let bytesPerRow = context.bytesPerRow
+            // Scan the slot region in the bitmap. CG origin is bottom-left,
+            // but bitmap memory is stored top-down. Row 0 in memory = top of image.
+            // CG Y=0 corresponds to the LAST row in memory.
+            // The slot occupies CG Y from (atlasHeight - packY - slotHeight) to (atlasHeight - packY).
+            // In bitmap memory: row (packY) to row (packY + slotHeight).
+            let slotRowStart = Int(packY)
+            let slotRowEnd = min(Int(packY + slotHeight), atlasHeight)
+            let slotColStart = Int(packX)
+            let slotColEnd = min(Int(packX + slotWidth), atlasWidth)
+
+            var nonZeroAlpha = 0
+            var totalPixels = 0
+            let ptr = data.bindMemory(to: UInt8.self, capacity: atlasHeight * bytesPerRow)
+            for row in slotRowStart..<slotRowEnd {
+                for col in slotColStart..<slotColEnd {
+                    let offset = row * bytesPerRow + col * 4
+                    let alpha = ptr[offset + 3]  // RGBA — alpha is 4th byte
+                    if alpha > 0 { nonZeroAlpha += 1 }
+                    totalPixels += 1
+                }
+            }
+            Log.info("[DIAG-SWIFT] rasterizeGlyph U+\(String(codePoint, radix: 16, uppercase: true)) pixelCheck: \(nonZeroAlpha)/\(totalPixels) non-zero alpha, slot=(\(slotColStart),\(slotRowStart))-(\(slotColEnd),\(slotRowEnd)), baseline=\(baselineY), packY=\(packY)")
+
+            // Dump atlas each time a new box-drawing glyph is rasterized
+            dumpAtlasToPNG()
+        }
 
         // UV coordinates (normalized).
         // CGContext has origin at bottom-left but bitmap data is stored top-down.
@@ -426,6 +484,20 @@ public final class MetalTerminalRenderer: NSObject {
         packX += slotWidth + padding
         atlasDirty = true
         return info
+    }
+
+    /// Debug: dump the atlas bitmap to a PNG file for visual inspection.
+    /// Call after rasterizing all needed glyphs.
+    private var atlasDumpCount = 0
+    func dumpAtlasToPNG() {
+        guard let context = atlasContext else { return }
+        guard let image = context.makeImage() else { return }
+        atlasDumpCount += 1
+        let url = URL(fileURLWithPath: "/tmp/chau7_atlas_\(atlasDumpCount).png")
+        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else { return }
+        CGImageDestinationAddImage(dest, image, nil)
+        CGImageDestinationFinalize(dest)
+        Log.info("[DIAG-SWIFT] Dumped glyph atlas to \(url.path) (\(atlasWidth)x\(atlasHeight))")
     }
 
     /// Uploads the CPU bitmap to the GPU texture.
@@ -530,6 +602,7 @@ public final class MetalTerminalRenderer: NSObject {
         let ch = Float(cellSize.height / scaleFactor)
 
         var foundBlinkingCells = false
+        var boxDrawCount: Int = 0  // Diagnostic counter
 
         for i in 0..<count {
             let cell = cells[i]
@@ -542,6 +615,19 @@ public final class MetalTerminalRenderer: NSObject {
             // Track if any cell has the blink flag (bit 4)
             if (cell.flags & 16) != 0 {
                 foundBlinkingCells = true
+            }
+
+            // Diagnostic: count box-drawing chars reaching Metal + sample colors
+            if cell.character >= 0x2500 && cell.character <= 0x257F {
+                boxDrawCount += 1
+                // Log non-dash box chars (│├┤┼ etc.) — these are the ones from Claude tables
+                // Also log the first ─ for reference
+                if (cell.character != 0x2500 || boxDrawCount == 1) && boxDrawCount <= 10 && (diagFrameCounter % 120 == 0) {
+                    let fg = cell.foregroundColor
+                    let bg = cell.backgroundColor
+                    let ch = Unicode.Scalar(cell.character).map { String(Character($0)) } ?? "?"
+                    Log.info("[DIAG-SWIFT] box-draw: '\(ch)' U+\(String(cell.character, radix: 16)) at (\(row),\(col)) fg=(\(String(format:"%.2f",fg.x)),\(String(format:"%.2f",fg.y)),\(String(format:"%.2f",fg.z))) bg=(\(String(format:"%.2f",bg.x)),\(String(format:"%.2f",bg.y)),\(String(format:"%.2f",bg.z)))")
+                }
             }
 
             let glyphInfo = lookupGlyph(codePoint: cell.character, bold: isBold, italic: isItalic)
@@ -568,6 +654,14 @@ public final class MetalTerminalRenderer: NSObject {
         }
 
         hasBlinkingCells = foundBlinkingCells
+
+        // Diagnostic: log box-drawing count (throttled to ~1/sec at 60fps)
+        if boxDrawCount > 0 {
+            diagFrameCounter += 1
+            if diagFrameCounter % 60 == 1 {
+                Log.info("[DIAG-SWIFT] updateInstanceBuffer: \(boxDrawCount) box-drawing cells in frame (\(count) total cells, \(cols) cols)")
+            }
+        }
 
         // Cursor: overwrite the cursor cell's flags to signal the shader
         // Only show cursor when blink phase is on (or blink is disabled)

@@ -453,6 +453,9 @@ final class CommandPaletteProvider {
             PaletteCommand(title: L("commandPalette.command.manageSnippets", "Manage Snippets..."), shortcut: nil, category: .edit, icon: "text.badge.checkmark") {
                 delegate.showSnippetsSettings()
             },
+            PaletteCommand(title: L("commandPalette.command.migrateSnippets", "Migrate Snippets to Clean JSON"), shortcut: nil, category: .edit, icon: "arrow.triangle.2.circlepath") {
+                SnippetManager.shared.migrateToCleanJSON()
+            },
 
             // View commands
             PaletteCommand(title: L("commandPalette.command.toggleFullScreen", "Toggle Full Screen"), shortcut: "⌃⌘F", category: .view, icon: "arrow.up.left.and.arrow.down.right") {
@@ -502,6 +505,12 @@ final class CommandPaletteProvider {
             PaletteCommand(title: L("commandPalette.command.scrollToBottom", "Scroll to Bottom"), shortcut: nil, category: .terminal, icon: "arrow.down.to.line") {
                 delegate.scrollToBottom()
             },
+            PaletteCommand(title: L("commandPalette.command.previousInputLine", "Previous Input Line"), shortcut: "⌘↑", category: .terminal, icon: "arrow.up.to.line") {
+                delegate.scrollToPreviousInputLine()
+            },
+            PaletteCommand(title: L("commandPalette.command.nextInputLine", "Next Input Line"), shortcut: "⌘↓", category: .terminal, icon: "arrow.down.to.line") {
+                delegate.scrollToNextInputLine()
+            },
 
             // Tab commands
             PaletteCommand(title: L("commandPalette.command.showNextTab", "Show Next Tab"), shortcut: "⇧⌘]", category: .tabs, icon: "arrow.right.square") {
@@ -518,6 +527,9 @@ final class CommandPaletteProvider {
             },
             PaletteCommand(title: L("commandPalette.command.renameTab", "Rename Tab..."), shortcut: "⇧⌘R", category: .tabs, icon: "pencil") {
                 delegate.beginRenameTab()
+            },
+            PaletteCommand(title: L("commandPalette.command.forceRefreshTab", "Force Refresh Tab"), shortcut: nil, category: .tabs, icon: "arrow.clockwise") {
+                delegate.forceRefreshTab()
             },
             PaletteCommand(title: L("commandPalette.command.selectTab1", "Select Tab 1"), shortcut: "⌘1", category: .tabs, icon: "1.circle") {
                 delegate.selectTab(number: 1)

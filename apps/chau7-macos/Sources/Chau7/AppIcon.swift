@@ -4,24 +4,29 @@ enum AppIcon {
     /// Loads the app icon from bundle or Resources folder.
     /// Returns nil if not found.
     static func loadFromFile() -> NSImage? {
-        // Try bundle first (for .app builds)
-        if let url = Bundle.main.url(forResource: "AppDockIcon", withExtension: "png"),
-           let image = NSImage(contentsOf: url) {
-            return image
+        // Try bundle first (for .app builds) — check both png and icns
+        for ext in ["png", "icns"] {
+            if let url = Bundle.main.url(forResource: "AppDockIcon", withExtension: ext),
+               let image = NSImage(contentsOf: url) {
+                return image
+            }
         }
 
         // For debug builds, look relative to executable location
-        // .build/debug/Chau7 -> ../../Resources/AppDockIcon.png
+        // .build/debug/Chau7 -> ../../Resources/AppDockIcon.{png,icns}
         let executableURL = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
-        let debugResourcesURL = executableURL
+        let debugResourcesDir = executableURL
             .deletingLastPathComponent()  // .build/debug
             .deletingLastPathComponent()  // .build
             .deletingLastPathComponent()  // project root
-            .appendingPathComponent("Resources/AppDockIcon.png")
+            .appendingPathComponent("Resources")
 
-        if FileManager.default.fileExists(atPath: debugResourcesURL.path),
-           let image = NSImage(contentsOf: debugResourcesURL) {
-            return image
+        for ext in ["png", "icns"] {
+            let url = debugResourcesDir.appendingPathComponent("AppDockIcon.\(ext)")
+            if FileManager.default.fileExists(atPath: url.path),
+               let image = NSImage(contentsOf: url) {
+                return image
+            }
         }
 
         return nil

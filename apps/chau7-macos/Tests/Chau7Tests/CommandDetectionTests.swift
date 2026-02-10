@@ -41,6 +41,23 @@ final class CommandDetectionTests: XCTestCase {
         XCTAssertEqual(CommandDetection.detectApp(from: "cursor"), "Cursor")
     }
 
+    func testDetectCody() {
+        XCTAssertEqual(CommandDetection.detectApp(from: "cody"), "Cody")
+    }
+
+    func testDetectAmazonQ() {
+        XCTAssertEqual(CommandDetection.detectApp(from: "amazon-q"), "Amazon Q")
+        XCTAssertEqual(CommandDetection.detectApp(from: "q"), "Amazon Q")
+    }
+
+    func testDetectGoose() {
+        XCTAssertEqual(CommandDetection.detectApp(from: "goose"), "Goose")
+    }
+
+    func testDetectAmp() {
+        XCTAssertEqual(CommandDetection.detectApp(from: "amp"), "Amp")
+    }
+
     func testUnknownCommand() {
         XCTAssertNil(CommandDetection.detectApp(from: "vim"))
         XCTAssertNil(CommandDetection.detectApp(from: "ls -la"))
@@ -146,6 +163,12 @@ final class CommandDetectionTests: XCTestCase {
         XCTAssertEqual(CommandDetection.detectAppFromOutput("Visit claude.ai for more"), "Claude")
     }
 
+    func testDetectClaudeFromOutputCaseInsensitive() {
+        // Output detection must be case-insensitive
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("CLAUDE CODE v2.0"), "Claude")
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("powered by ANTHROPIC"), "Claude")
+    }
+
     func testDetectGeminiFromOutput() {
         XCTAssertEqual(CommandDetection.detectAppFromOutput("Google AI Studio"), "Gemini")
         XCTAssertEqual(CommandDetection.detectAppFromOutput("Using Gemini Pro model"), "Gemini")
@@ -154,6 +177,7 @@ final class CommandDetectionTests: XCTestCase {
     func testDetectChatGPTFromOutput() {
         XCTAssertEqual(CommandDetection.detectAppFromOutput("ChatGPT CLI v1.0"), "ChatGPT")
         XCTAssertEqual(CommandDetection.detectAppFromOutput("Visit openai.com"), "ChatGPT")
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("CHATGPT is ready"), "ChatGPT")
     }
 
     func testDetectCopilotFromOutput() {
@@ -176,9 +200,18 @@ final class CommandDetectionTests: XCTestCase {
         XCTAssertEqual(CommandDetection.detectAppFromOutput("cursor.sh"), "Cursor")
     }
 
+    func testDetectNewToolsFromOutput() {
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("Sourcegraph Cody ready"), "Cody")
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("Amazon Q Developer"), "Amazon Q")
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("goose v1.2.0"), "Goose")
+        XCTAssertEqual(CommandDetection.detectAppFromOutput("Visit continue.dev"), "Continue")
+    }
+
     func testNoDetectionFromOutput() {
         XCTAssertNil(CommandDetection.detectAppFromOutput("Hello, world!"))
         XCTAssertNil(CommandDetection.detectAppFromOutput("$ ls -la"))
+        // "cursor" alone must NOT match (too generic)
+        XCTAssertNil(CommandDetection.detectAppFromOutput("move cursor to line 10"))
     }
 
     // MARK: - Tokenization

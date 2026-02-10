@@ -80,6 +80,11 @@ pub struct GridSnapshot {
     pub cols: u16,
     /// Number of visible rows
     pub rows: u16,
+    /// Whether the terminal cursor should be visible (DECTCEM / ESC[?25l/h).
+    /// 0 = hidden, 1 = visible. u8 for FFI safety (matches grid_dirty, running, etc.)
+    pub cursor_visible: u8,
+    /// Padding for alignment (3 bytes to fill to next u32 boundary)
+    pub _pad: [u8; 3],
     /// Number of scrollback rows available
     pub scrollback_rows: u32,
     /// Current display offset (scroll position)

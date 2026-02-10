@@ -51,6 +51,8 @@ struct Snippet: Identifiable, Codable, Equatable {
     var shells: [String]?
     /// Optional single-letter shortcut key (a-z) for quick selection in the snippet picker
     var key: String?
+    /// Whether this snippet is pinned to the top of the list
+    var isPinned: Bool
     var createdAt: Date?
     var updatedAt: Date?
 
@@ -62,6 +64,7 @@ struct Snippet: Identifiable, Codable, Equatable {
         folder: String? = nil,
         shells: [String]? = nil,
         key: String? = nil,
+        isPinned: Bool = false,
         createdAt: Date? = nil,
         updatedAt: Date? = nil
     ) {
@@ -72,8 +75,52 @@ struct Snippet: Identifiable, Codable, Equatable {
         self.folder = folder
         self.shells = shells
         self.key = key
+        self.isPinned = isPinned
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+
+    // MARK: - Clean JSON encoding
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, body, tags, folder, shells, key, isPinned, createdAt, updatedAt
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(body, forKey: .body)
+        // Only write tags if non-empty
+        if !tags.isEmpty {
+            try container.encode(tags, forKey: .tags)
+        }
+        // Only write optionals if non-nil (and non-empty for arrays)
+        try container.encodeIfPresent(folder, forKey: .folder)
+        if let shells, !shells.isEmpty {
+            try container.encode(shells, forKey: .shells)
+        }
+        try container.encodeIfPresent(key, forKey: .key)
+        // Only write isPinned if true
+        if isPinned {
+            try container.encode(isPinned, forKey: .isPinned)
+        }
+        try container.encodeIfPresent(createdAt, forKey: .createdAt)
+        try container.encodeIfPresent(updatedAt, forKey: .updatedAt)
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        body = try container.decode(String.self, forKey: .body)
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        folder = try container.decodeIfPresent(String.self, forKey: .folder)
+        shells = try container.decodeIfPresent([String].self, forKey: .shells)
+        key = try container.decodeIfPresent(String.self, forKey: .key)
+        isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
     }
 
     /// Validated key - returns the key only if it's a single lowercase letter a-z
@@ -225,6 +272,7 @@ final class SnippetManager: ObservableObject {
 
     private init() {
         ensureBaseDirectories()
+        migrateIfNeeded()
         setupMonitors()
         reloadAll()
     }
@@ -243,6 +291,12 @@ final class SnippetManager: ObservableObject {
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             let root = self.resolveRepoRoot(path: normalized)
+            // Migrate legacy repo snippets if needed
+            if let root {
+                let legacyFile = self.legacyRepoURL(for: root)
+                let targetDir = self.repoURL(for: root)
+                self.migrateSourceIfNeeded(legacyFile: legacyFile, targetDir: targetDir)
+            }
             DispatchQueue.main.async {
                 if self.repoRoot != root {
                     self.repoRoot = root
@@ -272,17 +326,17 @@ final class SnippetManager: ObservableObject {
                 }
                 return
             }
-            let globalURL = self.globalURL()
-            let profileURL = self.profileURL()
-            self.ensureSnippetFileExists(at: globalURL)
-            self.ensureSnippetFileExists(at: profileURL)
-            if let repoURL = self.repoURL() {
-                self.ensureSnippetFileExists(at: repoURL)
+            let globalDir = self.globalURL()
+            let profileDir = self.profileURL()
+            FileOperations.createDirectory(at: globalDir)
+            FileOperations.createDirectory(at: profileDir)
+            if let repoDir = self.repoURL() {
+                FileOperations.createDirectory(at: repoDir)
             }
 
-            let globalSnippets = self.loadSnippets(from: globalURL)
-            let profileSnippets = self.loadSnippets(from: profileURL)
-            let repoSnippets = self.repoURL().map { self.loadSnippets(from: $0) } ?? []
+            let globalSnippets = self.loadSnippetsFromDirectory(globalDir)
+            let profileSnippets = self.loadSnippetsFromDirectory(profileDir)
+            let repoSnippets = self.repoURL().map { self.loadSnippetsFromDirectory($0) } ?? []
 
             let entries = self.mergeEntries(
                 global: globalSnippets,
@@ -291,6 +345,45 @@ final class SnippetManager: ObservableObject {
             )
             DispatchQueue.main.async {
                 self.entries = entries
+            }
+        }
+    }
+
+    /// Re-saves all snippet files using the clean encoder (pretty-printed, sorted
+    /// keys, ISO 8601 dates, no empty arrays). Also migrates any remaining legacy
+    /// single-file format to per-file format.
+    func migrateToCleanJSON() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            // First, migrate any remaining legacy single-file formats
+            self.migrateIfNeeded()
+
+            var migrated: [String] = []
+            let dirs: [(String, URL)] = [
+                ("global", self.globalURL()),
+                ("default", self.profileURL()),
+            ]
+            for (label, dirURL) in dirs {
+                let snippets = self.loadSnippetsFromDirectory(dirURL)
+                guard !snippets.isEmpty else { continue }
+                for snippet in snippets {
+                    self.saveSnippet(snippet, to: dirURL)
+                }
+                migrated.append("\(label) (\(snippets.count) snippets)")
+            }
+            if let repoDir = self.repoURL() {
+                let snippets = self.loadSnippetsFromDirectory(repoDir)
+                if !snippets.isEmpty {
+                    for snippet in snippets {
+                        self.saveSnippet(snippet, to: repoDir)
+                    }
+                    migrated.append("repo (\(snippets.count) snippets)")
+                }
+            }
+            let summary = migrated.isEmpty ? "No snippets to migrate" : "Migrated: \(migrated.joined(separator: ", "))"
+            Log.info("Snippet migration: \(summary)")
+            DispatchQueue.main.async {
+                self.reloadAll()
             }
         }
     }
@@ -321,10 +414,8 @@ final class SnippetManager: ObservableObject {
     func createSnippet(from draft: SnippetDraft) {
         queue.async { [weak self] in
             guard let self else { return }
-            let sourceURL = self.url(for: draft.source, repoRootOverride: draft.repoPath)
-            guard let sourceURL else { return }
+            guard let dirURL = self.url(for: draft.source, repoRootOverride: draft.repoPath) else { return }
 
-            var snippets = self.loadSnippets(from: sourceURL)
             let id = draft.id.isEmpty ? self.makeSnippetID(from: draft.title) : draft.id
             let now = Date()
             let snippet = Snippet(
@@ -338,12 +429,7 @@ final class SnippetManager: ObservableObject {
                 createdAt: now,
                 updatedAt: now
             )
-            if let index = snippets.firstIndex(where: { $0.id == id }) {
-                snippets[index] = snippet
-            } else {
-                snippets.append(snippet)
-            }
-            self.saveSnippets(snippets, to: sourceURL)
+            self.saveSnippet(snippet, to: dirURL)
             self.reloadAll()
         }
     }
@@ -351,8 +437,7 @@ final class SnippetManager: ObservableObject {
     func updateSnippet(entry: SnippetEntry, with draft: SnippetDraft) {
         queue.async { [weak self] in
             guard let self else { return }
-            let newSourceURL = self.url(for: draft.source, repoRootOverride: draft.repoPath)
-            guard let newSourceURL else { return }
+            guard let newDirURL = self.url(for: draft.source, repoRootOverride: draft.repoPath) else { return }
 
             let now = Date()
             let resolvedID = draft.id.isEmpty ? entry.snippet.id : draft.id
@@ -364,6 +449,7 @@ final class SnippetManager: ObservableObject {
                 folder: draft.folder.isEmpty ? nil : draft.folder,
                 shells: self.parseCSV(draft.shellsText),
                 key: Self.normalizeKey(draft.key),
+                isPinned: entry.snippet.isPinned,
                 createdAt: entry.snippet.createdAt ?? now,
                 updatedAt: now
             )
@@ -373,29 +459,17 @@ final class SnippetManager: ObservableObject {
             let sameRepo = entry.source != .repo || draft.source != .repo || oldRepo == newRepo
 
             if entry.source == draft.source && sameRepo {
-                var snippets = self.loadSnippets(from: newSourceURL)
+                // Same source: write updated file, delete old file if ID changed
                 if resolvedID != entry.snippet.id {
-                    snippets.removeAll { $0.id == resolvedID }
+                    self.deleteSnippetFile(id: entry.snippet.id, from: newDirURL)
                 }
-                if let index = snippets.firstIndex(where: { $0.id == entry.snippet.id }) {
-                    snippets[index] = updated
-                } else {
-                    snippets.append(updated)
-                }
-                self.saveSnippets(snippets, to: newSourceURL)
+                self.saveSnippet(updated, to: newDirURL)
             } else {
-                if let oldURL = self.url(for: entry.source, repoRootOverride: entry.repoRoot) {
-                    var oldSnippets = self.loadSnippets(from: oldURL)
-                    oldSnippets.removeAll { $0.id == entry.snippet.id }
-                    self.saveSnippets(oldSnippets, to: oldURL)
+                // Moving between sources: delete from old, write to new
+                if let oldDirURL = self.url(for: entry.source, repoRootOverride: entry.repoRoot) {
+                    self.deleteSnippetFile(id: entry.snippet.id, from: oldDirURL)
                 }
-                var newSnippets = self.loadSnippets(from: newSourceURL)
-                if let index = newSnippets.firstIndex(where: { $0.id == resolvedID }) {
-                    newSnippets[index] = updated
-                } else {
-                    newSnippets.append(updated)
-                }
-                self.saveSnippets(newSnippets, to: newSourceURL)
+                self.saveSnippet(updated, to: newDirURL)
             }
 
             self.reloadAll()
@@ -405,10 +479,8 @@ final class SnippetManager: ObservableObject {
     func deleteSnippet(_ entry: SnippetEntry) {
         queue.async { [weak self] in
             guard let self else { return }
-            guard let url = self.url(for: entry.source, repoRootOverride: entry.repoRoot) else { return }
-            var snippets = self.loadSnippets(from: url)
-            snippets.removeAll { $0.id == entry.snippet.id }
-            self.saveSnippets(snippets, to: url)
+            guard let dirURL = self.url(for: entry.source, repoRootOverride: entry.repoRoot) else { return }
+            self.deleteSnippetFile(id: entry.snippet.id, from: dirURL)
             self.reloadAll()
         }
     }
@@ -416,18 +488,30 @@ final class SnippetManager: ObservableObject {
     func duplicateSnippet(_ entry: SnippetEntry, to target: SnippetSource, repoRootOverride: String? = nil) {
         queue.async { [weak self] in
             guard let self else { return }
-            guard let url = self.url(for: target, repoRootOverride: repoRootOverride) else { return }
-            var snippets = self.loadSnippets(from: url)
+            guard let dirURL = self.url(for: target, repoRootOverride: repoRootOverride) else { return }
 
             let now = Date()
             var copied = entry.snippet
             copied.createdAt = now
             copied.updatedAt = now
-            if snippets.contains(where: { $0.id == copied.id }) {
+            // Check if a file with this ID already exists
+            let existingFile = dirURL.appendingPathComponent("\(copied.id).json")
+            if FileManager.default.fileExists(atPath: existingFile.path) {
                 copied.id = self.makeSnippetID(from: copied.title)
             }
-            snippets.append(copied)
-            self.saveSnippets(snippets, to: url)
+            self.saveSnippet(copied, to: dirURL)
+            self.reloadAll()
+        }
+    }
+
+    func togglePin(_ entry: SnippetEntry) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            guard let dirURL = self.url(for: entry.source, repoRootOverride: entry.repoRoot) else { return }
+            var snippet = entry.snippet
+            snippet.isPinned.toggle()
+            snippet.updatedAt = Date()
+            self.saveSnippet(snippet, to: dirURL)
             self.reloadAll()
         }
     }
@@ -705,12 +789,14 @@ final class SnippetManager: ObservableObject {
         register(profile, source: .profile, priority: priorityForSource(.profile))
         register(repo, source: .repo, priority: priorityForSource(.repo))
 
+        let globalDir = globalURL()
+        let profileDir = profileURL()
         var entries: [SnippetEntry] = []
         entries.append(contentsOf: global.map {
             SnippetEntry(
                 snippet: $0,
                 source: .global,
-                sourcePath: globalURL().path,
+                sourcePath: globalDir.appendingPathComponent("\($0.id).json").path,
                 isOverridden: highestById[$0.id] != .global,
                 repoRoot: nil
             )
@@ -719,17 +805,17 @@ final class SnippetManager: ObservableObject {
             SnippetEntry(
                 snippet: $0,
                 source: .profile,
-                sourcePath: profileURL().path,
+                sourcePath: profileDir.appendingPathComponent("\($0.id).json").path,
                 isOverridden: highestById[$0.id] != .profile,
                 repoRoot: nil
             )
         })
-        if let repoURL = repoURL() {
+        if let repoDir = repoURL() {
             entries.append(contentsOf: repo.map {
                 SnippetEntry(
                     snippet: $0,
                     source: .repo,
-                    sourcePath: repoURL.path,
+                    sourcePath: repoDir.appendingPathComponent("\($0.id).json").path,
                     isOverridden: highestById[$0.id] != .repo,
                     repoRoot: repoRoot
                 )
@@ -737,6 +823,10 @@ final class SnippetManager: ObservableObject {
         }
 
         return entries.sorted { lhs, rhs in
+            // Pinned snippets always come first
+            if lhs.snippet.isPinned != rhs.snippet.isPinned {
+                return lhs.snippet.isPinned
+            }
             if lhs.source != rhs.source {
                 return priorityForSource(lhs.source) > priorityForSource(rhs.source)
             }
@@ -755,39 +845,54 @@ final class SnippetManager: ObservableObject {
         }
     }
 
+    // MARK: - Directory monitoring
+
+    /// Debounce work item for directory change notifications
+    private var reloadDebounceItem: DispatchWorkItem?
+
+    private func debouncedReload() {
+        reloadDebounceItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.reloadAll()
+        }
+        reloadDebounceItem = work
+        // 100ms debounce — directory monitors fire per-child-change
+        queue.asyncAfter(deadline: .now() + 0.1, execute: work)
+    }
+
     private func setupMonitors() {
         guard FeatureSettings.shared.isSnippetsEnabled else {
             stopMonitors()
             return
         }
-        let globalURL = globalURL()
-        ensureSnippetFileExists(at: globalURL)
-        if globalMonitor?.url != globalURL {
+        let globalDir = globalURL()
+        FileOperations.createDirectory(at: globalDir)
+        if globalMonitor?.url != globalDir {
             globalMonitor?.stop()
-            let monitor = FileMonitor(url: globalURL) { [weak self] in
-                self?.reloadAll()
+            let monitor = FileMonitor(url: globalDir) { [weak self] in
+                self?.debouncedReload()
             }
             monitor.start()
             globalMonitor = monitor
         }
 
-        let profileURL = profileURL()
-        ensureSnippetFileExists(at: profileURL)
-        if profileMonitor?.url != profileURL {
+        let profileDir = profileURL()
+        FileOperations.createDirectory(at: profileDir)
+        if profileMonitor?.url != profileDir {
             profileMonitor?.stop()
-            let monitor = FileMonitor(url: profileURL) { [weak self] in
-                self?.reloadAll()
+            let monitor = FileMonitor(url: profileDir) { [weak self] in
+                self?.debouncedReload()
             }
             monitor.start()
             profileMonitor = monitor
         }
 
-        if FeatureSettings.shared.isRepoSnippetsEnabled, let repoURL = repoURL() {
-            ensureSnippetFileExists(at: repoURL)
-            if repoMonitor?.url != repoURL {
+        if FeatureSettings.shared.isRepoSnippetsEnabled, let repoDir = repoURL() {
+            FileOperations.createDirectory(at: repoDir)
+            if repoMonitor?.url != repoDir {
                 repoMonitor?.stop()
-                let monitor = FileMonitor(url: repoURL) { [weak self] in
-                    self?.reloadAll()
+                let monitor = FileMonitor(url: repoDir) { [weak self] in
+                    self?.debouncedReload()
                 }
                 monitor.start()
                 repoMonitor = monitor
@@ -808,45 +913,132 @@ final class SnippetManager: ObservableObject {
     }
 
     private func ensureBaseDirectories() {
-        let base = supportDirectory().appendingPathComponent("snippets", isDirectory: true)
-        FileOperations.createDirectory(at: base)
+        FileOperations.createDirectory(at: globalURL())
+        FileOperations.createDirectory(at: profileURL())
     }
 
-    private func ensureSnippetFileExists(at url: URL) {
-        let dir = url.deletingLastPathComponent()
-        FileOperations.createDirectory(at: dir)
-        guard !FileManager.default.fileExists(atPath: url.path) else { return }
-        let file = SnippetFile(version: 1, snippets: [])
-        saveSnippets(file.snippets, to: url)
-    }
+    // MARK: - Encoding / Decoding
 
-    private func loadSnippets(from url: URL) -> [Snippet] {
-        guard let data = FileOperations.readData(from: url) else { return [] }
+    /// Decoder that reads ISO 8601 strings first, then falls back to Double
+    /// (timeIntervalSinceReferenceDate) for legacy files written before the fix.
+    static func snippetDecoder() -> JSONDecoder {
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        // Try current format first, then legacy format
-        if let file = JSONOperations.decode(SnippetFile.self, from: data, context: "snippet file \(url.lastPathComponent)") {
-            return file.snippets
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            // Try ISO 8601 string first (new format)
+            if let str = try? container.decode(String.self) {
+                let fmt = ISO8601DateFormatter()
+                fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+                if let date = fmt.date(from: str) { return date }
+                // Try without fractional seconds
+                fmt.formatOptions = [.withInternetDateTime]
+                if let date = fmt.date(from: str) { return date }
+            }
+            // Fall back to Double (legacy Apple epoch)
+            if let ts = try? container.decode(Double.self) {
+                return Date(timeIntervalSinceReferenceDate: ts)
+            }
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Cannot decode date")
         }
-        if let legacy = JSONOperations.decode([Snippet].self, from: data, context: "legacy snippets \(url.lastPathComponent)") {
-            return legacy
-        }
-        Log.warn("Could not decode snippets from \(url.lastPathComponent)")
-        return []
+        return decoder
     }
 
-    private func saveSnippets(_ snippets: [Snippet], to url: URL) {
-        let file = SnippetFile(version: 1, snippets: snippets)
+    /// Encoder that produces clean, human-readable JSON.
+    static func snippetEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        guard let data = JSONOperations.encode(file, context: "snippets \(url.lastPathComponent)") else {
+        return encoder
+    }
+
+    // MARK: - Per-file storage
+
+    /// Loads all snippets from a directory (one `.json` file per snippet).
+    private func loadSnippetsFromDirectory(_ dirURL: URL) -> [Snippet] {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: dirURL.path) else { return [] }
+        guard let files = try? fm.contentsOfDirectory(
+            at: dirURL,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        let decoder = Self.snippetDecoder()
+        var snippets: [Snippet] = []
+        for file in files where file.pathExtension == "json" {
+            guard let data = FileOperations.readData(from: file) else { continue }
+            if let snippet = JSONOperations.decode(Snippet.self, from: data, decoder: decoder, context: "snippet \(file.lastPathComponent)") {
+                snippets.append(snippet)
+            } else {
+                Log.warn("Could not decode snippet from \(file.lastPathComponent)")
+            }
+        }
+        return snippets
+    }
+
+    /// Writes a single snippet as `{id}.json` in the given directory.
+    private func saveSnippet(_ snippet: Snippet, to dirURL: URL) {
+        FileOperations.createDirectory(at: dirURL)
+        let encoder = Self.snippetEncoder()
+        let fileURL = dirURL.appendingPathComponent("\(snippet.id).json")
+        guard let data = JSONOperations.encode(snippet, encoder: encoder, context: "snippet \(snippet.id)") else { return }
+        FileOperations.writeData(data, to: fileURL, options: [.atomic])
+    }
+
+    /// Removes a single snippet file from the directory.
+    private func deleteSnippetFile(id: String, from dirURL: URL) {
+        let fileURL = dirURL.appendingPathComponent("\(id).json")
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    // MARK: - Legacy single-file loading (for migration only)
+
+    /// Loads snippets from a legacy single-file format (`{ version, snippets: [...] }`).
+    private func loadSnippetsLegacy(from url: URL) -> [Snippet] {
+        guard let data = FileOperations.readData(from: url) else { return [] }
+        let decoder = Self.snippetDecoder()
+        if let file = JSONOperations.decode(SnippetFile.self, from: data, decoder: decoder, context: "legacy file \(url.lastPathComponent)") {
+            return file.snippets
+        }
+        if let legacy = JSONOperations.decode([Snippet].self, from: data, decoder: decoder, context: "legacy array \(url.lastPathComponent)") {
+            return legacy
+        }
+        Log.warn("Could not decode legacy snippets from \(url.lastPathComponent)")
+        return []
+    }
+
+    // MARK: - Auto-migration from single-file to per-file
+
+    /// Detects legacy single-file snippet format and migrates to per-file.
+    /// Safe: writes all individual files before deleting the legacy file.
+    private func migrateIfNeeded() {
+        migrateSourceIfNeeded(legacyFile: legacyGlobalURL(), targetDir: globalURL())
+        migrateSourceIfNeeded(legacyFile: legacyProfileURL(), targetDir: profileURL())
+        // Repo migration happens in updateContextPath() since repoRoot is nil at init
+    }
+
+    private func migrateSourceIfNeeded(legacyFile: URL, targetDir: URL) {
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: legacyFile.path, isDirectory: &isDir), !isDir.boolValue else { return }
+
+        let snippets = loadSnippetsLegacy(from: legacyFile)
+        guard !snippets.isEmpty else {
+            // Empty file, just remove it
+            try? fm.removeItem(at: legacyFile)
+            Log.info("Removed empty legacy snippet file: \(legacyFile.lastPathComponent)")
             return
         }
-        let dir = url.deletingLastPathComponent()
-        FileOperations.createDirectory(at: dir)
-        FileOperations.writeData(data, to: url, options: [.atomic])
+
+        FileOperations.createDirectory(at: targetDir)
+        for snippet in snippets {
+            saveSnippet(snippet, to: targetDir)
+        }
+        try? fm.removeItem(at: legacyFile)
+        Log.info("Migrated \(snippets.count) snippets from \(legacyFile.lastPathComponent) to per-file format in \(targetDir.lastPathComponent)/")
     }
+
+    // MARK: - URL resolution
 
     private func supportDirectory() -> URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -854,16 +1046,18 @@ final class SnippetManager: ObservableObject {
         return base.appendingPathComponent("Chau7", isDirectory: true)
     }
 
+    /// Returns the directory URL for global snippets.
     private func globalURL() -> URL {
         supportDirectory()
             .appendingPathComponent("snippets", isDirectory: true)
-            .appendingPathComponent("global.json")
+            .appendingPathComponent("global", isDirectory: true)
     }
 
+    /// Returns the directory URL for profile snippets.
     private func profileURL() -> URL {
         supportDirectory()
             .appendingPathComponent("snippets", isDirectory: true)
-            .appendingPathComponent("default.json")
+            .appendingPathComponent("default", isDirectory: true)
     }
 
     private func repoURL() -> URL? {
@@ -873,10 +1067,15 @@ final class SnippetManager: ObservableObject {
         return repoURL(for: repoRoot)
     }
 
+    /// Returns the directory URL for repo-scoped snippets.
     private func repoURL(for root: String) -> URL {
-        let relative = FeatureSettings.shared.repoSnippetPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        let path = relative.isEmpty ? ".chau7/snippets.json" : relative
-        return URL(fileURLWithPath: root).appendingPathComponent(path)
+        var relative = FeatureSettings.shared.repoSnippetPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if relative.isEmpty { relative = ".chau7/snippets" }
+        // Strip .json suffix from legacy settings
+        if relative.hasSuffix(".json") {
+            relative = String(relative.dropLast(5))
+        }
+        return URL(fileURLWithPath: root).appendingPathComponent(relative, isDirectory: true)
     }
 
     private func url(for source: SnippetSource, repoRootOverride: String? = nil) -> URL? {
@@ -892,6 +1091,24 @@ final class SnippetManager: ObservableObject {
             }
             return repoURL()
         }
+    }
+
+    // MARK: - Legacy URL helpers (for migration)
+
+    private func legacyGlobalURL() -> URL {
+        supportDirectory()
+            .appendingPathComponent("snippets", isDirectory: true)
+            .appendingPathComponent("global.json")
+    }
+
+    private func legacyProfileURL() -> URL {
+        supportDirectory()
+            .appendingPathComponent("snippets", isDirectory: true)
+            .appendingPathComponent("default.json")
+    }
+
+    private func legacyRepoURL(for root: String) -> URL {
+        URL(fileURLWithPath: root).appendingPathComponent(".chau7/snippets.json")
     }
 
     /// Cache of paths we've already checked and found to not be git repos

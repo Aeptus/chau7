@@ -42,6 +42,11 @@ final class InputLineTracker {
         return rows.filter { $0 >= top && $0 <= bottom }
     }
 
+    /// Returns all tracked rows sorted ascending (for binary-search navigation).
+    func sortedRows() -> [Int] {
+        rows.sorted()
+    }
+
     /// Clears all tracked input rows.
     func reset() {
         rows.removeAll(keepingCapacity: true)

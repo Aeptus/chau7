@@ -1740,6 +1740,38 @@ final class Chau7TerminalView: LocalProcessTerminalView {
         scroll(toPosition: 1)
     }
 
+    func scrollToRow(absoluteRow: Int) {
+        let currentTop = terminal.getTopVisibleRow()
+        let delta = currentTop - absoluteRow  // positive = scroll up into history
+        if delta > 0 {
+            scrollUp(lines: delta)
+        } else if delta < 0 {
+            scrollDown(lines: -delta)
+        }
+    }
+
+    func scrollToPreviousInputLine() {
+        let sorted = inputLineTracker.sortedRows()
+        guard !sorted.isEmpty else { return }
+        let currentTop = terminal.getTopVisibleRow()
+        if let idx = sorted.lastIndex(where: { $0 < currentTop }) {
+            scrollToRow(absoluteRow: sorted[idx])
+            Log.info("Chau7TerminalView: jumped to previous input line at row \(sorted[idx])")
+        }
+    }
+
+    func scrollToNextInputLine() {
+        let sorted = inputLineTracker.sortedRows()
+        guard !sorted.isEmpty else { return }
+        let currentTop = terminal.getTopVisibleRow()
+        if let idx = sorted.firstIndex(where: { $0 > currentTop }) {
+            scrollToRow(absoluteRow: sorted[idx])
+            Log.info("Chau7TerminalView: jumped to next input line at row \(sorted[idx])")
+        } else {
+            scrollToBottom()
+        }
+    }
+
     func getSelectedText() -> String? {
         guard let selection = getSelection(), !selection.isEmpty else {
             return nil

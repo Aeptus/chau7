@@ -25,6 +25,15 @@ final class DevServerMonitor {
     private var currentServer: DevServerInfo?
     private var lastCommandHint: String?  // Hint from command detection
     private let queue = DispatchQueue(label: "com.chau7.devserver", qos: .utility)
+    /// Tracks whether the server was detected via output patterns (sticky).
+    /// When true, the periodic port check won't clear the server just because
+    /// it can't find a listening port (e.g., if process tree walking is slow).
+    private var detectedViaOutput = false
+    /// Count of consecutive port-check cycles with no children found.
+    /// We only clear a server after several consecutive misses to avoid
+    /// flapping caused by transient process-tree timing.
+    private var noChildrenCycleCount = 0
+    private let noChildrenClearThreshold = 3
 
     // MARK: - Public API
 
@@ -41,6 +50,8 @@ final class DevServerMonitor {
         checkTimer = nil
         shellPID = nil
         lastCommandHint = nil
+        detectedViaOutput = false
+        noChildrenCycleCount = 0
         if currentServer != nil {
             currentServer = nil
             DispatchQueue.main.async { [weak self] in
@@ -73,6 +84,8 @@ final class DevServerMonitor {
 
             if newServer != currentServer {
                 currentServer = newServer
+                detectedViaOutput = true
+                noChildrenCycleCount = 0
                 lastCommandHint = nil
                 DispatchQueue.main.async { [weak self] in
                     self?.onDevServerChanged?(newServer)
@@ -101,9 +114,15 @@ final class DevServerMonitor {
         // Get child processes of the shell
         let childPIDs = getChildProcesses(of: shellPID)
         guard !childPIDs.isEmpty else {
-            // No child processes - server might have stopped
+            // No child processes — the server *might* have stopped.
+            // Don't clear immediately: require several consecutive misses
+            // to avoid flapping (process tree walks can miss short-lived forks).
+            noChildrenCycleCount += 1
+            guard noChildrenCycleCount >= noChildrenClearThreshold else { return }
+
             if currentServer != nil {
                 currentServer = nil
+                detectedViaOutput = false
                 lastCommandHint = nil
                 DispatchQueue.main.async { [weak self] in
                     self?.onDevServerChanged?(nil)
@@ -111,6 +130,8 @@ final class DevServerMonitor {
             }
             return
         }
+
+        noChildrenCycleCount = 0  // reset — we found children
 
         // Check if any child process is listening on a dev port
         if let serverInfo = findListeningServer(pids: childPIDs) {
@@ -124,11 +145,14 @@ final class DevServerMonitor {
         }
     }
 
-    /// Get child process IDs of a given parent
+    /// Get child process IDs of a given parent (recursively includes grandchildren).
+    /// Uses `pgrep -P` which is available on both macOS and Linux.
+    /// Note: macOS `/bin/ps` does NOT support the GNU-style `--ppid` flag,
+    /// so the previous implementation silently failed on every call.
     private func getChildProcesses(of parentPID: pid_t) -> [pid_t] {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-o", "pid=", "--ppid", "\(parentPID)"]
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+        process.arguments = ["-P", "\(parentPID)"]
 
         let pipe = Pipe()
         process.standardOutput = pipe

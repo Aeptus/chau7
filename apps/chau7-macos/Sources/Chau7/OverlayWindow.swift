@@ -40,6 +40,32 @@ final class OverlayWindow: NSWindow {
         NotificationCenter.default.removeObserver(self)
     }
 
+    // MARK: - Key Equivalents
+
+    /// Intercept ⌘; before the menu system gets it.
+    ///
+    /// macOS auto-injects "Edit > Show Spelling and Grammar" (⌘;) when an
+    /// NSTextInputClient is first responder.  The default performKeyEquivalent
+    /// dispatch walks the responder chain → menu bar and fires that system
+    /// action *in addition to* the local event monitor that calls
+    /// toggleSnippets().  By consuming ⌘; here, only toggleSnippets() fires
+    /// (via the local monitor, which runs after performKeyEquivalent returns
+    /// false — but we return true, so the monitor won't see it either).
+    /// We therefore call toggleSnippets() directly.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            .subtracting([.capsLock, .numericPad, .function])
+        if flags == .command,
+           event.charactersIgnoringModifiers?.lowercased() == ";" {
+            // Dispatch to the AppDelegate which owns the overlay model
+            if let appDelegate = NSApp.delegate as? AppDelegate {
+                appDelegate.toggleSnippets()
+            }
+            return true  // consumed — don't let menu system see it
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     // MARK: - Fullscreen Handling
 
     @objc private func didEnterFullScreen(_ notification: Notification) {

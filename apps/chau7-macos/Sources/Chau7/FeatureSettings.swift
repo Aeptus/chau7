@@ -48,6 +48,9 @@ struct KeyboardShortcut: Codable, Identifiable, Equatable {
         KeyboardShortcut(action: "splitHorizontal", key: "h", modifiers: ["cmd", "opt"]),
         KeyboardShortcut(action: "splitVertical", key: "v", modifiers: ["cmd", "opt"]),
         KeyboardShortcut(action: "openTextEditor", key: "e", modifiers: ["cmd", "opt"]),
+        // Navigation
+        KeyboardShortcut(action: "previousInputLine", key: "up", modifiers: ["cmd"]),
+        KeyboardShortcut(action: "nextInputLine", key: "down", modifiers: ["cmd"]),
         // Recovery shortcut
         KeyboardShortcut(action: "refreshTabBar", key: "r", modifiers: ["cmd", "shift"]),
     ]
@@ -1767,7 +1770,7 @@ final class FeatureSettings: ObservableObject {
         self.isRepoSnippetsEnabled = defaults.object(forKey: Keys.repoSnippetsEnabled) as? Bool ?? true
         self.allowProtectedFolderAccess = defaults.object(forKey: Keys.allowProtectedFolderAccess) as? Bool ?? true
         self.recentRepoRoots = defaults.stringArray(forKey: Keys.recentRepoRoots) ?? []
-        self.repoSnippetPath = defaults.string(forKey: Keys.repoSnippetPath) ?? ".chau7/snippets.json"
+        self.repoSnippetPath = defaults.string(forKey: Keys.repoSnippetPath) ?? ".chau7/snippets"
         self.snippetInsertMode = defaults.string(forKey: Keys.snippetInsertMode) ?? "expand"
         self.snippetPlaceholdersEnabled = defaults.object(forKey: Keys.snippetPlaceholders) as? Bool ?? true
 
@@ -2328,7 +2331,7 @@ final class FeatureSettings: ObservableObject {
         isRepoSnippetsEnabled = true
         allowProtectedFolderAccess = true
         recentRepoRoots = []
-        repoSnippetPath = ".chau7/snippets.json"
+        repoSnippetPath = ".chau7/snippets"
         snippetInsertMode = "expand"
         snippetPlaceholdersEnabled = true
         isSyntaxHighlightEnabled = true
@@ -2391,7 +2394,7 @@ final class FeatureSettings: ObservableObject {
         isRepoSnippetsEnabled = true
         allowProtectedFolderAccess = true
         recentRepoRoots = []
-        repoSnippetPath = ".chau7/snippets.json"
+        repoSnippetPath = ".chau7/snippets"
         snippetInsertMode = "expand"
         snippetPlaceholdersEnabled = true
         isClipboardHistoryEnabled = true
@@ -2560,7 +2563,7 @@ extension FeatureSettings {
             isSnippetsEnabled: true,
             isRepoSnippetsEnabled: true,
             allowProtectedFolderAccess: true,
-            repoSnippetPath: ".chau7/snippets.json",
+            repoSnippetPath: ".chau7/snippets",
             snippetInsertMode: "expand",
             snippetPlaceholdersEnabled: true,
             isSyntaxHighlightEnabled: true,

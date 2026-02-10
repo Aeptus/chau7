@@ -836,9 +836,12 @@ impl Chau7Terminal {
         // We hold the term lock only for grid iteration. Color conversion
         // uses the cloned theme (no lock). Hyperlink URI extraction must
         // happen here since it references grid cell data.
-        let (mut cells, cols, rows, display_offset, history_size, link_url_vec) = {
+        let (mut cells, cols, rows, display_offset, history_size, link_url_vec, cursor_visible) = {
             let term = self.term.lock();
             let grid = term.grid();
+
+            // DECTCEM: whether the cursor should be drawn (ESC[?25l hides, ESC[?25h shows)
+            let cursor_visible = term.mode().contains(TermMode::SHOW_CURSOR);
 
             let cols = grid.columns();
             let rows = grid.screen_lines();
@@ -869,6 +872,11 @@ impl Chau7Terminal {
             //   viewport row 0 → grid Line(-display_offset)     (top of what user sees)
             //   viewport row N → grid Line(N - display_offset)
             //   When display_offset == 0, this simplifies to Line(0)..Line(rows-1).
+            // Diagnostic: count box-drawing chars (U+2500..=U+257F) in every snapshot.
+            // Logs once per snapshot only when box-drawing chars are present.
+            let mut box_draw_count: u32 = 0;
+            let mut box_draw_sample: u32 = 0; // first box-drawing codepoint seen
+
             for line_idx in 0..rows {
                 let line = Line(line_idx as i32 - display_offset as i32);
                 for col_idx in 0..cols {
@@ -876,6 +884,13 @@ impl Chau7Terminal {
                     let cell = &grid[point];
 
                     let character = cell.c as u32;
+
+                    // Track box-drawing characters
+                    if (0x2500..=0x257F).contains(&character) {
+                        box_draw_count += 1;
+                        if box_draw_sample == 0 { box_draw_sample = character; }
+                    }
+
                     let is_bold = cell.flags.contains(CellFlags::BOLD);
 
                     // Bold brightening: when a cell is bold and has a standard
@@ -945,8 +960,28 @@ impl Chau7Terminal {
                 }
             }
 
+            // Diagnostic: log box-drawing stats to file (throttled, every ~100th snapshot with box-draw chars)
+            {
+                // Use a static atomic counter for throttling
+                use std::sync::atomic::{AtomicU32, Ordering};
+                static DIAG_COUNTER: AtomicU32 = AtomicU32::new(0);
+                if box_draw_count > 0 {
+                    let n = DIAG_COUNTER.fetch_add(1, Ordering::Relaxed);
+                    if n % 100 == 0 {
+                        use std::io::Write;
+                        if let Ok(mut f) = std::fs::OpenOptions::new()
+                            .create(true).append(true)
+                            .open("/tmp/chau7_rust_diag.log")
+                        {
+                            let _ = writeln!(f, "[DIAG-RUST] snapshot#{} has {} box-drawing chars (first=U+{:04X}), grid={}x{}",
+                                n, box_draw_count, box_draw_sample, rows, cols);
+                        }
+                    }
+                }
+            }
+
             // term lock is dropped at the end of this block
-            (cells, cols, rows, display_offset, history_size, link_url_vec)
+            (cells, cols, rows, display_offset, history_size, link_url_vec, cursor_visible)
         };
         // ── Phase 2: Post-processing without any lock ───────────────
 
@@ -980,6 +1015,8 @@ impl Chau7Terminal {
             cells: cells_ptr,
             cols: cols as u16,
             rows: rows as u16,
+            cursor_visible: if cursor_visible { 1 } else { 0 },
+            _pad: [0; 3],
             scrollback_rows: history_size as u32,
             display_offset: display_offset as u32,
             capacity,

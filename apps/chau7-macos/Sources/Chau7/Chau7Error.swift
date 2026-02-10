@@ -268,10 +268,11 @@ enum FileOperations {
 
 /// Helpers for JSON encoding/decoding with proper error handling
 enum JSONOperations {
-    /// Decodes JSON with error logging, returns nil on failure
-    static func decode<T: Decodable>(_ type: T.Type, from data: Data, context: String = "") -> T? {
+    /// Decodes JSON with error logging, returns nil on failure.
+    /// Pass a pre-configured `decoder` to control date strategy, key strategy, etc.
+    static func decode<T: Decodable>(_ type: T.Type, from data: Data, decoder: JSONDecoder? = nil, context: String = "") -> T? {
         do {
-            return try JSONDecoder().decode(type, from: data)
+            return try (decoder ?? JSONDecoder()).decode(type, from: data)
         } catch {
             let typeName = String(describing: type)
             if context.isEmpty {
@@ -283,10 +284,11 @@ enum JSONOperations {
         }
     }
 
-    /// Encodes to JSON with error logging, returns nil on failure
-    static func encode<T: Encodable>(_ value: T, context: String = "") -> Data? {
+    /// Encodes to JSON with error logging, returns nil on failure.
+    /// Pass a pre-configured `encoder` to control formatting, date strategy, etc.
+    static func encode<T: Encodable>(_ value: T, encoder: JSONEncoder? = nil, context: String = "") -> Data? {
         do {
-            return try JSONEncoder().encode(value)
+            return try (encoder ?? JSONEncoder()).encode(value)
         } catch {
             let typeName = String(describing: T.self)
             if context.isEmpty {

@@ -553,6 +553,7 @@ private struct SnippetDetailView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(entry.snippet.title)
                             .font(.title2.weight(.semibold))
+                            .textSelection(.enabled)
 
                         HStack(spacing: 8) {
                             Label(entry.source.displayName, systemImage: entry.source.icon)
@@ -567,6 +568,7 @@ private struct SnippetDetailView: View {
                                     .padding(.vertical, 2)
                                     .background(Color.accentColor.opacity(0.15))
                                     .cornerRadius(3)
+                                    .textSelection(.enabled)
                             }
 
                             if entry.isOverridden {
@@ -653,6 +655,7 @@ private struct SnippetDetailView: View {
                                                 .padding(.vertical, 2)
                                                 .background(Color.accentColor.opacity(0.2))
                                                 .cornerRadius(4)
+                                                .textSelection(.enabled)
                                         }
                                     }
                                 }
@@ -665,6 +668,7 @@ private struct SnippetDetailView: View {
                                         .foregroundColor(.secondary)
                                     Text(folder)
                                         .font(.system(size: 11))
+                                        .textSelection(.enabled)
                                 }
                             }
 
@@ -675,6 +679,7 @@ private struct SnippetDetailView: View {
                                         .foregroundColor(.secondary)
                                     Text(shells.joined(separator: ", "))
                                         .font(.system(size: 11))
+                                        .textSelection(.enabled)
                                 }
                             }
                         }
@@ -708,6 +713,7 @@ private struct SnippetDetailView: View {
                     Text(L("Prompt for values when inserting a snippet", "Prompt for values when inserting a snippet"))
                         .font(.caption)
                         .foregroundColor(.secondary)
+                        .textSelection(.enabled)
 
                     VStack(alignment: .leading, spacing: 12) {
                         // Text input
@@ -785,6 +791,7 @@ private struct TokenHelpRow: View {
             Text(description)
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
+                .textSelection(.enabled)
         }
     }
 }
@@ -820,6 +827,7 @@ private struct InputVariableHelpSection: View {
                     Text(example.description)
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
+                        .textSelection(.enabled)
                 }
             }
 
@@ -827,6 +835,7 @@ private struct InputVariableHelpSection: View {
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
                 .italic()
+                .textSelection(.enabled)
         }
     }
 }
@@ -1200,7 +1209,7 @@ private struct ImportExportSheet: View {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
 
-        if let data = JSONOperations.encode(file, context: "snippet export"),
+        if let data = JSONOperations.encode(file, encoder: encoder, context: "snippet export"),
            let json = String(data: data, encoding: .utf8) {
             exportText = json
         } else {
@@ -1257,11 +1266,8 @@ private struct ImportExportSheet: View {
             return
         }
 
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-
         do {
-            let file = try decoder.decode(SnippetExportFile.self, from: data)
+            let file = try SnippetManager.snippetDecoder().decode(SnippetExportFile.self, from: data)
 
             for snippet in file.snippets {
                 let draft = SnippetDraft(

@@ -37,6 +37,8 @@ private struct RustGridSnapshot {
     var cells: UnsafeMutablePointer<RustCellData>?
     var cols: UInt16
     var rows: UInt16
+    var cursor_visible: UInt8  // DECTCEM: 0 = hidden, 1 = visible
+    var _pad: (UInt8, UInt8, UInt8)  // Alignment padding to next UInt32
     var scrollback_rows: UInt32
     var display_offset: UInt32
     var capacity: Int  // Must match Rust's usize (8 bytes on 64-bit)
@@ -98,6 +100,16 @@ private final class RustGridView: NSView {
     private var cursor: (col: Int, row: Int) = (0, 0)
     private var lastCursor: (col: Int, row: Int) = (0, 0)
     private var lastBlinkPhase: Bool = true
+
+    /// DECTCEM cursor visibility: when false, the terminal has hidden the cursor (ESC[?25l).
+    /// Programs like Claude Code hide the terminal cursor and draw their own via ANSI styling.
+    var cursorVisible: Bool = true {
+        didSet {
+            if oldValue != cursorVisible {
+                setNeedsDisplay(cursorRect(for: cursor))
+            }
+        }
+    }
 
     /// When true, Metal handles display — suppresses CPU draw() and setNeedsDisplay.
     var metalRenderingActive = false
@@ -363,6 +375,9 @@ private final class RustGridView: NSView {
     }
 
     private func drawCursor(in ctx: CGContext, cellWidth: CGFloat, cellHeight: CGFloat, baselineOffset: CGFloat) {
+        // DECTCEM: don't draw cursor if the terminal has hidden it (ESC[?25l)
+        guard cursorVisible else { return }
+
         if cursorStyle.blink && !lastBlinkPhase {
             return
         }
@@ -2404,10 +2419,12 @@ final class RustTerminalView: NSView {
     override func validRequestor(forSendType sendType: NSPasteboard.PasteboardType?, returnType: NSPasteboard.PasteboardType?) -> Any? {
         if sendType == .string {
             if let selection = getSelection(), !selection.isEmpty {
+                Log.trace("RustTerminalView[\(viewId)]: validRequestor sendType=string → self (has selection)")
                 return self
             }
         }
         if returnType == .string {
+            Log.trace("RustTerminalView[\(viewId)]: validRequestor returnType=string → self")
             return self
         }
         return super.validRequestor(forSendType: sendType, returnType: returnType)
@@ -2425,11 +2442,28 @@ final class RustTerminalView: NSView {
     @objc(readSelectionFromPasteboard:)
     func readSelectionFromPasteboard(_ pboard: NSPasteboard) -> Bool {
         guard let text = pboard.string(forType: .string), !text.isEmpty else {
+            Log.info("RustTerminalView[\(viewId)]: readSelectionFromPasteboard — empty or nil text")
             return false
         }
+        Log.info("RustTerminalView[\(viewId)]: readSelectionFromPasteboard — received \(text.count) chars, pasting")
         pasteText(text)
         return true
     }
+
+    // MARK: - NSTextInputClient (Password AutoFill + IME support)
+    //
+    // macOS Password AutoFill injects credentials via the text input system,
+    // calling insertText(_:replacementRange:) on the first responder.
+    // Without NSTextInputClient conformance, the credential is silently dropped.
+
+    override var inputContext: NSTextInputContext? {
+        // Return a real input context so macOS routes text input here
+        if _inputContext == nil {
+            _inputContext = NSTextInputContext(client: self)
+        }
+        return _inputContext
+    }
+    private var _inputContext: NSTextInputContext?
 
     // MARK: - Cell Dimensions
 
@@ -2824,9 +2858,10 @@ final class RustTerminalView: NSView {
             guard let (grid, freeGrid) = rust.getGrid() else { return nil }
 
             let cursor = rust.cursorPosition
+            let cursorVisible = grid.pointee.cursor_visible != 0
             // grid is UnsafeMutablePointer<RustGridSnapshot>, cast to raw for the generic provider
             let rawPtr = UnsafeMutableRawPointer(grid)
-            return (grid: rawPtr, cursor: cursor, free: freeGrid)
+            return (grid: rawPtr, cursor: cursor, cursorVisible: cursorVisible, free: freeGrid)
         }
     }
 
@@ -2870,9 +2905,13 @@ final class RustTerminalView: NSView {
         let gridRows = Int(snapshot.rows)
         let totalCells = gridCols * gridRows
         let cursor = rust.cursorPosition
+        let cursorVisible = snapshot.cursor_visible != 0
 
         // Cache scrollback size for renderTopVisibleRow (lightweight access)
         cachedScrollbackRows = Int(snapshot.scrollback_rows)
+
+        // Update CPU renderer cursor visibility (DECTCEM)
+        gridView?.cursorVisible = cursorVisible
 
         // Fast path: Check if grid dimensions changed (requires full rebuild)
         let dimensionsChanged = gridCols != previousGridCols || gridRows != previousGridRows
@@ -3457,6 +3496,10 @@ final class RustTerminalView: NSView {
     /// This is typically set by programs like vim, less, tmux via escape sequence ESC[?1h
     private var applicationCursorMode = false
 
+    /// True while keyDown is routing through inputContext, so insertText knows
+    /// the call originated from a keyboard event (not Password AutoFill).
+    private var handlingKeyDown = false
+
     override func keyDown(with event: NSEvent) {
         guard let rust = rustTerminal else {
             Log.trace("RustTerminalView[\(viewId)]: keyDown - No Rust terminal")
@@ -3481,23 +3524,29 @@ final class RustTerminalView: NSView {
             return
         }
 
-        // Fallback to characters for regular text input
-        if let chars = event.characters, !chars.isEmpty {
-            // LOCAL ECHO: Show printable characters immediately before PTY round-trip
-            applyLocalEchoForText(chars)
-            let escaped = chars.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
-            Log.trace("RustTerminalView[\(viewId)]: keyDown - Sending characters: '\(escaped)' (keyCode=\(keyCode))")
-            rust.sendText(chars)
-            onInput?(chars)
-        } else if let charsNoMod = event.charactersIgnoringModifiers, !charsNoMod.isEmpty {
-            // LOCAL ECHO: Show printable characters immediately before PTY round-trip
-            applyLocalEchoForText(charsNoMod)
-            let escaped = charsNoMod.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
-            Log.trace("RustTerminalView[\(viewId)]: keyDown - Sending chars (no mod): '\(escaped)' (keyCode=\(keyCode))")
-            rust.sendText(charsNoMod)
-            onInput?(charsNoMod)
-        } else {
-            Log.trace("RustTerminalView[\(viewId)]: keyDown - No characters to send (keyCode=\(keyCode))")
+        // Route regular text input through NSTextInputContext so that
+        // Password AutoFill and IME can deliver text via insertText.
+        handlingKeyDown = true
+        let handled = inputContext?.handleEvent(event) ?? false
+        handlingKeyDown = false
+
+        if !handled {
+            // Fallback: inputContext didn't consume it, send characters directly
+            if let chars = event.characters, !chars.isEmpty {
+                applyLocalEchoForText(chars)
+                let escaped = chars.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
+                Log.trace("RustTerminalView[\(viewId)]: keyDown - Sending characters (fallback): '\(escaped)' (keyCode=\(keyCode))")
+                rust.sendText(chars)
+                onInput?(chars)
+            } else if let charsNoMod = event.charactersIgnoringModifiers, !charsNoMod.isEmpty {
+                applyLocalEchoForText(charsNoMod)
+                let escaped = charsNoMod.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
+                Log.trace("RustTerminalView[\(viewId)]: keyDown - Sending chars (no mod, fallback): '\(escaped)' (keyCode=\(keyCode))")
+                rust.sendText(charsNoMod)
+                onInput?(charsNoMod)
+            } else {
+                Log.trace("RustTerminalView[\(viewId)]: keyDown - No characters to send (keyCode=\(keyCode))")
+            }
         }
     }
 
@@ -4266,6 +4315,44 @@ final class RustTerminalView: NSView {
     func scrollToBottom() {
         Log.trace("RustTerminalView[\(viewId)]: scrollToBottom")
         scroll(toPosition: 0.0)
+    }
+
+    /// Scroll so that `absoluteRow` is at the top of the viewport.
+    func scrollToRow(absoluteRow: Int) {
+        let currentTop = renderTopVisibleRow
+        let delta = currentTop - absoluteRow  // positive = scroll up into history
+        if delta > 0 {
+            scrollUp(lines: delta)
+        } else if delta < 0 {
+            scrollDown(lines: -delta)
+        }
+    }
+
+    /// Scroll to the nearest input line above the current viewport top.
+    func scrollToPreviousInputLine() {
+        let sorted = inputLineTracker.sortedRows()
+        guard !sorted.isEmpty else { return }
+        let currentTop = renderTopVisibleRow
+        // Find the last tracked row strictly above the current viewport top
+        if let idx = sorted.lastIndex(where: { $0 < currentTop }) {
+            scrollToRow(absoluteRow: sorted[idx])
+            Log.info("RustTerminalView[\(viewId)]: jumped to previous input line at row \(sorted[idx])")
+        }
+    }
+
+    /// Scroll to the nearest input line below the current viewport top.
+    func scrollToNextInputLine() {
+        let sorted = inputLineTracker.sortedRows()
+        guard !sorted.isEmpty else { return }
+        let currentTop = renderTopVisibleRow
+        // Find the first tracked row strictly below the current viewport top
+        if let idx = sorted.firstIndex(where: { $0 > currentTop }) {
+            scrollToRow(absoluteRow: sorted[idx])
+            Log.info("RustTerminalView[\(viewId)]: jumped to next input line at row \(sorted[idx])")
+        } else {
+            // No more marks below — go to bottom
+            scrollToBottom()
+        }
     }
 
     /// Update isUserAtBottom based on current scroll position (for Smart Scroll)
@@ -5677,4 +5764,78 @@ private struct RustSnippetPlaceholder {
     let index: Int
     let start: Int
     let length: Int
+}
+
+// MARK: - NSTextInputClient
+
+extension RustTerminalView: NSTextInputClient {
+
+    func insertText(_ string: Any, replacementRange: NSRange) {
+        let text: String
+        if let s = string as? String {
+            text = s
+        } else if let attr = string as? NSAttributedString {
+            text = attr.string
+        } else {
+            return
+        }
+        guard !text.isEmpty else { return }
+
+        if handlingKeyDown {
+            // Regular keyboard input routed through inputContext — send directly
+            applyLocalEchoForText(text)
+            Log.trace("RustTerminalView[\(viewId)]: insertText (keyboard) — \(text.count) chars")
+            send(txt: text)
+        } else {
+            // External injection (Password AutoFill, Services, programmatic)
+            Log.info("RustTerminalView[\(viewId)]: insertText (external, e.g. Password AutoFill) — \(text.count) chars")
+            pasteText(text)
+        }
+    }
+
+    func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        // IME marked text (pre-edit) — not needed for password AutoFill
+        // but required by protocol. For now, just insert on commit.
+    }
+
+    func unmarkText() {
+        // Called when IME composition is committed
+    }
+
+    func selectedRange() -> NSRange {
+        return NSRange(location: NSNotFound, length: 0)
+    }
+
+    func markedRange() -> NSRange {
+        return NSRange(location: NSNotFound, length: 0)
+    }
+
+    func hasMarkedText() -> Bool {
+        return false
+    }
+
+    func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
+        return nil
+    }
+
+    func validAttributedString(for proposedString: NSAttributedString, selectedRange: NSRange) -> NSAttributedString? {
+        return proposedString
+    }
+
+    func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
+        // Return the cursor position so popups (e.g. IME candidate window) appear nearby
+        let frame = caretFrame
+        guard let _ = window?.frame, let screenFrame = window?.convertToScreen(frame) else {
+            return .zero
+        }
+        return screenFrame
+    }
+
+    func characterIndex(for point: NSPoint) -> Int {
+        return NSNotFound
+    }
+
+    func validAttributesForMarkedText() -> [NSAttributedString.Key] {
+        return []
+    }
 }
