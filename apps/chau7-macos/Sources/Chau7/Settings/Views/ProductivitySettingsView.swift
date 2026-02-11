@@ -21,7 +21,7 @@ struct ProductivitySettingsView: View {
                         Label("\(SnippetManager.shared.entries.filter { $0.source == .global }.count) \(L("settings.productivity.user", "User"))", systemImage: "person.fill")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
-                        if SnippetManager.shared.repoRoot != nil {
+                        if SnippetManager.shared.activeRepoRoot != nil {
                             Label("\(SnippetManager.shared.entries.filter { $0.source == .repo }.count) \(L("settings.productivity.repo", "Repo"))", systemImage: "folder.fill")
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary)

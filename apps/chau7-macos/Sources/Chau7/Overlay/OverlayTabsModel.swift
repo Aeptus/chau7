@@ -169,13 +169,14 @@ struct OverlayTab: Identifiable, Equatable {
 // MARK: - Tab State Persistence
 
 /// Lightweight Codable snapshot of a tab's restorable state.
-/// Terminal scrollback and process state cannot be restored, but working
-/// directory, title, and color give the user a familiar starting point.
+/// Captures working directory, title, color, and the last N lines of
+/// terminal scrollback so the user has context when tabs are restored.
 struct SavedTabState: Codable {
     let customTitle: String?
     let color: String  // TabColor.rawValue
     let directory: String
     let selectedIndex: Int?  // non-nil only for the selected tab
+    let scrollbackContent: String?  // last N lines of terminal output
 
     static let userDefaultsKey = "com.chau7.savedTabState"
 }
@@ -328,23 +329,53 @@ final class OverlayTabsModel: ObservableObject {
     /// and periodically during normal operation.
     func saveTabState() {
         let selectedID = selectedTabID
+        let maxLines = FeatureSettings.shared.restoredScrollbackLines
         var states: [SavedTabState] = []
         for (i, tab) in tabs.enumerated() {
             let dir = tab.session?.currentDirectory
                 ?? TerminalSessionModel.defaultStartDirectory()
             let isSelected = tab.id == selectedID
+
+            // Capture scrollback (last N lines of terminal output)
+            var scrollback: String? = nil
+            if maxLines > 0, let data = tab.session?.captureRemoteSnapshot() {
+                let text = String(decoding: data, as: UTF8.self)
+                // Strip trailing empty lines — the terminal buffer includes blank
+                // lines below the cursor to fill the viewport, which would appear
+                // as empty newlines when cat'd back on restore.
+                var lines = text.components(separatedBy: "\n")
+                while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
+                    lines.removeLast()
+                }
+                if lines.count > maxLines {
+                    scrollback = lines.suffix(maxLines).joined(separator: "\n")
+                } else if !lines.isEmpty {
+                    scrollback = lines.joined(separator: "\n")
+                }
+                // Don't save empty scrollback
+                if let s = scrollback, s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    scrollback = nil
+                }
+                // Cap total size to avoid UserDefaults bloat (500KB per tab max)
+                if let s = scrollback, s.utf8.count > 500_000 {
+                    let truncatedLines = s.components(separatedBy: "\n")
+                    scrollback = truncatedLines.suffix(maxLines / 2).joined(separator: "\n")
+                }
+            }
+
             states.append(SavedTabState(
                 customTitle: tab.customTitle,
                 color: tab.color.rawValue,
                 directory: dir,
-                selectedIndex: isSelected ? i : nil
+                selectedIndex: isSelected ? i : nil,
+                scrollbackContent: scrollback
             ))
         }
         guard !states.isEmpty else { return }
         do {
             let data = try JSONEncoder().encode(states)
             UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
-            Log.trace("Saved \(states.count) tab state(s)")
+            Log.trace("Saved \(states.count) tab state(s) with scrollback")
         } catch {
             Log.warn("Failed to save tab state: \(error)")
         }
@@ -374,17 +405,37 @@ final class OverlayTabsModel: ObservableObject {
             tab.customTitle = state.customTitle
             tab.color = TabColor(rawValue: state.color) ?? colors[i % colors.count]
 
-            // Set the working directory on the session once it's ready
+            // Restore working directory and scrollback once the shell is ready
             let directory = state.directory
-            if !directory.isEmpty {
-                // The terminal shell starts asynchronously. We set the initial
-                // directory by sending a `cd` command after a short delay to
-                // let the shell initialize.
-                let session = tab.session
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    // Single-quote the path for safe shell escaping
+            let scrollback = state.scrollbackContent
+            let session = tab.session
+            let tabIndex = i
+
+            // The terminal shell starts asynchronously. We send commands after
+            // a short delay to let the shell initialize.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                var commands: [String] = []
+
+                // Print previous scrollback content via a temp file
+                if let scrollback = scrollback, !scrollback.isEmpty {
+                    let tempFile = NSTemporaryDirectory() + "chau7_restore_\(tabIndex).txt"
+                    do {
+                        try scrollback.write(toFile: tempFile, atomically: true, encoding: .utf8)
+                        let escapedTemp = "'" + tempFile.replacingOccurrences(of: "'", with: "'\\''") + "'"
+                        commands.append("cat \(escapedTemp) && rm -f \(escapedTemp)")
+                    } catch {
+                        Log.warn("Failed to write scrollback restore file: \(error)")
+                    }
+                }
+
+                // cd to previous directory
+                if !directory.isEmpty {
                     let escaped = "'" + directory.replacingOccurrences(of: "'", with: "'\\''") + "'"
-                    session?.sendInput("cd \(escaped) && clear\n")
+                    commands.append("cd \(escaped)")
+                }
+
+                if !commands.isEmpty {
+                    session?.sendInput(commands.joined(separator: " && ") + "\n")
                 }
             }
 
@@ -418,7 +469,7 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     var overlayWorkspaceIdentifier: String? {
-        if let repoRoot = SnippetManager.shared.repoRoot {
+        if let repoRoot = SnippetManager.shared.activeRepoRoot {
             return repoRoot
         }
         return selectedTab?.session?.currentDirectory
