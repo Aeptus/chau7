@@ -825,6 +825,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     private func handlePromptDetected() {
         isAtPrompt = true
+        devServerMonitor.commandDidFinish()
         guard hasPendingCommand, pendingCommandLine != nil else { return }
         promptSeenForPendingCommand = true
         if !commandFinishedNotified {
