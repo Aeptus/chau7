@@ -456,6 +456,9 @@ final class CommandPaletteProvider {
             PaletteCommand(title: L("commandPalette.command.migrateSnippets", "Migrate Snippets to Clean JSON"), shortcut: nil, category: .edit, icon: "arrow.triangle.2.circlepath") {
                 SnippetManager.shared.migrateToCleanJSON()
             },
+            PaletteCommand(title: L("commandPalette.command.reloadSnippets", "Reload Snippets"), shortcut: nil, category: .edit, icon: "arrow.clockwise") {
+                SnippetManager.shared.forceReloadAll()
+            },
 
             // View commands
             PaletteCommand(title: L("commandPalette.command.toggleFullScreen", "Toggle Full Screen"), shortcut: "⌃⌘F", category: .view, icon: "arrow.up.left.and.arrow.down.right") {
