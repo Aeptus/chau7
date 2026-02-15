@@ -82,6 +82,15 @@ struct EnhancedEditorView: NSViewRepresentable {
         }
     }
 
+    static func dismantleNSView(_ scrollView: EditorScrollView, coordinator: EditorCoordinator) {
+        // Clear the undo stack to prevent use-after-free when the NSTextView
+        // is deallocated but NSUndoManager still holds references to it.
+        let textView = scrollView.editorTextView
+        textView.undoManager?.removeAllActions()
+        coordinator.syntaxTimer?.invalidate()
+        coordinator.textView = nil
+    }
+
     func makeCoordinator() -> EditorCoordinator {
         EditorCoordinator(parent: self)
     }
@@ -92,7 +101,7 @@ struct EnhancedEditorView: NSViewRepresentable {
 class EditorCoordinator: NSObject, NSTextViewDelegate {
     let parent: EnhancedEditorView
     weak var textView: NSTextView?
-    private var syntaxTimer: Timer?
+    var syntaxTimer: Timer?
 
     init(parent: EnhancedEditorView) {
         self.parent = parent
