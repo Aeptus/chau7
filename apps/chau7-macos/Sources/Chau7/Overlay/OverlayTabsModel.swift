@@ -177,6 +177,7 @@ struct SavedTabState: Codable {
     let directory: String
     let selectedIndex: Int?  // non-nil only for the selected tab
     let scrollbackContent: String?  // last N lines of terminal output
+    let aiResumeCommand: String?  // e.g. "claude --resume abc123" — prefilled on restore
 
     static let userDefaultsKey = "com.chau7.savedTabState"
 }
@@ -363,12 +364,19 @@ final class OverlayTabsModel: ObservableObject {
                 }
             }
 
+            // Build AI resume command if this tab was running an AI session
+            let resumeCommand = Self.buildAIResumeCommand(
+                appName: tab.session?.activeAppName,
+                directory: dir
+            )
+
             states.append(SavedTabState(
                 customTitle: tab.customTitle,
                 color: tab.color.rawValue,
                 directory: dir,
                 selectedIndex: isSelected ? i : nil,
-                scrollbackContent: scrollback
+                scrollbackContent: scrollback,
+                aiResumeCommand: resumeCommand
             ))
         }
         guard !states.isEmpty else { return }
@@ -379,6 +387,113 @@ final class OverlayTabsModel: ObservableObject {
         } catch {
             Log.warn("Failed to save tab state: \(error)")
         }
+    }
+
+    /// Build a resume command for an AI session running in the given directory.
+    /// Returns nil if no resumable session is found.
+    private static func buildAIResumeCommand(appName: String?, directory: String) -> String? {
+        guard let appName = appName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !appName.isEmpty else { return nil }
+        let lowered = appName.lowercased()
+
+        if lowered.contains("claude") {
+            if let sessionId = ClaudeCodeMonitor.shared.sessionId(forDirectory: directory),
+               isValidSessionId(sessionId) {
+                return "claude --resume \(sessionId)"
+            }
+            return nil
+        }
+
+        if lowered.contains("codex") {
+            if let sessionId = findCodexSessionId(forDirectory: directory),
+               isValidSessionId(sessionId) {
+                return "codex resume \(sessionId)"
+            }
+            return nil
+        }
+
+        return nil
+    }
+
+    /// Validate that a session ID contains only safe characters (alphanumeric, hyphens,
+    /// underscores) to prevent shell injection when interpolated into a command string.
+    private static func isValidSessionId(_ id: String) -> Bool {
+        !id.isEmpty && id.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+    }
+
+    /// Find the most recent Codex session ID for a given directory.
+    /// Scans ~/.codex/sessions/ day directories for session files whose
+    /// cwd matches the given directory. Caps total file reads to avoid
+    /// blocking the main thread.
+    private static func findCodexSessionId(forDirectory dir: String) -> String? {
+        let fm = FileManager.default
+        let sessionsDir = fm.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/sessions")
+
+        // Filter helper: only include entries that look like date components (digits only)
+        let isDateComponent = { (name: String) -> Bool in
+            !name.isEmpty && name.allSatisfy(\.isNumber)
+        }
+
+        // Collect year/month/day directories, sorted most-recent-first
+        guard let years = try? fm.contentsOfDirectory(atPath: sessionsDir.path) else { return nil }
+        var dayDirs: [URL] = []
+        for year in years.filter(isDateComponent).sorted().reversed() {
+            let yearURL = sessionsDir.appendingPathComponent(year)
+            guard let months = try? fm.contentsOfDirectory(atPath: yearURL.path) else { continue }
+            for month in months.filter(isDateComponent).sorted().reversed() {
+                let monthURL = yearURL.appendingPathComponent(month)
+                guard let days = try? fm.contentsOfDirectory(atPath: monthURL.path) else { continue }
+                for day in days.filter(isDateComponent).sorted().reversed() {
+                    dayDirs.append(monthURL.appendingPathComponent(day))
+                }
+            }
+        }
+
+        // Scan the 7 most recent day directories, capping total file reads
+        var filesRead = 0
+        let maxFileReads = 30
+        for dayDir in dayDirs.prefix(7) {
+            guard let files = try? fm.contentsOfDirectory(atPath: dayDir.path) else { continue }
+            // Sort files reverse-alphabetically (most recent timestamp first)
+            let jsonlFiles = files.filter { $0.hasSuffix(".jsonl") }.sorted().reversed()
+            for file in jsonlFiles {
+                guard filesRead < maxFileReads else { return nil }
+                filesRead += 1
+                let filePath = dayDir.appendingPathComponent(file).path
+                guard let firstLine = readFirstLine(atPath: filePath) else { continue }
+                // Parse session_meta to extract cwd and id
+                if let (sessionCwd, sessionId) = parseCodexSessionMeta(firstLine),
+                   sessionCwd == dir || dir.hasPrefix(sessionCwd + "/") {
+                    return sessionId
+                }
+            }
+        }
+        return nil
+    }
+
+    /// Read just the first line of a file without loading the entire contents.
+    private static func readFirstLine(atPath path: String) -> String? {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { handle.closeFile() }
+        let chunk = handle.readData(ofLength: 8192)
+        guard !chunk.isEmpty else { return nil }
+        let text = String(decoding: chunk, as: UTF8.self)
+        return text.components(separatedBy: "\n").first
+    }
+
+    /// Parse the first line of a Codex session file (session_meta JSON)
+    /// to extract the cwd and session ID.
+    private static func parseCodexSessionMeta(_ line: String) -> (cwd: String, id: String)? {
+        guard let data = line.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = json["type"] as? String, type == "session_meta",
+              let payload = json["payload"] as? [String: Any],
+              let cwd = payload["cwd"] as? String,
+              let id = payload["id"] as? String else {
+            return nil
+        }
+        return (cwd, id)
     }
 
     /// Restores tabs from saved state. Returns nil if no saved state exists
@@ -408,6 +523,7 @@ final class OverlayTabsModel: ObservableObject {
             // Restore working directory and scrollback once the shell is ready
             let directory = state.directory
             let scrollback = state.scrollbackContent
+            let resumeCommand = state.aiResumeCommand
             let session = tab.session
             let tabIndex = i
 
@@ -436,6 +552,15 @@ final class OverlayTabsModel: ObservableObject {
 
                 if !commands.isEmpty {
                     session?.sendInput(commands.joined(separator: " && ") + "\n")
+                }
+
+                // Prefill AI resume command after cd completes (without newline —
+                // user presses Enter to confirm). The 0.5s inner delay lets the
+                // shell process the cd and render a fresh prompt before we type.
+                if let resumeCmd = resumeCommand {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        session?.sendInput(resumeCmd)
+                    }
                 }
             }
 

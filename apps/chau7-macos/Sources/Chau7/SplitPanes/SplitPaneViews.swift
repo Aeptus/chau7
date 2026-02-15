@@ -407,6 +407,14 @@ struct TextEditorContent: NSViewRepresentable {
         Log.info("Scrolled editor to line \(lineNumber)")
     }
 
+    static func dismantleNSView(_ scrollView: NSScrollView, coordinator: Coordinator) {
+        // Clear the undo stack to prevent use-after-free when the NSTextView
+        // is deallocated but NSUndoManager still holds references to it.
+        if let textView = scrollView.documentView as? NSTextView {
+            textView.undoManager?.removeAllActions()
+        }
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
