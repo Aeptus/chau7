@@ -2059,10 +2059,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         }
 
         let current = ProcessInfo.processInfo.environment
+        let rtkEnabled = FeatureSettings.shared.tokenOptimizationMode != .off
         if let path = current["PATH"] {
             // RTK: prepend wrapper directory if token optimization is not off
-            let rtkMode = FeatureSettings.shared.tokenOptimizationMode
-            if rtkMode != .off {
+            if rtkEnabled {
                 dict["PATH"] = RTKManager.shared.prependedPATH(original: path)
             } else {
                 dict["PATH"] = path
@@ -2073,8 +2073,12 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         }
         dict["CHAU7_START_DIR"] = startDirectoryForLaunch()
 
-        // RTK: set session ID for flag file lookup by wrapper scripts
-        dict["CHAU7_SESSION_ID"] = tabIdentifier
+        // RTK: set session ID for flag file lookup by wrapper scripts.
+        // Uses a dedicated env var to avoid conflicting with CHAU7_SESSION_ID
+        // which the analytics proxy uses for per-shell-launch correlation.
+        if rtkEnabled {
+            dict["CHAU7_RTK_SESSION"] = tabIdentifier
+        }
 
         // Set startup command if configured
         let startupCmd = FeatureSettings.shared.startupCommand.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2132,8 +2136,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             // Gemini CLI / Google GenAI SDK
             dict["GOOGLE_GEMINI_BASE_URL"] = proxyBase
 
+            // Session ID for correlation with terminal session
+            dict["CHAU7_SESSION_ID"] = dict["TERM_SESSION_ID"] ?? UUID().uuidString
+
             // Tab ID for task lifecycle tracking (unique per terminal tab)
-            // Note: CHAU7_SESSION_ID is set unconditionally above for RTK support
             dict["CHAU7_TAB_ID"] = tabIdentifier
 
             // Project path for repo switch detection
@@ -2212,6 +2218,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             override: tokenOptOverride,
             isAIActive: activeAppName != nil
         )
+
+        // Notify tab bar to re-render bolt icon state (the OverlayTab struct
+        // is a value type and doesn't observe session changes directly).
+        NotificationCenter.default.post(name: .rtkFlagRecalculated, object: nil)
     }
 
     weak var highlightView: TerminalHighlightView?

@@ -56,7 +56,7 @@ enum TabTokenOptOverride: String, Codable, CaseIterable {
 /// intercept commands. Flag files live in `~/.chau7/rtk_active/` and are
 /// named by session ID.
 ///
-/// The wrapper script checks: `if [ -f ~/.chau7/rtk_active/$CHAU7_SESSION_ID ]; then ...`
+/// The wrapper script checks: `if [ -f ~/.chau7/rtk_active/$CHAU7_RTK_SESSION ]; then ...`
 enum RTKFlagManager {
 
     /// Base directory for RTK flag files.
@@ -134,14 +134,21 @@ enum RTKFlagManager {
     static func removeAllFlags() {
         let fm = FileManager.default
         guard fm.fileExists(atPath: flagDirectory.path) else { return }
-        do {
-            let contents = try fm.contentsOfDirectory(atPath: flagDirectory.path)
-            for file in contents {
+        guard let contents = try? fm.contentsOfDirectory(atPath: flagDirectory.path) else {
+            Log.error("RTKFlagManager: failed to list flag directory")
+            return
+        }
+        var removed = 0
+        for file in contents {
+            do {
                 try fm.removeItem(atPath: flagDirectory.appendingPathComponent(file).path)
+                removed += 1
+            } catch {
+                Log.error("RTKFlagManager: failed to remove flag \(file): \(error)")
             }
-            Log.info("RTKFlagManager: cleared \(contents.count) flag file(s)")
-        } catch {
-            Log.error("RTKFlagManager: failed to clear flags: \(error)")
+        }
+        if removed > 0 {
+            Log.info("RTKFlagManager: cleared \(removed) flag file(s)")
         }
     }
 

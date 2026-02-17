@@ -164,9 +164,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         Log.info("Saved tab state for restoration")
 
-        // RTK: clean up all flag files and wrappers
+        // RTK: clean up all flag files and wrappers (no-op if mode was .off)
         RTKManager.shared.teardown()
-        Log.info("RTK cleaned up")
 
         // Stop API analytics proxy
         Task { @MainActor in
