@@ -1084,6 +1084,39 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(timestampFormat, forKey: Keys.timestampFormat) }
     }
 
+    // MARK: - Tab Display Customization
+
+    /// Show AI product logos and dev server icons in tabs
+    @Published var showTabIcons: Bool {
+        didSet { UserDefaults.standard.set(showTabIcons, forKey: Keys.showTabIcons) }
+    }
+
+    /// Show the working directory path next to the tab title
+    @Published var showTabPath: Bool {
+        didSet { UserDefaults.standard.set(showTabPath, forKey: Keys.showTabPath) }
+    }
+
+    /// Show the git branch indicator in tabs
+    @Published var showTabGitIndicator: Bool {
+        didSet { UserDefaults.standard.set(showTabGitIndicator, forKey: Keys.showTabGitIndicator) }
+    }
+
+    /// Show the RTK bolt icon in tabs (independent of RTK being enabled)
+    @Published var showTabRTKIndicator: Bool {
+        didSet { UserDefaults.standard.set(showTabRTKIndicator, forKey: Keys.showTabRTKIndicator) }
+    }
+
+    /// Show the broadcast indicator in tabs
+    @Published var showTabBroadcastIndicator: Bool {
+        didSet { UserDefaults.standard.set(showTabBroadcastIndicator, forKey: Keys.showTabBroadcastIndicator) }
+    }
+
+    /// When enabled, only the custom title is shown (hides all other tab elements
+    /// except the close button). Has no effect on tabs without a custom title.
+    @Published var customTitleOnly: Bool {
+        didSet { UserDefaults.standard.set(customTitleOnly, forKey: Keys.customTitleOnly) }
+    }
+
     // MARK: - F20: Last Command Badge
 
     @Published var isLastCommandBadgeEnabled: Bool {
@@ -1545,6 +1578,13 @@ final class FeatureSettings: ObservableObject {
         // F19
         static let lineTimestamps = "feature.lineTimestamps"
         static let timestampFormat = "feature.timestampFormat"
+        // Tab Display
+        static let showTabIcons = "tabs.display.showIcons"
+        static let showTabPath = "tabs.display.showPath"
+        static let showTabGitIndicator = "tabs.display.showGitIndicator"
+        static let showTabRTKIndicator = "tabs.display.showRTKIndicator"
+        static let showTabBroadcastIndicator = "tabs.display.showBroadcastIndicator"
+        static let customTitleOnly = "tabs.display.customTitleOnly"
         // F20
         static let lastCommandBadge = "feature.lastCommandBadge"
         // F03
@@ -1759,6 +1799,14 @@ final class FeatureSettings: ObservableObject {
         // F19: Line Timestamps (default: disabled)
         self.isLineTimestampsEnabled = defaults.object(forKey: Keys.lineTimestamps) as? Bool ?? false
         self.timestampFormat = defaults.string(forKey: Keys.timestampFormat) ?? "HH:mm:ss"
+
+        // Tab Display (defaults: all visible)
+        self.showTabIcons = defaults.object(forKey: Keys.showTabIcons) as? Bool ?? true
+        self.showTabPath = defaults.object(forKey: Keys.showTabPath) as? Bool ?? true
+        self.showTabGitIndicator = defaults.object(forKey: Keys.showTabGitIndicator) as? Bool ?? true
+        self.showTabRTKIndicator = defaults.object(forKey: Keys.showTabRTKIndicator) as? Bool ?? true
+        self.showTabBroadcastIndicator = defaults.object(forKey: Keys.showTabBroadcastIndicator) as? Bool ?? true
+        self.customTitleOnly = defaults.object(forKey: Keys.customTitleOnly) as? Bool ?? false
 
         // F20: Last Command Badge (default: enabled)
         self.isLastCommandBadgeEnabled = defaults.object(forKey: Keys.lastCommandBadge) as? Bool ?? true
@@ -2065,6 +2113,12 @@ final class FeatureSettings: ObservableObject {
         var dangerousOutputHighlightLowPowerEnabled: Bool?
         var defaultStartDirectory: String
         var isAutoTabThemeEnabled: Bool
+        var showTabIcons: Bool?
+        var showTabPath: Bool?
+        var showTabGitIndicator: Bool?
+        var showTabRTKIndicator: Bool?
+        var showTabBroadcastIndicator: Bool?
+        var customTitleOnly: Bool?
         var isCopyOnSelectEnabled: Bool
         var isLineTimestampsEnabled: Bool
         var timestampFormat: String
@@ -2139,6 +2193,12 @@ final class FeatureSettings: ObservableObject {
             dangerousOutputHighlightLowPowerEnabled: dangerousOutputHighlightLowPowerEnabled,
             defaultStartDirectory: defaultStartDirectory,
             isAutoTabThemeEnabled: isAutoTabThemeEnabled,
+            showTabIcons: showTabIcons,
+            showTabPath: showTabPath,
+            showTabGitIndicator: showTabGitIndicator,
+            showTabRTKIndicator: showTabRTKIndicator,
+            showTabBroadcastIndicator: showTabBroadcastIndicator,
+            customTitleOnly: customTitleOnly,
             isCopyOnSelectEnabled: isCopyOnSelectEnabled,
             isLineTimestampsEnabled: isLineTimestampsEnabled,
             timestampFormat: timestampFormat,
@@ -2255,6 +2315,12 @@ final class FeatureSettings: ObservableObject {
         }
         defaultStartDirectory = imported.defaultStartDirectory
         isAutoTabThemeEnabled = imported.isAutoTabThemeEnabled
+        showTabIcons = imported.showTabIcons ?? true
+        showTabPath = imported.showTabPath ?? true
+        showTabGitIndicator = imported.showTabGitIndicator ?? true
+        showTabRTKIndicator = imported.showTabRTKIndicator ?? true
+        showTabBroadcastIndicator = imported.showTabBroadcastIndicator ?? true
+        customTitleOnly = imported.customTitleOnly ?? false
         isCopyOnSelectEnabled = imported.isCopyOnSelectEnabled
         isLineTimestampsEnabled = imported.isLineTimestampsEnabled
         timestampFormat = imported.timestampFormat
@@ -2360,6 +2426,14 @@ final class FeatureSettings: ObservableObject {
         dangerousOutputHighlightMaxIntervalMs = 2000
         dangerousOutputHighlightLowPowerEnabled = false
         defaultStartDirectory = home
+
+        // Tab Display
+        showTabIcons = true
+        showTabPath = true
+        showTabGitIndicator = true
+        showTabRTKIndicator = true
+        showTabBroadcastIndicator = true
+        customTitleOnly = false
 
         // Features
         isAutoTabThemeEnabled = true
@@ -2598,6 +2672,12 @@ extension FeatureSettings {
             bellSound: "default",
             defaultStartDirectory: home,
             isAutoTabThemeEnabled: true,
+            showTabIcons: true,
+            showTabPath: true,
+            showTabGitIndicator: true,
+            showTabRTKIndicator: true,
+            showTabBroadcastIndicator: true,
+            customTitleOnly: false,
             isCopyOnSelectEnabled: false,
             isLineTimestampsEnabled: false,
             timestampFormat: "HH:mm:ss",
