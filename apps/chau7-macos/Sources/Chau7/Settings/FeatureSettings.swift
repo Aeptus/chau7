@@ -1399,6 +1399,15 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
+    // MARK: - Token Optimization (RTK) Settings
+
+    @Published var tokenOptimizationMode: TokenOptimizationMode {
+        didSet {
+            UserDefaults.standard.set(tokenOptimizationMode.rawValue, forKey: Keys.tokenOptimizationMode)
+            NotificationCenter.default.post(name: .tokenOptimizationModeChanged, object: nil)
+        }
+    }
+
     // MARK: - Remote Control Settings
 
     @Published var isRemoteEnabled: Bool {
@@ -1572,6 +1581,8 @@ final class FeatureSettings: ObservableObject {
         static let apiAnalyticsEnabled = "analytics.api.enabled"
         static let apiAnalyticsPort = "analytics.api.port"
         static let apiAnalyticsLogPrompts = "analytics.api.logPrompts"
+        // Token Optimization (RTK)
+        static let tokenOptimizationMode = "rtk.mode"
         // Remote Control
         static let remoteEnabled = "remote.enabled"
         static let remoteRelayURL = "remote.relayURL"
@@ -1822,6 +1833,14 @@ final class FeatureSettings: ObservableObject {
         self.isAPIAnalyticsEnabled = defaults.object(forKey: Keys.apiAnalyticsEnabled) as? Bool ?? false
         self.apiAnalyticsPort = defaults.object(forKey: Keys.apiAnalyticsPort) as? Int ?? 18080
         self.apiAnalyticsLogPrompts = defaults.object(forKey: Keys.apiAnalyticsLogPrompts) as? Bool ?? false
+
+        // Token Optimization (default: off)
+        if let modeRaw = defaults.string(forKey: Keys.tokenOptimizationMode),
+           let mode = TokenOptimizationMode(rawValue: modeRaw) {
+            self.tokenOptimizationMode = mode
+        } else {
+            self.tokenOptimizationMode = .off
+        }
 
         // Remote Control (default: disabled)
         self.isRemoteEnabled = defaults.object(forKey: Keys.remoteEnabled) as? Bool ?? false
