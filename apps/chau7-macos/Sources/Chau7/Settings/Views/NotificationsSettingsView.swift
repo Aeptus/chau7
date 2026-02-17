@@ -4,96 +4,153 @@ import Chau7Core
 
 // MARK: - Notifications Settings
 
+/// Top-level notification settings view with segmented sub-navigation.
+/// Three tabs: Triggers (unified filter+action management), Thresholds, Monitoring.
 struct NotificationsSettingsView: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject private var settings = FeatureSettings.shared
+    @State private var selectedTab: NotificationTab = .triggers
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Sub-navigation
+            Picker("", selection: $selectedTab) {
+                ForEach(NotificationTab.allCases, id: \.self) { tab in
+                    Text(tab.label).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.bottom, 4)
+
+            switch selectedTab {
+            case .triggers:
+                TriggersTabView(model: model)
+            case .thresholds:
+                EventDetectionThresholdsSection()
+            case .monitoring:
+                EventMonitoringSection(model: model)
+            }
+        }
+    }
+}
+
+// MARK: - Tab Enum
+
+private enum NotificationTab: String, CaseIterable {
+    case triggers
+    case thresholds
+    case monitoring
+
+    var label: String {
+        switch self {
+        case .triggers: return L("settings.notifications.tab.triggers", "Triggers")
+        case .thresholds: return L("settings.notifications.tab.thresholds", "Thresholds")
+        case .monitoring: return L("settings.notifications.tab.monitoring", "Monitoring")
+        }
+    }
+}
+
+// MARK: - Triggers Tab (Status + Unified Triggers)
+
+private struct TriggersTabView: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var settings = FeatureSettings.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             // Status & Permissions
-            SettingsSectionHeader(L("settings.notifications.status", "Status & Permissions"), icon: "bell")
+            StatusPermissionsSection(model: model)
 
-            SettingsInfoRow(
-                label: L("settings.notifications.status.label", "Status"),
-                value: model.notificationStatus,
-                monospaced: true
-            )
+            Divider()
+                .padding(.vertical, 4)
 
-            if let warning = model.notificationWarning {
-                SettingsRow(L("settings.notifications.warning", "Warning")) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                        Text(warning)
+            // Unified Trigger Management
+            UnifiedTriggerSection()
+        }
+    }
+}
+
+// MARK: - Status & Permissions Section
+
+private struct StatusPermissionsSection: View {
+    @ObservedObject var model: AppModel
+
+    private var isNotDetermined: Bool {
+        model.notificationStatus == "NotDetermined" || model.notificationStatus == "Unknown"
+    }
+
+    private var isDenied: Bool {
+        model.notificationStatus == "Denied"
+    }
+
+    private var isAuthorized: Bool {
+        model.notificationStatus == "Authorized" || model.notificationStatus == "Provisional"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if isNotDetermined {
+                // Onboarding card for first-time users
+                SettingsCard(content: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label(
+                            L("settings.notifications.onboarding.title", "Enable Notifications"),
+                            systemImage: "bell.badge"
+                        )
+                        .font(.headline)
+                        Text(L("settings.notifications.onboarding.description",
+                            "Get notified when AI tasks complete, fail, or need your attention."))
                             .font(.caption)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(.secondary)
+                    }
+                }, action: {
+                    model.requestNotificationPermission()
+                }, actionLabel: L("settings.notifications.onboarding.action", "Enable Notifications"),
+                   actionIcon: "bell.badge"
+                )
+            } else {
+                SettingsSectionHeader(L("settings.notifications.status", "Status & Permissions"), icon: "bell")
+
+                SettingsInfoRow(
+                    label: L("settings.notifications.status.label", "Status"),
+                    value: model.notificationStatus,
+                    monospaced: true
+                )
+
+                if let warning = model.notificationWarning {
+                    SettingsRow(L("settings.notifications.warning", "Warning")) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.orange)
+                            Text(warning)
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
                     }
                 }
-            }
 
-            SettingsButtonRow(buttons: [
-                .init(title: L("settings.notifications.requestPermission", "Request Permission"), icon: "bell.badge") {
-                    model.requestNotificationPermission()
-                },
-                .init(title: L("settings.notifications.systemSettings", "System Settings"), icon: "gear") {
-                    model.openNotificationSettings()
-                },
-                .init(title: L("settings.notifications.sendTest", "Send Test"), icon: "paperplane") {
-                    model.sendTestNotification()
+                if isDenied {
+                    SettingsHint(
+                        icon: "arrow.right.circle",
+                        text: L("settings.notifications.denied.hint",
+                                "Notifications are denied. Open System Settings to enable them.")
+                    )
+                    SettingsButtonRow(buttons: [
+                        .init(title: L("settings.notifications.systemSettings", "System Settings"), icon: "gear") {
+                            model.openNotificationSettings()
+                        }
+                    ])
+                } else if isAuthorized {
+                    SettingsButtonRow(buttons: [
+                        .init(title: L("settings.notifications.sendTest", "Send Test"), icon: "paperplane") {
+                            model.sendTestNotification()
+                        },
+                        .init(title: L("settings.notifications.systemSettings", "System Settings"), icon: "gear") {
+                            model.openNotificationSettings()
+                        }
+                    ])
                 }
-            ])
-
-            Divider()
-                .padding(.vertical, 8)
-
-            // Notification Filters - now in its own component
-            NotificationFiltersSection()
-
-            Divider()
-                .padding(.vertical, 8)
-
-            // Trigger Actions
-            TriggerActionsSettingsView()
-
-            Divider()
-                .padding(.vertical, 8)
-
-            // Event Detection Thresholds
-            EventDetectionThresholdsSection()
-
-            Divider()
-                .padding(.vertical, 8)
-
-            // Event Monitoring
-            SettingsSectionHeader(L("settings.notifications.eventMonitoring", "Event Monitoring"), icon: "waveform.path.ecg")
-
-            SettingsToggle(
-                label: L("settings.notifications.monitorAIEvents", "Monitor AI Events"),
-                help: L("settings.notifications.monitorAIEvents.help", "Watch for AI CLI events like task completion, failures, and permission requests"),
-                isOn: $model.isMonitoring
-            )
-            .onChange(of: model.isMonitoring) { _ in
-                model.applyMonitoringState()
             }
-
-            SettingsTextField(
-                label: L("settings.notifications.eventLogPath", "Event Log Path"),
-                help: L("settings.notifications.eventLogPath.help", "Path to the AI event log file"),
-                placeholder: "~/.ai-events.log",
-                text: $model.logPath,
-                width: 280,
-                monospaced: true,
-                onSubmit: { model.restartTailer() }
-            )
-
-            SettingsButtonRow(buttons: [
-                .init(title: L("settings.notifications.restartMonitor", "Restart Monitor"), icon: "arrow.clockwise") {
-                    model.restartTailer()
-                },
-                .init(title: L("settings.notifications.revealInFinder", "Reveal in Finder"), icon: "folder") {
-                    model.revealLogInFinder()
-                }
-            ])
         }
     }
 }
@@ -137,12 +194,18 @@ fileprivate struct TriggerGroup: Identifiable {
     let triggers: [NotificationTrigger]
 }
 
-// MARK: - Notification Filters Section
+// MARK: - Unified Trigger Section
 
-private struct NotificationFiltersSection: View {
+/// Merges the old "Notification Filters" and "Trigger Actions" sections into one.
+/// Each trigger row shows its enable/disable toggle AND its action chain in one place.
+private struct UnifiedTriggerSection: View {
     @ObservedObject private var settings = FeatureSettings.shared
     @State private var expandedCategories: Set<TriggerCategory> = [.aiApps]
     @State private var expandedSources: Set<String> = []
+    @State private var expandedTriggerId: String? = nil
+    @State private var showingActionPicker = false
+    @State private var selectedTriggerId: String? = nil
+    @State private var editingAction: (triggerId: String, config: NotificationActionConfig)? = nil
 
     private func triggerGroups(for category: TriggerCategory) -> [TriggerGroup] {
         category.sources.compactMap { sourceId in
@@ -157,7 +220,7 @@ private struct NotificationFiltersSection: View {
         }
     }
 
-    private func binding(for trigger: NotificationTrigger) -> Binding<Bool> {
+    private func triggerBinding(for trigger: NotificationTrigger) -> Binding<Bool> {
         Binding(
             get: { settings.notificationTriggerState.isEnabled(for: trigger) },
             set: { newValue in
@@ -188,9 +251,9 @@ private struct NotificationFiltersSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SettingsSectionHeader(L("settings.notifications.filters", "Notification Filters"), icon: "line.3.horizontal.decrease.circle")
+            SettingsSectionHeader(L("settings.notifications.triggers", "Notification Triggers"), icon: "line.3.horizontal.decrease.circle")
 
-            Text(L("settings.notifications.filtersDescription", "Choose which events trigger notifications:"))
+            Text(L("settings.notifications.triggersDescription", "Enable triggers and configure what happens when they fire:"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.bottom, 4)
@@ -199,13 +262,14 @@ private struct NotificationFiltersSection: View {
                 let groups = triggerGroups(for: category)
                 let allTriggersForCategory = groups.flatMap(\.triggers)
                 if !groups.isEmpty {
-                    CategorySection(
+                    UnifiedCategorySection(
                         category: category,
                         groups: groups,
                         enabledCount: allTriggersForCategory.filter { settings.notificationTriggerState.isEnabled(for: $0) }.count,
                         totalCount: allTriggersForCategory.count,
                         isExpanded: expandedCategories.contains(category),
                         expandedSources: $expandedSources,
+                        expandedTriggerId: $expandedTriggerId,
                         onToggleExpand: {
                             if expandedCategories.contains(category) {
                                 expandedCategories.remove(category)
@@ -215,27 +279,64 @@ private struct NotificationFiltersSection: View {
                         },
                         onEnableAll: { enableAll(for: category) },
                         onDisableAll: { disableAll(for: category) },
-                        triggerBinding: binding
+                        triggerBinding: triggerBinding,
+                        onAddAction: { triggerId in
+                            selectedTriggerId = triggerId
+                            showingActionPicker = true
+                        },
+                        onEditAction: { triggerId, config in
+                            editingAction = (triggerId, config)
+                        },
+                        onDeleteAction: { triggerId, actionId in
+                            settings.removeActionFromTrigger(triggerId, actionId: actionId)
+                        },
+                        onToggleAction: { triggerId, actionId, enabled in
+                            settings.setActionEnabled(enabled, triggerId: triggerId, actionId: actionId)
+                        }
                     )
                 }
+            }
+        }
+        .sheet(isPresented: $showingActionPicker) {
+            if let triggerId = selectedTriggerId {
+                ActionPickerSheet(triggerId: triggerId) { actionType in
+                    let newAction = NotificationActionConfig(actionType: actionType, enabled: true)
+                    settings.addActionToTrigger(triggerId, action: newAction)
+                    if let info = NotificationActionCatalog.action(for: actionType), info.requiresConfig {
+                        editingAction = (triggerId, newAction)
+                    }
+                }
+            }
+        }
+        .sheet(item: Binding(
+            get: { editingAction.map { EditingActionItem(triggerId: $0.triggerId, config: $0.config) } },
+            set: { editingAction = $0.map { ($0.triggerId, $0.config) } }
+        )) { item in
+            ActionConfigSheet(triggerId: item.triggerId, actionConfig: item.config) { updatedConfig in
+                settings.updateActionInTrigger(item.triggerId, action: updatedConfig)
             }
         }
     }
 }
 
-// MARK: - Category Section
+// MARK: - Unified Category Section
 
-private struct CategorySection: View {
+private struct UnifiedCategorySection: View {
     let category: TriggerCategory
     let groups: [TriggerGroup]
     let enabledCount: Int
     let totalCount: Int
     let isExpanded: Bool
     @Binding var expandedSources: Set<String>
+    @Binding var expandedTriggerId: String?
     let onToggleExpand: () -> Void
     let onEnableAll: () -> Void
     let onDisableAll: () -> Void
     let triggerBinding: (NotificationTrigger) -> Binding<Bool>
+    let onAddAction: (String) -> Void
+    let onEditAction: (String, NotificationActionConfig) -> Void
+    let onDeleteAction: (String, UUID) -> Void
+    let onToggleAction: (String, UUID, Bool) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -297,12 +398,23 @@ private struct CategorySection: View {
             // Expanded content
             if isExpanded {
                 VStack(alignment: .leading, spacing: 8) {
+                    if enabledCount == 0 {
+                        SettingsHint(
+                            icon: "bell.slash",
+                            text: L("settings.notifications.categoryDisabled",
+                                    "No triggers enabled in this category.")
+                        )
+                        .padding(.leading, 16)
+                        .padding(.top, 4)
+                    }
+
                     ForEach(groups) { group in
                         let groupEnabledCount = group.triggers.filter { triggerBinding($0).wrappedValue }.count
-                        SourceSection(
+                        UnifiedSourceSection(
                             group: group,
                             enabledCount: groupEnabledCount,
                             isExpanded: expandedSources.contains(group.id),
+                            expandedTriggerId: $expandedTriggerId,
                             onToggleExpand: {
                                 if expandedSources.contains(group.id) {
                                     expandedSources.remove(group.id)
@@ -310,7 +422,11 @@ private struct CategorySection: View {
                                     expandedSources.insert(group.id)
                                 }
                             },
-                            triggerBinding: triggerBinding
+                            triggerBinding: triggerBinding,
+                            onAddAction: onAddAction,
+                            onEditAction: onEditAction,
+                            onDeleteAction: onDeleteAction,
+                            onToggleAction: onToggleAction
                         )
                     }
                 }
@@ -321,14 +437,19 @@ private struct CategorySection: View {
     }
 }
 
-// MARK: - Source Section
+// MARK: - Unified Source Section
 
-private struct SourceSection: View {
+private struct UnifiedSourceSection: View {
     let group: TriggerGroup
     let enabledCount: Int
     let isExpanded: Bool
+    @Binding var expandedTriggerId: String?
     let onToggleExpand: () -> Void
     let triggerBinding: (NotificationTrigger) -> Binding<Bool>
+    let onAddAction: (String) -> Void
+    let onEditAction: (String, NotificationActionConfig) -> Void
+    let onDeleteAction: (String, UUID) -> Void
+    let onToggleAction: (String, UUID, Bool) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -363,7 +484,20 @@ private struct SourceSection: View {
             if isExpanded {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(group.triggers) { trigger in
-                        TriggerRow(trigger: trigger, isOn: triggerBinding(trigger))
+                        UnifiedTriggerRow(
+                            trigger: trigger,
+                            isOn: triggerBinding(trigger),
+                            isExpanded: expandedTriggerId == trigger.id,
+                            onToggleExpand: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    expandedTriggerId = expandedTriggerId == trigger.id ? nil : trigger.id
+                                }
+                            },
+                            onAddAction: { onAddAction(trigger.id) },
+                            onEditAction: { config in onEditAction(trigger.id, config) },
+                            onDeleteAction: { actionId in onDeleteAction(trigger.id, actionId) },
+                            onToggleAction: { actionId, enabled in onToggleAction(trigger.id, actionId, enabled) }
+                        )
                     }
                 }
                 .padding(.leading, 16)
@@ -372,34 +506,128 @@ private struct SourceSection: View {
     }
 }
 
-// MARK: - Trigger Row
+// MARK: - Unified Trigger Row
 
-private struct TriggerRow: View {
+/// Single row that combines enable/disable toggle with action management.
+/// Collapsed: shows checkbox + label + action count badge + enabled dot + chevron.
+/// Expanded: shows inline action list with add/edit/delete controls.
+private struct UnifiedTriggerRow: View {
     let trigger: NotificationTrigger
     @Binding var isOn: Bool
+    let isExpanded: Bool
+    let onToggleExpand: () -> Void
+    let onAddAction: () -> Void
+    let onEditAction: (NotificationActionConfig) -> Void
+    let onDeleteAction: (UUID) -> Void
+    let onToggleAction: (UUID, Bool) -> Void
+
+    @ObservedObject private var settings = FeatureSettings.shared
+
+    private var actions: [NotificationActionConfig] {
+        settings.triggerActionBindings[trigger.id] ?? []
+    }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Toggle("", isOn: $isOn)
-                .toggleStyle(.checkbox)
-                .labelsHidden()
+        VStack(alignment: .leading, spacing: 0) {
+            // Header row
+            HStack(spacing: 8) {
+                // Enable/disable toggle
+                Toggle("", isOn: $isOn)
+                    .toggleStyle(.checkbox)
+                    .labelsHidden()
 
-            VStack(alignment: .leading, spacing: 1) {
-                Text(trigger.localizedLabel)
-                    .font(.caption)
-                    .foregroundStyle(isOn ? .primary : .secondary)
+                // Trigger info (clickable to expand actions)
+                Button(action: onToggleExpand) {
+                    HStack(spacing: 6) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(trigger.localizedLabel)
+                                .font(.caption)
+                                .foregroundStyle(isOn ? .primary : .secondary)
 
-                if !trigger.localizedDescription.isEmpty {
-                    Text(trigger.localizedDescription)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+                            if !trigger.localizedDescription.isEmpty {
+                                Text(trigger.localizedDescription)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                            }
+                        }
+
+                        Spacer()
+
+                        // Action count badge
+                        if !actions.isEmpty {
+                            Text(actions.count.formatted())
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.accentColor.opacity(0.2))
+                                .foregroundColor(.accentColor)
+                                .cornerRadius(4)
+                        }
+
+                        // Enabled indicator
+                        Circle()
+                            .fill(isOn ? Color.green : Color.gray.opacity(0.3))
+                            .frame(width: 8, height: 8)
+
+                        // Expand chevron
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 12)
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
             }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 4)
+            .background(isExpanded ? Color.secondary.opacity(0.05) : Color.clear)
+            .cornerRadius(4)
 
-            Spacer()
+            // Expanded: action management
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 4) {
+                    if actions.isEmpty {
+                        HStack {
+                            Image(systemName: "info.circle")
+                                .foregroundStyle(.secondary)
+                            Text(L("settings.notifications.noActions", "No actions configured. Using default notification."))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 28)
+                        .padding(.vertical, 4)
+                    } else {
+                        ForEach(actions) { action in
+                            ActionRow(
+                                action: action,
+                                onEdit: { onEditAction(action) },
+                                onDelete: { onDeleteAction(action.id) },
+                                onToggle: { enabled in onToggleAction(action.id, enabled) }
+                            )
+                        }
+                    }
+
+                    // Add action button
+                    Button(action: onAddAction) {
+                        HStack {
+                            Image(systemName: "plus.circle.fill")
+                            Text(L("settings.notifications.addAction", "Add Action"))
+                        }
+                        .font(.caption)
+                        .foregroundColor(.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 4)
+                }
+                .padding(.top, 4)
+                .padding(.leading, 20)
+                .background(Color.secondary.opacity(0.03))
+            }
         }
-        .padding(.vertical, 2)
     }
 }
 
@@ -431,36 +659,25 @@ private struct EventDetectionThresholdsSection: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L("settings.notifications.longRunningThreshold", "Long-Running (seconds)"))
                             .font(.caption)
-                        TextField(L("60", "60"), value: Binding(
-                            get: { settings.shellEventConfig.longRunningThresholdSeconds },
-                            set: {
-                                var config = settings.shellEventConfig
-                                config.longRunningThresholdSeconds = $0
-                                settings.shellEventConfig = config
-                            }
-                        ), formatter: NumberFormatter())
+                        TextField(
+                            L("60", "60"),
+                            value: $settings.shellEventConfig.nested(\.longRunningThresholdSeconds, min: 0),
+                            formatter: NumberFormatter()
+                        )
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
                     }
 
-                    Toggle(L("settings.notifications.notifyDirectoryChange", "Directory Change"), isOn: Binding(
-                        get: { settings.shellEventConfig.notifyOnDirectoryChange },
-                        set: {
-                            var config = settings.shellEventConfig
-                            config.notifyOnDirectoryChange = $0
-                            settings.shellEventConfig = config
-                        }
-                    ))
+                    Toggle(
+                        L("settings.notifications.notifyDirectoryChange", "Directory Change"),
+                        isOn: $settings.shellEventConfig.nested(\.notifyOnDirectoryChange)
+                    )
                     .font(.caption)
 
-                    Toggle(L("settings.notifications.notifyGitBranch", "Git Branch"), isOn: Binding(
-                        get: { settings.shellEventConfig.notifyOnGitBranchChange },
-                        set: {
-                            var config = settings.shellEventConfig
-                            config.notifyOnGitBranchChange = $0
-                            settings.shellEventConfig = config
-                        }
-                    ))
+                    Toggle(
+                        L("settings.notifications.notifyGitBranch", "Git Branch"),
+                        isOn: $settings.shellEventConfig.nested(\.notifyOnGitBranchChange)
+                    )
                     .font(.caption)
                 }
                 .padding(.leading, 24)
@@ -483,14 +700,11 @@ private struct EventDetectionThresholdsSection: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L("settings.notifications.inactivityThreshold", "Inactivity (minutes)"))
                             .font(.caption)
-                        TextField(L("0", "0"), value: Binding(
-                            get: { settings.appEventConfig.inactivityThresholdMinutes },
-                            set: {
-                                var config = settings.appEventConfig
-                                config.inactivityThresholdMinutes = $0
-                                settings.appEventConfig = config
-                            }
-                        ), formatter: NumberFormatter())
+                        TextField(
+                            L("0", "0"),
+                            value: $settings.appEventConfig.nested(\.inactivityThresholdMinutes, min: 0),
+                            formatter: NumberFormatter()
+                        )
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
                         Text(L("0 = disabled", "0 = disabled"))
@@ -501,14 +715,11 @@ private struct EventDetectionThresholdsSection: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L("settings.notifications.memoryThreshold", "Memory (MB)"))
                             .font(.caption)
-                        TextField(L("0", "0"), value: Binding(
-                            get: { settings.appEventConfig.memoryThresholdMB },
-                            set: {
-                                var config = settings.appEventConfig
-                                config.memoryThresholdMB = $0
-                                settings.appEventConfig = config
-                            }
-                        ), formatter: NumberFormatter())
+                        TextField(
+                            L("0", "0"),
+                            value: $settings.appEventConfig.nested(\.memoryThresholdMB, min: 0),
+                            formatter: NumberFormatter()
+                        )
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 80)
                         Text(L("0 = disabled", "0 = disabled"))
@@ -520,28 +731,60 @@ private struct EventDetectionThresholdsSection: View {
 
                 // Tab notifications (can be noisy)
                 HStack(spacing: 16) {
-                    Toggle(L("settings.notifications.notifyTabOpen", "Tab Open"), isOn: Binding(
-                        get: { settings.appEventConfig.notifyOnTabOpen },
-                        set: {
-                            var config = settings.appEventConfig
-                            config.notifyOnTabOpen = $0
-                            settings.appEventConfig = config
-                        }
-                    ))
+                    Toggle(
+                        L("settings.notifications.notifyTabOpen", "Tab Open"),
+                        isOn: $settings.appEventConfig.nested(\.notifyOnTabOpen)
+                    )
                     .font(.caption)
 
-                    Toggle(L("settings.notifications.notifyTabClose", "Tab Close"), isOn: Binding(
-                        get: { settings.appEventConfig.notifyOnTabClose },
-                        set: {
-                            var config = settings.appEventConfig
-                            config.notifyOnTabClose = $0
-                            settings.appEventConfig = config
-                        }
-                    ))
+                    Toggle(
+                        L("settings.notifications.notifyTabClose", "Tab Close"),
+                        isOn: $settings.appEventConfig.nested(\.notifyOnTabClose)
+                    )
                     .font(.caption)
                 }
                 .padding(.leading, 24)
             }
+        }
+    }
+}
+
+// MARK: - Event Monitoring Section
+
+private struct EventMonitoringSection: View {
+    @ObservedObject var model: AppModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsSectionHeader(L("settings.notifications.eventMonitoring", "Event Monitoring"), icon: "waveform.path.ecg")
+
+            SettingsToggle(
+                label: L("settings.notifications.monitorAIEvents", "Monitor AI Events"),
+                help: L("settings.notifications.monitorAIEvents.help", "Watch for AI CLI events like task completion, failures, and permission requests"),
+                isOn: $model.isMonitoring
+            )
+            .onChange(of: model.isMonitoring) { _ in
+                model.applyMonitoringState()
+            }
+
+            SettingsTextField(
+                label: L("settings.notifications.eventLogPath", "Event Log Path"),
+                help: L("settings.notifications.eventLogPath.help", "Path to the AI event log file"),
+                placeholder: "~/.ai-events.log",
+                text: $model.logPath,
+                width: 280,
+                monospaced: true,
+                onSubmit: { model.restartTailer() }
+            )
+
+            SettingsButtonRow(buttons: [
+                .init(title: L("settings.notifications.restartMonitor", "Restart Monitor"), icon: "arrow.clockwise") {
+                    model.restartTailer()
+                },
+                .init(title: L("settings.notifications.revealInFinder", "Reveal in Finder"), icon: "folder") {
+                    model.revealLogInFinder()
+                }
+            ])
         }
     }
 }

@@ -433,6 +433,7 @@
 "palette.cmd.close.tab" = "Fermer l'onglet";
 "palette.cmd.close.window" = "Fermer la fenêtre";
 "palette.cmd.close.other" = "Fermer les autres onglets";
+"palette.cmd.reopen.tab" = "Rouvrir l'onglet fermé";
 "palette.cmd.export" = "Exporter le texte...";
 "palette.cmd.print" = "Imprimer...";
 "palette.cmd.cut" = "Couper";
@@ -1165,6 +1166,45 @@
 "settings.notifications.eventLogPath.help" = "Chemin vers le fichier journal des événements IA";
 "settings.notifications.restartMonitor" = "Redémarrer la surveillance";
 "settings.notifications.revealInFinder" = "Afficher dans le Finder";
+
+// Sous-navigation segmentée
+"settings.notifications.tab.triggers" = "Déclencheurs";
+"settings.notifications.tab.thresholds" = "Seuils";
+"settings.notifications.tab.monitoring" = "Surveillance";
+
+// Intégration
+"settings.notifications.onboarding.title" = "Activer les notifications";
+"settings.notifications.onboarding.description" = "Soyez notifié lorsque les tâches IA se terminent, échouent ou nécessitent votre attention.";
+"settings.notifications.onboarding.action" = "Activer les notifications";
+"settings.notifications.denied.hint" = "Les notifications sont refusées. Ouvrez les Réglages Système pour les activer.";
+
+// Gestion unifiée des déclencheurs
+"settings.notifications.triggers" = "Déclencheurs de notification";
+"settings.notifications.triggersDescription" = "Activez les déclencheurs et configurez leurs actions :";
+"settings.notifications.enableAll" = "Tous";
+"settings.notifications.disableAll" = "Aucun";
+"settings.notifications.categoryDisabled" = "Aucun déclencheur activé dans cette catégorie.";
+"settings.notifications.noActions" = "Aucune action configurée. Notification par défaut utilisée.";
+"settings.notifications.addAction" = "Ajouter une action";
+
+// Seuils
+"settings.notifications.thresholds" = "Seuils de détection";
+"settings.notifications.thresholds.description" = "Configurez quand les événements shell et app déclenchent des notifications.";
+"settings.notifications.shell" = "Événements shell";
+"settings.notifications.longRunningThreshold" = "Longue durée (secondes)";
+"settings.notifications.notifyDirectoryChange" = "Changement de répertoire";
+"settings.notifications.notifyGitBranch" = "Branche Git";
+"settings.notifications.app" = "Événements app";
+"settings.notifications.inactivityThreshold" = "Inactivité (minutes)";
+"settings.notifications.memoryThreshold" = "Mémoire (Mo)";
+"settings.notifications.notifyTabOpen" = "Ouverture d'onglet";
+"settings.notifications.notifyTabClose" = "Fermeture d'onglet";
+
+// Avertissement
+"settings.notifications.warning" = "Avertissement";
+
+// Format du compteur
+"notifications.enabledCount" = "(%d/%d)";
 
 // -----------------------------------------------------------------------------
 // MARK: Paramètres des journaux

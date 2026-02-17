@@ -433,6 +433,7 @@
 "palette.cmd.close.tab" = "Close Tab";
 "palette.cmd.close.window" = "Close Window";
 "palette.cmd.close.other" = "Close Other Tabs";
+"palette.cmd.reopen.tab" = "Reopen Closed Tab";
 "palette.cmd.export" = "Export Text...";
 "palette.cmd.print" = "Print...";
 "palette.cmd.cut" = "Cut";
@@ -1167,6 +1168,45 @@
 "settings.notifications.eventLogPath.help" = "Path to the AI event log file";
 "settings.notifications.restartMonitor" = "Restart Monitor";
 "settings.notifications.revealInFinder" = "Reveal in Finder";
+
+// Segmented sub-navigation
+"settings.notifications.tab.triggers" = "Triggers";
+"settings.notifications.tab.thresholds" = "Thresholds";
+"settings.notifications.tab.monitoring" = "Monitoring";
+
+// Onboarding
+"settings.notifications.onboarding.title" = "Enable Notifications";
+"settings.notifications.onboarding.description" = "Get notified when AI tasks complete, fail, or need your attention.";
+"settings.notifications.onboarding.action" = "Enable Notifications";
+"settings.notifications.denied.hint" = "Notifications are denied. Open System Settings to enable them.";
+
+// Unified Trigger Management
+"settings.notifications.triggers" = "Notification Triggers";
+"settings.notifications.triggersDescription" = "Enable triggers and configure what happens when they fire:";
+"settings.notifications.enableAll" = "All";
+"settings.notifications.disableAll" = "None";
+"settings.notifications.categoryDisabled" = "No triggers enabled in this category.";
+"settings.notifications.noActions" = "No actions configured. Using default notification.";
+"settings.notifications.addAction" = "Add Action";
+
+// Thresholds
+"settings.notifications.thresholds" = "Detection Thresholds";
+"settings.notifications.thresholds.description" = "Configure when shell and app events should trigger notifications.";
+"settings.notifications.shell" = "Shell Events";
+"settings.notifications.longRunningThreshold" = "Long-Running (seconds)";
+"settings.notifications.notifyDirectoryChange" = "Directory Change";
+"settings.notifications.notifyGitBranch" = "Git Branch";
+"settings.notifications.app" = "App Events";
+"settings.notifications.inactivityThreshold" = "Inactivity (minutes)";
+"settings.notifications.memoryThreshold" = "Memory (MB)";
+"settings.notifications.notifyTabOpen" = "Tab Open";
+"settings.notifications.notifyTabClose" = "Tab Close";
+
+// Warning
+"settings.notifications.warning" = "Warning";
+
+// Enabled count format
+"notifications.enabledCount" = "(%d/%d)";
 
 // -----------------------------------------------------------------------------
 // MARK: Logs Settings

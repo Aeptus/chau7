@@ -412,6 +412,9 @@ final class CommandPaletteProvider {
             PaletteCommand(title: L("commandPalette.command.closeOtherTabs", "Close Other Tabs"), shortcut: "⌥⌘W", category: .file, icon: "xmark.square.fill") {
                 delegate.closeOtherTabs()
             },
+            PaletteCommand(title: L("commandPalette.command.reopenClosedTab", "Reopen Closed Tab"), shortcut: "⇧⌘T", category: .file, icon: "arrow.uturn.backward.square") {
+                delegate.reopenClosedTab()
+            },
             PaletteCommand(title: L("commandPalette.command.exportText", "Export Text..."), shortcut: "⇧⌘S", category: .file, icon: "square.and.arrow.up") {
                 delegate.exportText()
             },
