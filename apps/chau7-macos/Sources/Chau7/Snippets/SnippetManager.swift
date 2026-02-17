@@ -260,21 +260,43 @@ final class SnippetManager: ObservableObject {
     static let shared = SnippetManager()
 
     @Published private(set) var entries: [SnippetEntry] = []
-    @Published private(set) var repoRoot: String?
+    @Published private(set) var activeRepoRoot: String?
 
     /// Background queue for file I/O operations
     private let queue = DispatchQueue(label: "com.chau7.snippets", qos: .utility)
     private var globalMonitor: FileMonitor?
     private var profileMonitor: FileMonitor?
-    private var repoMonitor: FileMonitor?
+    /// File monitor for the active repo's snippet directory only
+    private var activeRepoMonitor: FileMonitor?
     private var lastContextPath: String = ""
     private var resolveWorkItem: DispatchWorkItem?
+
+    /// In-memory caches — avoid disk I/O when switching repos
+    private var globalSnippetsCache: [Snippet] = []
+    private var profileSnippetsCache: [Snippet] = []
+    private var allRepoSnippets: [String: [Snippet]] = [:]
 
     private init() {
         ensureBaseDirectories()
         migrateIfNeeded()
+        // Sync load global + profile for immediate availability
+        let globalDir = globalURL()
+        let profileDir = profileURL()
+        FileOperations.createDirectory(at: globalDir)
+        FileOperations.createDirectory(at: profileDir)
+        globalSnippetsCache = loadSnippetsFromDirectory(globalDir)
+        profileSnippetsCache = loadSnippetsFromDirectory(profileDir)
         setupMonitors()
-        reloadAll()
+        rebuildEntries()
+        // Async pre-load all known repos
+        queue.async { [weak self] in
+            guard let self else { return }
+            let repos = self.loadAllRepoSnippetsFromDisk()
+            DispatchQueue.main.async {
+                self.allRepoSnippets = repos
+                self.rebuildEntries()
+            }
+        }
     }
 
     func updateContextPath(_ path: String, force: Bool = false) {
@@ -283,7 +305,8 @@ final class SnippetManager: ObservableObject {
         if !force && normalized == lastContextPath { return }
         lastContextPath = normalized
 
-        if let root = repoRoot, normalized == root || normalized.hasPrefix(root + "/") {
+        // Quick check: still within the current active repo — no-op
+        if let root = activeRepoRoot, normalized == root || normalized.hasPrefix(root + "/") {
             return
         }
 
@@ -291,6 +314,7 @@ final class SnippetManager: ObservableObject {
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             let root = self.resolveRepoRoot(path: normalized)
+            Log.info("Snippet context: path=\(normalized) resolved repoRoot=\(root ?? "nil")")
             // Migrate legacy repo snippets if needed
             if let root {
                 let legacyFile = self.legacyRepoURL(for: root)
@@ -298,13 +322,35 @@ final class SnippetManager: ObservableObject {
                 self.migrateSourceIfNeeded(legacyFile: legacyFile, targetDir: targetDir)
             }
             DispatchQueue.main.async {
-                if self.repoRoot != root {
-                    self.repoRoot = root
-                    if let root {
-                        FeatureSettings.shared.recordRecentRepo(root)
+                guard self.activeRepoRoot != root else { return }
+                self.activeRepoRoot = root
+
+                if let root {
+                    FeatureSettings.shared.recordRecentRepo(root)
+
+                    if self.allRepoSnippets[root] == nil {
+                        // New repo discovered: load its snippets into cache
+                        self.queue.async {
+                            let repoDir = self.repoURL(for: root)
+                            FileOperations.createDirectory(at: repoDir)
+                            let snippets = self.loadSnippetsFromDirectory(repoDir)
+                            DispatchQueue.main.async {
+                                self.allRepoSnippets[root] = snippets
+                                self.rebuildEntries()
+                                Log.info("Loaded new repo snippets: \(root) count=\(snippets.count)")
+                            }
+                        }
+                    } else {
+                        // Already cached: instant switch
+                        self.rebuildEntries()
                     }
-                    self.setupMonitors()
-                    self.reloadAll()
+
+                    self.setupActiveRepoMonitor(for: root)
+                } else {
+                    // No repo: rebuild with global + profile only
+                    self.activeRepoMonitor?.stop()
+                    self.activeRepoMonitor = nil
+                    self.rebuildEntries()
                 }
             }
         }
@@ -326,27 +372,83 @@ final class SnippetManager: ObservableObject {
                 }
                 return
             }
-            let globalDir = self.globalURL()
-            let profileDir = self.profileURL()
-            FileOperations.createDirectory(at: globalDir)
-            FileOperations.createDirectory(at: profileDir)
-            if let repoDir = self.repoURL() {
-                FileOperations.createDirectory(at: repoDir)
-            }
-
-            let globalSnippets = self.loadSnippetsFromDirectory(globalDir)
-            let profileSnippets = self.loadSnippetsFromDirectory(profileDir)
-            let repoSnippets = self.repoURL().map { self.loadSnippetsFromDirectory($0) } ?? []
-
-            let entries = self.mergeEntries(
-                global: globalSnippets,
-                profile: profileSnippets,
-                repo: repoSnippets
-            )
+            let (global, profile, repos) = self.loadAllSourcesFromDisk()
             DispatchQueue.main.async {
-                self.entries = entries
+                self.globalSnippetsCache = global
+                self.profileSnippetsCache = profile
+                self.allRepoSnippets = repos
+                self.rebuildEntries()
             }
         }
+    }
+
+    /// Manual reload: re-reads all sources from disk and rebuilds entries.
+    /// Intended for "Reload Snippets" command palette action.
+    func forceReloadAll() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            let (global, profile, repos) = self.loadAllSourcesFromDisk()
+            DispatchQueue.main.async {
+                self.globalSnippetsCache = global
+                self.profileSnippetsCache = profile
+                self.allRepoSnippets = repos
+                self.rebuildEntries()
+                Log.info("Snippets force-reloaded: global=\(global.count) profile=\(profile.count) repos=\(repos.count)")
+            }
+        }
+    }
+
+    /// Loads global, profile, and all known repo snippets from disk.
+    /// Returns local values — does NOT write to instance caches (thread-safe).
+    /// Must be called on the background queue.
+    private func loadAllSourcesFromDisk() -> (global: [Snippet], profile: [Snippet], repos: [String: [Snippet]]) {
+        let globalDir = globalURL()
+        let profileDir = profileURL()
+        FileOperations.createDirectory(at: globalDir)
+        FileOperations.createDirectory(at: profileDir)
+        let global = loadSnippetsFromDirectory(globalDir)
+        let profile = loadSnippetsFromDirectory(profileDir)
+        let repos = loadAllRepoSnippetsFromDisk()
+        return (global, profile, repos)
+    }
+
+    /// Loads snippets from all known repo roots.
+    /// Returns a new dictionary — does NOT write to instance caches (thread-safe).
+    /// Must be called on the background queue.
+    private func loadAllRepoSnippetsFromDisk() -> [String: [Snippet]] {
+        guard FeatureSettings.shared.isRepoSnippetsEnabled else { return [:] }
+        let fm = FileManager.default
+        var cache: [String: [Snippet]] = [:]
+        for root in FeatureSettings.shared.recentRepoRoots {
+            let repoDir = repoURL(for: root)
+            guard fm.fileExists(atPath: repoDir.path) else { continue }
+            let snippets = loadSnippetsFromDirectory(repoDir)
+            if !snippets.isEmpty {
+                cache[root] = snippets
+            }
+        }
+        Log.info("Pre-loaded snippets from \(cache.count) repos (\(cache.values.reduce(0) { $0 + $1.count }) snippets total)")
+        return cache
+    }
+
+    /// Rebuilds `entries` from in-memory caches using the current `activeRepoRoot`.
+    /// No disk I/O. Must be called on the main thread.
+    private func rebuildEntries() {
+        guard FeatureSettings.shared.isSnippetsEnabled else {
+            entries = []
+            return
+        }
+        let repoSnippets: [Snippet]
+        if let root = activeRepoRoot, let cached = allRepoSnippets[root] {
+            repoSnippets = cached
+        } else {
+            repoSnippets = []
+        }
+        entries = mergeEntries(
+            global: globalSnippetsCache,
+            profile: profileSnippetsCache,
+            repo: repoSnippets
+        )
     }
 
     /// Re-saves all snippet files using the clean encoder (pretty-printed, sorted
@@ -371,13 +473,18 @@ final class SnippetManager: ObservableObject {
                 }
                 migrated.append("\(label) (\(snippets.count) snippets)")
             }
-            if let repoDir = self.repoURL() {
+            // Migrate all known repos (iterate recentRepoRoots, not the cache)
+            let fm = FileManager.default
+            for root in FeatureSettings.shared.recentRepoRoots {
+                let repoDir = self.repoURL(for: root)
+                guard fm.fileExists(atPath: repoDir.path) else { continue }
                 let snippets = self.loadSnippetsFromDirectory(repoDir)
                 if !snippets.isEmpty {
                     for snippet in snippets {
                         self.saveSnippet(snippet, to: repoDir)
                     }
-                    migrated.append("repo (\(snippets.count) snippets)")
+                    let name = URL(fileURLWithPath: root).lastPathComponent
+                    migrated.append("repo:\(name) (\(snippets.count))")
                 }
             }
             let summary = migrated.isEmpty ? "No snippets to migrate" : "Migrated: \(migrated.joined(separator: ", "))"
@@ -817,7 +924,7 @@ final class SnippetManager: ObservableObject {
                     source: .repo,
                     sourcePath: repoDir.appendingPathComponent("\($0.id).json").path,
                     isOverridden: highestById[$0.id] != .repo,
-                    repoRoot: repoRoot
+                    repoRoot: activeRepoRoot
                 )
             })
         }
@@ -847,8 +954,10 @@ final class SnippetManager: ObservableObject {
 
     // MARK: - Directory monitoring
 
-    /// Debounce work item for directory change notifications
+    /// Debounce work item for global/profile directory change notifications
     private var reloadDebounceItem: DispatchWorkItem?
+    /// Separate debounce for repo directory changes (independent from global/profile)
+    private var repoReloadDebounceItem: DispatchWorkItem?
 
     private func debouncedReload() {
         reloadDebounceItem?.cancel()
@@ -887,20 +996,45 @@ final class SnippetManager: ObservableObject {
             profileMonitor = monitor
         }
 
-        if FeatureSettings.shared.isRepoSnippetsEnabled, let repoDir = repoURL() {
-            FileOperations.createDirectory(at: repoDir)
-            if repoMonitor?.url != repoDir {
-                repoMonitor?.stop()
-                let monitor = FileMonitor(url: repoDir) { [weak self] in
-                    self?.debouncedReload()
-                }
-                monitor.start()
-                repoMonitor = monitor
-            }
-        } else {
-            repoMonitor?.stop()
-            repoMonitor = nil
+        // Repo monitor is handled separately by setupActiveRepoMonitor()
+    }
+
+    /// Sets up a file monitor for the active repo's snippet directory.
+    private func setupActiveRepoMonitor(for root: String) {
+        guard FeatureSettings.shared.isRepoSnippetsEnabled else {
+            activeRepoMonitor?.stop()
+            activeRepoMonitor = nil
+            return
         }
+        let repoDir = repoURL(for: root)
+        FileOperations.createDirectory(at: repoDir)
+        if activeRepoMonitor?.url != repoDir {
+            activeRepoMonitor?.stop()
+            let capturedRoot = root
+            let monitor = FileMonitor(url: repoDir) { [weak self] in
+                self?.debouncedReloadRepo(root: capturedRoot)
+            }
+            monitor.start()
+            activeRepoMonitor = monitor
+        }
+    }
+
+    /// Reloads a single repo's snippets from disk and updates its cache entry.
+    private func debouncedReloadRepo(root: String) {
+        repoReloadDebounceItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let repoDir = self.repoURL(for: root)
+            let snippets = self.loadSnippetsFromDirectory(repoDir)
+            DispatchQueue.main.async {
+                self.allRepoSnippets[root] = snippets
+                if self.activeRepoRoot == root {
+                    self.rebuildEntries()
+                }
+            }
+        }
+        repoReloadDebounceItem = work
+        queue.asyncAfter(deadline: .now() + 0.1, execute: work)
     }
 
     private func stopMonitors() {
@@ -908,8 +1042,8 @@ final class SnippetManager: ObservableObject {
         globalMonitor = nil
         profileMonitor?.stop()
         profileMonitor = nil
-        repoMonitor?.stop()
-        repoMonitor = nil
+        activeRepoMonitor?.stop()
+        activeRepoMonitor = nil
     }
 
     private func ensureBaseDirectories() {
@@ -1014,7 +1148,7 @@ final class SnippetManager: ObservableObject {
     private func migrateIfNeeded() {
         migrateSourceIfNeeded(legacyFile: legacyGlobalURL(), targetDir: globalURL())
         migrateSourceIfNeeded(legacyFile: legacyProfileURL(), targetDir: profileURL())
-        // Repo migration happens in updateContextPath() since repoRoot is nil at init
+        // Repo migration happens in updateContextPath() since activeRepoRoot is nil at init
     }
 
     private func migrateSourceIfNeeded(legacyFile: URL, targetDir: URL) {
@@ -1063,8 +1197,8 @@ final class SnippetManager: ObservableObject {
     private func repoURL() -> URL? {
         guard FeatureSettings.shared.isSnippetsEnabled else { return nil }
         guard FeatureSettings.shared.isRepoSnippetsEnabled else { return nil }
-        guard let repoRoot else { return nil }
-        return repoURL(for: repoRoot)
+        guard let activeRepoRoot else { return nil }
+        return repoURL(for: activeRepoRoot)
     }
 
     /// Returns the directory URL for repo-scoped snippets.

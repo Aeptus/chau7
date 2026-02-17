@@ -150,6 +150,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if let host = self?.overlayHosts.first {
                 self?.showOverlayWindow(host, reason: "finishLaunching")
             }
+            // Ensure menu bar is anchored after splash dismissal.
+            // During the splash phase no window is key/main, so macOS may
+            // drop the menu bar for this app. Re-activating here forces it back.
+            NSApp.activate(ignoringOtherApps: true)
         }
     }
 
@@ -532,6 +536,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ensureActiveOverlayModel()?.closeOtherTabs()
     }
 
+    func reopenClosedTab() {
+        ensureActiveOverlayModel()?.reopenClosedTab()
+    }
+
     // MARK: - Edit Menu Actions
 
     func cut() {
@@ -853,6 +861,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func windowDidChangeOcclusionState(_ notification: Notification) {
+        // Occlusion fires many times per second during space switches — trace-only
+        guard Log.isTraceEnabled else { return }
         guard let window = notification.object as? NSWindow else { return }
         logOverlayDiagnostics(reason: "didChangeOcclusion", window: window)
     }
@@ -986,7 +996,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.hasShadow = true
         window.alphaValue = FeatureSettings.shared.windowOpacity
         window.level = .normal
-        window.collectionBehavior = [.managed]
+        // collectionBehavior is set by OverlayWindow.setupFullscreenBehavior()
+        // to [.fullScreenPrimary, .managed] — don't overwrite it here.
         window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
         window.delegate = self

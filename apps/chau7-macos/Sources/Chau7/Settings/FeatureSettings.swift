@@ -931,6 +931,19 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
+    func setActionEnabled(_ enabled: Bool, triggerId: String, actionId: UUID) {
+        guard var actions = triggerActionBindings[triggerId],
+              let index = actions.firstIndex(where: { $0.id == actionId }) else { return }
+        let action = actions[index]
+        actions[index] = NotificationActionConfig(
+            id: action.id,
+            actionType: action.actionType,
+            enabled: enabled,
+            config: action.config
+        )
+        triggerActionBindings[triggerId] = actions
+    }
+
     // MARK: - Find Defaults (NEW)
 
     @Published var findCaseSensitiveDefault: Bool {
@@ -1306,6 +1319,19 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
+    /// Maximum number of scrollback lines restored when tabs are recovered.
+    /// Set to 0 to disable scrollback restoration.
+    @Published var restoredScrollbackLines: Int {
+        didSet {
+            let clamped = max(0, min(restoredScrollbackLines, 10_000))
+            if restoredScrollbackLines != clamped {
+                restoredScrollbackLines = clamped
+                return
+            }
+            UserDefaults.standard.set(restoredScrollbackLines, forKey: Keys.restoredScrollbackLines)
+        }
+    }
+
     @Published var bellEnabled: Bool {
         didSet { UserDefaults.standard.set(bellEnabled, forKey: Keys.bellEnabled) }
     }
@@ -1567,6 +1593,7 @@ final class FeatureSettings: ObservableObject {
         static let cursorStyle = "terminal.cursorStyle"
         static let cursorBlink = "terminal.cursorBlink"
         static let scrollbackLines = "terminal.scrollbackLines"
+        static let restoredScrollbackLines = "terminal.restoredScrollbackLines"
         static let bellEnabled = "terminal.bellEnabled"
         static let bellSound = "terminal.bellSound"
         static let dangerousCommandHighlightEnabled = "terminal.dangerousCommandHighlightEnabled"
@@ -1809,6 +1836,7 @@ final class FeatureSettings: ObservableObject {
         self.cursorStyle = defaults.string(forKey: Keys.cursorStyle) ?? "block"
         self.cursorBlink = defaults.object(forKey: Keys.cursorBlink) as? Bool ?? true
         self.scrollbackLines = defaults.object(forKey: Keys.scrollbackLines) as? Int ?? 10000
+        self.restoredScrollbackLines = defaults.object(forKey: Keys.restoredScrollbackLines) as? Int ?? 500
         self.bellEnabled = defaults.object(forKey: Keys.bellEnabled) as? Bool ?? true
         self.bellSound = defaults.string(forKey: Keys.bellSound) ?? "default"
         if let raw = defaults.string(forKey: Keys.dangerousCommandHighlightScope),
@@ -2026,6 +2054,7 @@ final class FeatureSettings: ObservableObject {
         var cursorStyle: String
         var cursorBlink: Bool
         var scrollbackLines: Int
+        var restoredScrollbackLines: Int
         var bellEnabled: Bool
         var bellSound: String
         var isDangerousCommandHighlightEnabled: Bool?
@@ -2099,6 +2128,7 @@ final class FeatureSettings: ObservableObject {
             cursorStyle: cursorStyle,
             cursorBlink: cursorBlink,
             scrollbackLines: scrollbackLines,
+            restoredScrollbackLines: restoredScrollbackLines,
             bellEnabled: bellEnabled,
             bellSound: bellSound,
             isDangerousCommandHighlightEnabled: dangerousCommandHighlightScope != .none,
@@ -2202,6 +2232,7 @@ final class FeatureSettings: ObservableObject {
         cursorStyle = imported.cursorStyle
         cursorBlink = imported.cursorBlink
         scrollbackLines = imported.scrollbackLines
+        restoredScrollbackLines = imported.restoredScrollbackLines
         bellEnabled = imported.bellEnabled
         bellSound = imported.bellSound
         if let raw = imported.dangerousCommandHighlightScope,
@@ -2320,6 +2351,7 @@ final class FeatureSettings: ObservableObject {
         cursorStyle = "block"
         cursorBlink = true
         scrollbackLines = 10000
+        restoredScrollbackLines = 500
         bellEnabled = true
         bellSound = "default"
         dangerousCommandHighlightScope = .allOutputs
@@ -2382,6 +2414,7 @@ final class FeatureSettings: ObservableObject {
         cursorStyle = "block"
         cursorBlink = true
         scrollbackLines = 10000
+        restoredScrollbackLines = 500
         bellEnabled = true
         bellSound = "default"
         dangerousCommandHighlightScope = .allOutputs
@@ -2560,6 +2593,7 @@ extension FeatureSettings {
             cursorStyle: "block",
             cursorBlink: true,
             scrollbackLines: 10000,
+            restoredScrollbackLines: 500,
             bellEnabled: true,
             bellSound: "default",
             defaultStartDirectory: home,

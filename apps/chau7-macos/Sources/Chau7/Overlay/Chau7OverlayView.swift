@@ -1891,7 +1891,7 @@ struct SnippetManagerOverlayView: View {
     }
 
     private var repoAvailable: Bool {
-        FeatureSettings.shared.isRepoSnippetsEnabled && manager.repoRoot != nil
+        FeatureSettings.shared.isRepoSnippetsEnabled && manager.activeRepoRoot != nil
     }
 
     private var preferredSource: SnippetSource {
@@ -2056,7 +2056,7 @@ struct SnippetManagerOverlayView: View {
                     }
                 }
 
-                if let root = manager.repoRoot, settings.isRepoSnippetsEnabled {
+                if let root = manager.activeRepoRoot, settings.isRepoSnippetsEnabled {
                     Text(String(format: L("snippet.repo", "Repo: %@"), root))
                         .font(.custom("Avenir Next", size: 9))
                         .foregroundStyle(.tertiary)
@@ -2088,7 +2088,7 @@ struct SnippetManagerOverlayView: View {
     }
 
     private func startCreate() {
-        let repoPath = preferredSource == .repo ? (manager.repoRoot ?? "") : ""
+        let repoPath = preferredSource == .repo ? (manager.activeRepoRoot ?? "") : ""
         draft = SnippetDraft(source: preferredSource, repoPath: repoPath)
         editingEntry = nil
         isEditorVisible = true

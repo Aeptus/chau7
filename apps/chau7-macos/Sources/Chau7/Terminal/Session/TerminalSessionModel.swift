@@ -513,6 +513,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             // UI-related updates need main thread
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
+                let mainToken = FeatureProfiler.shared.begin(.outputMainThread, bytes: data.count)
                 FeatureProfiler.shared.end(outputToken)
 
                 if let exitCode = aiExitCode {
@@ -523,7 +524,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
                 self.maybeApplyShellIntegration()
 
                 // Prompt update handling
+                let promptToken = FeatureProfiler.shared.begin(.promptUpdate, bytes: data.count)
                 let sawPromptUpdate = self.maybeHandlePromptUpdate(data)
+                FeatureProfiler.shared.end(promptToken)
 
                 // AI app detection
                 if !sawPromptUpdate {
@@ -539,7 +542,11 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
                 self.maybeDetectAIWaitingForInput(data)
 
                 // Dev server detection
+                let devToken = FeatureProfiler.shared.begin(.devServerDetect, bytes: data.count)
                 self.maybeDetectDevServer(data)
+                FeatureProfiler.shared.end(devToken)
+
+                FeatureProfiler.shared.end(mainToken)
             }
         }
     }
@@ -829,6 +836,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     private func handlePromptDetected() {
         isAtPrompt = true
+        devServerMonitor.commandDidFinish()
         guard hasPendingCommand, pendingCommandLine != nil else { return }
         promptSeenForPendingCommand = true
         if !commandFinishedNotified {
