@@ -496,6 +496,8 @@ struct SettingsDetailView: View {
                         RemoteSettingsView()
                     case .aiIntegration:
                         AIIntegrationSettingsView()
+                    case .tokenOptimization:
+                        TokenOptimizationSettingsView()
                     case .notifications:
                         NotificationsSettingsView(model: model)
                     case .logs:

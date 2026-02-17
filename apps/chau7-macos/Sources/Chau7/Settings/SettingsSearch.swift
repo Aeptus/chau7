@@ -34,6 +34,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case windows
     case remote
     case aiIntegration
+    case tokenOptimization
     case notifications
     case logs
     case about
@@ -51,6 +52,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .windows: return L("settings.windows", "Windows")
         case .remote: return L("settings.remote", "Remote Control")
         case .aiIntegration: return L("settings.ai", "AI Integration")
+        case .tokenOptimization: return L("settings.tokenOptimization", "Token Optimization")
         case .notifications: return L("settings.notifications", "Notifications")
         case .logs: return L("settings.logs", "Logs")
         case .about: return L("settings.about", "About")
@@ -68,6 +70,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .windows: return "macwindow.on.rectangle"
         case .remote: return "antenna.radiowaves.left.and.right"
         case .aiIntegration: return "sparkles"
+        case .tokenOptimization: return "bolt.horizontal.circle"
         case .notifications: return "bell.badge"
         case .logs: return "doc.text.magnifyingglass"
         case .about: return "info.circle"
@@ -85,6 +88,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .windows: return L("settings.windows.description", "Overlay and split panes")
         case .remote: return L("settings.remote.description", "Remote access and pairing")
         case .aiIntegration: return L("settings.ai.description", "AI CLI detection and theming")
+        case .tokenOptimization: return L("settings.tokenOptimization.description", "Reduce token usage for AI CLI commands")
         case .notifications: return L("settings.notifications.description", "Alert preferences and event filters")
         case .logs: return L("settings.logs.description", "Log files and session tracking")
         case .about: return L("settings.about.description", "Version information and links")
@@ -502,6 +506,18 @@ extension FeatureSettings {
             description: L("settings.search.autoTabTheme.description", "Color tabs by AI model")
         ),
 
+        // Token Optimization
+        SearchableSetting(
+            id: "tokenOptimizationMode",
+            section: .tokenOptimization,
+            title: L("settings.search.rtk.title", "Token Optimization Mode"),
+            keywords: localizedKeywords(
+                "settings.search.rtk.keywords",
+                "rtk,token,optimization,reduce,compress,ai,commands"
+            ),
+            description: L("settings.search.rtk.description", "Control when token-optimized command output is active")
+        ),
+
         // Notifications
         SearchableSetting(
             id: "notificationStatus",
@@ -612,4 +628,7 @@ extension Notification.Name {
     static let apiAnalyticsSettingsChanged = Notification.Name("apiAnalyticsSettingsChanged")
     static let apiCallRecorded = Notification.Name("apiCallRecorded")
     static let proxyStatusChanged = Notification.Name("proxyStatusChanged")
+    // Token Optimization (RTK)
+    static let tokenOptimizationModeChanged = Notification.Name("tokenOptimizationModeChanged")
+    static let rtkFlagRecalculated = Notification.Name("rtkFlagRecalculated")
 }
