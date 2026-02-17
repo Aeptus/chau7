@@ -590,4 +590,5 @@ extension Notification.Name {
     static let proxyStatusChanged = Notification.Name("proxyStatusChanged")
     // Token Optimization (RTK)
     static let tokenOptimizationModeChanged = Notification.Name("tokenOptimizationModeChanged")
+    static let rtkFlagRecalculated = Notification.Name("rtkFlagRecalculated")
 }

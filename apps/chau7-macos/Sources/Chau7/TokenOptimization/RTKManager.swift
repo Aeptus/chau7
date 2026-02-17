@@ -112,7 +112,7 @@ final class RTKManager {
         # Checks flag file to decide: optimize output or pass through.
 
         _RTK_FLAG_DIR="$HOME/.chau7/rtk_active"
-        _RTK_SESSION_FLAG="$_RTK_FLAG_DIR/$CHAU7_SESSION_ID"
+        _RTK_SESSION_FLAG="$_RTK_FLAG_DIR/$CHAU7_RTK_SESSION"
 
         # Find the real binary (skip our wrapper directory in PATH)
         _RTK_WRAPPER_DIR="$HOME/.chau7/rtk_bin"
@@ -136,21 +136,15 @@ final class RTKManager {
         fi
 
         # If no session ID or no flag file, exec real binary directly (zero overhead)
-        if [ -z "$CHAU7_SESSION_ID" ] || [ ! -f "$_RTK_SESSION_FLAG" ]; then
+        if [ -z "$CHAU7_RTK_SESSION" ] || [ ! -f "$_RTK_SESSION_FLAG" ]; then
             exec "$_RTK_REAL_BIN" "$@"
         fi
 
-        # RTK is active — run real binary and apply token optimization
-        # For now, pass through with a compact header comment
-        _RTK_OUTPUT=$("$_RTK_REAL_BIN" "$@" 2>&1)
-        _RTK_EXIT=$?
-
-        if [ $_RTK_EXIT -eq 0 ]; then
-            echo "$_RTK_OUTPUT"
-        else
-            echo "$_RTK_OUTPUT"
-            exit $_RTK_EXIT
-        fi
+        # RTK is active — exec real binary directly for now (stub).
+        # Future: pipe through an RTK transformer for token-optimized output.
+        # Using exec preserves stdout/stderr separation, trailing newlines,
+        # exit codes, and signal handling — no output corruption.
+        exec "$_RTK_REAL_BIN" "$@"
         """
     }
 
@@ -160,8 +154,10 @@ final class RTKManager {
     /// Only prepends if RTK mode is not `.off`.
     func prependedPATH(original: String) -> String {
         let wrapperDir = wrapperBinDir.path
-        // Don't add if already present
-        if original.contains(wrapperDir) {
+        // Check for exact PATH component match to avoid false positives
+        // (e.g. /path/rtk_bin_old matching /path/rtk_bin)
+        let components = original.split(separator: ":", omittingEmptySubsequences: false)
+        if components.contains(where: { String($0) == wrapperDir }) {
             return original
         }
         return "\(wrapperDir):\(original)"

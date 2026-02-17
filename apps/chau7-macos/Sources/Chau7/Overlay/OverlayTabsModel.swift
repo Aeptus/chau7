@@ -281,6 +281,9 @@ final class OverlayTabsModel: ObservableObject {
     private var isDiagnosticsLoggingEnabled: Bool = false
     /// Periodic auto-save timer so tab state survives crashes (SIGABRT etc.)
     private var autoSaveTimer: DispatchSourceTimer?
+    /// RTK notification observer tokens (stored for cleanup in deinit)
+    private var rtkModeObserver: NSObjectProtocol?
+    private var rtkFlagObserver: NSObjectProtocol?
 
     weak var overlayWindow: NSWindow?
     var onCloseLastTab: (() -> Void)?
@@ -329,12 +332,28 @@ final class OverlayTabsModel: ObservableObject {
         autoSaveTimer = timer
 
         // RTK: listen for global mode changes and recalculate all tab flags
-        NotificationCenter.default.addObserver(
+        rtkModeObserver = NotificationCenter.default.addObserver(
             forName: .tokenOptimizationModeChanged,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             self?.recalculateAllRTKFlags()
+            // Also setup/teardown wrappers when mode changes at runtime
+            let mode = FeatureSettings.shared.tokenOptimizationMode
+            if mode == .off {
+                RTKManager.shared.teardown()
+            } else {
+                RTKManager.shared.setup()
+            }
+        }
+
+        // RTK: refresh tab bar when a session's flag state changes (e.g. AI detected)
+        rtkFlagObserver = NotificationCenter.default.addObserver(
+            forName: .rtkFlagRecalculated,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.objectWillChange.send()
         }
     }
 
@@ -342,6 +361,8 @@ final class OverlayTabsModel: ObservableObject {
         stopTabBarWatchdog()
         autoSaveTimer?.cancel()
         autoSaveTimer = nil
+        if let rtkModeObserver { NotificationCenter.default.removeObserver(rtkModeObserver) }
+        if let rtkFlagObserver { NotificationCenter.default.removeObserver(rtkFlagObserver) }
     }
 
     // MARK: - Tab State Persistence
@@ -402,6 +423,8 @@ final class OverlayTabsModel: ObservableObject {
             if let overrideRaw = state.tokenOptOverride,
                let override = TabTokenOptOverride(rawValue: overrideRaw) {
                 tab.tokenOptOverride = override
+                // Sync to session so activeAppName.didSet uses the restored value
+                tab.session?.tokenOptOverride = override
             }
 
             // Set the working directory on the session once it's ready
@@ -1185,7 +1208,7 @@ final class OverlayTabsModel: ObservableObject {
         let next: TabTokenOptOverride
         switch mode {
         case .off:
-            return
+            return  // Guarded above, but required for exhaustive switch
         case .allTabs:
             // Toggle: default (on) <-> forceOff
             next = (current == .default) ? .forceOff : .default

@@ -166,20 +166,9 @@ struct TokenOptimizationSettingsView: View {
 
     @ViewBuilder
     private var statusIndicator: some View {
-        switch wrapperStatus {
-        case .notInstalled:
-            Circle()
-                .fill(Color.secondary)
-                .frame(width: 8, height: 8)
-        case .installed:
-            Circle()
-                .fill(Color.green)
-                .frame(width: 8, height: 8)
-        case .error:
-            Circle()
-                .fill(Color.red)
-                .frame(width: 8, height: 8)
-        }
+        Circle()
+            .fill(wrapperStatus == .installed ? Color.green : Color.secondary)
+            .frame(width: 8, height: 8)
     }
 
     private var statusText: String {
@@ -191,8 +180,6 @@ struct TokenOptimizationSettingsView: View {
                 format: L("rtk.status.installed", "%d wrapper scripts installed"),
                 RTKManager.supportedCommands.count
             )
-        case .error:
-            return L("rtk.status.error", "Error installing wrapper scripts")
         }
     }
 
@@ -314,13 +301,9 @@ struct TokenOptimizationSettingsView: View {
     // MARK: - Actions
 
     private func handleModeChange(_ newMode: TokenOptimizationMode) {
-        if newMode == .off {
-            RTKManager.shared.teardown()
-            wrapperStatus = .notInstalled
-        } else {
-            RTKManager.shared.setup()
-            updateWrapperStatus()
-        }
+        // RTKManager setup/teardown is handled centrally by OverlayTabsModel's
+        // .tokenOptimizationModeChanged observer. We only update local UI state.
+        updateWrapperStatus()
     }
 
     private func updateWrapperStatus() {
@@ -345,7 +328,6 @@ struct TokenOptimizationSettingsView: View {
 private enum WrapperStatus {
     case notInstalled
     case installed
-    case error
 }
 
 // MARK: - Preview
