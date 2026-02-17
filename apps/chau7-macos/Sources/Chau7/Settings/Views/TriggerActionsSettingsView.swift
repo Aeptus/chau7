@@ -1,269 +1,20 @@
 import SwiftUI
 import Chau7Core
 
-// MARK: - Trigger Actions Settings View
+// MARK: - Shared Types
 
-struct TriggerActionsSettingsView: View {
-    @ObservedObject private var settings = FeatureSettings.shared
-    @State private var expandedTriggerId: String? = nil
-    @State private var showingActionPicker = false
-    @State private var selectedTriggerId: String? = nil
-    @State private var editingAction: (triggerId: String, config: NotificationActionConfig)? = nil
-
-    private var triggerGroups: [(source: NotificationTriggerSourceInfo, triggers: [NotificationTrigger])] {
-        NotificationTriggerCatalog.sources
-            .sorted { $0.sortOrder < $1.sortOrder }
-            .compactMap { source in
-                let triggers = NotificationTriggerCatalog
-                    .triggers(for: source.id)
-                    .filter { $0.displayContexts.contains(.settings) }
-                guard !triggers.isEmpty else { return nil }
-                return (source, triggers)
-            }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionHeader(L("settings.notifications.actions", "Trigger Actions"), icon: "bolt.circle")
-
-            Text(L("settings.notifications.actions.description", "Configure what happens when each trigger fires. Click a trigger to expand and manage its actions."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.bottom, 4)
-
-            ForEach(triggerGroups, id: \.source.id) { group in
-                TriggerGroupSection(
-                    source: group.source,
-                    triggers: group.triggers,
-                    expandedTriggerId: $expandedTriggerId,
-                    onAddAction: { triggerId in
-                        selectedTriggerId = triggerId
-                        showingActionPicker = true
-                    },
-                    onEditAction: { triggerId, config in
-                        editingAction = (triggerId, config)
-                    },
-                    onDeleteAction: { triggerId, actionId in
-                        settings.removeActionFromTrigger(triggerId, actionId: actionId)
-                    },
-                    onToggleAction: { triggerId, actionId, enabled in
-                        if var actions = settings.triggerActionBindings[triggerId],
-                           let index = actions.firstIndex(where: { $0.id == actionId }) {
-                            var action = actions[index]
-                            action = NotificationActionConfig(
-                                id: action.id,
-                                actionType: action.actionType,
-                                enabled: enabled,
-                                config: action.config
-                            )
-                            actions[index] = action
-                            settings.triggerActionBindings[triggerId] = actions
-                        }
-                    }
-                )
-            }
-        }
-        .sheet(isPresented: $showingActionPicker) {
-            if let triggerId = selectedTriggerId {
-                ActionPickerSheet(triggerId: triggerId) { actionType in
-                    let newAction = NotificationActionConfig(actionType: actionType, enabled: true)
-                    settings.addActionToTrigger(triggerId, action: newAction)
-                    // Immediately open config if required
-                    if let info = NotificationActionCatalog.action(for: actionType), info.requiresConfig {
-                        editingAction = (triggerId, newAction)
-                    }
-                }
-            }
-        }
-        .sheet(item: Binding(
-            get: { editingAction.map { EditingActionItem(triggerId: $0.triggerId, config: $0.config) } },
-            set: { editingAction = $0.map { ($0.triggerId, $0.config) } }
-        )) { item in
-            ActionConfigSheet(triggerId: item.triggerId, actionConfig: item.config) { updatedConfig in
-                settings.updateActionInTrigger(item.triggerId, action: updatedConfig)
-            }
-        }
-    }
-}
-
-// Helper for sheet binding
-private struct EditingActionItem: Identifiable {
+/// Helper for sheet binding in unified trigger management
+struct EditingActionItem: Identifiable {
     let triggerId: String
     let config: NotificationActionConfig
     var id: UUID { config.id }
 }
 
-// MARK: - Trigger Group Section
-
-private struct TriggerGroupSection: View {
-    let source: NotificationTriggerSourceInfo
-    let triggers: [NotificationTrigger]
-    @Binding var expandedTriggerId: String?
-    let onAddAction: (String) -> Void
-    let onEditAction: (String, NotificationActionConfig) -> Void
-    let onDeleteAction: (String, UUID) -> Void
-    let onToggleAction: (String, UUID, Bool) -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: source.icon)
-                    .foregroundStyle(.secondary)
-                Text(source.localizedLabel)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-            }
-            .padding(.top, 8)
-
-            ForEach(triggers) { trigger in
-                TriggerRow(
-                    trigger: trigger,
-                    isExpanded: expandedTriggerId == trigger.id,
-                    onToggleExpand: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            expandedTriggerId = expandedTriggerId == trigger.id ? nil : trigger.id
-                        }
-                    },
-                    onAddAction: { onAddAction(trigger.id) },
-                    onEditAction: { config in onEditAction(trigger.id, config) },
-                    onDeleteAction: { actionId in onDeleteAction(trigger.id, actionId) },
-                    onToggleAction: { actionId, enabled in onToggleAction(trigger.id, actionId, enabled) }
-                )
-            }
-        }
-    }
-}
-
-private extension NotificationTriggerSourceInfo {
-    var icon: String {
-        switch id {
-        case .eventsLog: return "doc.text"
-        case .terminalSession: return "terminal"
-        case .historyMonitor: return "clock.arrow.circlepath"
-        case .claudeCode: return "brain"
-        case .app: return "app"
-        default: return "bell"
-        }
-    }
-}
-
-// MARK: - Trigger Row
-
-private struct TriggerRow: View {
-    let trigger: NotificationTrigger
-    let isExpanded: Bool
-    let onToggleExpand: () -> Void
-    let onAddAction: () -> Void
-    let onEditAction: (NotificationActionConfig) -> Void
-    let onDeleteAction: (UUID) -> Void
-    let onToggleAction: (UUID, Bool) -> Void
-
-    @ObservedObject private var settings = FeatureSettings.shared
-
-    private var actions: [NotificationActionConfig] {
-        settings.triggerActionBindings[trigger.id] ?? []
-    }
-
-    private var isEnabled: Bool {
-        settings.notificationTriggerState.isEnabled(for: trigger)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header row
-            Button(action: onToggleExpand) {
-                HStack {
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 16)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(trigger.localizedLabel)
-                            .font(.body)
-                            .foregroundStyle(isEnabled ? .primary : .secondary)
-                        Text(trigger.localizedDescription)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-
-                    Spacer()
-
-                    // Action count badge
-                    if !actions.isEmpty {
-                        Text(actions.count.formatted())
-                            .font(.caption2)
-                            .fontWeight(.medium)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.accentColor.opacity(0.2))
-                            .foregroundColor(.accentColor)
-                            .cornerRadius(4)
-                    }
-
-                    // Enabled indicator
-                    Circle()
-                        .fill(isEnabled ? Color.green : Color.gray.opacity(0.3))
-                        .frame(width: 8, height: 8)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.vertical, 8)
-            .padding(.horizontal, 12)
-            .background(isExpanded ? Color.secondary.opacity(0.05) : Color.clear)
-            .cornerRadius(6)
-
-            // Expanded content
-            if isExpanded {
-                VStack(alignment: .leading, spacing: 8) {
-                    if actions.isEmpty {
-                        HStack {
-                            Image(systemName: "info.circle")
-                                .foregroundStyle(.secondary)
-                            Text(L("settings.notifications.noActions", "No actions configured. Using default notification."))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 28)
-                        .padding(.vertical, 4)
-                    } else {
-                        ForEach(actions) { action in
-                            ActionRow(
-                                action: action,
-                                onEdit: { onEditAction(action) },
-                                onDelete: { onDeleteAction(action.id) },
-                                onToggle: { enabled in onToggleAction(action.id, enabled) }
-                            )
-                        }
-                    }
-
-                    // Add action button
-                    Button(action: onAddAction) {
-                        HStack {
-                            Image(systemName: "plus.circle.fill")
-                            Text(L("settings.notifications.addAction", "Add Action"))
-                        }
-                        .font(.caption)
-                        .foregroundColor(.accentColor)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 28)
-                    .padding(.bottom, 8)
-                }
-                .padding(.top, 4)
-                .background(Color.secondary.opacity(0.03))
-            }
-        }
-        .background(Color.secondary.opacity(0.05))
-        .cornerRadius(8)
-    }
-}
-
 // MARK: - Action Row
 
-private struct ActionRow: View {
+/// Displays a single configured action with toggle, icon, label, edit/delete buttons.
+/// Used by UnifiedTriggerRow when a trigger is expanded to show its action chain.
+struct ActionRow: View {
     let action: NotificationActionConfig
     let onEdit: () -> Void
     let onDelete: () -> Void
@@ -588,9 +339,20 @@ struct ActionConfigSheet: View {
 
 // MARK: - Config Field View
 
-private struct ConfigFieldView: View {
+struct ConfigFieldView: View {
     let field: ActionConfigField
     @Binding var value: String
+
+    /// Dynamically discovered macOS system sounds (cached on first access)
+    private static let systemSounds: [String] = {
+        let soundsDir = "/System/Library/Sounds"
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(atPath: soundsDir) else { return [] }
+        return files
+            .filter { $0.hasSuffix(".aiff") }
+            .map { String($0.dropLast(5)) }
+            .sorted()
+    }()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -663,28 +425,19 @@ private struct ConfigFieldView: View {
                 }
 
             case .soundPicker:
-                Picker("", selection: $value) {
-                    Text(L("Default", "Default")).tag("default")
-                    Text(L("Basso", "Basso")).tag("Basso")
-                    Text(L("Blow", "Blow")).tag("Blow")
-                    Text(L("Bottle", "Bottle")).tag("Bottle")
-                    Text(L("Frog", "Frog")).tag("Frog")
-                    Text(L("Funk", "Funk")).tag("Funk")
-                    Text(L("Glass", "Glass")).tag("Glass")
-                    Text(L("Hero", "Hero")).tag("Hero")
-                    Text(L("Morse", "Morse")).tag("Morse")
-                    Text(L("Ping", "Ping")).tag("Ping")
-                    Text(L("Pop", "Pop")).tag("Pop")
-                    Text(L("Purr", "Purr")).tag("Purr")
-                    Text(L("Sosumi", "Sosumi")).tag("Sosumi")
-                    Text(L("Submarine", "Submarine")).tag("Submarine")
-                    Text(L("Tink", "Tink")).tag("Tink")
-                }
-                .labelsHidden()
-                .frame(width: 150)
+                HStack {
+                    Picker("", selection: $value) {
+                        Text(L("Default", "Default")).tag("default")
+                        ForEach(Self.systemSounds, id: \.self) { sound in
+                            Text(sound).tag(sound)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 150)
 
-                Button(action: previewSound) {
-                    Image(systemName: "speaker.wave.2")
+                    Button(action: previewSound) {
+                        Image(systemName: "speaker.wave.2")
+                    }
                 }
             }
         }
@@ -694,7 +447,7 @@ private struct ConfigFieldView: View {
     private func selectFile() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
-        panel.canChooseDirectories = field.id.contains("Dir") || field.id.contains("Path") && !field.id.contains("file")
+        panel.canChooseDirectories = field.id.contains("Dir") || (field.id.contains("Path") && !field.id.contains("file"))
         panel.allowsMultipleSelection = false
 
         if panel.runModal() == .OK, let url = panel.url {
@@ -721,10 +474,10 @@ private struct ConfigFieldView: View {
 // MARK: - Preview
 
 #if DEBUG
-struct TriggerActionsSettingsView_Previews: PreviewProvider {
+struct ActionPickerSheet_Previews: PreviewProvider {
     static var previews: some View {
-        TriggerActionsSettingsView()
-            .frame(width: 600, height: 800)
+        ActionPickerSheet(triggerId: "test.trigger") { _ in }
+            .frame(width: 500, height: 600)
     }
 }
 #endif

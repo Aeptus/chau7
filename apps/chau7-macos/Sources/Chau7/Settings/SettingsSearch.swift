@@ -514,14 +514,54 @@ extension FeatureSettings {
             description: L("settings.search.notificationStatus.description", "Notification permission status")
         ),
         SearchableSetting(
-            id: "notificationFilters",
+            id: "notificationTriggers",
             section: .notifications,
-            title: L("settings.search.notificationFilters.title", "Notification Filters"),
+            title: L("settings.search.notificationTriggers.title", "Notification Triggers"),
             keywords: localizedKeywords(
-                "settings.search.notificationFilters.keywords",
-                "filter,event,type,toggle,task,complete,failed"
+                "settings.search.notificationTriggers.keywords",
+                "filter,event,type,toggle,task,complete,failed,trigger,enable,disable"
             ),
-            description: L("settings.search.notificationFilters.description", "Filter which events trigger notifications")
+            description: L("settings.search.notificationTriggers.description", "Enable triggers and configure actions for notifications")
+        ),
+        SearchableSetting(
+            id: "triggerActions",
+            section: .notifications,
+            title: L("settings.search.triggerActions.title", "Trigger Actions"),
+            keywords: localizedKeywords(
+                "settings.search.triggerActions.keywords",
+                "action,webhook,slack,discord,script,sound,docker,notification,play,run"
+            ),
+            description: L("settings.search.triggerActions.description", "Configure what happens when notification triggers fire")
+        ),
+        SearchableSetting(
+            id: "shellThresholds",
+            section: .notifications,
+            title: L("settings.search.shellThresholds.title", "Shell Event Thresholds"),
+            keywords: localizedKeywords(
+                "settings.search.shellThresholds.keywords",
+                "long running,directory,git branch,threshold,seconds,shell"
+            ),
+            description: L("settings.search.shellThresholds.description", "Configure shell event detection thresholds")
+        ),
+        SearchableSetting(
+            id: "appThresholds",
+            section: .notifications,
+            title: L("settings.search.appThresholds.title", "App Event Thresholds"),
+            keywords: localizedKeywords(
+                "settings.search.appThresholds.keywords",
+                "inactivity,memory,tab open,tab close,threshold,minutes"
+            ),
+            description: L("settings.search.appThresholds.description", "Configure app event detection thresholds")
+        ),
+        SearchableSetting(
+            id: "aiToolNotifications",
+            section: .notifications,
+            title: L("settings.search.aiToolNotifications.title", "AI Tool Notifications"),
+            keywords: localizedKeywords(
+                "settings.search.aiToolNotifications.keywords",
+                "claude,codex,cursor,windsurf,copilot,aider,cline,continue,ai"
+            ),
+            description: L("settings.search.aiToolNotifications.description", "Notifications from AI coding tools")
         ),
         SearchableSetting(
             id: "eventMonitoring",
@@ -529,7 +569,7 @@ extension FeatureSettings {
             title: L("settings.search.eventMonitoring.title", "Event Monitoring"),
             keywords: localizedKeywords(
                 "settings.search.eventMonitoring.keywords",
-                "monitor,watch,ai,events,log"
+                "monitor,watch,ai,events,log,tailer,restart"
             ),
             description: L("settings.search.eventMonitoring.description", "Monitor AI CLI events for notifications")
         ),

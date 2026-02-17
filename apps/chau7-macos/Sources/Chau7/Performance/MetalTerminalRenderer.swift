@@ -380,11 +380,11 @@ public final class MetalTerminalRenderer: NSObject {
             }
         }
 
-        // Diagnostic: log box-drawing glyph resolution
+        // Diagnostic: log box-drawing glyph resolution (trace-only)
         let isBoxDraw = codePoint >= 0x2500 && codePoint <= 0x257F
-        if isBoxDraw {
+        if isBoxDraw && Log.isTraceEnabled {
             let fontName = CTFontCopyPostScriptName(drawFont) as String
-            Log.info("[DIAG-SWIFT] rasterizeGlyph U+\(String(codePoint, radix: 16, uppercase: true)) '\(charStr)' found=\(found) glyph=\(glyphs[0]) font=\(fontName) bold=\(bold)")
+            Log.trace("[DIAG-SWIFT] rasterizeGlyph U+\(String(codePoint, radix: 16, uppercase: true)) '\(charStr)' found=\(found) glyph=\(glyphs[0]) font=\(fontName) bold=\(bold)")
         }
 
         // Determine if this is a wide character
@@ -432,14 +432,9 @@ public final class MetalTerminalRenderer: NSObject {
         var position = CGPoint(x: packX, y: baselineY)
         CTFontDrawGlyphs(drawFont, glyphs, &position, 1, context)
 
-        // Diagnostic: check if box-drawing glyph produced visible pixels
-        if isBoxDraw, let data = context.data {
+        // Diagnostic: check if box-drawing glyph produced visible pixels (trace-only)
+        if isBoxDraw && Log.isTraceEnabled, let data = context.data {
             let bytesPerRow = context.bytesPerRow
-            // Scan the slot region in the bitmap. CG origin is bottom-left,
-            // but bitmap memory is stored top-down. Row 0 in memory = top of image.
-            // CG Y=0 corresponds to the LAST row in memory.
-            // The slot occupies CG Y from (atlasHeight - packY - slotHeight) to (atlasHeight - packY).
-            // In bitmap memory: row (packY) to row (packY + slotHeight).
             let slotRowStart = Int(packY)
             let slotRowEnd = min(Int(packY + slotHeight), atlasHeight)
             let slotColStart = Int(packX)
@@ -451,14 +446,13 @@ public final class MetalTerminalRenderer: NSObject {
             for row in slotRowStart..<slotRowEnd {
                 for col in slotColStart..<slotColEnd {
                     let offset = row * bytesPerRow + col * 4
-                    let alpha = ptr[offset + 3]  // RGBA — alpha is 4th byte
+                    let alpha = ptr[offset + 3]
                     if alpha > 0 { nonZeroAlpha += 1 }
                     totalPixels += 1
                 }
             }
-            Log.info("[DIAG-SWIFT] rasterizeGlyph U+\(String(codePoint, radix: 16, uppercase: true)) pixelCheck: \(nonZeroAlpha)/\(totalPixels) non-zero alpha, slot=(\(slotColStart),\(slotRowStart))-(\(slotColEnd),\(slotRowEnd)), baseline=\(baselineY), packY=\(packY)")
+            Log.trace("[DIAG-SWIFT] rasterizeGlyph U+\(String(codePoint, radix: 16, uppercase: true)) pixelCheck: \(nonZeroAlpha)/\(totalPixels) non-zero alpha, slot=(\(slotColStart),\(slotRowStart))-(\(slotColEnd),\(slotRowEnd)), baseline=\(baselineY), packY=\(packY)")
 
-            // Dump atlas each time a new box-drawing glyph is rasterized
             dumpAtlasToPNG()
         }
 
@@ -497,7 +491,7 @@ public final class MetalTerminalRenderer: NSObject {
         guard let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else { return }
         CGImageDestinationAddImage(dest, image, nil)
         CGImageDestinationFinalize(dest)
-        Log.info("[DIAG-SWIFT] Dumped glyph atlas to \(url.path) (\(atlasWidth)x\(atlasHeight))")
+        Log.trace("[DIAG-SWIFT] Dumped glyph atlas to \(url.path) (\(atlasWidth)x\(atlasHeight))")
     }
 
     /// Uploads the CPU bitmap to the GPU texture.
@@ -617,16 +611,14 @@ public final class MetalTerminalRenderer: NSObject {
                 foundBlinkingCells = true
             }
 
-            // Diagnostic: count box-drawing chars reaching Metal + sample colors
+            // Count box-drawing chars reaching Metal (diagnostic details trace-only)
             if cell.character >= 0x2500 && cell.character <= 0x257F {
                 boxDrawCount += 1
-                // Log non-dash box chars (│├┤┼ etc.) — these are the ones from Claude tables
-                // Also log the first ─ for reference
-                if (cell.character != 0x2500 || boxDrawCount == 1) && boxDrawCount <= 10 && (diagFrameCounter % 120 == 0) {
+                if Log.isTraceEnabled && (cell.character != 0x2500 || boxDrawCount == 1) && boxDrawCount <= 10 && (diagFrameCounter % 120 == 0) {
                     let fg = cell.foregroundColor
                     let bg = cell.backgroundColor
                     let ch = Unicode.Scalar(cell.character).map { String(Character($0)) } ?? "?"
-                    Log.info("[DIAG-SWIFT] box-draw: '\(ch)' U+\(String(cell.character, radix: 16)) at (\(row),\(col)) fg=(\(String(format:"%.2f",fg.x)),\(String(format:"%.2f",fg.y)),\(String(format:"%.2f",fg.z))) bg=(\(String(format:"%.2f",bg.x)),\(String(format:"%.2f",bg.y)),\(String(format:"%.2f",bg.z)))")
+                    Log.trace("[DIAG-SWIFT] box-draw: '\(ch)' U+\(String(cell.character, radix: 16)) at (\(row),\(col)) fg=(\(String(format:"%.2f",fg.x)),\(String(format:"%.2f",fg.y)),\(String(format:"%.2f",fg.z))) bg=(\(String(format:"%.2f",bg.x)),\(String(format:"%.2f",bg.y)),\(String(format:"%.2f",bg.z)))")
                 }
             }
 
@@ -655,11 +647,11 @@ public final class MetalTerminalRenderer: NSObject {
 
         hasBlinkingCells = foundBlinkingCells
 
-        // Diagnostic: log box-drawing count (throttled to ~1/sec at 60fps)
+        // Diagnostic: log box-drawing count (trace-only, throttled to ~1/sec at 60fps)
         if boxDrawCount > 0 {
             diagFrameCounter += 1
-            if diagFrameCounter % 60 == 1 {
-                Log.info("[DIAG-SWIFT] updateInstanceBuffer: \(boxDrawCount) box-drawing cells in frame (\(count) total cells, \(cols) cols)")
+            if Log.isTraceEnabled && diagFrameCounter % 60 == 1 {
+                Log.trace("[DIAG-SWIFT] updateInstanceBuffer: \(boxDrawCount) box-drawing cells in frame (\(count) total cells, \(cols) cols)")
             }
         }
 

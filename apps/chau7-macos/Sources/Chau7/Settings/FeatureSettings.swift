@@ -931,6 +931,19 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
+    func setActionEnabled(_ enabled: Bool, triggerId: String, actionId: UUID) {
+        guard var actions = triggerActionBindings[triggerId],
+              let index = actions.firstIndex(where: { $0.id == actionId }) else { return }
+        let action = actions[index]
+        actions[index] = NotificationActionConfig(
+            id: action.id,
+            actionType: action.actionType,
+            enabled: enabled,
+            config: action.config
+        )
+        triggerActionBindings[triggerId] = actions
+    }
+
     // MARK: - Find Defaults (NEW)
 
     @Published var findCaseSensitiveDefault: Bool {

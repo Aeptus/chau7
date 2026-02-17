@@ -80,6 +80,11 @@ struct Chau7App: App {
                 }
                 .keyboardShortcut("w", modifiers: [.command, .option])
 
+                Button(L("Reopen Closed Tab", "Reopen Closed Tab")) {
+                    appDelegate.reopenClosedTab()
+                }
+                .keyboardShortcut("t", modifiers: [.command, .shift])
+
                 Divider()
 
                 Button(L("Export Text...", "Export Text...")) {

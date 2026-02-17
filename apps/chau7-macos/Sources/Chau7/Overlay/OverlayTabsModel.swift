@@ -182,6 +182,15 @@ struct SavedTabState: Codable {
     static let userDefaultsKey = "com.chau7.savedTabState"
 }
 
+/// In-memory record of a closed tab, enabling "Reopen Closed Tab" (Cmd+Shift+T).
+/// Wraps the existing `SavedTabState` with positional + temporal metadata.
+/// Not persisted to disk — the stack resets on app quit, matching browser behavior.
+struct ClosedTabEntry {
+    let state: SavedTabState
+    let originalIndex: Int
+    let closedAt: Date
+}
+
 /// Manages terminal tabs, search, and broadcast mode for the overlay window.
 /// - Note: Thread Safety - @Published properties must be modified on main thread.
 ///   All methods assume main thread execution.
@@ -256,6 +265,14 @@ final class OverlayTabsModel: ObservableObject {
     @Published var currentCandidate: TaskCandidate? = nil
     @Published var currentTask: TrackedTask? = nil
     @Published var isTaskAssessmentVisible: Bool = false
+
+    // Reopen Closed Tab (Cmd+Shift+T)
+    /// LIFO stack of recently closed tabs (max 10, in-memory only)
+    private var closedTabStack: [ClosedTabEntry] = []
+    private let maxClosedTabs = 10
+
+    /// Whether there are any closed tabs available to reopen
+    var canReopenClosedTab: Bool { !closedTabStack.isEmpty }
 
     private var taskCancellables: Set<AnyCancellable> = []
     private var renameTabID: UUID? = nil
@@ -387,6 +404,63 @@ final class OverlayTabsModel: ObservableObject {
         } catch {
             Log.warn("Failed to save tab state: \(error)")
         }
+    }
+
+    /// Captures a snapshot of a tab about to be closed and pushes it onto the
+    /// closed-tab stack. Must be called BEFORE `closeAllSessions()` kills the shell,
+    /// because we need the live scrollback buffer and active app name.
+    private func captureClosedTabSnapshot(tab: OverlayTab, at index: Int) {
+        let dir = tab.session?.currentDirectory
+            ?? TerminalSessionModel.defaultStartDirectory()
+        let maxLines = FeatureSettings.shared.restoredScrollbackLines
+
+        var scrollback: String? = nil
+        if maxLines > 0, let data = tab.session?.captureRemoteSnapshot() {
+            let text = String(decoding: data, as: UTF8.self)
+            var lines = text.components(separatedBy: "\n")
+            while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
+                lines.removeLast()
+            }
+            if lines.count > maxLines {
+                scrollback = lines.suffix(maxLines).joined(separator: "\n")
+            } else if !lines.isEmpty {
+                scrollback = lines.joined(separator: "\n")
+            }
+            if let s = scrollback, s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                scrollback = nil
+            }
+            if let s = scrollback, s.utf8.count > 500_000 {
+                let truncatedLines = s.components(separatedBy: "\n")
+                scrollback = truncatedLines.suffix(maxLines / 2).joined(separator: "\n")
+            }
+        }
+
+        let resumeCommand = Self.buildAIResumeCommand(
+            appName: tab.session?.activeAppName,
+            directory: dir
+        )
+
+        let state = SavedTabState(
+            customTitle: tab.customTitle,
+            color: tab.color.rawValue,
+            directory: dir,
+            selectedIndex: nil,
+            scrollbackContent: scrollback,
+            aiResumeCommand: resumeCommand
+        )
+
+        closedTabStack.append(ClosedTabEntry(
+            state: state,
+            originalIndex: index,
+            closedAt: Date()
+        ))
+
+        // Cap the stack
+        if closedTabStack.count > maxClosedTabs {
+            closedTabStack.removeFirst(closedTabStack.count - maxClosedTabs)
+        }
+
+        Log.info("Captured closed tab snapshot: \"\(tab.displayTitle)\" at index \(index) (stack size: \(closedTabStack.count))")
     }
 
     /// Build a resume command for an AI session running in the given directory.
@@ -1012,6 +1086,11 @@ final class OverlayTabsModel: ObservableObject {
             clearRenameState(shouldFocus: false)
         }
 
+        // Snapshot tab state BEFORE killing the shell (scrollback is gone after close).
+        // Use initialIndex (captured before the modal dialog) so reopening restores
+        // to the original position even if other tabs were closed while the dialog was open.
+        captureClosedTabSnapshot(tab: tabs[index], at: initialIndex)
+
         // Clean up per-tab command history
         if let sessionID = tabs[index].session?.tabIdentifier {
             CommandHistoryManager.shared.removeTab(sessionID)
@@ -1179,6 +1258,14 @@ final class OverlayTabsModel: ObservableObject {
             return
         }
 
+        // Snapshot each tab BEFORE killing its shell (reverse order so
+        // Cmd+Shift+T restores the rightmost closed tab first)
+        for tab in currentOtherTabs.reversed() {
+            if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
+                captureClosedTabSnapshot(tab: tab, at: idx)
+            }
+        }
+
         // Close all sessions in all tabs except current one
         for tab in currentOtherTabs {
             tab.splitController.root.closeAllSessions()
@@ -1186,6 +1273,77 @@ final class OverlayTabsModel: ObservableObject {
 
         tabs = tabs.filter { $0.id == currentID }
         Log.info("Closed all other tabs, keeping \(currentID)")
+    }
+
+    /// Reopens the most recently closed tab, restoring its title, color, directory,
+    /// scrollback content, and AI resume command. Inserts at the original position
+    /// (clamped to current tab count). Matches browser Cmd+Shift+T behavior.
+    func reopenClosedTab() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let entry = closedTabStack.popLast() else {
+            Log.info("reopenClosedTab: stack is empty")
+            return
+        }
+
+        let state = entry.state
+        let insertIndex = min(entry.originalIndex, tabs.count)
+
+        var tab = OverlayTab(appModel: appModel)
+        tab.customTitle = state.customTitle
+        tab.color = TabColor(rawValue: state.color) ?? .blue
+
+        tabs.insert(tab, at: insertIndex)
+        selectedTabID = tab.id
+
+        Log.info("reopenClosedTab: restored \"\(tab.displayTitle)\" at index \(insertIndex) (stack remaining: \(closedTabStack.count))")
+
+        // Restore directory, scrollback, and AI resume command once the shell is ready.
+        // Same delayed-send pattern as restoreSavedTabs().
+        let directory = state.directory
+        let scrollback = state.scrollbackContent
+        let resumeCommand = state.aiResumeCommand
+        let tabId = tab.id
+        let tabIndex = insertIndex
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            // Look up the session at execution time — if the tab was closed
+            // before this fires, we bail instead of holding a stale reference.
+            guard let session = self?.tabs.first(where: { $0.id == tabId })?.session else { return }
+
+            var commands: [String] = []
+
+            // Print previous scrollback content via a temp file
+            if let scrollback = scrollback, !scrollback.isEmpty {
+                let tempFile = NSTemporaryDirectory() + "chau7_reopen_\(tabIndex).txt"
+                do {
+                    try scrollback.write(toFile: tempFile, atomically: true, encoding: .utf8)
+                    let escapedTemp = "'" + tempFile.replacingOccurrences(of: "'", with: "'\\''") + "'"
+                    commands.append("cat \(escapedTemp) && rm -f \(escapedTemp)")
+                } catch {
+                    Log.warn("reopenClosedTab: failed to write scrollback file: \(error)")
+                }
+            }
+
+            // cd to previous directory
+            if !directory.isEmpty {
+                let escaped = "'" + directory.replacingOccurrences(of: "'", with: "'\\''") + "'"
+                commands.append("cd \(escaped)")
+            }
+
+            if !commands.isEmpty {
+                session.sendInput(commands.joined(separator: " && ") + "\n")
+            }
+
+            // Prefill AI resume command (without newline — user presses Enter to confirm)
+            if let resumeCmd = resumeCommand {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    guard let session = self?.tabs.first(where: { $0.id == tabId })?.session else { return }
+                    session.sendInput(resumeCmd)
+                }
+            }
+        }
+
+        tabBarRefreshToken += 1
     }
 
     func selectNextTab() {

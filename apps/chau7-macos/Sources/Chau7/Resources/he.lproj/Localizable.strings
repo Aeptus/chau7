@@ -431,6 +431,7 @@
 "palette.cmd.close.tab" = "סגור כרטיסייה";
 "palette.cmd.close.window" = "סגור חלון";
 "palette.cmd.close.other" = "סגור כרטיסיות אחרות";
+"palette.cmd.reopen.tab" = "פתח מחדש כרטיסייה שנסגרה";
 "palette.cmd.export" = "ייצא טקסט...";
 "palette.cmd.print" = "הדפס...";
 "palette.cmd.cut" = "גזור";
@@ -1218,6 +1219,46 @@
 "settings.notifications.requestPermission" = "בקש הרשאה";
 "settings.notifications.restartMonitor" = "הפעל מחדש את הניטור";
 "settings.notifications.revealInFinder" = "הצג ב-Finder";
+
+// ניווט מפולח
+"settings.notifications.tab.triggers" = "טריגרים";
+"settings.notifications.tab.thresholds" = "ספים";
+"settings.notifications.tab.monitoring" = "ניטור";
+
+// הכנה ראשונית
+"settings.notifications.onboarding.title" = "הפעל התראות";
+"settings.notifications.onboarding.description" = "קבל התראות כשמשימות AI מסתיימות, נכשלות או דורשות תשומת לב.";
+"settings.notifications.onboarding.action" = "הפעל התראות";
+"settings.notifications.denied.hint" = "ההתראות נדחו. פתח את הגדרות המערכת כדי להפעיל אותן.";
+
+// ניהול טריגרים מאוחד
+"settings.notifications.triggers" = "טריגרים להתראות";
+"settings.notifications.triggersDescription" = "הפעל טריגרים והגדר מה קורה כשהם מופעלים:";
+"settings.notifications.enableAll" = "הכל";
+"settings.notifications.disableAll" = "ללא";
+"settings.notifications.categoryDisabled" = "אין טריגרים מופעלים בקטגוריה זו.";
+"settings.notifications.noActions" = "לא הוגדרו פעולות. משתמש בהתראה ברירת מחדל.";
+"settings.notifications.addAction" = "הוסף פעולה";
+
+// ספים
+"settings.notifications.thresholds" = "ספי זיהוי";
+"settings.notifications.thresholds.description" = "הגדר מתי אירועי מעטפת ואפליקציה יפעילו התראות.";
+"settings.notifications.shell" = "אירועי מעטפת";
+"settings.notifications.longRunningThreshold" = "ריצה ארוכה (שניות)";
+"settings.notifications.notifyDirectoryChange" = "שינוי ספרייה";
+"settings.notifications.notifyGitBranch" = "ענף Git";
+"settings.notifications.app" = "אירועי אפליקציה";
+"settings.notifications.inactivityThreshold" = "חוסר פעילות (דקות)";
+"settings.notifications.memoryThreshold" = "זיכרון (מ\"ב)";
+"settings.notifications.notifyTabOpen" = "פתיחת כרטיסייה";
+"settings.notifications.notifyTabClose" = "סגירת כרטיסייה";
+
+// אזהרה
+"settings.notifications.warning" = "אזהרה";
+
+// פורמט מספר
+"notifications.enabledCount" = "(%d/%d)";
+
 "settings.notifications.sendTest" = "שלח בדיקה";
 "settings.notifications.status" = "מצב והרשאות";
 "settings.notifications.status.label" = "מצב";

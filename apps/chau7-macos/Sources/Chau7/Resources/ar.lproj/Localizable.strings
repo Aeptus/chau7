@@ -431,6 +431,7 @@
 "palette.cmd.close.tab" = "إغلاق التبويب";
 "palette.cmd.close.window" = "إغلاق النافذة";
 "palette.cmd.close.other" = "إغلاق التبويبات الأخرى";
+"palette.cmd.reopen.tab" = "إعادة فتح التبويب المغلق";
 "palette.cmd.export" = "تصدير النص...";
 "palette.cmd.print" = "طباعة...";
 "palette.cmd.cut" = "قص";
@@ -1218,6 +1219,46 @@
 "settings.notifications.requestPermission" = "طلب الإذن";
 "settings.notifications.restartMonitor" = "إعادة تشغيل المراقبة";
 "settings.notifications.revealInFinder" = "إظهار في Finder";
+
+// التنقل المقسم
+"settings.notifications.tab.triggers" = "المشغلات";
+"settings.notifications.tab.thresholds" = "الحدود";
+"settings.notifications.tab.monitoring" = "المراقبة";
+
+// الإعداد الأولي
+"settings.notifications.onboarding.title" = "تفعيل الإشعارات";
+"settings.notifications.onboarding.description" = "احصل على إشعارات عند اكتمال مهام الذكاء الاصطناعي أو فشلها أو حاجتها لانتباهك.";
+"settings.notifications.onboarding.action" = "تفعيل الإشعارات";
+"settings.notifications.denied.hint" = "الإشعارات مرفوضة. افتح إعدادات النظام لتفعيلها.";
+
+// إدارة المشغلات الموحدة
+"settings.notifications.triggers" = "مشغلات الإشعارات";
+"settings.notifications.triggersDescription" = "فعّل المشغلات واضبط ما يحدث عند تشغيلها:";
+"settings.notifications.enableAll" = "الكل";
+"settings.notifications.disableAll" = "لا شيء";
+"settings.notifications.categoryDisabled" = "لا توجد مشغلات مفعلة في هذه الفئة.";
+"settings.notifications.noActions" = "لم يتم تكوين إجراءات. يُستخدم الإشعار الافتراضي.";
+"settings.notifications.addAction" = "إضافة إجراء";
+
+// الحدود
+"settings.notifications.thresholds" = "حدود الكشف";
+"settings.notifications.thresholds.description" = "اضبط متى تؤدي أحداث الصدفة والتطبيق إلى تشغيل الإشعارات.";
+"settings.notifications.shell" = "أحداث الصدفة";
+"settings.notifications.longRunningThreshold" = "تشغيل طويل (ثوانٍ)";
+"settings.notifications.notifyDirectoryChange" = "تغيير المجلد";
+"settings.notifications.notifyGitBranch" = "فرع Git";
+"settings.notifications.app" = "أحداث التطبيق";
+"settings.notifications.inactivityThreshold" = "عدم النشاط (دقائق)";
+"settings.notifications.memoryThreshold" = "الذاكرة (م.ب)";
+"settings.notifications.notifyTabOpen" = "فتح تبويب";
+"settings.notifications.notifyTabClose" = "إغلاق تبويب";
+
+// تحذير
+"settings.notifications.warning" = "تحذير";
+
+// صيغة العدد
+"notifications.enabledCount" = "(%d/%d)";
+
 "settings.notifications.sendTest" = "إرسال اختبار";
 "settings.notifications.status" = "الحالة والأذونات";
 "settings.notifications.status.label" = "الحالة";
