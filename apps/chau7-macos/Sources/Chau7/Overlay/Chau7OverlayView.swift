@@ -993,25 +993,36 @@ struct UnifiedTabButton: View {
         tab.session?.isGitRepo ?? false
     }
 
+    /// Whether this tab should show only the custom title (hiding all extras).
+    private var isMinimalDisplay: Bool {
+        FeatureSettings.shared.customTitleOnly
+            && tab.customTitle != nil
+            && !tab.customTitle!.isEmpty
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             // Notification style icon (takes precedence over AI logo when present)
-            if let iconName = notificationStyle?.icon {
-                Image(systemName: iconName)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(notificationStyle?.iconColor ?? notificationStyle?.titleColor ?? .primary)
-                    .accessibilityHidden(true)
-            } else if let logo = aiProductLogo {
-                // AI product logo (only if no notification icon)
-                logo
-                    .resizable()
-                    .frame(width: 14, height: 14)
-                    .accessibilityHidden(true)
-            } else if let devIcon = devServerIconName {
-                Image(systemName: devIcon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.yellow)
-                    .accessibilityHidden(true)
+            if !isMinimalDisplay {
+                if let iconName = notificationStyle?.icon {
+                    Image(systemName: iconName)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(notificationStyle?.iconColor ?? notificationStyle?.titleColor ?? .primary)
+                        .accessibilityHidden(true)
+                } else if FeatureSettings.shared.showTabIcons {
+                    if let logo = aiProductLogo {
+                        // AI product logo (only if no notification icon)
+                        logo
+                            .resizable()
+                            .frame(width: 14, height: 14)
+                            .accessibilityHidden(true)
+                    } else if let devIcon = devServerIconName {
+                        Image(systemName: devIcon)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.yellow)
+                            .accessibilityHidden(true)
+                    }
+                }
             }
 
             Text(resolvedTitle)
@@ -1019,60 +1030,63 @@ struct UnifiedTabButton: View {
                 .foregroundStyle(titleColor ?? .primary)
                 .lineLimit(1)
 
-            // Path (only show if we have a session with path info)
-            if !resolvedPath.isEmpty {
-                Text(String(format: L("tab.path.prefix", "- %@"), resolvedPath))
-                    .font(.custom("Avenir Next", size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-
-            if isSuspended {
-                Image(systemName: "pause.circle.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .help(L("tab.renderingSuspended", "Rendering suspended"))
-            }
-
-            // F20: Command badge
-            if let badge = tab.commandBadge {
-                Text(badge)
-                    .font(.custom("Avenir Next", size: 10).weight(.medium))
-                    .foregroundStyle(badge.contains("✗") ? .red : .green)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background(Color.black.opacity(0.2))
-                    .clipShape(Capsule())
-            }
-
-            // F13: Broadcast indicator
-            if isBroadcastIncluded {
-                Image(systemName: "dot.radiowaves.left.and.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.orange)
-            }
-
-            // RTK: Token optimization indicator
-            if FeatureSettings.shared.tokenOptimizationMode != .off {
-                Button(action: { onToggleTokenOpt?() }) {
-                    Image(systemName: tab.isTokenOptActive ? "bolt.fill" : "bolt.slash")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(tab.isTokenOptActive ? .yellow : .secondary)
+            if !isMinimalDisplay {
+                // Path (only show if we have a session with path info)
+                if FeatureSettings.shared.showTabPath && !resolvedPath.isEmpty {
+                    Text(String(format: L("tab.path.prefix", "- %@"), resolvedPath))
+                        .font(.custom("Avenir Next", size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
-                .buttonStyle(.plain)
-                .help(tab.isTokenOptActive
-                    ? L("rtk.tab.active", "Token optimization active (click to toggle)")
-                    : L("rtk.tab.inactive", "Token optimization inactive (click to toggle)"))
-                .accessibilityLabel(tab.isTokenOptActive
-                    ? L("rtk.tab.a11y.active", "Token optimization on")
-                    : L("rtk.tab.a11y.inactive", "Token optimization off"))
-            }
 
-            // Git indicator
-            if isGitRepo {
-                Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 11, weight: .semibold))
+                if isSuspended {
+                    Image(systemName: "pause.circle.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .help(L("tab.renderingSuspended", "Rendering suspended"))
+                }
+
+                // F20: Command badge
+                if let badge = tab.commandBadge {
+                    Text(badge)
+                        .font(.custom("Avenir Next", size: 10).weight(.medium))
+                        .foregroundStyle(badge.contains("✗") ? .red : .green)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(Color.black.opacity(0.2))
+                        .clipShape(Capsule())
+                }
+
+                // F13: Broadcast indicator
+                if FeatureSettings.shared.showTabBroadcastIndicator && isBroadcastIncluded {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.orange)
+                }
+
+                // RTK: Token optimization indicator
+                if FeatureSettings.shared.showTabRTKIndicator
+                    && FeatureSettings.shared.tokenOptimizationMode != .off {
+                    Button(action: { onToggleTokenOpt?() }) {
+                        Image(systemName: tab.isTokenOptActive ? "bolt.fill" : "bolt.slash")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(tab.isTokenOptActive ? .yellow : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(tab.isTokenOptActive
+                        ? L("rtk.tab.active", "Token optimization active (click to toggle)")
+                        : L("rtk.tab.inactive", "Token optimization inactive (click to toggle)"))
+                    .accessibilityLabel(tab.isTokenOptActive
+                        ? L("rtk.tab.a11y.active", "Token optimization on")
+                        : L("rtk.tab.a11y.inactive", "Token optimization off"))
+                }
+
+                // Git indicator
+                if FeatureSettings.shared.showTabGitIndicator && isGitRepo {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: 11, weight: .semibold))
+                }
             }
 
             Button(action: onClose) {
