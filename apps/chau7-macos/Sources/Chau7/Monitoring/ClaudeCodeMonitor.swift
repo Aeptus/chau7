@@ -20,6 +20,7 @@ final class ClaudeCodeMonitor: ObservableObject {
     struct ClaudeSessionInfo: Identifiable, Equatable {
         let id: String  // sessionId
         let projectName: String
+        let cwd: String  // Full working directory path for matching to tabs
         let transcriptPath: String
         var lastActivity: Date
         var state: SessionState
@@ -172,6 +173,7 @@ final class ClaudeCodeMonitor: ObservableObject {
                 var session = ClaudeSessionInfo(
                     id: sessionId,
                     projectName: event.projectName,
+                    cwd: event.cwd,
                     transcriptPath: event.transcriptPath,
                     lastActivity: event.timestamp,
                     state: self.stateForEvent(event.type)
@@ -310,6 +312,27 @@ final class ClaudeCodeMonitor: ObservableObject {
     /// Get all messages from a transcript path
     func getTranscriptMessages(at path: String) -> [ClaudeTranscriptMessage] {
         return ClaudeTranscriptParser.parseTranscript(at: path)
+    }
+
+    // MARK: - Session Lookup
+
+    /// Find the most recently active Claude session for a given directory.
+    /// Returns the session ID suitable for `claude --resume <ID>`.
+    func sessionId(forDirectory dir: String) -> String? {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard !dir.isEmpty else { return nil }
+        let matching = activeSessions.values.filter { session in
+            session.cwd == dir || dir.hasPrefix(session.cwd + "/")
+        }
+        // Prefer non-closed sessions, then most recent activity
+        return matching
+            .sorted { lhs, rhs in
+                let lAlive = lhs.state != .closed
+                let rAlive = rhs.state != .closed
+                if lAlive != rAlive { return lAlive }
+                return lhs.lastActivity > rhs.lastActivity
+            }
+            .first?.id
     }
 
     // MARK: - Utilities

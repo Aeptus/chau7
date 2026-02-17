@@ -412,6 +412,9 @@ final class CommandPaletteProvider {
             PaletteCommand(title: L("commandPalette.command.closeOtherTabs", "Close Other Tabs"), shortcut: "⌥⌘W", category: .file, icon: "xmark.square.fill") {
                 delegate.closeOtherTabs()
             },
+            PaletteCommand(title: L("commandPalette.command.reopenClosedTab", "Reopen Closed Tab"), shortcut: "⇧⌘T", category: .file, icon: "arrow.uturn.backward.square") {
+                delegate.reopenClosedTab()
+            },
             PaletteCommand(title: L("commandPalette.command.exportText", "Export Text..."), shortcut: "⇧⌘S", category: .file, icon: "square.and.arrow.up") {
                 delegate.exportText()
             },
@@ -455,6 +458,9 @@ final class CommandPaletteProvider {
             },
             PaletteCommand(title: L("commandPalette.command.migrateSnippets", "Migrate Snippets to Clean JSON"), shortcut: nil, category: .edit, icon: "arrow.triangle.2.circlepath") {
                 SnippetManager.shared.migrateToCleanJSON()
+            },
+            PaletteCommand(title: L("commandPalette.command.reloadSnippets", "Reload Snippets"), shortcut: nil, category: .edit, icon: "arrow.clockwise") {
+                SnippetManager.shared.forceReloadAll()
             },
 
             // View commands

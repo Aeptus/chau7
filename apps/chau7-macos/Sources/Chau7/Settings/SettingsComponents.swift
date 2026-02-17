@@ -626,3 +626,27 @@ struct SettingsDetectionRow: View {
 }
 
 // Note: NotificationFilterToggle is defined in NotificationsSettingsView.swift
+
+// MARK: - Binding Helpers
+
+extension Binding {
+    /// Creates a binding to a nested property of a writable value.
+    /// Eliminates the verbose `Binding(get:{ obj.prop }, set:{ var c = obj; c.prop = $0; obj = c })` pattern
+    /// that arises from struct properties nested inside @Published.
+    func nested<T>(_ keyPath: WritableKeyPath<Value, T>) -> Binding<T> {
+        Binding<T>(
+            get: { self.wrappedValue[keyPath: keyPath] },
+            set: { self.wrappedValue[keyPath: keyPath] = $0 }
+        )
+    }
+
+    /// Variant that clamps numeric values to a minimum bound on both read and write.
+    /// Clamp-on-get ensures stale/invalid values from UserDefaults display correctly;
+    /// clamp-on-set ensures new values are never stored below the floor.
+    func nested<T: Comparable>(_ keyPath: WritableKeyPath<Value, T>, min minValue: T) -> Binding<T> {
+        Binding<T>(
+            get: { Swift.max(minValue, self.wrappedValue[keyPath: keyPath]) },
+            set: { self.wrappedValue[keyPath: keyPath] = Swift.max(minValue, $0) }
+        )
+    }
+}

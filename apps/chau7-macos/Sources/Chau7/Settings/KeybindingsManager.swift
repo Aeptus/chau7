@@ -93,6 +93,7 @@ enum KeyAction: String, CaseIterable {
     // Tab management
     case newTab
     case closeTab
+    case reopenClosedTab
     case nextTab
     case previousTab
     case refreshTabBar  // Recovery: force re-render of tab bar
@@ -147,6 +148,7 @@ enum KeyAction: String, CaseIterable {
         switch self {
         case .newTab: return "New Tab"
         case .closeTab: return "Close Tab"
+        case .reopenClosedTab: return "Reopen Closed Tab"
         case .nextTab: return "Next Tab"
         case .previousTab: return "Previous Tab"
         case .refreshTabBar: return "Refresh Tab Bar"
@@ -196,6 +198,7 @@ enum KeyAction: String, CaseIterable {
         switch action {
         case "newTab": return .newTab
         case "closeTab": return .closeTab
+        case "reopenClosedTab": return .reopenClosedTab
         case "nextTab": return .nextTab
         case "previousTab": return .previousTab
         case "refreshTabBar": return .refreshTabBar
@@ -287,6 +290,8 @@ final class KeybindingsManager: ObservableObject {
             delegate?.newTab()
         case .closeTab:
             delegate?.closeTabFromShortcut()
+        case .reopenClosedTab:
+            delegate?.reopenClosedTab()
         case .nextTab:
             delegate?.nextTab()
         case .previousTab:

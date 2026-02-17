@@ -12,6 +12,9 @@ enum FeatureMetric: String, CaseIterable, Identifiable {
     case aiDetect = "AI Detect"
     case remoteOutput = "Remote Output"
     case metalRender = "Metal Render"
+    case outputMainThread = "Output Main"
+    case promptUpdate = "Prompt Update"
+    case devServerDetect = "Dev Server"
 
     var id: String { rawValue }
 
@@ -29,6 +32,9 @@ enum FeatureMetric: String, CaseIterable, Identifiable {
         case .aiDetect: return "AIDetect"
         case .remoteOutput: return "RemoteOutput"
         case .metalRender: return "MetalRender"
+        case .outputMainThread: return "OutputMainThread"
+        case .promptUpdate: return "PromptUpdate"
+        case .devServerDetect: return "DevServerDetect"
         }
     }
 }

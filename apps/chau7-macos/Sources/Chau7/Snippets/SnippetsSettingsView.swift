@@ -217,7 +217,7 @@ struct SnippetsSettingsView: View {
                 selectedSource = .global
             }
 
-            if snippetManager.repoRoot != nil {
+            if snippetManager.activeRepoRoot != nil {
                 SourceFilterButton(
                     source: .repo,
                     label: L("snippets.filter.repo", "Repo"),
@@ -261,7 +261,7 @@ struct SnippetsSettingsView: View {
                     draft: $editorDraft,
                     isNew: isNewSnippet,
                     repoSnippetsEnabled: settings.isRepoSnippetsEnabled,
-                    currentRepoRoot: snippetManager.repoRoot,
+                    currentRepoRoot: snippetManager.activeRepoRoot,
                     recentRepoRoots: settings.recentRepoRoots,
                     onCancel: {
                         isEditorPresented = false
@@ -273,7 +273,7 @@ struct SnippetsSettingsView: View {
             } else if let entry = selectedSnippet {
                 SnippetDetailView(
                     entry: entry,
-                    currentRepoRoot: snippetManager.repoRoot,
+                    currentRepoRoot: snippetManager.activeRepoRoot,
                     onEdit: {
                         startEditing(entry)
                     },
@@ -285,13 +285,13 @@ struct SnippetsSettingsView: View {
                         // Insert into terminal if available
                         NSApp.sendAction(#selector(AppDelegate.insertSnippetByID(_:)), to: nil, from: entry.snippet.id)
                     },
-                    canCopyToCurrentRepo: settings.isRepoSnippetsEnabled && snippetManager.repoRoot != nil,
+                    canCopyToCurrentRepo: settings.isRepoSnippetsEnabled && snippetManager.activeRepoRoot != nil,
                     repoCopyEnabled: settings.isRepoSnippetsEnabled,
                     onCopyToGlobal: {
                         copySnippet(entry, to: .global, repoRoot: nil)
                     },
                     onCopyToCurrentRepo: {
-                        guard let repoRoot = snippetManager.repoRoot else { return }
+                        guard let repoRoot = snippetManager.activeRepoRoot else { return }
                         copySnippet(entry, to: .repo, repoRoot: repoRoot)
                     },
                     onCopyToRepoPicker: {
@@ -364,7 +364,7 @@ struct SnippetsSettingsView: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
 
-                if let repoRoot = snippetManager.repoRoot {
+                if let repoRoot = snippetManager.activeRepoRoot {
                     Text(L("•", "•"))
                         .foregroundColor(.secondary)
                     Text(URL(fileURLWithPath: repoRoot).lastPathComponent)
@@ -380,7 +380,7 @@ struct SnippetsSettingsView: View {
     // MARK: - Actions
 
     private func defaultRepoRoot() -> String {
-        if let current = snippetManager.repoRoot {
+        if let current = snippetManager.activeRepoRoot {
             return current
         }
         return settings.recentRepoRoots.first ?? ""
