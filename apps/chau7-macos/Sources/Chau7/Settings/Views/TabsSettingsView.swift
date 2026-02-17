@@ -54,6 +54,53 @@ struct TabsSettingsView: View {
             Divider()
                 .padding(.vertical, 8)
 
+            // Tab Display
+            SettingsSectionHeader(L("settings.tabs.display", "Tab Display"), icon: "eye")
+
+            SettingsToggle(
+                label: L("settings.tabs.customTitleOnly", "Custom Title Only"),
+                help: L("settings.tabs.customTitleOnly.help", "When a tab has a custom title, hide all other elements (icons, path, indicators). Tabs without a custom title are unaffected."),
+                isOn: $settings.customTitleOnly
+            )
+
+            SettingsToggle(
+                label: L("settings.tabs.showIcons", "Tab Icons"),
+                help: L("settings.tabs.showIcons.help", "Show AI product logos and dev server icons in tabs"),
+                isOn: $settings.showTabIcons
+            )
+            .disabled(settings.customTitleOnly)
+
+            SettingsToggle(
+                label: L("settings.tabs.showPath", "Working Directory"),
+                help: L("settings.tabs.showPath.help", "Show the current working directory path next to the tab title"),
+                isOn: $settings.showTabPath
+            )
+            .disabled(settings.customTitleOnly)
+
+            SettingsToggle(
+                label: L("settings.tabs.showGitIndicator", "Git Indicator"),
+                help: L("settings.tabs.showGitIndicator.help", "Show a branch icon when the tab is in a git repository"),
+                isOn: $settings.showTabGitIndicator
+            )
+            .disabled(settings.customTitleOnly)
+
+            SettingsToggle(
+                label: L("settings.tabs.showRTKIndicator", "Token Optimization Indicator"),
+                help: L("settings.tabs.showRTKIndicator.help", "Show the bolt icon for RTK token optimization status"),
+                isOn: $settings.showTabRTKIndicator
+            )
+            .disabled(settings.customTitleOnly)
+
+            SettingsToggle(
+                label: L("settings.tabs.showBroadcastIndicator", "Broadcast Indicator"),
+                help: L("settings.tabs.showBroadcastIndicator.help", "Show the broadcast icon when a tab is included in broadcast mode"),
+                isOn: $settings.showTabBroadcastIndicator
+            )
+            .disabled(settings.customTitleOnly)
+
+            Divider()
+                .padding(.vertical, 8)
+
             // Appearance
             SettingsSectionHeader(L("settings.tabs.appearance", "Appearance"), icon: "paintpalette")
 
