@@ -413,7 +413,8 @@ private struct ToolbarTabBarView: View {
                 } else {
                     overlayModel.cancelPrewarm(id: tab.id)
                 }
-            }
+            },
+            onToggleTokenOpt: { overlayModel.toggleTokenOpt(for: tab.id) }
         )
         // Explicit stable identity based on tab UUID
         .id(tab.id)
@@ -928,6 +929,7 @@ struct UnifiedTabButton: View {
     let onRename: () -> Void
     let onClose: () -> Void
     var onHover: ((Bool) -> Void)? = nil
+    var onToggleTokenOpt: (() -> Void)? = nil
 
     // Pulse animation state
     @State private var isPulsing: Bool = false
@@ -1049,6 +1051,22 @@ struct UnifiedTabButton: View {
                 Image(systemName: "dot.radiowaves.left.and.right")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.orange)
+            }
+
+            // RTK: Token optimization indicator
+            if FeatureSettings.shared.tokenOptimizationMode != .off {
+                Button(action: { onToggleTokenOpt?() }) {
+                    Image(systemName: tab.isTokenOptActive ? "bolt.fill" : "bolt.slash")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(tab.isTokenOptActive ? .yellow : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help(tab.isTokenOptActive
+                    ? L("rtk.tab.active", "Token optimization active (click to toggle)")
+                    : L("rtk.tab.inactive", "Token optimization inactive (click to toggle)"))
+                .accessibilityLabel(tab.isTokenOptActive
+                    ? L("rtk.tab.a11y.active", "Token optimization on")
+                    : L("rtk.tab.a11y.inactive", "Token optimization off"))
             }
 
             // Git indicator

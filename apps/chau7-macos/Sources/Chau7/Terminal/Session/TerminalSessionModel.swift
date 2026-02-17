@@ -73,7 +73,11 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     @Published var isGitRepo: Bool = false
     @Published var gitBranch: String? = nil
     @Published var gitRootPath: String? = nil
-    @Published var activeAppName: String? = nil
+    @Published var activeAppName: String? = nil {
+        didSet {
+            recalculateRTKFlag()
+        }
+    }
     @Published var devServer: DevServerMonitor.DevServerInfo? = nil
     @Published var tabTitleOverride: String? = nil
     @Published var fontSize: CGFloat = 13
@@ -2056,12 +2060,21 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
         let current = ProcessInfo.processInfo.environment
         if let path = current["PATH"] {
-            dict["PATH"] = path
+            // RTK: prepend wrapper directory if token optimization is not off
+            let rtkMode = FeatureSettings.shared.tokenOptimizationMode
+            if rtkMode != .off {
+                dict["PATH"] = RTKManager.shared.prependedPATH(original: path)
+            } else {
+                dict["PATH"] = path
+            }
         }
         if let home = current["HOME"] {
             dict["HOME"] = home
         }
         dict["CHAU7_START_DIR"] = startDirectoryForLaunch()
+
+        // RTK: set session ID for flag file lookup by wrapper scripts
+        dict["CHAU7_SESSION_ID"] = tabIdentifier
 
         // Set startup command if configured
         let startupCmd = FeatureSettings.shared.startupCommand.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2119,10 +2132,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             // Gemini CLI / Google GenAI SDK
             dict["GOOGLE_GEMINI_BASE_URL"] = proxyBase
 
-            // Session ID for correlation with terminal session
-            dict["CHAU7_SESSION_ID"] = dict["TERM_SESSION_ID"] ?? UUID().uuidString
-
             // Tab ID for task lifecycle tracking (unique per terminal tab)
+            // Note: CHAU7_SESSION_ID is set unconditionally above for RTK support
             dict["CHAU7_TAB_ID"] = tabIdentifier
 
             // Project path for repo switch detection
@@ -2179,6 +2190,28 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         let count: Int
         let previewLines: [String]
         let error: String?
+    }
+
+    // MARK: - Token Optimization (RTK) Flag Recalculation
+
+    /// Per-tab token optimization override. Set by `OverlayTabsModel` when the
+    /// user toggles per-tab RTK. Stored here so `activeAppName.didSet` can
+    /// access it without a back-reference to the tab model.
+    var tokenOptOverride: TabTokenOptOverride = .default
+
+    /// Recalculates the RTK flag file for this session based on the current
+    /// global mode, per-tab override, and AI detection state.
+    /// Called automatically when `activeAppName` changes.
+    func recalculateRTKFlag() {
+        let mode = FeatureSettings.shared.tokenOptimizationMode
+        guard mode != .off else { return }
+
+        RTKFlagManager.recalculate(
+            sessionID: tabIdentifier,
+            mode: mode,
+            override: tokenOptOverride,
+            isAIActive: activeAppName != nil
+        )
     }
 
     weak var highlightView: TerminalHighlightView?
