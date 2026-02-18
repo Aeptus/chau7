@@ -597,6 +597,7 @@ public final class MetalTerminalRenderer: NSObject {
 
         var foundBlinkingCells = false
         var boxDrawCount: Int = 0  // Diagnostic counter
+        let traceBoxDraw = Log.isTraceEnabled && (diagFrameCounter % 600 == 0)
 
         for i in 0..<count {
             let cell = cells[i]
@@ -614,7 +615,7 @@ public final class MetalTerminalRenderer: NSObject {
             // Count box-drawing chars reaching Metal (diagnostic details trace-only)
             if cell.character >= 0x2500 && cell.character <= 0x257F {
                 boxDrawCount += 1
-                if Log.isTraceEnabled && (cell.character != 0x2500 || boxDrawCount == 1) && boxDrawCount <= 10 && (diagFrameCounter % 120 == 0) {
+                if traceBoxDraw && (cell.character != 0x2500 || boxDrawCount == 1) && boxDrawCount <= 3 {
                     let fg = cell.foregroundColor
                     let bg = cell.backgroundColor
                     let ch = Unicode.Scalar(cell.character).map { String(Character($0)) } ?? "?"
@@ -650,7 +651,7 @@ public final class MetalTerminalRenderer: NSObject {
         // Diagnostic: log box-drawing count (trace-only, throttled to ~1/sec at 60fps)
         if boxDrawCount > 0 {
             diagFrameCounter += 1
-            if Log.isTraceEnabled && diagFrameCounter % 60 == 1 {
+            if Log.isTraceEnabled && diagFrameCounter % 300 == 1 {
                 Log.trace("[DIAG-SWIFT] updateInstanceBuffer: \(boxDrawCount) box-drawing cells in frame (\(count) total cells, \(cols) cols)")
             }
         }

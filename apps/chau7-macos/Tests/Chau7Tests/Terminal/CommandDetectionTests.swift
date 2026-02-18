@@ -288,6 +288,26 @@ final class CommandDetectionTests: XCTestCase {
         XCTAssertEqual(CommandDetection.detectApp(from: "Claude"), "Claude")
         XCTAssertEqual(CommandDetection.detectApp(from: "cLaUdE"), "Claude")
     }
+
+    // MARK: - command -v (Existence Queries)
+
+    func testCommandDashVIsNotExecution() {
+        // "command -v claude" checks if claude exists, it doesn't run it
+        XCTAssertNil(CommandDetection.detectApp(from: "command -v claude"))
+        XCTAssertNil(CommandDetection.detectApp(from: "command -v codex"))
+        XCTAssertNil(CommandDetection.detectApp(from: "command -v aider"))
+    }
+
+    func testCommandDashPStillDetects() {
+        // "command -p claude" executes claude using default PATH — should detect
+        XCTAssertEqual(CommandDetection.detectApp(from: "command -p claude"), "Claude")
+    }
+
+    func testCommandWithoutDashVStillDetects() {
+        // "command claude" (no -v) is wrapper execution — should still detect
+        XCTAssertEqual(CommandDetection.detectApp(from: "command claude"), "Claude")
+        XCTAssertEqual(CommandDetection.detectApp(from: "command codex"), "Codex")
+    }
 }
 
 // MARK: - Event Parsing Tests
