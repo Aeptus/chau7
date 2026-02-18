@@ -1,0 +1,10 @@
+/Users/christophehenner/Downloads/Repositories/Chau7/apps/chau7-macos/rust/target/debug/deps/polling-3b5fb3d8b0302dab.d: /Users/christophehenner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0/src/lib.rs /Users/christophehenner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0/src/os.rs /Users/christophehenner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0/src/os/kqueue.rs /Users/christophehenner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0/src/kqueue.rs
+
+/Users/christophehenner/Downloads/Repositories/Chau7/apps/chau7-macos/rust/target/debug/deps/libpolling-3b5fb3d8b0302dab.rlib: /Users/christophehenner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0/src/lib.rs /Users/christophehenner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0/src/os.rs /Users/christophehenner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0/src/os/kqueue.rs /Users/christophehenner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0/src/kqueue.rs
+
+/Users/christophehenner/Downloads/Repositories/Chau7/apps/chau7-macos/rust/target/debug/deps/libpolling-3b5fb3d8b0302dab.rmeta: /Users/christophehenner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0/src/lib.rs /Users/christophehenner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0/src/os.rs /Users/christophehenner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0/src/os/kqueue.rs /Users/christophehenner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0/src/kqueue.rs
+
+/Users/christophehenner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0/src/lib.rs:
+/Users/christophehenner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0/src/os.rs:
+/Users/christophehenner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0/src/os/kqueue.rs:
+/Users/christophehenner/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/polling-3.11.0/src/kqueue.rs:

@@ -1,0 +1,1 @@
+/Users/christophehenner/Downloads/Repositories/Chau7/apps/chau7-macos/rust/target/release/libchau7_parse.dylib: /Users/christophehenner/Downloads/Repositories/Chau7/apps/chau7-macos/rust/chau7_parse/src/lib.rs
