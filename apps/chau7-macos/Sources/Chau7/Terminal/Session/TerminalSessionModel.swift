@@ -442,14 +442,17 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     func handleInput(_ text: String) {
         lastInputAt = Date()
-        if !text.isEmpty {
+        let sanitizedText = sanitizeInputForBuffer(text)
+        guard !sanitizedText.isEmpty else { return }
+
+        if !sanitizedText.isEmpty {
             markInputLatencyStart()
         }
-        inputBuffer.append(text)
+        inputBuffer.append(sanitizedText)
         aiLogQueue.sync {
-            aiLogSession?.recordInput(text)
+            aiLogSession?.recordInput(sanitizedText)
         }
-        if text.contains("\n") || text.contains("\r") {
+        if sanitizedText.contains("\n") || sanitizedText.contains("\r") {
             processInputBuffer()
             markRunning()
         }
@@ -1132,6 +1135,64 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         hasPendingCommand = true
     }
 
+    private func sanitizeInputForBuffer(_ text: String) -> String {
+        guard text.contains("\u{1b}") else { return text }
+        guard let data = text.data(using: .utf8) else { return text }
+
+        var output = Data()
+        var index = 0
+        while index < data.count {
+            let byte = data[index]
+            if byte != 0x1B {
+                output.append(byte)
+                index += 1
+                continue
+            }
+
+            index += 1
+            guard index < data.count else { break }
+
+            let next = data[index]
+            if next == 0x5B {
+                // CSI sequence: ESC [ ... final byte [@-~]
+                index += 1
+                while index < data.count {
+                    let current = data[index]
+                    if current >= 0x40 && current <= 0x7E {
+                        index += 1
+                        break
+                    }
+                    index += 1
+                }
+                continue
+            }
+
+            if next == 0x5D || next == 0x50 {
+                // OSC / DCS sequence (terminated by BEL or ESC \)
+                index += 1
+                while index < data.count {
+                    if data[index] == 0x07 {
+                        index += 1
+                        break
+                    }
+                    if data[index] == 0x1B,
+                       index + 1 < data.count,
+                       data[index + 1] == 0x5C {
+                        index += 2
+                        break
+                    }
+                    index += 1
+                }
+                continue
+            }
+
+            // Generic escape + one byte (legacy function keys / modifier codes)
+            index += 1
+        }
+
+        return String(data: output, encoding: .utf8) ?? text
+    }
+
     private func processInputBuffer() {
         let normalized = inputBuffer.replacingOccurrences(of: "\r", with: "\n")
         let parts = normalized.components(separatedBy: "\n")
@@ -1144,10 +1205,21 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         inputBuffer = parts.last ?? ""
     }
 
+    private func applyRTKPrefixIfNeeded(to line: String) -> String {
+        guard FeatureSettings.shared.isRTKEnabled(forTabIdentifier: tabIdentifier) else { return line }
+        let prefix = FeatureSettings.shared.rtkPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !prefix.isEmpty else { return line }
+        guard !line.isEmpty else { return line }
+        if line.hasPrefix(prefix) { return line }
+        let needsSeparator = !prefix.hasSuffix(" ") && !line.hasPrefix(" ")
+        return needsSeparator ? "\(prefix) \(line)" : "\(prefix)\(line)"
+    }
+
     private func handleInputLine(_ line: String) {
         // Sanitize input to remove escape sequences that contaminate history/logs
         let sanitized = EscapeSequenceSanitizer.sanitize(line)
-        let trimmed = sanitized.trimmingCharacters(in: .whitespacesAndNewlines)
+        let transformed = applyRTKPrefixIfNeeded(to: sanitized)
+        let trimmed = transformed.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             pendingCommandLine = nil
             promptSeenForPendingCommand = false

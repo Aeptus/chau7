@@ -656,6 +656,16 @@ extension FeatureSettings {
             description: L("settings.search.autoTabTheme.description", "Color tabs by AI model")
         ),
         SearchableSetting(
+            id: "rtkIntegration",
+            section: .aiDetection,
+            title: L("settings.search.aiRtk.title", "RTK Integration"),
+            keywords: localizedKeywords(
+                "settings.search.aiRtk.keywords",
+                "rtk,prefix,tab,override,integration"
+            ),
+            description: L("settings.search.aiRtk.description", "Prepend RTK commands to terminal input")
+        ),
+        SearchableSetting(
             id: "llmProvider",
             section: .aiDetection,
             title: L("settings.search.llmProvider.title", "LLM Provider"),

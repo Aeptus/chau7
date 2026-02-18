@@ -238,7 +238,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
 
         // Create the settings view with its own state
-        let settingsView = SettingsWindowView(model: model)
+        let settingsView = SettingsWindowView(model: model, overlayModel: overlayModel)
         let hostingView = NSHostingView(rootView: settingsView)
 
         let window = NSWindow(
