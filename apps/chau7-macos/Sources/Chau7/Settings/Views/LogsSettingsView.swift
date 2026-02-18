@@ -159,6 +159,12 @@ struct LogsSettingsView: View {
                     }
                 }
             }
+
+            Divider()
+                .padding(.vertical, 8)
+
+            // Persistent History (embedded)
+            HistorySettingsView()
         }
     }
 }
