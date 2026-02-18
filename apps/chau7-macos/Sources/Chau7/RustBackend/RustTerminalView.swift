@@ -5823,12 +5823,12 @@ extension RustTerminalView: NSTextInputClient {
     }
 
     func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
-        // Return the cursor position so popups (e.g. IME candidate window) appear nearby
-        let frame = caretFrame
-        guard let _ = window?.frame, let screenFrame = window?.convertToScreen(frame) else {
-            return .zero
-        }
-        return screenFrame
+        // Return the cursor position so popups (e.g. IME candidate window) appear nearby.
+        // caretFrame is in view-local coordinates — must convert to window coords first.
+        let viewFrame = caretFrame
+        guard let window = window else { return .zero }
+        let windowFrame = convert(viewFrame, to: nil)
+        return window.convertToScreen(windowFrame)
     }
 
     func characterIndex(for point: NSPoint) -> Int {
