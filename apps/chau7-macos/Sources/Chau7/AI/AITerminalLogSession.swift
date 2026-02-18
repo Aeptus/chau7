@@ -2,7 +2,7 @@ import Foundation
 import Chau7Core
 
 final class AITerminalLogSession {
-    private let toolName: String
+    let toolName: String
     private let logPath: String
     private let queue = DispatchQueue(label: "com.chau7.ptylog.\(UUID().uuidString)")
     private var handle: FileHandle?

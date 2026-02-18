@@ -706,6 +706,17 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             shellEventDetector.commandFinished(exitCode: exitCode, command: aiLogContext?.commandLine)
 
             guard let context = aiLogContext else {
+                // If aiLogSession still exists, a prior caller already cleared aiLogContext
+                // but we never logged a "Finished" event — emit one now to avoid orphaned starts
+                if let session = aiLogSession {
+                    AIEventLogWriter.appendEvent(
+                        type: "finished",
+                        tool: session.toolName,
+                        message: "Finished (cleanup)",
+                        source: .terminalSession,
+                        logPath: eventsLogPath()
+                    )
+                }
                 aiLogSession?.close()
                 aiLogSession = nil
                 aiLogPrefixBuffer.removeAll(keepingCapacity: true)

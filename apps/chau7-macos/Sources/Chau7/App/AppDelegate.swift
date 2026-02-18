@@ -23,6 +23,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
     private var overlayHosts: [OverlayHost] = []
     private weak var activeOverlayModel: OverlayTabsModel?
+    private var lastOverlayDiagLogAt: CFAbsoluteTime = 0
+    private var lastOverlayDiagReason: String = ""
     private var keyMonitor: Any?
     private var opacityObserver: Any?
     private var appThemeObserver: Any?
@@ -1032,7 +1034,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func logOverlayDiagnostics(reason: String, window: NSWindow) {
+        guard Log.isTraceEnabled else { return }
         guard let host = overlayHosts.first(where: { $0.window == window }) else { return }
+
+        // Deduplicate: skip if same reason within 2 seconds
+        let now = CFAbsoluteTimeGetCurrent()
+        if reason == lastOverlayDiagReason && (now - lastOverlayDiagLogAt) < 2.0 {
+            return
+        }
+        lastOverlayDiagLogAt = now
+        lastOverlayDiagReason = reason
+
         let occlusionVisible = window.occlusionState.contains(.visible)
         let appearance = window.effectiveAppearance.name.rawValue
         let blurView = window.contentView as? NSVisualEffectView
@@ -1042,7 +1054,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         } else {
             blurDesc = "none"
         }
-        Log.info("Overlay window state (\(reason)): key=\(window.isKeyWindow) main=\(window.isMainWindow) visible=\(window.isVisible) onActiveSpace=\(window.isOnActiveSpace) mini=\(window.isMiniaturized) occlusionVisible=\(occlusionVisible) occlusion=\(window.occlusionState) alpha=\(window.alphaValue) level=\(window.level.rawValue) appearance=\(appearance) blur[\(blurDesc)]")
+        Log.trace("Overlay window state (\(reason)): key=\(window.isKeyWindow) main=\(window.isMainWindow) visible=\(window.isVisible) onActiveSpace=\(window.isOnActiveSpace) mini=\(window.isMiniaturized) occlusionVisible=\(occlusionVisible) occlusion=\(window.occlusionState) alpha=\(window.alphaValue) level=\(window.level.rawValue) appearance=\(appearance) blur[\(blurDesc)]")
         host.model.logVisualState(reason: "window:\(reason)")
     }
 

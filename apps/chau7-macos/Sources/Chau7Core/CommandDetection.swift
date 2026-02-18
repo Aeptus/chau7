@@ -432,6 +432,18 @@ public enum CommandDetection {
             }
 
             if wrapperCommands.contains(lower) {
+                // "command -v foo" and "command -V" are existence queries, not execution.
+                // Note: "command -p foo" DOES execute foo (using default PATH), so -p is
+                // treated as a normal wrapper flag and skipped in the loop below.
+                if lower == "command" {
+                    let nextIndex = index + 1
+                    if nextIndex < tokens.count {
+                        let nextLower = tokens[nextIndex].lowercased()
+                        if nextLower == "-v" {
+                            return nil
+                        }
+                    }
+                }
                 index += 1
                 continue
             }

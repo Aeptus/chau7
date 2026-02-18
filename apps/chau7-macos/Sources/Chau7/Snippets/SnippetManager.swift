@@ -305,8 +305,12 @@ final class SnippetManager: ObservableObject {
         if !force && normalized == lastContextPath { return }
         lastContextPath = normalized
 
-        // Quick check: still within the current active repo — no-op
+        // Quick check: still within the current active repo — cancel any stale resolve and no-op.
+        // Without the cancel, a prior updateContextPath (e.g. from init with home dir) can fire
+        // its 0.25s delayed resolve AFTER we've already confirmed the correct repo, stomping
+        // activeRepoRoot and clearing repo snippets from all subsequent tabs.
         if let root = activeRepoRoot, normalized == root || normalized.hasPrefix(root + "/") {
+            resolveWorkItem?.cancel()
             return
         }
 

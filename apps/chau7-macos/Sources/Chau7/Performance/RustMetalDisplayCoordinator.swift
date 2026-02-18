@@ -273,9 +273,13 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             )
         }
 
-        // 4. Get drawable
+        // 4. Get drawable (skip silently when window has zero bounds — minimized/hidden)
+        guard view.bounds.width > 0 && view.bounds.height > 0 else {
+            FeatureProfiler.shared.end(token)
+            return
+        }
         guard let drawable = (view.layer as? CAMetalLayer)?.nextDrawable() else {
-            Log.warn("RustMetalDisplayCoordinator: draw skipped — no drawable available (layer=\(String(describing: view.layer is CAMetalLayer)), bounds=\(view.bounds))")
+            Log.trace("RustMetalDisplayCoordinator: draw skipped — no drawable (bounds=\(view.bounds))")
             FeatureProfiler.shared.end(token)
             return
         }
