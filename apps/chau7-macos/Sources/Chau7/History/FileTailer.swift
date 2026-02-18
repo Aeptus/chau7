@@ -14,6 +14,7 @@ final class FileTailer<T> {
     private var offset: UInt64 = 0
     private var buffer: String = ""
     private let queue: DispatchQueue
+    private var readHandle: FileHandle?
 
     // MARK: - Memory Protection
     /// Maximum buffer size to prevent OOM with malformed files (4MB)
@@ -65,20 +66,30 @@ final class FileTailer<T> {
         timer?.cancel()
         timer = nil
         buffer = ""
+        try? readHandle?.close()
+        readHandle = nil
         Log.trace("FileTailer stop. path=\(fileURL.path)")
     }
 
-    private func tick() {
-        guard let handle = try? FileHandle(forReadingFrom: fileURL) else {
-            Log.trace("FileTailer read failed. path=\(fileURL.path)")
-            return
-        }
-        defer { try? handle.close() }
+    private func openReadHandle() {
+        try? readHandle?.close()
+        readHandle = try? FileHandle(forReadingFrom: fileURL)
+    }
 
+    private func tick() {
         if let size = currentFileSize(), size < offset {
             offset = 0
             buffer = ""
+            openReadHandle()
             Log.trace("FileTailer reset after truncation. path=\(fileURL.path)")
+        }
+
+        if readHandle == nil {
+            openReadHandle()
+        }
+        guard let handle = readHandle else {
+            Log.trace("FileTailer read failed. path=\(fileURL.path)")
+            return
         }
 
         do {
@@ -129,6 +140,9 @@ final class FileTailer<T> {
             buffer = parts.last ?? ""
         } catch {
             Log.trace("FileTailer error: \(error.localizedDescription)")
+            // Handle became invalid (file deleted/replaced), reopen on next tick
+            try? readHandle?.close()
+            readHandle = nil
         }
     }
 

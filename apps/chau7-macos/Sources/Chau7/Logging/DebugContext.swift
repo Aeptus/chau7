@@ -328,22 +328,67 @@ final class BugReporter {
 
     private weak var appModel: AppModel?
     private weak var overlayModel: OverlayTabsModel?
+    private static let githubIssueOwner = "anthropics"
+    private static let githubIssueRepo = "chau7"
 
     func configure(appModel: AppModel, overlayModel: OverlayTabsModel) {
         self.appModel = appModel
         self.overlayModel = overlayModel
     }
 
+    func prefilledIssueURL(userDescription: String = "") -> URL? {
+        let payload = makeReportPayload(userDescription: userDescription)
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "github.com"
+        components.path = "/\(Self.githubIssueOwner)/\(Self.githubIssueRepo)/issues/new"
+        components.queryItems = [
+            URLQueryItem(name: "title", value: "Bug report from Chau7 \(payload.snapshot.appVersion)"),
+            URLQueryItem(name: "body", value: payload.report)
+        ]
+        return components.url
+    }
+
     /// Generates a bug report and returns the file path
     func generateReport(userDescription: String = "") -> String? {
+        let payload = makeReportPayload(userDescription: userDescription)
+        let report = payload.report
+        let snapshot = payload.snapshot
+
+        // Save report
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let filename = "chau7-bug-report-\(formatter.string(from: Date())).md"
+
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".chau7/reports")
+
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let path = dir.appendingPathComponent(filename)
+            try report.write(to: path, atomically: true, encoding: .utf8)
+
+            // Also save JSON snapshot
+            _ = snapshot.save()
+
+            Log.info("Bug report saved to \(path.path)")
+            return path.path
+        } catch {
+            Log.error("Failed to save bug report: \(error)")
+            return nil
+        }
+    }
+
+    private func makeReportPayload(userDescription: String) -> (snapshot: StateSnapshot, report: String) {
         let snapshot = StateSnapshot.capture(from: appModel, overlayModel: overlayModel)
+        let bodyDescription = userDescription.isEmpty ? "(No description provided)" : userDescription
 
         var report = """
         # Chau7 Bug Report
         Generated: \(ISO8601DateFormatter().string(from: Date()))
 
         ## User Description
-        \(userDescription.isEmpty ? "(No description provided)" : userDescription)
+        \(bodyDescription)
 
         ## Environment
         - App Version: \(snapshot.appVersion)
@@ -418,28 +463,7 @@ final class BugReporter {
         ```
         """
 
-        // Save report
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        let filename = "chau7-bug-report-\(formatter.string(from: Date())).md"
-
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".chau7/reports")
-
-        do {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let path = dir.appendingPathComponent(filename)
-            try report.write(to: path, atomically: true, encoding: .utf8)
-
-            // Also save JSON snapshot
-            _ = snapshot.save()
-
-            Log.info("Bug report saved to \(path.path)")
-            return path.path
-        } catch {
-            Log.error("Failed to save bug report: \(error)")
-            return nil
-        }
+        return (snapshot, report)
     }
 
     /// Opens Finder at the reports directory

@@ -80,6 +80,16 @@ public final class ProxyManager: ObservableObject {
         dataDirectory.appendingPathComponent("proxy.sock")
     }
 
+    private func apiURL(path: String, queryItems: [URLQueryItem]? = nil) -> URL? {
+        var components = URLComponents()
+        components.scheme = "http"
+        components.host = "127.0.0.1"
+        components.port = port
+        components.path = path.starts(with: "/") ? path : "/\(path)"
+        components.queryItems = queryItems
+        return components.url
+    }
+
     // MARK: - Initialization
 
     private init() {
@@ -250,7 +260,10 @@ public final class ProxyManager: ObservableObject {
     public func checkHealth() async -> Bool {
         guard isRunning else { return false }
 
-        let url = URL(string: "http://127.0.0.1:\(port)/health")!
+        guard let url = apiURL(path: "/health") else {
+            logger.error("Invalid proxy URL for health check")
+            return false
+        }
 
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -277,7 +290,10 @@ public final class ProxyManager: ObservableObject {
     public func getStats() async -> APICallStats? {
         guard isRunning else { return nil }
 
-        let url = URL(string: "http://127.0.0.1:\(port)/stats")!
+        guard let url = apiURL(path: "/stats") else {
+            logger.error("Invalid proxy URL for stats")
+            return nil
+        }
 
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -311,7 +327,10 @@ public final class ProxyManager: ObservableObject {
     public func getTaskCandidate(tabId: String) async -> TaskCandidate? {
         guard isRunning else { return nil }
 
-        let url = URL(string: "http://127.0.0.1:\(port)/task/candidate?tab_id=\(tabId)")!
+        guard let url = apiURL(path: "/task/candidate", queryItems: [URLQueryItem(name: "tab_id", value: tabId)]) else {
+            logger.error("Invalid proxy URL for task candidate")
+            return nil
+        }
 
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -370,7 +389,10 @@ public final class ProxyManager: ObservableObject {
     public func getCurrentTask(tabId: String) async -> TrackedTask? {
         guard isRunning else { return nil }
 
-        let url = URL(string: "http://127.0.0.1:\(port)/task/current?tab_id=\(tabId)")!
+        guard let url = apiURL(path: "/task/current", queryItems: [URLQueryItem(name: "tab_id", value: tabId)]) else {
+            logger.error("Invalid proxy URL for current task")
+            return nil
+        }
 
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
@@ -449,7 +471,10 @@ public final class ProxyManager: ObservableObject {
     public func startTask(tabId: String, taskName: String?, candidateId: String? = nil) async -> TrackedTask? {
         guard isRunning else { return nil }
 
-        let url = URL(string: "http://127.0.0.1:\(port)/task/start")!
+        guard let url = apiURL(path: "/task/start") else {
+            logger.error("Invalid proxy URL for start task")
+            return nil
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -521,7 +546,10 @@ public final class ProxyManager: ObservableObject {
     public func dismissCandidate(tabId: String, candidateId: String) async -> Bool {
         guard isRunning else { return false }
 
-        let url = URL(string: "http://127.0.0.1:\(port)/task/dismiss")!
+        guard let url = apiURL(path: "/task/dismiss") else {
+            logger.error("Invalid proxy URL for dismiss candidate")
+            return false
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -566,7 +594,10 @@ public final class ProxyManager: ObservableObject {
     public func assessTask(taskId: String, approved: Bool, note: String? = nil) async -> Bool {
         guard isRunning else { return false }
 
-        let url = URL(string: "http://127.0.0.1:\(port)/task/assess")!
+        guard let url = apiURL(path: "/task/assess") else {
+            logger.error("Invalid proxy URL for assess task")
+            return false
+        }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"

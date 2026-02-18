@@ -848,15 +848,26 @@ struct Chau7OverlayView: View {
             }
 
             if settings.isShortcutHelperHintEnabled {
-                VStack {
+                HStack {
                     Spacer()
-                    HStack {
-                        Spacer()
-                        ShortcutHelperHintView(shortcut: "⌘/")
+                    VStack(alignment: .trailing, spacing: 1) {
+                        ShortcutHelperHintView(
+                            label: L("shortcut.helper.label", "Keyboard Shortcuts"),
+                            shortcut: "⌘/"
+                        )
+                        ShortcutHelperHintView(
+                            label: L("shortcut.helper.reportIssue.label", "Report Issue"),
+                            shortcut: reportIssueShortcutText,
+                            accessibilityHint: L(
+                                "shortcut.helper.reportIssue.hint",
+                                "Open the bug report flow"
+                            )
+                        )
                     }
                     .padding(.trailing, 12)
-                    .padding(.bottom, overlayModel.currentTask != nil ? 52 : 12)
                 }
+                .padding(.top, OverlayLayout.tabBarHeight + 8)
+                .padding(.trailing, 4)
                 .zIndex(11)
             }
         }
@@ -873,14 +884,20 @@ struct Chau7OverlayView: View {
             ]
         ))
     }
+
+    private var reportIssueShortcutText: String {
+        settings.shortcut(for: "reportIssue")?.displayString ?? "⇧⌘I"
+    }
 }
 
 private struct ShortcutHelperHintView: View {
+    let label: String
     let shortcut: String
+    let accessibilityHint: String
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(L("shortcut.helper.label", "Keyboard Shortcuts"))
+            Text(label)
                 .font(.custom("Avenir Next", size: 11).weight(.semibold))
             Text(shortcut)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -896,11 +913,21 @@ private struct ShortcutHelperHintView: View {
         .accessibilityLabel(
             String(
                 format: L("accessibility.shortcutHelper", "%@ %@"),
-                L("shortcut.helper.label", "Keyboard Shortcuts"),
+                label,
                 shortcut
             )
         )
-        .accessibilityHint(L("shortcut.helper.hint", "Show the keyboard shortcuts window"))
+        .accessibilityHint(accessibilityHint)
+    }
+
+    init(
+        label: String,
+        shortcut: String,
+        accessibilityHint: String = L("shortcut.helper.hint", "Show the keyboard shortcuts window")
+    ) {
+        self.label = label
+        self.shortcut = shortcut
+        self.accessibilityHint = accessibilityHint
     }
 }
 
