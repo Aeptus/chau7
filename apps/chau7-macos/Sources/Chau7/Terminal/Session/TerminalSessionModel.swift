@@ -43,6 +43,13 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             }
             return Array(buffer.prefix(count))
         }
+
+        /// Sliding-window average over the most recent samples in the buffer.
+        func recentAverage() -> Int? {
+            guard count > 0 else { return nil }
+            let vals = values()
+            return vals.reduce(0, +) / vals.count
+        }
     }
 
     enum LagKind: String, CaseIterable {
@@ -444,8 +451,6 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         }
         if text.contains("\n") || text.contains("\r") {
             processInputBuffer()
-        }
-        if text.contains("\n") || text.contains("\r") {
             markRunning()
         }
     }
@@ -886,9 +891,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         inputLatencySamples.append(Int(elapsedMs.rounded()))
         inputLatencySampleCount += 1
         inputLatencyTotalMs += elapsedMs
-        let avg = inputLatencyTotalMs / Double(inputLatencySampleCount)
         inputLatencyMs = Int(elapsedMs.rounded())
-        inputLatencyAverageMs = Int(avg.rounded())
+        inputLatencyAverageMs = inputLatencySamples.recentAverage()
         maybeLogLatencySpike(
             kind: "input",
             elapsedMs: elapsedMs,
@@ -938,9 +942,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         outputLatencySamples.append(Int(elapsedMs.rounded()))
         outputLatencySampleCount += 1
         outputLatencyTotalMs += elapsedMs
-        let avg = outputLatencyTotalMs / Double(outputLatencySampleCount)
         outputLatencyMs = Int(elapsedMs.rounded())
-        outputLatencyAverageMs = Int(avg.rounded())
+        outputLatencyAverageMs = outputLatencySamples.recentAverage()
         maybeLogLatencySpike(
             kind: "output",
             elapsedMs: elapsedMs,
@@ -1374,9 +1377,8 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             self.dangerousHighlightSamples.append(Int(elapsedMs.rounded()))
             self.dangerousHighlightSampleCount += 1
             self.dangerousHighlightTotalMs += elapsedMs
-            let avg = self.dangerousHighlightTotalMs / Double(self.dangerousHighlightSampleCount)
             self.dangerousHighlightDelayMs = Int(elapsedMs.rounded())
-            self.dangerousHighlightAverageMs = Int(avg.rounded())
+            self.dangerousHighlightAverageMs = self.dangerousHighlightSamples.recentAverage()
             self.dangerousOutputHighlightLastRun = Date()
             self.maybeLogLatencySpike(
                 kind: "highlight",
@@ -1420,10 +1422,12 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     private func isCpuSaturated() -> Bool {
+        // Only use input/output latency — these measure real main-thread congestion.
+        // Highlight latency includes its own throttle delay, creating a feedback loop
+        // where isCpuSaturated() → 1000ms delay → high average → isCpuSaturated() forever.
         let inputLag = inputLatencyAverageMs ?? inputLatencyMs ?? 0
         let outputLag = outputLatencyAverageMs ?? outputLatencyMs ?? 0
-        let highlightLag = dangerousHighlightAverageMs ?? dangerousHighlightDelayMs ?? 0
-        let maxLag = max(inputLag, max(outputLag, highlightLag))
+        let maxLag = max(inputLag, outputLag)
         return maxLag >= 80
     }
 

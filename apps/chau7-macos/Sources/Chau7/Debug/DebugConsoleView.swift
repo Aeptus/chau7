@@ -875,10 +875,19 @@ struct DebugConsoleView: View {
                         .border(Color.gray.opacity(0.3))
 
                     HStack {
-                        Button(L("Generate Report", "Generate Report")) {
-                            lastReportPath = BugReporter.shared.generateReport(userDescription: bugReportDescription)
+                        Button(L("Generate Github Report", "Generate Github Report")) {
+                            if let issueURL = BugReporter.shared.prefilledIssueURL(userDescription: bugReportDescription) {
+                                lastReportPath = issueURL.absoluteString
+                                NSWorkspace.shared.open(issueURL)
+                            } else {
+                                lastReportPath = nil
+                            }
                         }
                         .buttonStyle(.borderedProminent)
+
+                        Button(L("Save Report", "Save Report")) {
+                            lastReportPath = BugReporter.shared.generateReport(userDescription: bugReportDescription)
+                        }
 
                         Button(L("Open Reports Folder", "Open Reports Folder")) {
                             BugReporter.shared.openReportsFolder()
@@ -889,7 +898,7 @@ struct DebugConsoleView: View {
                         HStack {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
-                            Text(L("Report saved to:", "Report saved to:"))
+                            Text(L("Report draft:", "Report draft:"))
                                 .font(.system(size: 10))
                             Text(path)
                                 .font(.system(size: 10, design: .monospaced))

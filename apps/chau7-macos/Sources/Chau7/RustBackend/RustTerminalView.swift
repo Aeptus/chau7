@@ -2047,6 +2047,9 @@ final class RustTerminalView: NSView {
     private var scrollWheelMonitor: Any?
     private var keyDownMonitor: Any?
     private var generalKeyMonitor: Any?  // Intercepts ALL key events for Rust terminal routing
+    /// Signature of the last key event handled by the general key monitor.
+    /// Used to prevent duplicate handling in keyDown after monitor interception.
+    private var lastMonitorHandledKeyEventSignature: String?
     private var isEventMonitoringEnabled = false
 
     /// Path detection work item (for debouncing cursor change on hover)
@@ -2091,6 +2094,13 @@ final class RustTerminalView: NSView {
 
     /// Characters that have been locally echoed and await PTY confirmation
     private var pendingLocalEcho: [UInt8] = []
+    /// Offset into `pendingLocalEcho` for robust partial matching.
+    /// Matches can only consume from this offset to avoid O(n) queue churn and
+    /// corruption when output contains control/escape bytes before echoed text.
+    private var pendingLocalEchoOffset: Int = 0
+
+    /// Bound used to periodically compact/clear pending local-echo state.
+    private static let maxPendingLocalEcho = 100
 
     /// Track pending backspaces to suppress PTY's backspace response
     private var pendingLocalBackspaces: Int = 0
@@ -3019,6 +3029,34 @@ final class RustTerminalView: NSView {
         localEchoOverlay.removeAll()
         localEchoCursor = nil
         gridView?.clearOverlay()
+        clearLocalEchoState()
+    }
+
+    private func clearLocalEchoState() {
+        pendingLocalEcho.removeAll()
+        pendingLocalEchoOffset = 0
+        pendingLocalBackspaces = 0
+    }
+
+    private func removeLastPendingLocalEchoChar() {
+        guard !pendingLocalEcho.isEmpty else { return }
+        pendingLocalEcho.removeLast()
+        if pendingLocalEchoOffset > pendingLocalEcho.count {
+            pendingLocalEchoOffset = pendingLocalEcho.count
+        }
+    }
+
+    private func compactConsumedLocalEchoIfNeeded() {
+        guard pendingLocalEchoOffset > 0 else { return }
+        if pendingLocalEchoOffset >= pendingLocalEcho.count {
+            pendingLocalEcho.removeAll()
+            pendingLocalEchoOffset = 0
+            return
+        }
+        if pendingLocalEchoOffset > 64 {
+            pendingLocalEcho.removeFirst(pendingLocalEchoOffset)
+            pendingLocalEchoOffset = 0
+        }
     }
 
     private func baseCellForLocalEcho(row: Int, col: Int) -> RustCellData {
@@ -3321,26 +3359,31 @@ final class RustTerminalView: NSView {
         while i < data.endIndex {
             let byte = data[i]
 
-            // Check for backspace sequence: 0x08 0x20 0x08 ("\b \b")
-            // This is the PTY's echo of a backspace we already displayed
-            if pendingLocalBackspaces > 0 && byte == 0x08 {
+            // Check for PTY backspace/delete confirmations (e.g. DEL, BS, or BS space BS)
+            if pendingLocalBackspaces > 0 {
                 let remaining = data.endIndex - i
-                if remaining >= 3 && data[i + 1] == 0x20 && data[i + 2] == 0x08 {
-                    // Suppress backspace sequence we already displayed
+                if byte == 0x08 && remaining >= 3 && data[i + 1] == 0x20 &&
+                    (data[i + 2] == 0x08 || data[i + 2] == 0x7F) {
+                    // Suppress backspace sequence we already displayed: "\b \b" or "\b \x7f"
                     pendingLocalBackspaces -= 1
-                    // Also remove the char from pendingLocalEcho that was erased
-                    if !pendingLocalEcho.isEmpty {
-                        pendingLocalEcho.removeLast()
-                    }
+                    removeLastPendingLocalEchoChar()
                     i += 3
+                    continue
+                }
+
+                if byte == 0x08 || byte == 0x7F {
+                    // Suppress single-byte backspace/delete echo
+                    pendingLocalBackspaces -= 1
+                    removeLastPendingLocalEchoChar()
+                    i += 1
                     continue
                 }
             }
 
             // Check for local echo character match
-            if !pendingLocalEcho.isEmpty && byte == pendingLocalEcho[0] {
-                // This byte matches our local echo - suppress it
-                pendingLocalEcho.removeFirst()
+            if pendingLocalEchoOffset < pendingLocalEcho.count && byte == pendingLocalEcho[pendingLocalEchoOffset] {
+                // This byte matches our local echo queue - suppress it
+                pendingLocalEchoOffset += 1
                 i += 1
                 continue
             }
@@ -3350,12 +3393,13 @@ final class RustTerminalView: NSView {
             i += 1
         }
 
+        compactConsumedLocalEchoIfNeeded()
+
         // Clear stale pending state (timeout protection)
-        // If we have more than 100 pending characters, something went wrong
-        if pendingLocalEcho.count > 100 {
+        // If we have too much pending prediction state, something is out of sync
+        if (pendingLocalEcho.count - pendingLocalEchoOffset) > Self.maxPendingLocalEcho || pendingLocalBackspaces > Self.maxPendingLocalEcho {
             Log.trace("RustTerminalView[\(viewId)]: Local echo buffer overflow, clearing")
-            pendingLocalEcho.removeAll()
-            pendingLocalBackspaces = 0
+            clearLocalEchoState()
             clearLocalEchoOverlay()
         }
 
@@ -3406,8 +3450,8 @@ final class RustTerminalView: NSView {
             if lowercased.contains(pattern) {
                 isPtyEchoLikelyEnabled = false
                 echoDisabledTime = now
-                pendingLocalEcho.removeAll()
-                pendingLocalBackspaces = 0
+                clearLocalEchoState()
+                clearLocalEchoOverlay()
                 Log.trace("RustTerminalView[\(viewId)]: Echo disabled (detected password prompt)")
                 return
             }
@@ -3431,10 +3475,23 @@ final class RustTerminalView: NSView {
     /// This reduces perceived latency by showing typed characters instantly
     private func applyLocalEcho(for bytes: [UInt8]) {
         // Check if local echo is enabled in settings
-        guard FeatureSettings.shared.isLocalEchoEnabled, supportsLocalEcho else { return }
+        guard supportsLocalEcho else { return }
+        guard FeatureSettings.shared.isLocalEchoEnabled else {
+            if !pendingLocalEcho.isEmpty || pendingLocalEchoOffset > 0 || pendingLocalBackspaces > 0 {
+                clearLocalEchoState()
+                clearLocalEchoOverlay()
+            }
+            return
+        }
 
         // Check if PTY echo is likely enabled (not in password mode, etc.)
-        guard isPtyEchoLikelyEnabled else { return }
+        guard isPtyEchoLikelyEnabled else {
+            if !pendingLocalEcho.isEmpty || pendingLocalEchoOffset > 0 || pendingLocalBackspaces > 0 {
+                clearLocalEchoState()
+                clearLocalEchoOverlay()
+            }
+            return
+        }
 
         let token = FeatureProfiler.shared.begin(.localEcho, bytes: bytes.count)
         defer { FeatureProfiler.shared.end(token) }
@@ -3458,27 +3515,33 @@ final class RustTerminalView: NSView {
                 cell.character = UInt32(byte)
                 localEchoOverlay[idx] = cell
                 advanceLocalEchoCursor(&cursor)
-            } else if (byte == 0x7F || byte == 0x08) && !pendingLocalEcho.isEmpty {
+            } else if byte == 0x7F || byte == 0x08 {
                 // Backspace/Delete: Undo the last local echo visually
                 // Track the backspace so we suppress PTY's backspace response too
                 pendingLocalBackspaces += 1
                 retreatLocalEchoCursor(&cursor)
                 let idx = cursor.row * cols + cursor.col
                 localEchoOverlay.removeValue(forKey: idx)
+                removeLastPendingLocalEchoChar()
+                if !pendingLocalEcho.isEmpty && pendingLocalEchoOffset > pendingLocalEcho.count {
+                    pendingLocalEchoOffset = pendingLocalEcho.count
+                }
             } else if byte == 0x03 || byte == 0x15 {
                 // Ctrl+C (0x03) or Ctrl+U (0x15): Clear local echo buffer
                 // These typically abort/clear the current line
-                pendingLocalEcho.removeAll()
-                pendingLocalBackspaces = 0
+                clearLocalEchoState()
                 clearLocalEchoOverlay()
                 localEchoCursor = nil
                 return
             } else if byte == 0x0A || byte == 0x0D {
                 clearLocalEchoOverlay()
+                clearLocalEchoState()
                 localEchoCursor = nil
                 return
             }
         }
+
+        compactConsumedLocalEchoIfNeeded()
 
         localEchoCursor = cursor
         updateLocalEchoOverlay()
@@ -3500,9 +3563,40 @@ final class RustTerminalView: NSView {
     /// the call originated from a keyboard event (not Password AutoFill).
     private var handlingKeyDown = false
 
+    private func makeInputEventSignature(_ event: NSEvent) -> String {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let characters = event.characters ?? ""
+        let charactersIgnoringModifiers = event.charactersIgnoringModifiers ?? ""
+        return "\(event.timestamp)|\(event.keyCode)|\(characters)|\(charactersIgnoringModifiers)|\(flags.rawValue)"
+    }
+
+    private func markGeneralKeyEventHandled(_ event: NSEvent) {
+        let signature = makeInputEventSignature(event)
+        lastMonitorHandledKeyEventSignature = signature
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self else { return }
+            if self.lastMonitorHandledKeyEventSignature == signature {
+                self.lastMonitorHandledKeyEventSignature = nil
+            }
+        }
+    }
+
+    private func isEventHandledByGeneralMonitor(_ event: NSEvent) -> Bool {
+        guard let signature = lastMonitorHandledKeyEventSignature else { return false }
+        return signature == makeInputEventSignature(event)
+    }
+
     override func keyDown(with event: NSEvent) {
         guard let rust = rustTerminal else {
             Log.trace("RustTerminalView[\(viewId)]: keyDown - No Rust terminal")
+            return
+        }
+        if isEventHandledByGeneralMonitor(event) {
+            Log.trace("RustTerminalView[\(viewId)]: keyDown - Skipping event already handled by general monitor")
+            return
+        }
+        // Command key combinations are handled by app commands (copy/paste/menus), not terminal input
+        if event.modifierFlags.contains(.command) {
             return
         }
         hideTipOverlay()
@@ -3512,15 +3606,15 @@ final class RustTerminalView: NSView {
 
         // Generate terminal escape sequence for this key event
         if let sequence = generateTerminalSequence(keyCode: keyCode, modifiers: modifiers, event: event) {
-            // NOTE: No local echo for escape sequences - they are control codes, not printable text.
-            // Local echo is only applied for regular text input (event.characters path below).
-
             let hexPreview = sequence.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
             Log.trace("RustTerminalView[\(viewId)]: keyDown - Sending escape sequence: [\(hexPreview)] (keyCode=\(keyCode))")
-            rust.sendBytes(sequence)
+            if sequence == [0x7f] || sequence == [0x08], let text = String(bytes: sequence, encoding: .utf8) {
+                applyLocalEchoForText(text)
+            }
             if let text = String(bytes: sequence, encoding: .utf8) {
                 onInput?(text)
             }
+            rust.sendBytes(sequence)
             return
         }
 
@@ -3536,14 +3630,12 @@ final class RustTerminalView: NSView {
                 applyLocalEchoForText(chars)
                 let escaped = chars.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
                 Log.trace("RustTerminalView[\(viewId)]: keyDown - Sending characters (fallback): '\(escaped)' (keyCode=\(keyCode))")
-                rust.sendText(chars)
-                onInput?(chars)
+                send(txt: chars)
             } else if let charsNoMod = event.charactersIgnoringModifiers, !charsNoMod.isEmpty {
                 applyLocalEchoForText(charsNoMod)
                 let escaped = charsNoMod.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
                 Log.trace("RustTerminalView[\(viewId)]: keyDown - Sending chars (no mod, fallback): '\(escaped)' (keyCode=\(keyCode))")
-                rust.sendText(charsNoMod)
-                onInput?(charsNoMod)
+                send(txt: charsNoMod)
             } else {
                 Log.trace("RustTerminalView[\(viewId)]: keyDown - No characters to send (keyCode=\(keyCode))")
             }
@@ -3570,27 +3662,28 @@ final class RustTerminalView: NSView {
         if let sequence = generateTerminalSequence(keyCode: keyCode, modifiers: modifiers, event: event) {
             let hexPreview = sequence.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
             Log.trace("RustTerminalView[\(viewId)]: handleTerminalKeyEvent - Sending escape sequence: [\(hexPreview)] (keyCode=\(keyCode))")
-            rust.sendBytes(sequence)
+            if sequence == [0x7f] || sequence == [0x08], let text = String(bytes: sequence, encoding: .utf8) {
+                applyLocalEchoForText(text)
+            }
             if let text = String(bytes: sequence, encoding: .utf8) {
                 onInput?(text)
             }
+            rust.sendBytes(sequence)
             return true
         }
 
         // Fallback to characters for regular text input
         if let chars = event.characters, !chars.isEmpty {
-            applyLocalEchoForText(chars)
             let escaped = chars.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
             Log.trace("RustTerminalView[\(viewId)]: handleTerminalKeyEvent - Sending characters: '\(escaped)' (keyCode=\(keyCode))")
-            rust.sendText(chars)
-            onInput?(chars)
+            applyLocalEchoForText(chars)
+            send(txt: chars)
             return true
         } else if let charsNoMod = event.charactersIgnoringModifiers, !charsNoMod.isEmpty {
-            applyLocalEchoForText(charsNoMod)
             let escaped = charsNoMod.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
             Log.trace("RustTerminalView[\(viewId)]: handleTerminalKeyEvent - Sending chars (no mod): '\(escaped)' (keyCode=\(keyCode))")
-            rust.sendText(charsNoMod)
-            onInput?(charsNoMod)
+            applyLocalEchoForText(charsNoMod)
+            send(txt: charsNoMod)
             return true
         }
 
@@ -4863,6 +4956,7 @@ final class RustTerminalView: NSView {
 
             // Route to Rust terminal
             if self.handleTerminalKeyEvent(event) {
+                self.markGeneralKeyEventHandled(event)
                 return nil  // Consume event - we handled it
             }
             return event  // Let it propagate if not handled

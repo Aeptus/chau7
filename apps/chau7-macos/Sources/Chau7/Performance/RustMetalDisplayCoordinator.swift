@@ -214,6 +214,9 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
 
     private static var drawCallCount: UInt64 = 0
     private static var lastDrawLogTime: CFAbsoluteTime = 0
+    private static var lastWarningLogTime: CFAbsoluteTime = 0
+    private static var lastNoDrawableWarningLogTime: CFAbsoluteTime = 0
+    private static let warningCooldown = 1.0
 
     func draw(in view: MTKView) {
         Self.drawCallCount += 1
@@ -223,7 +226,11 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         // Ensure font is configured (may not be ready at init if window isn't available yet)
         if !fontConfigured { configureFont() }
         guard fontConfigured else {
-            Log.warn("RustMetalDisplayCoordinator: draw skipped — font not configured")
+            let now = CFAbsoluteTimeGetCurrent()
+            if now - Self.lastWarningLogTime > Self.warningCooldown {
+                Log.debug("RustMetalDisplayCoordinator: draw skipped — font not configured")
+                Self.lastWarningLogTime = now
+            }
             return
         }
 
@@ -231,7 +238,11 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
 
         // 1. Get grid snapshot from Rust via the provider closure
         guard let snapshot = gridProvider?() else {
-            Log.warn("RustMetalDisplayCoordinator: draw skipped — gridProvider returned nil")
+            let now = CFAbsoluteTimeGetCurrent()
+            if now - Self.lastWarningLogTime > Self.warningCooldown {
+                Log.debug("RustMetalDisplayCoordinator: draw skipped — gridProvider returned nil")
+                Self.lastWarningLogTime = now
+            }
             FeatureProfiler.shared.end(token)
             return
         }
@@ -279,7 +290,11 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             return
         }
         guard let drawable = (view.layer as? CAMetalLayer)?.nextDrawable() else {
-            Log.trace("RustMetalDisplayCoordinator: draw skipped — no drawable (bounds=\(view.bounds))")
+            let now = CFAbsoluteTimeGetCurrent()
+            if now - Self.lastNoDrawableWarningLogTime > Self.warningCooldown {
+                Log.debug("RustMetalDisplayCoordinator: draw skipped — no drawable (bounds=\(view.bounds))")
+                Self.lastNoDrawableWarningLogTime = now
+            }
             FeatureProfiler.shared.end(token)
             return
         }
@@ -288,7 +303,11 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         let renderBuf = tripleBuffer.renderBuffer
         let cellCount = rows * cols
         guard cellCount > 0 else {
-            Log.warn("RustMetalDisplayCoordinator: draw skipped — cellCount is 0 (rows=\(rows), cols=\(cols))")
+            let now = CFAbsoluteTimeGetCurrent()
+            if now - Self.lastWarningLogTime > Self.warningCooldown {
+                Log.debug("RustMetalDisplayCoordinator: draw skipped — cellCount is 0 (rows=\(rows), cols=\(cols))")
+                Self.lastWarningLogTime = now
+            }
             FeatureProfiler.shared.end(token)
             return
         }

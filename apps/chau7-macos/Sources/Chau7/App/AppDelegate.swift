@@ -767,23 +767,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func reportIssue() {
-        let alert = NSAlert()
-        alert.messageText = L("alert.reportIssue.title", "Report an Issue")
-        alert.informativeText = L("alert.reportIssue.message", """
-        To report a bug or request a feature:
-
-        1. Open Debug Console (⇧⌘L) to capture logs
-        2. Note the steps to reproduce the issue
-        3. Include your macOS version and Chau7 version
-
-        You can export logs from Debug Console → Export Logs.
-        """)
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: L("button.openDebugConsole", "Open Debug Console"))
-        alert.addButton(withTitle: L("button.cancel", "Cancel"))
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            DebugConsoleController.shared.toggle()
+        if let issueURL = BugReporter.shared.prefilledIssueURL() {
+            NSWorkspace.shared.open(issueURL)
+        } else {
+            let alert = NSAlert()
+            alert.messageText = L("alert.reportIssue.title", "Report an Issue")
+            alert.informativeText = L("alert.reportIssue.message", "Unable to build a prefilled GitHub issue link.")
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: L("button.ok", "OK"))
+            alert.runModal()
         }
     }
 
