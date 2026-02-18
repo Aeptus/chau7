@@ -7,6 +7,14 @@ final class AITerminalLogSession {
     private let queue = DispatchQueue(label: "com.chau7.ptylog.\(UUID().uuidString)")
     private var handle: FileHandle?
     private var inputBuffer = Data()
+    private var writeCount = 0
+    private let maxBytes: Int = {
+        if let raw = EnvVars.get(EnvVars.ptyLogMaxBytes),
+           let value = Int(raw), value > 0 {
+            return value
+        }
+        return 50 * 1024 * 1024  // 50 MB
+    }()
 
     init(toolName: String, logPath: String) {
         self.toolName = toolName
@@ -22,6 +30,10 @@ final class AITerminalLogSession {
                 self.openHandle()
             }
             self.handle?.write(data)
+            self.writeCount += 1
+            if self.writeCount % 200 == 0 {
+                self.trimLogIfNeeded()
+            }
         }
     }
 
@@ -53,6 +65,32 @@ final class AITerminalLogSession {
         }
         handle = try? FileHandle(forWritingTo: url)
         _ = try? handle?.seekToEnd()
+    }
+
+    private func trimLogIfNeeded() {
+        guard maxBytes > 0 else { return }
+        let url = URL(fileURLWithPath: logPath)
+        guard let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? UInt64 else {
+            return
+        }
+        let max = UInt64(maxBytes)
+        guard size > max else { return }
+
+        let keepBytes = max / 2
+        guard let readHandle = try? FileHandle(forReadingFrom: url) else { return }
+        defer { try? readHandle.close() }
+
+        let start = size > keepBytes ? size - keepBytes : 0
+        try? readHandle.seek(toOffset: start)
+        guard let tail = try? readHandle.readToEnd() else { return }
+
+        try? handle?.close()
+        handle = nil
+        guard let writeHandle = try? FileHandle(forWritingTo: url) else { return }
+        try? writeHandle.truncate(atOffset: 0)
+        try? writeHandle.write(contentsOf: tail)
+        _ = try? writeHandle.seekToEnd()
+        handle = writeHandle
     }
 
     private func flushInputLocked() {

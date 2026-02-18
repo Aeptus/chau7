@@ -68,6 +68,7 @@ enum Log {
             try handle.seekToEnd()
             fileHandle = handle
         } catch {
+            fputs("[Chau7] WARNING: Failed to open log file at \(path): \(error)\n", stderr)
             fileHandle = nil
         }
     }
@@ -100,9 +101,17 @@ enum Log {
     }
 
     private static func writeToFile(_ line: String) {
-        guard let handle = fileHandle else { return }
         let data = (line + "\n").data(using: .utf8) ?? Data()
         fileQueue.async {
+            // Lazy recovery: if fileHandle is nil (configure failed or trim broke it), retry once
+            if fileHandle == nil && !filePathValue.isEmpty {
+                let url = URL(fileURLWithPath: filePathValue)
+                if let h = try? FileHandle(forWritingTo: url) {
+                    _ = try? h.seekToEnd()
+                    fileHandle = h
+                }
+            }
+            guard let handle = fileHandle else { return }
             try? handle.write(contentsOf: data)
             writeCount += 1
             if writeCount % 200 == 0 {
@@ -129,7 +138,11 @@ enum Log {
         guard let tailData = try? readHandle.readToEnd() else { return }
 
         try? fileHandle?.close()
-        guard let writeHandle = try? FileHandle(forWritingTo: url) else { return }
+        fileHandle = nil
+        guard let writeHandle = try? FileHandle(forWritingTo: url) else {
+            fputs("[Chau7] WARNING: Failed to reopen log after trim\n", stderr)
+            return
+        }
         try? writeHandle.truncate(atOffset: 0)
         try? writeHandle.write(contentsOf: tailData)
         _ = try? writeHandle.seekToEnd()
