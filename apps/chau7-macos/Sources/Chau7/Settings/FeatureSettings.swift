@@ -1528,6 +1528,50 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(errorExplainEnabled, forKey: Keys.errorExplainEnabled) }
     }
 
+    // MARK: - RTK Integration
+
+    @Published var isRTKEnabled: Bool {
+        didSet { UserDefaults.standard.set(isRTKEnabled, forKey: Keys.rtkEnabled) }
+    }
+
+    @Published var rtkPrefix: String {
+        didSet {
+            let trimmed = rtkPrefix.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .newlines)
+            if rtkPrefix != trimmed {
+                rtkPrefix = trimmed
+                return
+            }
+            UserDefaults.standard.set(rtkPrefix, forKey: Keys.rtkPrefix)
+        }
+    }
+
+    @Published var rtkTabOverrides: [String: Bool] {
+        didSet { UserDefaults.standard.set(rtkTabOverrides, forKey: Keys.rtkTabOverrides) }
+    }
+
+    func isRTKEnabled(forTabIdentifier tabIdentifier: String?) -> Bool {
+        guard let normalized = normalizeTabIdentifier(tabIdentifier),
+              let override = rtkTabOverrides[normalized] else {
+            return isRTKEnabled
+        }
+        return override
+    }
+
+    func rtkOverride(forTabIdentifier tabIdentifier: String?) -> Bool? {
+        guard let normalized = normalizeTabIdentifier(tabIdentifier) else { return nil }
+        return rtkTabOverrides[normalized]
+    }
+
+    func setRTKOverride(_ enabled: Bool, forTabIdentifier tabIdentifier: String?) {
+        guard let normalized = normalizeTabIdentifier(tabIdentifier) else { return }
+        rtkTabOverrides[normalized] = enabled
+    }
+
+    func clearRTKOverride(forTabIdentifier tabIdentifier: String?) {
+        guard let normalized = normalizeTabIdentifier(tabIdentifier) else { return }
+        rtkTabOverrides.removeValue(forKey: normalized)
+    }
+
     // MARK: - Keys
 
     private enum Keys {
@@ -1664,6 +1708,10 @@ final class FeatureSettings: ObservableObject {
         static let tmuxAutoAttachEnabled = "feature.tmuxAutoAttachEnabled"
         // LLM / Error Explanation
         static let errorExplainEnabled = "feature.errorExplainEnabled"
+        // RTK Integration
+        static let rtkEnabled = "feature.rtkEnabled"
+        static let rtkPrefix = "feature.rtkPrefix"
+        static let rtkTabOverrides = "feature.rtkTabOverrides"
     }
 
     // MARK: - Init
@@ -1947,6 +1995,18 @@ final class FeatureSettings: ObservableObject {
 
         // LLM / Error Explanation
         self.errorExplainEnabled = defaults.object(forKey: Keys.errorExplainEnabled) as? Bool ?? false
+
+        // RTK Integration
+        self.isRTKEnabled = defaults.object(forKey: Keys.rtkEnabled) as? Bool ?? false
+        self.rtkPrefix = defaults.string(forKey: Keys.rtkPrefix) ?? ""
+        if let raw = defaults.dictionary(forKey: Keys.rtkTabOverrides) {
+            self.rtkTabOverrides = raw.compactMapValues { value in
+                guard let boolValue = value as? Bool else { return nil }
+                return boolValue
+            }
+        } else {
+            self.rtkTabOverrides = [:]
+        }
     }
 
     private static func migratedShortcutsIfNeeded(_ shortcuts: [KeyboardShortcut]) -> [KeyboardShortcut] {
@@ -2072,6 +2132,12 @@ final class FeatureSettings: ObservableObject {
         return base?.isEmpty == false ? base! : "global"
     }
 
+    private func normalizeTabIdentifier(_ tabIdentifier: String?) -> String? {
+        guard let tabIdentifier else { return nil }
+        let trimmed = tabIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     // MARK: - Import/Export Settings (NEW)
 
     struct ExportableSettings: Codable {
@@ -2150,6 +2216,9 @@ final class FeatureSettings: ObservableObject {
         var keybindingPreset: String
         var isRemoteEnabled: Bool? = nil
         var remoteRelayURL: String? = nil
+        var isRTKEnabled: Bool = false
+        var rtkPrefix: String = ""
+        var rtkTabOverrides: [String: Bool] = [:]
         var exportVersion: Int = 1
     }
 
@@ -2229,7 +2298,10 @@ final class FeatureSettings: ObservableObject {
             isSplitPanesEnabled: isSplitPanesEnabled,
             keybindingPreset: keybindingPreset,
             isRemoteEnabled: isRemoteEnabled,
-            remoteRelayURL: remoteRelayURL
+            remoteRelayURL: remoteRelayURL,
+            isRTKEnabled: isRTKEnabled,
+            rtkPrefix: rtkPrefix,
+            rtkTabOverrides: rtkTabOverrides
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -2363,6 +2435,9 @@ final class FeatureSettings: ObservableObject {
         if let relayURL = imported.remoteRelayURL {
             remoteRelayURL = relayURL
         }
+        isRTKEnabled = imported.isRTKEnabled
+        rtkPrefix = imported.rtkPrefix
+        rtkTabOverrides = imported.rtkTabOverrides
 
         return true
     }
@@ -2467,6 +2542,9 @@ final class FeatureSettings: ObservableObject {
         isSplitPanesEnabled = true
         isRemoteEnabled = false
         remoteRelayURL = "wss://relay.example.com/connect"
+        isRTKEnabled = false
+        rtkPrefix = ""
+        rtkTabOverrides.removeAll()
         keybindingPreset = "default"
 
         // Overlay positions
@@ -2707,7 +2785,10 @@ extension FeatureSettings {
             isSplitPanesEnabled: true,
             keybindingPreset: "default",
             isRemoteEnabled: false,
-            remoteRelayURL: "wss://relay.example.com/connect"
+            remoteRelayURL: "wss://relay.example.com/connect",
+            isRTKEnabled: false,
+            rtkPrefix: "",
+            rtkTabOverrides: [:]
         )
     }
 

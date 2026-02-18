@@ -6,6 +6,7 @@ import Chau7Core
 
 struct AIIntegrationSettingsView: View {
     @ObservedObject private var settings = FeatureSettings.shared
+    let overlayModel: OverlayTabsModel?
     @State private var newCustomPattern: String = ""
     @State private var newCustomName: String = ""
     @State private var newCustomColor: TabColor = .gray
@@ -27,6 +28,107 @@ struct AIIntegrationSettingsView: View {
             SettingsDetectionRow(name: "GitHub Copilot", commands: "gh copilot, copilot", color: TabColor.orange.color)
             SettingsDetectionRow(name: "Aider", commands: "aider, aider-chat", color: TabColor.pink.color)
             SettingsDetectionRow(name: "Cursor", commands: "cursor", color: TabColor.teal.color)
+
+            Divider()
+                .padding(.vertical, 8)
+
+            // RTK Integration
+            SettingsSectionHeader(L("settings.ai.rtk", "RTK Integration"), icon: "bolt.fill")
+
+            SettingsToggle(
+                label: L("settings.ai.rtk.enabled", "Enable RTK"),
+                help: L(
+                    "settings.ai.rtk.enabledHelp",
+                    "When enabled, the RTK prefix is prepended to terminal commands."
+                ),
+                isOn: Binding(
+                    get: { settings.isRTKEnabled },
+                    set: { settings.isRTKEnabled = $0 }
+                )
+            )
+
+            SettingsTextField(
+                L("settings.ai.rtk.prefix", "RTK Prefix"),
+                help: L(
+                    "settings.ai.rtk.prefixHelp",
+                    "Prefix text to prepend (supports per-tab overrides)."
+                ),
+                placeholder: "/think",
+                text: Binding(
+                    get: { settings.rtkPrefix },
+                    set: { settings.rtkPrefix = $0 }
+                ),
+                width: 220,
+                monospaced: true
+            )
+
+            if let overlayModel {
+                let tabRows = activeTabRows(from: overlayModel.tabs)
+
+                if !tabRows.isEmpty {
+                    SettingsSectionHeader(L("settings.ai.rtk.tabs", "Tab-by-tab RTK"), icon: "list.bullet")
+
+                            SettingsRow(L("settings.ai.rtk.applyAll", "Apply to all open tabs")) {
+                                HStack(spacing: 8) {
+                                    Button(L("settings.ai.rtk.enableAll", "Enable all")) {
+                                        applyRTK(to: tabRows.map(\.id), enabled: true)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+
+                                    Button(L("settings.ai.rtk.disableAll", "Disable all")) {
+                                        applyRTK(to: tabRows.map(\.id), enabled: false)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+
+                            Button(L("settings.ai.rtk.clearAllOverrides", "Use global on all")) {
+                                clearRTKOverrides()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+
+                    ForEach(tabRows) { row in
+                        SettingsRow(
+                            row.tabTitle,
+                            help: row.hasOverride
+                                ? L("settings.ai.rtk.tabOverride", "Overrides global RTK setting for this tab.")
+                                : L("settings.ai.rtk.tabInherit", "Uses global RTK setting.")
+                        ) {
+                            HStack(spacing: 12) {
+                                Toggle("", isOn: Binding(
+                                    get: { settings.isRTKEnabled(forTabIdentifier: row.id) },
+                                    set: { value in
+                                        if value == settings.isRTKEnabled {
+                                            settings.clearRTKOverride(forTabIdentifier: row.id)
+                                        } else {
+                                            settings.setRTKOverride(value, forTabIdentifier: row.id)
+                                        }
+                                    }
+                                ))
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+
+                                if row.hasOverride {
+                                    Button(L("settings.ai.rtk.clearOverride", "Use global")) {
+                                        settings.clearRTKOverride(forTabIdentifier: row.id)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    SettingsRow(L("settings.ai.rtk.tabsUnavailable", "No active tabs")) {
+                        Text(L("settings.ai.rtk.waitForTabs", "Open a tab to enable per-tab settings."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
 
             Divider()
                 .padding(.vertical, 8)
@@ -103,6 +205,42 @@ struct AIIntegrationSettingsView: View {
         newCustomPattern = ""
         newCustomName = ""
         newCustomColor = .gray
+    }
+
+    private func activeTabRows(from overlayTabs: [OverlayTab]) -> [RTKTabRow] {
+        overlayTabs.compactMap { tab -> RTKTabRow? in
+            guard let sessionIdentifier = tab.session?.tabIdentifier else { return nil }
+            let override = settings.rtkOverride(forTabIdentifier: sessionIdentifier)
+            return RTKTabRow(
+                id: sessionIdentifier,
+                tabTitle: tab.displayTitle.isEmpty ? "Tab" : tab.displayTitle,
+                hasOverride: override != nil
+            )
+        }
+        .sorted { lhs, rhs in
+            lhs.tabTitle.localizedCaseInsensitiveCompare(rhs.tabTitle) == .orderedAscending
+        }
+    }
+
+    private func applyRTK(to tabIDs: [String], enabled: Bool) {
+        let uniqueTabIDs = Set(tabIDs)
+        uniqueTabIDs.forEach { tabID in
+            settings.setRTKOverride(enabled, forTabIdentifier: tabID)
+        }
+    }
+
+    private func clearRTKOverrides() {
+        guard let overlayModel else { return }
+        for tab in overlayModel.tabs {
+            guard let sessionIdentifier = tab.session?.tabIdentifier else { continue }
+            settings.clearRTKOverride(forTabIdentifier: sessionIdentifier)
+        }
+    }
+
+    private struct RTKTabRow: Identifiable {
+        let id: String
+        let tabTitle: String
+        let hasOverride: Bool
     }
 }
 

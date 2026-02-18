@@ -8,9 +8,10 @@ import Chau7Core
 /// Wrapper view for the standalone settings window (opened via Cmd+,)
 struct SettingsWindowView: View {
     @ObservedObject var model: AppModel
+    let overlayModel: OverlayTabsModel?
 
     var body: some View {
-        SettingsRootView(model: model)
+        SettingsRootView(model: model, overlayModel: overlayModel)
     }
 }
 
@@ -343,6 +344,7 @@ struct StreamView: View {
 
 struct SettingsRootView: View {
     @ObservedObject var model: AppModel
+    let overlayModel: OverlayTabsModel?
     @State private var selection: SettingsSection = .general
     @State private var searchQuery: String = ""
 
@@ -385,7 +387,12 @@ struct SettingsRootView: View {
             }
             .frame(minWidth: 220)
         } detail: {
-            SettingsDetailView(selection: selection, model: model, searchQuery: searchQuery)
+            SettingsDetailView(
+                selection: selection,
+                model: model,
+                overlayModel: overlayModel,
+                searchQuery: searchQuery
+            )
         }
         .frame(minWidth: 860, minHeight: 650)
         .localized()
@@ -470,6 +477,7 @@ struct SettingsSidebarRow: View {
 struct SettingsDetailView: View {
     let selection: SettingsSection
     @ObservedObject var model: AppModel
+    let overlayModel: OverlayTabsModel?
     var searchQuery: String = ""
 
     private var matchingSettings: [SearchableSetting] {
@@ -528,7 +536,7 @@ struct SettingsDetailView: View {
                         ProductivitySettingsView()
                     // Integrations
                     case .aiDetection:
-                        AIIntegrationSettingsView()
+                        AIIntegrationSettingsView(overlayModel: overlayModel)
                     case .remoteControl:
                         RemoteSettingsView()
                     case .apiProxy:
