@@ -81,6 +81,12 @@ struct AIIntegrationSettingsView: View {
                     .disabled(newCustomPattern.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+
+            Divider()
+                .padding(.vertical, 8)
+
+            // LLM Provider (embedded)
+            LLMSettingsView(settings: settings)
         }
     }
 

@@ -26,6 +26,12 @@ struct RemoteSettingsView: View {
 
             SettingsSectionHeader(L("settings.remote.pairing", "Pairing"), icon: "qrcode")
             pairingView
+
+            Divider()
+                .padding(.vertical, 8)
+
+            // SSH Profiles (embedded)
+            SSHProfilesSettingsView()
         }
     }
 

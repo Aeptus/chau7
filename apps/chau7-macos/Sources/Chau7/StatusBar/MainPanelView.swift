@@ -350,6 +350,8 @@ struct SettingsRootView: View {
         FeatureSettings.sectionsMatching(query: searchQuery)
     }
 
+    private var isSearching: Bool { !searchQuery.isEmpty }
+
     private var filteredSections: [SettingsSection] {
         if searchQuery.isEmpty {
             return SettingsSection.allCases
@@ -363,22 +365,29 @@ struct SettingsRootView: View {
                 // Search Bar
                 SettingsSearchBar(searchQuery: $searchQuery)
 
-                // Section List
-                List(filteredSections, selection: $selection) { section in
-                    SettingsSidebarRow(
-                        section: section,
-                        isHighlighted: !searchQuery.isEmpty && matchingSections.contains(section),
-                        matchCount: searchQuery.isEmpty ? 0 : FeatureSettings.searchableSettings.filter { $0.section == section && $0.matches(searchQuery) }.count
-                    )
-                    .tag(section)
+                // Section List — grouped when browsing, flat when searching
+                List(selection: $selection) {
+                    if isSearching {
+                        ForEach(filteredSections) { section in
+                            sidebarRow(for: section)
+                        }
+                    } else {
+                        ForEach(SettingsSectionGroup.allCases) { group in
+                            Section(header: Text(group.title)) {
+                                ForEach(group.sections, id: \.self) { section in
+                                    sidebarRow(for: section)
+                                }
+                            }
+                        }
+                    }
                 }
                 .listStyle(.sidebar)
             }
-            .frame(minWidth: 200)
+            .frame(minWidth: 220)
         } detail: {
             SettingsDetailView(selection: selection, model: model, searchQuery: searchQuery)
         }
-        .frame(minWidth: 820, minHeight: 650)
+        .frame(minWidth: 860, minHeight: 650)
         .localized()
         .onChange(of: searchQuery) { newQuery in
             // Auto-select first matching section when searching
@@ -386,6 +395,15 @@ struct SettingsRootView: View {
                 selection = firstMatch
             }
         }
+    }
+
+    private func sidebarRow(for section: SettingsSection) -> some View {
+        SettingsSidebarRow(
+            section: section,
+            isHighlighted: isSearching && matchingSections.contains(section),
+            matchCount: isSearching ? FeatureSettings.searchableSettings.filter { $0.section == section && $0.matches(searchQuery) }.count : 0
+        )
+        .tag(section)
     }
 }
 
@@ -478,32 +496,48 @@ struct SettingsDetailView: View {
                 // Section content
                 Group {
                     switch selection {
+                    // Essentials
                     case .general:
                         GeneralSettingsView(model: model)
-                    case .appearance:
-                        AppearanceSettingsView()
-                    case .terminal:
-                        TerminalSettingsView(model: model)
-                    case .tabs:
-                        TabsSettingsView()
-                    case .input:
-                        InputSettingsView()
-                    case .productivity:
-                        ProductivitySettingsView()
-                    case .windows:
-                        WindowsSettingsView()
-                    case .remote:
-                        RemoteSettingsView()
-                    case .aiIntegration:
-                        AIIntegrationSettingsView()
-                    case .tokenOptimization:
-                        TokenOptimizationSettingsView()
-                    case .notifications:
-                        NotificationsSettingsView(model: model)
-                    case .logs:
-                        LogsSettingsView(model: model)
+                    case .profilesBackup:
+                        ProfilesBackupSettingsView()
                     case .about:
                         AboutSettingsView(model: model)
+                    // Look & Feel
+                    case .fontColors:
+                        FontColorsSettingsView()
+                    case .display:
+                        DisplaySettingsView()
+                    case .tabs:
+                        TabsSettingsView()
+                    // Terminal
+                    case .shell:
+                        ShellSettingsView()
+                    case .scrollbackPerf:
+                        ScrollbackPerfSettingsView(model: model)
+                    case .dangerousCommands:
+                        DangerousCommandSettingsView()
+                    case .graphics:
+                        GraphicsSettingsView()
+                    case .tmux:
+                        TmuxSettingsView()
+                    // Input & Productivity
+                    case .keyboardMouse:
+                        InputSettingsView()
+                    case .snippetsTools:
+                        ProductivitySettingsView()
+                    // Integrations
+                    case .aiDetection:
+                        AIIntegrationSettingsView()
+                    case .remoteControl:
+                        RemoteSettingsView()
+                    case .apiProxy:
+                        ProxySettingsView()
+                    // Monitoring
+                    case .notifications:
+                        NotificationsSettingsView(model: model)
+                    case .logsHistory:
+                        LogsSettingsView(model: model)
                     }
                 }
             }
