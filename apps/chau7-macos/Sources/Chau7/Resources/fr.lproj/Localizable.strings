@@ -1150,9 +1150,23 @@
 // Section État et permissions
 "settings.notifications.status" = "État et permissions";
 "settings.notifications.status.label" = "État";
+"settings.notifications.permission.state.unavailable" = "Indisponible (non inclus dans un package)";
+"settings.notifications.permission.state.unknown" = "Inconnu";
+"settings.notifications.permission.state.notDetermined" = "Non déterminé";
+"settings.notifications.permission.state.denied" = "Refusé";
+"settings.notifications.permission.state.authorized" = "Autorisé";
+"settings.notifications.permission.state.provisional" = "Provisoire";
+"settings.notifications.permission.state.ephemeral" = "Éphémère";
+"settings.notifications.permission.warning.notBundled" = "Les notifications nécessitent le bundle de l'application. Lancez et ouvrez Chau7.app.";
+"settings.notifications.permission.warning.notDetermined" = "La permission n'a pas encore été demandée.";
+"settings.notifications.permission.warning.denied" = "Les notifications sont refusées. Ouvrez les Réglages Système et autorisez les alertes pour Chau7.";
+"settings.notifications.permission.warning.alertsDisabled" = "Les alertes sont désactivées pour Chau7. Activez Bannières ou alertes dans Réglages Système.";
+"settings.notifications.permission.warning.unknown" = "Statut de notification inconnu. Vérifiez Réglages Système > Notifications > Chau7.";
+"settings.notifications.permission.warning.testRequiresPermission" = "Activez d'abord les notifications pour envoyer un test.";
 "settings.notifications.requestPermission" = "Demander la permission";
 "settings.notifications.systemSettings" = "Réglages système";
 "settings.notifications.sendTest" = "Envoyer un test";
+"settings.notifications.unavailable.hint" = "Lancez l'application via son bundle pour activer les notifications système.";
 
 // Section Filtres de notifications
 "settings.notifications.filters" = "Filtres de notifications";
@@ -1186,6 +1200,17 @@
 "settings.notifications.categoryDisabled" = "Aucun déclencheur activé dans cette catégorie.";
 "settings.notifications.noActions" = "Aucune action configurée. Notification par défaut utilisée.";
 "settings.notifications.addAction" = "Ajouter une action";
+"settings.notifications.triggerCategory.core" = "Base";
+"settings.notifications.triggerCategory.shell" = "Shell";
+"settings.notifications.triggerCategory.aiApps" = "Applications IA";
+"settings.notifications.triggerCategory.app" = "Application";
+"settings.notifications.actionCategory.basic" = "Basique";
+"settings.notifications.actionCategory.automation" = "Automatisation";
+"settings.notifications.actionCategory.integration" = "Intégrations";
+"settings.notifications.actionCategory.devops" = "DevOps";
+"settings.notifications.actionCategory.productivity" = "Productivité";
+"settings.notifications.actionCategory.accessibility" = "Accessibilité";
+"settings.notifications.actionCategory.timeTracking" = "Suivi du temps";
 
 // Seuils
 "settings.notifications.thresholds" = "Seuils de détection";

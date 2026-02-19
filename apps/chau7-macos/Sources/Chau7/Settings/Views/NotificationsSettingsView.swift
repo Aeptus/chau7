@@ -75,81 +75,66 @@ private struct TriggersTabView: View {
 private struct StatusPermissionsSection: View {
     @ObservedObject var model: AppModel
 
-    private var isNotDetermined: Bool {
-        model.notificationStatus == "NotDetermined" || model.notificationStatus == "Unknown"
-    }
-
-    private var isDenied: Bool {
-        model.notificationStatus == "Denied"
-    }
-
-    private var isAuthorized: Bool {
-        model.notificationStatus == "Authorized" || model.notificationStatus == "Provisional"
+    private var permissionState: AppModel.NotificationPermissionState {
+        model.notificationPermissionState
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if isNotDetermined {
-                // Onboarding card for first-time users
-                SettingsCard(content: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label(
-                            L("settings.notifications.onboarding.title", "Enable Notifications"),
-                            systemImage: "bell.badge"
-                        )
-                        .font(.headline)
-                        Text(L("settings.notifications.onboarding.description",
-                            "Get notified when AI tasks complete, fail, or need your attention."))
+            SettingsSectionHeader(L("settings.notifications.status", "Status & Permissions"), icon: "bell")
+
+            SettingsInfoRow(
+                label: L("settings.notifications.status.label", "Status"),
+                value: permissionState.localizedLabel,
+                monospaced: true
+            )
+
+            if let warning = model.notificationWarning {
+                SettingsRow(L("settings.notifications.warning", "Warning")) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        Text(warning)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.orange)
                     }
-                }, action: {
-                    model.requestNotificationPermission()
-                }, actionLabel: L("settings.notifications.onboarding.action", "Enable Notifications"),
-                   actionIcon: "bell.badge"
+                }
+            }
+
+            if permissionState == .unavailableNotBundled {
+                SettingsHint(
+                    icon: "xmark.octagon",
+                    text: L("settings.notifications.unavailable.hint", "Launch the app as a bundle to enable system notifications.")
                 )
+            } else if permissionState.showRequestPermissionAction {
+                SettingsButtonRow(buttons: [
+                    .init(title: L("settings.notifications.requestPermission", "Request Permission"), icon: "person.badge.plus") {
+                        model.requestNotificationPermission()
+                    }
+                ])
+            } else if permissionState.requiresSystemSettingsAction {
+                SettingsButtonRow(buttons: [
+                    .init(title: L("settings.notifications.systemSettings", "System Settings"), icon: "gear") {
+                        model.openNotificationSettings()
+                    }
+                ])
             } else {
-                SettingsSectionHeader(L("settings.notifications.status", "Status & Permissions"), icon: "bell")
-
-                SettingsInfoRow(
-                    label: L("settings.notifications.status.label", "Status"),
-                    value: model.notificationStatus,
-                    monospaced: true
-                )
-
-                if let warning = model.notificationWarning {
-                    SettingsRow(L("settings.notifications.warning", "Warning")) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundColor(.orange)
-                            Text(warning)
-                                .font(.caption)
-                                .foregroundStyle(.orange)
-                        }
-                    }
-                }
-
-                if isDenied {
-                    SettingsHint(
-                        icon: "arrow.right.circle",
-                        text: L("settings.notifications.denied.hint",
-                                "Notifications are denied. Open System Settings to enable them.")
-                    )
-                    SettingsButtonRow(buttons: [
-                        .init(title: L("settings.notifications.systemSettings", "System Settings"), icon: "gear") {
-                            model.openNotificationSettings()
-                        }
-                    ])
-                } else if isAuthorized {
-                    SettingsButtonRow(buttons: [
-                        .init(title: L("settings.notifications.sendTest", "Send Test"), icon: "paperplane") {
+                SettingsButtonRow(buttons: [
+                    .init(
+                        title: L("settings.notifications.sendTest", "Send Test"),
+                        icon: "paperplane",
+                        action: {
                             model.sendTestNotification()
-                        },
-                        .init(title: L("settings.notifications.systemSettings", "System Settings"), icon: "gear") {
+                        }
+                    ),
+                    .init(
+                        title: L("settings.notifications.systemSettings", "System Settings"),
+                        icon: "gear",
+                        action: {
                             model.openNotificationSettings()
                         }
-                    ])
-                }
+                    )
+                ])
             }
         }
     }
@@ -158,12 +143,25 @@ private struct StatusPermissionsSection: View {
 // MARK: - Shared Types
 
 fileprivate enum TriggerCategory: String, CaseIterable, Identifiable {
-    case core = "Core"
-    case shell = "Shell"
-    case aiApps = "AI Coding Apps"
-    case app = "App"
+    case core = "core"
+    case shell = "shell"
+    case aiApps = "aiApps"
+    case app = "app"
 
     var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .core:
+            return L("settings.notifications.triggerCategory.core", "Core")
+        case .shell:
+            return L("settings.notifications.triggerCategory.shell", "Shell")
+        case .aiApps:
+            return L("settings.notifications.triggerCategory.aiApps", "AI Coding Apps")
+        case .app:
+            return L("settings.notifications.triggerCategory.app", "App")
+        }
+    }
 
     var icon: String {
         switch self {
@@ -353,7 +351,7 @@ private struct UnifiedCategorySection: View {
                             .font(.caption)
                             .foregroundStyle(Color.accentColor)
 
-                        Text(category.rawValue)
+                        Text(category.label)
                             .font(.caption)
                             .fontWeight(.semibold)
 

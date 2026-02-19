@@ -24,6 +24,42 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         case provisional
         case ephemeral
 
+        static func from(_ status: UNAuthorizationStatus) -> NotificationPermissionState {
+            switch status {
+            case .authorized:
+                return .authorized
+            case .denied:
+                return .denied
+            case .notDetermined:
+                return .notDetermined
+            case .provisional:
+                return .provisional
+            case .ephemeral:
+                return .ephemeral
+            @unknown default:
+                return .unknown
+            }
+        }
+
+        var localizedLabel: String {
+            switch self {
+            case .unavailableNotBundled:
+                return L("settings.notifications.permission.state.unavailable", "Unavailable (Not Bundled)")
+            case .unknown:
+                return L("settings.notifications.permission.state.unknown", "Unknown")
+            case .notDetermined:
+                return L("settings.notifications.permission.state.notDetermined", "Not Determined")
+            case .denied:
+                return L("settings.notifications.permission.state.denied", "Denied")
+            case .authorized:
+                return L("settings.notifications.permission.state.authorized", "Authorized")
+            case .provisional:
+                return L("settings.notifications.permission.state.provisional", "Provisional")
+            case .ephemeral:
+                return L("settings.notifications.permission.state.ephemeral", "Ephemeral")
+            }
+        }
+
         var isAuthorized: Bool {
             switch self {
             case .authorized, .provisional, .ephemeral:
@@ -35,9 +71,11 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
         var showRequestPermissionAction: Bool {
             switch self {
-            case .notDetermined, .denied:
+            case .notDetermined:
                 return true
             case .unknown, .authorized, .provisional, .ephemeral, .unavailableNotBundled:
+                return false
+            case .denied:
                 return false
             }
         }
@@ -172,7 +210,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
     }
 
-    @Published var notificationStatus: String = ""
+    @Published var notificationStatus: String = "Unknown"
     @Published var notificationPermissionState: NotificationPermissionState = .unknown
     @Published var notificationWarning: String? = nil
     @Published var logFilePath: String = ""
@@ -341,8 +379,10 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             requestNotificationPermission()
             refreshNotificationStatus()
         } else {
-            notificationStatus = "Unavailable (Not Bundled)"
-            notificationWarning = "Notifications require the app bundle. Build and launch Chau7.app."
+            setNotificationState(
+                .unavailableNotBundled,
+                warning: L("settings.notifications.permission.warning.notBundled", "Notifications require the app bundle. Build and launch Chau7.app.")
+            )
             Log.warn("Not running as bundle - notifications disabled.")
         }
         applyMonitoringState()
@@ -528,13 +568,16 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
     func refreshNotificationStatus() {
         guard Bundle.main.bundleIdentifier != nil else {
-            notificationStatus = "Unavailable (Not Bundled)"
-            notificationWarning = "Notifications require the app bundle. Build and launch Chau7.app."
+            setNotificationState(
+                .unavailableNotBundled,
+                warning: L("settings.notifications.permission.warning.notBundled", "Notifications require the app bundle. Build and launch Chau7.app.")
+            )
             Log.warn("Not running as bundle - cannot refresh notification status.")
             return
         }
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { [weak self] settings in
+            let permissionState = NotificationPermissionState.from(settings.authorizationStatus)
             let snapshot = NotificationSettingsSnapshot(
                 authorizationStatus: settings.authorizationStatus,
                 alertSetting: settings.alertSetting,
@@ -543,28 +586,14 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 alertStyle: settings.alertStyle
             )
             NotificationManager.shared.updateAuthorizationStatus(settings.authorizationStatus)
-            let status: String
-            switch settings.authorizationStatus {
-            case .authorized:
-                status = "Authorized"
-            case .denied:
-                status = "Denied"
-            case .notDetermined:
-                status = "Not Determined"
-            case .provisional:
-                status = "Provisional"
-            case .ephemeral:
-                status = "Ephemeral"
-            @unknown default:
-                status = "Unknown"
-            }
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.notificationStatus = status
+                self.notificationPermissionState = permissionState
+                self.notificationStatus = permissionState.localizedLabel
                 self.notificationSettingsSnapshot = snapshot
-                self.notificationWarning = self.notificationWarningMessage(for: snapshot)
+                self.notificationWarning = self.notificationWarning(for: permissionState, snapshot: snapshot)
             }
-            Log.info("Notification status: \(status)")
+            Log.info("Notification status: \(permissionState.localizedLabel)")
             Log.trace("Notification settings: alert=\(settings.alertSetting.rawValue) sound=\(settings.soundSetting.rawValue) badge=\(settings.badgeSetting.rawValue) lock=\(settings.lockScreenSetting.rawValue) center=\(settings.notificationCenterSetting.rawValue) style=\(settings.alertStyle.rawValue)")
         }
     }
@@ -573,8 +602,10 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     /// - Parameter force: If true, requests permission even if already requested before.
     func requestNotificationPermission(force: Bool = false) {
         guard Bundle.main.bundleIdentifier != nil else {
-            notificationStatus = "Unavailable (Not Bundled)"
-            notificationWarning = "Notifications require the app bundle. Build and launch Chau7.app."
+            setNotificationState(
+                .unavailableNotBundled,
+                warning: L("settings.notifications.permission.warning.notBundled", "Notifications require the app bundle. Build and launch Chau7.app.")
+            )
             Log.warn("Not running as bundle - skipping permission request.")
             return
         }
@@ -623,16 +654,40 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     private func notificationWarningMessage(for snapshot: NotificationSettingsSnapshot) -> String? {
         switch snapshot.authorizationStatus {
         case .notDetermined:
-            return "Permission not requested. Click “Request Permission”."
+            return L("settings.notifications.permission.warning.notDetermined", "Permission has not been requested.")
         case .denied:
-            return "Notifications are denied. Open System Settings > Notifications > Chau7 and allow alerts."
+            return L("settings.notifications.permission.warning.denied", "Notifications are denied. Open System Settings and allow alerts for Chau7.")
         case .authorized, .provisional, .ephemeral:
             if snapshot.alertSetting == .disabled || snapshot.alertStyle == .none {
-                return "Alerts are off. In System Settings > Notifications > Chau7, choose Banners or Alerts."
+                return L("settings.notifications.permission.warning.alertsDisabled", "Alerts are disabled for Chau7. Enable banners or alerts in System Settings.")
             }
             return nil
         @unknown default:
-            return "Notification status unknown. Check System Settings > Notifications > Chau7."
+            return L("settings.notifications.permission.warning.unknown", "Notification status unknown. Check System Settings > Notifications > Chau7.")
+        }
+    }
+
+    private func notificationWarning(for state: NotificationPermissionState, snapshot: NotificationSettingsSnapshot?) -> String? {
+        if state == .unavailableNotBundled {
+            return L("settings.notifications.permission.warning.notBundled", "Notifications require the app bundle. Build and launch Chau7.app.")
+        }
+
+        guard let snapshot else {
+            return state == .notDetermined
+                ? L("settings.notifications.permission.warning.notDetermined", "Permission has not been requested.")
+                : (state == .unknown
+                    ? L("settings.notifications.permission.warning.unknown", "Notification status unknown. Check System Settings > Notifications > Chau7.")
+                    : nil)
+        }
+
+        return notificationWarningMessage(for: snapshot)
+    }
+
+    private func setNotificationState(_ state: NotificationPermissionState, warning: String? = nil) {
+        DispatchQueue.main.async {
+            self.notificationPermissionState = state
+            self.notificationStatus = state.localizedLabel
+            self.notificationWarning = warning
         }
     }
 
@@ -653,9 +708,15 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
     func sendTestNotification() {
         guard Bundle.main.bundleIdentifier != nil else {
-            notificationStatus = "Unavailable (Not Bundled)"
-            notificationWarning = "Notifications require the app bundle. Build and launch Chau7.app."
+            setNotificationState(
+                .unavailableNotBundled,
+                warning: L("settings.notifications.permission.warning.notBundled", "Notifications require the app bundle. Build and launch Chau7.app.")
+            )
             Log.warn("Not running as bundle - skipping test notification.")
+            return
+        }
+        guard notificationPermissionState.isAuthorized else {
+            notificationWarning = L("settings.notifications.permission.warning.testRequiresPermission", "Enable notifications first to send test notifications.")
             return
         }
         let event = AIEvent(
