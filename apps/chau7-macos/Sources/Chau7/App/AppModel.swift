@@ -15,6 +15,43 @@ struct SessionStatus: Identifiable, Equatable {
 /// - Note: Thread Safety - @Published properties must be modified on main thread.
 ///   Use DispatchQueue.main.async when updating state from background callbacks.
 final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
+    enum NotificationPermissionState: String, Codable, Sendable {
+        case unavailableNotBundled
+        case unknown
+        case notDetermined
+        case denied
+        case authorized
+        case provisional
+        case ephemeral
+
+        var isAuthorized: Bool {
+            switch self {
+            case .authorized, .provisional, .ephemeral:
+                return true
+            case .unavailableNotBundled, .unknown, .notDetermined, .denied:
+                return false
+            }
+        }
+
+        var showRequestPermissionAction: Bool {
+            switch self {
+            case .notDetermined, .denied:
+                return true
+            case .unknown, .authorized, .provisional, .ephemeral, .unavailableNotBundled:
+                return false
+            }
+        }
+
+        var requiresSystemSettingsAction: Bool {
+            switch self {
+            case .denied:
+                return true
+            case .unknown, .notDetermined, .authorized, .provisional, .ephemeral, .unavailableNotBundled:
+                return false
+            }
+        }
+    }
+
     @Published var isMonitoring: Bool {
         didSet {
             UserDefaults.standard.set(isMonitoring, forKey: Keys.isMonitoring)
@@ -135,7 +172,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
     }
 
-    @Published var notificationStatus: String = "Unknown"
+    @Published var notificationStatus: String = ""
+    @Published var notificationPermissionState: NotificationPermissionState = .unknown
     @Published var notificationWarning: String? = nil
     @Published var logFilePath: String = ""
     @Published var logLines: [String] = []
