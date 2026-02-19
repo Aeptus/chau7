@@ -113,6 +113,25 @@ struct ActionPickerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var searchText = ""
 
+    private func categoryLabel(for category: ActionCategory) -> String {
+        switch category {
+        case .basic:
+            return L("settings.notifications.actionCategory.basic", "Basic")
+        case .automation:
+            return L("settings.notifications.actionCategory.automation", "Automation")
+        case .integration:
+            return L("settings.notifications.actionCategory.integration", "Integrations")
+        case .devops:
+            return L("settings.notifications.actionCategory.devops", "DevOps")
+        case .productivity:
+            return L("settings.notifications.actionCategory.productivity", "Productivity")
+        case .accessibility:
+            return L("settings.notifications.actionCategory.accessibility", "Accessibility")
+        case .timeTracking:
+            return L("settings.notifications.actionCategory.timeTracking", "Time Tracking")
+        }
+    }
+
     private var filteredCategories: [(category: ActionCategory, actions: [NotificationActionInfo])] {
         let query = searchText.lowercased().trimmingCharacters(in: .whitespaces)
         if query.isEmpty {
@@ -121,7 +140,10 @@ struct ActionPickerSheet: View {
         return NotificationActionCatalog.byCategory.compactMap { category, actions in
             let filtered = actions.filter {
                 $0.labelFallback.lowercased().contains(query) ||
-                $0.descriptionFallback.lowercased().contains(query)
+                $0.descriptionFallback.lowercased().contains(query) ||
+                L($0.labelKey, $0.labelFallback).lowercased().contains(query) ||
+                L($0.descriptionKey, $0.descriptionFallback).lowercased().contains(query) ||
+                categoryLabel(for: category).lowercased().contains(query)
             }
             return filtered.isEmpty ? nil : (category, filtered)
         }
@@ -159,7 +181,7 @@ struct ActionPickerSheet: View {
                             HStack {
                                 Image(systemName: category.icon)
                                     .foregroundStyle(.secondary)
-                                Text(category.displayName)
+                                Text(categoryLabel(for: category))
                                     .font(.subheadline)
                                     .fontWeight(.semibold)
                             }
