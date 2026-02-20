@@ -35,6 +35,7 @@ struct AboutSettingsView: View {
             SettingsInfoRow(label: L("settings.about.application", "Application"), value: ProcessInfo.processInfo.processName, monospaced: true)
             SettingsInfoRow(label: L("settings.about.bundleId", "Bundle ID"), value: Bundle.main.bundleIdentifier ?? L("settings.about.notBundled", "Not bundled"), monospaced: true)
             SettingsInfoRow(label: L("settings.about.version", "Version"), value: bundleVersion, monospaced: true)
+            SettingsInfoRow(label: L("settings.about.built", "Built"), value: buildDateString, monospaced: true)
 
             Divider()
                 .padding(.vertical, 8)
@@ -108,6 +109,18 @@ struct AboutSettingsView: View {
         default:
             return "Development Build"
         }
+    }
+
+    private var buildDateString: String {
+        guard let execURL = Bundle.main.executableURL,
+              let attrs = try? FileManager.default.attributesOfItem(atPath: execURL.path),
+              let date = attrs[.modificationDate] as? Date else {
+            return "Unknown"
+        }
+        let fmt = DateFormatter()
+        fmt.dateStyle = .medium
+        fmt.timeStyle = .short
+        return fmt.string(from: date)
     }
 
     private var machineArchitecture: String {
