@@ -59,6 +59,12 @@ public final class MetalTerminalRenderer: NSObject {
         let isWide: Bool            // Double-width (CJK)
     }
 
+    // MARK: - Shared Pipeline Cache (compiled once, reused across tabs)
+
+    private static var cachedLibrary: MTLLibrary?
+    private static var cachedPipeline: MTLRenderPipelineState?
+    private static var cachedBgPipeline: MTLRenderPipelineState?
+
     // MARK: - Metal Resources
 
     private let device: MTLDevice
@@ -169,7 +175,14 @@ public final class MetalTerminalRenderer: NSObject {
     // MARK: - Setup
 
     private func setupPipelines() throws {
+        if let cached = Self.cachedPipeline, let cachedBg = Self.cachedBgPipeline {
+            pipelineState = cached
+            backgroundPipelineState = cachedBg
+            return
+        }
+
         let library = try device.makeLibrary(source: Self.shaderSource, options: nil)
+        Self.cachedLibrary = library
 
         guard let vertexFunction = library.makeFunction(name: "vertexShader"),
               let fragmentFunction = library.makeFunction(name: "fragmentShader"),
@@ -198,6 +211,9 @@ public final class MetalTerminalRenderer: NSObject {
         bgDescriptor.fragmentFunction = bgFragmentFunction
         bgDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
         backgroundPipelineState = try device.makeRenderPipelineState(descriptor: bgDescriptor)
+
+        Self.cachedPipeline = pipelineState
+        Self.cachedBgPipeline = backgroundPipelineState
     }
 
     private func setupBuffers() throws {
