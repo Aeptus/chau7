@@ -1442,19 +1442,19 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             : idleDelay
 
         dangerousOutputHighlightWorkItem?.cancel()
-        let scheduledAt = CFAbsoluteTimeGetCurrent()
+        let expectedFireAt = CFAbsoluteTimeGetCurrent() + delay
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            let elapsedMs = (CFAbsoluteTimeGetCurrent() - scheduledAt) * 1000.0
-            self.dangerousHighlightSamples.append(Int(elapsedMs.rounded()))
+            let congestionMs = max(0, (CFAbsoluteTimeGetCurrent() - expectedFireAt) * 1000.0)
+            self.dangerousHighlightSamples.append(Int(congestionMs.rounded()))
             self.dangerousHighlightSampleCount += 1
-            self.dangerousHighlightTotalMs += elapsedMs
-            self.dangerousHighlightDelayMs = Int(elapsedMs.rounded())
+            self.dangerousHighlightTotalMs += congestionMs
+            self.dangerousHighlightDelayMs = Int(congestionMs.rounded())
             self.dangerousHighlightAverageMs = self.dangerousHighlightSamples.recentAverage()
             self.dangerousOutputHighlightLastRun = Date()
             self.maybeLogLatencySpike(
                 kind: "highlight",
-                elapsedMs: elapsedMs,
+                elapsedMs: congestionMs,
                 averageMs: self.dangerousHighlightAverageMs,
                 samples: self.dangerousHighlightSamples,
                 thresholdMs: self.highlightLagLogThresholdMs,
@@ -2822,6 +2822,11 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     func updateCurrentDirectory(_ path: String) {
         let normalized = URL(fileURLWithPath: path).standardized.path
         guard currentDirectory != normalized else { return }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: normalized, isDirectory: &isDir), isDir.boolValue else {
+            Log.debug("updateCurrentDirectory rejected non-existent path: \(normalized)")
+            return
+        }
         currentDirectory = normalized
         // Update both backends (only one will be active)
         terminalView?.currentDirectory = normalized

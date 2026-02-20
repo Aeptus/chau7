@@ -3294,7 +3294,7 @@ final class RustTerminalView: NSView {
                         end += 1
                     }
 
-                    if end > start {
+                    if end < bytes.count && end > start {
                         // Extract the URL string
                         let urlBytes = Array(bytes[start..<end])
                         if let urlString = String(bytes: urlBytes, encoding: .utf8) {

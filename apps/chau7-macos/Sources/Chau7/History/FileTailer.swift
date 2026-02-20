@@ -17,14 +17,15 @@ final class FileTailer<T> {
     private var readHandle: FileHandle?
 
     // MARK: - Memory Protection
-    /// Maximum buffer size to prevent OOM with malformed files (4MB)
-    /// Increased from 1MB to handle verbose output from tools like Codex
-    private let maxBufferSize = 4 * 1024 * 1024
+    /// Maximum buffer size to prevent OOM with malformed files.
+    /// Default 4MB; PTY log tailers should use 8MB for AI streaming headroom.
+    private let maxBufferSize: Int
 
     init(
         fileURL: URL,
         pollInterval: DispatchTimeInterval = .milliseconds(500),
         createIfMissing: Bool = false,
+        maxBufferSize: Int = 4 * 1024 * 1024,
         queueLabel: String = "com.chau7.tailer",
         parser: @escaping (String) throws -> T,
         onItem: @escaping (T) -> Void
@@ -32,6 +33,7 @@ final class FileTailer<T> {
         self.fileURL = fileURL
         self.pollInterval = pollInterval
         self.createIfMissing = createIfMissing
+        self.maxBufferSize = maxBufferSize
         self.queue = DispatchQueue(label: queueLabel)
         self.parser = parser
         self.onItem = onItem
@@ -234,6 +236,7 @@ extension FileTailer where T == String {
             fileURL: fileURL,
             pollInterval: .milliseconds(250),
             createIfMissing: true,
+            maxBufferSize: 8 * 1024 * 1024,
             queueLabel: "com.chau7.textTailer",
             parser: { $0 },  // Identity parser - just return the line
             onItem: onLine
