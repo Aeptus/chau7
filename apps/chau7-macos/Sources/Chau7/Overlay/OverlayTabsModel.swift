@@ -485,11 +485,13 @@ final class OverlayTabsModel: ObservableObject {
             directory: dir
         )
 
+        let overrideRaw = tab.tokenOptOverride == .default ? nil : tab.tokenOptOverride.rawValue
         let state = SavedTabState(
             customTitle: tab.customTitle,
             color: tab.color.rawValue,
             directory: dir,
             selectedIndex: nil,
+            tokenOptOverride: overrideRaw,
             scrollbackContent: scrollback,
             aiResumeCommand: resumeCommand
         )

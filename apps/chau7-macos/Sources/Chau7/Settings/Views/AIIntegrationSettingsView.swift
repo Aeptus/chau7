@@ -48,7 +48,7 @@ struct AIIntegrationSettingsView: View {
             )
 
             SettingsTextField(
-                L("settings.ai.rtk.prefix", "RTK Prefix"),
+                label: L("settings.ai.rtk.prefix", "RTK Prefix"),
                 help: L(
                     "settings.ai.rtk.prefixHelp",
                     "Prefix text to prepend (supports per-tab overrides)."

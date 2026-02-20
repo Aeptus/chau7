@@ -85,6 +85,10 @@ enum Log {
         emit(level: "ERROR", message: message)
     }
 
+    static func debug(_ message: String) {
+        emit(level: "DEBUG", message: message)
+    }
+
     static func trace(_ message: String) {
         guard isTraceEnabled else { return }
         emit(level: "TRACE", message: message)
