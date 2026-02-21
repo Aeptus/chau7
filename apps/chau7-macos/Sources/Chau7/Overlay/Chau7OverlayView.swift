@@ -292,6 +292,7 @@ private struct ToolbarTabBarView: View {
 
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
+            ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     // Use refresh token in ForEach id to force complete re-render on recovery
@@ -330,6 +331,12 @@ private struct ToolbarTabBarView: View {
             .id("tabbar-scroll-\(overlayModel.tabBarRefreshToken)")
             // Hardening: ensure ScrollView content maintains minimum size
             .fixedSize(horizontal: false, vertical: true)
+            .onChange(of: overlayModel.selectedTabID) { newID in
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    proxy.scrollTo(newID, anchor: .center)
+                }
+            }
+            }
 
             Spacer()
 
