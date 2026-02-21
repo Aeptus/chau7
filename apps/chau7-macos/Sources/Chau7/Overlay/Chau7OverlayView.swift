@@ -284,8 +284,6 @@ private struct ToolbarTabBarView: View {
     // Gesture-based drag state for tab reordering (Chrome/Safari style live reorder)
     @State private var dragOffset: CGFloat = 0
     @State private var dragAccumulatedOffset: CGFloat = 0  // Cumulative adjustment from swaps
-    /// Target accumulated offset — animated towards by dragOffset to smooth out swap jumps.
-    @State private var dragTargetAccumulatedOffset: CGFloat = 0
     /// Cooldown: ignore swaps for a few frames after one fires, preventing rapid bouncing.
     @State private var swapCooldownUntil: Date = .distantPast
 
@@ -443,23 +441,14 @@ private struct ToolbarTabBarView: View {
         if draggingTabID == nil {
             draggingTabID = tab.id
             dragAccumulatedOffset = 0
-            dragTargetAccumulatedOffset = 0
             swapCooldownUntil = .distantPast
             Log.info("Tab drag started (gesture): tabID=\(tab.id)")
         }
 
-        // Smoothly interpolate accumulated offset towards the target.
-        // After a swap, dragTargetAccumulatedOffset jumps instantly but
-        // dragAccumulatedOffset lerps towards it, smoothing the visual snap.
-        let lerpFactor: CGFloat = 0.45
-        let diff = dragTargetAccumulatedOffset - dragAccumulatedOffset
-        if abs(diff) < 0.5 {
-            dragAccumulatedOffset = dragTargetAccumulatedOffset
-        } else {
-            dragAccumulatedOffset += diff * lerpFactor
-        }
-
-        // Visual offset = raw translation + smoothed accumulated adjustments
+        // Visual offset = raw gesture translation + cumulative swap adjustments.
+        // After a swap the tab's home position in the HStack shifts by one tab
+        // width, so dragAccumulatedOffset compensates instantly to keep the tab
+        // exactly under the cursor (home_shift + offset_shift = 0 net movement).
         dragOffset = translation + dragAccumulatedOffset
 
         // Snapshot the tab array locally to avoid race conditions —
@@ -472,7 +461,6 @@ private struct ToolbarTabBarView: View {
             draggingTabID = nil
             dragOffset = 0
             dragAccumulatedOffset = 0
-            dragTargetAccumulatedOffset = 0
             return
         }
 
@@ -502,8 +490,8 @@ private struct ToolbarTabBarView: View {
                 withTransaction(t) {
                     overlayModel.swapTabWithNeighbor(id: tab.id, direction: 1)
                 }
-                // Set target — will be lerped smoothly in next onChanged call
-                dragTargetAccumulatedOffset -= (neighborWidth + tabSpacing)
+                // Compensate: tab's home shifted right, offset shifts left to cancel
+                dragAccumulatedOffset -= (neighborWidth + tabSpacing)
                 swapCooldownUntil = now.addingTimeInterval(0.15)
             }
         }
@@ -519,7 +507,7 @@ private struct ToolbarTabBarView: View {
                 withTransaction(t) {
                     overlayModel.swapTabWithNeighbor(id: tab.id, direction: -1)
                 }
-                dragTargetAccumulatedOffset += (neighborWidth + tabSpacing)
+                dragAccumulatedOffset += (neighborWidth + tabSpacing)
                 swapCooldownUntil = now.addingTimeInterval(0.15)
             }
         }
@@ -532,7 +520,6 @@ private struct ToolbarTabBarView: View {
             draggingTabID = nil
             dragOffset = 0
             dragAccumulatedOffset = 0
-            dragTargetAccumulatedOffset = 0
         }
         Log.info("Tab drag ended: tabID=\(tab.id)")
     }
