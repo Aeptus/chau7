@@ -2063,6 +2063,7 @@ final class RustTerminalView: NSView {
 
     /// Copy-on-select tracking
     private var lastSelectionText: String?
+    private var copyOnSelectWorkItem: DispatchWorkItem?
 
     // MARK: - Command History Navigation State
 
@@ -2426,6 +2427,18 @@ final class RustTerminalView: NSView {
         return true
     }
 
+    override func resignFirstResponder() -> Bool {
+        Log.trace("RustTerminalView[\(viewId)]: resignFirstResponder")
+        // Clear any pending IME composition to prevent dead key state from
+        // leaking across tab switches (e.g. ^ on French keyboards).
+        if markedTextStorage != nil {
+            markedTextStorage = nil
+            markedSelectedRange = NSRange(location: NSNotFound, length: 0)
+            inputContext?.discardMarkedText()
+        }
+        return super.resignFirstResponder()
+    }
+
     override func validRequestor(forSendType sendType: NSPasteboard.PasteboardType?, returnType: NSPasteboard.PasteboardType?) -> Any? {
         if sendType == .string {
             if let selection = getSelection(), !selection.isEmpty {
@@ -2703,6 +2716,16 @@ final class RustTerminalView: NSView {
         // ALWAYS poll the Rust terminal to drain PTY buffer, even when suspended.
         // This prevents the PTY reader thread from blocking when the buffer fills up.
         // (Issue #4 fix: suspended state was blocking PTY by not draining)
+        //
+        // Selection preservation: Rust manages selection state internally. If poll()
+        // processes output that scrolls the terminal, Rust may clear its selection.
+        // During an active drag (isSelecting == true), the next mouseDragged event
+        // re-establishes the selection via rust.updateSelection(). However, if the
+        // user holds the mouse still during scrolling, no drag events fire and the
+        // selection stays cleared until the next mouse movement. The 60fps
+        // CVDisplayLink render loop minimizes visible flicker in the common case.
+        // If flicker becomes noticeable, a Rust FFI flag
+        // (preserve_selection_during_scroll) would be the proper fix.
         let changed = rust.poll(timeout: 0)
 
         // Check for bell events from Rust terminal and trigger audio/visual feedback
@@ -3562,6 +3585,13 @@ final class RustTerminalView: NSView {
     /// True while keyDown is routing through inputContext, so insertText knows
     /// the call originated from a keyboard event (not Password AutoFill).
     private var handlingKeyDown = false
+
+    /// IME marked text state — tracks pending dead key / composition text.
+    /// Without this, dead keys like ^ on French keyboards get stuck because
+    /// NSTextInputContext enters an inconsistent state when setMarkedText is
+    /// a no-op and hasMarkedText returns false.
+    private var markedTextStorage: String?
+    private var markedSelectedRange: NSRange = NSRange(location: NSNotFound, length: 0)
 
     private func makeInputEventSignature(_ event: NSEvent) -> String {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -4746,6 +4776,7 @@ final class RustTerminalView: NSView {
                 self.rustTerminal?.startSelection(col: absoluteCell.col, row: absoluteCell.row, selectionType: 2)  // Semantic
                 self.needsGridSync = true
                 self.mouseDownLocation = nil  // Prevent cursor positioning and drag start
+                self.scheduleCopyOnSelect()
                 return event
             } else if event.clickCount >= 3 {
                 // Triple-click: Select entire line (Lines selection)
@@ -4753,6 +4784,7 @@ final class RustTerminalView: NSView {
                 self.rustTerminal?.startSelection(col: 0, row: absoluteCell.row, selectionType: 3)  // Lines
                 self.needsGridSync = true
                 self.mouseDownLocation = nil  // Prevent cursor positioning and drag start
+                self.scheduleCopyOnSelect()
                 return event
             }
 
@@ -4875,20 +4907,10 @@ final class RustTerminalView: NSView {
                 }
             }
 
-            // Copy-on-select (selection is now in Rust)
-            // Option key temporarily disables copy-on-select (matches Chau7TerminalView behavior)
+            // Copy-on-select: Option key temporarily disables (matches Chau7TerminalView)
             let optionHeld = event.modifierFlags.contains(.option)
-            if wasSelecting && FeatureSettings.shared.isCopyOnSelectEnabled && !optionHeld {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.030) { [weak self] in
-                    guard let self = self,
-                          let text = self.getSelection(),
-                          !text.isEmpty,
-                          text != self.lastSelectionText else { return }
-
-                    Log.trace("RustTerminalView[\(self.viewId)]: Copy-on-select - Copying \(text.count) chars")
-                    self.copyToClipboard(text)
-                    self.lastSelectionText = text
-                }
+            if wasSelecting && !optionHeld {
+                self.scheduleCopyOnSelect()
             }
 
             return event
@@ -5168,6 +5190,25 @@ final class RustTerminalView: NSView {
     }
 
     // MARK: - Clipboard
+
+    /// Debounced copy-on-select: cancels any pending copy, waits 50ms for Rust selection
+    /// to finalize, then copies if text changed. Called from mouseUp and any future
+    /// selection-complete triggers.
+    private func scheduleCopyOnSelect() {
+        guard FeatureSettings.shared.isCopyOnSelectEnabled else { return }
+        copyOnSelectWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self,
+                  let text = self.getSelection(),
+                  !text.isEmpty,
+                  text != self.lastSelectionText else { return }
+            Log.trace("RustTerminalView[\(self.viewId)]: Copy-on-select - Copying \(text.count) chars")
+            self.copyToClipboard(text)
+            self.lastSelectionText = text
+        }
+        copyOnSelectWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.050, execute: work)
+    }
 
     private func copyToClipboard(_ text: String) {
         Log.trace("RustTerminalView[\(viewId)]: copyToClipboard - Copying \(text.count) chars")
@@ -5865,6 +5906,10 @@ private struct RustSnippetPlaceholder {
 extension RustTerminalView: NSTextInputClient {
 
     func insertText(_ string: Any, replacementRange: NSRange) {
+        // Clear marked text — composition is now committed
+        markedTextStorage = nil
+        markedSelectedRange = NSRange(location: NSNotFound, length: 0)
+
         let text: String
         if let s = string as? String {
             text = s
@@ -5888,12 +5933,26 @@ extension RustTerminalView: NSTextInputClient {
     }
 
     func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
-        // IME marked text (pre-edit) — not needed for password AutoFill
-        // but required by protocol. For now, just insert on commit.
+        let text: String
+        if let s = string as? String {
+            text = s
+        } else if let attr = string as? NSAttributedString {
+            text = attr.string
+        } else {
+            text = ""
+        }
+        if text.isEmpty {
+            markedTextStorage = nil
+            markedSelectedRange = NSRange(location: NSNotFound, length: 0)
+        } else {
+            markedTextStorage = text
+            markedSelectedRange = selectedRange
+        }
     }
 
     func unmarkText() {
-        // Called when IME composition is committed
+        markedTextStorage = nil
+        markedSelectedRange = NSRange(location: NSNotFound, length: 0)
     }
 
     func selectedRange() -> NSRange {
@@ -5901,11 +5960,14 @@ extension RustTerminalView: NSTextInputClient {
     }
 
     func markedRange() -> NSRange {
-        return NSRange(location: NSNotFound, length: 0)
+        guard let marked = markedTextStorage else {
+            return NSRange(location: NSNotFound, length: 0)
+        }
+        return NSRange(location: 0, length: marked.utf16.count)
     }
 
     func hasMarkedText() -> Bool {
-        return false
+        return markedTextStorage != nil
     }
 
     func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {

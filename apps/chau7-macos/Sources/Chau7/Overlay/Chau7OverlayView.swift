@@ -1003,23 +1003,6 @@ struct UnifiedTabButton: View {
         tab.session?.displayPath() ?? ""
     }
 
-    private var aiProductLogo: Image? {
-        guard let appName = tab.session?.activeAppName else { return nil }
-        return AIAgentLogo.image(forAppName: appName)
-    }
-
-    private var devServerIconName: String? {
-        guard let devName = tab.session?.devServer?.name,
-              devName.compare("Vite", options: .caseInsensitive) == .orderedSame else {
-            return nil
-        }
-        return "bolt.fill"
-    }
-
-    private var isGitRepo: Bool {
-        tab.session?.isGitRepo ?? false
-    }
-
     /// Whether this tab should show only the custom title (hiding all extras).
     private var isMinimalDisplay: Bool {
         FeatureSettings.shared.customTitleOnly
@@ -1029,44 +1012,24 @@ struct UnifiedTabButton: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            // Notification style icon (takes precedence over AI logo when present)
-            if !isMinimalDisplay {
-                if let iconName = notificationStyle?.icon {
-                    Image(systemName: iconName)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(notificationStyle?.iconColor ?? notificationStyle?.titleColor ?? .primary)
-                        .accessibilityHidden(true)
-                } else if FeatureSettings.shared.showTabIcons {
-                    if let logo = aiProductLogo {
-                        // AI product logo (only if no notification icon)
-                        logo
-                            .resizable()
-                            .frame(width: 14, height: 14)
-                            .accessibilityHidden(true)
-                    } else if let devIcon = devServerIconName {
-                        Image(systemName: devIcon)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.yellow)
-                            .accessibilityHidden(true)
-                    }
-                }
+            // Session-dependent content (icon, title, path, git) in an observing subview
+            if let session = tab.session {
+                TabSessionContent(
+                    session: session,
+                    customTitle: tab.customTitle,
+                    isMinimalDisplay: isMinimalDisplay,
+                    notificationStyle: notificationStyle,
+                    titleFont: titleFont,
+                    titleColor: titleColor
+                )
+            } else {
+                Text(resolvedTitle)
+                    .font(titleFont)
+                    .foregroundStyle(titleColor ?? .primary)
+                    .lineLimit(1)
             }
 
-            Text(resolvedTitle)
-                .font(titleFont)
-                .foregroundStyle(titleColor ?? .primary)
-                .lineLimit(1)
-
             if !isMinimalDisplay {
-                // Path (only show if we have a session with path info)
-                if FeatureSettings.shared.showTabPath && !resolvedPath.isEmpty {
-                    Text(String(format: L("tab.path.prefix", "- %@"), resolvedPath))
-                        .font(.custom("Avenir Next", size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-
                 if isSuspended {
                     Image(systemName: "pause.circle.fill")
                         .font(.system(size: 11, weight: .semibold))
@@ -1109,8 +1072,8 @@ struct UnifiedTabButton: View {
                         : L("rtk.tab.a11y.inactive", "Token optimization off"))
                 }
 
-                // Git indicator
-                if FeatureSettings.shared.showTabGitIndicator && isGitRepo {
+                // Git indicator — observed via TabSessionContent, keep fallback here
+                if FeatureSettings.shared.showTabGitIndicator && (tab.session?.isGitRepo ?? false) {
                     Image(systemName: "arrow.triangle.branch")
                         .font(.system(size: 11, weight: .semibold))
                 }
@@ -1184,6 +1147,89 @@ struct UnifiedTabButton: View {
         }
         .onAppear {
             isPulsing = notificationStyle?.shouldPulse == true
+        }
+    }
+}
+
+// MARK: - Tab Session Content (observes session for live updates)
+
+/// Subview that observes the `TerminalSessionModel` so icons, title, and path
+/// update reactively when `activeAppName`, `devServer`, or directory change.
+/// Without this, `UnifiedTabButton` (which takes `OverlayTab` as a struct value)
+/// would never re-render for session property changes.
+struct TabSessionContent: View {
+    @ObservedObject var session: TerminalSessionModel
+    let customTitle: String?
+    let isMinimalDisplay: Bool
+    let notificationStyle: TabNotificationStyle?
+    let titleFont: Font
+    let titleColor: Color?
+
+    private var aiProductLogo: Image? {
+        guard let appName = session.activeAppName else { return nil }
+        return AIAgentLogo.image(forAppName: appName)
+    }
+
+    private var devServerIconName: String? {
+        guard let devName = session.devServer?.name,
+              devName.compare("Vite", options: .caseInsensitive) == .orderedSame else {
+            return nil
+        }
+        return "bolt.fill"
+    }
+
+    private var resolvedTitle: String {
+        if let customTitle, !customTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return customTitle
+        }
+        if let activeName = session.activeAppName, !activeName.isEmpty {
+            return activeName
+        }
+        if let devName = session.devServer?.name,
+           devName.compare("Vite", options: .caseInsensitive) == .orderedSame {
+            return devName
+        }
+        return L("tab.shell", "Shell")
+    }
+
+    var body: some View {
+        if !isMinimalDisplay {
+            if let iconName = notificationStyle?.icon {
+                Image(systemName: iconName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(notificationStyle?.iconColor ?? notificationStyle?.titleColor ?? .primary)
+                    .accessibilityHidden(true)
+            } else if FeatureSettings.shared.showTabIcons {
+                if let logo = aiProductLogo {
+                    logo
+                        .resizable()
+                        .frame(width: 14, height: 14)
+                        .accessibilityHidden(true)
+                } else if let devIcon = devServerIconName {
+                    Image(systemName: devIcon)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.yellow)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+
+        Text(resolvedTitle)
+            .font(titleFont)
+            .foregroundStyle(titleColor ?? .primary)
+            .lineLimit(1)
+
+        if !isMinimalDisplay {
+            if FeatureSettings.shared.showTabPath {
+                let path = session.tabPathDisplayName()
+                if !path.isEmpty {
+                    Text(String(format: L("tab.path.prefix", "- %@"), path))
+                        .font(.custom("Avenir Next", size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
         }
     }
 }
