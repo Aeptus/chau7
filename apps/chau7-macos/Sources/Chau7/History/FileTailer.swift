@@ -15,6 +15,8 @@ final class FileTailer<T> {
     private var buffer: String = ""
     private let queue: DispatchQueue
     private var readHandle: FileHandle?
+    private var parseErrorCount: Int = 0
+    private let maxParseErrorLogs = 10
 
     // MARK: - Memory Protection
     /// Maximum buffer size to prevent OOM with malformed files.
@@ -135,7 +137,10 @@ final class FileTailer<T> {
                     let item = try parser(trimmed)
                     onItem(item)
                 } catch {
-                    Log.trace("FileTailer parse failed. line=\(trimmed.prefix(120))")
+                    parseErrorCount += 1
+                    if parseErrorCount <= maxParseErrorLogs {
+                        Log.warn("FileTailer parse failed (\(parseErrorCount)): \(error). line=\(trimmed.prefix(120))")
+                    }
                 }
             }
 

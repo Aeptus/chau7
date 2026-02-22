@@ -26,7 +26,11 @@ final class SessionRecorder: ObservableObject {
     }
 
     init() {
-        try? FileManager.default.createDirectory(at: recordingsDir, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: recordingsDir, withIntermediateDirectories: true)
+        } catch {
+            Log.error("SessionRecorder: failed to create recordings dir: \(error)")
+        }
         loadRecordingsList()
         Log.info("SessionRecorder initialized: \(recordings.count) existing recordings")
     }
@@ -77,8 +81,8 @@ final class SessionRecorder: ObservableObject {
         recordings.removeAll { $0.id == id }
         let metaFile = recordingsDir.appendingPathComponent("\(id.uuidString).json")
         let dataFile = recordingsDir.appendingPathComponent("\(id.uuidString).bin")
-        try? FileManager.default.removeItem(at: metaFile)
-        try? FileManager.default.removeItem(at: dataFile)
+        do { try FileManager.default.removeItem(at: metaFile) } catch { Log.error("SessionRecorder: delete meta \(id): \(error)") }
+        do { try FileManager.default.removeItem(at: dataFile) } catch { Log.error("SessionRecorder: delete data \(id): \(error)") }
         Log.info("SessionRecorder: deleted recording \(id)")
     }
 
@@ -99,10 +103,17 @@ final class SessionRecorder: ObservableObject {
         let metaFile = recordingsDir.appendingPathComponent("\(meta.id.uuidString).json")
         let dataFile = recordingsDir.appendingPathComponent("\(meta.id.uuidString).bin")
 
-        if let metaData = try? JSONEncoder().encode(meta) {
-            try? metaData.write(to: metaFile)
+        do {
+            let metaData = try JSONEncoder().encode(meta)
+            try metaData.write(to: metaFile)
+        } catch {
+            Log.error("SessionRecorder: failed to save meta: \(error)")
         }
-        try? Self.encodeFrames(frames).write(to: dataFile)
+        do {
+            try Self.encodeFrames(frames).write(to: dataFile)
+        } catch {
+            Log.error("SessionRecorder: failed to save data: \(error)")
+        }
     }
 
     static func encodeFrames(_ frames: [RecordedFrame]) -> Data {

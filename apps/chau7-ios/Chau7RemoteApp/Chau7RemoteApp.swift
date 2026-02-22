@@ -17,11 +17,26 @@ struct RemoteRootView: View {
     @AppStorage("hold_to_send") private var holdToSend = true
     @AppStorage("append_newline") private var appendNewline = true
     @AppStorage("render_ansi") private var renderANSI = false
-    @AppStorage("pairing_payload") private var pairingPayload = ""
+    @State private var pairingPayload: String = {
+        if let data = KeychainStore.load(key: "pairing_payload"),
+           let str = String(data: data, encoding: .utf8) {
+            return str
+        }
+        return ""
+    }()
 
     private var pairingInfo: PairingInfo? {
         guard let data = pairingPayload.data(using: .utf8) else { return nil }
         return try? JSONDecoder().decode(PairingInfo.self, from: data)
+    }
+
+    private func savePairingPayload(_ value: String) {
+        pairingPayload = value
+        if value.isEmpty {
+            _ = KeychainStore.delete(key: "pairing_payload")
+        } else if let data = value.data(using: .utf8) {
+            _ = KeychainStore.save(key: "pairing_payload", data: data)
+        }
     }
 
     private var activeError: String? {
@@ -56,7 +71,10 @@ struct RemoteRootView: View {
             }
             .sheet(isPresented: $isPairingPresented) {
                 PairingSheetView(
-                    pairingPayload: $pairingPayload,
+                    pairingPayload: Binding(
+                        get: { pairingPayload },
+                        set: { savePairingPayload($0) }
+                    ),
                     pairingError: $pairingError
                 )
             }

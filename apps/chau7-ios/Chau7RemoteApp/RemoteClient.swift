@@ -6,7 +6,7 @@ import Combine
 import Chau7Core
 
 @MainActor
-final class RemoteClient: ObservableObject, @unchecked Sendable {
+final class RemoteClient: ObservableObject {
     @Published var outputText: String = ""
     @Published var tabs: [RemoteTab] = []
     @Published var isConnected: Bool = false
@@ -138,6 +138,7 @@ final class RemoteClient: ObservableObject, @unchecked Sendable {
         case .snapshot:
             outputText = String(data: workingFrame.payload, encoding: .utf8) ?? ""
         case .ping:
+            lastPingPayload = workingFrame.payload
             sendPong()
         case .error:
             handleErrorPayload(workingFrame.payload)
@@ -193,11 +194,15 @@ final class RemoteClient: ObservableObject, @unchecked Sendable {
         }
     }
 
+    private static let maxFrameBytes = 65536
+    private static let maxOutputBytes = 200000
+
     private func appendOutput(_ data: Data) {
-        guard let text = String(data: data, encoding: .utf8) else { return }
+        let cappedData = data.count > Self.maxFrameBytes ? data.prefix(Self.maxFrameBytes) : data
+        guard let text = String(data: cappedData, encoding: .utf8) else { return }
         outputText.append(text)
-        if outputText.count > 200000 {
-            outputText = String(outputText.suffix(200000))
+        if outputText.utf8.count > Self.maxOutputBytes {
+            outputText = String(outputText.suffix(Self.maxOutputBytes))
         }
     }
 
@@ -242,12 +247,14 @@ final class RemoteClient: ObservableObject, @unchecked Sendable {
         send(frame: frame, encrypt: false)
     }
 
+    private var lastPingPayload: Data = Data()
+
     private func sendPong() {
         let frame = RemoteFrame(
             type: RemoteFrameType.pong.rawValue,
             tabID: 0,
             seq: nextSeq(),
-            payload: Data()
+            payload: lastPingPayload
         )
         send(frame: frame, encrypt: true)
     }

@@ -73,8 +73,17 @@ enum ProtectedPathPolicy {
         do {
             _ = try FileManager.default.contentsOfDirectory(atPath: path)
             return true
-        } catch {
-            return false
+        } catch let error as NSError {
+            // Only treat permission errors as denied; not-found means the path
+            // doesn't exist yet, which shouldn't permanently deny access.
+            if error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoPermissionError {
+                return false
+            }
+            if error.domain == NSPOSIXErrorDomain && error.code == Int(EACCES) {
+                return false
+            }
+            // Path doesn't exist or other non-permission error — treat as accessible
+            return true
         }
     }
 }

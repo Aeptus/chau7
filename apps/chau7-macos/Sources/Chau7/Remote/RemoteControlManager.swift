@@ -185,15 +185,21 @@ final class RemoteControlManager: ObservableObject {
     }
 
     private func handleIPCFrame(_ frame: RemoteFrame) {
-        guard let type = RemoteFrameType(rawValue: frame.type) else { return }
+        guard let type = RemoteFrameType(rawValue: frame.type) else {
+            logger.warning("Unknown IPC frame type: 0x\(String(frame.type, radix: 16))")
+            return
+        }
         switch type {
         case .pairingInfo:
             handlePairingInfo(frame)
         case .sessionReady:
             isIPCConnected = true
         case .sessionStatus:
-            if let status = try? JSONDecoder().decode(RemoteSessionStatus.self, from: frame.payload) {
+            do {
+                let status = try JSONDecoder().decode(RemoteSessionStatus.self, from: frame.payload)
                 sessionStatus = status.status
+            } catch {
+                logger.warning("Failed to decode session status: \(error.localizedDescription)")
             }
         case .tabSwitch:
             handleTabSwitch(frame)
@@ -311,7 +317,11 @@ final class RemoteControlManager: ObservableObject {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
         let dir = appSupport.appendingPathComponent("Chau7")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        } catch {
+            logger.error("Failed to create data directory: \(error.localizedDescription)")
+        }
         return dir
     }
 
@@ -491,7 +501,10 @@ extension RemotePairingInfo {
             pairingCode: pairingCode,
             expiresAt: expiresAt
         )
-        guard let data = try? JSONEncoder().encode(payload) else { return nil }
+        guard let data = try? JSONEncoder().encode(payload) else {
+            Log.error("RemoteControlManager: failed to encode QR payload")
+            return nil
+        }
         return String(data: data, encoding: .utf8)
     }
 }

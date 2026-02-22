@@ -77,20 +77,23 @@ final class AITerminalLogSession {
         guard size > max else { return }
 
         let keepBytes = max / 2
-        guard let readHandle = try? FileHandle(forReadingFrom: url) else { return }
-        defer { try? readHandle.close() }
+        do {
+            let readHandle = try FileHandle(forReadingFrom: url)
+            defer { try? readHandle.close() }
 
-        let start = size > keepBytes ? size - keepBytes : 0
-        try? readHandle.seek(toOffset: start)
-        guard let tail = try? readHandle.readToEnd() else { return }
+            let start = size > keepBytes ? size - keepBytes : 0
+            try readHandle.seek(toOffset: start)
+            let tail = try readHandle.readToEnd()
 
-        try? handle?.close()
-        handle = nil
-        guard let writeHandle = try? FileHandle(forWritingTo: url) else { return }
-        try? writeHandle.truncate(atOffset: 0)
-        try? writeHandle.write(contentsOf: tail)
-        _ = try? writeHandle.seekToEnd()
-        handle = writeHandle
+            try? handle?.close()
+            handle = nil
+            // Atomic write avoids truncate-then-write race
+            try tail?.write(to: url, options: .atomic)
+            handle = try FileHandle(forWritingTo: url)
+            _ = try handle?.seekToEnd()
+        } catch {
+            Log.error("AITerminalLogSession trim failed: \(error)")
+        }
     }
 
     private func flushInputLocked() {

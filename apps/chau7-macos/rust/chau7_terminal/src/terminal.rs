@@ -21,7 +21,7 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
 use crate::color::{ThemeColors, color_to_rgb_with_theme};
 use crate::graphics;
-use crate::metrics::{AdaptivePoller, DirtyRowTracker, OutputBatcher};
+use crate::metrics::{AdaptivePoller, DirtyRowTracker};
 use crate::pool::get_cell_buffer_pool;
 use crate::pty::{Chau7EventListener, PtyHandle, PtyMessage, SizeInfo};
 use crate::types::{CellData, DebugState, GridSnapshot, PerformanceMetrics, cell_flags_to_u8, underline_style};
@@ -147,9 +147,6 @@ pub struct Chau7Terminal {
     pub(crate) adaptive_poller: AdaptivePoller,
     /// Dirty row tracker for partial updates
     pub(crate) dirty_rows: DirtyRowTracker,
-    /// Output batcher for reducing FFI overhead (wired in future batch-output path)
-    #[allow(dead_code)]
-    pub(crate) output_batcher: OutputBatcher,
 
     // Graphics protocol support
     /// Pre-filter that intercepts image escape sequences before VTE processing
@@ -399,7 +396,6 @@ impl Chau7Terminal {
             // Performance optimizations
             adaptive_poller: AdaptivePoller::new(),
             dirty_rows: DirtyRowTracker::new(rows as usize),
-            output_batcher: OutputBatcher::new(),
             // Graphics protocol support
             graphics_interceptor: Mutex::new(graphics::GraphicsInterceptor::new()),
             image_store: Mutex::new(graphics::ImageStore::new()),
@@ -577,20 +573,14 @@ impl Chau7Terminal {
         let mut had_data = false;
         let mut bytes_this_poll = 0usize;
 
-        // Clear the last_output buffer at the start of each poll
-        {
-            let mut last_output = self.last_output.lock();
-            last_output.clear();
-        }
+        // Accumulate all data locally, then lock last_output once at the end
+        let mut local_output = Vec::new();
 
         // Try to receive data with timeout for the first message
         match self.pty_rx.recv_timeout(timeout) {
             Ok(PtyMessage::Data(data)) => {
                 bytes_this_poll += data.len();
-                {
-                    let mut last_output = self.last_output.lock();
-                    last_output.extend_from_slice(&data);
-                }
+                local_output.extend_from_slice(&data);
                 self.process_pty_data(&data);
                 had_data = true;
             }
@@ -613,10 +603,7 @@ impl Chau7Terminal {
             match self.pty_rx.try_recv() {
                 Ok(PtyMessage::Data(data)) => {
                     bytes_this_poll += data.len();
-                    {
-                        let mut last_output = self.last_output.lock();
-                        last_output.extend_from_slice(&data);
-                    }
+                    local_output.extend_from_slice(&data);
                     self.process_pty_data(&data);
                     had_data = true;
                 }
@@ -632,6 +619,13 @@ impl Chau7Terminal {
                     break;
                 }
             }
+        }
+
+        // Single lock: replace last_output with accumulated data
+        {
+            let mut last_output = self.last_output.lock();
+            last_output.clear();
+            last_output.extend_from_slice(&local_output);
         }
 
         // Process terminal events
@@ -872,11 +866,6 @@ impl Chau7Terminal {
             //   viewport row 0 → grid Line(-display_offset)     (top of what user sees)
             //   viewport row N → grid Line(N - display_offset)
             //   When display_offset == 0, this simplifies to Line(0)..Line(rows-1).
-            // Diagnostic: count box-drawing chars (U+2500..=U+257F) in every snapshot.
-            // Logs once per snapshot only when box-drawing chars are present.
-            let mut box_draw_count: u32 = 0;
-            let mut box_draw_sample: u32 = 0; // first box-drawing codepoint seen
-
             for line_idx in 0..rows {
                 let line = Line(line_idx as i32 - display_offset as i32);
                 for col_idx in 0..cols {
@@ -884,12 +873,6 @@ impl Chau7Terminal {
                     let cell = &grid[point];
 
                     let character = cell.c as u32;
-
-                    // Track box-drawing characters
-                    if (0x2500..=0x257F).contains(&character) {
-                        box_draw_count += 1;
-                        if box_draw_sample == 0 { box_draw_sample = character; }
-                    }
 
                     let is_bold = cell.flags.contains(CellFlags::BOLD);
 
@@ -957,26 +940,6 @@ impl Chau7Terminal {
                         _pad: underline_style(cell.flags),
                         link_id,
                     });
-                }
-            }
-
-            // Diagnostic: log box-drawing stats to file (throttled, every ~100th snapshot with box-draw chars)
-            {
-                // Use a static atomic counter for throttling
-                use std::sync::atomic::{AtomicU32, Ordering};
-                static DIAG_COUNTER: AtomicU32 = AtomicU32::new(0);
-                if box_draw_count > 0 {
-                    let n = DIAG_COUNTER.fetch_add(1, Ordering::Relaxed);
-                    if n % 100 == 0 {
-                        use std::io::Write;
-                        if let Ok(mut f) = std::fs::OpenOptions::new()
-                            .create(true).append(true)
-                            .open("/tmp/chau7_rust_diag.log")
-                        {
-                            let _ = writeln!(f, "[DIAG-RUST] snapshot#{} has {} box-drawing chars (first=U+{:04X}), grid={}x{}",
-                                n, box_draw_count, box_draw_sample, rows, cols);
-                        }
-                    }
                 }
             }
 

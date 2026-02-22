@@ -99,29 +99,29 @@ final class ClipboardHistoryManager: ObservableObject {
         trimToMaxItems(maxItems)
     }
 
-    /// Memory-optimized trimming: removes oldest unpinned items in-place
+    /// Single-pass trimming: collects unpinned indices, removes excess from the end
     private func trimToMaxItems(_ maxItems: Int) {
         guard items.count > maxItems else { return }
 
-        // Count pinned items
         let pinnedCount = items.reduce(0) { $0 + ($1.isPinned ? 1 : 0) }
         let maxUnpinned = max(0, maxItems - pinnedCount)
 
-        // Remove oldest unpinned items from the end (in-place)
-        var unpinnedSeen = 0
-        var i = items.count - 1
-        while i >= 0 && items.count > maxItems {
-            if !items[i].isPinned {
-                unpinnedSeen += 1
-                if unpinnedSeen > maxUnpinned {
-                    // Count remaining unpinned after index i
-                    let unpinnedAfter = items[0..<i].filter { !$0.isPinned }.count
-                    if unpinnedAfter >= maxUnpinned {
-                        items.remove(at: i)
-                    }
-                }
+        // Collect indices of all unpinned items
+        var unpinnedIndices: [Int] = []
+        for (i, item) in items.enumerated() {
+            if !item.isPinned {
+                unpinnedIndices.append(i)
             }
-            i -= 1
+        }
+
+        // Remove excess unpinned from the end (oldest = highest indices first)
+        let toRemove = max(0, unpinnedIndices.count - maxUnpinned)
+        if toRemove > 0 {
+            let removeSet = unpinnedIndices.suffix(toRemove)
+            // Remove in reverse order to preserve indices
+            for idx in removeSet.reversed() {
+                items.remove(at: idx)
+            }
         }
     }
 
