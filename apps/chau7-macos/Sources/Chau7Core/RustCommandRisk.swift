@@ -1,6 +1,10 @@
 import Foundation
 import Darwin
 
+private func stderrPrint(_ message: String) {
+    fputs(message + "\n", stderr)
+}
+
 final class RustCommandRisk {
     static let shared = RustCommandRisk()
 
@@ -54,6 +58,7 @@ final class RustCommandRisk {
         loadAttempted = true
 
         let candidates = libraryCandidates()
+        var lastError: String?
         for path in candidates {
             if let handle = dlopen(path, RTLD_NOW) {
                 dylibHandle = handle
@@ -63,8 +68,14 @@ final class RustCommandRisk {
                 } else {
                     dlclose(handle)
                     dylibHandle = nil
+                    lastError = "symbols not found in \(path)"
                 }
+            } else {
+                lastError = String(cString: dlerror())
             }
+        }
+        if !candidates.isEmpty {
+            stderrPrint("[RustCommandRisk] dlopen failed. Tried: \(candidates). Last error: \(lastError ?? "unknown")")
         }
         return false
     }

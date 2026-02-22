@@ -65,7 +65,11 @@ final class PersistentHistoryStore {
     private var dbPath: String {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = support.appendingPathComponent("Chau7")
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        } catch {
+            Log.error("PersistentHistoryStore: failed to create dir: \(error)")
+        }
         return dir.appendingPathComponent("history.db").path
     }
 
@@ -76,6 +80,14 @@ final class PersistentHistoryStore {
         if sqlite3_open_v2(dbPath, &db, flags, nil) != SQLITE_OK {
             Log.error("PersistentHistoryStore: failed to open database: \(String(cString: sqlite3_errmsg(db!)))")
             db = nil
+            // Attempt recovery: rename corrupt DB and retry with fresh file
+            let corruptPath = dbPath + ".corrupt.\(Int(Date().timeIntervalSince1970))"
+            try? FileManager.default.moveItem(atPath: dbPath, toPath: corruptPath)
+            Log.warn("PersistentHistoryStore: renamed corrupt DB to \(corruptPath), retrying")
+            if sqlite3_open_v2(dbPath, &db, flags, nil) != SQLITE_OK {
+                Log.error("PersistentHistoryStore: retry also failed")
+                db = nil
+            }
         }
         execute("PRAGMA journal_mode=WAL")
         execute("PRAGMA synchronous=NORMAL")
@@ -305,7 +317,12 @@ final class PersistentHistoryStore {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return try? encoder.encode(records)
+        do {
+            return try encoder.encode(records)
+        } catch {
+            Log.error("PersistentHistoryStore: export JSON encode failed: \(error)")
+            return nil
+        }
     }
 
     /// Imports history records from JSON data, appending to existing history.
@@ -314,8 +331,11 @@ final class PersistentHistoryStore {
     func importJSON(_ data: Data) -> Int {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let records = try? decoder.decode([HistoryRecord].self, from: data) else {
-            Log.error("PersistentHistoryStore: failed to decode import JSON")
+        let records: [HistoryRecord]
+        do {
+            records = try decoder.decode([HistoryRecord].self, from: data)
+        } catch {
+            Log.error("PersistentHistoryStore: failed to decode import JSON: \(error)")
             return 0
         }
         var count = 0

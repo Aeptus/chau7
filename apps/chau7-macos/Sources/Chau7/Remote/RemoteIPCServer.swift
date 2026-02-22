@@ -36,7 +36,11 @@ final class RemoteIPCServer: ObservableObject {
 
         let path = socketPath.path
         let dir = socketPath.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        } catch {
+            logger.error("Failed to create IPC socket directory: \(error.localizedDescription)")
+        }
         unlink(path)
 
         socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -118,9 +122,18 @@ final class RemoteIPCServer: ObservableObject {
         let fd = clientFD
         let data = FrameParser.packForTransport(frame)
 
-        queue.async {
+        queue.async { [weak self] in
             data.withUnsafeBytes { rawBuffer in
-                _ = write(fd, rawBuffer.baseAddress, rawBuffer.count)
+                let written = write(fd, rawBuffer.baseAddress, rawBuffer.count)
+                if written < 0 {
+                    let err = String(cString: strerror(errno))
+                    self?.logger.error("IPC write failed: \(err)")
+                    if errno == EPIPE {
+                        DispatchQueue.main.async {
+                            self?.onClientDisconnected?()
+                        }
+                    }
+                }
             }
         }
     }

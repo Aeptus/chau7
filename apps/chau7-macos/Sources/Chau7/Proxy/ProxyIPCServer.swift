@@ -79,7 +79,11 @@ public final class ProxyIPCServer: ObservableObject {
 
         // Create data directory if needed
         let dir = socketPath.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        } catch {
+            Log.error("ProxyIPCServer: failed to create socket directory: \(error)")
+        }
 
         // Remove any stale socket
         unlink(path)

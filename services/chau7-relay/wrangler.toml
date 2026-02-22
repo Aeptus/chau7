@@ -2,6 +2,9 @@ name = "chau7-relay"
 main = "src/worker.ts"
 compatibility_date = "2024-10-01"
 
+[vars]
+RELAY_SECRET = "CHANGE_ME_IN_PRODUCTION"
+
 [[durable_objects.bindings]]
 name = "SESSION"
 class_name = "SessionDO"

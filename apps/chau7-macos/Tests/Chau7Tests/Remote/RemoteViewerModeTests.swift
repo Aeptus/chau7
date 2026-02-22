@@ -249,5 +249,70 @@ final class RemoteViewerModeTests: XCTestCase {
         XCTAssertEqual(viewerMode.connectedViewers.count, 0)
         XCTAssertEqual(viewerMode.pendingApprovals.count, 0)
     }
+
+    // MARK: - Rejection at Max Viewers
+
+    func testMaxViewersRejectionCleansUpPending() {
+        viewerMode.startSharing()
+        viewerMode.maxViewers = 1
+
+        viewerMode.handleViewerConnection(viewerID: "viewer-1", viewerName: "Alice")
+        viewerMode.approveViewer("viewer-1")
+
+        // Try to add another — should not appear in pending or connected
+        viewerMode.handleViewerConnection(viewerID: "viewer-2", viewerName: "Bob")
+
+        XCTAssertEqual(viewerMode.connectedViewers.count, 1)
+        XCTAssertEqual(viewerMode.pendingApprovals.count, 0)
+        XCTAssertFalse(viewerMode.connectedViewers.contains(where: { $0.id == "viewer-2" }))
+    }
+
+    // MARK: - State Cleanup After Max Viewers
+
+    func testSlotFreedAfterDisconnect() {
+        viewerMode.startSharing()
+        viewerMode.maxViewers = 1
+
+        viewerMode.handleViewerConnection(viewerID: "viewer-1", viewerName: "Alice")
+        viewerMode.approveViewer("viewer-1")
+        XCTAssertEqual(viewerMode.connectedViewers.count, 1)
+
+        // Disconnect frees the slot
+        viewerMode.disconnectViewer("viewer-1")
+        XCTAssertEqual(viewerMode.connectedViewers.count, 0)
+
+        // New viewer should now be accepted
+        viewerMode.handleViewerConnection(viewerID: "viewer-2", viewerName: "Bob")
+        XCTAssertEqual(viewerMode.pendingApprovals.count, 1)
+        viewerMode.approveViewer("viewer-2")
+        XCTAssertEqual(viewerMode.connectedViewers.count, 1)
+        XCTAssertEqual(viewerMode.connectedViewers.first?.id, "viewer-2")
+    }
+
+    // MARK: - Duplicate Viewer Connection
+
+    func testDuplicateViewerConnectionIgnored() {
+        viewerMode.startSharing()
+
+        viewerMode.handleViewerConnection(viewerID: "viewer-1", viewerName: "Alice")
+        viewerMode.handleViewerConnection(viewerID: "viewer-1", viewerName: "Alice")
+
+        // Should not create duplicate pending entries
+        XCTAssertEqual(viewerMode.pendingApprovals.count, 1)
+    }
+
+    // MARK: - Revoke While Pending
+
+    func testRevokeViewerWhilePending() {
+        viewerMode.startSharing()
+        viewerMode.knownViewerIDs.insert("viewer-1")
+
+        viewerMode.handleViewerConnection(viewerID: "viewer-1", viewerName: "Alice")
+
+        // Revoke trust — should also remove from pending if there
+        viewerMode.revokeViewer("viewer-1")
+
+        XCTAssertFalse(viewerMode.knownViewerIDs.contains("viewer-1"))
+    }
 }
 #endif

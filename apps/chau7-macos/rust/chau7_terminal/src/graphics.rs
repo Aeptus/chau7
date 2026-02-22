@@ -9,7 +9,6 @@
 //!   passthrough → processor.advance()  (normal terminal data)
 //!   events      → image decode queue   (graphics data)
 
-use std::collections::HashMap;
 
 use log::{debug, trace, warn};
 
@@ -549,82 +548,11 @@ pub fn decode_sixel(data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     let mut y: u32 = 0; // Top of current 6-pixel band
     let mut max_x: u32 = 0;
 
-    // First pass: determine image dimensions
-    let mut scan_x: u32 = 0;
-    let mut scan_y: u32 = 0;
-    let mut scan_max_x: u32 = 0;
+    // Single-pass decode: pixel rows grown on demand.
+    // Each entry is one pixel row's RGBA data (variable length).
+    let mut rows: Vec<Vec<u8>> = Vec::new();
+
     let mut i = 0;
-    while i < data.len() {
-        let b = data[i];
-        match b {
-            b'$' => {
-                // Graphics carriage return — move to start of current band
-                if scan_x > scan_max_x { scan_max_x = scan_x; }
-                scan_x = 0;
-            }
-            b'-' => {
-                // Graphics new line — move down one 6-pixel band
-                if scan_x > scan_max_x { scan_max_x = scan_x; }
-                scan_x = 0;
-                scan_y += 6;
-            }
-            b'!' => {
-                // Repeat: !<count><char>
-                i += 1;
-                let mut count: u32 = 0;
-                while i < data.len() && data[i].is_ascii_digit() {
-                    count = count.saturating_mul(10).saturating_add((data[i] - b'0') as u32);
-                    i += 1;
-                }
-                if i < data.len() && data[i] >= 0x3F && data[i] <= 0x7E {
-                    scan_x += count;
-                }
-            }
-            b'#' => {
-                // Color introducer — skip params
-                i += 1;
-                while i < data.len() && (data[i].is_ascii_digit() || data[i] == b';') {
-                    i += 1;
-                }
-                continue; // Don't increment i again
-            }
-            b'"' => {
-                // Raster attributes — skip
-                i += 1;
-                while i < data.len() && (data[i].is_ascii_digit() || data[i] == b';') {
-                    i += 1;
-                }
-                continue;
-            }
-            0x3F..=0x7E => {
-                // Sixel character
-                scan_x += 1;
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    if scan_x > scan_max_x { scan_max_x = scan_x; }
-    let width = scan_max_x;
-    let height = scan_y + 6; // Last band is always 6 pixels
-
-    if width == 0 || height == 0 {
-        warn!("Sixel decode: empty image ({}x{})", width, height);
-        return None;
-    }
-    if width > SIXEL_MAX_WIDTH || height > SIXEL_MAX_HEIGHT {
-        warn!("Sixel decode: image too large ({}x{}, max {}x{})", width, height, SIXEL_MAX_WIDTH, SIXEL_MAX_HEIGHT);
-        return None;
-    }
-
-    debug!("Sixel decode: {}x{} image, {} bytes of data", width, height, data.len());
-
-    // Allocate RGBA buffer (transparent black default)
-    let pixel_count = (width * height) as usize;
-    let mut rgba = vec![0u8; pixel_count * 4];
-
-    // Second pass: decode pixels
-    i = 0;
     while i < data.len() {
         let b = data[i];
         match b {
@@ -638,6 +566,10 @@ pub fn decode_sixel(data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
                 if x > max_x { max_x = x; }
                 x = 0;
                 y += 6;
+                if y >= SIXEL_MAX_HEIGHT {
+                    warn!("Sixel decode: height exceeds max {}", SIXEL_MAX_HEIGHT);
+                    return None;
+                }
             }
             b'!' => {
                 // Repeat: !<count><sixel_char>
@@ -650,11 +582,10 @@ pub fn decode_sixel(data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
                 if i < data.len() && data[i] >= 0x3F && data[i] <= 0x7E {
                     let bits = data[i] - 0x3F;
                     let (r, g, b_color) = colors[current_color];
-                    // Cap repeat count to remaining width to prevent
-                    // malicious input from causing a multi-billion iteration loop.
-                    let effective_count = count.min(width.saturating_sub(x));
+                    // Cap repeat count to prevent unbounded iteration
+                    let effective_count = count.min(SIXEL_MAX_WIDTH.saturating_sub(x));
                     for _ in 0..effective_count {
-                        paint_sixel_column(&mut rgba, width, height, x, y, bits, r, g, b_color);
+                        paint_sixel_rows(&mut rows, x, y, bits, r, g, b_color);
                         x += 1;
                     }
                 }
@@ -699,7 +630,6 @@ pub fn decode_sixel(data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
                         let (r, g, b_val) = hls_to_rgb(h, l, s);
                         colors[reg] = (r, g, b_val);
                     }
-                    // '#reg;...' both defines AND selects the color
                     current_color = reg;
                     continue; // Don't increment i
                 }
@@ -707,7 +637,7 @@ pub fn decode_sixel(data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
                 continue; // Don't increment i
             }
             b'"' => {
-                // Raster attributes: "Pan;Pad;Ph;Pv — we already used dimensions from scan
+                // Raster attributes — skip
                 i += 1;
                 while i < data.len() && (data[i].is_ascii_digit() || data[i] == b';') {
                     i += 1;
@@ -718,8 +648,8 @@ pub fn decode_sixel(data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
                 // Sixel data character
                 let bits = b - 0x3F;
                 let (r, g, b_color) = colors[current_color];
-                if x < width {
-                    paint_sixel_column(&mut rgba, width, height, x, y, bits, r, g, b_color);
+                if x < SIXEL_MAX_WIDTH {
+                    paint_sixel_rows(&mut rows, x, y, bits, r, g, b_color);
                     x += 1;
                 }
             }
@@ -729,28 +659,63 @@ pub fn decode_sixel(data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
         }
         i += 1;
     }
+    if x > max_x { max_x = x; }
+
+    let width = max_x;
+    // Last band always extends 6 pixel rows per the sixel spec
+    let height = y.saturating_add(6);
+
+    if width == 0 || height == 0 || height < y {
+        warn!("Sixel decode: empty image ({}x{})", width, height);
+        return None;
+    }
+    if width > SIXEL_MAX_WIDTH || height > SIXEL_MAX_HEIGHT {
+        warn!("Sixel decode: image too large ({}x{}, max {}x{})", width, height, SIXEL_MAX_WIDTH, SIXEL_MAX_HEIGHT);
+        return None;
+    }
+
+    debug!("Sixel decode: {}x{} image, {} bytes of data", width, height, data.len());
+
+    // Flatten rows into contiguous RGBA buffer
+    let mut rgba = vec![0u8; (width as usize) * (height as usize) * 4];
+    let row_stride = (width as usize) * 4;
+    for row_idx in 0..height as usize {
+        if let Some(row) = rows.get(row_idx) {
+            let copy_len = row.len().min(row_stride);
+            let dst = row_idx * row_stride;
+            rgba[dst..dst + copy_len].copy_from_slice(&row[..copy_len]);
+        }
+    }
 
     Some((rgba, width, height))
 }
 
-/// Paint a single sixel column (6 vertical pixels) into the RGBA buffer.
+/// Paint a single sixel column (6 vertical pixels) into row-based RGBA buffers.
 #[inline]
-fn paint_sixel_column(
-    rgba: &mut [u8], width: u32, height: u32,
-    x: u32, y: u32, bits: u8, r: u8, g: u8, b: u8,
+fn paint_sixel_rows(
+    rows: &mut Vec<Vec<u8>>,
+    x: u32, band_y: u32, bits: u8, r: u8, g: u8, b: u8,
 ) {
     for bit in 0..6u32 {
         if bits & (1 << bit) != 0 {
-            let py = y + bit;
-            if py < height {
-                let offset = ((py * width + x) * 4) as usize;
-                if offset + 3 < rgba.len() {
-                    rgba[offset] = r;
-                    rgba[offset + 1] = g;
-                    rgba[offset + 2] = b;
-                    rgba[offset + 3] = 255; // Fully opaque
-                }
+            let py = band_y + bit;
+            if py >= SIXEL_MAX_HEIGHT { break; }
+            let py_idx = py as usize;
+            // Grow row list if needed
+            if rows.len() <= py_idx {
+                rows.resize_with(py_idx + 1, Vec::new);
             }
+            // Grow row width if needed
+            let needed = ((x as usize) + 1) * 4;
+            let row = &mut rows[py_idx];
+            if row.len() < needed {
+                row.resize(needed, 0);
+            }
+            let offset = (x as usize) * 4;
+            row[offset] = r;
+            row[offset + 1] = g;
+            row[offset + 2] = b;
+            row[offset + 3] = 255;
         }
     }
 }
@@ -830,8 +795,8 @@ impl KittyAccumulator {
     pub fn feed(&mut self, control: &str, payload: &[u8]) -> KittyAction {
         let params = parse_kitty_control(control);
 
-        let action = params.get("a").map(|s| s.as_str()).unwrap_or("T");
-        let more = params.get("m").map(|s| s.as_str()).unwrap_or("0");
+        let action = params.get("a").unwrap_or("T");
+        let more = params.get("m").unwrap_or("0");
 
         match action {
             "T" | "t" => {
@@ -848,7 +813,7 @@ impl KittyAccumulator {
                 }
 
                 // Final chunk — decode
-                let result = self.decode_payload(&params);
+                let result = self.decode_payload();
                 self.payload.clear();
                 self.control.clear();
                 result
@@ -875,19 +840,12 @@ impl KittyAccumulator {
     }
 
     /// Decode the accumulated payload into RGBA pixels.
-    fn decode_payload(
-        &self,
-        params: &HashMap<String, String>,
-    ) -> KittyAction {
-        // Use the first chunk's control if params are from a continuation chunk
-        let effective_params = if !self.control.is_empty() && self.control != params.values().next().unwrap_or(&String::new()).as_str() {
-            parse_kitty_control(&self.control)
-        } else {
-            params.clone()
-        };
+    fn decode_payload(&self) -> KittyAction {
+        // Parse the stored control string (always from the first chunk)
+        let params = parse_kitty_control(&self.control);
 
-        let format = effective_params.get("f").and_then(|s| s.parse().ok()).unwrap_or(32u32);
-        let transmission = effective_params.get("t").map(|s| s.as_str()).unwrap_or("d");
+        let format = params.get("f").and_then(|s| s.parse().ok()).unwrap_or(32u32);
+        let transmission = params.get("t").unwrap_or("d");
 
         if transmission != "d" {
             // Only direct transmission supported for now (no file/shared memory)
@@ -908,8 +866,8 @@ impl KittyAccumulator {
         match format {
             24 => {
                 // Raw RGB (3 bytes per pixel)
-                let width = effective_params.get("s").and_then(|s| s.parse().ok()).unwrap_or(0u32);
-                let height = effective_params.get("v").and_then(|s| s.parse().ok()).unwrap_or(0u32);
+                let width = params.get("s").and_then(|s| s.parse().ok()).unwrap_or(0u32);
+                let height = params.get("v").and_then(|s| s.parse().ok()).unwrap_or(0u32);
                 if width == 0 || height == 0 {
                     warn!("Kitty: RGB format requires s= and v= dimensions");
                     return KittyAction::Noop;
@@ -932,8 +890,8 @@ impl KittyAccumulator {
             }
             32 => {
                 // Raw RGBA (4 bytes per pixel)
-                let width = effective_params.get("s").and_then(|s| s.parse().ok()).unwrap_or(0u32);
-                let height = effective_params.get("v").and_then(|s| s.parse().ok()).unwrap_or(0u32);
+                let width = params.get("s").and_then(|s| s.parse().ok()).unwrap_or(0u32);
+                let height = params.get("v").and_then(|s| s.parse().ok()).unwrap_or(0u32);
                 if width == 0 || height == 0 {
                     warn!("Kitty: RGBA format requires s= and v= dimensions");
                     return KittyAction::Noop;
@@ -965,15 +923,39 @@ impl KittyAccumulator {
     }
 }
 
-/// Parse Kitty control string "key=val,key2=val2" into a HashMap.
-fn parse_kitty_control(control: &str) -> HashMap<String, String> {
-    let mut map = HashMap::new();
+/// Parsed Kitty control parameters — avoids HashMap allocation.
+/// Stores up to 16 key-value pairs inline with borrowed string slices.
+struct KittyParams<'a> {
+    pairs: [(&'a str, &'a str); 16],
+    len: usize,
+}
+
+impl<'a> KittyParams<'a> {
+    fn get(&self, key: &str) -> Option<&'a str> {
+        for i in 0..self.len {
+            if self.pairs[i].0 == key {
+                return Some(self.pairs[i].1);
+            }
+        }
+        None
+    }
+}
+
+/// Parse Kitty control string "key=val,key2=val2" into inline params.
+fn parse_kitty_control(control: &str) -> KittyParams<'_> {
+    let mut params = KittyParams {
+        pairs: [("", ""); 16],
+        len: 0,
+    };
     for pair in control.split(',') {
         if let Some((key, val)) = pair.split_once('=') {
-            map.insert(key.to_string(), val.to_string());
+            if params.len < 16 {
+                params.pairs[params.len] = (key, val);
+                params.len += 1;
+            }
         }
     }
-    map
+    params
 }
 
 /// Decode a PNG buffer into RGBA pixels using minimal PNG parsing.

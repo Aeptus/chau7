@@ -523,7 +523,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let terminal = terminalView.getTerminal()
             var text = ""
             for row in 0..<terminal.rows {
-                text += terminal.getLine(row: row).debugDescription + "\n"
+                text += terminalView.getLineText(absoluteRow: row) + "\n"
             }
             do {
                 try text.write(to: url, atomically: true, encoding: .utf8)
@@ -607,10 +607,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if !NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil) {
             window.firstResponder?.perform(#selector(NSText.selectAll(_:)), with: nil)
         }
-    }
-
-    private func selectCurrentInputLine(in terminalView: TerminalViewLike) {
-        terminalView.selectCurrentCommand()
     }
 
     func clearToPreviousMark() {
@@ -936,8 +932,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func createOverlayWindow(tabsModel: OverlayTabsModel, windowNumber: Int) -> NSWindow {
         guard let model else {
-            Log.error("AppModel missing; cannot create overlay window.")
-            return NSWindow()
+            fatalError("AppModel must be set before creating overlay windows")
         }
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
         let width = min(1100, screenFrame.width - 120)

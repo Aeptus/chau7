@@ -69,9 +69,14 @@ func (f *Frame) HeaderBytes(payloadLen uint32) []byte {
 	return data
 }
 
+var ErrUnsupportedVersion = errors.New("unsupported protocol version")
+
 func DecodeFrame(data []byte) (*Frame, error) {
 	if len(data) < HeaderSize {
 		return nil, ErrInsufficientData
+	}
+	if data[0] != 1 {
+		return nil, ErrUnsupportedVersion
 	}
 	payloadLen := int(binary.LittleEndian.Uint32(data[16:20]))
 	if payloadLen < 0 || len(data) < HeaderSize+payloadLen {

@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 
 // ============================================================================
 // Adaptive polling
@@ -104,11 +104,12 @@ impl Default for AdaptivePoller {
 // ============================================================================
 
 /// Dirty row tracker for partial updates.
-/// Uses a bitmap to track which rows have been modified since last sync.
+/// Uses a heap-allocated bitmap to track which rows have been modified since last sync.
+/// Scales to any terminal height (no fixed 512-row cap).
 pub struct DirtyRowTracker {
-    /// Bitmap of dirty rows (each bit represents one row)
-    /// Supports up to 512 rows (8 * 64 bits)
-    dirty_bits: [AtomicU64; 8],
+    /// Bitmap of dirty rows (each bit represents one row).
+    /// RwLock allows concurrent reads (mark_dirty, is_dirty) with rare writes (set_rows).
+    dirty_bits: RwLock<Vec<AtomicU64>>,
     /// Number of rows being tracked
     rows: AtomicU64,
     /// Whether all rows should be considered dirty
@@ -117,8 +118,13 @@ pub struct DirtyRowTracker {
 
 impl DirtyRowTracker {
     pub fn new(rows: usize) -> Self {
+        let words = (rows + 63) / 64;
+        let mut dirty_bits = Vec::with_capacity(words);
+        for _ in 0..words {
+            dirty_bits.push(AtomicU64::new(0));
+        }
         Self {
-            dirty_bits: Default::default(),
+            dirty_bits: RwLock::new(dirty_bits),
             rows: AtomicU64::new(rows as u64),
             full_dirty: AtomicBool::new(true),  // Start fully dirty
         }
@@ -126,27 +132,30 @@ impl DirtyRowTracker {
 
     /// Mark a specific row as dirty
     pub fn mark_dirty(&self, row: usize) {
-        if row >= 512 {
-            self.full_dirty.store(true, Ordering::Relaxed);
-            return;
-        }
+        let bits = self.dirty_bits.read();
         let word = row / 64;
         let bit = row % 64;
-        self.dirty_bits[word].fetch_or(1 << bit, Ordering::Relaxed);
+        if word < bits.len() {
+            bits[word].fetch_or(1 << bit, Ordering::Relaxed);
+        } else {
+            self.full_dirty.store(true, Ordering::Relaxed);
+        }
     }
 
     /// Mark a range of rows as dirty using word-level bitmask batching.
-    /// Uses at most 3 atomic ops instead of N per-row ops.
     pub fn mark_range_dirty(&self, start: usize, end: usize) {
-        let end = end.min(511);
-        if start > end || start >= 512 {
+        if start > end { return; }
+        let bits = self.dirty_bits.read();
+        let max_row = bits.len() * 64 - 1;
+        let end = end.min(max_row);
+        if start > max_row {
+            self.full_dirty.store(true, Ordering::Relaxed);
             return;
         }
         let start_word = start / 64;
         let end_word = end / 64;
 
         if start_word == end_word {
-            // Single word — compute mask covering [start_bit..=end_bit]
             let start_bit = start % 64;
             let end_bit = end % 64;
             let mask = if end_bit == 63 {
@@ -154,21 +163,18 @@ impl DirtyRowTracker {
             } else {
                 ((1u64 << (end_bit + 1)) - 1) & !((1u64 << start_bit) - 1)
             };
-            self.dirty_bits[start_word].fetch_or(mask, Ordering::Relaxed);
+            bits[start_word].fetch_or(mask, Ordering::Relaxed);
         } else {
-            // First partial word
             let start_bit = start % 64;
-            self.dirty_bits[start_word].fetch_or(!0u64 << start_bit, Ordering::Relaxed);
+            bits[start_word].fetch_or(!0u64 << start_bit, Ordering::Relaxed);
 
-            // Full middle words
             for word in (start_word + 1)..end_word {
-                self.dirty_bits[word].store(u64::MAX, Ordering::Relaxed);
+                bits[word].store(u64::MAX, Ordering::Relaxed);
             }
 
-            // Last partial word
             let end_bit = end % 64;
             let mask = if end_bit == 63 { !0u64 } else { (1u64 << (end_bit + 1)) - 1 };
-            self.dirty_bits[end_word].fetch_or(mask, Ordering::Relaxed);
+            bits[end_word].fetch_or(mask, Ordering::Relaxed);
         }
     }
 
@@ -182,12 +188,13 @@ impl DirtyRowTracker {
         if self.full_dirty.load(Ordering::Relaxed) {
             return true;
         }
-        if row >= 512 {
-            return true;
-        }
+        let bits = self.dirty_bits.read();
         let word = row / 64;
         let bit = row % 64;
-        (self.dirty_bits[word].load(Ordering::Relaxed) & (1 << bit)) != 0
+        if word >= bits.len() {
+            return true;
+        }
+        (bits[word].load(Ordering::Relaxed) & (1 << bit)) != 0
     }
 
     /// Get list of dirty row indices (for partial updates)
@@ -196,11 +203,18 @@ impl DirtyRowTracker {
             return (0..self.rows.load(Ordering::Relaxed) as usize).collect();
         }
 
-        let mut dirty = Vec::new();
+        let bits = self.dirty_bits.read();
         let rows = self.rows.load(Ordering::Relaxed) as usize;
-        for row in 0..rows.min(512) {
-            if self.is_dirty(row) {
-                dirty.push(row);
+        let mut dirty = Vec::new();
+        for word_idx in 0..bits.len() {
+            let word = bits[word_idx].load(Ordering::Relaxed);
+            if word == 0 { continue; }
+            for bit in 0..64 {
+                let row = word_idx * 64 + bit;
+                if row >= rows { return dirty; }
+                if word & (1 << bit) != 0 {
+                    dirty.push(row);
+                }
             }
         }
         dirty
@@ -209,8 +223,9 @@ impl DirtyRowTracker {
     /// Clear all dirty flags
     pub fn clear(&self) {
         self.full_dirty.store(false, Ordering::Relaxed);
-        for bits in &self.dirty_bits {
-            bits.store(0, Ordering::Relaxed);
+        let bits = self.dirty_bits.read();
+        for b in bits.iter() {
+            b.store(0, Ordering::Relaxed);
         }
     }
 
@@ -219,15 +234,21 @@ impl DirtyRowTracker {
         if self.full_dirty.load(Ordering::Relaxed) {
             return self.rows.load(Ordering::Relaxed) as usize;
         }
-        self.dirty_bits.iter()
-            .map(|bits| bits.load(Ordering::Relaxed).count_ones() as usize)
+        let bits = self.dirty_bits.read();
+        bits.iter()
+            .map(|b| b.load(Ordering::Relaxed).count_ones() as usize)
             .sum()
     }
 
     /// Update row count (e.g., on resize)
     pub fn set_rows(&self, rows: usize) {
+        let words_needed = (rows + 63) / 64;
+        let mut bits = self.dirty_bits.write();
+        while bits.len() < words_needed {
+            bits.push(AtomicU64::new(0));
+        }
         self.rows.store(rows as u64, Ordering::Relaxed);
-        self.mark_all_dirty();  // Resize requires full redraw
+        self.full_dirty.store(true, Ordering::Relaxed);  // Resize requires full redraw
     }
 }
 
@@ -242,84 +263,6 @@ impl Default for DirtyRowTracker {
 // ============================================================================
 
 /// Output buffer with batching support.
-/// Accumulates small outputs into larger batches to reduce FFI overhead.
-/// Uses a single Mutex (buffer) + AtomicU64 for flush timestamp to avoid double-lock.
-pub struct OutputBatcher {
-    /// Accumulated output data
-    buffer: Mutex<Vec<u8>>,
-    /// Buffer capacity (pre-allocated)
-    capacity: usize,
-    /// Minimum batch size before flushing (unless timeout)
-    min_batch_size: usize,
-    /// Immutable baseline instant (set at construction)
-    baseline: Instant,
-    /// Last flush time as elapsed microseconds since baseline (atomic, no lock needed)
-    last_flush_us: AtomicU64,
-    /// Maximum time to hold data before flushing (microseconds)
-    max_hold_us: u64,
-}
-
-impl OutputBatcher {
-    pub fn new() -> Self {
-        let now = Instant::now();
-        Self {
-            buffer: Mutex::new(Vec::with_capacity(32 * 1024)),  // 32KB initial capacity
-            capacity: 32 * 1024,
-            min_batch_size: 256,  // Batch at least 256 bytes
-            baseline: now,
-            last_flush_us: AtomicU64::new(0),
-            max_hold_us: 2000,  // Max 2ms hold time
-        }
-    }
-
-    /// Add data to the batch
-    pub fn push(&self, data: &[u8]) {
-        let mut buffer = self.buffer.lock();
-        buffer.extend_from_slice(data);
-    }
-
-    /// Check if batch is ready to flush (single lock only)
-    pub fn should_flush(&self) -> bool {
-        let buffer = self.buffer.lock();
-        if buffer.is_empty() {
-            return false;
-        }
-
-        // Flush if buffer is large enough
-        if buffer.len() >= self.min_batch_size {
-            return true;
-        }
-
-        // Flush if held too long
-        let now_us = self.baseline.elapsed().as_micros() as u64;
-        let last_us = self.last_flush_us.load(Ordering::Relaxed);
-        now_us.saturating_sub(last_us) >= self.max_hold_us
-    }
-
-    /// Flush and return the batched data (single lock only)
-    pub fn flush(&self) -> Vec<u8> {
-        let mut buffer = self.buffer.lock();
-        self.last_flush_us.store(
-            self.baseline.elapsed().as_micros() as u64,
-            Ordering::Relaxed,
-        );
-
-        // Take the buffer and replace with a new one
-        let mut new_buffer = Vec::with_capacity(self.capacity);
-        std::mem::swap(&mut *buffer, &mut new_buffer);
-        new_buffer
-    }
-
-    /// Get current buffer size
-    pub fn len(&self) -> usize {
-        self.buffer.lock().len()
-    }
-
-    /// Check if buffer is empty
-    pub fn is_empty(&self) -> bool {
-        self.buffer.lock().is_empty()
-    }
-}
 
 // ============================================================================
 // Tests

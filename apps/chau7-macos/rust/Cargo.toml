@@ -1,3 +1,9 @@
 [workspace]
 members = ["chau7_parse", "chau7_terminal"]
 resolver = "2"
+
+[profile.release]
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

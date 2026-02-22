@@ -119,15 +119,19 @@ final class MinimalModeTests: XCTestCase {
             defaults.removeObject(forKey: key)
         }
 
-        // Since MinimalMode is a singleton that has already loaded, we verify
-        // the defaults match the expected init behavior (true for all hide flags)
-        let mode = MinimalMode.shared
-        // Re-check after clearing - the singleton retains its state, so just
-        // verify the properties are accessible and boolean
-        XCTAssertNotNil(mode.hideTabBar as Bool?)
-        XCTAssertNotNil(mode.hideTitleBar as Bool?)
-        XCTAssertNotNil(mode.hideStatusBar as Bool?)
-        XCTAssertNotNil(mode.hideSidebar as Bool?)
+        // Verify the default values are true (all elements hidden when minimal mode is on)
+        XCTAssertTrue(defaults.object(forKey: "minimal.hideTabBar") == nil
+                      || defaults.bool(forKey: "minimal.hideTabBar"),
+                      "hideTabBar should default to true")
+        XCTAssertTrue(defaults.object(forKey: "minimal.hideTitleBar") == nil
+                      || defaults.bool(forKey: "minimal.hideTitleBar"),
+                      "hideTitleBar should default to true")
+        XCTAssertTrue(defaults.object(forKey: "minimal.hideStatusBar") == nil
+                      || defaults.bool(forKey: "minimal.hideStatusBar"),
+                      "hideStatusBar should default to true")
+        XCTAssertTrue(defaults.object(forKey: "minimal.hideSidebar") == nil
+                      || defaults.bool(forKey: "minimal.hideSidebar"),
+                      "hideSidebar should default to true")
     }
 
     // MARK: - Notification Name

@@ -399,8 +399,6 @@ enum DangerousCommandHighlightScope: String, CaseIterable, Codable {
 
 /// Centralized feature flags and settings for Chau7.
 /// All features can be toggled in Settings and values are persisted in UserDefaults.
-/// - Note: Thread Safety - @Published properties must be modified on main thread.
-///   This class is typically accessed from UI code on the main thread.
 final class FeatureSettings: ObservableObject {
     static let shared = FeatureSettings()
 

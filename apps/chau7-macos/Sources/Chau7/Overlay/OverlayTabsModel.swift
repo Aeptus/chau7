@@ -2582,6 +2582,10 @@ final class OverlayTabsModel: ObservableObject {
                     self.currentTask = task
                     Log.info("Task confirmed: \(task.name)")
                 }
+            } else {
+                await MainActor.run {
+                    Log.error("OverlayTabsModel: failed to confirm task candidate \(candidate.id)")
+                }
             }
         }
     }
@@ -2600,6 +2604,8 @@ final class OverlayTabsModel: ObservableObject {
                     self.currentCandidate = nil
                     Log.info("Task candidate dismissed")
                 }
+            } else {
+                Log.error("OverlayTabsModel: failed to dismiss task candidate \(candidate.id)")
             }
         }
     }
@@ -2628,6 +2634,8 @@ final class OverlayTabsModel: ObservableObject {
                     self.currentTask = nil
                     Log.info("Task assessed: \(approved ? "success" : "failed")")
                 }
+            } else {
+                Log.error("OverlayTabsModel: failed to assess task \(task.id)")
             }
         }
     }

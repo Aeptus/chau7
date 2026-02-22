@@ -2,6 +2,10 @@
 
 This repository hosts the macOS app, iOS app, relay service, and remote agent.
 
+## Rule #1: Document Decisions Near the Code
+
+All code-related decisions must be documented as close as possible to the related code. Prefer inline comments, per-folder `README.md` files, or doc-comments over distant wiki pages or top-level docs. When someone reads a file, the *why* behind its design should be reachable without leaving the directory.
+
 ## Layout
 
 ```

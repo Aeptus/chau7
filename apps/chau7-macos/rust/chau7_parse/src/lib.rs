@@ -483,7 +483,7 @@ fn parse_ansi_segments(input: &str) -> Vec<AnsiSegment> {
     segments
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn chau7_risk_patterns_create(
     patterns: *const *const c_char,
     count: usize,
@@ -510,7 +510,7 @@ pub extern "C" fn chau7_risk_patterns_create(
     Box::into_raw(Box::new(set))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn chau7_risk_patterns_free(handle: *mut PatternSet) {
     if handle.is_null() {
         return;
@@ -520,7 +520,7 @@ pub extern "C" fn chau7_risk_patterns_free(handle: *mut PatternSet) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn chau7_risk_is_risky(
     handle: *const PatternSet,
     command: *const c_char,
@@ -547,7 +547,7 @@ pub extern "C" fn chau7_risk_is_risky(
     false
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn chau7_risk_normalize(value: *const c_char) -> *mut c_char {
     if value.is_null() {
         return std::ptr::null_mut();
@@ -563,17 +563,7 @@ pub extern "C" fn chau7_risk_normalize(value: *const c_char) -> *mut c_char {
     cstr.into_raw()
 }
 
-#[no_mangle]
-pub extern "C" fn chau7_risk_string_free(value: *mut c_char) {
-    if value.is_null() {
-        return;
-    }
-    unsafe {
-        drop(CString::from_raw(value));
-    }
-}
-
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn chau7_escape_sanitize(value: *const c_char) -> *mut c_char {
     if value.is_null() {
         return std::ptr::null_mut();
@@ -589,8 +579,9 @@ pub extern "C" fn chau7_escape_sanitize(value: *const c_char) -> *mut c_char {
     cstr.into_raw()
 }
 
-#[no_mangle]
-pub extern "C" fn chau7_escape_string_free(value: *mut c_char) {
+/// Free any CString returned by chau7_parse FFI functions.
+#[unsafe(no_mangle)]
+pub extern "C" fn chau7_parse_string_free(value: *mut c_char) {
     if value.is_null() {
         return;
     }
@@ -599,7 +590,7 @@ pub extern "C" fn chau7_escape_string_free(value: *mut c_char) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn chau7_match_patterns_create(
     patterns: *const *const c_char,
     count: usize,
@@ -629,7 +620,7 @@ pub extern "C" fn chau7_match_patterns_create(
     Box::into_raw(Box::new(set))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn chau7_match_patterns_free(handle: *mut MatchPatternSet) {
     if handle.is_null() {
         return;
@@ -639,7 +630,7 @@ pub extern "C" fn chau7_match_patterns_free(handle: *mut MatchPatternSet) {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn chau7_match_first(handle: *const MatchPatternSet, haystack: *const c_char) -> i32 {
     if handle.is_null() || haystack.is_null() {
         return -1;
@@ -658,7 +649,7 @@ pub extern "C" fn chau7_match_first(handle: *const MatchPatternSet, haystack: *c
     best_index.map(|idx| idx as i32).unwrap_or(-1)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn chau7_match_any(handle: *const MatchPatternSet, haystack: *const c_char) -> bool {
     if handle.is_null() || haystack.is_null() {
         return false;
@@ -673,7 +664,7 @@ pub extern "C" fn chau7_match_any(handle: *const MatchPatternSet, haystack: *con
     set.matcher.is_match(haystack)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn chau7_ansi_parse(text: *const c_char) -> *mut AnsiSegments {
     if text.is_null() {
         return std::ptr::null_mut();
@@ -690,7 +681,7 @@ pub extern "C" fn chau7_ansi_parse(text: *const c_char) -> *mut AnsiSegments {
     Box::into_raw(Box::new(wrapper))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn chau7_ansi_segments_free(ptr: *mut AnsiSegments) {
     if ptr.is_null() {
         return;
@@ -734,8 +725,8 @@ fn contains_dim_prefix(input: &[u8]) -> bool {
 fn patch_dim_sequences(input: &[u8]) -> Vec<u8> {
     // ESC[38;5;246m = dim grey replacement
     let dim_replacement: &[u8] = b"\x1b[38;5;246m";
-    // ESC[39m = reset foreground (dim off)
-    let dim_reset_replacement: &[u8] = b"\x1b[39m";
+    // ESC[22;39m = normal intensity (reset bold+dim) + reset foreground
+    let dim_reset_replacement: &[u8] = b"\x1b[22;39m";
 
     let mut output: Vec<u8> = Vec::with_capacity(input.len() + 64);
     let mut i = 0;
@@ -775,7 +766,7 @@ fn patch_dim_sequences(input: &[u8]) -> Vec<u8> {
     output
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn chau7_patch_dim(
     data: *const u8,
     len: usize,
@@ -810,7 +801,7 @@ pub extern "C" fn chau7_patch_dim(
     Box::into_raw(Box::new(result))
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn chau7_patch_dim_free(ptr: *mut PatchedBuffer) {
     if ptr.is_null() {
         return;
@@ -921,8 +912,8 @@ mod tests {
         let patched = patch_dim_sequences(input);
         // ESC[2m (4 bytes) -> ESC[38;5;246m (11 bytes)
         assert!(patched.starts_with(b"\x1b[38;5;246m"));
-        // ESC[22m (5 bytes) -> ESC[39m (4 bytes)
-        assert!(patched.ends_with(b"\x1b[39m"));
+        // ESC[22m (5 bytes) -> ESC[22;39m (7 bytes) — reset both intensity and fg
+        assert!(patched.ends_with(b"\x1b[22;39m"));
     }
 
     #[test]
