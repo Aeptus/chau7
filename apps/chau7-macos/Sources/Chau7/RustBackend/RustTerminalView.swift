@@ -2,7 +2,6 @@ import AppKit
 import Carbon
 import Darwin
 import QuartzCore
-import SwiftTerm
 import CoreText
 
 // MARK: - Rust FFI Structures (matching chau7_terminal.h)
@@ -222,7 +221,7 @@ private final class RustGridView: NSView {
         ctx.saveGState()
         ctx.textMatrix = .identity
 
-        // Match SwiftTerm: set sRGB color space for consistent color reproduction
+        // Set sRGB color space for consistent color reproduction
         if let srgb = CGColorSpace(name: CGColorSpace.sRGB) {
             ctx.setFillColorSpace(srgb)
             ctx.setStrokeColorSpace(srgb)
@@ -233,7 +232,7 @@ private final class RustGridView: NSView {
 
         let cellHeight = cellSize.height
         let cellWidth = cellSize.width
-        // Use CTFont metrics for consistency with SwiftTerm.
+        // Use CTFont metrics for font dimension calculations.
         // CTFontGetDescent returns a POSITIVE value (unlike NSFont.descender which is negative).
         let ctFont = font as CTFont
         let ascent = CTFontGetAscent(ctFont)
@@ -448,7 +447,7 @@ private final class RustGridView: NSView {
     }
 
     private func resolveColors(for cell: RustCellData) -> (NSColor, NSColor) {
-        // Use deviceRed to match SwiftTerm's color creation (NSColor.make uses deviceRed).
+        // Use deviceRed for consistent color extraction.
         // The CGContext is set to sRGB color space in draw() for consistent rendering.
         var fg = NSColor(deviceRed: CGFloat(cell.fg_r) / 255.0, green: CGFloat(cell.fg_g) / 255.0, blue: CGFloat(cell.fg_b) / 255.0, alpha: 1.0)
         var bg = NSColor(deviceRed: CGFloat(cell.bg_r) / 255.0, green: CGFloat(cell.bg_g) / 255.0, blue: CGFloat(cell.bg_b) / 255.0, alpha: 1.0)
@@ -1851,11 +1850,10 @@ private struct RustDebugState {
 /// Architecture:
 /// - Rust owns: PTY, terminal state machine, scrollback, selection
 /// - Native renderer provides: grid-based text rendering
-/// - SwiftTerm provides: headless buffer for search/highlights
 /// - This view bridges them: polls Rust at 60fps, feeds the native renderer
 final class RustTerminalView: NSView {
 
-    // MARK: - Public Interface (matching Chau7TerminalView)
+    // MARK: - Public Interface
 
     /// Callback when PTY output is received
     var onOutput: ((Data) -> Void)?
@@ -1952,11 +1950,6 @@ final class RustTerminalView: NSView {
 
     private var inlineImages: [InlineImagePlacement] = []
     private var lastDisplayOffset: Int = 0
-
-    /// HeadlessTerminal stub for getTerminal() protocol conformance.
-    /// Phase 3b: No longer fed PTY data — buffer features use native Rust FFI.
-    /// Kept as lightweight empty terminal for callers that still require a Terminal object.
-    private var headlessTerminal: HeadlessTerminal!
 
     /// Display link for polling and rendering at vsync rate
     private var displayLink: CVDisplayLink?
@@ -2115,8 +2108,7 @@ final class RustTerminalView: NSView {
     private let supportsLocalEcho: Bool = true
 
     /// Heuristic-based echo detection: disabled when password prompts or raw mode detected.
-    /// Architecture note: Unlike Chau7TerminalView (which uses `tcgetattr` to query the PTY's
-    /// ECHO flag directly), the Rust terminal owns the PTY, so we rely on heuristics:
+    /// The Rust terminal owns the PTY, so we rely on heuristics:
     /// - Password prompt patterns ("password:", "sudo password", etc.) disable echo
     /// - Shell prompt patterns ($ # %) re-enable echo
     /// - Timeout recovery re-enables echo after 5 seconds
@@ -2184,7 +2176,7 @@ final class RustTerminalView: NSView {
     var renderCellSize: CGSize { CGSize(width: cellWidth, height: cellHeight) }
     var renderCursorRow: Int { Int(rustTerminal?.cursorPosition.row ?? 0) }
     /// Top visible row in absolute buffer coordinates.
-    /// Equivalent to SwiftTerm's getTopVisibleRow() but using native Rust data.
+    /// Top visible row using native Rust data.
     /// When at bottom (displayOffset=0), this equals the history size.
     /// When scrolled up, it equals historySize - displayOffset.
     var renderTopVisibleRow: Int {
@@ -2273,17 +2265,7 @@ final class RustTerminalView: NSView {
         rows = max(1, Int(bounds.height / cellHeight))
         Log.trace("RustTerminalView[\(viewId)]: setupViews - Initial dimensions: \(cols)x\(rows) (bounds: \(bounds))")
 
-        // 1. Create headless terminal for buffer-dependent features (search, highlights)
-        Log.trace("RustTerminalView[\(viewId)]: setupViews - Creating HeadlessTerminal for buffer features")
-        headlessTerminal = HeadlessTerminal(queue: .main) { [weak self] data in
-            // This is called when headless terminal wants to send data (we ignore it)
-            // Actual PTY communication goes through Rust
-            _ = self
-        }
-        headlessTerminal.terminal.resize(cols: cols, rows: rows)
-        Log.trace("RustTerminalView[\(viewId)]: setupViews - HeadlessTerminal created and resized")
-
-        // 2. Create native grid renderer for Rust terminal output
+        // Create native grid renderer for Rust terminal output
         Log.trace("RustTerminalView[\(viewId)]: setupViews - Creating RustGridView for rendering")
         gridView = RustGridView(frame: bounds)
         gridView.autoresizingMask = [.width, .height]
@@ -2316,9 +2298,6 @@ final class RustTerminalView: NSView {
         cols = max(1, Int(bounds.width / cellWidth))
         rows = max(1, Int(bounds.height / cellHeight))
         Log.info("RustTerminalView[\(viewId)]: startTerminal - Starting with \(cols)x\(rows), shell=\(configuredShell ?? "<default>")")
-
-        // Sync headlessTerminal to actual dimensions (was initialized with potentially wrong bounds in setupViews)
-        headlessTerminal?.terminal.resize(cols: cols, rows: rows)
 
         // Create Rust terminal (owns PTY and state)
         // Use environment-aware init if environment was configured, otherwise use basic init
@@ -2391,7 +2370,7 @@ final class RustTerminalView: NSView {
 
     override func layout() {
         super.layout()
-        // Match SwiftTerm behavior: use bounds directly without toolbar inset calculation.
+        // Use bounds directly without toolbar inset calculation.
         // The hosting view is already positioned at contentLayoutRect by OverlayBlurView.
         gridView?.frame = bounds
         overlayContainer?.frame = bounds
@@ -2412,7 +2391,6 @@ final class RustTerminalView: NSView {
             cols = newCols
             rows = newRows
             rustTerminal?.resize(cols: UInt16(cols), rows: UInt16(rows))
-            headlessTerminal?.terminal.resize(cols: cols, rows: rows)
             needsGridSync = true
         }
 
@@ -2491,7 +2469,7 @@ final class RustTerminalView: NSView {
     // MARK: - Cell Dimensions
 
     private func updateCellDimensions() {
-        // Match SwiftTerm's computeFontDimensions():
+        // Compute font dimensions using CTFont metrics:
         // - Width: measure all ASCII printable chars, take max advance, ceil()
         // - Height: max of (ascent+descent+leading) and NSLayoutManager.defaultLineHeight, ceil()
         let ctFont = font as CTFont
@@ -2512,7 +2490,7 @@ final class RustTerminalView: NSView {
         }
         cellWidth = max(1, ceil(maxWidth))
 
-        // Cell height: match SwiftTerm which uses max of CTFont metrics and layout manager
+        // Cell height: use max of CTFont metrics and layout manager
         let lineAscent = CTFontGetAscent(ctFont)
         let lineDescent = CTFontGetDescent(ctFont)
         let lineLeading = CTFontGetLeading(ctFont)
@@ -2827,11 +2805,6 @@ final class RustTerminalView: NSView {
             let smartScrollEnabled = FeatureSettings.shared.isSmartScrollEnabled
             let wasAtBottom = isUserAtBottom
             let savedScrollPosition = scrollPosition
-
-            // HeadlessTerminal feed removed (Phase 3b): Buffer-dependent features
-            // (search, dangerous command detection) now use native Rust FFI via
-            // getBufferAsData(), terminalRows, terminalCols, currentAbsoluteRow.
-            // This eliminates 2x memory usage from the HeadlessTerminal mirror.
 
             // Smart Scroll: Restore position if user wasn't at bottom
             restoreSmartScrollIfNeeded(smartScrollEnabled: smartScrollEnabled, wasAtBottom: wasAtBottom, savedPosition: savedScrollPosition)
@@ -4027,11 +4000,10 @@ final class RustTerminalView: NSView {
         guard !data.isEmpty else { return }
         Log.trace("RustTerminalView[\(viewId)]: injectOutput - Injecting \(data.count) bytes")
         rustTerminal.injectOutput(data)
-        // HeadlessTerminal feed removed (Phase 3b) — Rust is the sole source of truth
         needsGridSync = true
     }
 
-    // MARK: - Public API (matching Chau7TerminalView)
+    // MARK: - Public API
 
     /// Start a shell process (no-op for RustTerminalView - Rust handles PTY)
     func startProcess(executable: String, args: [String], environment: [String]?, execName: String?) {
@@ -4040,21 +4012,10 @@ final class RustTerminalView: NSView {
         Log.info("RustTerminalView[\(viewId)]: startProcess - Shell managed by Rust terminal (executable=\(executable), args=\(args))")
     }
 
-    /// Get the underlying SwiftTerm Terminal for compatibility
-    func getTerminal() -> Terminal {
-        Log.trace("RustTerminalView[\(viewId)]: getTerminal - Returning HeadlessTerminal")
-        return headlessTerminal.terminal
-    }
-
     /// Returns the full terminal buffer (screen + scrollback) as UTF-8 Data.
-    /// Uses native Rust FFI when available, falling back to HeadlessTerminal.
     func getBufferAsData() -> Data? {
-        // Prefer native Rust FFI — avoids HeadlessTerminal dependency
-        if let text = rustTerminal?.fullBufferText() {
-            return text.data(using: .utf8)
-        }
-        // Fallback to HeadlessTerminal mirror
-        return headlessTerminal.terminal.getBufferAsData()
+        guard let text = rustTerminal?.fullBufferText() else { return nil }
+        return text.data(using: .utf8)
     }
 
     var terminalRows: Int { rows }
@@ -4122,28 +4083,6 @@ final class RustTerminalView: NSView {
         gridView?.cursorColor = scheme.nsColor(for: scheme.cursor)
         gridView?.selectionColor = scheme.nsColor(for: scheme.selection)
 
-        // Build palette
-        let palette: [Color] = [
-            terminalColor(from: scheme.black),
-            terminalColor(from: scheme.red),
-            terminalColor(from: scheme.green),
-            terminalColor(from: scheme.yellow),
-            terminalColor(from: scheme.blue),
-            terminalColor(from: scheme.magenta),
-            terminalColor(from: scheme.cyan),
-            terminalColor(from: scheme.white),
-            terminalColor(from: scheme.brightBlack),
-            terminalColor(from: scheme.brightRed),
-            terminalColor(from: scheme.brightGreen),
-            terminalColor(from: scheme.brightYellow),
-            terminalColor(from: scheme.brightBlue),
-            terminalColor(from: scheme.brightMagenta),
-            terminalColor(from: scheme.brightCyan),
-            terminalColor(from: scheme.brightWhite)
-        ]
-        headlessTerminal.terminal.installPalette(colors: palette)
-        Log.trace("RustTerminalView[\(viewId)]: applyColorScheme - SwiftTerm palette installed with 16 colors")
-
         // Apply colors to Rust terminal for correct grid rendering
         // This fixes issues #6, #8, and #10: color_to_rgb() now uses theme colors
         let fgRGB = rgbComponents(from: scheme.foreground)
@@ -4186,31 +4125,17 @@ final class RustTerminalView: NSView {
         return (red, green, blue)
     }
 
-    private func terminalColor(from hex: String) -> Color {
-        let nsColor = TerminalColorScheme.default.nsColor(for: hex)
-        let rgb = nsColor.usingColorSpace(.deviceRGB) ?? nsColor
-        let red = UInt16(rgb.redComponent * 65535)
-        let green = UInt16(rgb.greenComponent * 65535)
-        let blue = UInt16(rgb.blueComponent * 65535)
-        return Color(red: red, green: green, blue: blue)
-    }
-
     /// Configure cursor style
     func applyCursorStyle(style: String, blink: Bool) {
-        let cursorStyle: CursorStyle
         let rendererShape: RustGridView.CursorStyle.Shape
         switch style {
         case "underline":
-            cursorStyle = blink ? .blinkUnderline : .steadyUnderline
             rendererShape = .underline
         case "bar":
-            cursorStyle = blink ? .blinkBar : .steadyBar
             rendererShape = .bar
         default:
-            cursorStyle = blink ? .blinkBlock : .steadyBlock
             rendererShape = .block
         }
-        headlessTerminal.terminal.setCursorStyle(cursorStyle)
         gridView?.cursorStyle = RustGridView.CursorStyle(shape: rendererShape, blink: blink)
     }
 
@@ -4277,8 +4202,6 @@ final class RustTerminalView: NSView {
         }
         Log.trace("RustTerminalView[\(viewId)]: applyScrollbackLines - Setting scrollback to \(lines) lines")
         rustTerminal?.setScrollbackSize(UInt32(lines))
-        // Also sync to headless terminal to keep buffer-dependent features (search, highlights) working
-        headlessTerminal?.terminal.changeHistorySize(lines)
         appliedScrollbackLines = lines
     }
 
@@ -4316,7 +4239,7 @@ final class RustTerminalView: NSView {
         return false
     }
 
-    /// Get selected text (alias for Chau7TerminalView compatibility)
+    /// Get selected text (alias for protocol conformance)
     func getSelectedText() -> String? {
         getSelection()
     }
@@ -4554,7 +4477,6 @@ final class RustTerminalView: NSView {
     }
 
     /// Record the current input line for history tracking.
-    /// Uses native Rust cursor + scroll data (no HeadlessTerminal dependency).
     func recordInputLine() {
         guard let rust = rustTerminal else { return }
         let cursor = rust.cursorPosition
@@ -4907,7 +4829,7 @@ final class RustTerminalView: NSView {
                 }
             }
 
-            // Copy-on-select: Option key temporarily disables (matches Chau7TerminalView)
+            // Copy-on-select: Option key temporarily disables
             let optionHeld = event.modifierFlags.contains(.option)
             if wasSelecting && !optionHeld {
                 self.scheduleCopyOnSelect()
@@ -5240,7 +5162,7 @@ final class RustTerminalView: NSView {
     }
 
     private func pasteText(_ text: String) {
-        // Check for bracketed paste mode from Rust terminal (not headlessTerminal which is display-only)
+        // Check for bracketed paste mode from Rust terminal
         // This fixes bracketed paste for vim, zsh, and other programs that enable it
         if rustTerminal?.isBracketedPasteMode() == true {
             Log.trace("RustTerminalView[\(viewId)]: paste - Using bracketed paste mode")
@@ -5273,9 +5195,6 @@ final class RustTerminalView: NSView {
 
         // Clear Rust terminal's scrollback history (frees memory)
         rustTerminal?.clearScrollback()
-
-        // Also reset the headless buffer state to stay in sync
-        headlessTerminal.terminal.resetToInitialState()
 
         clearLocalEchoOverlay()
 
@@ -5409,7 +5328,7 @@ final class RustTerminalView: NSView {
 
     @objc private func contextSelectAll(_ sender: Any?) {
         Log.trace("RustTerminalView[\(viewId)]: contextSelectAll")
-        // Issue #1 fix: Use Rust's selection instead of SwiftTerm's
+        // Issue #1 fix: Use Rust's native selection
         // This ensures getSelection() returns the correct text after select-all
         rustTerminal?.selectAll()
         needsGridSync = true
@@ -5440,7 +5359,7 @@ final class RustTerminalView: NSView {
         let text = insertion.text
 
         // Send the snippet text (with bracketed paste if enabled)
-        // Use Rust terminal's bracketed paste mode state (not headless terminal)
+        // Use Rust terminal's bracketed paste mode state
         if rustTerminal?.isBracketedPasteMode() == true {
             Log.trace("RustTerminalView[\(viewId)]: insertSnippet - Using bracketed paste mode (from Rust)")
             send(txt: "\u{1b}[200~")
@@ -5842,7 +5761,6 @@ final class RustTerminalView: NSView {
 
         // Check components
         results["hasRustTerminal"] = rustTerminal != nil
-        results["hasHeadlessTerminal"] = headlessTerminal != nil
         results["hasGridView"] = gridView != nil
 
         // Performance metrics
@@ -5853,13 +5771,6 @@ final class RustTerminalView: NSView {
             results["bytesReceived"] = state.bytesReceived
             results["bytesSent"] = state.bytesSent
             results["uptimeMs"] = state.uptimeMs
-        }
-
-        // Scrollback sync check
-        if let headless = headlessTerminal {
-            let headlessRows = headless.terminal.getTopVisibleRow()
-            let rustOffset = rustTerminal?.displayOffset ?? 0
-            results["scrollbackInSync"] = abs(Int(headlessRows) - Int(rustOffset)) <= 1
         }
 
         Log.info("RustTerminalView[\(viewId)]: Diagnostics complete: \(results)")

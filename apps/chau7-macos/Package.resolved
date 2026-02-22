@@ -1,23 +1,6 @@
 {
   "pins" : [
     {
-      "identity" : "chau7-swiftterm",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/schiste/Chau7-SwiftTerm.git",
-      "state" : {
-        "revision" : "82b4e5fb327b8724131161402096e598f27c9829"
-      }
-    },
-    {
-      "identity" : "swift-argument-parser",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-argument-parser",
-      "state" : {
-        "revision" : "c5d11a805e765f52ba34ec7284bd4fcd6ba68615",
-        "version" : "1.7.0"
-      }
-    },
-    {
       "identity" : "swift-atomics",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-atomics.git",

@@ -715,7 +715,7 @@ struct Chau7OverlayView: View {
             // Only keep nearby tabs (selected ± 1, previous ± 1) in full view hierarchy.
             // This ensures smooth transitions even when jumping between distant tabs.
             // Distant tabs use lightweight placeholders - their shell processes
-            // continue running via retainedTerminalView in TerminalSessionModel.
+            // continue running via retainedRustTerminalView in TerminalSessionModel.
             ForEach(Array(overlayModel.tabs.enumerated()), id: \.element.id) { index, tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
                 let selectedIndex = overlayModel.tabs.firstIndex(where: { $0.id == overlayModel.selectedTabID }) ?? 0
@@ -738,7 +738,7 @@ struct Chau7OverlayView: View {
                         .animation(.spring(response: 0.2, dampingFraction: 0.9), value: isSelected)
                 } else {
                     // Lightweight placeholder for distant tabs
-                    // The terminal process keeps running via retainedTerminalView
+                    // The terminal process keeps running via retainedRustTerminalView
                     Color.clear
                         .frame(width: 0, height: 0)
                         .accessibilityHidden(true)

@@ -406,7 +406,7 @@
 "about.open.debug" = "وحدة تحكم التصحيح";
 
 "about.acknowledgments" = "الشكر";
-"about.swiftterm" = "تم بناء Chau7 باستخدام SwiftTerm لمحاكاة الطرفية.";
+"settings.about.terminalCredit" = "يستخدم Chau7 محاكي طرفية مبني على Rust مع عرض GPU عبر Metal.";
 
 // MARK: - Command Palette
 "palette.title" = "لوحة الأوامر";

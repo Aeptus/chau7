@@ -13,12 +13,12 @@ SwiftUI/AppKit terminal view wrappers, the unified terminal view protocol, and l
 
 ## Key Types
 
-- `TerminalViewLike` — protocol unifying Chau7TerminalView and RustTerminalView interfaces
-- `TerminalViewRepresentable` — SwiftUI bridge wrapping terminal views with Metal rendering support
-- `TerminalContainerView` — NSView container managing terminal view layout and Metal coordinator
+- `TerminalViewLike` — protocol defining the terminal view interface (RustTerminalView is the sole conformer)
+- `TerminalViewRepresentable` — SwiftUI bridge wrapping RustTerminalView with Metal rendering support
+- `UnifiedTerminalContainerView` — NSView container managing terminal view layout and Metal coordinator
 - `AnsiLogView` — NSViewRepresentable for rendering ANSI-colored log output
 
 ## Dependencies
 
-- **Uses:** Terminal/Rendering (Chau7TerminalView), RustBackend (RustTerminalView), Performance (MetalDisplayCoordinator), Rendering, Settings
+- **Uses:** RustBackend (RustTerminalView), Performance (RustMetalDisplayCoordinator), Rendering, Settings
 - **Used by:** Overlay, SplitPanes, StatusBar

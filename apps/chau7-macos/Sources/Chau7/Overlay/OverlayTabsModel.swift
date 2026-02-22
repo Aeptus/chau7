@@ -819,9 +819,7 @@ final class OverlayTabsModel: ObservableObject {
             return
         }
 
-        // Try Rust backend first (primary), then SwiftTerm fallback
-        let snapshotView: NSView? = (tabs[currentIndex].session?.existingRustTerminalView as NSView?)
-            ?? (tabs[currentIndex].session?.existingTerminalView as NSView?)
+        let snapshotView: NSView? = tabs[currentIndex].session?.existingRustTerminalView as NSView?
         if let terminalView = snapshotView {
             // Live capture from the terminal view
             guard let bitmapRep = terminalView.bitmapImageRepForCachingDisplay(in: terminalView.bounds) else {
@@ -1813,27 +1811,10 @@ final class OverlayTabsModel: ObservableObject {
             }
             Log.info("forceRefreshSelectedTab: unhid Rust view + Metal for tab \(selectedTabID)")
         }
-        // 3. Same for SwiftTerm fallback
-        //    Hierarchy: UnifiedTerminalContainerView → TerminalContainerView → Chau7TerminalView
-        if let swiftView = session.existingTerminalView {
-            swiftView.isHidden = false
-            swiftView.notifyUpdateChanges = true
-            swiftView.needsDisplay = true
-            swiftView.setEventMonitoringEnabled(true)
-            if let container = swiftView.superview as? TerminalContainerView {
-                container.isHidden = false
-                if let metalView = container.metalCoordinator?.metalView {
-                    metalView.isHidden = false
-                    metalView.needsDisplay = true
-                }
-            }
-            Log.info("forceRefreshSelectedTab: unhid SwiftTerm view + Metal for tab \(selectedTabID)")
-        }
-
-        // 4. Trigger SwiftUI re-render
+        // 3. Trigger SwiftUI re-render
         objectWillChange.send()
 
-        // 5. Re-focus
+        // 4. Re-focus
         focusSelected()
 
         logVisualState(reason: "forceRefreshSelectedTab")

@@ -91,7 +91,7 @@ struct AboutSettingsView: View {
             // Acknowledgments
             SettingsSectionHeader(L("settings.about.acknowledgments", "Acknowledgments"), icon: "heart")
 
-            SettingsDescription(text: L("settings.about.swiftTermCredit", "Chau7 is built with SwiftTerm for terminal emulation."))
+            SettingsDescription(text: L("settings.about.terminalCredit", "Chau7 uses a Rust-based terminal emulator with Metal GPU rendering."))
             SettingsDescription(text: L("settings.about.copyright", "Copyright © 2024-2025. All rights reserved."))
         }
     }

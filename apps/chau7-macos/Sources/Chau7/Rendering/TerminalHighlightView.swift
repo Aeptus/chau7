@@ -1,27 +1,15 @@
 import AppKit
-import SwiftTerm
 
 // MARK: - Terminal Highlight View
 
 final class TerminalHighlightView: NSView {
-    /// Terminal view reference - uses unified TerminalViewLike protocol
+    /// Terminal view reference
     private weak var _terminalView: (any TerminalViewLike)?
-
-    /// Set the terminal view (supports both Chau7TerminalView and RustTerminalView)
-    var terminalView: Chau7TerminalView? {
-        get { _terminalView as? Chau7TerminalView }
-        set { _terminalView = newValue }
-    }
 
     /// Set the terminal view for RustTerminalView
     var rustTerminalView: RustTerminalView? {
         get { _terminalView as? RustTerminalView }
         set { _terminalView = newValue }
-    }
-
-    /// Set any TerminalViewLike conforming view
-    func setTerminalView(_ view: any TerminalViewLike) {
-        _terminalView = view
     }
 
     weak var session: TerminalSessionModel?
@@ -31,10 +19,6 @@ final class TerminalHighlightView: NSView {
     private var cachedYDisp: Int = -1
     private var cachedRows: Int = -1
     private var cachedMatchCount: Int = -1
-
-    // Cached font metrics to avoid recalculating on every draw (Latency optimization)
-    private var cachedCellWidth: CGFloat = 0
-    private var cachedFont: NSFont?
 
     // Display batching to coalesce multiple needsDisplay calls (Latency optimization)
     private var displayScheduled = false
@@ -61,48 +45,14 @@ final class TerminalHighlightView: NSView {
         guard let terminalView = _terminalView, let session else { return }
         let token = FeatureProfiler.shared.begin(.highlightDraw)
         defer { FeatureProfiler.shared.end(token) }
-        let terminal = terminalView.getTerminal()
-        let rows: Int
-        let cols: Int
-        if let rustView = terminalView as? RustTerminalView {
-            rows = rustView.renderRows
-            cols = rustView.renderCols
-        } else {
-            rows = terminal.rows
-            cols = terminal.cols
-        }
+        guard let rustView = terminalView as? RustTerminalView else { return }
+        let rows = rustView.renderRows
+        let cols = rustView.renderCols
         if rows <= 0 || cols <= 0 { return }
 
-        // Use cached font metrics to avoid recalculating on every draw (Latency optimization)
-        let font = terminalView.font
-        let cellWidth: CGFloat
-        if let rustView = terminalView as? RustTerminalView {
-            cellWidth = rustView.renderCellSize.width
-        } else {
-            if cachedFont !== font {
-                cachedFont = font
-                let sampleChar: NSString = "M"
-                cachedCellWidth = sampleChar.size(withAttributes: [.font: font]).width
-            }
-            cellWidth = cachedCellWidth
-        }
-        let cellHeight: CGFloat
-        if let rustView = terminalView as? RustTerminalView {
-            cellHeight = rustView.renderCellSize.height
-        } else {
-            cellHeight = terminalView.bounds.height / CGFloat(rows)
-        }
-
-        // For RustTerminalView, use the native renderTopVisibleRow instead of the
-        // headless terminal's yDisp (which is always 0 since the headless terminal
-        // isn't fed PTY data in Phase 3b). Using yDisp=0 would cause every visible
-        // row to fall into the expensive scrollback path in getLineText().
-        let yDisp: Int
-        if let rustView = terminalView as? RustTerminalView {
-            yDisp = rustView.renderTopVisibleRow
-        } else {
-            yDisp = terminal.buffer.yDisp
-        }
+        let cellWidth = rustView.renderCellSize.width
+        let cellHeight = rustView.renderCellSize.height
+        let yDisp = rustView.renderTopVisibleRow
 
         // Update cache if needed (Issue #14 fix - performance optimization)
         let allMatches = session.searchMatches
@@ -221,9 +171,4 @@ final class TerminalHighlightView: NSView {
         cachedVisibleMatches = []
     }
 
-    /// Invalidates the font metrics cache (call when font changes).
-    func invalidateFontCache() {
-        cachedFont = nil
-        cachedCellWidth = 0
-    }
 }

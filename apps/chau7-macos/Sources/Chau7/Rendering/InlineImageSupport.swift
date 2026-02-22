@@ -1,6 +1,5 @@
 import Foundation
 import AppKit
-import SwiftTerm
 
 // MARK: - iTerm2 Image Protocol Handler
 

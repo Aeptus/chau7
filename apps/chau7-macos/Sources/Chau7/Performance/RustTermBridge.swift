@@ -2,9 +2,9 @@
 // Converts Rust's CellData (pre-resolved u8 RGB) into TerminalCell structs
 // for GPU rendering via the TripleBufferedTerminal.
 //
-// Unlike SwiftTermBridge, no palette lookup is needed here: the Rust backend
-// resolves colors via ThemeColors before building the GridSnapshot.  The bridge
-// simply converts u8 RGB → SIMD4<Float> (divide by 255.0) and maps cell flags.
+// No palette lookup is needed: the Rust backend resolves colors via ThemeColors
+// before building the GridSnapshot. The bridge simply converts u8 RGB →
+// SIMD4<Float> (divide by 255.0) and maps cell flags.
 
 import Foundation
 import simd

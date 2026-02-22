@@ -1,7 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
 import SwiftUI
-import SwiftTerm
 
 private final class OverlayBlurView: NSVisualEffectView {
     weak var hostedView: NSView?
@@ -352,8 +351,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 terminal.window?.makeFirstResponder(terminal)
                 if let rustView = terminal as? RustTerminalView {
                     rustView.copy(nil)
-                } else if let swiftView = terminal as? Chau7TerminalView {
-                    swiftView.copy(swiftView)
                 }
                 return
             }
@@ -377,8 +374,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 terminal.window?.makeFirstResponder(terminal)
                 if let rustView = terminal as? RustTerminalView {
                     rustView.paste(nil)
-                } else if let swiftView = terminal as? Chau7TerminalView {
-                    swiftView.paste(swiftView)
                 }
                 return
             }
@@ -464,7 +459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         - Split Panes
         - Snippets & More
 
-        Built with SwiftUI and SwiftTerm.
+        Built with SwiftUI and Rust.
 
         Copyright \u{00a9} 2024-2025
         """)
@@ -520,10 +515,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         if savePanel.runModal() == .OK, let url = savePanel.url {
             // Get all text from terminal buffer
-            let terminal = terminalView.getTerminal()
-            var text = ""
-            for row in 0..<terminal.rows {
-                text += terminalView.getLineText(absoluteRow: row) + "\n"
+            guard let data = terminalView.getBufferAsData(),
+                  let text = String(data: data, encoding: .utf8) else {
+                Log.warn("Export text: failed to read terminal buffer.")
+                return
             }
             do {
                 try text.write(to: url, atomically: true, encoding: .utf8)
@@ -585,10 +580,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if let lastTime = lastSelectAllTime,
                now.timeIntervalSince(lastTime) < doubleTapThreshold {
                 // Double-tap: Select entire terminal buffer
-                // Use SwiftTerm's selectAll if available, otherwise clear state
-                if let swiftTerm = terminalView as? Chau7TerminalView {
-                    swiftTerm.selectAll(nil)
-                } else if let rustView = terminalView as? RustTerminalView {
+                if let rustView = terminalView as? RustTerminalView {
                     rustView.selectAll(nil)
                 }
                 terminalView.clearCommandSelectionState()
@@ -1068,7 +1060,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func installKeyMonitor() {
         guard keyMonitor == nil else { return }
-        // Note: Cmd+C and Cmd+V are now handled directly by Chau7TerminalView
+        // Note: Cmd+C and Cmd+V are now handled directly by the terminal view
         // via performKeyEquivalent. We keep the monitor for potential future shortcuts
         // that need to be handled at the app level.
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
@@ -1109,15 +1101,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return false
     }
 
-    /// Returns the active terminal view (either SwiftTerm or Rust) if one is first responder
+    /// Returns the active terminal view if one is first responder
     private func activeTerminalView(in window: NSWindow?) -> TerminalViewLike? {
         guard let window = window,
               overlayHosts.contains(where: { $0.window == window }),
               let responder = window.firstResponder else { return nil }
 
-        if let swiftTermView = responder as? Chau7TerminalView {
-            return swiftTermView
-        }
         if let rustView = responder as? RustTerminalView {
             return rustView
         }
