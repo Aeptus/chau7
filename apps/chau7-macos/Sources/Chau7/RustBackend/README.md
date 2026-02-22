@@ -1,6 +1,6 @@
 # RustBackend
 
-Alternative terminal backend using a Rust-based terminal emulator via FFI.
+Terminal backend using a Rust-based terminal emulator via FFI.
 
 ## Files
 
@@ -9,7 +9,7 @@ Alternative terminal backend using a Rust-based terminal emulator via FFI.
 | `RustAnsiParser.swift` | Swift-side ANSI parser bridging Rust FFI structs for color and attribute segments |
 | `RustDimPatcher.swift` | Dynamic library loader that patches dim attribute rendering in Rust output |
 | `RustTerminalView.swift` | NSView-based terminal view powered by the Rust chau7_terminal FFI backend |
-| `SixelKittyBridge.swift` | Enables Sixel and Kitty image protocols in SwiftTerm's TerminalOptions |
+| `SixelKittyBridge.swift` | Manages Sixel and Kitty image protocol settings |
 
 ## Key Types
 

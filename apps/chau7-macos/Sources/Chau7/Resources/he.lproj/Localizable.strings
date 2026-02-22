@@ -406,7 +406,7 @@
 "about.open.debug" = "מסוף ניפוי באגים";
 
 "about.acknowledgments" = "תודות";
-"about.swiftterm" = "Chau7 בנוי עם SwiftTerm לאמולציית מסוף.";
+"settings.about.terminalCredit" = "Chau7 משתמש באמולטור מסוף מבוסס Rust עם עיבוד GPU של Metal.";
 
 // MARK: - Command Palette
 "palette.title" = "לוח פקודות";

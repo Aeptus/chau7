@@ -1,12 +1,11 @@
 import Foundation
 import AppKit
 
-/// Bridges SwiftTerm's Sixel and Kitty image protocol support
+/// Bridges Sixel and Kitty image protocol support
 /// into Chau7's inline image display system.
 ///
-/// SwiftTerm already parses Sixel (DCS sequences) and Kitty (APC sequences)
-/// image data. This bridge:
-/// 1. Enables the protocols in TerminalOptions when settings allow
+/// This bridge:
+/// 1. Enables the protocols when settings allow
 /// 2. Converts decoded image data into InlineImageView displays
 /// 3. Manages the Kitty image cache size setting
 @MainActor
@@ -22,7 +21,7 @@ final class SixelKittyBridge: ObservableObject {
         Log.info("SixelKittyBridge initialized: sixel=\(isSixelEnabled) kitty=\(isKittyGraphicsEnabled) cache=\(kittyCacheLimitMB)MB")
     }
 
-    /// Call during terminal view setup to configure SwiftTerm's TerminalOptions
+    /// Call during terminal view setup to configure terminal options
     func configureTerminal(_ terminalView: Any) {
         // Access terminalView's terminal.options to set:
         // - terminal.options.enableSixelReported = isSixelEnabled

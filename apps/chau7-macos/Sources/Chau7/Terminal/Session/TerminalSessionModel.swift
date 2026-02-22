@@ -1,6 +1,5 @@
 import Foundation
 import AppKit
-import SwiftTerm
 import Darwin
 import Chau7Core
 
@@ -14,9 +13,8 @@ enum CommandStatus: String {
 
 /// Model for a terminal session, managing shell state, search, and output capture.
 /// - Note: Thread Safety - @Published properties must be modified on main thread.
-///   Delegate callbacks from SwiftTerm may arrive on background threads and
-///   dispatch to main via DispatchQueue.main.async.
-final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTerminalViewDelegate {
+///   Callbacks may arrive on background threads and dispatch to main via DispatchQueue.main.async.
+final class TerminalSessionModel: NSObject, ObservableObject {
     private struct LatencySampleBuffer {
         private var buffer: [Int]
         private var index: Int = 0
@@ -106,10 +104,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     @Published private(set) var lagTimeline: [LagEvent] = []
 
     private weak var appModel: AppModel?
-    private weak var terminalView: Chau7TerminalView?
-    /// Strong reference to keep the terminal view alive across SwiftUI view recreations (e.g., when splitting)
-    private var retainedTerminalView: Chau7TerminalView?
-    /// Rust terminal view (when using Rust backend)
+    /// Rust terminal view
     private weak var rustTerminalView: RustTerminalView?
     /// Strong reference to keep the Rust terminal view alive across SwiftUI view recreations
     private var retainedRustTerminalView: RustTerminalView?
@@ -299,51 +294,14 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         devServerMonitor.stop()
     }
 
-    /// Returns the existing terminal view if one exists (to reuse across SwiftUI view recreations)
-    var existingTerminalView: Chau7TerminalView? {
-        retainedTerminalView
-    }
-
     /// Returns the existing Rust terminal view if one exists
     var existingRustTerminalView: RustTerminalView? {
         retainedRustTerminalView
     }
 
-    /// Unified accessor for the active terminal view (either SwiftTerm or Rust backend)
-    /// This enables backend-agnostic code in session-level operations
+    /// Accessor for the active terminal view
     private var activeTerminalView: (any TerminalViewLike)? {
-        // Prefer Rust view if attached, fall back to SwiftTerm
-        if let rust = rustTerminalView {
-            return rust
-        }
-        return terminalView
-    }
-
-    /// Whether we're currently using the Rust backend
-    private var isUsingRustBackend: Bool {
-        rustTerminalView != nil
-    }
-
-    func attachTerminal(_ view: Chau7TerminalView) {
-        terminalView = view
-        retainedTerminalView = view  // Keep strong reference to survive view recreation
-        view.currentDirectory = currentDirectory
-
-        // Configure scrollback buffer size from settings
-        let scrollbackLines = FeatureSettings.shared.scrollbackLines
-        view.getTerminal().changeHistorySize(scrollbackLines)
-        Log.trace("Configured terminal scrollback: \(scrollbackLines) lines")
-
-        // Auto-focus on attach for newly created tabs
-        if shouldAutoFocusOnAttach {
-            shouldAutoFocusOnAttach = false
-            // Brief delay to ensure view is fully integrated into window hierarchy
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak view] in
-                guard let view = view, let window = view.window else { return }
-                window.makeFirstResponder(view)
-                Log.trace("Auto-focused terminal view on attach")
-            }
-        }
+        rustTerminalView
     }
 
     func attachRustTerminal(_ view: RustTerminalView) {
@@ -356,7 +314,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         view.applyScrollbackLines(scrollbackLines)
         Log.trace("Configured Rust terminal scrollback: \(scrollbackLines) lines")
 
-        // Wire up title change callback (equivalent to LocalProcessTerminalViewDelegate.setTerminalTitle)
+        // Wire up title change callback
         view.onTitleChanged = { [weak self] title in
             DispatchQueue.main.async {
                 let newTitle = title.isEmpty ? "Shell" : title
@@ -365,12 +323,12 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             }
         }
 
-        // Wire up process termination callback (equivalent to LocalProcessTerminalViewDelegate.processTerminated)
+        // Wire up process termination callback
         view.onProcessTerminated = { [weak self] (exitCode: Int32?) in
             self?.handleProcessTermination(exitCode: exitCode)
         }
 
-        // Wire up directory change callback (equivalent to LocalProcessTerminalViewDelegate.hostCurrentDirectoryUpdate)
+        // Wire up directory change callback
         view.onDirectoryChanged = { [weak self] (directory: String) in
             guard let self = self else { return }
             DispatchQueue.main.async {
@@ -396,24 +354,18 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     func focusTerminal(in window: NSWindow?, retryCount: Int = 0) {
         guard let window else { return }
-        // Use activeTerminalView to support both SwiftTerm and Rust backends.
-        // Previously only checked `terminalView` (SwiftTerm), which silently failed
-        // for the Rust backend, causing focus to never land on the terminal after
-        // tab switches, and keystrokes to leak into inputs.
-        if let rust = rustTerminalView {
-            window.makeFirstResponder(rust)
-        } else if let swiftTerm = terminalView {
-            window.makeFirstResponder(swiftTerm)
+        if let view = rustTerminalView {
+            window.makeFirstResponder(view)
         } else if retryCount < 3 {
             // The terminal view may not be attached yet (SwiftUI makeNSView is async).
             // Retry after a short delay to allow the view lifecycle to complete.
             let attempt = retryCount + 1
-            Log.trace("focusTerminal: backends nil for '\(self.title)', retry \(attempt)/3 in 100ms")
+            Log.trace("focusTerminal: view nil for '\(self.title)', retry \(attempt)/3 in 100ms")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 self?.focusTerminal(in: window, retryCount: attempt)
             }
         } else {
-            Log.warn("focusTerminal: no terminal view available (both backends nil) for tab '\(self.title)' after 3 retries")
+            Log.warn("focusTerminal: no terminal view available for tab '\(self.title)' after 3 retries")
         }
     }
 
@@ -421,7 +373,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     /// Schedules shell integration script to run after shell is ready.
     /// Instead of an arbitrary delay, we wait for initial output (prompt).
-    func scheduleShellIntegration(for view: TerminalView) {
+    func scheduleShellIntegration(for view: any TerminalViewLike) {
         // The shell integration will be applied when we detect the first few outputs,
         // indicating the shell has started and is ready for input.
         didApplyShellIntegration = false
@@ -430,13 +382,13 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
 
     private func maybeApplyShellIntegration() {
         guard !didApplyShellIntegration else { return }
-        guard let terminalView else { return }
+        guard let view = activeTerminalView else { return }
 
         // Wait for a few output events to ensure shell is ready
         shellIntegrationOutputCount += 1
         if shellIntegrationOutputCount >= 2 {
             didApplyShellIntegration = true
-            applyShellIntegration(to: terminalView)
+            applyShellIntegration(to: view)
         }
     }
 
@@ -564,14 +516,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         if !didStartDevServerMonitor {
             var pid: pid_t = 0
 
-            // Try Rust backend first
             if let rustView = rustTerminalView {
                 pid = rustView.shellPid
                 Log.trace("TerminalSessionModel: Got shell PID from Rust backend: \(pid)")
-            } else if let view = terminalView {
-                // Fall back to SwiftTerm
-                pid = view.process.shellPid
-                Log.trace("TerminalSessionModel: Got shell PID from SwiftTerm: \(pid)")
             }
 
             if pid > 0 {
@@ -1397,10 +1344,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     private func recordInputLineIfNeeded() {
-        guard let terminalView else { return }
+        guard let view = activeTerminalView else { return }
         // Record input lines for semantic search or any active AI agent
         if FeatureSettings.shared.isSemanticSearchEnabled || activeAppName != nil {
-            terminalView.recordInputLine()
+            view.recordInputLine()
         }
     }
 
@@ -1796,7 +1743,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         return didWriteShellIntegration ? zdotdirPath : nil
     }
 
-    func applyShellIntegration(to view: TerminalView) {
+    func applyShellIntegration(to view: any TerminalViewLike) {
         // No-op: integration now happens via shell rc files at startup
         Log.trace("Shell integration applied via shell config files.")
     }
@@ -1812,45 +1759,6 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
         guard let view = activeTerminalView else { return }
         view.send(txt: "\u{0C}")
         Log.trace("Cleared terminal on launch.")
-    }
-
-    // MARK: - LocalProcessTerminalViewDelegate
-
-    func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {
-        // No-op: window controls layout.
-    }
-
-    func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
-        DispatchQueue.main.async {
-            let newTitle = title.isEmpty ? "Shell" : title
-            // Guard against redundant @Published updates — each fires objectWillChange
-            // and triggers SwiftUI tab bar re-diff even when the value hasn't changed.
-            guard self.title != newTitle else { return }
-            self.title = newTitle
-        }
-    }
-
-    func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {
-        DispatchQueue.main.async {
-            if let directory, let url = URL(string: directory) {
-                self.updateCurrentDirectory(url.path)
-            } else if let directory {
-                self.updateCurrentDirectory(directory)
-            }
-            self.handlePromptDetected()
-            if self.activeAppName != nil {
-                Log.trace("Clearing active app after shell prompt update.")
-                self.activeAppName = nil
-            }
-            // finishAILogging is idempotent and has internal synchronization
-            self.finishAILogging(exitCode: nil)
-            // Note: Don't clear devServer here - it persists until the server actually stops
-            // The DevServerMonitor will detect when the server is no longer listening
-        }
-    }
-
-    func processTerminated(source: TerminalView, exitCode: Int32?) {
-        handleProcessTermination(exitCode: exitCode)
     }
 
     // MARK: - Session Control (Issue #5, #15 fixes)
@@ -1928,16 +1836,11 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     }
 
     func copyOrInterrupt() {
-        // Handle both backends - SwiftTerm has copy() method, Rust uses getSelection + pasteboard
-        if let rustView = rustTerminalView {
-            rustView.window?.makeFirstResponder(rustView)
-            if let text = rustView.getSelectedText(), !text.isEmpty {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
-            }
-        } else if let swiftView = terminalView {
-            swiftView.window?.makeFirstResponder(swiftView)
-            swiftView.copy(swiftView)
+        guard let view = rustTerminalView else { return }
+        view.window?.makeFirstResponder(view)
+        if let text = view.getSelectedText(), !text.isEmpty {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
         }
         Log.trace("Copy/interrupt requested from session model.")
     }
@@ -1949,15 +1852,10 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     // MARK: - Paste (Issue #10 fix - delegate to terminal view)
 
     func paste() {
-        // Handle both backends - SwiftTerm has paste() method, Rust handles via send()
-        if let rustView = rustTerminalView {
-            rustView.window?.makeFirstResponder(rustView)
-            if let text = NSPasteboard.general.string(forType: .string) {
-                rustView.send(txt: text)
-            }
-        } else if let swiftView = terminalView {
-            swiftView.window?.makeFirstResponder(swiftView)
-            swiftView.paste(swiftView)
+        guard let view = rustTerminalView else { return }
+        view.window?.makeFirstResponder(view)
+        if let text = NSPasteboard.general.string(forType: .string) {
+            view.send(txt: text)
         }
     }
 
@@ -2145,13 +2043,9 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private static let defaultLsColors = "exfxcxdxbxegedabagacad"
 
     func buildEnvironment() -> [String] {
-        let env = Terminal.getEnvironmentVariables(termName: "xterm-256color", trueColor: true)
         var dict: [String: String] = [:]
-        for entry in env {
-            if let idx = entry.firstIndex(of: "=") {
-                dict[String(entry[..<idx])] = String(entry[entry.index(after: idx)...])
-            }
-        }
+        dict["TERM"] = "xterm-256color"
+        dict["COLORTERM"] = "truecolor"
 
         let current = ProcessInfo.processInfo.environment
         let rtkEnabled = FeatureSettings.shared.tokenOptimizationMode != .off
@@ -2346,9 +2240,7 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
     private var searchCaseSensitive: Bool = false
     private var searchRegexEnabled: Bool = false
 
-    /// Returns cached buffer data or fetches fresh data if needed (memory optimization)
-    /// Uses the backend-native getBufferAsData() protocol method, which avoids the
-    /// HeadlessTerminal mirror when the Rust backend is active.
+    /// Returns cached buffer data or fetches fresh data if needed (memory optimization).
     private func getBufferData() -> Data? {
         guard let view = activeTerminalView else { return nil }
 
@@ -2828,8 +2720,6 @@ final class TerminalSessionModel: NSObject, ObservableObject, LocalProcessTermin
             return
         }
         currentDirectory = normalized
-        // Update both backends (only one will be active)
-        terminalView?.currentDirectory = normalized
         rustTerminalView?.currentDirectory = normalized
         // Notify shell event detector of directory change
         shellEventDetector.directoryChanged(to: normalized)

@@ -49,7 +49,7 @@ public final class OptimalMetalView: MTKView {
     // MARK: - Initialization
 
     /// When true, all mouse events pass through to the view underneath.
-    /// Used in coexistence mode where SwiftTerm handles input and Metal handles display.
+    /// Used so the terminal view underneath handles input while Metal handles display.
     public var isEventPassthrough: Bool = false
 
     public init(frame: CGRect, device: MTLDevice) {

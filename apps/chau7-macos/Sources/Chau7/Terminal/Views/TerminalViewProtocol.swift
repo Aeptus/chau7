@@ -1,15 +1,12 @@
 import AppKit
-import SwiftTerm
 
 // MARK: - Unified Terminal View Protocol
 
 /// Protocol that defines the common interface for terminal views.
-/// Both Chau7TerminalView (SwiftTerm) and RustTerminalView conform to this protocol,
-/// enabling backend-agnostic code in the session model and UI layers.
+/// RustTerminalView conforms to this protocol, enabling backend-agnostic code
+/// in the session model and UI layers.
 ///
 /// This protocol is the single source of truth for terminal view capabilities.
-/// It consolidates the existing `HighlightTerminalView` and `CursorLineTerminalView`
-/// protocols while adding all the methods needed by `TerminalSessionModel`.
 protocol TerminalViewLike: NSView {
     // MARK: - Callbacks
 
@@ -62,13 +59,6 @@ protocol TerminalViewLike: NSView {
     /// Current scroll position (0.0 = bottom, 1.0 = top of history)
     var scrollPosition: Double { get }
 
-    // MARK: - Terminal Access
-
-    /// Returns the underlying SwiftTerm Terminal for buffer access
-    /// Note: For RustTerminalView, this returns a HeadlessTerminal that mirrors Rust state
-    /// Prefer the backend-native properties (terminalRows, terminalCols, etc.) where possible.
-    func getTerminal() -> Terminal
-
     // MARK: - Backend-Native Data Access
 
     /// Number of visible rows in the terminal viewport.
@@ -83,10 +73,6 @@ protocol TerminalViewLike: NSView {
 
     /// Returns the full terminal buffer (screen + scrollback) as UTF-8 Data.
     /// Each line is newline-terminated. Trailing spaces on each line are trimmed.
-    ///
-    /// This is the preferred method for search and text extraction.
-    /// - SwiftTerm: delegates to Terminal.getBufferAsData()
-    /// - Rust: calls native FFI (no HeadlessTerminal mirror needed)
     func getBufferAsData() -> Data?
 
     /// Get the text content of a specific row in absolute buffer coordinates.
@@ -201,51 +187,8 @@ protocol TerminalViewLike: NSView {
     var isPtyEchoDisabled: Bool { get }
 }
 
-// MARK: - Chau7TerminalView Conformance
-
-extension Chau7TerminalView: TerminalViewLike {
-    // Bridge method: Convert [UInt8] to ArraySlice for SwiftTerm's base class
-    // SwiftTerm's send(data:) takes ArraySlice<UInt8>, but our protocol uses [UInt8]
-    func send(data bytes: [UInt8]) {
-        // Call the parent class method by converting array to slice
-        send(data: bytes[...])
-    }
-
-    var terminalRows: Int { getTerminal().rows }
-    var terminalCols: Int { getTerminal().cols }
-
-    var currentAbsoluteRow: Int {
-        let terminal = getTerminal()
-        let cursor = terminal.getCursorLocation()
-        return terminal.getTopVisibleRow() + cursor.y
-    }
-
-    func getBufferAsData() -> Data? {
-        getTerminal().getBufferAsData()
-    }
-
-    func getLineText(absoluteRow: Int) -> String {
-        let terminal = getTerminal()
-        let cols = terminal.cols
-        let startPos = Position(col: 0, row: absoluteRow)
-        let endPos = Position(col: max(cols - 1, 0), row: absoluteRow)
-        return terminal.getText(start: startPos, end: endPos)
-    }
-}
-
 // MARK: - RustTerminalView Conformance
 
 extension RustTerminalView: TerminalViewLike {
-    // Most methods already exist with matching signatures.
-    // Only need explicit conformance declaration.
+    // All methods already exist with matching signatures on RustTerminalView.
 }
-
-// MARK: - Deprecated Protocol Aliases
-
-/// Deprecated: Use `TerminalViewLike` instead.
-/// This protocol is kept for backwards compatibility with existing highlight views.
-typealias HighlightTerminalView = TerminalViewLike
-
-/// Deprecated: Use `TerminalViewLike` instead.
-/// This protocol is kept for backwards compatibility with existing cursor line views.
-typealias CursorLineTerminalView = TerminalViewLike

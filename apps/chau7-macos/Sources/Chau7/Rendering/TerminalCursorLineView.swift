@@ -1,5 +1,4 @@
 import AppKit
-import SwiftTerm
 
 // MARK: - Terminal Cursor Line View
 
@@ -15,23 +14,6 @@ final class TerminalCursorLineView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
-    }
-
-    /// Update with Chau7TerminalView (for backwards compatibility)
-    func update(
-        with terminalView: Chau7TerminalView,
-        isFocused: Bool,
-        showsContextLines: Bool,
-        showsInputHistory: Bool,
-        inputLineTracker: InputLineTracker?
-    ) {
-        updateInternal(
-            with: terminalView,
-            isFocused: isFocused,
-            showsContextLines: showsContextLines,
-            showsInputHistory: showsInputHistory,
-            inputLineTracker: inputLineTracker
-        )
     }
 
     /// Update with RustTerminalView
@@ -78,20 +60,10 @@ final class TerminalCursorLineView: NSView {
         let caret = terminalView.caretFrame
         guard caret.height > 0 else { return }
 
-        let cursorRow: Int
-        let topRow: Int
-        let totalRows: Int
-        if let rustView = terminalView as? RustTerminalView {
-            topRow = rustView.renderTopVisibleRow
-            cursorRow = topRow + rustView.renderCursorRow
-            totalRows = rustView.renderRows
-        } else {
-            let terminal = terminalView.getTerminal()
-            let cursor = terminal.getCursorLocation()
-            topRow = terminal.getTopVisibleRow()
-            cursorRow = topRow + cursor.y
-            totalRows = terminal.rows
-        }
+        guard let rustView = terminalView as? RustTerminalView else { return }
+        let topRow = rustView.renderTopVisibleRow
+        let cursorRow = topRow + rustView.renderCursorRow
+        let totalRows = rustView.renderRows
         let lineHeight = caret.height
         let baseY = caret.origin.y
         let width = terminalView.bounds.width

@@ -408,7 +408,7 @@
 "about.open.debug" = "Debug Console";
 
 "about.acknowledgments" = "Acknowledgments";
-"about.swiftterm" = "Chau7 is built with SwiftTerm for terminal emulation.";
+"settings.about.terminalCredit" = "Chau7 uses a Rust-based terminal emulator with Metal GPU rendering.";
 
 // MARK: - Command Palette
 "palette.title" = "Command Palette";

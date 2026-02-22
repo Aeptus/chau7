@@ -13,7 +13,6 @@ let package = Package(
         .library(name: "Chau7Core", targets: ["Chau7Core"])
     ],
     dependencies: [
-        .package(url: "https://github.com/schiste/Chau7-SwiftTerm.git", revision: "82b4e5fb327b8724131161402096e598f27c9829"),
         .package(url: "https://github.com/apple/swift-atomics.git", from: "1.2.0")
     ],
     targets: [
@@ -28,7 +27,6 @@ let package = Package(
             name: "Chau7",
             dependencies: [
                 "Chau7Core",
-                .product(name: "SwiftTerm", package: "chau7-swiftterm"),
                 .product(name: "Atomics", package: "swift-atomics")
             ],
             path: "Sources/Chau7",

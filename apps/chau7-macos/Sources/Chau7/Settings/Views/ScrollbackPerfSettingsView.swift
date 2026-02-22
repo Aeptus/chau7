@@ -49,40 +49,19 @@ struct ScrollbackPerfSettingsView: View {
             Divider()
                 .padding(.vertical, 8)
 
-            // Backend
-            SettingsSectionHeader("Terminal Backend", icon: "cpu")
+            // Rendering
+            SettingsSectionHeader("Rendering", icon: "cpu")
 
             SettingsToggle(
-                label: "Use Rust Terminal (Experimental)",
-                help: "Use the Rust-based terminal renderer instead of SwiftTerm. " +
-                      "Changes take effect for new tabs only.",
-                isOn: $settings.isRustTerminalEnabled
-            )
-
-            if settings.isRustTerminalEnabled {
-                if RustTerminalView.isAvailable {
-                    Text("New tabs will use the Rust terminal backend. Existing tabs are not affected.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.leading, 20)
-                } else {
-                    Text("Rust terminal library not found. The SwiftTerm backend will be used.")
-                        .font(.caption)
-                        .foregroundColor(.orange)
-                        .padding(.leading, 20)
-                }
-            }
-
-            SettingsToggle(
-                label: "Metal Renderer (Experimental)",
-                help: "Use GPU-accelerated Metal rendering for the SwiftTerm backend. " +
+                label: "Metal Renderer",
+                help: "Use GPU-accelerated Metal rendering for the terminal. " +
                       "Falls back to standard rendering if Metal is unavailable. " +
                       "Changes take effect for new tabs only.",
                 isOn: $settings.useMetalRenderer
             )
 
             if settings.useMetalRenderer {
-                Text("New SwiftTerm tabs will use Metal GPU rendering. The terminal still processes via SwiftTerm — Metal only handles display.")
+                Text("New tabs will use Metal GPU rendering for display.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.leading, 20)

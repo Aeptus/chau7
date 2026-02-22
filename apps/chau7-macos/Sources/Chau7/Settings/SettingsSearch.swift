@@ -459,7 +459,7 @@ extension FeatureSettings {
             title: L("settings.search.terminalBackend.title", "Terminal Backend"),
             keywords: localizedKeywords(
                 "settings.search.terminalBackend.keywords",
-                "rust,metal,gpu,renderer,swiftterm"
+                "rust,metal,gpu,renderer"
             ),
             description: L("settings.search.terminalBackend.description", "Choose terminal rendering backend")
         ),
