@@ -239,6 +239,8 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
     override var fittingSize: NSSize {
         desiredSize
     }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 private struct TabDropIndicator: Equatable {
