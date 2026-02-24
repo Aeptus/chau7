@@ -286,6 +286,8 @@ private struct ToolbarTabBarView: View {
     // Gesture-based drag state for tab reordering (Chrome/Safari style live reorder)
     @State private var dragOffset: CGFloat = 0
     @State private var dragAccumulatedOffset: CGFloat = 0  // Cumulative adjustment from swaps
+    /// Must match HStack spacing in the tab bar ForEach.
+    private let tabSpacing: CGFloat = 8
     /// Cooldown: ignore swaps for a few frames after one fires, preventing rapid bouncing.
     @State private var swapCooldownUntil: Date = .distantPast
 
@@ -454,6 +456,9 @@ private struct ToolbarTabBarView: View {
             Log.info("Tab drag started (gesture): tabID=\(tab.id)")
         }
 
+        // Guard: if a second tab somehow starts a gesture, ignore it
+        guard draggingTabID == tab.id else { return }
+
         // Visual offset = raw gesture translation + cumulative swap adjustments.
         // After a swap the tab's home position in the HStack shifts by one tab
         // width, so dragAccumulatedOffset compensates instantly to keep the tab
@@ -478,8 +483,6 @@ private struct ToolbarTabBarView: View {
         let now = Date()
         guard now >= swapCooldownUntil else { return }
 
-        let tabSpacing: CGFloat = 8
-
         // Check if we should swap with the next tab (dragging right)
         if dragOffset > 0, currentIndex < snapshot.count - 1 {
             let neighborID = snapshot[currentIndex + 1].id
@@ -499,8 +502,12 @@ private struct ToolbarTabBarView: View {
                 withTransaction(t) {
                     overlayModel.swapTabWithNeighbor(id: tab.id, direction: 1)
                 }
-                // Compensate: tab's home shifted right, offset shifts left to cancel
+                // Compensate: tab's home shifted right, offset shifts left to cancel.
+                // Recalculate dragOffset in the SAME render pass so SwiftUI sees
+                // the updated offset together with the new tab order — without this,
+                // there's a 1-frame jump where home has shifted but offset hasn't.
                 dragAccumulatedOffset -= (neighborWidth + tabSpacing)
+                dragOffset = translation + dragAccumulatedOffset
                 swapCooldownUntil = now.addingTimeInterval(0.15)
             }
         }
@@ -517,12 +524,15 @@ private struct ToolbarTabBarView: View {
                     overlayModel.swapTabWithNeighbor(id: tab.id, direction: -1)
                 }
                 dragAccumulatedOffset += (neighborWidth + tabSpacing)
+                dragOffset = translation + dragAccumulatedOffset
                 swapCooldownUntil = now.addingTimeInterval(0.15)
             }
         }
     }
 
     private func handleTabDragEnd(tab: OverlayTab, translation: CGFloat) {
+        // Ignore if this isn't the tab being dragged (or no drag active)
+        guard draggingTabID == tab.id else { return }
         // Tab is already in the correct position from live reordering.
         // Animate the dragged tab smoothly back to its slot position.
         withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
