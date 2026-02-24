@@ -2400,6 +2400,8 @@ final class RustTerminalView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
     override func becomeFirstResponder() -> Bool {
         Log.trace("RustTerminalView[\(viewId)]: becomeFirstResponder")
         return true
