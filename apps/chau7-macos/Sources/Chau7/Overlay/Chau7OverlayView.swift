@@ -1440,41 +1440,59 @@ struct TabButtonFallback: View {
 struct DraggableOverlay<Content: View>: View {
     let id: String
     let workspace: String?
+    let maxWidth: CGFloat?
     @ViewBuilder let content: Content
     @ObservedObject private var settings = FeatureSettings.shared
     @State private var dragOffset: CGSize = .zero
     @GestureState private var dragTranslation: CGSize = .zero
 
-    init(id: String, workspace: String?, @ViewBuilder content: () -> Content) {
+    init(id: String, workspace: String?, maxWidth: CGFloat? = nil, @ViewBuilder content: () -> Content) {
         self.id = id
         self.workspace = workspace
+        self.maxWidth = maxWidth
         self.content = content()
+    }
+
+    private var drag: some Gesture {
+        DragGesture()
+            .updating($dragTranslation) { value, state, _ in
+                state = value.translation
+            }
+            .onEnded { value in
+                dragOffset.width += value.translation.width
+                dragOffset.height += value.translation.height
+                settings.setOverlayOffset(dragOffset, for: id, workspace: workspace)
+            }
     }
 
     var body: some View {
         let workspaceKey = workspace ?? "global"
-        content
-            .offset(x: dragOffset.width + dragTranslation.width, y: dragOffset.height + dragTranslation.height)
-            .gesture(
-                DragGesture()
-                    .updating($dragTranslation) { value, state, _ in
-                        state = value.translation
-                    }
-                    .onEnded { value in
-                        dragOffset.width += value.translation.width
-                        dragOffset.height += value.translation.height
-                        settings.setOverlayOffset(dragOffset, for: id, workspace: workspace)
-                    }
-            )
-            .onAppear {
-                dragOffset = settings.overlayOffset(for: id, workspace: workspace)
-            }
-            .onChange(of: settings.overlayPositionsVersion) { _ in
-                dragOffset = settings.overlayOffset(for: id, workspace: workspace)
-            }
-            .onChange(of: workspaceKey) { _ in
-                dragOffset = settings.overlayOffset(for: id, workspace: workspace)
-            }
+        VStack(spacing: 0) {
+            // Drag handle — sole target for the drag gesture.
+            // Isolating the gesture here prevents DragGesture from
+            // stealing scroll events inside ScrollViews in the content.
+            Capsule()
+                .fill(Color.secondary.opacity(0.25))
+                .frame(width: 36, height: 4)
+                .frame(maxWidth: .infinity, minHeight: 18)
+                .contentShape(Rectangle())
+                .gesture(drag)
+            content
+        }
+        .background(overlayPanelBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .frame(maxWidth: maxWidth ?? .infinity)
+        .padding(.horizontal, 16)
+        .offset(x: dragOffset.width + dragTranslation.width, y: dragOffset.height + dragTranslation.height)
+        .onAppear {
+            dragOffset = settings.overlayOffset(for: id, workspace: workspace)
+        }
+        .onChange(of: settings.overlayPositionsVersion) { _ in
+            dragOffset = settings.overlayOffset(for: id, workspace: workspace)
+        }
+        .onChange(of: workspaceKey) { _ in
+            dragOffset = settings.overlayOffset(for: id, workspace: workspace)
+        }
     }
 }
 
@@ -1599,10 +1617,8 @@ struct SearchOverlayView: View {
                         // Note: Cmd+G is in menu commands
                 }
             }
-            .padding(10)
-            .background(overlayPanelBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 10)
+            .padding(.bottom, 10)
             .onAppear { isFocused = true }
         }
     }
@@ -1689,16 +1705,8 @@ struct RenameOverlayView: View {
                     }
                 }
             }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(overlayPanelBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(Color.white.opacity(0.1), lineWidth: 1)
-            )
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
             .onAppear { isFocused = true }
         }
     }
@@ -1713,7 +1721,7 @@ struct ClipboardHistoryOverlayView: View {
     @ObservedObject private var clipboardManager = ClipboardHistoryManager.shared
 
     var body: some View {
-        DraggableOverlay(id: "clipboard", workspace: model.overlayWorkspaceIdentifier) {
+        DraggableOverlay(id: "clipboard", workspace: model.overlayWorkspaceIdentifier, maxWidth: OverlayLayout.commandPanelMaxWidth) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(L("Clipboard History", "Clipboard History"))
@@ -1755,11 +1763,8 @@ struct ClipboardHistoryOverlayView: View {
                     .font(.custom("Avenir Next", size: 10))
                     .foregroundStyle(.tertiary)
             }
-            .padding(10)
-            .background(overlayPanelBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .padding(.horizontal, 16)
-            .frame(maxWidth: OverlayLayout.commandPanelMaxWidth)
+            .padding(.horizontal, 10)
+            .padding(.bottom, 10)
         }
     }
 }
@@ -1834,7 +1839,7 @@ struct BookmarkListOverlayView: View {
     @State private var newBookmarkLabel: String = ""
 
     var body: some View {
-        DraggableOverlay(id: "bookmarks", workspace: model.overlayWorkspaceIdentifier) {
+        DraggableOverlay(id: "bookmarks", workspace: model.overlayWorkspaceIdentifier, maxWidth: OverlayLayout.searchPanelMaxWidth) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(L("Bookmarks", "Bookmarks"))
@@ -1882,11 +1887,8 @@ struct BookmarkListOverlayView: View {
                     .font(.custom("Avenir Next", size: 10))
                     .foregroundStyle(.tertiary)
             }
-            .padding(10)
-            .background(overlayPanelBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .padding(.horizontal, 16)
-            .frame(maxWidth: OverlayLayout.searchPanelMaxWidth)
+            .padding(.horizontal, 10)
+            .padding(.bottom, 10)
         }
     }
 }
@@ -2057,7 +2059,7 @@ struct SnippetManagerOverlayView: View {
     }
 
     var body: some View {
-        DraggableOverlay(id: "snippets", workspace: model.overlayWorkspaceIdentifier) {
+        DraggableOverlay(id: "snippets", workspace: model.overlayWorkspaceIdentifier, maxWidth: dynamicMaxWidth) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(L("Snippets", "Snippets"))
@@ -2157,11 +2159,8 @@ struct SnippetManagerOverlayView: View {
                         .truncationMode(.middle)
                 }
             }
-            .padding(10)
-            .background(overlayPanelBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .padding(.horizontal, 16)
-            .frame(maxWidth: dynamicMaxWidth)
+            .padding(.horizontal, 10)
+            .padding(.bottom, 10)
             .onAppear {
                 // Focus is now handled by SnippetSearchField.focusWithRetry() in makeNSView
                 // This just resets query state on reopen

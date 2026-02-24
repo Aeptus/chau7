@@ -2345,6 +2345,9 @@ final class OverlayTabsModel: ObservableObject {
             isRenameVisible = false
             isClipboardHistoryVisible = false
             isBookmarkListVisible = false
+            // Refresh snippet context from the active tab so repo snippets
+            // are correct even if a background tab updated the context.
+            updateSnippetContextForSelection()
         } else {
             // Focus terminal when snippet manager is closed
             focusSelected()
