@@ -42,11 +42,15 @@ final class RTKManager {
     private(set) var totalOptimizedBytes: Int64 = 0
     private let statsLock = NSLock()
 
+    /// Directory for per-command invocation counters.
+    private let statsDir: URL
+
     private init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let base = home.appendingPathComponent(".chau7", isDirectory: true)
         self.wrapperBinDir = base.appendingPathComponent("rtk_bin", isDirectory: true)
         self.dataDir = base.appendingPathComponent("rtk_data", isDirectory: true)
+        self.statsDir = dataDir.appendingPathComponent("stats", isDirectory: true)
     }
 
     // MARK: - Setup
@@ -57,7 +61,7 @@ final class RTKManager {
         let fm = FileManager.default
 
         // Create directories
-        for dir in [wrapperBinDir, dataDir] {
+        for dir in [wrapperBinDir, dataDir, statsDir] {
             if !fm.fileExists(atPath: dir.path) {
                 do {
                     try fm.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -140,8 +144,12 @@ final class RTKManager {
             exec "$_RTK_REAL_BIN" "$@"
         fi
 
-        # RTK is active — exec real binary directly for now (stub).
+        # RTK is active — record invocation (append is atomic on POSIX), then exec.
         # Future: pipe through an RTK transformer for token-optimized output.
+        _RTK_STATS_DIR="$HOME/.chau7/rtk_data/stats"
+        mkdir -p "$_RTK_STATS_DIR" 2>/dev/null
+        echo . >> "$_RTK_STATS_DIR/\(command)" 2>/dev/null
+
         # Using exec preserves stdout/stderr separation, trailing newlines,
         # exit codes, and signal handling — no output corruption.
         exec "$_RTK_REAL_BIN" "$@"
@@ -163,6 +171,32 @@ final class RTKManager {
         return "\(wrapperDir):\(original)"
     }
 
+    // MARK: - Installation Health Check
+
+    /// Per-command installation status.
+    struct WrapperHealth: Identifiable {
+        let command: String
+        let isInstalled: Bool
+        let isExecutable: Bool
+        var id: String { command }
+    }
+
+    /// Checks the installation status of every supported wrapper script.
+    func checkInstallation() -> [WrapperHealth] {
+        let fm = FileManager.default
+        return Self.supportedCommands.map { command in
+            let path = wrapperBinDir.appendingPathComponent(command).path
+            let exists = fm.fileExists(atPath: path)
+            let executable = exists && fm.isExecutableFile(atPath: path)
+            return WrapperHealth(command: command, isInstalled: exists, isExecutable: executable)
+        }
+    }
+
+    /// Quick check: are all wrappers installed and executable?
+    var isFullyInstalled: Bool {
+        checkInstallation().allSatisfy { $0.isInstalled && $0.isExecutable }
+    }
+
     // MARK: - Statistics
 
     /// Records bytes before and after optimization for tracking savings.
@@ -182,12 +216,51 @@ final class RTKManager {
         return (saved / Double(totalOriginalBytes)) * 100.0
     }
 
-    /// Resets statistics counters.
+    /// Reads per-command invocation counters from `~/.chau7/rtk_data/stats/`.
+    /// Each counter file contains one line per invocation (atomic append).
+    func commandInvocationCounts() -> [String: Int] {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: statsDir.path),
+              let files = try? fm.contentsOfDirectory(atPath: statsDir.path)
+        else { return [:] }
+
+        var counts: [String: Int] = [:]
+        for file in files {
+            let path = statsDir.appendingPathComponent(file).path
+            if let data = fm.contents(atPath: path),
+               let text = String(data: data, encoding: .utf8) {
+                let lineCount = text.components(separatedBy: "\n")
+                    .filter { !$0.isEmpty }
+                    .count
+                if lineCount > 0 {
+                    counts[file] = lineCount
+                }
+            }
+        }
+        return counts
+    }
+
+    /// Total number of RTK-intercepted command invocations across all commands.
+    var totalInterceptions: Int {
+        commandInvocationCounts().values.reduce(0, +)
+    }
+
+    /// Resets all statistics: in-memory counters and on-disk invocation files.
     func resetStats() {
         statsLock.lock()
-        defer { statsLock.unlock() }
         totalOriginalBytes = 0
         totalOptimizedBytes = 0
+        statsLock.unlock()
+
+        // Clear on-disk counters
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: statsDir.path),
+              let files = try? fm.contentsOfDirectory(atPath: statsDir.path)
+        else { return }
+        for file in files {
+            try? fm.removeItem(atPath: statsDir.appendingPathComponent(file).path)
+        }
+        Log.info("RTKManager: reset statistics")
     }
 
     // MARK: - Cleanup
