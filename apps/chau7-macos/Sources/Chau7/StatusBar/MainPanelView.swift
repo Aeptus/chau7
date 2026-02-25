@@ -536,7 +536,9 @@ struct SettingsDetailView: View {
                         ProductivitySettingsView()
                     // Integrations
                     case .aiDetection:
-                        AIIntegrationSettingsView(overlayModel: overlayModel)
+                        AIIntegrationSettingsView()
+                    case .tokenOptimization:
+                        TokenOptimizationSettingsView(overlayModel: overlayModel)
                     case .remoteControl:
                         RemoteSettingsView()
                     case .apiProxy:

@@ -2,11 +2,17 @@ import SwiftUI
 
 // MARK: - Token Optimization Settings
 
-/// Settings view for configuring RTK (Reduced Token Kit) token optimization.
-/// Allows users to choose between Off, All Commands, AI Only, and Manual modes.
+/// Top-level settings view for RTK (Reduced Token Kit) — combining optimization
+/// mode selection, RTK prefix, per-tab overrides, and wrapper script management.
 struct TokenOptimizationSettingsView: View {
     @ObservedObject private var settings = FeatureSettings.shared
-    @State private var wrapperStatus: WrapperStatus = .notInstalled
+    let overlayModel: OverlayTabsModel?
+    @State private var wrapperHealth: [RTKManager.WrapperHealth] = []
+    @State private var invocationCounts: [String: Int] = [:]
+
+    init(overlayModel: OverlayTabsModel? = nil) {
+        self.overlayModel = overlayModel
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -32,29 +38,73 @@ struct TokenOptimizationSettingsView: View {
                 Divider()
                     .padding(.vertical, 8)
 
-                // Status
-                SettingsSectionHeader(
-                    L("rtk.settings.status", "Status"),
-                    icon: "circle.fill"
+                // RTK Prefix
+                SettingsSectionHeader(L("rtk.settings.prefix", "RTK Prefix"), icon: "bolt.fill")
+
+                SettingsToggle(
+                    label: L("settings.ai.rtk.enabled", "Enable RTK"),
+                    help: L(
+                        "settings.ai.rtk.enabledHelp",
+                        "When enabled, the RTK prefix is prepended to terminal commands."
+                    ),
+                    isOn: Binding(
+                        get: { settings.isRTKEnabled },
+                        set: { settings.isRTKEnabled = $0 }
+                    )
                 )
 
-                HStack(spacing: 8) {
-                    statusIndicator
-                    Text(statusText)
-                        .font(.body)
-                }
-                .padding(.vertical, 4)
+                SettingsTextField(
+                    label: L("settings.ai.rtk.prefix", "RTK Prefix"),
+                    help: L(
+                        "settings.ai.rtk.prefixHelp",
+                        "Prefix text to prepend (supports per-tab overrides)."
+                    ),
+                    placeholder: "/think",
+                    text: Binding(
+                        get: { settings.rtkPrefix },
+                        set: { settings.rtkPrefix = $0 }
+                    ),
+                    width: 220,
+                    monospaced: true
+                )
 
                 Divider()
                     .padding(.vertical, 8)
 
-                // Per-Tab Control Info
+                // Installation Health
+                SettingsSectionHeader(
+                    L("rtk.settings.installation", "Installation"),
+                    icon: "checkmark.shield"
+                )
+
+                installationHealthView
+
+                Divider()
+                    .padding(.vertical, 8)
+
+                // Statistics
+                SettingsSectionHeader(
+                    L("rtk.settings.statistics", "Statistics"),
+                    icon: "chart.bar"
+                )
+
+                statisticsView
+
+                Divider()
+                    .padding(.vertical, 8)
+
+                // Per-Tab Control
                 SettingsSectionHeader(
                     L("rtk.settings.perTab", "Per-Tab Control"),
                     icon: "rectangle.stack"
                 )
 
                 perTabInfoView
+
+                // Live tab overrides
+                if let overlayModel {
+                    perTabOverridesView(overlayModel: overlayModel)
+                }
 
                 Divider()
                     .padding(.vertical, 8)
@@ -80,10 +130,10 @@ struct TokenOptimizationSettingsView: View {
             }
         }
         .onAppear {
-            updateWrapperStatus()
+            refreshHealthAndStats()
         }
-        .onChange(of: settings.tokenOptimizationMode) { newMode in
-            handleModeChange(newMode)
+        .onChange(of: settings.tokenOptimizationMode) { _ in
+            refreshHealthAndStats()
         }
     }
 
@@ -162,24 +212,130 @@ struct TokenOptimizationSettingsView: View {
         }
     }
 
-    // MARK: - Status
+    // MARK: - Installation Health
 
     @ViewBuilder
-    private var statusIndicator: some View {
-        Circle()
-            .fill(wrapperStatus == .installed ? Color.green : Color.secondary)
-            .frame(width: 8, height: 8)
+    private var installationHealthView: some View {
+        let allGood = !wrapperHealth.isEmpty && wrapperHealth.allSatisfy { $0.isInstalled && $0.isExecutable }
+
+        // Summary row
+        HStack(spacing: 8) {
+            Image(systemName: allGood ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(allGood ? .green : .orange)
+            Text(allGood
+                ? L("rtk.health.allGood", "All wrapper scripts installed and executable")
+                : L("rtk.health.issues", "Some wrapper scripts need attention"))
+                .font(.body)
+            Spacer()
+            Button(L("rtk.health.reinstall", "Reinstall")) {
+                RTKManager.shared.setup()
+                refreshHealthAndStats()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(.vertical, 4)
+
+        // Per-command detail
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(wrapperHealth) { item in
+                HStack(spacing: 8) {
+                    Image(systemName: item.isInstalled && item.isExecutable
+                        ? "checkmark.circle.fill"
+                        : item.isInstalled ? "exclamationmark.circle.fill" : "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(item.isInstalled && item.isExecutable
+                            ? .green
+                            : item.isInstalled ? .orange : .red)
+                    Text(item.command)
+                        .font(.system(.body, design: .monospaced))
+                    Spacer()
+                    if !item.isInstalled {
+                        Text(L("rtk.health.missing", "Missing"))
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    } else if !item.isExecutable {
+                        Text(L("rtk.health.notExecutable", "Not executable"))
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 4)
     }
 
-    private var statusText: String {
-        switch wrapperStatus {
-        case .notInstalled:
-            return L("rtk.status.notInstalled", "Wrapper scripts not installed")
-        case .installed:
-            return String(
-                format: L("rtk.status.installed", "%d wrapper scripts installed"),
-                RTKManager.supportedCommands.count
-            )
+    // MARK: - Statistics
+
+    @ViewBuilder
+    private var statisticsView: some View {
+        let total = invocationCounts.values.reduce(0, +)
+
+        if total == 0 {
+            HStack(spacing: 8) {
+                Image(systemName: "chart.bar")
+                    .foregroundStyle(.secondary)
+                Text(L("rtk.stats.noData", "No intercepted commands yet. Statistics will appear once RTK intercepts commands."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.vertical, 4)
+        } else {
+            // Total
+            HStack(spacing: 8) {
+                Image(systemName: "number")
+                    .foregroundStyle(.blue)
+                    .frame(width: 20)
+                Text(L("rtk.stats.total", "Total intercepted commands"))
+                    .font(.body)
+                Spacer()
+                Text("\(total)")
+                    .font(.system(.body, design: .monospaced))
+                    .fontWeight(.semibold)
+            }
+            .padding(.vertical, 2)
+
+            // Per-command breakdown (sorted by count descending)
+            let sorted = invocationCounts.sorted { $0.value > $1.value }
+            ForEach(sorted, id: \.key) { command, count in
+                HStack(spacing: 8) {
+                    Image(systemName: "terminal")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20)
+                    Text(command)
+                        .font(.system(.body, design: .monospaced))
+                    Spacer()
+
+                    // Proportion bar
+                    GeometryReader { geo in
+                        let fraction = CGFloat(count) / CGFloat(max(total, 1))
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.accentColor.opacity(0.3))
+                            .frame(width: geo.size.width * fraction, height: geo.size.height)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                    .frame(width: 80, height: 14)
+
+                    Text("\(count)")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 50, alignment: .trailing)
+                }
+                .padding(.vertical, 1)
+            }
+
+            // Reset button
+            HStack {
+                Spacer()
+                Button(L("rtk.stats.reset", "Reset Statistics")) {
+                    RTKManager.shared.resetStats()
+                    refreshHealthAndStats()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            .padding(.top, 4)
         }
     }
 
@@ -242,6 +398,104 @@ struct TokenOptimizationSettingsView: View {
         }
     }
 
+    // MARK: - Per-Tab Overrides (Live)
+
+    @ViewBuilder
+    private func perTabOverridesView(overlayModel: OverlayTabsModel) -> some View {
+        let tabRows = activeTabRows(from: overlayModel.tabs)
+
+        if !tabRows.isEmpty {
+            SettingsRow(L("settings.ai.rtk.applyAll", "Apply to all open tabs")) {
+                HStack(spacing: 8) {
+                    Button(L("settings.ai.rtk.enableAll", "Enable all")) {
+                        applyRTK(to: tabRows.map(\.id), enabled: true)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button(L("settings.ai.rtk.disableAll", "Disable all")) {
+                        applyRTK(to: tabRows.map(\.id), enabled: false)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button(L("settings.ai.rtk.clearAllOverrides", "Use global on all")) {
+                        clearRTKOverrides(overlayModel: overlayModel)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
+
+            ForEach(tabRows) { row in
+                SettingsRow(
+                    row.tabTitle,
+                    help: row.hasOverride
+                        ? L("settings.ai.rtk.tabOverride", "Overrides global RTK setting for this tab.")
+                        : L("settings.ai.rtk.tabInherit", "Uses global RTK setting.")
+                ) {
+                    HStack(spacing: 12) {
+                        Toggle("", isOn: Binding(
+                            get: { settings.isRTKEnabled(forTabIdentifier: row.id) },
+                            set: { value in
+                                if value == settings.isRTKEnabled {
+                                    settings.clearRTKOverride(forTabIdentifier: row.id)
+                                } else {
+                                    settings.setRTKOverride(value, forTabIdentifier: row.id)
+                                }
+                            }
+                        ))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+
+                        if row.hasOverride {
+                            Button(L("settings.ai.rtk.clearOverride", "Use global")) {
+                                settings.clearRTKOverride(forTabIdentifier: row.id)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+            }
+        } else {
+            SettingsRow(L("settings.ai.rtk.tabsUnavailable", "No active tabs")) {
+                Text(L("settings.ai.rtk.waitForTabs", "Open a tab to enable per-tab settings."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func activeTabRows(from overlayTabs: [OverlayTab]) -> [RTKTabRow] {
+        overlayTabs.compactMap { tab -> RTKTabRow? in
+            guard let sessionIdentifier = tab.session?.tabIdentifier else { return nil }
+            let override = settings.rtkOverride(forTabIdentifier: sessionIdentifier)
+            return RTKTabRow(
+                id: sessionIdentifier,
+                tabTitle: tab.displayTitle.isEmpty ? "Tab" : tab.displayTitle,
+                hasOverride: override != nil
+            )
+        }
+        .sorted { lhs, rhs in
+            lhs.tabTitle.localizedCaseInsensitiveCompare(rhs.tabTitle) == .orderedAscending
+        }
+    }
+
+    private func applyRTK(to tabIDs: [String], enabled: Bool) {
+        let uniqueTabIDs = Set(tabIDs)
+        uniqueTabIDs.forEach { tabID in
+            settings.setRTKOverride(enabled, forTabIdentifier: tabID)
+        }
+    }
+
+    private func clearRTKOverrides(overlayModel: OverlayTabsModel) {
+        for tab in overlayModel.tabs {
+            guard let sessionIdentifier = tab.session?.tabIdentifier else { continue }
+            settings.clearRTKOverride(forTabIdentifier: sessionIdentifier)
+        }
+    }
+
     // MARK: - Commands List
 
     @ViewBuilder
@@ -300,34 +554,16 @@ struct TokenOptimizationSettingsView: View {
 
     // MARK: - Actions
 
-    private func handleModeChange(_ newMode: TokenOptimizationMode) {
-        // RTKManager setup/teardown is handled centrally by OverlayTabsModel's
-        // .tokenOptimizationModeChanged observer. We only update local UI state.
-        updateWrapperStatus()
+    private func refreshHealthAndStats() {
+        wrapperHealth = RTKManager.shared.checkInstallation()
+        invocationCounts = RTKManager.shared.commandInvocationCounts()
     }
 
-    private func updateWrapperStatus() {
-        let mode = settings.tokenOptimizationMode
-        guard mode != .off else {
-            wrapperStatus = .notInstalled
-            return
-        }
-
-        let fm = FileManager.default
-        let wrapperDir = RTKManager.shared.wrapperBinDir.path
-        if fm.fileExists(atPath: wrapperDir) {
-            wrapperStatus = .installed
-        } else {
-            wrapperStatus = .notInstalled
-        }
+    private struct RTKTabRow: Identifiable {
+        let id: String
+        let tabTitle: String
+        let hasOverride: Bool
     }
-}
-
-// MARK: - Wrapper Status
-
-private enum WrapperStatus {
-    case notInstalled
-    case installed
 }
 
 // MARK: - Preview

@@ -145,6 +145,7 @@ struct OverlayTab: Identifiable, Equatable {
 
     static func == (lhs: OverlayTab, rhs: OverlayTab) -> Bool {
         lhs.id == rhs.id
+            && lhs.tokenOptOverride == rhs.tokenOptOverride
     }
 
     // MARK: - Split Pane Operations

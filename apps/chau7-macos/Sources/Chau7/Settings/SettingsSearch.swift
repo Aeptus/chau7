@@ -53,7 +53,7 @@ enum SettingsSectionGroup: String, CaseIterable, Identifiable {
         case .lookAndFeel:       return [.fontColors, .display, .tabs]
         case .terminal:          return [.shell, .scrollbackPerf, .dangerousCommands, .graphics, .tmux]
         case .inputProductivity: return [.keyboardMouse, .snippetsTools]
-        case .integrations:      return [.aiDetection, .remoteControl, .apiProxy]
+        case .integrations:      return [.aiDetection, .tokenOptimization, .remoteControl, .apiProxy]
         case .monitoring:        return [.notifications, .logsHistory]
         }
     }
@@ -81,6 +81,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case snippetsTools
     // Integrations
     case aiDetection
+    case tokenOptimization
     case remoteControl
     case apiProxy
     // Monitoring
@@ -105,6 +106,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .keyboardMouse:     return L("settings.keyboardMouse", "Keyboard & Mouse")
         case .snippetsTools:     return L("settings.snippetsTools", "Snippets & Tools")
         case .aiDetection:       return L("settings.aiDetection", "AI Detection")
+        case .tokenOptimization: return L("settings.tokenOptimization", "Token Optimization (RTK)")
         case .remoteControl:     return L("settings.remoteControl", "Remote Control")
         case .apiProxy:          return L("settings.apiProxy", "API Proxy")
         case .notifications:     return L("settings.notifications", "Notifications")
@@ -128,6 +130,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .keyboardMouse:     return "keyboard"
         case .snippetsTools:     return "bolt.fill"
         case .aiDetection:       return "sparkles"
+        case .tokenOptimization: return "bolt.horizontal.circle"
         case .remoteControl:     return "antenna.radiowaves.left.and.right"
         case .apiProxy:          return "network"
         case .notifications:     return "bell.badge"
@@ -151,6 +154,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .keyboardMouse:     return L("settings.keyboardMouse.description", "Keyboard shortcuts and mouse behavior")
         case .snippetsTools:     return L("settings.snippetsTools.description", "Snippets, clipboard, bookmarks, and search")
         case .aiDetection:       return L("settings.aiDetection.description", "AI CLI detection, theming, and LLM provider")
+        case .tokenOptimization: return L("settings.tokenOptimization.description", "RTK wrapper scripts, per-tab control, and prefix")
         case .remoteControl:     return L("settings.remoteControl.description", "Remote access, pairing, and SSH profiles")
         case .apiProxy:          return L("settings.apiProxy.description", "API call tracking and analytics proxy")
         case .notifications:     return L("settings.notifications.description", "Alert preferences and event filters")
@@ -168,7 +172,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
             return .terminal
         case .keyboardMouse, .snippetsTools:
             return .inputProductivity
-        case .aiDetection, .remoteControl, .apiProxy:
+        case .aiDetection, .tokenOptimization, .remoteControl, .apiProxy:
             return .integrations
         case .notifications, .logsHistory:
             return .monitoring
@@ -656,16 +660,6 @@ extension FeatureSettings {
             description: L("settings.search.autoTabTheme.description", "Color tabs by AI model")
         ),
         SearchableSetting(
-            id: "rtkIntegration",
-            section: .aiDetection,
-            title: L("settings.search.aiRtk.title", "RTK Integration"),
-            keywords: localizedKeywords(
-                "settings.search.aiRtk.keywords",
-                "rtk,prefix,tab,override,integration"
-            ),
-            description: L("settings.search.aiRtk.description", "Prepend RTK commands to terminal input")
-        ),
-        SearchableSetting(
             id: "llmProvider",
             section: .aiDetection,
             title: L("settings.search.llmProvider.title", "LLM Provider"),
@@ -674,6 +668,38 @@ extension FeatureSettings {
                 "openai,anthropic,api,key,llm,byoai"
             ),
             description: L("settings.search.llmProvider.description", "Configure LLM provider and API keys")
+        ),
+
+        // Token Optimization (RTK)
+        SearchableSetting(
+            id: "rtkMode",
+            section: .tokenOptimization,
+            title: L("settings.search.rtkMode.title", "Optimization Mode"),
+            keywords: localizedKeywords(
+                "settings.search.rtkMode.keywords",
+                "rtk,token,optimization,mode,wrapper,all,ai,manual"
+            ),
+            description: L("settings.search.rtkMode.description", "Controls when token-optimized output is active")
+        ),
+        SearchableSetting(
+            id: "rtkPrefix",
+            section: .tokenOptimization,
+            title: L("settings.search.rtkPrefix.title", "RTK Prefix"),
+            keywords: localizedKeywords(
+                "settings.search.rtkPrefix.keywords",
+                "rtk,prefix,prepend,tab,override,integration"
+            ),
+            description: L("settings.search.rtkPrefix.description", "Prefix text prepended to terminal commands")
+        ),
+        SearchableSetting(
+            id: "rtkPerTab",
+            section: .tokenOptimization,
+            title: L("settings.search.rtkPerTab.title", "Per-Tab RTK"),
+            keywords: localizedKeywords(
+                "settings.search.rtkPerTab.keywords",
+                "tab,override,force,enable,disable,bolt"
+            ),
+            description: L("settings.search.rtkPerTab.description", "Override RTK settings per tab")
         ),
 
         // Remote Control
