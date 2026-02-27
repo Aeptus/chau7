@@ -3,7 +3,7 @@ import XCTest
 @testable import Chau7
 
 /// Tests for the Token Optimization (RTK) decision logic, flag manager,
-/// RTKManager PATH injection, and statistics tracking.
+/// RTKManager PATH injection, rewrite map, and gain stats decoding.
 ///
 /// These tests exercise the pure-logic parts of the RTK system without
 /// requiring a running terminal or shell process.
@@ -188,7 +188,6 @@ final class TokenOptimizationTests: XCTestCase {
 
     func testPrependedPATHAvoidsFalsePositive() {
         let manager = RTKManager.shared
-        // Create a PATH that contains a similar but not identical directory
         let similar = manager.wrapperBinDir.path + "_old"
         let pathWithSimilar = similar + ":/usr/bin"
         let result = manager.prependedPATH(original: pathWithSimilar)
@@ -201,66 +200,116 @@ final class TokenOptimizationTests: XCTestCase {
 
     func testSupportedCommandsList() {
         let commands = RTKManager.supportedCommands
-        XCTAssertFalse(commands.isEmpty, "There should be at least one supported command")
-        XCTAssertTrue(commands.contains("cat"), "cat should be a supported command")
-        XCTAssertTrue(commands.contains("ls"), "ls should be a supported command")
-        XCTAssertTrue(commands.contains("find"), "find should be a supported command")
+        XCTAssertTrue(commands.count >= 15,
+                      "There should be at least 15 supported commands, got \(commands.count)")
+
+        // Core commands
+        for cmd in ["cat", "ls", "find", "tree", "head", "tail", "wc"] {
+            XCTAssertTrue(commands.contains(cmd), "\(cmd) should be a supported command")
+        }
+        // Expanded rtk-routed commands
+        for cmd in ["grep", "rg", "git", "diff", "cargo", "curl", "docker", "kubectl"] {
+            XCTAssertTrue(commands.contains(cmd), "\(cmd) should be a supported command")
+        }
     }
 
-    // MARK: - RTKManager Statistics
-
-    func testStatisticsInitialValues() {
-        let manager = RTKManager.shared
-        manager.resetStats()
-
-        XCTAssertEqual(manager.totalOriginalBytes, 0)
-        XCTAssertEqual(manager.totalOptimizedBytes, 0)
-        XCTAssertEqual(manager.savingsPercent, 0.0, accuracy: 0.001)
+    func testExecOnlyCommandsAreSubset() {
+        let execOnly = RTKManager.execOnlyCommands
+        for cmd in execOnly {
+            XCTAssertTrue(RTKManager.supportedCommands.contains(cmd),
+                          "exec-only command '\(cmd)' should also be in supportedCommands")
+        }
     }
 
-    func testRecordStatsAccumulates() {
-        let manager = RTKManager.shared
-        manager.resetStats()
+    // MARK: - RTK Rewrite Map
 
-        manager.recordStats(originalBytes: 1000, optimizedBytes: 400)
-        manager.recordStats(originalBytes: 2000, optimizedBytes: 800)
+    func testRewriteMapCoversExpectedCommands() {
+        let map = RTKManager.rtkRewriteMap
+        let expectedMappings: [String: String] = [
+            "cat": "read",
+            "ls": "ls",
+            "find": "find",
+            "tree": "tree",
+            "grep": "grep",
+            "rg": "grep",
+            "git": "git",
+            "diff": "diff",
+            "cargo": "cargo",
+            "curl": "curl",
+            "docker": "docker",
+            "kubectl": "kubectl",
+        ]
 
-        XCTAssertEqual(manager.totalOriginalBytes, 3000)
-        XCTAssertEqual(manager.totalOptimizedBytes, 1200)
+        XCTAssertEqual(map.count, expectedMappings.count,
+                       "Rewrite map should have exactly \(expectedMappings.count) entries")
+        for (cmd, sub) in expectedMappings {
+            XCTAssertEqual(map[cmd], sub,
+                           "\(cmd) should map to rtk \(sub)")
+        }
     }
 
-    func testSavingsPercentCalculation() {
-        let manager = RTKManager.shared
-        manager.resetStats()
-
-        manager.recordStats(originalBytes: 1000, optimizedBytes: 300)
-        // Savings = (1000 - 300) / 1000 = 70%
-        XCTAssertEqual(manager.savingsPercent, 70.0, accuracy: 0.001)
+    func testRewriteMapAndExecOnlyAreMutuallyExclusive() {
+        let rewriteKeys = Set(RTKManager.rtkRewriteMap.keys)
+        let execOnly = RTKManager.execOnlyCommands
+        let overlap = rewriteKeys.intersection(execOnly)
+        XCTAssertTrue(overlap.isEmpty,
+                      "Rewrite map and exec-only commands should not overlap: \(overlap)")
     }
 
-    func testSavingsPercentZeroWhenNoData() {
-        let manager = RTKManager.shared
-        manager.resetStats()
-        XCTAssertEqual(manager.savingsPercent, 0.0, accuracy: 0.001,
-                       "Savings should be 0% when no data has been recorded")
+    func testRewriteMapPlusExecOnlyCoversSupportedCommands() {
+        let rewriteKeys = Set(RTKManager.rtkRewriteMap.keys)
+        let execOnly = RTKManager.execOnlyCommands
+        let allCovered = rewriteKeys.union(execOnly)
+        let supported = Set(RTKManager.supportedCommands)
+        XCTAssertEqual(allCovered, supported,
+                       "Rewrite map + exec-only should exactly cover supportedCommands")
     }
 
-    func testResetStatsClearsAll() {
-        let manager = RTKManager.shared
-        manager.recordStats(originalBytes: 5000, optimizedBytes: 1000)
-        XCTAssertGreaterThan(manager.totalOriginalBytes, 0)
+    // MARK: - RTKGainStats Decoding
 
-        manager.resetStats()
+    func testGainStatsDecodingRoundTrip() throws {
+        let stats = RTKManager.RTKGainStats(
+            commands: 42,
+            inputTokens: 10000,
+            outputTokens: 3000,
+            savedTokens: 7000,
+            savingsPct: 70.0,
+            totalTimeMs: 1500,
+            avgTimeMs: 36
+        )
 
-        XCTAssertEqual(manager.totalOriginalBytes, 0)
-        XCTAssertEqual(manager.totalOptimizedBytes, 0)
-        XCTAssertEqual(manager.savingsPercent, 0.0, accuracy: 0.001)
+        let data = try JSONEncoder().encode(stats)
+        let decoded = try JSONDecoder().decode(RTKManager.RTKGainStats.self, from: data)
+        XCTAssertEqual(decoded, stats,
+                       "RTKGainStats should round-trip through JSON encoding")
+    }
+
+    func testGainStatsDecodingFromSnakeCaseJSON() throws {
+        let json = """
+        {
+            "commands": 100,
+            "input_tokens": 50000,
+            "output_tokens": 15000,
+            "saved_tokens": 35000,
+            "savings_pct": 70.0,
+            "total_time_ms": 5000,
+            "avg_time_ms": 50
+        }
+        """.data(using: .utf8)!
+
+        let stats = try JSONDecoder().decode(RTKManager.RTKGainStats.self, from: json)
+        XCTAssertEqual(stats.commands, 100)
+        XCTAssertEqual(stats.inputTokens, 50000)
+        XCTAssertEqual(stats.outputTokens, 15000)
+        XCTAssertEqual(stats.savedTokens, 35000)
+        XCTAssertEqual(stats.savingsPct, 70.0, accuracy: 0.001)
+        XCTAssertEqual(stats.totalTimeMs, 5000)
+        XCTAssertEqual(stats.avgTimeMs, 50)
     }
 
     // MARK: - Complete Decision Matrix (exhaustive)
 
     func testExhaustiveDecisionMatrix() {
-        // Exhaustively test every combination of (mode, override, isAIActive)
         struct TestCase {
             let mode: TokenOptimizationMode
             let override: TabTokenOptOverride
@@ -322,7 +371,6 @@ final class TokenOptimizationTests: XCTestCase {
     // MARK: - RTK Notification Names
 
     func testNotificationNames() {
-        // Verify the notification names are defined and distinct
         let modeChanged = Notification.Name.tokenOptimizationModeChanged
         let flagRecalculated = Notification.Name.rtkFlagRecalculated
 

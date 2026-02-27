@@ -2,26 +2,25 @@ import Foundation
 
 // MARK: - RTK Manager
 
-/// Manages the RTK (Reduced Token Kit) binary lifecycle, wrapper script
-/// generation, and PATH injection for token-optimized command output.
-///
-/// RTK intercepts commands like `cat`, `ls`, `find`, `tree` etc. and produces
-/// compact output that consumes fewer AI tokens while preserving semantic content.
+/// Manages the RTK wrapper layer: script generation, `rtk` binary detection,
+/// PATH injection, and token-savings statistics via `rtk gain`.
 ///
 /// ## Architecture
 ///
 /// 1. **Wrapper scripts** live in `~/.chau7/rtk_bin/` and shadow real binaries
 ///    via PATH prepend.
-/// 2. Each wrapper checks for a **flag file** in `~/.chau7/rtk_active/<SESSION_ID>`.
-///    If the flag exists, the wrapper runs the real binary and pipes output
-///    through an RTK transformer. If not, it exec's the real binary directly.
+/// 2. Each wrapper checks a **flag file** in `~/.chau7/rtk_active/<SESSION_ID>`.
+///    When active *and* the `rtk` binary is installed, commands in `rtkRewriteMap`
+///    are routed through `rtk <subcommand>` for token-optimized output.
+///    When `rtk` is absent, the real binary is exec'd directly (current behavior).
 /// 3. `RTKFlagManager` controls flag file creation/removal based on the global
 ///    mode + per-tab override + AI detection state.
 ///
 /// ## Supported Commands
 ///
-/// Phase 1: `cat`, `ls`, `find`, `tree`, `head`, `tail`, `wc`
-/// Phase 2: `grep`, `rg`, `diff`, `git diff`, `git log`, `git status`
+/// With rtk routing: `cat`, `ls`, `find`, `tree`, `grep`, `rg`, `git`, `diff`,
+///                    `cargo`, `curl`, `docker`, `kubectl`
+/// Exec-only (no rtk subcommand): `head`, `tail`, `wc`
 final class RTKManager {
 
     static let shared = RTKManager()
@@ -35,18 +34,33 @@ final class RTKManager {
     /// Directory for RTK data/config files.
     private let dataDir: URL
 
-    /// Commands that RTK provides wrappers for.
-    static let supportedCommands: [String] = [
-        "cat", "ls", "find", "tree", "head", "tail", "wc"
+    /// Maps shell command names to their `rtk` subcommand equivalents.
+    /// Commands in this map are routed through the `rtk` binary when active.
+    static let rtkRewriteMap: [String: String] = [
+        "cat": "read",
+        "ls": "ls",
+        "find": "find",
+        "tree": "tree",
+        "grep": "grep",
+        "rg": "grep",
+        "git": "git",
+        "diff": "diff",
+        "cargo": "cargo",
+        "curl": "curl",
+        "docker": "docker",
+        "kubectl": "kubectl",
     ]
 
-    /// Token savings statistics.
-    private(set) var totalOriginalBytes: Int64 = 0
-    private(set) var totalOptimizedBytes: Int64 = 0
-    private let statsLock = NSLock()
+    /// All commands that RTK provides wrappers for (rtk-routed + exec-only).
+    static let supportedCommands: [String] = [
+        "cat", "ls", "find", "tree",
+        "grep", "rg", "git", "diff",
+        "cargo", "curl", "docker", "kubectl",
+        "head", "tail", "wc",
+    ]
 
-    /// Directory for per-command invocation counters.
-    private let statsDir: URL
+    /// Commands that are exec-only (no rtk subcommand mapping).
+    static let execOnlyCommands: Set<String> = ["head", "tail", "wc"]
 
     private init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
@@ -54,7 +68,6 @@ final class RTKManager {
         self.wrapperBinDir = base.appendingPathComponent("rtk_bin", isDirectory: true)
         self.binDir = base.appendingPathComponent("bin", isDirectory: true)
         self.dataDir = base.appendingPathComponent("rtk_data", isDirectory: true)
-        self.statsDir = dataDir.appendingPathComponent("stats", isDirectory: true)
     }
 
     // MARK: - Setup
@@ -64,8 +77,7 @@ final class RTKManager {
     func setup() {
         let fm = FileManager.default
 
-        // Create directories
-        for dir in [wrapperBinDir, binDir, dataDir, statsDir] {
+        for dir in [wrapperBinDir, binDir, dataDir] {
             if !fm.fileExists(atPath: dir.path) {
                 do {
                     try fm.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -78,24 +90,45 @@ final class RTKManager {
 
         RTKFlagManager.ensureFlagDirectory()
 
-        // Install wrapper scripts for all supported commands
         for command in Self.supportedCommands {
             installWrapper(for: command)
         }
     }
 
+    // MARK: - RTK Binary Detection
+
+    /// Walks PATH to find the `rtk` binary, skipping our wrapper directory.
+    /// Returns the absolute path if found, nil otherwise.
+    func findRTKBinary() -> String? {
+        let fm = FileManager.default
+        guard let pathEnv = ProcessInfo.processInfo.environment["PATH"] else { return nil }
+        let wrapperDir = wrapperBinDir.path
+
+        for dir in pathEnv.split(separator: ":") {
+            let dirStr = String(dir)
+            if dirStr == wrapperDir { continue }
+            let candidate = (dirStr as NSString).appendingPathComponent("rtk")
+            if fm.isExecutableFile(atPath: candidate) {
+                return candidate
+            }
+        }
+        return nil
+    }
+
+    /// Whether the `rtk` binary is discoverable in PATH.
+    var isRTKBinaryInstalled: Bool {
+        findRTKBinary() != nil
+    }
+
     // MARK: - Wrapper Scripts
 
     /// Installs a wrapper script for the given command.
-    /// The wrapper checks for the session flag file and either runs the RTK
-    /// transformer or exec's the real binary.
     private func installWrapper(for command: String) {
         let wrapperPath = wrapperBinDir.appendingPathComponent(command)
         let script = generateWrapperScript(for: command)
 
         do {
             try script.write(to: wrapperPath, atomically: true, encoding: .utf8)
-            // Make executable (rwxr-xr-x)
             try FileManager.default.setAttributes(
                 [.posixPermissions: 0o755],
                 ofItemAtPath: wrapperPath.path
@@ -107,10 +140,6 @@ final class RTKManager {
     }
 
     /// Generates the shell wrapper script for a command.
-    /// The wrapper:
-    /// 1. Checks if the flag file exists for this session
-    /// 2. If yes: runs the real binary and pipes through RTK transform
-    /// 3. If no: exec's the real binary directly (zero overhead)
     private func generateWrapperScript(for command: String) -> String {
         if command == "cat" {
             return generateCatWrapperScript()
@@ -118,8 +147,43 @@ final class RTKManager {
         return generateGenericWrapperScript(for: command)
     }
 
-    /// Generic wrapper: find real binary, check flag, record stats, exec.
+    /// Generic wrapper: find real binary, check flag, route through rtk or exec.
+    ///
+    /// When RTK is active:
+    /// - If `rtk` binary exists AND command has a rewrite mapping → `exec rtk <subcommand> "$@"`
+    /// - If `rtk` not found or command is exec-only → `exec real_binary "$@"`
     private func generateGenericWrapperScript(for command: String) -> String {
+        let rtkSubcommand = Self.rtkRewriteMap[command]
+
+        // Shell block that finds the rtk binary (reused across wrappers)
+        let findRTKBlock: String
+        if let sub = rtkSubcommand {
+            findRTKBlock = """
+
+                    # Find rtk binary (skip our wrapper directory)
+                    _RTK_BIN=""
+                    _OLD_IFS2="$IFS"
+                    IFS=':'
+                    for _dir2 in $PATH; do
+                        if [ "$_dir2" = "$_RTK_WRAPPER_DIR" ]; then
+                            continue
+                        fi
+                        if [ -x "$_dir2/rtk" ]; then
+                            _RTK_BIN="$_dir2/rtk"
+                            break
+                        fi
+                    done
+                    IFS="$_OLD_IFS2"
+
+                    # Route through rtk if available
+                    if [ -n "$_RTK_BIN" ]; then
+                        exec "$_RTK_BIN" \(sub) "$@"
+                    fi
+            """
+        } else {
+            findRTKBlock = ""
+        }
+
         return """
         #!/bin/bash
         # RTK wrapper for \(command) — generated by Chau7
@@ -154,23 +218,22 @@ final class RTKManager {
             exec "$_RTK_REAL_BIN" "$@"
         fi
 
-        # RTK is active — record invocation (append is atomic on POSIX), then exec.
-        _RTK_STATS_DIR="$HOME/.chau7/rtk_data/stats"
-        mkdir -p "$_RTK_STATS_DIR" 2>/dev/null
-        echo . >> "$_RTK_STATS_DIR/\(command)" 2>/dev/null
+        # RTK is active\(findRTKBlock)
 
+        # Fallback: exec real binary
         exec "$_RTK_REAL_BIN" "$@"
         """
     }
 
-    /// Specialized `cat` wrapper: renders `.md`/`.markdown` files with chau7-md
-    /// when RTK is active, stdout is a terminal, no flags are passed, and all
-    /// arguments are markdown files.
+    /// Specialized `cat` wrapper:
+    /// 1. Markdown files → chau7-md (when stdout is a terminal, no flags, all .md)
+    /// 2. Other files → `rtk read "$@"` (when rtk available)
+    /// 3. Fallback → real cat
     private func generateCatWrapperScript() -> String {
         return """
         #!/bin/bash
         # RTK wrapper for cat — generated by Chau7
-        # Renders markdown files with chau7-md when active.
+        # Renders markdown files with chau7-md, routes others through rtk read.
 
         _RTK_FLAG_DIR="$HOME/.chau7/rtk_active"
         _RTK_SESSION_FLAG="$_RTK_FLAG_DIR/$CHAU7_RTK_SESSION"
@@ -201,11 +264,6 @@ final class RTKManager {
             exec "$_RTK_REAL_BIN" "$@"
         fi
 
-        # Record invocation
-        _RTK_STATS_DIR="$HOME/.chau7/rtk_data/stats"
-        mkdir -p "$_RTK_STATS_DIR" 2>/dev/null
-        echo . >> "$_RTK_STATS_DIR/cat" 2>/dev/null
-
         # Markdown rendering: check if chau7-md is available,
         # stdout is a terminal, no flags are passed, and all args are .md/.markdown
         _CHAU7_MD="$HOME/.chau7/bin/chau7-md"
@@ -216,7 +274,7 @@ final class RTKManager {
             for _arg in "$@"; do
                 case "$_arg" in
                     -*)
-                        # Any flag means fall through to real cat
+                        # Any flag means fall through
                         _ALL_MD=false
                         break
                         ;;
@@ -242,6 +300,25 @@ final class RTKManager {
             fi
         fi
 
+        # Find rtk binary for non-markdown files
+        _RTK_BIN=""
+        _OLD_IFS2="$IFS"
+        IFS=':'
+        for _dir2 in $PATH; do
+            if [ "$_dir2" = "$_RTK_WRAPPER_DIR" ]; then
+                continue
+            fi
+            if [ -x "$_dir2/rtk" ]; then
+                _RTK_BIN="$_dir2/rtk"
+                break
+            fi
+        done
+        IFS="$_OLD_IFS2"
+
+        if [ -n "$_RTK_BIN" ]; then
+            exec "$_RTK_BIN" read "$@"
+        fi
+
         exec "$_RTK_REAL_BIN" "$@"
         """
     }
@@ -264,7 +341,6 @@ final class RTKManager {
         let fm = FileManager.default
         let dest = markdownRendererPath
 
-        // Create bin dir if needed
         if !fm.fileExists(atPath: binDir.path) {
             do {
                 try fm.createDirectory(at: binDir, withIntermediateDirectories: true)
@@ -275,7 +351,6 @@ final class RTKManager {
         }
 
         do {
-            // Remove existing binary first
             if fm.fileExists(atPath: dest.path) {
                 try fm.removeItem(at: dest)
             }
@@ -292,11 +367,8 @@ final class RTKManager {
     // MARK: - PATH Injection
 
     /// Returns the PATH string with the RTK wrapper directory prepended.
-    /// Only prepends if RTK mode is not `.off`.
     func prependedPATH(original: String) -> String {
         let wrapperDir = wrapperBinDir.path
-        // Check for exact PATH component match to avoid false positives
-        // (e.g. /path/rtk_bin_old matching /path/rtk_bin)
         let components = original.split(separator: ":", omittingEmptySubsequences: false)
         if components.contains(where: { String($0) == wrapperDir }) {
             return original
@@ -311,6 +383,8 @@ final class RTKManager {
         let command: String
         let isInstalled: Bool
         let isExecutable: Bool
+        /// Whether this command routes through `rtk` (vs exec-only).
+        let hasRTKRoute: Bool
         var id: String { command }
     }
 
@@ -321,7 +395,13 @@ final class RTKManager {
             let path = wrapperBinDir.appendingPathComponent(command).path
             let exists = fm.fileExists(atPath: path)
             let executable = exists && fm.isExecutableFile(atPath: path)
-            return WrapperHealth(command: command, isInstalled: exists, isExecutable: executable)
+            let hasRoute = Self.rtkRewriteMap[command] != nil
+            return WrapperHealth(
+                command: command,
+                isInstalled: exists,
+                isExecutable: executable,
+                hasRTKRoute: hasRoute
+            )
         }
     }
 
@@ -330,70 +410,61 @@ final class RTKManager {
         checkInstallation().allSatisfy { $0.isInstalled && $0.isExecutable }
     }
 
-    // MARK: - Statistics
+    // MARK: - RTK Gain Statistics
 
-    /// Records bytes before and after optimization for tracking savings.
-    func recordStats(originalBytes: Int64, optimizedBytes: Int64) {
-        statsLock.lock()
-        defer { statsLock.unlock() }
-        totalOriginalBytes += originalBytes
-        totalOptimizedBytes += optimizedBytes
-    }
+    /// Token savings data returned by `rtk gain --format json`.
+    struct RTKGainStats: Codable, Equatable {
+        let commands: Int
+        let inputTokens: Int
+        let outputTokens: Int
+        let savedTokens: Int
+        let savingsPct: Double
+        let totalTimeMs: Int
+        let avgTimeMs: Int
 
-    /// Returns the current savings percentage (0-100).
-    var savingsPercent: Double {
-        statsLock.lock()
-        defer { statsLock.unlock() }
-        guard totalOriginalBytes > 0 else { return 0 }
-        let saved = Double(totalOriginalBytes - totalOptimizedBytes)
-        return (saved / Double(totalOriginalBytes)) * 100.0
-    }
-
-    /// Reads per-command invocation counters from `~/.chau7/rtk_data/stats/`.
-    /// Each counter file contains one line per invocation (atomic append).
-    func commandInvocationCounts() -> [String: Int] {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: statsDir.path),
-              let files = try? fm.contentsOfDirectory(atPath: statsDir.path)
-        else { return [:] }
-
-        var counts: [String: Int] = [:]
-        for file in files {
-            let path = statsDir.appendingPathComponent(file).path
-            if let data = fm.contents(atPath: path),
-               let text = String(data: data, encoding: .utf8) {
-                let lineCount = text.components(separatedBy: "\n")
-                    .filter { !$0.isEmpty }
-                    .count
-                if lineCount > 0 {
-                    counts[file] = lineCount
-                }
-            }
+        enum CodingKeys: String, CodingKey {
+            case commands
+            case inputTokens = "input_tokens"
+            case outputTokens = "output_tokens"
+            case savedTokens = "saved_tokens"
+            case savingsPct = "savings_pct"
+            case totalTimeMs = "total_time_ms"
+            case avgTimeMs = "avg_time_ms"
         }
-        return counts
     }
 
-    /// Total number of RTK-intercepted command invocations across all commands.
-    var totalInterceptions: Int {
-        commandInvocationCounts().values.reduce(0, +)
-    }
+    /// Fetches aggregated token savings from `rtk gain --format json`.
+    /// Returns nil if rtk is not installed or the command fails.
+    func fetchGainStats() async -> RTKGainStats? {
+        guard let rtkPath = findRTKBinary() else { return nil }
 
-    /// Resets all statistics: in-memory counters and on-disk invocation files.
-    func resetStats() {
-        statsLock.lock()
-        totalOriginalBytes = 0
-        totalOptimizedBytes = 0
-        statsLock.unlock()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: rtkPath)
+        process.arguments = ["gain", "--format", "json"]
 
-        // Clear on-disk counters
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: statsDir.path),
-              let files = try? fm.contentsOfDirectory(atPath: statsDir.path)
-        else { return }
-        for file in files {
-            try? fm.removeItem(atPath: statsDir.appendingPathComponent(file).path)
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+        } catch {
+            Log.error("RTKManager: failed to run rtk gain: \(error)")
+            return nil
         }
-        Log.info("RTKManager: reset statistics")
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+
+        guard process.terminationStatus == 0, !data.isEmpty else { return nil }
+
+        do {
+            let stats = try JSONDecoder().decode(RTKGainStats.self, from: data)
+            return stats
+        } catch {
+            Log.error("RTKManager: failed to decode rtk gain output: \(error)")
+            return nil
+        }
     }
 
     // MARK: - Cleanup

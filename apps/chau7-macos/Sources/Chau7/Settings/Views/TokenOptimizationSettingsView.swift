@@ -3,13 +3,16 @@ import SwiftUI
 // MARK: - Token Optimization Settings
 
 /// Top-level settings view for RTK (Reduced Token Kit) — combining optimization
-/// mode selection, RTK prefix, per-tab overrides, and wrapper script management.
+/// mode selection, input prefix, per-tab overrides, rtk binary status, and
+/// token savings analytics.
 struct TokenOptimizationSettingsView: View {
     @ObservedObject private var settings = FeatureSettings.shared
     let overlayModel: OverlayTabsModel?
     @State private var wrapperHealth: [RTKManager.WrapperHealth] = []
-    @State private var invocationCounts: [String: Int] = [:]
     @State private var mdRendererInstalled = false
+    @State private var rtkBinaryPath: String?
+    @State private var gainStats: RTKManager.RTKGainStats?
+    @State private var isLoadingStats = false
 
     init(overlayModel: OverlayTabsModel? = nil) {
         self.overlayModel = overlayModel
@@ -32,15 +35,14 @@ struct TokenOptimizationSettingsView: View {
                 }
             )
 
-            // Mode description
             modeDescriptionView
 
             if settings.tokenOptimizationMode != .off {
                 Divider()
                     .padding(.vertical, 8)
 
-                // RTK Prefix
-                SettingsSectionHeader(L("rtk.settings.prefix", "RTK Prefix"), icon: "bolt.fill")
+                // Input Prefix
+                SettingsSectionHeader(L("rtk.settings.prefix", "Input Prefix"), icon: "bolt.fill")
 
                 SettingsToggle(
                     label: L("settings.ai.rtk.enabled", "Enable RTK"),
@@ -55,7 +57,7 @@ struct TokenOptimizationSettingsView: View {
                 )
 
                 SettingsTextField(
-                    label: L("settings.ai.rtk.prefix", "RTK Prefix"),
+                    label: L("settings.ai.rtk.prefix", "Input Prefix"),
                     help: L(
                         "settings.ai.rtk.prefixHelp",
                         "Prefix text to prepend (supports per-tab overrides)."
@@ -72,24 +74,27 @@ struct TokenOptimizationSettingsView: View {
                 Divider()
                     .padding(.vertical, 8)
 
-                // Installation Health
+                // RTK Binary
                 SettingsSectionHeader(
-                    L("rtk.settings.installation", "Installation"),
+                    L("rtk.settings.binary", "RTK Binary"),
                     icon: "checkmark.shield"
                 )
 
+                rtkBinaryStatusView
+
+                // Wrapper script health
                 installationHealthView
 
                 Divider()
                     .padding(.vertical, 8)
 
-                // Statistics
+                // Token Savings
                 SettingsSectionHeader(
-                    L("rtk.settings.statistics", "Statistics"),
+                    L("rtk.settings.savings", "Token Savings"),
                     icon: "chart.bar"
                 )
 
-                statisticsView
+                tokenSavingsView
 
                 Divider()
                     .padding(.vertical, 8)
@@ -102,7 +107,6 @@ struct TokenOptimizationSettingsView: View {
 
                 perTabInfoView
 
-                // Live tab overrides
                 if let overlayModel {
                     perTabOverridesView(overlayModel: overlayModel)
                 }
@@ -110,7 +114,7 @@ struct TokenOptimizationSettingsView: View {
                 Divider()
                     .padding(.vertical, 8)
 
-                // Supported Commands
+                // Optimized Commands
                 SettingsSectionHeader(
                     L("rtk.settings.commands", "Optimized Commands"),
                     icon: "terminal"
@@ -131,10 +135,10 @@ struct TokenOptimizationSettingsView: View {
             }
         }
         .onAppear {
-            refreshHealthAndStats()
+            refreshAll()
         }
         .onChange(of: settings.tokenOptimizationMode) { _ in
-            refreshHealthAndStats()
+            refreshAll()
         }
     }
 
@@ -213,13 +217,55 @@ struct TokenOptimizationSettingsView: View {
         }
     }
 
+    // MARK: - RTK Binary Status
+
+    @ViewBuilder
+    private var rtkBinaryStatusView: some View {
+        HStack(spacing: 8) {
+            if let path = rtkBinaryPath {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L("rtk.binary.installed", "Installed"))
+                        .font(.body)
+                    Text(path)
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.orange)
+                Text(L("rtk.binary.notInstalled", "Not installed — commands will exec real binaries directly"))
+                    .font(.body)
+            }
+
+            Spacer()
+
+            if rtkBinaryPath == nil {
+                Button(L("rtk.binary.install", "Install RTK...")) {
+                    if let url = URL(string: "https://github.com/rtk-ai/rtk#install") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            Button(L("rtk.binary.checkAgain", "Check Again")) {
+                rtkBinaryPath = RTKManager.shared.findRTKBinary()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding(.vertical, 4)
+    }
+
     // MARK: - Installation Health
 
     @ViewBuilder
     private var installationHealthView: some View {
         let allGood = !wrapperHealth.isEmpty && wrapperHealth.allSatisfy { $0.isInstalled && $0.isExecutable }
 
-        // Summary row
         HStack(spacing: 8) {
             Image(systemName: allGood ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                 .foregroundStyle(allGood ? .green : .orange)
@@ -230,14 +276,13 @@ struct TokenOptimizationSettingsView: View {
             Spacer()
             Button(L("rtk.health.reinstall", "Reinstall")) {
                 RTKManager.shared.setup()
-                refreshHealthAndStats()
+                refreshAll()
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
         }
         .padding(.vertical, 4)
 
-        // Per-command detail
         VStack(alignment: .leading, spacing: 4) {
             ForEach(wrapperHealth) { item in
                 HStack(spacing: 8) {
@@ -296,78 +341,118 @@ struct TokenOptimizationSettingsView: View {
         .padding(.vertical, 4)
     }
 
-    // MARK: - Statistics
+    // MARK: - Token Savings
 
     @ViewBuilder
-    private var statisticsView: some View {
-        let total = invocationCounts.values.reduce(0, +)
-
-        if total == 0 {
+    private var tokenSavingsView: some View {
+        if rtkBinaryPath == nil {
+            // RTK not installed banner
             HStack(spacing: 8) {
-                Image(systemName: "chart.bar")
+                Image(systemName: "info.circle")
                     .foregroundStyle(.secondary)
-                Text(L("rtk.stats.noData", "No intercepted commands yet. Statistics will appear once RTK intercepts commands."))
+                Text(L("rtk.savings.installPrompt", "Install the rtk binary to see token savings analytics. Without rtk, commands are intercepted but output is not optimized."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             .padding(.vertical, 4)
-        } else {
-            // Total
+        } else if isLoadingStats {
             HStack(spacing: 8) {
-                Image(systemName: "number")
-                    .foregroundStyle(.blue)
-                    .frame(width: 20)
-                Text(L("rtk.stats.total", "Total intercepted commands"))
-                    .font(.body)
-                Spacer()
-                Text("\(total)")
-                    .font(.system(.body, design: .monospaced))
-                    .fontWeight(.semibold)
+                ProgressView()
+                    .controlSize(.small)
+                Text(L("rtk.savings.loading", "Loading token savings..."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .padding(.vertical, 2)
-
-            // Per-command breakdown (sorted by count descending)
-            let sorted = invocationCounts.sorted { $0.value > $1.value }
-            ForEach(sorted, id: \.key) { command, count in
-                HStack(spacing: 8) {
-                    Image(systemName: "terminal")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 20)
-                    Text(command)
-                        .font(.system(.body, design: .monospaced))
-                    Spacer()
-
-                    // Proportion bar
-                    GeometryReader { geo in
-                        let fraction = CGFloat(count) / CGFloat(max(total, 1))
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(Color.accentColor.opacity(0.3))
-                            .frame(width: geo.size.width * fraction, height: geo.size.height)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
-                    .frame(width: 80, height: 14)
-
-                    Text("\(count)")
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 50, alignment: .trailing)
-                }
-                .padding(.vertical, 1)
+            .padding(.vertical, 4)
+        } else if let stats = gainStats, stats.commands > 0 {
+            // Stats available
+            VStack(alignment: .leading, spacing: 6) {
+                statRow(
+                    icon: "number",
+                    iconColor: .blue,
+                    label: L("rtk.savings.totalCommands", "Total commands"),
+                    value: "\(stats.commands)"
+                )
+                statRow(
+                    icon: "arrow.right.circle",
+                    iconColor: .secondary,
+                    label: L("rtk.savings.inputTokens", "Input tokens"),
+                    value: formatNumber(stats.inputTokens)
+                )
+                statRow(
+                    icon: "arrow.left.circle",
+                    iconColor: .secondary,
+                    label: L("rtk.savings.outputTokens", "Output tokens"),
+                    value: formatNumber(stats.outputTokens)
+                )
+                statRow(
+                    icon: "arrow.down.circle.fill",
+                    iconColor: .green,
+                    label: L("rtk.savings.savedTokens", "Tokens saved"),
+                    value: formatNumber(stats.savedTokens)
+                )
+                statRow(
+                    icon: "percent",
+                    iconColor: .green,
+                    label: L("rtk.savings.avgSavings", "Avg savings"),
+                    value: String(format: "%.1f%%", stats.savingsPct)
+                )
+                statRow(
+                    icon: "clock",
+                    iconColor: .secondary,
+                    label: L("rtk.savings.avgResponseTime", "Avg response time"),
+                    value: "\(stats.avgTimeMs)ms"
+                )
             }
 
-            // Reset button
             HStack {
                 Spacer()
-                Button(L("rtk.stats.reset", "Reset Statistics")) {
-                    RTKManager.shared.resetStats()
-                    refreshHealthAndStats()
+                Button(L("rtk.savings.refresh", "Refresh")) {
+                    loadGainStats()
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
             }
             .padding(.top, 4)
+        } else {
+            // RTK installed but no data yet
+            HStack(spacing: 8) {
+                Image(systemName: "chart.bar")
+                    .foregroundStyle(.secondary)
+                Text(L("rtk.savings.noData", "No token savings data yet. Run some commands with RTK active to see analytics."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(L("rtk.savings.refresh", "Refresh")) {
+                    loadGainStats()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            .padding(.vertical, 4)
         }
+    }
+
+    @ViewBuilder
+    private func statRow(icon: String, iconColor: Color, label: String, value: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .foregroundStyle(iconColor)
+                .frame(width: 20)
+            Text(label)
+                .font(.body)
+            Spacer()
+            Text(value)
+                .font(.system(.body, design: .monospaced))
+                .fontWeight(.semibold)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func formatNumber(_ n: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: n)) ?? "\(n)"
     }
 
     // MARK: - Per-Tab Info
@@ -531,15 +616,24 @@ struct TokenOptimizationSettingsView: View {
 
     @ViewBuilder
     private var commandsList: some View {
-        let commands = RTKManager.supportedCommands
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(commands, id: \.self) { command in
+            ForEach(RTKManager.supportedCommands, id: \.self) { command in
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(.green)
                     Text(command)
                         .font(.system(.body, design: .monospaced))
+
+                    if let sub = RTKManager.rtkRewriteMap[command] {
+                        Text("→ rtk \(sub)")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.purple)
+                    } else {
+                        Text("exec only")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
@@ -557,7 +651,7 @@ struct TokenOptimizationSettingsView: View {
 
             codeRow("~/.chau7/rtk_bin/")
 
-            Text(L("rtk.howItWorks.mechanism", "Each wrapper checks a per-session flag file to decide whether to optimize output. When inactive, the real binary runs directly with zero overhead."))
+            Text(L("rtk.howItWorks.mechanism", "Each wrapper checks a per-session flag file. When the rtk binary is installed, commands are routed through it for token-optimized output. Without rtk, the real binary runs directly."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -585,10 +679,22 @@ struct TokenOptimizationSettingsView: View {
 
     // MARK: - Actions
 
-    private func refreshHealthAndStats() {
+    private func refreshAll() {
         wrapperHealth = RTKManager.shared.checkInstallation()
-        invocationCounts = RTKManager.shared.commandInvocationCounts()
         mdRendererInstalled = RTKManager.shared.isMarkdownRendererInstalled
+        rtkBinaryPath = RTKManager.shared.findRTKBinary()
+        loadGainStats()
+    }
+
+    private func loadGainStats() {
+        isLoadingStats = true
+        Task {
+            let stats = await RTKManager.shared.fetchGainStats()
+            await MainActor.run {
+                gainStats = stats
+                isLoadingStats = false
+            }
+        }
     }
 
     private struct RTKTabRow: Identifiable {
