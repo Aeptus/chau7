@@ -2,15 +2,15 @@ import SwiftUI
 
 // MARK: - Token Optimization Settings
 
-/// Top-level settings view for RTK (Reduced Token Kit) — combining optimization
-/// mode selection, input prefix, per-tab overrides, rtk binary status, and
+/// Top-level settings view for token optimization — combining optimization
+/// mode selection, input prefix, per-tab overrides, optimizer status, and
 /// token savings analytics.
 struct TokenOptimizationSettingsView: View {
     @ObservedObject private var settings = FeatureSettings.shared
     let overlayModel: OverlayTabsModel?
     @State private var wrapperHealth: [RTKManager.WrapperHealth] = []
     @State private var mdRendererInstalled = false
-    @State private var rtkBinaryPath: String?
+    @State private var optimizerInstalled = false
     @State private var gainStats: RTKManager.RTKGainStats?
     @State private var isLoadingStats = false
 
@@ -45,10 +45,10 @@ struct TokenOptimizationSettingsView: View {
                 SettingsSectionHeader(L("rtk.settings.prefix", "Input Prefix"), icon: "bolt.fill")
 
                 SettingsToggle(
-                    label: L("settings.ai.rtk.enabled", "Enable RTK"),
+                    label: L("settings.ai.rtk.enabled", "Enable Input Prefix"),
                     help: L(
                         "settings.ai.rtk.enabledHelp",
-                        "When enabled, the RTK prefix is prepended to terminal commands."
+                        "When enabled, the prefix text is prepended to terminal input."
                     ),
                     isOn: Binding(
                         get: { settings.isRTKEnabled },
@@ -74,13 +74,13 @@ struct TokenOptimizationSettingsView: View {
                 Divider()
                     .padding(.vertical, 8)
 
-                // RTK Binary
+                // Optimizer
                 SettingsSectionHeader(
-                    L("rtk.settings.binary", "RTK Binary"),
+                    L("rtk.settings.optimizer", "Optimizer"),
                     icon: "checkmark.shield"
                 )
 
-                rtkBinaryStatusView
+                optimizerStatusView
 
                 // Wrapper script health
                 installationHealthView
@@ -217,45 +217,44 @@ struct TokenOptimizationSettingsView: View {
         }
     }
 
-    // MARK: - RTK Binary Status
+    // MARK: - Optimizer Status
 
     @ViewBuilder
-    private var rtkBinaryStatusView: some View {
-        HStack(spacing: 8) {
-            if let path = rtkBinaryPath {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(L("rtk.binary.installed", "Installed"))
-                        .font(.body)
-                    Text(path)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.orange)
-                Text(L("rtk.binary.notInstalled", "Not installed — commands will exec real binaries directly"))
-                    .font(.body)
-            }
+    private var optimizerStatusView: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(L("rtk.optimizer.desc", "The optimizer filters and compresses command output before it reaches your LLM context, typically saving 60-90% of tokens. It ships built-in — no external dependencies required."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
-            Spacer()
-
-            if rtkBinaryPath == nil {
-                Button(L("rtk.binary.install", "Install RTK...")) {
-                    if let url = URL(string: "https://github.com/rtk-ai/rtk#install") {
-                        NSWorkspace.shared.open(url)
+            HStack(spacing: 8) {
+                if optimizerInstalled {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L("rtk.optimizer.installed", "Installed"))
+                            .font(.body)
+                        Text(RTKManager.shared.optimizerPath.path)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
                     }
+                } else {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.orange)
+                    Text(L("rtk.optimizer.notInstalled", "Not installed — commands will pass through unoptimized"))
+                        .font(.body)
+                }
+
+                Spacer()
+
+                Button(L("rtk.optimizer.reinstall", "Reinstall from Bundle")) {
+                    if let bundlePath = Bundle.main.url(forResource: "chau7-optim", withExtension: nil) {
+                        RTKManager.shared.installOptimizer(from: bundlePath)
+                    }
+                    refreshAll()
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
             }
-
-            Button(L("rtk.binary.checkAgain", "Check Again")) {
-                rtkBinaryPath = RTKManager.shared.findRTKBinary()
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
         }
         .padding(.vertical, 4)
     }
@@ -345,17 +344,7 @@ struct TokenOptimizationSettingsView: View {
 
     @ViewBuilder
     private var tokenSavingsView: some View {
-        if rtkBinaryPath == nil {
-            // RTK not installed banner
-            HStack(spacing: 8) {
-                Image(systemName: "info.circle")
-                    .foregroundStyle(.secondary)
-                Text(L("rtk.savings.installPrompt", "Install the rtk binary to see token savings analytics. Without rtk, commands are intercepted but output is not optimized."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.vertical, 4)
-        } else if isLoadingStats {
+        if isLoadingStats {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
@@ -415,11 +404,10 @@ struct TokenOptimizationSettingsView: View {
             }
             .padding(.top, 4)
         } else {
-            // RTK installed but no data yet
             HStack(spacing: 8) {
                 Image(systemName: "chart.bar")
                     .foregroundStyle(.secondary)
-                Text(L("rtk.savings.noData", "No token savings data yet. Run some commands with RTK active to see analytics."))
+                Text(L("rtk.savings.noData", "No token savings data yet. Run some commands with optimization active to see analytics."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -547,8 +535,8 @@ struct TokenOptimizationSettingsView: View {
                 SettingsRow(
                     row.tabTitle,
                     help: row.hasOverride
-                        ? L("settings.ai.rtk.tabOverride", "Overrides global RTK setting for this tab.")
-                        : L("settings.ai.rtk.tabInherit", "Uses global RTK setting.")
+                        ? L("settings.ai.rtk.tabOverride", "Overrides global optimization setting for this tab.")
+                        : L("settings.ai.rtk.tabInherit", "Uses global optimization setting.")
                 ) {
                     HStack(spacing: 12) {
                         Toggle("", isOn: Binding(
@@ -626,7 +614,7 @@ struct TokenOptimizationSettingsView: View {
                         .font(.system(.body, design: .monospaced))
 
                     if let sub = RTKManager.rtkRewriteMap[command] {
-                        Text("→ rtk \(sub)")
+                        Text("→ optim \(sub)")
                             .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(.purple)
                     } else {
@@ -644,24 +632,65 @@ struct TokenOptimizationSettingsView: View {
 
     @ViewBuilder
     private var howItWorksView: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(L("rtk.howItWorks.desc", "When active, Chau7 prepends a directory of wrapper scripts to your PATH:"))
+        VStack(alignment: .leading, spacing: 10) {
+            // What the optimizer does
+            Text(L("rtk.howItWorks.optimizerTitle", "The Optimizer"))
+                .font(.caption)
+                .fontWeight(.semibold)
+
+            Text(L("rtk.howItWorks.optimizerDesc", "chau7-optim is a built-in binary (based on rtk) that intercepts command output and compresses it for LLM consumption. For example, `cat large_file.rs` strips comments and blank lines, `git diff` condenses to changed lines only, and `cargo build` filters out Compiling... progress, keeping only errors."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            codeRow("~/.chau7/bin/chau7-optim")
+
+            // How wrappers work
+            Text(L("rtk.howItWorks.wrappersTitle", "Wrapper Scripts"))
+                .font(.caption)
+                .fontWeight(.semibold)
+                .padding(.top, 4)
+
+            Text(L("rtk.howItWorks.desc", "When active, Chau7 prepends a directory of wrapper scripts to your PATH. Each wrapper shadows a real binary (cat, ls, git, etc.) and decides whether to optimize:"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             codeRow("~/.chau7/rtk_bin/")
 
-            Text(L("rtk.howItWorks.mechanism", "Each wrapper checks a per-session flag file. When the rtk binary is installed, commands are routed through it for token-optimized output. Without rtk, the real binary runs directly."))
+            // Decision flow
+            Text(L("rtk.howItWorks.flow", "Decision flow for each command:"))
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .fontWeight(.semibold)
+                .padding(.top, 4)
 
-            Text(L("rtk.howItWorks.flagDir", "Flag files location:"))
+            VStack(alignment: .leading, spacing: 4) {
+                flowRow("1.", "Check for a per-session flag file — if absent, exec the real binary directly (zero overhead)")
+                flowRow("2.", "If the flag is set and the optimizer is installed, route through chau7-optim for filtered output")
+                flowRow("3.", "Special case: cat on .md files routes through chau7-md for ANSI-formatted markdown")
+                flowRow("4.", "Fallback: exec the real binary unmodified")
+            }
+
+            // Flag files
+            Text(L("rtk.howItWorks.flagDir", "Per-session flag files:"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .padding(.top, 4)
 
             codeRow("~/.chau7/rtk_active/<SESSION_ID>")
 
             Text(L("rtk.howItWorks.cleanup", "All flag files and wrappers are cleaned up when the app quits or when the mode is set to Off."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func flowRow(_ number: String, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(number)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 16, alignment: .trailing)
+            Text(text)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -682,7 +711,7 @@ struct TokenOptimizationSettingsView: View {
     private func refreshAll() {
         wrapperHealth = RTKManager.shared.checkInstallation()
         mdRendererInstalled = RTKManager.shared.isMarkdownRendererInstalled
-        rtkBinaryPath = RTKManager.shared.findRTKBinary()
+        optimizerInstalled = RTKManager.shared.isOptimizerInstalled
         loadGainStats()
     }
 

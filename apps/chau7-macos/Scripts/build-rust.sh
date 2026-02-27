@@ -9,6 +9,9 @@ LIBS_DIR="$ROOT_DIR/Libraries"
 CRATES=("chau7_parse" "chau7_terminal")
 DYLIBS=("libchau7_parse.dylib" "libchau7_terminal.dylib")
 
+# Binary crates (standalone executables)
+BINS=("chau7-md" "chau7-optim")
+
 # Parse arguments
 BUILD_MODE="release"
 UNIVERSAL_BUILD=false
@@ -105,6 +108,24 @@ if [[ "$UNIVERSAL_BUILD" == true ]]; then
             echo "  x86_64: $X86_64_LIB (exists: $(test -f "$X86_64_LIB" && echo yes || echo no))" >&2
         fi
     done
+
+    # Copy binaries (lipo for universal)
+    for bin in "${BINS[@]}"; do
+        ARM64_BIN="$ARM64_DIR/$bin"
+        X86_64_BIN="$X86_64_DIR/$bin"
+        UNIVERSAL_BIN="$LIBS_DIR/$bin"
+
+        if [[ -f "$ARM64_BIN" && -f "$X86_64_BIN" ]]; then
+            echo "Creating universal binary for $bin..."
+            lipo -create "$ARM64_BIN" "$X86_64_BIN" -output "$UNIVERSAL_BIN"
+            echo "Created: $UNIVERSAL_BIN"
+        elif [[ -f "$ARM64_BIN" ]]; then
+            cp "$ARM64_BIN" "$UNIVERSAL_BIN"
+            echo "Copied (arm64 only): $UNIVERSAL_BIN"
+        else
+            echo "Warning: Could not find $bin binary" >&2
+        fi
+    done
 else
     echo "Building for native architecture..."
     build_for_target ""
@@ -126,9 +147,22 @@ else
             echo "Warning: $dylib not found for $crate at $SRC_LIB" >&2
         fi
     done
+
+    # Copy binaries to Libraries directory
+    for bin in "${BINS[@]}"; do
+        SRC_BIN="$TARGET_DIR/$bin"
+        DEST_BIN="$LIBS_DIR/$bin"
+
+        if [[ -f "$SRC_BIN" ]]; then
+            cp "$SRC_BIN" "$DEST_BIN"
+            echo "Copied: $DEST_BIN"
+        else
+            echo "Warning: $bin not found at $SRC_BIN" >&2
+        fi
+    done
 fi
 
-# Verify all expected libraries exist
+# Verify all expected outputs exist
 echo ""
 echo "Build complete. Libraries in $LIBS_DIR:"
 for dylib in "${DYLIBS[@]}"; do
@@ -140,5 +174,16 @@ for dylib in "${DYLIBS[@]}"; do
         fi
     else
         echo "  [MISSING] $dylib"
+    fi
+done
+for bin in "${BINS[@]}"; do
+    bin_path="$LIBS_DIR/$bin"
+    if [[ -f "$bin_path" ]]; then
+        echo "  [OK] $bin"
+        if [[ "$UNIVERSAL_BUILD" == true ]]; then
+            lipo -info "$bin_path" 2>/dev/null || true
+        fi
+    else
+        echo "  [MISSING] $bin"
     fi
 done
