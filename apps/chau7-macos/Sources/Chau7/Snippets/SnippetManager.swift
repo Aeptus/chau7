@@ -1265,7 +1265,7 @@ final class SnippetManager: ObservableObject {
         }
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.executableURL = GitBinary.path
         process.arguments = ["-C", path, "rev-parse", "--show-toplevel"]
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -1289,7 +1289,7 @@ final class SnippetManager: ObservableObject {
     static func resolveRepoRoot(at path: String) -> String? {
         let normalized = URL(fileURLWithPath: path).standardized.path
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.executableURL = GitBinary.path
         process.arguments = ["-C", normalized, "rev-parse", "--show-toplevel"]
         let pipe = Pipe()
         process.standardOutput = pipe

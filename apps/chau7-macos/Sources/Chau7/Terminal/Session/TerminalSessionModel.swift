@@ -2768,7 +2768,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         }
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.executableURL = GitBinary.path
         process.arguments = ["-C", path, "rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"]
         let pipe = Pipe()
         process.standardOutput = pipe

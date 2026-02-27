@@ -27,6 +27,27 @@ extension Array {
     }
 }
 
+// MARK: - Git Binary Resolution
+
+enum GitBinary {
+    /// Resolved path to the git binary, cached for the app lifetime.
+    /// Prefers Homebrew/MacPorts git over /usr/bin/git (Xcode shim) since the
+    /// shim requires Xcode license agreement and silently fails without it.
+    static let path: URL = {
+        let candidates = [
+            "/opt/homebrew/bin/git",   // Homebrew (Apple Silicon)
+            "/usr/local/bin/git",      // Homebrew (Intel) / MacPorts
+            "/usr/bin/git",            // Xcode CLT shim (fallback)
+        ]
+        for candidate in candidates {
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return URL(fileURLWithPath: candidate)
+            }
+        }
+        return URL(fileURLWithPath: "/usr/bin/git")
+    }()
+}
+
 // MARK: - Environment Variables
 
 /// Centralized environment variable names for the app.
