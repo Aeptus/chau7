@@ -9,6 +9,7 @@ struct TokenOptimizationSettingsView: View {
     let overlayModel: OverlayTabsModel?
     @State private var wrapperHealth: [RTKManager.WrapperHealth] = []
     @State private var invocationCounts: [String: Int] = [:]
+    @State private var mdRendererInstalled = false
 
     init(overlayModel: OverlayTabsModel? = nil) {
         self.overlayModel = overlayModel
@@ -249,6 +250,11 @@ struct TokenOptimizationSettingsView: View {
                             : item.isInstalled ? .orange : .red)
                     Text(item.command)
                         .font(.system(.body, design: .monospaced))
+                    if item.command == "cat" && mdRendererInstalled {
+                        Text("+ md")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.purple)
+                    }
                     Spacer()
                     if !item.isInstalled {
                         Text(L("rtk.health.missing", "Missing"))
@@ -260,6 +266,31 @@ struct TokenOptimizationSettingsView: View {
                             .foregroundStyle(.orange)
                     }
                 }
+            }
+
+            // Markdown renderer status
+            Divider().padding(.vertical, 2)
+            HStack(spacing: 8) {
+                Image(systemName: mdRendererInstalled ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(mdRendererInstalled ? .green : .secondary)
+                Text("chau7-md")
+                    .font(.system(.body, design: .monospaced))
+                Text(L("rtk.health.mdRenderer", "Markdown renderer"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if !mdRendererInstalled {
+                    Text(L("rtk.health.mdNotInstalled", "Not installed"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if mdRendererInstalled {
+                Text(L("rtk.health.mdDesc", "cat README.md renders with ANSI formatting in terminal"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 28)
             }
         }
         .padding(.vertical, 4)
@@ -557,6 +588,7 @@ struct TokenOptimizationSettingsView: View {
     private func refreshHealthAndStats() {
         wrapperHealth = RTKManager.shared.checkInstallation()
         invocationCounts = RTKManager.shared.commandInvocationCounts()
+        mdRendererInstalled = RTKManager.shared.isMarkdownRendererInstalled
     }
 
     private struct RTKTabRow: Identifiable {
