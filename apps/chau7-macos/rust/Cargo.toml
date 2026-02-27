@@ -1,5 +1,5 @@
 [workspace]
-members = ["chau7_parse", "chau7_terminal", "chau7_md"]
+members = ["chau7_parse", "chau7_terminal", "chau7_md", "chau7_optim"]
 resolver = "2"
 
 [profile.release]

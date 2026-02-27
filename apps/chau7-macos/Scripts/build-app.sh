@@ -133,6 +133,15 @@ else
   log_warn "Rust terminal library not found at $RUST_TERMINAL_LIB (Rust backend will be unavailable)"
 fi
 
+# Copy helper binaries (chau7-md, chau7-optim) into app bundle
+for helper in chau7-md chau7-optim; do
+    HELPER_BIN="$RUST_LIBS_DIR/$helper"
+    if [[ -f "$HELPER_BIN" ]]; then
+        run_cmd cp "$HELPER_BIN" "$CONTENTS/Resources/$helper"
+        log_ok "Copied helper binary: $helper"
+    fi
+done
+
 # Ad-hoc codesign the app bundle so macOS doesn't SIGKILL on dlopen().
 # Without this, replacing the Rust dylib invalidates the kernel's cached
 # code signature, causing EXC_BAD_ACCESS (Code Signature Invalid) on launch.

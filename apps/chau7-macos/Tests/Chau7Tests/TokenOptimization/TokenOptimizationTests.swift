@@ -282,16 +282,24 @@ final class TokenOptimizationTests: XCTestCase {
         let decoded = try JSONDecoder().decode(RTKManager.RTKGainStats.self, from: data)
         XCTAssertEqual(decoded, stats,
                        "RTKGainStats should round-trip through JSON encoding")
+
+        // Verify the encoded keys match chau7-optim gain format
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        XCTAssertNotNil(json["total_commands"], "Encoded key should be 'total_commands'")
+        XCTAssertNotNil(json["total_input"], "Encoded key should be 'total_input'")
+        XCTAssertNotNil(json["total_output"], "Encoded key should be 'total_output'")
+        XCTAssertNotNil(json["total_saved"], "Encoded key should be 'total_saved'")
     }
 
-    func testGainStatsDecodingFromSnakeCaseJSON() throws {
+    func testGainStatsDecodingFromOptimizerJSON() throws {
+        // Matches the actual output format of `chau7-optim gain --format json`
         let json = """
         {
-            "commands": 100,
-            "input_tokens": 50000,
-            "output_tokens": 15000,
-            "saved_tokens": 35000,
-            "savings_pct": 70.0,
+            "total_commands": 100,
+            "total_input": 50000,
+            "total_output": 15000,
+            "total_saved": 35000,
+            "avg_savings_pct": 70.0,
             "total_time_ms": 5000,
             "avg_time_ms": 50
         }
@@ -366,6 +374,34 @@ final class TokenOptimizationTests: XCTestCase {
                 "expected \(tc.expected), got \(result)"
             )
         }
+    }
+
+    // MARK: - Optimizer Path
+
+    func testOptimizerPathIsInBinDir() {
+        let manager = RTKManager.shared
+        XCTAssertEqual(
+            manager.optimizerPath,
+            manager.binDir.appendingPathComponent("chau7-optim"),
+            "optimizerPath should point to chau7-optim in the bin directory"
+        )
+    }
+
+    func testOptimizerPathEndsWithExpectedBinaryName() {
+        let manager = RTKManager.shared
+        XCTAssertTrue(
+            manager.optimizerPath.lastPathComponent == "chau7-optim",
+            "Optimizer binary should be named chau7-optim"
+        )
+    }
+
+    func testMarkdownRendererPathIsInBinDir() {
+        let manager = RTKManager.shared
+        XCTAssertEqual(
+            manager.markdownRendererPath,
+            manager.binDir.appendingPathComponent("chau7-md"),
+            "markdownRendererPath should point to chau7-md in the bin directory"
+        )
     }
 
     // MARK: - RTK Notification Names

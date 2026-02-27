@@ -2,25 +2,25 @@ import Foundation
 
 // MARK: - RTK Manager
 
-/// Manages the RTK wrapper layer: script generation, `rtk` binary detection,
-/// PATH injection, and token-savings statistics via `rtk gain`.
+/// Manages the token optimization wrapper layer: script generation, optimizer
+/// binary installation, PATH injection, and token-savings statistics.
 ///
 /// ## Architecture
 ///
 /// 1. **Wrapper scripts** live in `~/.chau7/rtk_bin/` and shadow real binaries
 ///    via PATH prepend.
 /// 2. Each wrapper checks a **flag file** in `~/.chau7/rtk_active/<SESSION_ID>`.
-///    When active *and* the `rtk` binary is installed, commands in `rtkRewriteMap`
-///    are routed through `rtk <subcommand>` for token-optimized output.
-///    When `rtk` is absent, the real binary is exec'd directly (current behavior).
+///    When active, commands in `rtkRewriteMap` are routed through the built-in
+///    `chau7-optim` optimizer for token-optimized output. When the optimizer is
+///    absent, the real binary is exec'd directly.
 /// 3. `RTKFlagManager` controls flag file creation/removal based on the global
 ///    mode + per-tab override + AI detection state.
 ///
 /// ## Supported Commands
 ///
-/// With rtk routing: `cat`, `ls`, `find`, `tree`, `grep`, `rg`, `git`, `diff`,
-///                    `cargo`, `curl`, `docker`, `kubectl`
-/// Exec-only (no rtk subcommand): `head`, `tail`, `wc`
+/// Optimizer-routed: `cat`, `ls`, `find`, `tree`, `grep`, `rg`, `git`, `diff`,
+///                   `cargo`, `curl`, `docker`, `kubectl`
+/// Exec-only (no optimizer subcommand): `head`, `tail`, `wc`
 final class RTKManager {
 
     static let shared = RTKManager()
@@ -34,8 +34,8 @@ final class RTKManager {
     /// Directory for RTK data/config files.
     private let dataDir: URL
 
-    /// Maps shell command names to their `rtk` subcommand equivalents.
-    /// Commands in this map are routed through the `rtk` binary when active.
+    /// Maps shell command names to their optimizer subcommand equivalents.
+    /// Commands in this map are routed through `chau7-optim` when active.
     static let rtkRewriteMap: [String: String] = [
         "cat": "read",
         "ls": "ls",
@@ -51,7 +51,7 @@ final class RTKManager {
         "kubectl": "kubectl",
     ]
 
-    /// All commands that RTK provides wrappers for (rtk-routed + exec-only).
+    /// All commands that have wrapper scripts (optimizer-routed + exec-only).
     static let supportedCommands: [String] = [
         "cat", "ls", "find", "tree",
         "grep", "rg", "git", "diff",
@@ -59,7 +59,7 @@ final class RTKManager {
         "head", "tail", "wc",
     ]
 
-    /// Commands that are exec-only (no rtk subcommand mapping).
+    /// Commands that are exec-only (no optimizer subcommand mapping).
     static let execOnlyCommands: Set<String> = ["head", "tail", "wc"]
 
     private init() {
@@ -93,31 +93,55 @@ final class RTKManager {
         for command in Self.supportedCommands {
             installWrapper(for: command)
         }
+
+        // Auto-install bundled helper binaries
+        if let bundlePath = Bundle.main.url(forResource: "chau7-md", withExtension: nil) {
+            installMarkdownRenderer(from: bundlePath)
+        }
+        if let bundlePath = Bundle.main.url(forResource: "chau7-optim", withExtension: nil) {
+            installOptimizer(from: bundlePath)
+        }
     }
 
-    // MARK: - RTK Binary Detection
+    // MARK: - Optimizer Binary
 
-    /// Walks PATH to find the `rtk` binary, skipping our wrapper directory.
-    /// Returns the absolute path if found, nil otherwise.
-    func findRTKBinary() -> String? {
+    /// Path where the chau7-optim binary should be installed.
+    var optimizerPath: URL {
+        binDir.appendingPathComponent("chau7-optim")
+    }
+
+    /// Whether the optimizer binary is installed and executable.
+    var isOptimizerInstalled: Bool {
+        FileManager.default.isExecutableFile(atPath: optimizerPath.path)
+    }
+
+    /// Installs the chau7-optim binary from a source path to `~/.chau7/bin/`.
+    @discardableResult
+    func installOptimizer(from sourcePath: URL) -> Bool {
         let fm = FileManager.default
-        guard let pathEnv = ProcessInfo.processInfo.environment["PATH"] else { return nil }
-        let wrapperDir = wrapperBinDir.path
+        let dest = optimizerPath
 
-        for dir in pathEnv.split(separator: ":") {
-            let dirStr = String(dir)
-            if dirStr == wrapperDir { continue }
-            let candidate = (dirStr as NSString).appendingPathComponent("rtk")
-            if fm.isExecutableFile(atPath: candidate) {
-                return candidate
+        if !fm.fileExists(atPath: binDir.path) {
+            do {
+                try fm.createDirectory(at: binDir, withIntermediateDirectories: true)
+            } catch {
+                Log.error("RTKManager: failed to create bin dir: \(error)")
+                return false
             }
         }
-        return nil
-    }
 
-    /// Whether the `rtk` binary is discoverable in PATH.
-    var isRTKBinaryInstalled: Bool {
-        findRTKBinary() != nil
+        do {
+            if fm.fileExists(atPath: dest.path) {
+                try fm.removeItem(at: dest)
+            }
+            try fm.copyItem(at: sourcePath, to: dest)
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
+            Log.info("RTKManager: installed chau7-optim to \(dest.path)")
+            return true
+        } catch {
+            Log.error("RTKManager: failed to install chau7-optim: \(error)")
+            return false
+        }
     }
 
     // MARK: - Wrapper Scripts
@@ -147,41 +171,26 @@ final class RTKManager {
         return generateGenericWrapperScript(for: command)
     }
 
-    /// Generic wrapper: find real binary, check flag, route through rtk or exec.
+    /// Generic wrapper: find real binary, check flag, route through optimizer or exec.
     ///
     /// When RTK is active:
-    /// - If `rtk` binary exists AND command has a rewrite mapping → `exec rtk <subcommand> "$@"`
-    /// - If `rtk` not found or command is exec-only → `exec real_binary "$@"`
+    /// - If optimizer exists AND command has a rewrite mapping → `exec chau7-optim <subcommand> "$@"`
+    /// - If optimizer not found or command is exec-only → `exec real_binary "$@"`
     private func generateGenericWrapperScript(for command: String) -> String {
         let rtkSubcommand = Self.rtkRewriteMap[command]
 
-        // Shell block that finds the rtk binary (reused across wrappers)
-        let findRTKBlock: String
+        let optimizerBlock: String
         if let sub = rtkSubcommand {
-            findRTKBlock = """
+            optimizerBlock = """
 
-                    # Find rtk binary (skip our wrapper directory)
-                    _RTK_BIN=""
-                    _OLD_IFS2="$IFS"
-                    IFS=':'
-                    for _dir2 in $PATH; do
-                        if [ "$_dir2" = "$_RTK_WRAPPER_DIR" ]; then
-                            continue
-                        fi
-                        if [ -x "$_dir2/rtk" ]; then
-                            _RTK_BIN="$_dir2/rtk"
-                            break
-                        fi
-                    done
-                    IFS="$_OLD_IFS2"
-
-                    # Route through rtk if available
-                    if [ -n "$_RTK_BIN" ]; then
-                        exec "$_RTK_BIN" \(sub) "$@"
+                    # Route through built-in optimizer
+                    _CHAU7_OPTIM="$HOME/.chau7/bin/chau7-optim"
+                    if [ -x "$_CHAU7_OPTIM" ]; then
+                        exec "$_CHAU7_OPTIM" \(sub) "$@"
                     fi
             """
         } else {
-            findRTKBlock = ""
+            optimizerBlock = ""
         }
 
         return """
@@ -209,7 +218,7 @@ final class RTKManager {
         IFS="$_OLD_IFS"
 
         if [ -z "$_RTK_REAL_BIN" ]; then
-            echo "rtk: could not find real \(command) binary" >&2
+            echo "chau7: could not find real \(command) binary" >&2
             exit 127
         fi
 
@@ -218,7 +227,7 @@ final class RTKManager {
             exec "$_RTK_REAL_BIN" "$@"
         fi
 
-        # RTK is active\(findRTKBlock)
+        # RTK is active\(optimizerBlock)
 
         # Fallback: exec real binary
         exec "$_RTK_REAL_BIN" "$@"
@@ -227,13 +236,13 @@ final class RTKManager {
 
     /// Specialized `cat` wrapper:
     /// 1. Markdown files → chau7-md (when stdout is a terminal, no flags, all .md)
-    /// 2. Other files → `rtk read "$@"` (when rtk available)
+    /// 2. Other files → `chau7-optim read "$@"` (when optimizer available)
     /// 3. Fallback → real cat
     private func generateCatWrapperScript() -> String {
         return """
         #!/bin/bash
         # RTK wrapper for cat — generated by Chau7
-        # Renders markdown files with chau7-md, routes others through rtk read.
+        # Renders markdown files with chau7-md, routes others through chau7-optim read.
 
         _RTK_FLAG_DIR="$HOME/.chau7/rtk_active"
         _RTK_SESSION_FLAG="$_RTK_FLAG_DIR/$CHAU7_RTK_SESSION"
@@ -255,7 +264,7 @@ final class RTKManager {
         IFS="$_OLD_IFS"
 
         if [ -z "$_RTK_REAL_BIN" ]; then
-            echo "rtk: could not find real cat binary" >&2
+            echo "chau7: could not find real cat binary" >&2
             exit 127
         fi
 
@@ -300,23 +309,10 @@ final class RTKManager {
             fi
         fi
 
-        # Find rtk binary for non-markdown files
-        _RTK_BIN=""
-        _OLD_IFS2="$IFS"
-        IFS=':'
-        for _dir2 in $PATH; do
-            if [ "$_dir2" = "$_RTK_WRAPPER_DIR" ]; then
-                continue
-            fi
-            if [ -x "$_dir2/rtk" ]; then
-                _RTK_BIN="$_dir2/rtk"
-                break
-            fi
-        done
-        IFS="$_OLD_IFS2"
-
-        if [ -n "$_RTK_BIN" ]; then
-            exec "$_RTK_BIN" read "$@"
+        # Route through built-in optimizer for non-markdown files
+        _CHAU7_OPTIM="$HOME/.chau7/bin/chau7-optim"
+        if [ -x "$_CHAU7_OPTIM" ]; then
+            exec "$_CHAU7_OPTIM" read "$@"
         fi
 
         exec "$_RTK_REAL_BIN" "$@"
@@ -383,7 +379,7 @@ final class RTKManager {
         let command: String
         let isInstalled: Bool
         let isExecutable: Bool
-        /// Whether this command routes through `rtk` (vs exec-only).
+        /// Whether this command routes through the optimizer (vs exec-only).
         let hasRTKRoute: Bool
         var id: String { command }
     }
@@ -412,7 +408,7 @@ final class RTKManager {
 
     // MARK: - RTK Gain Statistics
 
-    /// Token savings data returned by `rtk gain --format json`.
+    /// Token savings data returned by `chau7-optim gain --format json`.
     struct RTKGainStats: Codable, Equatable {
         let commands: Int
         let inputTokens: Int
@@ -423,23 +419,28 @@ final class RTKManager {
         let avgTimeMs: Int
 
         enum CodingKeys: String, CodingKey {
-            case commands
-            case inputTokens = "input_tokens"
-            case outputTokens = "output_tokens"
-            case savedTokens = "saved_tokens"
-            case savingsPct = "savings_pct"
+            case commands = "total_commands"
+            case inputTokens = "total_input"
+            case outputTokens = "total_output"
+            case savedTokens = "total_saved"
+            case savingsPct = "avg_savings_pct"
             case totalTimeMs = "total_time_ms"
             case avgTimeMs = "avg_time_ms"
         }
     }
 
-    /// Fetches aggregated token savings from `rtk gain --format json`.
-    /// Returns nil if rtk is not installed or the command fails.
+    /// Wrapper for the JSON envelope from `chau7-optim gain --format json`.
+    private struct GainResponse: Codable {
+        let summary: RTKGainStats
+    }
+
+    /// Fetches aggregated token savings from `chau7-optim gain --format json`.
+    /// Returns nil if the optimizer is not installed or the command fails.
     func fetchGainStats() async -> RTKGainStats? {
-        guard let rtkPath = findRTKBinary() else { return nil }
+        guard isOptimizerInstalled else { return nil }
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: rtkPath)
+        process.executableURL = optimizerPath
         process.arguments = ["gain", "--format", "json"]
 
         let pipe = Pipe()
@@ -449,7 +450,7 @@ final class RTKManager {
         do {
             try process.run()
         } catch {
-            Log.error("RTKManager: failed to run rtk gain: \(error)")
+            Log.error("RTKManager: failed to run chau7-optim gain: \(error)")
             return nil
         }
 
@@ -459,10 +460,10 @@ final class RTKManager {
         guard process.terminationStatus == 0, !data.isEmpty else { return nil }
 
         do {
-            let stats = try JSONDecoder().decode(RTKGainStats.self, from: data)
-            return stats
+            let response = try JSONDecoder().decode(GainResponse.self, from: data)
+            return response.summary
         } catch {
-            Log.error("RTKManager: failed to decode rtk gain output: \(error)")
+            Log.error("RTKManager: failed to decode chau7-optim gain output: \(error)")
             return nil
         }
     }
