@@ -105,56 +105,6 @@ pub fn format_tokens(n: usize) -> String {
     }
 }
 
-/// Formate un montant USD avec précision adaptée.
-///
-/// # Arguments
-/// * `amount` - Montant en dollars
-///
-/// # Returns
-/// String formaté avec $ prefix
-///
-/// # Examples
-/// ```
-/// use rtk::utils::format_usd;
-/// assert_eq!(format_usd(1234.567), "$1234.57");
-/// assert_eq!(format_usd(12.345), "$12.35");
-/// assert_eq!(format_usd(0.123), "$0.12");
-/// assert_eq!(format_usd(0.0096), "$0.0096");
-/// ```
-pub fn format_usd(amount: f64) -> String {
-    if !amount.is_finite() {
-        return "$0.00".to_string();
-    }
-    if amount >= 0.01 {
-        format!("${:.2}", amount)
-    } else {
-        format!("${:.4}", amount)
-    }
-}
-
-/// Format cost-per-token as $/MTok (e.g., "$3.86/MTok")
-///
-/// # Arguments
-/// * `cpt` - Cost per token (not per million tokens)
-///
-/// # Returns
-/// Formatted string like "$3.86/MTok"
-///
-/// # Examples
-/// ```
-/// use rtk::utils::format_cpt;
-/// assert_eq!(format_cpt(0.000003), "$3.00/MTok");
-/// assert_eq!(format_cpt(0.0000038), "$3.80/MTok");
-/// assert_eq!(format_cpt(0.00000386), "$3.86/MTok");
-/// ```
-pub fn format_cpt(cpt: f64) -> String {
-    if !cpt.is_finite() || cpt <= 0.0 {
-        return "$0.00/MTok".to_string();
-    }
-    let cpt_per_million = cpt * 1_000_000.0;
-    format!("${:.2}/MTok", cpt_per_million)
-}
-
 /// Format a confirmation message: "ok \<action\> \<detail\>"
 /// Used for write operations (merge, create, comment, edit, etc.)
 ///
@@ -312,30 +262,6 @@ mod tests {
     }
 
     #[test]
-    fn test_format_usd_large() {
-        assert_eq!(format_usd(1234.567), "$1234.57");
-        assert_eq!(format_usd(1000.0), "$1000.00");
-    }
-
-    #[test]
-    fn test_format_usd_medium() {
-        assert_eq!(format_usd(12.345), "$12.35");
-        assert_eq!(format_usd(0.99), "$0.99");
-    }
-
-    #[test]
-    fn test_format_usd_small() {
-        assert_eq!(format_usd(0.0096), "$0.0096");
-        assert_eq!(format_usd(0.0001), "$0.0001");
-    }
-
-    #[test]
-    fn test_format_usd_edge() {
-        assert_eq!(format_usd(0.01), "$0.01");
-        assert_eq!(format_usd(0.009), "$0.0090");
-    }
-
-    #[test]
     fn test_ok_confirmation_with_detail() {
         assert_eq!(ok_confirmation("merged", "#42"), "ok merged #42");
         assert_eq!(
@@ -347,21 +273,6 @@ mod tests {
     #[test]
     fn test_ok_confirmation_no_detail() {
         assert_eq!(ok_confirmation("commented", ""), "ok commented");
-    }
-
-    #[test]
-    fn test_format_cpt_normal() {
-        assert_eq!(format_cpt(0.000003), "$3.00/MTok");
-        assert_eq!(format_cpt(0.0000038), "$3.80/MTok");
-        assert_eq!(format_cpt(0.00000386), "$3.86/MTok");
-    }
-
-    #[test]
-    fn test_format_cpt_edge_cases() {
-        assert_eq!(format_cpt(0.0), "$0.00/MTok"); // zero
-        assert_eq!(format_cpt(-0.000001), "$0.00/MTok"); // negative
-        assert_eq!(format_cpt(f64::INFINITY), "$0.00/MTok"); // infinite
-        assert_eq!(format_cpt(f64::NAN), "$0.00/MTok"); // NaN
     }
 
     #[test]

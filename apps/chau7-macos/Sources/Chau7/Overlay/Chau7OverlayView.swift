@@ -183,13 +183,6 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
             height = OverlayLayout.tabBarHeight
         }
 
-        // NSToolbar's layout engine uses minSize/maxSize on the ITEM (not Auto Layout
-        // constraints on the view) to decide how much space to give a toolbar item.
-        // Without these, the toolbar asks the view for its fittingSize, which returns
-        // the SwiftUI minimum (180px) — causing the tab bar to stay tiny after refresh.
-        item.minSize = NSSize(width: minWidth, height: height)
-        item.maxSize = NSSize(width: maxWidth, height: height)
-
         guard let view = item.view as? TabBarHostingView else { return }
         view.desiredSize = NSSize(width: maxWidth, height: height)
 
