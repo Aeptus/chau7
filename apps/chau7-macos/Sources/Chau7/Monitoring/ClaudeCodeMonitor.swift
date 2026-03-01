@@ -3,7 +3,7 @@ import Chau7Core
 
 // MARK: - Claude Code Monitor
 
-/// Monitors Claude Code events via hooks and provides real-time updates.
+/// Monitors Claude Code events and provides real-time updates.
 /// - Note: Thread Safety - @Published properties must be modified on main thread.
 ///   Background callbacks dispatch to main via DispatchQueue.main.async.
 final class ClaudeCodeMonitor: ObservableObject {
@@ -337,16 +337,4 @@ final class ClaudeCodeMonitor: ObservableObject {
 
     // MARK: - Utilities
 
-    /// Check if hook script is installed
-    static var isHookInstalled: Bool {
-        let hookPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".chau7/hooks/claude-notify.sh").path
-        return FileManager.default.isExecutableFile(atPath: hookPath)
-    }
-
-    /// Get the hook command for settings.json
-    static var hookCommand: String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return "\(home)/.chau7/hooks/claude-notify.sh"
-    }
 }

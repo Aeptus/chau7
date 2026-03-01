@@ -200,15 +200,19 @@ final class TokenOptimizationTests: XCTestCase {
 
     func testSupportedCommandsList() {
         let commands = RTKManager.supportedCommands
-        XCTAssertTrue(commands.count >= 15,
-                      "There should be at least 15 supported commands, got \(commands.count)")
+        XCTAssertTrue(commands.count >= 30,
+                      "There should be at least 30 supported commands, got \(commands.count)")
 
         // Core commands
-        for cmd in ["cat", "ls", "find", "tree", "head", "tail", "wc"] {
+        for cmd in ["cat", "ls", "find", "tree", "head", "tail", "wc", "rg"] {
             XCTAssertTrue(commands.contains(cmd), "\(cmd) should be a supported command")
         }
+
         // Expanded rtk-routed commands
-        for cmd in ["grep", "rg", "git", "diff", "cargo", "curl", "docker", "kubectl"] {
+        for cmd in ["grep", "git", "diff", "cargo", "curl", "docker", "kubectl", "gh",
+                    "pnpm", "wget", "npm", "npx", "vitest", "prisma", "tsc", "next",
+                    "lint", "prettier", "format", "playwright", "ruff", "pytest",
+                    "pip", "go", "golangci-lint"] {
             XCTAssertTrue(commands.contains(cmd), "\(cmd) should be a supported command")
         }
     }
@@ -231,13 +235,31 @@ final class TokenOptimizationTests: XCTestCase {
             "find": "find",
             "tree": "tree",
             "grep": "grep",
-            "rg": "grep",
+            "rg": "rg",
             "git": "git",
             "diff": "diff",
             "cargo": "cargo",
             "curl": "curl",
             "docker": "docker",
             "kubectl": "kubectl",
+            "gh": "gh",
+            "pnpm": "pnpm",
+            "wget": "wget",
+            "npm": "npm",
+            "npx": "npx",
+            "vitest": "vitest",
+            "prisma": "prisma",
+            "tsc": "tsc",
+            "next": "next",
+            "lint": "lint",
+            "prettier": "prettier",
+            "format": "format",
+            "playwright": "playwright",
+            "ruff": "ruff",
+            "pytest": "pytest",
+            "pip": "pip",
+            "go": "go",
+            "golangci-lint": "golangci-lint",
         ]
 
         XCTAssertEqual(map.count, expectedMappings.count,

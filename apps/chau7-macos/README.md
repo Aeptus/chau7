@@ -9,7 +9,7 @@ Chau7 is a macOS menu bar helper and floating terminal overlay built for AI-assi
 - Multi-tab SwiftTerm overlay with rename, colors, last-command badges, and git branch indicator.
 - Command palette, search overlay (regex + case sensitivity), snippets, clipboard history, bookmarks, and broadcast input.
 - AI CLI detection with auto tab theming and custom detection rules.
-- Claude Code hook monitoring with permission and response-complete alerts.
+- Claude Code event monitoring with permission and response-complete alerts.
 - SSH connection manager with jump hosts and import from `~/.ssh/config`.
 
 For a complete feature inventory, see `docs/FEATURES.md`:
