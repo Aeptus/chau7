@@ -28,7 +28,7 @@ This ensures RTK **never returns false data silently** while maintaining maximum
                       │
 ┌─────────────────────▼───────────────────────────────────┐
 │                  Canonical Types                         │
-│  TestResult, LintResult, DependencyState, BuildOutput   │
+│  TestResult, DependencyState                          │
 └─────────────────────┬───────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────┐
@@ -124,20 +124,10 @@ For test runners (vitest, playwright, jest, etc.)
 - Fields: `total`, `passed`, `failed`, `skipped`, `duration_ms`, `failures`
 - Formatter: Shows summary + failure details (compact: top 5, verbose: all)
 
-### LintResult
-For linters (eslint, biome, tsc, etc.)
-- Fields: `total_files`, `files_with_issues`, `total_issues`, `errors`, `warnings`, `issues`
-- Formatter: Groups by rule_id, shows top violations
-
 ### DependencyState
 For package managers (pnpm, npm, cargo, etc.)
 - Fields: `total_packages`, `outdated_count`, `dependencies`
 - Formatter: Shows upgrade paths (current → latest)
-
-### BuildOutput
-For build tools (next, webpack, vite, cargo, etc.)
-- Fields: `success`, `duration_ms`, `bundles`, `routes`, `warnings`, `errors`
-- Formatter: Shows bundle sizes, route metrics
 
 ## Format Modes
 
@@ -158,14 +148,13 @@ For build tools (next, webpack, vite, cargo, etc.)
 
 ## Error Handling
 
-### ParseError Types
-- `JsonError`: Line/column context for debugging
-- `PatternMismatch`: Regex pattern failed
-- `PartialParse`: Some fields missing
-- `InvalidFormat`: Unexpected structure
-- `MissingField`: Required field absent
-- `VersionMismatch`: Tool version incompatible
-- `EmptyOutput`: No data to parse
+### Parse Failure Handling
+
+`serde_json` failures and schema mismatches are handled via the parser tier fallback:
+
+- Tier 1 keeps full structured output when parsing succeeds.
+- Tier 2 emits partial/regex output with warning messages.
+- Tier 3 falls back to passthrough with truncated raw output.
 
 ### Degradation Warnings
 
@@ -229,16 +218,14 @@ echo '{"testResults": [...]}' | cargo run -- vitest parse
 fn test_vitest_json_parsing() {
     let json = include_str!("fixtures/vitest-v1.json");
     let result = VitestParser::parse(json);
-    assert_eq!(result.tier(), 1); // Full parse
-    assert!(result.is_ok());
+    assert!(matches!(result, ParseResult::Full(_)));
 }
 
 #[test]
 fn test_vitest_regex_fallback() {
     let text = "Test Files  2 passed (2)\n Tests  13 passed (13)";
     let result = VitestParser::parse(text);
-    assert_eq!(result.tier(), 2); // Degraded
-    assert!(!result.warnings().is_empty());
+    assert!(matches!(result, ParseResult::Degraded(_, warnings) if !warnings.is_empty()));
 }
 ```
 
