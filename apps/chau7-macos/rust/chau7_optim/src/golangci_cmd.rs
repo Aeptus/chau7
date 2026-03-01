@@ -9,18 +9,12 @@ use std::process::Command;
 struct Position {
     #[serde(rename = "Filename")]
     filename: String,
-    #[serde(rename = "Line")]
-    line: usize,
-    #[serde(rename = "Column")]
-    column: usize,
 }
 
 #[derive(Debug, Deserialize)]
 struct Issue {
     #[serde(rename = "FromLinter")]
     from_linter: String,
-    #[serde(rename = "Text")]
-    text: String,
     #[serde(rename = "Pos")]
     pos: Position,
 }

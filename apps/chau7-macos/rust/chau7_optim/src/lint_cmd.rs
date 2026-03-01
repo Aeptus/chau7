@@ -32,16 +32,8 @@ struct EslintResult {
 struct PylintDiagnostic {
     #[serde(rename = "type")]
     msg_type: String, // "warning", "error", "convention", "refactor"
-    #[allow(dead_code)]
-    module: String,
-    #[allow(dead_code)]
-    obj: String,
-    line: usize,
-    #[allow(dead_code)]
-    column: usize,
     path: String,
     symbol: String, // rule code like "unused-variable"
-    message: String,
     #[serde(rename = "message-id")]
     message_id: String, // e.g., "W0612"
 }
