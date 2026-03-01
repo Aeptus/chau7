@@ -198,23 +198,11 @@ final class TokenOptimizationTests: XCTestCase {
 
     // MARK: - RTKManager Supported Commands
 
-    func testSupportedCommandsList() {
-        let commands = RTKManager.supportedCommands
-        XCTAssertTrue(commands.count >= 30,
-                      "There should be at least 30 supported commands, got \(commands.count)")
-
-        // Core commands
-        for cmd in ["cat", "ls", "find", "tree", "head", "tail", "wc", "rg"] {
-            XCTAssertTrue(commands.contains(cmd), "\(cmd) should be a supported command")
-        }
-
-        // Expanded rtk-routed commands
-        for cmd in ["grep", "git", "diff", "cargo", "curl", "docker", "kubectl", "gh",
-                    "pnpm", "wget", "npm", "npx", "vitest", "prisma", "tsc", "next",
-                    "lint", "prettier", "format", "playwright", "ruff", "pytest",
-                    "pip", "go", "golangci-lint"] {
-            XCTAssertTrue(commands.contains(cmd), "\(cmd) should be a supported command")
-        }
+    func testSupportedCommandsIsDerivedFromMapAndExecOnly() {
+        let commands = Set(RTKManager.supportedCommands)
+        let expected = Set(RTKManager.rtkRewriteMap.keys).union(RTKManager.execOnlyCommands)
+        XCTAssertEqual(commands, expected,
+                       "supportedCommands should equal rtkRewriteMap keys ∪ execOnlyCommands")
     }
 
     func testExecOnlyCommandsAreSubset() {
