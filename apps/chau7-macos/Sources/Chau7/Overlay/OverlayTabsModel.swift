@@ -143,6 +143,23 @@ struct OverlayTab: Identifiable, Equatable {
         return RTKFlagManager.shouldBeActive(mode: mode, override: tokenOptOverride, isAIActive: isAI)
     }
 
+    /// Visual state for optimizer tab badge: nil = hidden, true = active override, false = inactive override.
+    /// Only non-nil when this tab deviates from its mode's default behavior.
+    var optimizerOverrideState: Bool? {
+        let mode = FeatureSettings.shared.tokenOptimizationMode
+        switch mode {
+        case .off: return nil
+        case .allTabs:  return tokenOptOverride == .forceOff ? false : nil
+        case .manual:   return tokenOptOverride == .forceOn ? true : nil
+        case .aiOnly:
+            switch tokenOptOverride {
+            case .forceOn:  return true
+            case .forceOff: return false
+            case .default:  return nil
+            }
+        }
+    }
+
     static func == (lhs: OverlayTab, rhs: OverlayTab) -> Bool {
         lhs.id == rhs.id
             && lhs.tokenOptOverride == rhs.tokenOptOverride

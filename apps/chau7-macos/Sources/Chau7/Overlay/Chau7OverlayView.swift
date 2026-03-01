@@ -1061,21 +1061,43 @@ struct UnifiedTabButton: View {
                         .foregroundStyle(.orange)
                 }
 
-                // RTK: Token optimization indicator
+                // RTK: Token optimization indicator (exception-only badge)
                 if FeatureSettings.shared.showTabRTKIndicator
                     && FeatureSettings.shared.tokenOptimizationMode != .off {
-                    Button(action: { onToggleTokenOpt?() }) {
-                        Image(systemName: tab.isTokenOptActive ? "bolt.fill" : "bolt.slash")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(tab.isTokenOptActive ? .yellow : .secondary)
+                    if let overrideState = tab.optimizerOverrideState {
+                        Button(action: { onToggleTokenOpt?() }) {
+                            if overrideState {
+                                Image(systemName: "wand.and.stars")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(.yellow)
+                            } else {
+                                ZStack {
+                                    Image(systemName: "wand.and.stars")
+                                    Rectangle()
+                                        .frame(width: 1.5, height: 14)
+                                        .rotationEffect(.degrees(-45))
+                                }
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.red)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .help(overrideState
+                            ? L("rtk.tab.active", "Token optimization active (click to toggle)")
+                            : L("rtk.tab.inactive", "Token optimization inactive (click to toggle)"))
+                        .accessibilityLabel(overrideState
+                            ? L("rtk.tab.a11y.active", "Token optimization on")
+                            : L("rtk.tab.a11y.inactive", "Token optimization off"))
+                    } else {
+                        // Invisible tap target so toggle still works on default-state tabs
+                        Button(action: { onToggleTokenOpt?() }) {
+                            Color.clear.frame(width: 14, height: 14)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(L("rtk.tab.toggle", "Click to override token optimization for this tab"))
+                        .accessibilityLabel(L("rtk.tab.a11y.default", "Token optimization default"))
                     }
-                    .buttonStyle(.plain)
-                    .help(tab.isTokenOptActive
-                        ? L("rtk.tab.active", "Token optimization active (click to toggle)")
-                        : L("rtk.tab.inactive", "Token optimization inactive (click to toggle)"))
-                    .accessibilityLabel(tab.isTokenOptActive
-                        ? L("rtk.tab.a11y.active", "Token optimization on")
-                        : L("rtk.tab.a11y.inactive", "Token optimization off"))
                 }
 
                 // Git indicator — observed via TabSessionContent, keep fallback here

@@ -42,7 +42,7 @@ struct TokenOptimizationSettingsView: View {
                     .padding(.vertical, 8)
 
                 // Input Prefix
-                SettingsSectionHeader(L("rtk.settings.prefix", "Input Prefix"), icon: "bolt.fill")
+                SettingsSectionHeader(L("rtk.settings.prefix", "Input Prefix"), icon: "wand.and.stars")
 
                 SettingsToggle(
                     label: L("settings.ai.rtk.enabled", "Enable Input Prefix"),
@@ -188,8 +188,8 @@ struct TokenOptimizationSettingsView: View {
 
     private func modeIcon(for mode: TokenOptimizationMode) -> String {
         switch mode {
-        case .off: return "bolt.slash"
-        case .allTabs: return "bolt.fill"
+        case .off: return "wand.and.stars"
+        case .allTabs: return "wand.and.stars"
         case .aiOnly: return "sparkles"
         case .manual: return "hand.tap"
         }
@@ -209,11 +209,11 @@ struct TokenOptimizationSettingsView: View {
         case .off:
             return ""
         case .allTabs:
-            return L("rtk.mode.allTabs.detail", "Every tab shows a bolt icon. Click it to opt out a specific tab.")
+            return L("rtk.mode.allTabs.detail", "All tabs optimized by default. A red wand badge appears on tabs you opt out.")
         case .aiOnly:
-            return L("rtk.mode.aiOnly.detail", "The bolt icon appears when an AI CLI (Claude Code, Codex, etc.) is detected. Click to force on/off per tab.")
+            return L("rtk.mode.aiOnly.detail", "AI tabs auto-optimize. Yellow wand when you force a tab on, red wand when you force off.")
         case .manual:
-            return L("rtk.mode.manual.detail", "No tabs are optimized by default. Click the bolt icon on any tab to opt in.")
+            return L("rtk.mode.manual.detail", "No tabs optimized by default. A yellow wand badge appears on tabs you opt in.")
         }
     }
 
@@ -454,36 +454,36 @@ struct TokenOptimizationSettingsView: View {
                 EmptyView()
             case .allTabs:
                 infoRow(
-                    icon: "bolt.fill",
+                    icon: "wand.and.stars",
                     iconColor: .yellow,
-                    text: L("rtk.perTab.allTabs.default", "All tabs are optimized by default")
+                    text: L("rtk.perTab.allTabs.default", "All tabs optimized by default — no badge shown")
                 )
                 infoRow(
-                    icon: "bolt.slash",
-                    iconColor: .secondary,
-                    text: L("rtk.perTab.allTabs.optOut", "Click the bolt to opt out a specific tab")
+                    icon: "wand.and.stars",
+                    iconColor: .red,
+                    text: L("rtk.perTab.allTabs.optOut", "Red wand appears on tabs you opt out")
                 )
             case .aiOnly:
                 infoRow(
-                    icon: "bolt.fill",
+                    icon: "wand.and.stars",
                     iconColor: .yellow,
-                    text: L("rtk.perTab.aiOnly.detected", "Bolt appears when AI CLI is detected")
+                    text: L("rtk.perTab.aiOnly.detected", "Yellow wand when you force a tab on")
                 )
                 infoRow(
-                    icon: "hand.tap",
-                    iconColor: .blue,
-                    text: L("rtk.perTab.aiOnly.cycle", "Click cycles: auto -> force off -> force on -> auto")
+                    icon: "wand.and.stars",
+                    iconColor: .red,
+                    text: L("rtk.perTab.aiOnly.cycle", "Red wand when you force a tab off")
                 )
             case .manual:
                 infoRow(
-                    icon: "bolt.slash",
-                    iconColor: .secondary,
-                    text: L("rtk.perTab.manual.default", "No tabs are optimized by default")
+                    icon: "wand.and.stars",
+                    iconColor: .yellow,
+                    text: L("rtk.perTab.manual.optIn", "Yellow wand appears on tabs you opt in")
                 )
                 infoRow(
-                    icon: "bolt.fill",
-                    iconColor: .yellow,
-                    text: L("rtk.perTab.manual.optIn", "Click the bolt to opt in a specific tab")
+                    icon: "wand.and.stars",
+                    iconColor: .secondary,
+                    text: L("rtk.perTab.manual.default", "No badge on tabs following the default")
                 )
             }
         }
