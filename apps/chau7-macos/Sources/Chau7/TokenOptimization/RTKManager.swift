@@ -19,10 +19,10 @@ import Foundation
 /// ## Supported Commands
 ///
 /// Optimizer-routed: `cat`, `ls`, `find`, `tree`, `grep`, `rg`, `git`, `diff`,
-///                   `rg`, `cargo`, `curl`, `docker`, `kubectl`, `gh`,
-///                   `pnpm`, `wget`, `npm`, `npx`, `vitest`, `prisma`, `tsc`,
-///                   `next`, `lint`, `prettier`, `format`, `playwright`,
-///                   `ruff`, `pytest`, `pip`, `go`, `golangci-lint`
+///                   `cargo`, `curl`, `docker`, `kubectl`, `gh`, `pnpm`, `wget`,
+///                   `npm`, `npx`, `vitest`, `prisma`, `tsc`, `next`, `lint`,
+///                   `prettier`, `format`, `playwright`, `ruff`, `pytest`, `pip`,
+///                   `go`, `golangci-lint`
 /// Exec-only (no optimizer subcommand): `head`, `tail`, `wc`
 final class RTKManager {
 
@@ -73,13 +73,9 @@ final class RTKManager {
     ]
 
     /// All commands that have wrapper scripts (optimizer-routed + exec-only).
-    static let supportedCommands: [String] = [
-        "cat", "cargo", "curl", "diff", "docker", "find", "format", "gh",
-        "git", "go", "golangci-lint", "grep", "head", "kubectl", "lint",
-        "ls", "next", "npm", "npx", "playwright", "pip", "pnpm", "prettier",
-        "prisma", "pytest", "rg", "ruff", "tail", "tree", "tsc", "vitest",
-        "wc", "wget"
-    ]
+    static let supportedCommands: [String] = {
+        (Array(rtkRewriteMap.keys) + Array(execOnlyCommands)).sorted()
+    }()
 
     /// Commands that are exec-only (no optimizer subcommand mapping).
     static let execOnlyCommands: Set<String> = ["head", "tail", "wc"]

@@ -335,6 +335,4 @@ final class ClaudeCodeMonitor: ObservableObject {
             .first?.id
     }
 
-    // MARK: - Utilities
-
 }
