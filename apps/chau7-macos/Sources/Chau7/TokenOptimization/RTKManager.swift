@@ -19,7 +19,10 @@ import Foundation
 /// ## Supported Commands
 ///
 /// Optimizer-routed: `cat`, `ls`, `find`, `tree`, `grep`, `rg`, `git`, `diff`,
-///                   `cargo`, `curl`, `docker`, `kubectl`
+///                   `rg`, `cargo`, `curl`, `docker`, `kubectl`, `gh`,
+///                   `pnpm`, `wget`, `npm`, `npx`, `vitest`, `prisma`, `tsc`,
+///                   `next`, `lint`, `prettier`, `format`, `playwright`,
+///                   `ruff`, `pytest`, `pip`, `go`, `golangci-lint`
 /// Exec-only (no optimizer subcommand): `head`, `tail`, `wc`
 final class RTKManager {
 
@@ -42,21 +45,40 @@ final class RTKManager {
         "find": "find",
         "tree": "tree",
         "grep": "grep",
-        "rg": "grep",
+        "rg": "rg",
         "git": "git",
         "diff": "diff",
         "cargo": "cargo",
         "curl": "curl",
         "docker": "docker",
         "kubectl": "kubectl",
+        "gh": "gh",
+        "pnpm": "pnpm",
+        "wget": "wget",
+        "npm": "npm",
+        "npx": "npx",
+        "vitest": "vitest",
+        "prisma": "prisma",
+        "tsc": "tsc",
+        "next": "next",
+        "lint": "lint",
+        "prettier": "prettier",
+        "format": "format",
+        "playwright": "playwright",
+        "ruff": "ruff",
+        "pytest": "pytest",
+        "pip": "pip",
+        "go": "go",
+        "golangci-lint": "golangci-lint",
     ]
 
     /// All commands that have wrapper scripts (optimizer-routed + exec-only).
     static let supportedCommands: [String] = [
-        "cat", "ls", "find", "tree",
-        "grep", "rg", "git", "diff",
-        "cargo", "curl", "docker", "kubectl",
-        "head", "tail", "wc",
+        "cat", "cargo", "curl", "diff", "docker", "find", "format", "gh",
+        "git", "go", "golangci-lint", "grep", "head", "kubectl", "lint",
+        "ls", "next", "npm", "npx", "playwright", "pip", "pnpm", "prettier",
+        "prisma", "pytest", "rg", "ruff", "tail", "tree", "tsc", "vitest",
+        "wc", "wget"
     ]
 
     /// Commands that are exec-only (no optimizer subcommand mapping).
@@ -270,6 +292,11 @@ final class RTKManager {
 
         # No RTK session → pass through
         if [ -z "$CHAU7_RTK_SESSION" ] || [ ! -f "$_RTK_SESSION_FLAG" ]; then
+            exec "$_RTK_REAL_BIN" "$@"
+        fi
+
+        # Cat with no args may read from stdin (e.g. pipes); avoid read-optimizer path.
+        if [ "$#" -eq 0 ]; then
             exec "$_RTK_REAL_BIN" "$@"
         fi
 

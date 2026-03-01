@@ -1,13 +1,13 @@
 # Monitoring
 
-Real-time monitoring of Claude Code hooks, dev servers, file changes, and shell events.
+Real-time monitoring of Claude Code events, dev servers, file changes, and shell events.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `ClaudeCodeEvent.swift` | Event types and model for Claude Code hook events (prompts, tools, permissions) |
-| `ClaudeCodeMonitor.swift` | Monitors Claude Code events via hooks and tracks active sessions |
+| `ClaudeCodeMonitor.swift` | Monitors Claude Code events and tracks active sessions |
 | `DevServerMonitor.swift` | Detects running dev servers by port scanning and command pattern matching |
 | `FileMonitor.swift` | Low-level file system watcher using GCD dispatch sources (O_EVTONLY) |
 | `HistoryIdleMonitor.swift` | Tracks session idle/active/closed states from history file entries |

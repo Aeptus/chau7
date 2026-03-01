@@ -195,7 +195,7 @@ Chau7 is a macOS menu bar helper and terminal overlay built for AI-assisted CLI 
 | AI event log | `~/.ai-events.log` |
 | Claude history log | `~/.claude/history.jsonl` |
 | Codex history log | `~/.codex/history.jsonl` |
-| Claude Code hook events | `~/.chau7/claude-events.jsonl` |
+| Claude Code events | `~/.chau7/claude-events.jsonl` |
 | App log | `~/Library/Logs/Chau7.log` |
 | Codex PTY log | `~/Library/Logs/Chau7/codex-pty.log` |
 | Claude PTY log | `~/Library/Logs/Chau7/claude-pty.log` |

@@ -916,7 +916,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         claudeTerminalTailer = nil
     }
 
-    // MARK: - Claude Code Integration (Hooks-based)
+    // MARK: - Claude Code Integration
 
     private func startClaudeCodeMonitor() {
         let monitor = ClaudeCodeMonitor.shared
@@ -943,13 +943,6 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
         // Initial sync
         syncClaudeCodeSessions()
-
-        if ClaudeCodeMonitor.isHookInstalled {
-            Log.info("Claude Code monitor started. Hook installed at ~/.chau7/hooks/claude-notify.sh")
-        } else {
-            Log.warn("Claude Code hook not installed. Run: chmod +x ~/.chau7/hooks/claude-notify.sh")
-            Log.info("Then add to ~/.claude/settings.json under 'hooks'")
-        }
     }
 
     private func syncClaudeCodeSessions() {
