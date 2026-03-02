@@ -91,6 +91,10 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     /// Whether the shell is at a prompt (not running a command). Used by history key monitor.
     @Published var isAtPrompt: Bool = true
 
+    /// Set to true when no PTY output arrives within the startup timeout (shell may be hung).
+    /// Cleared automatically on first output.
+    @Published var shellStartupSlow: Bool = false
+
     // MARK: - Latency Telemetry (non-Published for performance)
     // These change on every keystroke. Keeping them as @Published would cause
     // SwiftUI to trigger updateNSView on every keystroke, adding unnecessary overhead.
@@ -411,6 +415,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     }
 
     func handleOutput(_ data: Data) {
+        if shellStartupSlow { shellStartupSlow = false }
+
         // Fix #6: Split output processing - light work inline, heavy work on background queue
         let outputToken = FeatureProfiler.shared.begin(.outputProcessing, bytes: data.count)
         let now = Date()
