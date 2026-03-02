@@ -274,6 +274,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.onOutput = { [weak model] data in
             model?.handleOutput(data)
         }
+        view.onShellStartupSlow = { [weak model] in
+            model?.shellStartupSlow = true
+        }
         view.onBufferChanged = { [weak model] in
             model?.scheduleSearchRefresh()
             model?.highlightView?.scheduleDisplay()

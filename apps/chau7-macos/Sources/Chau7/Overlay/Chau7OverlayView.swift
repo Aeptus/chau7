@@ -716,6 +716,15 @@ struct Chau7OverlayView: View {
                 }
             }
 
+            // MARK: - Shell Startup Slow Indicator
+            ForEach(overlayModel.tabs) { tab in
+                let isSelected = tab.id == overlayModel.selectedTabID
+                if isSelected, let session = tab.session {
+                    ShellStartupSlowIndicator(session: session)
+                        .zIndex(4)
+                }
+            }
+
             // MARK: - Tab Switch Optimization: Lazy Tab Loading + Directional Motion
             // Only keep nearby tabs (selected ± 1, previous ± 1) in full view hierarchy.
             // This ensures smooth transitions even when jumping between distant tabs.
@@ -927,6 +936,34 @@ private struct ShortcutHelperHintView: View {
         self.label = label
         self.shortcut = shortcut
         self.accessibilityHint = accessibilityHint
+    }
+}
+
+/// Displayed when the shell takes >5s to produce its first PTY output.
+/// Uses @ObservedObject so SwiftUI observes shellStartupSlow changes
+/// (OverlayTab is Equatable by id only, so ForEach won't re-diff on session changes).
+private struct ShellStartupSlowIndicator: View {
+    @ObservedObject var session: TerminalSessionModel
+
+    var body: some View {
+        if session.shellStartupSlow {
+            VStack {
+                Spacer()
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Shell initializing\u{2026}")
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                Spacer()
+            }
+            .transition(.opacity)
+            .animation(.easeInOut(duration: 0.3), value: session.shellStartupSlow)
+        }
     }
 }
 

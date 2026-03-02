@@ -1882,6 +1882,9 @@ final class RustTerminalView: NSView {
     /// Callback when current directory changes (OSC 7)
     var onDirectoryChanged: ((String) -> Void)?
 
+    /// Callback when shell produces no PTY output within the startup timeout
+    var onShellStartupSlow: (() -> Void)?
+
     /// Current working directory
     var currentDirectory: String = FileManager.default.homeDirectoryForCurrentUser.path
 
@@ -1973,6 +1976,9 @@ final class RustTerminalView: NSView {
 
     /// Track startup bytes for debugging
     private var startupBytesLogged: Int = 0
+
+    /// One-shot timer that fires onShellStartupSlow if no PTY output arrives
+    private var shellStartupTimeoutWork: DispatchWorkItem?
 
     /// Terminal dimensions
     private var cols: Int = 80
@@ -2336,6 +2342,16 @@ final class RustTerminalView: NSView {
         // Start polling loop now that terminal exists
         setupPollingLoop()
 
+        // Schedule a one-shot timeout: if no PTY output arrives within 5 seconds,
+        // notify the UI so it can show a "shell initializing" indicator.
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.startupBytesLogged == 0 else { return }
+            Log.warn("RustTerminalView[\(self.viewId)]: No PTY output after 5s — shell may be hung")
+            self.onShellStartupSlow?()  // Already on main queue
+        }
+        shellStartupTimeoutWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: work)
+
         Log.info("RustTerminalView[\(viewId)]: startTerminal - Complete")
     }
 
@@ -2343,6 +2359,7 @@ final class RustTerminalView: NSView {
         Log.info("RustTerminalView[\(viewId)]: deinit - Starting cleanup")
         // Set flag to prevent CVDisplayLink callbacks from accessing deallocated view
         isBeingDeallocated = true
+        shellStartupTimeoutWork?.cancel()
         stopPollingLoop()
         stopAutoScrollTimer()
         removeEventMonitors()
@@ -2604,6 +2621,10 @@ final class RustTerminalView: NSView {
     /// Background tabs only need to drain the PTY buffer to prevent the shell from
     /// blocking — they don't need 60fps rendering. A 500ms timer is sufficient.
     private func pauseDisplayLink() {
+        // Cancel startup timeout — background tabs shouldn't trigger false positives
+        shellStartupTimeoutWork?.cancel()
+        shellStartupTimeoutWork = nil
+
         if let link = displayLink, CVDisplayLinkIsRunning(link) {
             CVDisplayLinkStop(link)
             Log.info("RustTerminalView[\(viewId)]: pauseDisplayLink - CVDisplayLink paused (tab suspended)")
@@ -2762,6 +2783,12 @@ final class RustTerminalView: NSView {
         // This enables shell integration, logging, and output detectors to receive data.
         // (Issue #3 fix: onOutput callback was never called)
         if var outputData = rust.getLastOutput(), !outputData.isEmpty {
+            // Cancel the shell-startup-slow timer on first PTY output
+            if startupBytesLogged == 0 {
+                shellStartupTimeoutWork?.cancel()
+                shellStartupTimeoutWork = nil
+            }
+
             // Log first 2KB of startup output for debugging
             if startupBytesLogged < 2048 {
                 let bytesToLog = min(outputData.count, 2048 - startupBytesLogged)
