@@ -96,6 +96,14 @@ private final class RustGridView: NSView {
     private var rows: Int = 0
     private var cells: [RustCellData] = []
     private var overlayCells: [Int: RustCellData] = [:]
+    /// Viewport-relative row tints (row index → tint color). Applied as a blend over cell backgrounds.
+    var rowTints: [Int: NSColor] = [:] {
+        didSet {
+            if rowTints.count != oldValue.count || rowTints.keys.sorted() != oldValue.keys.sorted() {
+                needsDisplay = true
+            }
+        }
+    }
     private var cursor: (col: Int, row: Int) = (0, 0)
     private var lastCursor: (col: Int, row: Int) = (0, 0)
     private var lastBlinkPhase: Bool = true
@@ -264,7 +272,13 @@ private final class RustGridView: NSView {
                 let rect = CGRect(x: x, y: y, width: cellWidth, height: cellHeight)
 
                 let (_, bg) = resolveColors(for: cell)
-                ctx.setFillColor(bg.cgColor)
+                let finalBg: NSColor
+                if let tint = rowTints[row] {
+                    finalBg = bg.blended(withFraction: tint.alphaComponent, of: tint.withAlphaComponent(1.0)) ?? bg
+                } else {
+                    finalBg = bg
+                }
+                ctx.setFillColor(finalBg.cgColor)
                 ctx.fill(rect)
             }
         }
@@ -1904,6 +1918,10 @@ final class RustTerminalView: NSView {
     private var highlightInputHistory = false
     private var isCursorLineHighlightEnabled = false
 
+    /// Provider for dangerous row tints (absolute row range → tint map).
+    /// Set during view setup to avoid coupling to session model directly.
+    var dangerousRowTintsProvider: ((Int, Int) -> [Int: NSColor])?
+
     /// Whether to enable mouse reporting to the PTY
     var allowMouseReporting: Bool = false
 
@@ -2863,6 +2881,11 @@ final class RustTerminalView: NSView {
             onBufferChanged?()
         }
 
+        // Update dangerous row tints every frame (cheap lookup, scrolls in-sync with grid)
+        if !isMetalRenderingActive {
+            updateDangerousRowTints()
+        }
+
         // Metal has its own cursor blink timer (RustMetalDisplayCoordinator.handleBlinkTick)
         if !isMetalRenderingActive {
             gridView?.tickCursorBlink(now: CFAbsoluteTimeGetCurrent())
@@ -3028,6 +3051,29 @@ final class RustTerminalView: NSView {
         }
 
         updateInlineImagePositions()
+    }
+
+    /// Updates the grid view's row tints from the danger tints provider.
+    /// Runs every display-link frame — the provider returns cached data so this is cheap.
+    private func updateDangerousRowTints() {
+        guard let provider = dangerousRowTintsProvider else {
+            if !(gridView?.rowTints.isEmpty ?? true) {
+                gridView?.rowTints = [:]
+            }
+            return
+        }
+        let yDisp = renderTopVisibleRow
+        let gridRows = rows
+        guard gridRows > 0 else { return }
+        let tints = provider(yDisp, yDisp + gridRows - 1)
+        var viewportTints: [Int: NSColor] = [:]
+        for (absRow, color) in tints {
+            let vr = absRow - yDisp
+            if vr >= 0 && vr < gridRows {
+                viewportTints[vr] = color
+            }
+        }
+        gridView?.rowTints = viewportTints
     }
 
     /// Compare two cells for equality (inlined for performance)

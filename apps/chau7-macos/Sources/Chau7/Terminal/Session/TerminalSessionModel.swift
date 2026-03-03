@@ -207,6 +207,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private let dangerousCommandTracker = InputLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
     private var dangerousOutputHighlightWorkItem: DispatchWorkItem?
     private var dangerousOutputHighlightLastRun = Date.distantPast
+    /// Cached dangerous output rows from the most recent async scan (for in-grid tinting).
+    private var cachedDangerousOutputRowSet: Set<Int> = []
     private var scrollHighlightWorkItem: DispatchWorkItem?
     private let scrollHighlightDebounceSeconds: TimeInterval = 0.15
 
@@ -1418,6 +1420,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                 thresholdMs: self.highlightLagLogThresholdMs,
                 lastLoggedAt: &self.lastHighlightLagLogAt
             )
+            self.refreshCachedDangerousOutputRows()
             self.highlightView?.scheduleDisplay()
         }
         dangerousOutputHighlightWorkItem = work
@@ -1571,6 +1574,42 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         return rows
     }
 
+    /// Refreshes the cached set of dangerous output rows using the current viewport.
+    private func refreshCachedDangerousOutputRows() {
+        guard let rustView = activeTerminalView as? RustTerminalView else {
+            cachedDangerousOutputRowSet = []
+            return
+        }
+        let top = rustView.renderTopVisibleRow
+        let bottom = top + rustView.renderRows - 1
+        cachedDangerousOutputRowSet = Set(dangerousOutputRowsVisible(top: top, bottom: bottom))
+    }
+
+    /// Returns cached dangerous output rows within the given viewport range.
+    private func cachedDangerousOutputRows(top: Int, bottom: Int) -> [Int] {
+        cachedDangerousOutputRowSet.filter { $0 >= top && $0 <= bottom }
+    }
+
+    /// Combines input command rows and cached output rows into a viewport tint map.
+    /// Called at 60fps from `syncGridToRenderer()` — uses only cheap lookups and cached data.
+    func dangerousRowTints(top: Int, bottom: Int) -> [Int: NSColor] {
+        let scope = FeatureSettings.shared.dangerousCommandHighlightScope
+        guard scope != .none else { return [:] }
+        let dangerColor = NSColor.systemRed.withAlphaComponent(0.50)
+        var tints: [Int: NSColor] = [:]
+        // Input rows: always included (cheap set lookup)
+        for row in dangerousCommandTracker.visibleRows(top: top, bottom: bottom) {
+            tints[row] = dangerColor
+        }
+        // Output rows: use cached results only (no expensive scanning here)
+        if scope == .allOutputs || (scope == .aiOutputs && activeAppName != nil) {
+            for row in cachedDangerousOutputRows(top: top, bottom: bottom) {
+                tints[row] = dangerColor
+            }
+        }
+        return tints
+    }
+
     // MARK: - Idle Timer (Issue #5 fix)
 
     private func startIdleTimer() {
@@ -1621,7 +1660,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         done
         typeset -U path
         export PATH="${(j/:/)path}"
-        unset path _codex_image_bin
+        unset _codex_image_bin
 
         # Disable PROMPT_CR - prevents the 143 spaces + CRs before each prompt
         # that can cause visual artifacts in some terminals
@@ -1954,6 +1993,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         ) { [weak self] _ in
             self?.outputRiskCacheVersion &+= 1
             self?.outputRiskCache.removeAll(keepingCapacity: true)
+            self?.cachedDangerousOutputRowSet = []
             self?.dirtyOutputRange = nil
             self?.dangerousOutputHighlightWorkItem?.cancel()
             self?.dangerousOutputHighlightWorkItem = nil
@@ -2261,6 +2301,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     func resetDangerousHighlights() {
         dangerousCommandTracker.reset()
         outputRiskCache.removeAll(keepingCapacity: true)
+        cachedDangerousOutputRowSet = []
         dirtyOutputRange = nil
         dangerousOutputHighlightWorkItem?.cancel()
         dangerousOutputHighlightWorkItem = nil
