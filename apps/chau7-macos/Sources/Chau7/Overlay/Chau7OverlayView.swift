@@ -860,13 +860,10 @@ struct Chau7OverlayView: View {
 
             // F21: Snippets
             if overlayModel.isSnippetManagerVisible {
-                GeometryReader { geo in
-                    SnippetManagerOverlayView(model: overlayModel, containerSize: geo.size)
-                        .padding(.top, 12)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                }
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .zIndex(10)
+                SnippetManagerOverlayView(model: overlayModel)
+                    .padding(.top, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(10)
             }
 
             // Task Lifecycle (v1.1) - Candidate banner at top
@@ -1598,15 +1595,17 @@ struct DraggableOverlay<Content: View>: View {
     let id: String
     let workspace: String?
     let maxWidth: CGFloat?
+    let onClose: (() -> Void)?
     @ViewBuilder let content: Content
     @ObservedObject private var settings = FeatureSettings.shared
     @State private var dragOffset: CGSize = .zero
     @GestureState private var dragTranslation: CGSize = .zero
 
-    init(id: String, workspace: String?, maxWidth: CGFloat? = nil, @ViewBuilder content: () -> Content) {
+    init(id: String, workspace: String?, maxWidth: CGFloat? = nil, onClose: (() -> Void)? = nil, @ViewBuilder content: () -> Content) {
         self.id = id
         self.workspace = workspace
         self.maxWidth = maxWidth
+        self.onClose = onClose
         self.content = content()
     }
 
@@ -1628,12 +1627,24 @@ struct DraggableOverlay<Content: View>: View {
             // Drag handle — sole target for the drag gesture.
             // Isolating the gesture here prevents DragGesture from
             // stealing scroll events inside ScrollViews in the content.
-            Capsule()
-                .fill(Color.secondary.opacity(0.25))
-                .frame(width: 36, height: 4)
-                .frame(maxWidth: .infinity, minHeight: 18)
-                .contentShape(Rectangle())
-                .gesture(drag)
+            HStack(spacing: 0) {
+                if let onClose {
+                    OverlayCloseButton(action: onClose)
+                        .padding(.leading, 10)
+                }
+                Spacer()
+                Capsule()
+                    .fill(Color.secondary.opacity(0.25))
+                    .frame(width: 36, height: 4)
+                Spacer()
+                if onClose != nil {
+                    // Balance the close button width on the right
+                    Color.clear.frame(width: 12).padding(.trailing, 10)
+                }
+            }
+            .frame(minHeight: 18)
+            .contentShape(Rectangle())
+            .gesture(drag)
             content
         }
         .background(overlayPanelBackground)
@@ -1650,6 +1661,30 @@ struct DraggableOverlay<Content: View>: View {
         .onChange(of: workspaceKey) { _ in
             dragOffset = settings.overlayOffset(for: id, workspace: workspace)
         }
+    }
+}
+
+/// macOS traffic-light style close button for overlay panels.
+private struct OverlayCloseButton: View {
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(isHovered ? Color.red : Color.red.opacity(0.8))
+                    .frame(width: 12, height: 12)
+                if isHovered {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundColor(.black.opacity(0.6))
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help(L("Close", "Close"))
     }
 }
 
@@ -2116,7 +2151,6 @@ struct BookmarkRow: View {
 
 struct SnippetManagerOverlayView: View {
     @ObservedObject var model: OverlayTabsModel
-    let containerSize: CGSize
     @ObservedObject private var manager = SnippetManager.shared
     @ObservedObject private var settings = FeatureSettings.shared
     @State private var query: String = ""
@@ -2132,15 +2166,8 @@ struct SnippetManagerOverlayView: View {
     /// All available letters for quick selection (a-z)
     private static let allLetters = Set("abcdefghijklmnopqrstuvwxyz")
 
-    /// Dynamic panel max width: ~50% of container, clamped between 420–700
-    private var dynamicMaxWidth: CGFloat {
-        min(700, max(420, containerSize.width * 0.50))
-    }
-
-    /// Dynamic list max height: ~50% of container, clamped between 200–500
-    private var dynamicListMaxHeight: CGFloat {
-        min(500, max(200, containerSize.height * 0.50))
-    }
+    private let panelMaxWidth: CGFloat = 560
+    private let listMaxHeight: CGFloat = 400
 
     private var repoAvailable: Bool {
         FeatureSettings.shared.isRepoSnippetsEnabled && manager.activeRepoRoot != nil
@@ -2216,122 +2243,123 @@ struct SnippetManagerOverlayView: View {
     }
 
     var body: some View {
-        DraggableOverlay(id: "snippets", workspace: model.overlayWorkspaceIdentifier, maxWidth: dynamicMaxWidth) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(L("Snippets", "Snippets"))
-                        .font(.custom("Avenir Next", size: 12).weight(.semibold))
-                    Spacer()
-                    Button(L("New", "New")) {
-                        startCreate()
+        ZStack(alignment: .top) {
+            // Main snippet selector panel
+            DraggableOverlay(id: "snippets", workspace: model.overlayWorkspaceIdentifier, maxWidth: panelMaxWidth, onClose: { model.toggleSnippetManager() }) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text(L("Snippets", "Snippets"))
+                            .font(.custom("Avenir Next", size: 12).weight(.semibold))
+                        Spacer()
+                        Button(L("New", "New")) {
+                            startCreate()
+                        }
+                        .controlSize(.small)
+                        .disabled(!settings.isSnippetsEnabled)
                     }
-                    .controlSize(.small)
-                    .disabled(!settings.isSnippetsEnabled)
-                    Button(L("Close", "Close")) {
-                        model.toggleSnippetManager()
-                    }
-                    .controlSize(.small)
-                }
 
-                if !settings.isSnippetsEnabled {
-                    Text(L("Snippets are disabled in Settings.", "Snippets are disabled in Settings."))
-                        .font(.custom("Avenir Next", size: 11))
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 8)
-                } else {
-                    let filtered = manager.filteredEntries(query: query)
-                    let keyMap = buildKeyMap(for: filtered)
-
-                    // Variable input dialog (shown above search)
-                    if isVariableDialogVisible, let entry = pendingVariableEntry {
-                        SnippetVariableDialog(
-                            snippetTitle: entry.snippet.title,
-                            variables: $pendingVariables,
-                            onCancel: cancelVariableInput,
-                            onInsert: insertWithVariables
-                        )
+                    if !settings.isSnippetsEnabled {
+                        Text(L("Snippets are disabled in Settings.", "Snippets are disabled in Settings."))
+                            .font(.custom("Avenir Next", size: 11))
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 8)
                     } else {
+                        let filtered = manager.filteredEntries(query: query)
+                        let keyMap = buildKeyMap(for: filtered)
+
                         SnippetSearchField(
                             text: $query,
                             onEscape: { model.toggleSnippetManager() },
                             onLetterKey: { letter in
-                                // Handle quick select when query is empty
-                                if query.isEmpty, !isEditorVisible {
+                                if query.isEmpty, !isEditorVisible, !isVariableDialogVisible {
                                     if let entry = keyMap.keyToSnippet[letter] {
                                         attemptInsert(entry)
                                     }
                                 }
                             }
                         )
-                    }
 
-                    if isEditorVisible && !isVariableDialogVisible {
-                        SnippetEditorView(
-                            draft: $draft,
-                            isNew: editingEntry == nil,
-                            repoAvailable: repoAvailable,
-                            onCancel: cancelEdit,
-                            onSave: saveEdit
-                        )
-                    } else {
-                        if filtered.isEmpty {
-                            Text(L("No snippets found.", "No snippets found."))
-                                .font(.custom("Avenir Next", size: 11))
-                                .foregroundStyle(.secondary)
-                                .padding(.vertical, 8)
+                        if isEditorVisible && !isVariableDialogVisible {
+                            SnippetEditorView(
+                                draft: $draft,
+                                isNew: editingEntry == nil,
+                                repoAvailable: repoAvailable,
+                                onCancel: cancelEdit,
+                                onSave: saveEdit
+                            )
                         } else {
-                            ScrollView {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    ForEach(filtered) { entry in
-                                        let assignedKey = query.isEmpty ? keyMap.snippetKeys[entry.id] : nil
-                                        let hasConflict = entry.snippet.validatedKey.map { keyMap.conflictingKeys.contains($0) } ?? false
-                                        SnippetRowView(
-                                            entry: entry,
-                                            quickSelectLetter: assignedKey,
-                                            hasKeyConflict: hasConflict,
-                                            onInsert: { attemptInsert(entry) },
-                                            onEdit: { startEdit(entry) },
-                                            onDelete: { deleteTarget = entry },
-                                            onTogglePin: { manager.togglePin(entry) }
-                                        )
+                            if filtered.isEmpty {
+                                Text(L("No snippets found.", "No snippets found."))
+                                    .font(.custom("Avenir Next", size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.vertical, 8)
+                            } else {
+                                ScrollView {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        ForEach(filtered) { entry in
+                                            let assignedKey = query.isEmpty ? keyMap.snippetKeys[entry.id] : nil
+                                            let hasConflict = entry.snippet.validatedKey.map { keyMap.conflictingKeys.contains($0) } ?? false
+                                            SnippetRowView(
+                                                entry: entry,
+                                                quickSelectLetter: assignedKey,
+                                                hasKeyConflict: hasConflict,
+                                                onInsert: { attemptInsert(entry) },
+                                                onEdit: { startEdit(entry) },
+                                                onDelete: { deleteTarget = entry },
+                                                onTogglePin: { manager.togglePin(entry) }
+                                            )
+                                        }
                                     }
                                 }
-                            }
-                            .frame(maxHeight: dynamicListMaxHeight)
+                                .frame(maxHeight: listMaxHeight)
 
-                            if query.isEmpty {
-                                Text(L("Press a letter to quick-insert", "Press a letter to quick-insert"))
-                                    .font(.custom("Avenir Next", size: 10))
-                                    .foregroundStyle(.tertiary)
+                                if query.isEmpty {
+                                    Text(L("Press a letter to quick-insert", "Press a letter to quick-insert"))
+                                        .font(.custom("Avenir Next", size: 10))
+                                        .foregroundStyle(.tertiary)
+                                }
                             }
                         }
                     }
-                }
 
-                if let root = manager.activeRepoRoot, settings.isRepoSnippetsEnabled {
-                    Text(String(format: L("snippet.repo", "Repo: %@"), root))
-                        .font(.custom("Avenir Next", size: 9))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    if let root = manager.activeRepoRoot, settings.isRepoSnippetsEnabled {
+                        Text(String(format: L("snippet.repo", "Repo: %@"), root))
+                            .font(.custom("Avenir Next", size: 9))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
+                .onAppear {
+                    query = ""
+                }
+                .alert(item: $deleteTarget) { entry in
+                    Alert(
+                        title: Text(L("Delete snippet?", "Delete snippet?")),
+                        message: Text(entry.snippet.title),
+                        primaryButton: .destructive(Text(L("Delete", "Delete"))) {
+                            manager.deleteSnippet(entry)
+                        },
+                        secondaryButton: .cancel()
+                    )
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.bottom, 10)
-            .onAppear {
-                // Focus is now handled by SnippetSearchField.focusWithRetry() in makeNSView
-                // This just resets query state on reopen
-                query = ""
-            }
-            .alert(item: $deleteTarget) { entry in
-                Alert(
-                    title: Text(L("Delete snippet?", "Delete snippet?")),
-                    message: Text(entry.snippet.title),
-                    primaryButton: .destructive(Text(L("Delete", "Delete"))) {
-                        manager.deleteSnippet(entry)
-                    },
-                    secondaryButton: .cancel()
-                )
+
+            // Variable input dialog — separate floating panel on top
+            if isVariableDialogVisible, let entry = pendingVariableEntry {
+                DraggableOverlay(id: "snippet-variables", workspace: model.overlayWorkspaceIdentifier, maxWidth: 420, onClose: cancelVariableInput) {
+                    SnippetVariableDialog(
+                        snippetTitle: entry.snippet.title,
+                        variables: $pendingVariables,
+                        onCancel: cancelVariableInput,
+                        onInsert: insertWithVariables
+                    )
+                }
+                .padding(.top, 50)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(1)
             }
         }
     }
@@ -2698,10 +2726,8 @@ struct SnippetVariableDialog: View {
                 .font(.custom("Avenir Next", size: 9))
                 .foregroundStyle(.tertiary)
         }
-        .padding(12)
-        .background(overlayPanelBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .frame(minWidth: 300, maxWidth: 400)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 10)
         .onAppear {
             // Focus first text field (pickers don't need focus)
             if let first = variables.first(where: { $0.inputType == .text }) {
