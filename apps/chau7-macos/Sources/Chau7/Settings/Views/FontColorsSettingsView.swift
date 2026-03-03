@@ -22,11 +22,11 @@ struct FontColorsSettingsView: View {
             // Font Settings
             SettingsSectionHeader(L("settings.appearance.font", "Font"), icon: "textformat")
 
-            SettingsPicker(
+            FontFamilyPicker(
                 label: L("settings.appearance.fontFamily", "Font Family"),
                 help: L("settings.appearance.fontFamily.help", "Choose a monospace font for the terminal"),
                 selection: $settings.fontFamily,
-                options: FeatureSettings.availableFonts.map { (value: $0, label: $0) }
+                families: FeatureSettings.availableFonts
             )
 
             // Custom font entry — validates live as you type, applies on Enter
@@ -168,5 +168,95 @@ struct FontColorsSettingsView: View {
             ], alignment: .trailing)
         }
     }
+}
 
+// MARK: - Font Family Picker (renders each name in its own font)
+
+/// A popup button that displays each font family name rendered in its actual typeface.
+/// Uses NSPopUpButton via NSViewRepresentable because SwiftUI's Picker strips custom
+/// fonts from menu items — NSMenuItem.attributedTitle is the only way to get per-item fonts.
+private struct FontFamilyPicker: View {
+    let label: String
+    let help: String?
+    @Binding var selection: String
+    let families: [String]
+
+    var body: some View {
+        HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                if let help {
+                    Text(help)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: SettingsLayout.labelWidth, alignment: .leading)
+
+            FontFamilyPopUpButton(selection: $selection, families: families)
+                .frame(width: 150, height: 24)
+
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// NSViewRepresentable wrapping NSPopUpButton with attributed menu items.
+private struct FontFamilyPopUpButton: NSViewRepresentable {
+    @Binding var selection: String
+    let families: [String]
+
+    func makeNSView(context: Context) -> NSPopUpButton {
+        let button = NSPopUpButton(frame: .zero, pullsDown: false)
+        button.target = context.coordinator
+        button.action = #selector(Coordinator.selectionChanged(_:))
+        button.font = NSFont.systemFont(ofSize: NSFont.systemFontSize(for: .small))
+        rebuildMenu(button)
+        return button
+    }
+
+    func updateNSView(_ button: NSPopUpButton, context: Context) {
+        let currentTitles = button.itemTitles
+        if currentTitles != families {
+            rebuildMenu(button)
+        }
+        if button.titleOfSelectedItem != selection {
+            button.selectItem(withTitle: selection)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(selection: $selection)
+    }
+
+    private func rebuildMenu(_ button: NSPopUpButton) {
+        button.removeAllItems()
+        let menuFontSize: CGFloat = 13
+        for family in families {
+            let item = NSMenuItem()
+            item.title = family
+            let font = TerminalFont.resolveFont(family: family, size: menuFontSize)
+            item.attributedTitle = NSAttributedString(
+                string: family,
+                attributes: [.font: font]
+            )
+            button.menu?.addItem(item)
+        }
+        button.selectItem(withTitle: selection)
+    }
+
+    final class Coordinator: NSObject {
+        var selection: Binding<String>
+
+        init(selection: Binding<String>) {
+            self.selection = selection
+        }
+
+        @objc func selectionChanged(_ sender: NSPopUpButton) {
+            if let title = sender.titleOfSelectedItem {
+                selection.wrappedValue = title
+            }
+        }
+    }
 }
