@@ -862,6 +862,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func windowDidResize(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         guard overlayHosts.contains(where: { $0.window == window }) else { return }
+        let titlebarHeight = window.frame.height - window.contentLayoutRect.height
+        if window.contentLayoutRect.width <= 0 || window.contentLayoutRect.height <= 0 || titlebarHeight <= 0 || !titlebarHeight.isFinite {
+            Log.warn("windowDidResize: invalid resize geometry for overlay window. frame=\(window.frame) content=\(window.contentLayoutRect) titlebarHeight=\(titlebarHeight). Forcing toolbar recreation")
+            TabBarToolbarDelegate.shared.recreateToolbar(for: window)
+        }
         TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
     }
 

@@ -182,6 +182,9 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
             maxWidth = max(800, minWidth)
             height = OverlayLayout.tabBarHeight
         }
+        if !maxWidth.isFinite || !height.isFinite || maxWidth <= 0 || height <= 0 {
+            Log.warn("TabBarToolbarDelegate.applySizing: invalid toolbar metrics. model=\(model != nil ? "present" : "nil"), minWidth=\(Int(minWidth)), maxWidth=\(Int(maxWidth)), height=\(Int(height))")
+        }
 
         guard let view = item.view as? TabBarHostingView else { return }
         view.desiredSize = NSSize(width: maxWidth, height: height)
@@ -283,6 +286,7 @@ private struct ToolbarTabBarView: View {
     private let tabSpacing: CGFloat = 8
     /// Cooldown: ignore swaps for a few frames after one fires, preventing rapid bouncing.
     @State private var swapCooldownUntil: Date = .distantPast
+    @State private var lastTinySizeLogAt: Date = .distantPast
 
     var body: some View {
         let selected = overlayModel.selectedTab
@@ -360,6 +364,13 @@ private struct ToolbarTabBarView: View {
         )
         .onPreferenceChange(TabBarSizeKey.self) { size in
             overlayModel.reportTabBarSize(size)
+            // Log tiny/zero rendered sizes immediately so disappearance can be diagnosed from logs.
+            let now = Date()
+            let expectedMinWidth = CGFloat(overlayModel.tabs.count) * 30
+            if (size.width <= 0 || size.height <= 0 || size.width < 1 || size.height < 10 || size.width < expectedMinWidth) && now.timeIntervalSince(lastTinySizeLogAt) > 1.0 {
+                lastTinySizeLogAt = now
+                Log.warn("ToolbarTabBarView: suspicious tab bar size reported width=\(Int(size.width)) height=\(Int(size.height)), tabs=\(overlayModel.tabs.count), expectedMinWidth=\(Int(expectedMinWidth)), refreshToken=\(overlayModel.tabBarRefreshToken)")
+            }
         }
         .onChange(of: overlayModel.tabs.count) { newCount in
             Log.info("ToolbarTabBarView: tabs.count changed to \(newCount)")

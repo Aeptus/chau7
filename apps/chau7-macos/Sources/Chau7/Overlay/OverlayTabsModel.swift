@@ -278,6 +278,7 @@ final class OverlayTabsModel: ObservableObject {
     private let minWidthPerTab: CGFloat = 30
     /// Tracks whether the tab bar is expected to be visible
     private var isTabBarVisible: Bool = true
+    private var lastTabBarVisibilityLogAt: Date = .distantPast
 
     // F13: Broadcast Input
     @Published var isBroadcastMode: Bool = false
@@ -949,15 +950,11 @@ final class OverlayTabsModel: ObservableObject {
             refreshSearch()
         }
 
-        // RTK: create flag file for new tab if mode requires it
+        // RTK: defer flag file creation until first prompt to avoid optimizer
+        // overhead during shell init scripts (NVM, compinit, etc.).
         let rtkMode = FeatureSettings.shared.tokenOptimizationMode
-        if rtkMode != .off, let sessionID = tab.session?.tabIdentifier {
-            RTKFlagManager.recalculate(
-                sessionID: sessionID,
-                mode: rtkMode,
-                override: tab.tokenOptOverride,
-                isAIActive: false
-            )
+        if rtkMode != .off {
+            tab.session?.rtkFlagDeferred = true
         }
 
         // Emit tab_opened event if enabled
@@ -1850,6 +1847,15 @@ final class OverlayTabsModel: ObservableObject {
     func reportTabBarSize(_ size: CGSize) {
         lastReportedTabBarSize = size
         lastPreferenceUpdateTime = Date()
+        let now = Date()
+        let expectedWidth = CGFloat(max(1, tabs.count)) * minWidthPerTab
+        if now.timeIntervalSince(lastTabBarVisibilityLogAt) > 1.0 &&
+            (size.width <= 0 || size.height <= 0 || size.height < 10 || size.width < expectedWidth) {
+            lastTabBarVisibilityLogAt = now
+            let window = overlayWindow
+            let frameText = window.map { "windowFrame=\($0.frame.width)x\($0.frame.height) content=\($0.contentLayoutRect.width)x\($0.contentLayoutRect.height)" } ?? "window=none"
+            Log.warn("Tab bar size report is suspicious: rendered=\(Int(size.width))x\(Int(size.height)), expectedWidth>=\(Int(expectedWidth)), tabs=\(tabs.count), \(frameText)")
+        }
     }
 
     /// Updates visibility state for the tab bar (e.g., window hidden/shown).
