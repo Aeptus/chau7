@@ -4274,10 +4274,13 @@ final class RustTerminalView: NSView {
         // Don't create multiple timers
         guard autoScrollTimer == nil else { return }
 
-        autoScrollTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.performAutoScroll()
         }
+        // Add to .common modes so the timer fires during mouse event tracking
+        RunLoop.main.add(timer, forMode: .common)
+        autoScrollTimer = timer
         Log.trace("RustTerminalView[\(viewId)]: startAutoScrollTimer - Started auto-scroll timer (direction=\(autoScrollDirection))")
     }
 
@@ -4319,8 +4322,9 @@ final class RustTerminalView: NSView {
             edgeRow = rows - 1
         }
         // Convert to absolute row (accounting for scrollback offset)
+        // Matches pointToCellAbsolute: visibleRow - displayOffset
         let displayOffset = Int(rust.displayOffset)
-        let absoluteRow = edgeRow + displayOffset
+        let absoluteRow = edgeRow - displayOffset
         // Use middle column for horizontal position
         let col = cols / 2
         rust.updateSelection(col: Int32(col), row: Int32(absoluteRow))
@@ -4678,6 +4682,12 @@ final class RustTerminalView: NSView {
             let location = self.convert(event.locationInWindow, from: nil)
             guard self.bounds.contains(location) else { return event }
 
+            // If a SwiftUI overlay is above us, don't intercept the click
+            if let hitView = event.window?.contentView?.hitTest(event.locationInWindow),
+               hitView !== self, !hitView.isDescendant(of: self) {
+                return event
+            }
+
             let cell = self.pointToCell(location)
             Log.trace("RustTerminalView[\(self.viewId)]: mouseDown at (\(location.x), \(location.y)) -> cell (\(cell.col), \(cell.row))")
 
@@ -4744,6 +4754,12 @@ final class RustTerminalView: NSView {
         mouseDragMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDragged) { [weak self] event in
             guard let self = self else { return event }
             guard event.window === self.window else { return event }
+
+            // If a SwiftUI overlay is above us, don't intercept the drag
+            if let hitView = event.window?.contentView?.hitTest(event.locationInWindow),
+               hitView !== self, !hitView.isDescendant(of: self) {
+                return event
+            }
 
             let location = self.convert(event.locationInWindow, from: nil)
 

@@ -270,6 +270,15 @@ private struct TabWidthPreferenceKey: PreferenceKey {
     }
 }
 
+/// Preference key for tracking the global midX of each tab chip (for hover card positioning)
+private struct TabMidXPreferenceKey: PreferenceKey {
+    static var defaultValue: [UUID: CGFloat] = [:]
+
+    static func reduce(value: inout [UUID: CGFloat], nextValue: () -> [UUID: CGFloat]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
 /// Preference key for tracking rendered tab count (for auto-recovery)
 private struct RenderedTabCountKey: PreferenceKey {
     static var defaultValue: Int = 0
@@ -305,6 +314,7 @@ private struct ToolbarTabBarView: View {
     private let tabSpacing: CGFloat = 8
     @State private var lastTinySizeLogAt: Date = .distantPast
     @State private var lastVisibilityLogAt: Date = .distantPast
+    @State private var tabMidXPositions: [UUID: CGFloat] = [:]
 
     var body: some View {
         let selected = overlayModel.selectedTab
@@ -341,6 +351,9 @@ private struct ToolbarTabBarView: View {
                 }
                 .onPreferenceChange(TabWidthPreferenceKey.self) { widths in
                     tabWidths = widths
+                }
+                .onPreferenceChange(TabMidXPreferenceKey.self) { positions in
+                    tabMidXPositions = positions
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
@@ -455,8 +468,11 @@ private struct ToolbarTabBarView: View {
             onHover: { isHovering in
                 if isHovering {
                     overlayModel.prewarmTab(id: tab.id)
+                    let midX = tabMidXPositions[tab.id] ?? 0
+                    overlayModel.tabHoverBegan(id: tab.id, anchorX: midX)
                 } else {
                     overlayModel.cancelPrewarm(id: tab.id)
+                    overlayModel.tabHoverEnded(id: tab.id)
                 }
             },
             onToggleTokenOpt: { overlayModel.toggleTokenOpt(for: tab.id) }
@@ -465,7 +481,9 @@ private struct ToolbarTabBarView: View {
         .id(tab.id)
             .background(
                 GeometryReader { proxy in
-                    Color.clear.preference(key: TabWidthPreferenceKey.self, value: [tab.id: proxy.size.width])
+                    Color.clear
+                        .preference(key: TabWidthPreferenceKey.self, value: [tab.id: proxy.size.width])
+                        .preference(key: TabMidXPreferenceKey.self, value: [tab.id: proxy.frame(in: .global).midX])
                 }
             )
             // Visual offset: dragged tab follows cursor, displaced neighbors slide
@@ -515,6 +533,7 @@ private struct ToolbarTabBarView: View {
     }
 
     private func handleTabDrag(tab: OverlayTab, translation: CGFloat) {
+        overlayModel.dismissHoverCard()
         let snapshot = overlayModel.tabs
 
         // Initialize drag state on first call
@@ -828,6 +847,16 @@ struct Chau7OverlayView: View {
                     .zIndex(5)
             }
 
+            // MARK: - Tab Hover Card
+            if overlayModel.hoverCardTabID != nil {
+                TabHoverCard(
+                    overlayModel: overlayModel,
+                    anchorX: overlayModel.hoverCardAnchorX
+                )
+                .allowsHitTesting(true)
+                .zIndex(8)
+            }
+
             if overlayModel.isSearchVisible {
                 SearchOverlayView(model: overlayModel)
                     .padding(.top, 12)
@@ -1137,9 +1166,7 @@ struct UnifiedTabButton: View {
         tab.session?.tabPathDisplayName() ?? ""
     }
 
-    private var resolvedPathTooltip: String {
-        tab.session?.displayPath() ?? ""
-    }
+
 
     /// Whether this tab should show only the custom title (hiding all extras).
     private var isMinimalDisplay: Bool {
@@ -1256,7 +1283,6 @@ struct UnifiedTabButton: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(notificationBorderOverlay)
-        .help(resolvedPathTooltip)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
@@ -1423,9 +1449,7 @@ struct TabButton: View {
         session.tabPathDisplayName()
     }
 
-    private var resolvedPathTooltip: String {
-        session.displayPath()
-    }
+
 
     /// Returns the bundled logo for the detected AI product, or nil for regular shell.
     private var aiProductLogo: Image? {
@@ -1497,7 +1521,6 @@ struct TabButton: View {
                 : Color.black.opacity(0.18)
         )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .help(resolvedPathTooltip)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
@@ -1625,10 +1648,11 @@ struct DraggableOverlay<Content: View>: View {
             // Drag handle — sole target for the drag gesture.
             // Isolating the gesture here prevents DragGesture from
             // stealing scroll events inside ScrollViews in the content.
+            // Full-width hit area (minHeight: 20) so the grab target is generous.
             Capsule()
                 .fill(Color.secondary.opacity(0.25))
                 .frame(width: 36, height: 4)
-                .frame(maxWidth: .infinity, minHeight: 14)
+                .frame(maxWidth: .infinity, minHeight: 20)
                 .contentShape(Rectangle())
                 .gesture(drag)
             content

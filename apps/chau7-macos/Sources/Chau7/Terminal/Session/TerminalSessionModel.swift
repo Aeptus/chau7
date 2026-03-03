@@ -84,6 +84,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         }
     }
     @Published var devServer: DevServerMonitor.DevServerInfo? = nil
+    @Published var processGroup: ProcessGroupSnapshot? = nil
     @Published var tabTitleOverride: String? = nil
     @Published var fontSize: CGFloat = 13
     @Published var searchMatches: [SearchMatch] = []
@@ -214,6 +215,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
     private let semanticDetector = SemanticOutputDetector()
     private let devServerMonitor = DevServerMonitor()
+    private let processResourceMonitor = ProcessResourceMonitor()
     private lazy var shellEventDetector = ShellEventDetector(appModel: appModel)
     private static let osc7Prefix = Data([0x1b, 0x5d, 0x37, 0x3b])
     private static let aiExitMarkerPrefix = Data("\u{001b}]9;chau7;exit=".utf8)
@@ -301,6 +303,27 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         searchUpdateWorkItem?.cancel()
         aiLogSession?.close()
         devServerMonitor.stop()
+        processResourceMonitor.stop()
+    }
+
+    // MARK: - Process Resource Monitoring (hover card)
+
+    func startProcessMonitoring() {
+        guard let rustView = rustTerminalView else { return }
+        let pid = rustView.shellPid
+        guard pid > 0 else {
+            processGroup = nil
+            return
+        }
+        processResourceMonitor.onUpdate = { [weak self] snapshot in
+            self?.processGroup = snapshot
+        }
+        processResourceMonitor.start(shellPID: pid)
+    }
+
+    func stopProcessMonitoring() {
+        processResourceMonitor.stop()
+        processGroup = nil
     }
 
     /// Returns the existing Rust terminal view if one exists
