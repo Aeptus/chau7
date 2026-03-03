@@ -1861,6 +1861,12 @@ final class OverlayTabsModel: ObservableObject {
     /// Updates visibility state for the tab bar (e.g., window hidden/shown).
     /// This prevents the watchdog from firing while the window is not visible.
     func noteTabBarVisibilityChanged(isVisible: Bool) {
+        if isTabBarVisible != isVisible {
+            let window = overlayWindow
+            let frameText = window.map { "windowFrame=\($0.frame.width)x\($0.frame.height) visible=\($0.isVisible) occluded=\(!($0.occlusionState.contains(.visible)))" } ?? "window=none"
+            let visibility = isVisible ? "visible" : "hidden"
+            Log.warn("Tab bar visibility changed: \(visibility), tabs=\(tabs.count), refreshToken=\(tabBarRefreshToken), \(frameText)")
+        }
         isTabBarVisible = isVisible
         watchdogRefreshAttempts = 0
         if isVisible {

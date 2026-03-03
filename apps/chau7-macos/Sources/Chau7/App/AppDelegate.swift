@@ -37,6 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var shownWindowNumbers: Set<Int> = []
     private var didFinishLaunching: Bool = false
     private var didPerformInitialSetup: Bool = false
+    private var lastOverlayLifecycleLogAt: CFAbsoluteTime = 0
+    private var lastOverlayLifecycleReason: String = ""
 
     // MARK: - App Nap Prevention
     // Activity token to prevent App Nap from throttling the terminal
@@ -301,6 +303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 host.model.noteTabBarVisibilityChanged(isVisible: false)
             }
             hiddenWindowNumbers.insert(window.windowNumber)
+            logOverlayWindowLifecycle(reason: "closeWindow-orderOut", window: window)
             window.orderOut(nil)
             Log.info("Overlay window hidden via Close Window.")
         } else {
@@ -794,11 +797,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if let host = overlayHosts.first(where: { $0.window == sender }) {
                 host.model.noteTabBarVisibilityChanged(isVisible: false)
             }
+            logOverlayWindowLifecycle(reason: "windowShouldClose-orderOut", window: sender)
             sender.orderOut(nil)
             return false
         }
         Log.info("windowShouldClose: allowing window to close")
         return true
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        guard overlayHosts.contains(where: { $0.window == window }) else { return }
+        logOverlayWindowLifecycle(reason: "windowWillClose", window: window)
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
@@ -824,21 +834,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
             }
         }
+        logOverlayWindowLifecycle(reason: "didBecomeKey", window: window)
         logOverlayDiagnostics(reason: "didBecomeKey", window: window)
     }
 
     func windowDidResignKey(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        logOverlayWindowLifecycle(reason: "didResignKey", window: window)
         logOverlayDiagnostics(reason: "didResignKey", window: window)
     }
 
     func windowDidBecomeMain(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        logOverlayWindowLifecycle(reason: "didBecomeMain", window: window)
         logOverlayDiagnostics(reason: "didBecomeMain", window: window)
     }
 
     func windowDidResignMain(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        logOverlayWindowLifecycle(reason: "didResignMain", window: window)
         logOverlayDiagnostics(reason: "didResignMain", window: window)
     }
 
@@ -851,17 +865,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func windowDidMiniaturize(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        logOverlayWindowLifecycle(reason: "didMiniaturize", window: window)
         logOverlayDiagnostics(reason: "didMiniaturize", window: window)
     }
 
     func windowDidDeminiaturize(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
+        logOverlayWindowLifecycle(reason: "didDeminiaturize", window: window)
         logOverlayDiagnostics(reason: "didDeminiaturize", window: window)
     }
 
     func windowDidResize(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         guard overlayHosts.contains(where: { $0.window == window }) else { return }
+        logOverlayWindowLifecycle(reason: "didResize", window: window)
         let titlebarHeight = window.frame.height - window.contentLayoutRect.height
         if window.contentLayoutRect.width <= 0 || window.contentLayoutRect.height <= 0 || titlebarHeight <= 0 || !titlebarHeight.isFinite {
             Log.warn("windowDidResize: invalid resize geometry for overlay window. frame=\(window.frame) content=\(window.contentLayoutRect) titlebarHeight=\(titlebarHeight). Forcing toolbar recreation")
@@ -874,6 +891,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let window = notification.object as? NSWindow else { return }
         guard overlayHosts.contains(where: { $0.window == window }) else { return }
         // Keep the toolbar visible during fullscreen to avoid slide-down layout shifts.
+        logOverlayWindowLifecycle(reason: "willEnterFullScreen", window: window)
         window.toolbar?.isVisible = true
         TitlebarBackgroundInstaller.install(for: window)
     }
@@ -881,6 +899,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func windowDidEnterFullScreen(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         guard overlayHosts.contains(where: { $0.window == window }) else { return }
+        logOverlayWindowLifecycle(reason: "didEnterFullScreen", window: window)
         window.toolbar?.isVisible = true
         TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
         TitlebarBackgroundInstaller.install(for: window)
@@ -889,6 +908,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func windowDidExitFullScreen(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         guard overlayHosts.contains(where: { $0.window == window }) else { return }
+        logOverlayWindowLifecycle(reason: "didExitFullScreen", window: window)
         window.toolbar?.isVisible = true
         TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
         TitlebarBackgroundInstaller.install(for: window)
@@ -994,6 +1014,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             guard let window else { return }
             self?.hiddenWindowNumbers.insert(window.windowNumber)
             tabsModel.noteTabBarVisibilityChanged(isVisible: false)
+            self?.logOverlayWindowLifecycle(reason: "onCloseLastTab-orderOut", window: window)
             window.orderOut(nil)
         }
         Log.info("Overlay window created.")
@@ -1005,8 +1026,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         host.window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         host.model.focusSelected()
+        logOverlayWindowLifecycle(reason: "showOverlayWindow-\(reason)", window: host.window)
         logOverlayDiagnostics(reason: reason, window: host.window)
         Log.info("Overlay window shown (\(reason)).")
+    }
+
+    private func logOverlayWindowLifecycle(reason: String, window: NSWindow) {
+        let now = CFAbsoluteTimeGetCurrent()
+        if reason == lastOverlayLifecycleReason && (now - lastOverlayLifecycleLogAt) < 0.5 {
+            return
+        }
+        lastOverlayLifecycleLogAt = now
+        lastOverlayLifecycleReason = reason
+
+        let isOverlayHost = overlayHosts.contains(where: { $0.window == window })
+        let model = overlayHosts.first(where: { $0.window == window })?.model
+        let tabCount = model?.tabs.count ?? -1
+        let toolbarState = window.toolbar?.isVisible == true ? "visible" : "hidden"
+        let titlebarHeight = max(0, window.frame.height - window.contentLayoutRect.height)
+        let title = window.title.isEmpty ? "unnamed" : window.title
+        let occlusionVisible = window.occlusionState.contains(.visible)
+        Log.info("Overlay window lifecycle (\(reason)): overlay=\(isOverlayHost) title=\(title) tabs=\(tabCount) windowNumber=\(window.windowNumber) style=\(window.styleMask.rawValue) toolbar=\(toolbarState) key=\(window.isKeyWindow) main=\(window.isMainWindow) visible=\(window.isVisible) onActiveSpace=\(window.isOnActiveSpace) mini=\(window.isMiniaturized) occlusionVisible=\(occlusionVisible) occlusion=\(window.occlusionState) frame=\(window.frame) content=\(window.contentLayoutRect) titlebarHeight=\(titlebarHeight) alpha=\(window.alphaValue)")
     }
 
     private func applyWindowOpacity() {

@@ -287,6 +287,7 @@ private struct ToolbarTabBarView: View {
     /// Cooldown: ignore swaps for a few frames after one fires, preventing rapid bouncing.
     @State private var swapCooldownUntil: Date = .distantPast
     @State private var lastTinySizeLogAt: Date = .distantPast
+    @State private var lastVisibilityLogAt: Date = .distantPast
 
     var body: some View {
         let selected = overlayModel.selectedTab
@@ -376,9 +377,23 @@ private struct ToolbarTabBarView: View {
             Log.info("ToolbarTabBarView: tabs.count changed to \(newCount)")
         }
         .onAppear {
+            let now = Date()
+            if now.timeIntervalSince(lastVisibilityLogAt) > 0.5 {
+                lastVisibilityLogAt = now
+                let windowFrame = overlayModel.overlayWindow.map { "\($0.frame.width)x\($0.frame.height)" } ?? "none"
+                Log.warn("ToolbarTabBarView: appeared, tabs=\(overlayModel.tabs.count), windowFrame=\(windowFrame), refreshToken=\(overlayModel.tabBarRefreshToken)")
+            }
             Log.info("ToolbarTabBarView: appeared with \(overlayModel.tabs.count) tabs")
             // Note: Watchdog is now started by the model, not by view lifecycle
             // This ensures consistent operation regardless of view recreation
+        }
+        .onDisappear {
+            let now = Date()
+            if now.timeIntervalSince(lastVisibilityLogAt) > 0.5 {
+                lastVisibilityLogAt = now
+                let windowFrame = overlayModel.overlayWindow.map { "\($0.frame.width)x\($0.frame.height)" } ?? "none"
+                Log.warn("ToolbarTabBarView: disappeared, tabs=\(overlayModel.tabs.count), windowFrame=\(windowFrame), refreshToken=\(overlayModel.tabBarRefreshToken)")
+            }
         }
         // Auto-recovery: detect when rendered tab count doesn't match model
         // Report rendered count to model for watchdog monitoring
@@ -727,11 +742,11 @@ struct Chau7OverlayView: View {
                 }
             }
 
-            // MARK: - Shell Startup Slow Indicator
+            // MARK: - Shell Loading Bar
             ForEach(overlayModel.tabs) { tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
                 if isSelected, let session = tab.session {
-                    ShellStartupSlowIndicator(session: session)
+                    ShellLoadingBar(session: session)
                         .zIndex(4)
                 }
             }
@@ -950,14 +965,37 @@ private struct ShortcutHelperHintView: View {
     }
 }
 
-/// Displayed when the shell takes >5s to produce its first PTY output.
-/// Uses @ObservedObject so SwiftUI observes shellStartupSlow changes
+/// ASCII loading bar shown during shell startup, replacing the old 5s-only indicator.
+/// Two modes: normal loading (top-left bar below TIP) and slow/hung warning (centered).
+/// Uses @ObservedObject so SwiftUI observes session property changes
 /// (OverlayTab is Equatable by id only, so ForEach won't re-diff on session changes).
-private struct ShellStartupSlowIndicator: View {
+private struct ShellLoadingBar: View {
     @ObservedObject var session: TerminalSessionModel
+
+    private static let barWidth = 28
+    private static let litWidth = 10
+    /// Total animation positions: bar sweeps right then left (bounce)
+    private static let totalPositions = (barWidth - litWidth) * 2
+
+    @State private var offset: Int = 0
+    @State private var visible: Bool = false
+
+    private let timer = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
+
+    private var barString: String {
+        // Bounce: offset 0..<(barWidth-litWidth) goes right, then reverses
+        let maxOffset = Self.barWidth - Self.litWidth
+        let pos = offset <= maxOffset ? offset : Self.totalPositions - offset
+        var chars = [Character](repeating: "░", count: Self.barWidth)
+        for i in pos..<(pos + Self.litWidth) {
+            chars[i] = "▸"
+        }
+        return "  " + String(chars) + " "
+    }
 
     var body: some View {
         if session.shellStartupSlow {
+            // Shell possibly hung — centered warning
             VStack {
                 Spacer()
                 HStack(spacing: 6) {
@@ -974,6 +1012,29 @@ private struct ShellStartupSlowIndicator: View {
             }
             .transition(.opacity)
             .animation(.easeInOut(duration: 0.3), value: session.shellStartupSlow)
+        } else if session.isShellLoading {
+            // Normal loading — ASCII bar below TIP, top-leading aligned
+            VStack(alignment: .leading) {
+                Text(barString + "Loading shell\u{2026}")
+                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+            .padding(.top, 65)
+            .padding(.leading, 24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .opacity(visible ? 1 : 0)
+            .onReceive(timer) { _ in
+                offset = (offset + 1) % Self.totalPositions
+            }
+            .onAppear {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    withAnimation(.easeIn(duration: 0.15)) {
+                        visible = true
+                    }
+                }
+            }
+            .transition(.opacity.animation(.easeInOut(duration: 0.3)))
         }
     }
 }

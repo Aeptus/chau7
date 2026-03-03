@@ -91,6 +91,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     /// Whether the shell is at a prompt (not running a command). Used by history key monitor.
     @Published var isAtPrompt: Bool = true
 
+    /// Whether the shell is still loading (no prompt yet). Cleared on first OSC 7.
+    @Published var isShellLoading: Bool = true
+
     /// Set to true when no PTY output arrives within the startup timeout (shell may be hung).
     /// Cleared automatically on first output.
     @Published var shellStartupSlow: Bool = false
@@ -807,7 +810,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     }
 
     private func handlePromptDetected() {
+        if isShellLoading { isShellLoading = false }
         isAtPrompt = true
+        createDeferredRTKFlag()
         devServerMonitor.commandDidFinish()
         guard hasPendingCommand, pendingCommandLine != nil else { return }
         promptSeenForPendingCommand = true
@@ -1600,9 +1605,23 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
         // Create .zshrc for zsh
         let zshrc = """
-        # Chau7 wrapper - source user's real .zshrc first
+        # Chau7 wrapper - source user's shell config first
         export ZDOTDIR="\(home)"
+        [ -f "\(home)/.zshenv" ] && source "\(home)/.zshenv"
         [ -f "\(home)/.zshrc" ] && source "\(home)/.zshrc"
+        if [[ -o login ]]; then
+          [ -f "\(home)/.zprofile" ] && source "\(home)/.zprofile"
+          [ -f "\(home)/.zlogin" ] && source "\(home)/.zlogin"
+        fi
+
+        # Ensure Volta image node toolchains stay ahead of the legacy ~/.volta/bin shim.
+        path=("${(s/:/)PATH}")
+        for _codex_image_bin in "\(home)/.volta/tools/image/node/"*"/bin"(N); do
+          [ -x "$_codex_image_bin/codex" ] && path=($_codex_image_bin $path)
+        done
+        typeset -U path
+        export PATH="${(j/:/)path}"
+        unset path _codex_image_bin
 
         # Disable PROMPT_CR - prevents the 143 spaces + CRs before each prompt
         # that can cause visual artifacts in some terminals
@@ -2199,6 +2218,19 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     /// user toggles per-tab RTK. Stored here so `activeAppName.didSet` can
     /// access it without a back-reference to the tab model.
     var tokenOptOverride: TabTokenOptOverride = .default
+
+    /// Whether the RTK flag creation was deferred until the first prompt.
+    /// This avoids optimizer overhead during shell init scripts (NVM, compinit, etc.)
+    /// that invoke coreutils thousands of times with flags chau7-optim can't handle.
+    var rtkFlagDeferred = false
+
+    /// Creates the RTK flag file after the shell has finished initializing.
+    /// Called once from `handlePromptDetected()` on the first prompt.
+    func createDeferredRTKFlag() {
+        guard rtkFlagDeferred else { return }
+        rtkFlagDeferred = false
+        recalculateRTKFlag()
+    }
 
     /// Recalculates the RTK flag file for this session based on the current
     /// global mode, per-tab override, and AI detection state.
