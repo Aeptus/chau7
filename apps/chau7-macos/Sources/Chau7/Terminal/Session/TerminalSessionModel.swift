@@ -315,8 +315,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             processGroup = nil
             return
         }
+        processGroup = nil  // Clear stale data from a previous hover
         processResourceMonitor.onUpdate = { [weak self] snapshot in
-            self?.processGroup = snapshot
+            DispatchQueue.main.async { self?.processGroup = snapshot }
         }
         processResourceMonitor.start(shellPID: pid)
     }

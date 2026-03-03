@@ -37,8 +37,9 @@ struct TabHoverCard: View {
                     }
                 )
                 .frame(width: cardWidth)
-                .position(x: clampedX + cardWidth / 2, y: 0)
-                .offset(y: 8)
+                .fixedSize(horizontal: false, vertical: true)
+                .offset(x: clampedX, y: 8)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
             .transition(.opacity.animation(.easeInOut(duration: 0.12)))
         }
@@ -276,7 +277,7 @@ private struct TabHoverCardContent: View {
                 }
 
                 // Per-child rows (capped at 5)
-                ForEach(snapshot.children.prefix(5)) { child in
+                ForEach(Array(snapshot.children.prefix(5))) { child in
                     HStack(spacing: 8) {
                         Spacer().frame(width: 16)
 
