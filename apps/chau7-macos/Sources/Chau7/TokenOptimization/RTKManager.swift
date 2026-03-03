@@ -220,11 +220,19 @@ final class RTKManager {
     private func generateGenericWrapperScript(for command: String, realBin: String?) -> String {
         let rtkSubcommand = Self.rtkRewriteMap[command]
 
+        // Optimizer block: run chau7-optim WITHOUT exec so we can fall through
+        // to the real binary if it can't handle the invocation (exit code 2 = clap
+        // parse error). This is critical because tools like NVM call grep/ls/cat
+        // with flags chau7-optim doesn't support (e.g. grep -q).
         let optimizerBlock: String
         if let sub = rtkSubcommand {
             optimizerBlock = """
             _CHAU7_OPTIM="$HOME/.chau7/bin/chau7-optim"
-            [ -x "$_CHAU7_OPTIM" ] && exec "$_CHAU7_OPTIM" \(sub) "$@"
+            if [ -x "$_CHAU7_OPTIM" ]; then
+                "$_CHAU7_OPTIM" \(sub) "$@" 2>/dev/null
+                _rc=$?
+                [ $_rc -ne 2 ] && exit $_rc
+            fi
             """
         } else {
             optimizerBlock = ""
@@ -242,7 +250,7 @@ final class RTKManager {
                 exec "\(path)" "$@"
             fi
 
-            # RTK is active.
+            # RTK is active — try optimizer, fall through to real binary on failure.
             \(optimizerBlock)
             exec "\(path)" "$@"
             """
@@ -371,7 +379,11 @@ final class RTKManager {
 
         # Route through built-in optimizer for non-markdown files
         _CHAU7_OPTIM="$HOME/.chau7/bin/chau7-optim"
-        [ -x "$_CHAU7_OPTIM" ] && exec "$_CHAU7_OPTIM" read "$@"
+        if [ -x "$_CHAU7_OPTIM" ]; then
+            "$_CHAU7_OPTIM" read "$@" 2>/dev/null
+            _rc=$?
+            [ $_rc -ne 2 ] && exit $_rc
+        fi
 
         exec "$_RTK_REAL_BIN" "$@"
         """

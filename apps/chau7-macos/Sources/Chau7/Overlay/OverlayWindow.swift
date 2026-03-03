@@ -17,6 +17,26 @@ final class OverlayWindow: NSWindow {
         setupFullscreenBehavior()
     }
 
+    override func orderOut(_ sender: Any?) {
+        Log.info("OverlayWindow orderOut: windowNumber=\(windowNumber) frame=\(frame) content=\(contentLayoutRect) visible=\(isVisible) key=\(isKeyWindow) main=\(isMainWindow) mini=\(isMiniaturized) title='\(title)'")
+        super.orderOut(sender)
+    }
+
+    override func orderFront(_ sender: Any?) {
+        Log.info("OverlayWindow orderFront: windowNumber=\(windowNumber) frame=\(frame) content=\(contentLayoutRect) title='\(title)'")
+        super.orderFront(sender)
+    }
+
+    override func makeKeyAndOrderFront(_ sender: Any?) {
+        Log.info("OverlayWindow makeKeyAndOrderFront: windowNumber=\(windowNumber) frame=\(frame) visible=\(isVisible) onActiveSpace=\(isOnActiveSpace)")
+        super.makeKeyAndOrderFront(sender)
+    }
+
+    override func close() {
+        Log.info("OverlayWindow close: windowNumber=\(windowNumber) frame=\(frame) visible=\(isVisible) title='\(title)'")
+        super.close()
+    }
+
     private func setupFullscreenBehavior() {
         // Allow fullscreen with managed behavior
         collectionBehavior = [.fullScreenPrimary, .managed]
