@@ -1,0 +1,177 @@
+import Darwin
+import Foundation
+
+/// Per-process resource snapshot.
+struct ProcessResourceInfo: Identifiable {
+    let pid: pid_t
+    let parentPid: pid_t
+    let name: String
+    let cpuPercent: Double
+    let rssBytes: Int64
+
+    var id: pid_t { pid }
+
+    var formattedCPU: String {
+        String(format: "%.1f%%", cpuPercent)
+    }
+
+    var formattedRSS: String {
+        let mb = Double(rssBytes) / (1024 * 1024)
+        if mb >= 1024 {
+            return String(format: "%.1f GB", mb / 1024)
+        }
+        return String(format: "%.1f MB", mb)
+    }
+}
+
+/// Aggregate snapshot of all child processes under a shell PID.
+struct ProcessGroupSnapshot {
+    let shellPid: pid_t
+    let children: [ProcessResourceInfo]  // sorted by CPU desc
+    let timestamp: Date
+
+    var totalCPU: Double {
+        children.reduce(0) { $0 + $1.cpuPercent }
+    }
+
+    var totalRSSBytes: Int64 {
+        children.reduce(0) { $0 + $1.rssBytes }
+    }
+
+    var formattedTotalCPU: String {
+        String(format: "%.1f%%", totalCPU)
+    }
+
+    var formattedTotalRSS: String {
+        let mb = Double(totalRSSBytes) / (1024 * 1024)
+        if mb >= 1024 {
+            return String(format: "%.1f GB", mb / 1024)
+        }
+        return String(format: "%.1f MB", mb)
+    }
+}
+
+/// On-demand process resource monitor.
+/// Polls `ps` on a timer to capture CPU/memory for a shell's child process tree.
+/// Only runs while actively needed (hover card visible).
+final class ProcessResourceMonitor {
+
+    var onUpdate: ((ProcessGroupSnapshot?) -> Void)?
+
+    private var timer: DispatchSourceTimer?
+    private var isStopped = true
+    private let queue = DispatchQueue(label: "com.chau7.processmonitor", qos: .utility)
+
+    func start(shellPID: pid_t) {
+        stop()
+        guard shellPID > 0 else { return }
+
+        isStopped = false
+
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now(), repeating: 2.0)
+        timer.setEventHandler { [weak self] in
+            self?.poll(shellPID: shellPID)
+        }
+        timer.resume()
+        self.timer = timer
+    }
+
+    func stop() {
+        isStopped = true
+        timer?.cancel()
+        timer = nil
+    }
+
+    // MARK: - Private
+
+    private func poll(shellPID: pid_t) {
+        guard !isStopped else { return }
+        let snapshot = captureSnapshot(shellPID: shellPID)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.isStopped else { return }
+            self.onUpdate?(snapshot)
+        }
+    }
+
+    private func captureSnapshot(shellPID: pid_t) -> ProcessGroupSnapshot? {
+        guard let output = runSubprocess(
+            executablePath: "/bin/ps",
+            arguments: ["-axo", "pid,ppid,rss,%cpu,comm"]
+        ) else { return nil }
+
+        // Build parent→children map and per-PID info
+        var childrenOf: [pid_t: [pid_t]] = [:]
+        var infoOf: [pid_t: (name: String, cpu: Double, rss: Int64)] = [:]
+
+        for line in output.split(separator: "\n") {
+            let cols = line.split(separator: " ", maxSplits: 4, omittingEmptySubsequences: true)
+            guard cols.count >= 5,
+                  let pid = Int32(cols[0]),
+                  let ppid = Int32(cols[1]),
+                  let rssKB = Int64(cols[2]),
+                  let cpu = Double(cols[3]) else { continue }
+
+            let comm = String(cols[4])
+            let name = URL(fileURLWithPath: comm).lastPathComponent
+
+            childrenOf[ppid, default: []].append(pid)
+            infoOf[pid] = (name: name, cpu: cpu, rss: rssKB * 1024)
+        }
+
+        // BFS from shellPID to collect all descendants
+        var descendants: [ProcessResourceInfo] = []
+        var bfsQueue = childrenOf[shellPID] ?? []
+        while !bfsQueue.isEmpty {
+            let pid = bfsQueue.removeFirst()
+            if let info = infoOf[pid] {
+                descendants.append(ProcessResourceInfo(
+                    pid: pid,
+                    parentPid: shellPID,
+                    name: info.name,
+                    cpuPercent: info.cpu,
+                    rssBytes: info.rss
+                ))
+            }
+            if let grandchildren = childrenOf[pid] {
+                bfsQueue.append(contentsOf: grandchildren)
+            }
+        }
+
+        // Sort by CPU descending
+        descendants.sort { $0.cpuPercent > $1.cpuPercent }
+
+        return ProcessGroupSnapshot(
+            shellPid: shellPID,
+            children: descendants,
+            timestamp: Date()
+        )
+    }
+
+    /// Runs a subprocess and returns stdout. Reaps child to prevent zombies.
+    private func runSubprocess(executablePath: String, arguments: [String]) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executablePath)
+        process.arguments = arguments
+
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+
+        // Explicitly reap — Foundation.Process on background queues
+        // may not run the SIGCHLD handler, leaving a zombie.
+        var status: Int32 = 0
+        waitpid(process.processIdentifier, &status, WNOHANG)
+
+        return String(decoding: data, as: UTF8.self)
+    }
+}
