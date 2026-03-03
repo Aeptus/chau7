@@ -111,6 +111,8 @@ public final class MetalTerminalRenderer: NSObject {
     private var fontDescent: CGFloat = 0
     private var fontSize: CGFloat = 13
     private var scaleFactor: CGFloat = 1.0
+    /// Normalized underline position within a cell (0=top, 1=bottom), derived from font metrics
+    private var underlinePosition: Float = 0.88
 
     // MARK: - Cursor State
 
@@ -141,7 +143,8 @@ public final class MetalTerminalRenderer: NSObject {
         var viewportSize: SIMD2<Float>
         var scaleFactor: Float
         var blinkVisible: Float  // 1.0 = show blinking text, 0.0 = hide
-        var _pad: SIMD2<Float> = .zero  // alignment padding
+        var underlineY: Float    // normalized Y position for underline (0=top, 1=bottom)
+        var _pad: Float = 0      // alignment padding
     }
 
     // MARK: - Initialization
@@ -250,15 +253,16 @@ public final class MetalTerminalRenderer: NSObject {
             space: colorSpace,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         )
-        atlasContext?.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0))
-        atlasContext?.fill(CGRect(x: 0, y: 0, width: atlasWidth, height: atlasHeight))
+        atlasContext?.clear(CGRect(x: 0, y: 0, width: atlasWidth, height: atlasHeight))
 
-        // Enable font smoothing for sharper glyph rendering (matches Terminal.app quality)
-        atlasContext?.setShouldSmoothFonts(true)
+        // Font smoothing note: setShouldSmoothFonts is NOT used here because
+        // subpixel LCD smoothing puts per-channel coverage in R/G/B, but our shader
+        // only reads texColor.a — inflating alpha and destroying edge antialiasing.
+        // Grayscale AA + subpixel positioning gives the best atlas quality.
+        atlasContext?.setShouldSmoothFonts(false)
+        atlasContext?.setShouldAntialias(true)
         atlasContext?.setAllowsFontSubpixelPositioning(true)
         atlasContext?.setShouldSubpixelPositionFonts(true)
-        atlasContext?.setShouldSubpixelQuantizeFonts(true)
-        atlasContext?.setShouldAntialias(true)
     }
 
     // MARK: - Font Configuration
@@ -290,36 +294,30 @@ public final class MetalTerminalRenderer: NSObject {
         boldItalicFont = CTFontCreateCopyWithSymbolicTraits(regularFont, scaledSize, nil, boldItalicTraits, boldItalicTraits)
             ?? regularFont
 
-        // Cell size from regular font metrics — must match the CPU renderer
-        // (RustTerminalView.updateCellDimensions) so rows/cols agree.
+        // Compute cell size in point space using the shared algorithm (single source of truth),
+        // then scale for atlas rendering. Positions divide by scaleFactor to recover
+        // the exact CPU cell dimensions, eliminating rounding drift.
+        let pointCellSize = TerminalFont.cellSize(for: nsFont)
+        cellSize = CGSize(
+            width: pointCellSize.width * scaleFactor,
+            height: pointCellSize.height * scaleFactor
+        )
+
+        // Store scaled font metrics for glyph placement within atlas slots
         let ascent = CTFontGetAscent(regularFont)
         let descent = CTFontGetDescent(regularFont)
-        let leading = CTFontGetLeading(regularFont)
         self.fontAscent = ascent
         self.fontDescent = descent
 
-        // Width: max advance of all printable ASCII (32-126), not just "M"
-        var characters = (32...126).map { UniChar($0) }
-        var glyphs = [CGGlyph](repeating: 0, count: characters.count)
-        CTFontGetGlyphsForCharacters(regularFont, &characters, &glyphs, characters.count)
-        var advances = [CGSize](repeating: .zero, count: characters.count)
-        CTFontGetAdvancesForGlyphs(regularFont, .horizontal, glyphs, &advances, glyphs.count)
-        var maxWidth: CGFloat = 0
-        for i in 0..<glyphs.count where glyphs[i] != 0 {
-            maxWidth = max(maxWidth, advances[i].width)
-        }
-        // Fallback if no glyphs mapped
-        if maxWidth == 0 {
-            var mGlyph = CTFontGetGlyphWithName(regularFont, "M" as CFString)
-            var mAdvance = CGSize.zero
-            CTFontGetAdvancesForGlyphs(regularFont, .horizontal, &mGlyph, &mAdvance, 1)
-            maxWidth = mAdvance.width
-        }
-
-        cellSize = CGSize(
-            width: ceil(maxWidth),
-            height: ceil(ascent + descent + leading)
-        )
+        // Derive underline position from font metrics (in normalized cell space).
+        // CTFontGetUnderlinePosition returns a negative offset below the baseline.
+        // In cell space: baseline is at (ascent / cellHeight_pt), underline is below that.
+        let baseCT = nsFont as CTFont
+        let ptAscent = CTFontGetAscent(baseCT)
+        let ulOffset = CTFontGetUnderlinePosition(baseCT)  // negative, e.g. -1.5
+        let baselineFrac = ptAscent / pointCellSize.height   // e.g. 0.82
+        let ulFrac = baselineFrac - ulOffset / pointCellSize.height // e.g. 0.82 + 1.5/17 ≈ 0.91
+        self.underlinePosition = Float(min(max(ulFrac, 0.7), 0.95))
 
         Log.info("MetalRenderer: Font configured — \(CTFontCopyFullName(regularFont)), scaledSize=\(scaledSize), cellSize=\(cellSize), ascent=\(ascent), descent=\(descent)")
 
@@ -344,9 +342,10 @@ public final class MetalTerminalRenderer: NSObject {
         packRowHeight = 0
         atlasDirty = false
 
-        // Clear bitmap
-        atlasContext?.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0))
-        atlasContext?.fill(CGRect(x: 0, y: 0, width: atlasWidth, height: atlasHeight))
+        // Clear bitmap — must use .clear() not .fill() with transparent black.
+        // CGContext defaults to source-over compositing where fill(0,0,0,0)
+        // is a no-op: src*0 + dst*1 = dst. Only .clear() forces all bytes to zero.
+        atlasContext?.clear(CGRect(x: 0, y: 0, width: atlasWidth, height: atlasHeight))
     }
 
     /// Pre-rasterizes ASCII 32-126 for all style variants (regular, bold, italic, bold+italic).
@@ -717,7 +716,8 @@ public final class MetalTerminalRenderer: NSObject {
             cellSize: SIMD2(Float(cellSize.width / scaleFactor), Float(cellSize.height / scaleFactor)),
             viewportSize: SIMD2(Float(viewportSize.width), Float(viewportSize.height)),
             scaleFactor: Float(scaleFactor),
-            blinkVisible: textBlinkPhase ? 1.0 : 0.0
+            blinkVisible: textBlinkPhase ? 1.0 : 0.0,
+            underlineY: underlinePosition
         )
     }
 
@@ -776,7 +776,8 @@ extension MetalTerminalRenderer {
         float2 viewportSize;
         float scaleFactor;
         float blinkVisible;  // 1.0 = show blinking text, 0.0 = hide
-        float2 _pad;
+        float underlineY;    // normalized Y position for underline decoration
+        float _pad;
     };
 
     struct VertexOut {
@@ -849,7 +850,7 @@ extension MetalTerminalRenderer {
         texture2d<float> glyphAtlas [[texture(0)]],
         constant Uniforms& uniforms [[buffer(2)]]
     ) {
-        constexpr sampler textureSampler(mag_filter::nearest, min_filter::nearest);
+        constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
         float4 texColor = glyphAtlas.sample(textureSampler, in.texCoord);
 
         // Text blink: hide text when blink flag (bit 4) is set and blink phase is off
@@ -888,7 +889,7 @@ extension MetalTerminalRenderer {
         // 0/1=single, 2=double, 3=curl/wavy, 4=dotted, 5=dashed
         if ((in.flags & 4u) != 0) {
             uint ulVariant = (in.flags >> 8) & 7u;
-            float underlineY = 1.0 - 0.12; // ~88% from top
+            float underlineY = uniforms.underlineY; // from font metrics
 
             if (ulVariant == 2u) {
                 // Double underline: two thin lines separated by a gap

@@ -14,46 +14,6 @@ import simd
 /// SIMD4<Float>, and writes TerminalCell structs into the TripleBufferedTerminal.
 final class RustTermBridge {
 
-    // MARK: - Types (must match RustTerminalView.swift / chau7_terminal.h)
-
-    /// Cell attribute flags from Rust (matches CellFlags in RustTerminalView.swift)
-    private struct RustFlags {
-        static let bold: UInt8       = 1 << 0
-        static let italic: UInt8     = 1 << 1
-        static let underline: UInt8  = 1 << 2
-        static let strikethrough: UInt8 = 1 << 3
-        static let inverse: UInt8    = 1 << 4
-        static let dim: UInt8        = 1 << 5
-        static let hidden: UInt8     = 1 << 6
-    }
-
-    /// C-compatible cell data matching Rust's CellData.
-    /// Must be identical in layout to the struct in RustTerminalView.swift.
-    struct CellData {
-        var character: UInt32
-        var fg_r: UInt8
-        var fg_g: UInt8
-        var fg_b: UInt8
-        var bg_r: UInt8
-        var bg_g: UInt8
-        var bg_b: UInt8
-        var flags: UInt8
-        var _pad: UInt8
-        var link_id: UInt16  // OSC 8 hyperlink ID (0 = no link)
-    }
-
-    /// C-compatible grid snapshot matching Rust's GridSnapshot
-    struct GridSnapshot {
-        var cells: UnsafeMutablePointer<CellData>?
-        var cols: UInt16
-        var rows: UInt16
-        var cursor_visible: UInt8  // DECTCEM: 0 = hidden, 1 = visible
-        var _pad: (UInt8, UInt8, UInt8)  // Alignment padding to next UInt32
-        var scrollback_rows: UInt32
-        var display_offset: UInt32
-        var capacity: Int  // Must match Rust's usize (8 bytes on 64-bit)
-    }
-
     // MARK: - Properties
 
     /// Default foreground for the current color scheme (used when Rust sends 0,0,0 fg for default)
@@ -88,7 +48,7 @@ final class RustTermBridge {
     ///   - grid: Pointer to a GridSnapshot obtained from `chau7_terminal_get_grid()`
     /// - Returns: `(rows, cols)` actually synced, or `nil` if the grid should trigger a resize
     @discardableResult
-    func syncToTripleBuffer(_ buffer: TripleBufferedTerminal, grid: UnsafeMutablePointer<GridSnapshot>) -> (rows: Int, cols: Int)? {
+    func syncToTripleBuffer(_ buffer: TripleBufferedTerminal, grid: UnsafeMutablePointer<RustGridSnapshot>) -> (rows: Int, cols: Int)? {
         let snapshot = grid.pointee
         guard let cells = snapshot.cells else { return nil }
 
@@ -120,7 +80,7 @@ final class RustTermBridge {
 
     /// Converts a single Rust CellData to a Metal TerminalCell, blending any row tint.
     @inline(__always)
-    private func convertCell(_ cell: CellData, row: Int) -> TerminalCell {
+    private func convertCell(_ cell: RustCellData, row: Int) -> TerminalCell {
         let flags = cell.flags
 
         // Convert u8 RGB → SIMD4<Float>
@@ -138,17 +98,17 @@ final class RustTermBridge {
         )
 
         // Handle inverse: swap fg/bg
-        if flags & RustFlags.inverse != 0 {
+        if flags & RustCellFlags.inverse != 0 {
             swap(&fg, &bg)
         }
 
         // Handle dim: reduce fg intensity
-        if flags & RustFlags.dim != 0 {
+        if flags & RustCellFlags.dim != 0 {
             fg = SIMD4(fg.x * 0.6, fg.y * 0.6, fg.z * 0.6, fg.w)
         }
 
         // Handle hidden: make fg match bg
-        if flags & RustFlags.hidden != 0 {
+        if flags & RustCellFlags.hidden != 0 {
             fg = bg
         }
 
@@ -158,20 +118,10 @@ final class RustTermBridge {
             bg = bg * (1.0 - alpha) + SIMD4(tint.x, tint.y, tint.z, 1.0) * alpha
         }
 
-        // Map Rust style flags to Metal TerminalCell flags.
-        // Metal flags layout:
-        //   bits 0-4:  bold=1, italic=2, underline=4, strikethrough=8, blink=16
-        //   bit  5:    cursor present
-        //   bits 6-7:  cursor style
-        //   bits 8-10: underline variant (0=none, 1=single, 2=double, 3=curl, 4=dotted, 5=dashed)
-        // Rust flags:  bold=1, italic=2, underline=4, strikethrough=8 (same bit positions!)
-        // Inverse/dim/hidden are handled above in color conversion, not passed through.
-        var metalFlags: UInt32 = 0
-        if flags & RustFlags.bold != 0       { metalFlags |= 1 }
-        if flags & RustFlags.italic != 0     { metalFlags |= 2 }
-        if flags & RustFlags.underline != 0  { metalFlags |= 4 }
-        if flags & RustFlags.strikethrough != 0 { metalFlags |= 8 }
-        // Encode underline variant in bits 8-10 (from _pad byte)
+        // Bits 0-3 (bold, italic, underline, strikethrough) have identical positions
+        // in Rust and Metal — use a single bitwise widening instead of per-flag branches.
+        var metalFlags = UInt32(flags & RustCellFlags.metalStyleMask)
+        // Underline variant in bits 8-10 (from _pad bits 0-2)
         metalFlags |= UInt32(cell._pad & 0x07) << 8
 
         return TerminalCell(

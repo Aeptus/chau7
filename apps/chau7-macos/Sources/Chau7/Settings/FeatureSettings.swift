@@ -407,7 +407,9 @@ final class FeatureSettings: ObservableObject {
     @Published var fontFamily: String {
         didSet {
             UserDefaults.standard.set(fontFamily, forKey: Keys.fontFamily)
-            NotificationCenter.default.post(name: .terminalFontChanged, object: nil)
+            // Don't post .terminalFontChanged here — that notification triggers
+            // applyDefaultFontSize() which resets per-tab zoom. Font family changes
+            // are picked up by SwiftUI's @ObservedObject observation directly.
         }
     }
 
@@ -420,6 +422,12 @@ final class FeatureSettings: ObservableObject {
             }
             UserDefaults.standard.set(fontSize, forKey: Keys.fontSize)
             NotificationCenter.default.post(name: .terminalFontChanged, object: nil)
+        }
+    }
+
+    @Published var customFontFamily: String {
+        didSet {
+            UserDefaults.standard.set(customFontFamily, forKey: Keys.customFontFamily)
         }
     }
 
@@ -436,8 +444,19 @@ final class FeatureSettings: ObservableObject {
     }
 
     /// Available monospace fonts for the terminal, filtered by system availability.
-    /// Includes system fonts, popular open-source fonts, and premium fonts.
-    static let availableFonts: [String] = {
+    /// Computed property so the custom font (if valid) appears at the top.
+    static var availableFonts: [String] {
+        var fonts = builtinAvailableFonts
+        let custom = shared.customFontFamily.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !custom.isEmpty, !fonts.contains(custom),
+           NSFontManager.shared.font(withFamily: custom, traits: [], weight: 5, size: 12) != nil {
+            fonts.insert(custom, at: 0)
+        }
+        return fonts
+    }
+
+    /// Built-in monospace font list, filtered by system availability (computed once).
+    private static let builtinAvailableFonts: [String] = {
         let monospacedFonts = [
             // macOS System Fonts
             "Menlo",
@@ -559,7 +578,11 @@ final class FeatureSettings: ObservableObject {
             "Intel One Mono",     // Intel's open source font
         ]
         let fontManager = NSFontManager.shared
-        return monospacedFonts.filter { fontManager.font(withFamily: $0, traits: [], weight: 5, size: 12) != nil }
+        // SF Mono is system-restricted: NSFontManager returns nil for it, but
+        // it's always available via NSFont.monospacedSystemFont(). Keep it unconditionally.
+        return monospacedFonts.filter {
+            $0 == "SF Mono" || fontManager.font(withFamily: $0, traits: [], weight: 5, size: 12) != nil
+        }
     }()
 
     private static let defaultDangerousCommandPatterns: [String] = [
@@ -1569,6 +1592,7 @@ final class FeatureSettings: ObservableObject {
         // Font (NEW)
         static let fontFamily = "terminal.fontFamily"
         static let fontSize = "terminal.fontSize"
+        static let customFontFamily = "terminal.customFontFamily"
         static let defaultZoomPercent = "terminal.defaultZoomPercent"
         // Color Scheme (NEW)
         static let colorSchemeName = "terminal.colorSchemeName"
@@ -1711,8 +1735,9 @@ final class FeatureSettings: ObservableObject {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
 
         // Font Settings (NEW)
-        self.fontFamily = defaults.string(forKey: Keys.fontFamily) ?? "Menlo"
-        self.fontSize = defaults.object(forKey: Keys.fontSize) as? Int ?? 13
+        self.fontFamily = defaults.string(forKey: Keys.fontFamily) ?? "SF Mono"
+        self.fontSize = defaults.object(forKey: Keys.fontSize) as? Int ?? 11
+        self.customFontFamily = defaults.string(forKey: Keys.customFontFamily) ?? ""
         self.defaultZoomPercent = defaults.object(forKey: Keys.defaultZoomPercent) as? Int ?? 100
 
         // Color Scheme (NEW)
@@ -2436,8 +2461,9 @@ final class FeatureSettings: ObservableObject {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
 
         // Font
-        fontFamily = "Menlo"
-        fontSize = 13
+        fontFamily = "SF Mono"
+        fontSize = 11
+        customFontFamily = ""
         defaultZoomPercent = 100
 
         // Colors
@@ -2540,8 +2566,9 @@ final class FeatureSettings: ObservableObject {
     }
 
     func resetAppearanceToDefaults() {
-        fontFamily = "Menlo"
-        fontSize = 13
+        fontFamily = "SF Mono"
+        fontSize = 11
+        customFontFamily = ""
         defaultZoomPercent = 100
         colorSchemeName = "Default"
         customColorScheme = nil
@@ -2707,8 +2734,8 @@ extension FeatureSettings {
     static var defaultExportableSettings: ExportableSettings {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         return ExportableSettings(
-            fontFamily: "Menlo",
-            fontSize: 13,
+            fontFamily: "SF Mono",
+            fontSize: 11,
             defaultZoomPercent: 100,
             colorSchemeName: "Default",
             customColorScheme: nil,
