@@ -5,6 +5,8 @@ import AppKit
 
 struct FontColorsSettingsView: View {
     @ObservedObject private var settings = FeatureSettings.shared
+    @State private var customFontInput: String = ""
+    @State private var customFontValid: Bool? = nil  // nil = not yet validated
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -27,6 +29,46 @@ struct FontColorsSettingsView: View {
                 options: FeatureSettings.availableFonts.map { (value: $0, label: $0) }
             )
 
+            // Custom font entry — validates live as you type, applies on Enter
+            HStack(spacing: 8) {
+                Text(L("settings.appearance.customFont", "Custom Font"))
+                    .frame(width: 120, alignment: .trailing)
+                TextField(
+                    L("settings.appearance.customFont.placeholder", "Font family name..."),
+                    text: $customFontInput,
+                    onCommit: {
+                        let family = customFontInput.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !family.isEmpty, customFontValid == true else { return }
+                        settings.customFontFamily = family
+                        settings.fontFamily = family
+                    }
+                )
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 200)
+                .onAppear {
+                    customFontInput = settings.customFontFamily
+                    if !customFontInput.isEmpty {
+                        customFontValid = NSFontManager.shared.font(withFamily: customFontInput, traits: [], weight: 5, size: 12) != nil
+                    }
+                }
+                .onChange(of: customFontInput) { newValue in
+                    let family = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if family.isEmpty {
+                        customFontValid = nil
+                    } else {
+                        customFontValid = NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: 12) != nil
+                    }
+                }
+
+                if let valid = customFontValid {
+                    Image(systemName: valid ? "checkmark.circle.fill" : "xmark.circle.fill")
+                        .foregroundColor(valid ? .green : .red)
+                        .help(valid
+                            ? L("settings.appearance.customFont.valid", "Font found — press Enter to apply")
+                            : L("settings.appearance.customFont.invalid", "Font not found on this system"))
+                }
+            }
+
             SettingsStepper(
                 label: L("settings.appearance.fontSize", "Font Size"),
                 help: L("settings.appearance.fontSize.help", "Terminal font size in points (8-72)"),
@@ -48,9 +90,9 @@ struct FontColorsSettingsView: View {
                 suffix: "%"
             )
 
-            // Font Preview
+            // Font Preview — use NSFont bridge for SF Mono (SwiftUI .custom() can't resolve it)
             Text(L("settings.appearance.fontPreview", "The quick brown fox jumps over the lazy dog"))
-                .font(.custom(settings.fontFamily, size: CGFloat(settings.fontSize)))
+                .font(Font(TerminalFont.resolveFont(family: settings.fontFamily, size: CGFloat(settings.fontSize))))
                 .padding(.vertical, 4)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -126,4 +168,5 @@ struct FontColorsSettingsView: View {
             ], alignment: .trailing)
         }
     }
+
 }

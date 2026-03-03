@@ -4,45 +4,6 @@ import Darwin
 import QuartzCore
 import CoreText
 
-// MARK: - Rust FFI Structures (matching chau7_terminal.h)
-
-/// Cell attribute flags from Rust
-private struct CellFlags {
-    static let bold: UInt8 = 1 << 0
-    static let italic: UInt8 = 1 << 1
-    static let underline: UInt8 = 1 << 2
-    static let strikethrough: UInt8 = 1 << 3
-    static let inverse: UInt8 = 1 << 4
-    static let dim: UInt8 = 1 << 5
-    static let hidden: UInt8 = 1 << 6
-}
-
-/// C-compatible cell data matching Rust's CellData
-private struct RustCellData {
-    var character: UInt32
-    var fg_r: UInt8
-    var fg_g: UInt8
-    var fg_b: UInt8
-    var bg_r: UInt8
-    var bg_g: UInt8
-    var bg_b: UInt8
-    var flags: UInt8
-    var _pad: UInt8
-    var link_id: UInt16  // OSC 8 hyperlink ID (0 = no link)
-}
-
-/// C-compatible grid snapshot matching Rust's GridSnapshot
-private struct RustGridSnapshot {
-    var cells: UnsafeMutablePointer<RustCellData>?
-    var cols: UInt16
-    var rows: UInt16
-    var cursor_visible: UInt8  // DECTCEM: 0 = hidden, 1 = visible
-    var _pad: (UInt8, UInt8, UInt8)  // Alignment padding to next UInt32
-    var scrollback_rows: UInt32
-    var display_offset: UInt32
-    var capacity: Int  // Must match Rust's usize (8 bytes on 64-bit)
-}
-
 // MARK: - CVDisplayLink Weak Reference Box
 
 /// Prevents use-after-free in CVDisplayLink callbacks.
@@ -74,22 +35,22 @@ private final class RustGridView: NSView {
     }
 
     var cellSize: CGSize = CGSize(width: 8, height: 16) {
-        didSet { needsDisplay = true }
+        didSet { if !metalRenderingActive { needsDisplay = true } }
     }
 
     var foregroundColor: NSColor = .textColor {
-        didSet { needsDisplay = true }
+        didSet { if !metalRenderingActive { needsDisplay = true } }
     }
     var backgroundColor: NSColor = .textBackgroundColor {
-        didSet { needsDisplay = true }
+        didSet { if !metalRenderingActive { needsDisplay = true } }
     }
     var cursorColor: NSColor = .white {
-        didSet { needsDisplay = true }
+        didSet { if !metalRenderingActive { needsDisplay = true } }
     }
     var selectionColor: NSColor = .selectedTextBackgroundColor
 
     var cursorStyle: CursorStyle = CursorStyle(shape: .block, blink: false) {
-        didSet { needsDisplay = true }
+        didSet { if !metalRenderingActive { needsDisplay = true } }
     }
 
     private var cols: Int = 0
@@ -99,7 +60,7 @@ private final class RustGridView: NSView {
     /// Viewport-relative row tints (row index → tint color). Applied as a blend over cell backgrounds.
     var rowTints: [Int: NSColor] = [:] {
         didSet {
-            if rowTints.count != oldValue.count || rowTints.keys.sorted() != oldValue.keys.sorted() {
+            if !metalRenderingActive, rowTints.count != oldValue.count || rowTints.keys.sorted() != oldValue.keys.sorted() {
                 needsDisplay = true
             }
         }
@@ -112,7 +73,7 @@ private final class RustGridView: NSView {
     /// Programs like Claude Code hide the terminal cursor and draw their own via ANSI styling.
     var cursorVisible: Bool = true {
         didSet {
-            if oldValue != cursorVisible {
+            if !metalRenderingActive, oldValue != cursorVisible {
                 setNeedsDisplay(cursorRect(for: cursor))
             }
         }
@@ -297,13 +258,13 @@ private final class RustGridView: NSView {
 
                 guard cell.character > 0, cell.character != 0xFFFF else { continue }
                 guard let scalar = UnicodeScalar(cell.character) else { continue }
-                if cell.flags & CellFlags.hidden != 0 { continue }
+                if cell.flags & RustCellFlags.hidden != 0 { continue }
 
                 let x = CGFloat(col) * cellWidth
                 let (fg, _) = resolveColors(for: cell)
                 let drawFont = fontForCell(cell.flags)
                 var textColor = fg
-                if cell.flags & CellFlags.dim != 0 {
+                if cell.flags & RustCellFlags.dim != 0 {
                     textColor = textColor.withAlphaComponent(0.6)
                 }
 
@@ -318,7 +279,7 @@ private final class RustGridView: NSView {
 
                 // Decorations — underline variants (stored in _pad byte)
                 // 0/1=single, 2=double, 3=curl/wavy, 4=dotted, 5=dashed
-                if cell.flags & CellFlags.underline != 0 {
+                if cell.flags & RustCellFlags.underline != 0 {
                     let underlineVariant = cell._pad
                     ctx.setStrokeColor(textColor.cgColor)
                     let lineW = max(1, drawFont.underlineThickness)
@@ -364,7 +325,7 @@ private final class RustGridView: NSView {
                         ctx.strokePath()
                     }
                 }
-                if cell.flags & CellFlags.strikethrough != 0 {
+                if cell.flags & RustCellFlags.strikethrough != 0 {
                     ctx.setStrokeColor(textColor.cgColor)
                     ctx.setLineWidth(1)
                     let strikeY = y + baselineOffset + drawFont.xHeight / 2.0
@@ -373,7 +334,7 @@ private final class RustGridView: NSView {
                     ctx.strokePath()
                 }
                 // OSC 8 hyperlink: underline in link color
-                if cell.link_id > 0 && cell.flags & CellFlags.underline == 0 {
+                if cell.link_id > 0 && cell.flags & RustCellFlags.underline == 0 {
                     let linkColor = NSColor.linkColor.cgColor
                     ctx.setStrokeColor(linkColor)
                     ctx.setLineWidth(max(1, drawFont.underlineThickness))
@@ -445,12 +406,12 @@ private final class RustGridView: NSView {
         italicFont = manager.convert(font, toHaveTrait: .italicFontMask)
         let boldItalic = manager.convert(boldFont, toHaveTrait: .italicFontMask)
         boldItalicFont = boldItalic
-        needsDisplay = true
+        if !metalRenderingActive { needsDisplay = true }
     }
 
     private func fontForCell(_ flags: UInt8) -> NSFont {
-        let isBold = flags & CellFlags.bold != 0
-        let isItalic = flags & CellFlags.italic != 0
+        let isBold = flags & RustCellFlags.bold != 0
+        let isItalic = flags & RustCellFlags.italic != 0
         switch (isBold, isItalic) {
         case (true, true):
             return boldItalicFont
@@ -468,7 +429,7 @@ private final class RustGridView: NSView {
         // The CGContext is set to sRGB color space in draw() for consistent rendering.
         var fg = NSColor(deviceRed: CGFloat(cell.fg_r) / 255.0, green: CGFloat(cell.fg_g) / 255.0, blue: CGFloat(cell.fg_b) / 255.0, alpha: 1.0)
         var bg = NSColor(deviceRed: CGFloat(cell.bg_r) / 255.0, green: CGFloat(cell.bg_g) / 255.0, blue: CGFloat(cell.bg_b) / 255.0, alpha: 1.0)
-        if cell.flags & CellFlags.inverse != 0 {
+        if cell.flags & RustCellFlags.inverse != 0 {
             swap(&fg, &bg)
         }
         return (fg, bg)
@@ -2171,8 +2132,14 @@ final class RustTerminalView: NSView {
     /// Font
     var font: NSFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular) {
         didSet {
-            gridView?.font = font
+            if !isMetalRenderingActive {
+                gridView?.font = font
+            }
             updateCellDimensions()
+            if isMetalRenderingActive {
+                gridView?.layer?.contents = nil
+            }
+            needsLayout = true
         }
     }
 
@@ -2394,11 +2361,15 @@ final class RustTerminalView: NSView {
 
         if window != nil {
             Log.trace("RustTerminalView[\(viewId)]: viewDidMoveToWindow - Added to window")
-            // Recalculate cell dimensions now that window?.backingScaleFactor is available
             updateCellDimensions()
             if isEventMonitoringEnabled {
                 Log.trace("RustTerminalView[\(viewId)]: viewDidMoveToWindow - Setting up event monitors")
                 setupEventMonitors()
+            }
+            // Re-configure Metal atlas with correct backingScaleFactor now that window is available
+            if isMetalRenderingActive,
+               let container = superview as? RustTerminalContainerView {
+                container.rustMetalCoordinator?.fontChanged()
             }
         } else {
             Log.trace("RustTerminalView[\(viewId)]: viewDidMoveToWindow - Removed from window")
@@ -2509,41 +2480,15 @@ final class RustTerminalView: NSView {
     // MARK: - Cell Dimensions
 
     private func updateCellDimensions() {
-        // Compute font dimensions using CTFont metrics:
-        // - Width: measure all ASCII printable chars, take max advance, ceil()
-        // - Height: max of (ascent+descent+leading) and NSLayoutManager.defaultLineHeight, ceil()
-        let ctFont = font as CTFont
         let oldWidth = cellWidth
         let oldHeight = cellHeight
-
-        // Cell width: max advance width of all printable ASCII characters
-        var characters = (32...126).map { UniChar($0) }
-        var glyphs = [CGGlyph](repeating: 0, count: characters.count)
-        let mapped = CTFontGetGlyphsForCharacters(ctFont, &characters, &glyphs, characters.count)
-        var maxWidth: CGFloat = 0
-        if mapped {
-            var advances = [CGSize](repeating: .zero, count: characters.count)
-            CTFontGetAdvancesForGlyphs(ctFont, .horizontal, glyphs, &advances, glyphs.count)
-            for idx in 0..<glyphs.count where glyphs[idx] != 0 {
-                maxWidth = max(maxWidth, advances[idx].width)
-            }
-        }
-        cellWidth = max(1, ceil(maxWidth))
-
-        // Cell height: use max of CTFont metrics and layout manager
-        let lineAscent = CTFontGetAscent(ctFont)
-        let lineDescent = CTFontGetDescent(ctFont)
-        let lineLeading = CTFontGetLeading(ctFont)
-        let baseLineHeight = lineAscent + lineDescent + lineLeading
-        // Also check NSLayoutManager's defaultLineHeight for consistent sizing
-        let layoutManager = NSLayoutManager()
-        let defaultLineHeight = layoutManager.defaultLineHeight(for: font)
-        cellHeight = max(1, ceil(max(baseLineHeight, defaultLineHeight)))
-
+        let cs = TerminalFont.cellSize(for: font)
+        cellWidth = cs.width
+        cellHeight = cs.height
         if cellWidth != oldWidth || cellHeight != oldHeight {
             Log.trace("RustTerminalView[\(viewId)]: updateCellDimensions - Cell size changed from \(oldWidth)x\(oldHeight) to \(cellWidth)x\(cellHeight)")
         }
-        gridView?.cellSize = CGSize(width: cellWidth, height: cellHeight)
+        gridView?.cellSize = cs
         rescaleInlineImages()
     }
 

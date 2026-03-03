@@ -13,7 +13,7 @@ import MetalKit
 /// Grid snapshot provider: reads the Rust grid and returns (snapshot pointer, free closure).
 /// The coordinator calls this each frame to get current grid state + cursor position.
 typealias RustGridProvider = () -> (
-    grid: UnsafeMutableRawPointer,  // Points to RustTermBridge.GridSnapshot
+    grid: UnsafeMutableRawPointer,  // Points to RustGridSnapshot
     cursor: (col: UInt16, row: UInt16),
     cursorVisible: Bool,            // DECTCEM: false when app hides cursor (ESC[?25l)
     free: () -> Void
@@ -157,6 +157,11 @@ final class RustMetalDisplayCoordinator: NSObject {
     }
 
     /// Called when the font changes.
+    /// Reconfigures the renderer's font/atlas but does NOT resize the triple buffer.
+    /// The authoritative resize happens in container.layout() after the terminal
+    /// view's needsLayout triggers layout() → updateCellDimensions() → renderRows/renderCols.
+    /// Doing resize() here would use stale bounds (layout hasn't run yet) and cause a
+    /// double-resize with potentially divergent row/col counts.
     func fontChanged() {
         configureFont()
         tripleBuffer.markFullRefresh()
@@ -270,7 +275,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         // 3. Convert grid pointer to typed pointer and sync to triple buffer.
         //    If the bridge returns nil, the grid dimensions changed — rebuild the
         //    triple buffer to match and re-sync immediately.
-        let gridPtr = snapshot.grid.assumingMemoryBound(to: RustTermBridge.GridSnapshot.self)
+        let gridPtr = snapshot.grid.assumingMemoryBound(to: RustGridSnapshot.self)
         if bridge.syncToTripleBuffer(tripleBuffer, grid: gridPtr) == nil {
             let gs = gridPtr.pointee
             let newRows = Int(gs.rows)

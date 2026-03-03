@@ -2007,12 +2007,6 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         })
     }
 
-    /// Called by TerminalViewRepresentable to apply font when SwiftUI updates.
-    func applyFontSize() {
-        // This is now handled by TerminalViewRepresentable.updateNSView
-        // to avoid double-setting the font.
-    }
-
     func clearSearch() {
         searchQuery = ""
         searchMatches = []

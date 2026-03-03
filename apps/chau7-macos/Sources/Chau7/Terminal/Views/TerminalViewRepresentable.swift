@@ -331,7 +331,6 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             rustView.startTerminal(initialOutput: headerBox)
 
             model.attachRustTerminal(view)
-            model.applyFontSize()
 
             // Enable Metal GPU rendering if the setting is on
             if useMetalRenderer {
@@ -348,7 +347,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         let metalActive = container.rustMetalCoordinator != nil
         if nsView.isHidden != isSuspended {
             nsView.isHidden = isSuspended
-            if !isSuspended {
+            if !isSuspended && !metalActive {
                 nsView.needsDisplay = true
             }
         }
@@ -388,10 +387,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
     }
 
     private func terminalFont() -> NSFont {
-        if let font = NSFont(name: settings.fontFamily, size: model.fontSize) {
-            return font
-        }
-        return NSFont.monospacedSystemFont(ofSize: model.fontSize, weight: .regular)
+        return TerminalFont.resolveFont(family: settings.fontFamily, size: model.fontSize)
     }
 }
 
