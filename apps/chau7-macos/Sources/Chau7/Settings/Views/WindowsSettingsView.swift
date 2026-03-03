@@ -25,6 +25,18 @@ struct WindowsSettingsView: View {
             Divider()
                 .padding(.vertical, 8)
 
+            // Fullscreen
+            SettingsSectionHeader(L("settings.windows.fullscreen", "Fullscreen"), icon: "arrow.up.left.and.arrow.down.right")
+
+            SettingsToggle(
+                label: L("settings.windows.alwaysShowToolbar", "Always Show Toolbar in Fullscreen"),
+                help: L("settings.windows.alwaysShowToolbar.help", "Keep the toolbar visible when the window is in fullscreen mode"),
+                isOn: $settings.alwaysShowToolbarInFullscreen
+            )
+
+            Divider()
+                .padding(.vertical, 8)
+
             // Split Panes
             SettingsSectionHeader(L("settings.windows.splitPanes", "Split Panes"), icon: "rectangle.split.2x1")
 

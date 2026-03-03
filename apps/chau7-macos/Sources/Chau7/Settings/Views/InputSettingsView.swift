@@ -101,6 +101,12 @@ struct InputSettingsView: View {
                     width: 250,
                     monospaced: true
                 )
+
+                SettingsToggle(
+                    label: L("settings.input.openInInternalEditor", "Open in Internal Editor"),
+                    help: L("settings.input.openInInternalEditor.help", "Open Cmd+clicked file paths in the built-in editor instead of an external application"),
+                    isOn: $settings.cmdClickOpensInternalEditor
+                )
             }
 
             SettingsToggle(

@@ -64,6 +64,18 @@ struct DangerousCommandSettingsView: View {
             Text(L("settings.dangerousGuard.description", "When enabled, pressing Enter on a command that matches a risky pattern will show a confirmation dialog before the command is sent to the shell."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            SettingsPicker(
+                label: L("settings.dangerousGuard.highlightScope", "Highlight Scope"),
+                help: L("settings.dangerousGuard.highlightScope.help", "Which terminal outputs are scanned for dangerous command patterns"),
+                selection: $settings.dangerousCommandHighlightScope,
+                options: [
+                    (value: DangerousCommandHighlightScope.none, label: L("settings.dangerousGuard.scope.none", "Disabled")),
+                    (value: DangerousCommandHighlightScope.aiOutputs, label: L("settings.dangerousGuard.scope.aiOutputs", "AI Outputs Only")),
+                    (value: DangerousCommandHighlightScope.allOutputs, label: L("settings.dangerousGuard.scope.allOutputs", "All Outputs"))
+                ],
+                disabled: !guard_.isEnabled
+            )
         }
     }
 

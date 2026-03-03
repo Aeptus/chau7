@@ -72,6 +72,16 @@ struct ProductivitySettingsView: View {
                 SnippetManager.shared.refreshConfiguration()
             }
 
+            SettingsTextField(
+                label: L("settings.productivity.repoSnippetPath", "Snippets Path"),
+                help: L("settings.productivity.repoSnippetPath.help", "Relative path within the git repository where snippets are stored"),
+                placeholder: ".chau7/snippets",
+                text: $settings.repoSnippetPath,
+                width: 250,
+                monospaced: true,
+                disabled: !settings.isSnippetsEnabled || !settings.isRepoSnippetsEnabled
+            )
+
             SettingsToggle(
                 label: L("settings.productivity.protectedFolders", "Allow Protected Folders"),
                 help: L(

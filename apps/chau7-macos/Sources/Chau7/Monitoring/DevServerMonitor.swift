@@ -79,10 +79,11 @@ final class DevServerMonitor {
 
     /// Check terminal output for dev server patterns.
     func checkOutput(_ output: String) {
-        if let serverName = CommandDetection.detectDevServerFromOutput(output) {
-            let url = CommandDetection.extractDevServerURL(from: output)
+        let cleaned = EscapeSequenceSanitizer.sanitize(output)
+        if let serverName = CommandDetection.detectDevServerFromOutput(cleaned) {
+            let url = CommandDetection.extractDevServerURL(from: cleaned)
             let port = url.flatMap { CommandDetection.extractPort(from: $0) }
-                ?? CommandDetection.extractPort(from: output)
+                ?? CommandDetection.extractPort(from: cleaned)
 
             let newServer = DevServerInfo(
                 name: serverName,

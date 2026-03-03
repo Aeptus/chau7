@@ -18,6 +18,19 @@ struct ScrollbackPerfSettingsView: View {
                 width: 100
             )
 
+            SettingsToggle(
+                label: L("settings.terminal.smartScroll", "Smart Scroll"),
+                help: L("settings.terminal.smartScroll.help", "Preserve scroll position when new output arrives while scrolled up"),
+                isOn: $settings.isSmartScrollEnabled
+            )
+
+            SettingsStepper(
+                label: L("settings.terminal.restoredScrollback", "Restored Scrollback"),
+                help: L("settings.terminal.restoredScrollback.help", "Lines of scrollback restored when recovering tabs (0 = disabled)"),
+                value: $settings.restoredScrollbackLines,
+                range: 0...10000
+            )
+
             Divider()
                 .padding(.vertical, 8)
 
