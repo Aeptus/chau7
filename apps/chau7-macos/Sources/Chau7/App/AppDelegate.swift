@@ -885,6 +885,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             TabBarToolbarDelegate.shared.recreateToolbar(for: window)
         }
         TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
+
+        // Post-resize recovery: check if the hosting view collapsed after layout settles.
+        // NSHostingView inside NSToolbar can lose its render layer during resize transitions
+        // even though SwiftUI reports valid metrics. Detect and force recreation.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard self != nil else { return }
+            TabBarToolbarDelegate.shared.validateHostingViewFrame(for: window) {
+                Log.warn("windowDidResize: hosting view frame collapsed after resize, forcing toolbar recreation")
+                TabBarToolbarDelegate.shared.recreateToolbar(for: window)
+            }
+        }
     }
 
     func windowWillEnterFullScreen(_ notification: Notification) {
@@ -903,6 +914,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.toolbar?.isVisible = true
         TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
         TitlebarBackgroundInstaller.install(for: window)
+
+        // macOS moves the toolbar into an NSToolbarFullScreenWindow during fullscreen.
+        // The NSHostingView's CALayer can become stale after this re-parenting, leaving
+        // SwiftUI reporting valid layout but nothing composited on screen.
+        // Force a toolbar recreation to get a fresh hosting view in the new window.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            Log.info("windowDidEnterFullScreen: recreating toolbar for fullscreen compositing fix")
+            TabBarToolbarDelegate.shared.recreateToolbar(for: window)
+        }
     }
 
     func windowDidExitFullScreen(_ notification: Notification) {
@@ -912,6 +932,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.toolbar?.isVisible = true
         TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
         TitlebarBackgroundInstaller.install(for: window)
+
+        // Same compositing fix as didEnterFullScreen — toolbar moves back from
+        // NSToolbarFullScreenWindow to the regular window.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            Log.info("windowDidExitFullScreen: recreating toolbar for compositing fix")
+            TabBarToolbarDelegate.shared.recreateToolbar(for: window)
+        }
     }
 
     /// Fullscreen with auto-hiding menu bar (appears on hover at top edge)

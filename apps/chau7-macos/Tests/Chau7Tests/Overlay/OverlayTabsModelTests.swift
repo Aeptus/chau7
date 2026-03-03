@@ -205,53 +205,52 @@ final class OverlayTabsModelTests: XCTestCase {
                        "Moving a tab to its current index should be a no-op")
     }
 
-    func testSwapTabWithNeighborRight() {
+    func testMoveTabFromIndexRight() {
         model.newTab()
         model.newTab()
         let tabA = model.tabs[0]
         let tabB = model.tabs[1]
 
-        model.swapTabWithNeighbor(id: tabA.id, direction: 1)
+        model.moveTab(fromIndex: 0, toIndex: 1)
 
         XCTAssertEqual(model.tabs[0].id, tabB.id)
         XCTAssertEqual(model.tabs[1].id, tabA.id,
-                       "Swapping right should swap with the right neighbor")
+                       "Moving index 0 to 1 should swap adjacent tabs")
     }
 
-    func testSwapTabWithNeighborLeft() {
+    func testMoveTabFromIndexLeft() {
         model.newTab()
         model.newTab()
         let tabB = model.tabs[1]
         let tabC = model.tabs[2]
 
-        model.swapTabWithNeighbor(id: tabC.id, direction: -1)
+        model.moveTab(fromIndex: 2, toIndex: 1)
 
         XCTAssertEqual(model.tabs[1].id, tabC.id)
         XCTAssertEqual(model.tabs[2].id, tabB.id,
-                       "Swapping left should swap with the left neighbor")
+                       "Moving index 2 to 1 should swap adjacent tabs")
     }
 
-    func testSwapTabAtBoundaryIsNoop() {
+    func testMoveTabFromIndexSameIsNoop() {
         model.newTab()
         let originalOrder = model.tabs.map(\.id)
 
-        // Try to swap the first tab to the left (no neighbor)
-        model.swapTabWithNeighbor(id: model.tabs[0].id, direction: -1)
+        model.moveTab(fromIndex: 0, toIndex: 0)
         XCTAssertEqual(model.tabs.map(\.id), originalOrder,
-                       "Swapping left at index 0 should be a no-op")
-
-        // Try to swap the last tab to the right (no neighbor)
-        model.swapTabWithNeighbor(id: model.tabs.last!.id, direction: 1)
-        XCTAssertEqual(model.tabs.map(\.id), originalOrder,
-                       "Swapping right at last index should be a no-op")
+                       "Moving to same index should be a no-op")
     }
 
-    func testSwapTabDirectionZeroIsNoop() {
+    func testMoveTabFromIndexOutOfBoundsIsNoop() {
         model.newTab()
         let originalOrder = model.tabs.map(\.id)
-        model.swapTabWithNeighbor(id: model.tabs[0].id, direction: 0)
+
+        model.moveTab(fromIndex: -1, toIndex: 0)
         XCTAssertEqual(model.tabs.map(\.id), originalOrder,
-                       "Direction 0 should be a no-op")
+                       "Negative source index should be a no-op")
+
+        model.moveTab(fromIndex: 0, toIndex: model.tabs.count)
+        XCTAssertEqual(model.tabs.map(\.id), originalOrder,
+                       "Destination beyond bounds should be a no-op")
     }
 
     func testMoveCurrentTabRight() {

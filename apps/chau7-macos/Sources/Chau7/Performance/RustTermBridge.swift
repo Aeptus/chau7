@@ -60,6 +60,10 @@ final class RustTermBridge {
     private var defaultFg: SIMD4<Float> = SIMD4(1, 1, 1, 1)
     private var defaultBg: SIMD4<Float> = SIMD4(0, 0, 0, 1)
 
+    /// Viewport-relative row tints. Set before each syncToTripleBuffer call.
+    /// Key = viewport row (0-based), value = SIMD4 RGBA tint color.
+    var rowTints: [Int: SIMD4<Float>] = [:]
+
     // MARK: - Init
 
     init() {
@@ -103,7 +107,7 @@ final class RustTermBridge {
             for col in 0..<syncCols {
                 let idx = row * gridCols + col
                 let rustCell = cells[idx]
-                let metalCell = convertCell(rustCell)
+                let metalCell = convertCell(rustCell, row: row)
                 buffer.setCell(row: row, col: col, metalCell)
             }
         }
@@ -114,9 +118,9 @@ final class RustTermBridge {
 
     // MARK: - Cell Conversion
 
-    /// Converts a single Rust CellData to a Metal TerminalCell.
+    /// Converts a single Rust CellData to a Metal TerminalCell, blending any row tint.
     @inline(__always)
-    private func convertCell(_ cell: CellData) -> TerminalCell {
+    private func convertCell(_ cell: CellData, row: Int) -> TerminalCell {
         let flags = cell.flags
 
         // Convert u8 RGB → SIMD4<Float>
@@ -146,6 +150,12 @@ final class RustTermBridge {
         // Handle hidden: make fg match bg
         if flags & RustFlags.hidden != 0 {
             fg = bg
+        }
+
+        // Blend dangerous-row tint if present
+        if let tint = rowTints[row] {
+            let alpha = tint.w
+            bg = bg * (1.0 - alpha) + SIMD4(tint.x, tint.y, tint.z, 1.0) * alpha
         }
 
         // Map Rust style flags to Metal TerminalCell flags.

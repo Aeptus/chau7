@@ -64,35 +64,15 @@ final class TerminalHighlightView: NSView {
             )
         }
 
-        // When CPU rendering, dangerous row tinting is handled in-grid (RustGridView Phase 1)
-        // for pixel-perfect scrolling. When Metal is active, RustGridView.draw() is skipped,
-        // so we fall back to overlay drawing here.
-        let dangerTints: [Int: NSColor]
-        if rustView.isMetalRenderingActive {
-            dangerTints = session.dangerousRowTints(top: yDisp, bottom: yDisp + rows - 1)
-        } else {
-            dangerTints = [:]
-        }
+        // Dangerous row tinting is handled at the bridge level (RustTermBridge.convertCell)
+        // for both CPU and Metal paths — no overlay fallback needed here.
 
-        guard !cachedVisibleMatches.isEmpty || !dangerTints.isEmpty else { return }
+        guard !cachedVisibleMatches.isEmpty else { return }
 
         let highlightColor = NSColor.systemYellow.withAlphaComponent(0.28)
         let activeColor = NSColor.systemOrange.withAlphaComponent(0.45)
 
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-
-        // Draw dangerous command rows (Metal fallback — overlay path)
-        if !dangerTints.isEmpty {
-            for (absRow, color) in dangerTints {
-                let visibleRow = absRow - yDisp
-                if visibleRow >= 0 && visibleRow < rows {
-                    let y = CGFloat(visibleRow) * cellHeight
-                    let rect = NSRect(x: 0, y: y, width: CGFloat(cols) * cellWidth, height: cellHeight)
-                    context.setFillColor(color.cgColor)
-                    context.fill(rect)
-                }
-            }
-        }
 
         // Draw all visible matches
         if !cachedVisibleMatches.isEmpty {

@@ -2014,18 +2014,15 @@ final class OverlayTabsModel: ObservableObject {
         Log.info("Moved tab \(id) to index \(adjustedIndex)")
     }
 
-    /// Swaps a tab with its neighbor. Used for Chrome/Safari style live reordering.
-    /// - Parameters:
-    ///   - id: The tab ID to swap
-    ///   - direction: Positive for right, negative for left (zero is ignored)
-    func swapTabWithNeighbor(id: UUID, direction: Int) {
+    /// Moves a tab from one index to another. Used at drag-end for Chrome/Safari style reordering.
+    func moveTab(fromIndex source: Int, toIndex destination: Int) {
         dispatchPrecondition(condition: .onQueue(.main))
-        guard direction != 0 else { return }
-        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
-        let neighborIndex = index + (direction > 0 ? 1 : -1)
-        guard neighborIndex >= 0, neighborIndex < tabs.count else { return }
-        tabs.swapAt(index, neighborIndex)
-        Log.info("Swapped tab \(id) from index \(index) to \(neighborIndex)")
+        guard source != destination,
+              source >= 0, source < tabs.count,
+              destination >= 0, destination < tabs.count else { return }
+        let tab = tabs.remove(at: source)
+        tabs.insert(tab, at: destination)
+        Log.info("Moved tab from index \(source) to \(destination)")
     }
 
     func moveCurrentTabRight() {
