@@ -289,6 +289,9 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         view.onScrollbackCleared = { [weak model] in
             model?.resetDangerousHighlights()
         }
+        view.dangerousRowTintsProvider = { [weak model] top, bottom in
+            model?.dangerousRowTints(top: top, bottom: bottom) ?? [:]
+        }
         view.tabIdentifier = model.tabIdentifier
         view.isAtPrompt = { [weak model] in model?.isAtPrompt ?? false }
         view.installHistoryKeyMonitor()

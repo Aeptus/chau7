@@ -64,46 +64,15 @@ final class TerminalHighlightView: NSView {
             )
         }
 
-        let scope = FeatureSettings.shared.dangerousCommandHighlightScope
-        let dangerInputRows = session.dangerousCommandRowsVisible(top: yDisp, bottom: yDisp + rows - 1)
-        let dangerOutputRows = scope == .none
-            ? []
-            : session.dangerousOutputRowsVisible(top: yDisp, bottom: yDisp + rows - 1)
-        let dangerRows: Set<Int>
-        switch scope {
-        case .allOutputs:
-            dangerRows = Set(dangerInputRows).union(dangerOutputRows)
-        case .aiOutputs:
-            dangerRows = Set(dangerOutputRows).subtracting(dangerInputRows)
-        case .none:
-            dangerRows = []
-        }
+        // Dangerous row highlighting is now handled by RustGridView (in-grid tinting)
+        // for pixel-perfect scrolling. Only search highlights remain here.
 
-        guard !cachedVisibleMatches.isEmpty || !dangerRows.isEmpty else { return }
+        guard !cachedVisibleMatches.isEmpty else { return }
 
         let highlightColor = NSColor.systemYellow.withAlphaComponent(0.28)
         let activeColor = NSColor.systemOrange.withAlphaComponent(0.45)
-        let dangerFill = NSColor.systemRed.withAlphaComponent(0.50)
-        let dangerStroke = NSColor.systemRed.withAlphaComponent(0.85)
 
         guard let context = NSGraphicsContext.current?.cgContext else { return }
-
-        // Draw dangerous command rows first (full-line highlight)
-        if !dangerRows.isEmpty {
-            context.setFillColor(dangerFill.cgColor)
-            context.setStrokeColor(dangerStroke.cgColor)
-            context.setLineWidth(1.5)
-            for row in dangerRows {
-                let visibleRow = row - yDisp
-                if visibleRow < 0 || visibleRow >= rows {
-                    continue
-                }
-                let y = CGFloat(visibleRow) * cellHeight
-                let rect = NSRect(x: 0, y: y, width: CGFloat(cols) * cellWidth, height: cellHeight)
-                context.fill(rect.insetBy(dx: 0.5, dy: 0.5))
-                context.stroke(rect.insetBy(dx: 0.5, dy: 0.5))
-            }
-        }
 
         // Draw all visible matches
         if !cachedVisibleMatches.isEmpty {
