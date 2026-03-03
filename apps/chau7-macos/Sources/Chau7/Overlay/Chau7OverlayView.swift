@@ -1595,17 +1595,15 @@ struct DraggableOverlay<Content: View>: View {
     let id: String
     let workspace: String?
     let maxWidth: CGFloat?
-    let onClose: (() -> Void)?
     @ViewBuilder let content: Content
     @ObservedObject private var settings = FeatureSettings.shared
     @State private var dragOffset: CGSize = .zero
     @GestureState private var dragTranslation: CGSize = .zero
 
-    init(id: String, workspace: String?, maxWidth: CGFloat? = nil, onClose: (() -> Void)? = nil, @ViewBuilder content: () -> Content) {
+    init(id: String, workspace: String?, maxWidth: CGFloat? = nil, @ViewBuilder content: () -> Content) {
         self.id = id
         self.workspace = workspace
         self.maxWidth = maxWidth
-        self.onClose = onClose
         self.content = content()
     }
 
@@ -1627,24 +1625,12 @@ struct DraggableOverlay<Content: View>: View {
             // Drag handle — sole target for the drag gesture.
             // Isolating the gesture here prevents DragGesture from
             // stealing scroll events inside ScrollViews in the content.
-            HStack(spacing: 0) {
-                if let onClose {
-                    OverlayCloseButton(action: onClose)
-                        .padding(.leading, 10)
-                }
-                Spacer()
-                Capsule()
-                    .fill(Color.secondary.opacity(0.25))
-                    .frame(width: 36, height: 4)
-                Spacer()
-                if onClose != nil {
-                    // Balance the close button width on the right
-                    Color.clear.frame(width: 12).padding(.trailing, 10)
-                }
-            }
-            .frame(minHeight: 18)
-            .contentShape(Rectangle())
-            .gesture(drag)
+            Capsule()
+                .fill(Color.secondary.opacity(0.25))
+                .frame(width: 36, height: 4)
+                .frame(maxWidth: .infinity, minHeight: 14)
+                .contentShape(Rectangle())
+                .gesture(drag)
             content
         }
         .background(overlayPanelBackground)
@@ -1665,7 +1651,7 @@ struct DraggableOverlay<Content: View>: View {
 }
 
 /// macOS traffic-light style close button for overlay panels.
-private struct OverlayCloseButton: View {
+struct OverlayCloseButton: View {
     let action: () -> Void
     @State private var isHovered = false
 
@@ -2245,9 +2231,10 @@ struct SnippetManagerOverlayView: View {
     var body: some View {
         ZStack(alignment: .top) {
             // Main snippet selector panel
-            DraggableOverlay(id: "snippets", workspace: model.overlayWorkspaceIdentifier, maxWidth: panelMaxWidth, onClose: { model.toggleSnippetManager() }) {
+            DraggableOverlay(id: "snippets", workspace: model.overlayWorkspaceIdentifier, maxWidth: panelMaxWidth) {
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack {
+                    HStack(spacing: 8) {
+                        OverlayCloseButton(action: { model.toggleSnippetManager() })
                         Text(L("Snippets", "Snippets"))
                             .font(.custom("Avenir Next", size: 12).weight(.semibold))
                         Spacer()
@@ -2349,7 +2336,7 @@ struct SnippetManagerOverlayView: View {
 
             // Variable input dialog — separate floating panel on top
             if isVariableDialogVisible, let entry = pendingVariableEntry {
-                DraggableOverlay(id: "snippet-variables", workspace: model.overlayWorkspaceIdentifier, maxWidth: 420, onClose: cancelVariableInput) {
+                DraggableOverlay(id: "snippet-variables", workspace: model.overlayWorkspaceIdentifier, maxWidth: 420) {
                     SnippetVariableDialog(
                         snippetTitle: entry.snippet.title,
                         variables: $pendingVariables,
@@ -2681,7 +2668,8 @@ struct SnippetVariableDialog: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            HStack(spacing: 8) {
+                OverlayCloseButton(action: onCancel)
                 Image(systemName: "doc.text.fill")
                     .foregroundStyle(.secondary)
                 Text(L("Fill in variables", "Fill in variables"))
