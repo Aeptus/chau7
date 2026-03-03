@@ -59,6 +59,7 @@ final class ProcessResourceMonitor {
     var onUpdate: ((ProcessGroupSnapshot?) -> Void)?
 
     private var timer: DispatchSourceTimer?
+    /// All reads/writes of `isStopped` and `timer` are synchronized on `queue`.
     private var isStopped = true
     private let queue = DispatchQueue(label: "com.chau7.processmonitor", qos: .utility)
 
@@ -66,21 +67,25 @@ final class ProcessResourceMonitor {
         stop()
         guard shellPID > 0 else { return }
 
-        isStopped = false
+        queue.sync {
+            isStopped = false
 
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now(), repeating: 2.0)
-        timer.setEventHandler { [weak self] in
-            self?.poll(shellPID: shellPID)
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(deadline: .now(), repeating: 1.0)
+            timer.setEventHandler { [weak self] in
+                self?.poll(shellPID: shellPID)
+            }
+            timer.resume()
+            self.timer = timer
         }
-        timer.resume()
-        self.timer = timer
     }
 
     func stop() {
-        isStopped = true
-        timer?.cancel()
-        timer = nil
+        queue.sync {
+            isStopped = true
+            timer?.cancel()
+            timer = nil
+        }
     }
 
     // MARK: - Private
@@ -88,8 +93,9 @@ final class ProcessResourceMonitor {
     private func poll(shellPID: pid_t) {
         guard !isStopped else { return }
         let snapshot = captureSnapshot(shellPID: shellPID)
+        let stopped = isStopped
         DispatchQueue.main.async { [weak self] in
-            guard let self, !self.isStopped else { return }
+            guard let self, !stopped else { return }
             self.onUpdate?(snapshot)
         }
     }
@@ -119,22 +125,22 @@ final class ProcessResourceMonitor {
             infoOf[pid] = (name: name, cpu: cpu, rss: rssKB * 1024)
         }
 
-        // BFS from shellPID to collect all descendants
+        // BFS from shellPID to collect all descendants (tracking actual parent)
         var descendants: [ProcessResourceInfo] = []
-        var bfsQueue = childrenOf[shellPID] ?? []
+        var bfsQueue: [(pid: pid_t, parent: pid_t)] = (childrenOf[shellPID] ?? []).map { ($0, shellPID) }
         while !bfsQueue.isEmpty {
-            let pid = bfsQueue.removeFirst()
+            let (pid, parent) = bfsQueue.removeFirst()
             if let info = infoOf[pid] {
                 descendants.append(ProcessResourceInfo(
                     pid: pid,
-                    parentPid: shellPID,
+                    parentPid: parent,
                     name: info.name,
                     cpuPercent: info.cpu,
                     rssBytes: info.rss
                 ))
             }
             if let grandchildren = childrenOf[pid] {
-                bfsQueue.append(contentsOf: grandchildren)
+                bfsQueue.append(contentsOf: grandchildren.map { ($0, pid) })
             }
         }
 
