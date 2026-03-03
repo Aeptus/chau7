@@ -248,7 +248,26 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         }
         defer { snapshot.free() }
 
-        // 2. Convert grid pointer to typed pointer and sync to triple buffer.
+        // 2. Update dangerous row tints for bridge-level blending
+        if let provider = terminalView?.dangerousRowTintsProvider {
+            let yDisp = terminalView?.renderTopVisibleRow ?? 0
+            let viewRows = rows
+            let absTints = provider(yDisp, yDisp + viewRows - 1)
+            var simdTints: [Int: SIMD4<Float>] = [:]
+            for (absRow, color) in absTints {
+                let vr = absRow - yDisp
+                if vr >= 0 && vr < viewRows {
+                    let c = color.usingColorSpace(.sRGB) ?? color
+                    simdTints[vr] = SIMD4(Float(c.redComponent), Float(c.greenComponent),
+                                           Float(c.blueComponent), Float(c.alphaComponent))
+                }
+            }
+            bridge.rowTints = simdTints
+        } else {
+            bridge.rowTints = [:]
+        }
+
+        // 3. Convert grid pointer to typed pointer and sync to triple buffer.
         //    If the bridge returns nil, the grid dimensions changed — rebuild the
         //    triple buffer to match and re-sync immediately.
         let gridPtr = snapshot.grid.assumingMemoryBound(to: RustTermBridge.GridSnapshot.self)
@@ -266,7 +285,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             }
         }
 
-        // 3. Update cursor state
+        // 4. Update cursor state
         renderer.cursorRow = Int(snapshot.cursor.row)
         renderer.cursorCol = Int(snapshot.cursor.col)
         renderer.cursorStyle = FeatureSettings.shared.cursorStyle
@@ -284,7 +303,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             )
         }
 
-        // 4. Get drawable (skip silently when window has zero bounds — minimized/hidden)
+        // 5. Get drawable (skip silently when window has zero bounds — minimized/hidden)
         guard view.bounds.width > 0 && view.bounds.height > 0 else {
             FeatureProfiler.shared.end(token)
             return
@@ -299,7 +318,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             return
         }
 
-        // 5. Render from the triple buffer
+        // 6. Render from the triple buffer
         let renderBuf = tripleBuffer.renderBuffer
         let cellCount = rows * cols
         guard cellCount > 0 else {
@@ -333,7 +352,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             viewportSize: view.bounds.size
         )
 
-        // 6. Advance triple buffer
+        // 7. Advance triple buffer
         tripleBuffer.presentFrame()
 
         FeatureProfiler.shared.end(token)

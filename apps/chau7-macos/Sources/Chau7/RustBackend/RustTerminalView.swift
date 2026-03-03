@@ -283,9 +283,12 @@ private final class RustGridView: NSView {
             }
         }
 
-        // Phase 2: Draw all text with AA on (smooth glyphs)
+        // Phase 2: Draw all text with AA + font smoothing on (smooth glyphs)
         ctx.setShouldAntialias(true)
         ctx.setAllowsAntialiasing(true)
+        ctx.setShouldSmoothFonts(true)
+        ctx.setShouldSubpixelPositionFonts(true)
+        ctx.setShouldSubpixelQuantizeFonts(true)
         for row in rowStart...rowEnd {
             let y = bounds.height - CGFloat(row + 1) * cellHeight
             for col in 0..<cols {

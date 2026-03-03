@@ -252,6 +252,13 @@ public final class MetalTerminalRenderer: NSObject {
         )
         atlasContext?.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 0))
         atlasContext?.fill(CGRect(x: 0, y: 0, width: atlasWidth, height: atlasHeight))
+
+        // Enable font smoothing for sharper glyph rendering (matches Terminal.app quality)
+        atlasContext?.setShouldSmoothFonts(true)
+        atlasContext?.setAllowsFontSubpixelPositioning(true)
+        atlasContext?.setShouldSubpixelPositionFonts(true)
+        atlasContext?.setShouldSubpixelQuantizeFonts(true)
+        atlasContext?.setShouldAntialias(true)
     }
 
     // MARK: - Font Configuration
@@ -842,7 +849,7 @@ extension MetalTerminalRenderer {
         texture2d<float> glyphAtlas [[texture(0)]],
         constant Uniforms& uniforms [[buffer(2)]]
     ) {
-        constexpr sampler textureSampler(mag_filter::linear, min_filter::linear);
+        constexpr sampler textureSampler(mag_filter::nearest, min_filter::nearest);
         float4 texColor = glyphAtlas.sample(textureSampler, in.texCoord);
 
         // Text blink: hide text when blink flag (bit 4) is set and blink phase is off

@@ -170,6 +170,19 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         applySizing(to: item, model: model)
     }
 
+    /// Checks if the hosting view has a valid visible frame. Calls `onCollapsed` if the
+    /// view exists but has zero/tiny dimensions (NSToolbar layout engine collapsed it).
+    func validateHostingViewFrame(for window: NSWindow, onCollapsed: () -> Void) {
+        guard let toolbar = window.toolbar else { return }
+        guard let item = toolbarItems[toolbar.identifier] else { return }
+        guard let view = item.view as? TabBarHostingView else { return }
+        let frame = view.frame
+        if frame.width < 10 || frame.height < 5 {
+            Log.warn("TabBarToolbarDelegate: hosting view collapsed — frame=\(frame) superview=\(view.superview != nil ? "present" : "nil") window=\(view.window != nil ? "present" : "nil")")
+            onCollapsed()
+        }
+    }
+
     private func applySizing(to item: NSToolbarItem, model: OverlayTabsModel?) {
         let minWidth = max(180, CGFloat(model?.tabs.count ?? 1) * 30)
         let maxWidth: CGFloat
@@ -185,6 +198,11 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         if !maxWidth.isFinite || !height.isFinite || maxWidth <= 0 || height <= 0 {
             Log.warn("TabBarToolbarDelegate.applySizing: invalid toolbar metrics. model=\(model != nil ? "present" : "nil"), minWidth=\(Int(minWidth)), maxWidth=\(Int(maxWidth)), height=\(Int(height))")
         }
+
+        // item.minSize/maxSize are the only reliable toolbar sizing API.
+        // Auto Layout constraints on the hosting view don't control toolbar space allocation.
+        item.minSize = NSSize(width: minWidth, height: height)
+        item.maxSize = NSSize(width: maxWidth, height: height)
 
         guard let view = item.view as? TabBarHostingView else { return }
         view.desiredSize = NSSize(width: maxWidth, height: height)
@@ -279,13 +297,12 @@ private struct ToolbarTabBarView: View {
     @State private var draggingTabID: UUID? = nil
     @State private var tabWidths: [UUID: CGFloat] = [:]
     @State private var recoveryDebounce: DispatchWorkItem? = nil
-    // Gesture-based drag state for tab reordering (Chrome/Safari style live reorder)
+    // Gesture-based drag state for tab reordering (Chrome/Safari style deferred reorder)
     @State private var dragOffset: CGFloat = 0
-    @State private var dragAccumulatedOffset: CGFloat = 0  // Cumulative adjustment from swaps
+    @State private var dragHomeIndex: Int = 0       // Original index when drag started
+    @State private var dragCurrentSlot: Int = 0     // Visual slot the dragged tab occupies
     /// Must match HStack spacing in the tab bar ForEach.
     private let tabSpacing: CGFloat = 8
-    /// Cooldown: ignore swaps for a few frames after one fires, preventing rapid bouncing.
-    @State private var swapCooldownUntil: Date = .distantPast
     @State private var lastTinySizeLogAt: Date = .distantPast
     @State private var lastVisibilityLogAt: Date = .distantPast
 
@@ -451,8 +468,9 @@ private struct ToolbarTabBarView: View {
                     Color.clear.preference(key: TabWidthPreferenceKey.self, value: [tab.id: proxy.size.width])
                 }
             )
-            // Visual offset when being dragged (Chrome/Safari style)
-            .offset(x: draggingTabID == tab.id ? dragOffset : 0)
+            // Visual offset: dragged tab follows cursor, displaced neighbors slide
+            .offset(x: tabDragOffset(for: tab))
+            .animation(draggingTabID == tab.id ? nil : .spring(response: 0.25, dampingFraction: 0.85), value: dragCurrentSlot)
             .zIndex(draggingTabID == tab.id ? 1 : 0)
             // Gesture-based tab reordering (more reliable than .onDrag in ScrollViews)
             .gesture(
@@ -466,100 +484,115 @@ private struct ToolbarTabBarView: View {
             )
     }
 
+    /// Returns the visual X offset for a tab during a drag gesture.
+    /// - Dragged tab: follows the cursor via `dragOffset`
+    /// - Displaced neighbors: shift by one tab width to fill the gap
+    /// - All others: no offset
+    private func tabDragOffset(for tab: OverlayTab) -> CGFloat {
+        guard let dragID = draggingTabID else { return 0 }
+
+        // The dragged tab itself tracks the cursor directly
+        if tab.id == dragID { return dragOffset }
+
+        // Find this tab's original index (model is unchanged during drag)
+        guard let i = overlayModel.tabs.firstIndex(where: { $0.id == tab.id }) else { return 0 }
+
+        let draggedWidth = tabWidths[dragID] ?? 100
+        let shift = draggedWidth + tabSpacing
+
+        if dragCurrentSlot > dragHomeIndex {
+            // Dragging right: tabs between (home, currentSlot] shift left
+            if i > dragHomeIndex && i <= dragCurrentSlot {
+                return -shift
+            }
+        } else if dragCurrentSlot < dragHomeIndex {
+            // Dragging left: tabs in [currentSlot, home) shift right
+            if i >= dragCurrentSlot && i < dragHomeIndex {
+                return shift
+            }
+        }
+        return 0
+    }
+
     private func handleTabDrag(tab: OverlayTab, translation: CGFloat) {
+        let snapshot = overlayModel.tabs
+
         // Initialize drag state on first call
         if draggingTabID == nil {
+            guard let home = snapshot.firstIndex(where: { $0.id == tab.id }) else { return }
             draggingTabID = tab.id
-            dragAccumulatedOffset = 0
-            swapCooldownUntil = .distantPast
-            Log.info("Tab drag started (gesture): tabID=\(tab.id)")
+            dragHomeIndex = home
+            dragCurrentSlot = home
+            Log.info("Tab drag started (gesture): tabID=\(tab.id), homeIndex=\(home)")
         }
 
         // Guard: if a second tab somehow starts a gesture, ignore it
         guard draggingTabID == tab.id else { return }
 
-        // Visual offset = raw gesture translation + cumulative swap adjustments.
-        // After a swap the tab's home position in the HStack shifts by one tab
-        // width, so dragAccumulatedOffset compensates instantly to keep the tab
-        // exactly under the cursor (home_shift + offset_shift = 0 net movement).
-        dragOffset = translation + dragAccumulatedOffset
-
-        // Snapshot the tab array locally to avoid race conditions —
-        // if a tab is closed/created via keyboard during the drag,
-        // the array can mutate between index lookup and element access.
-        let snapshot = overlayModel.tabs
-        guard let currentIndex = snapshot.firstIndex(where: { $0.id == tab.id }) else {
-            // Tab was closed during drag — abort cleanly
+        // Tab was closed during drag — abort cleanly
+        guard snapshot.contains(where: { $0.id == tab.id }) else {
             Log.warn("Tab drag aborted: tab \(tab.id) no longer in tabs array")
             draggingTabID = nil
             dragOffset = 0
-            dragAccumulatedOffset = 0
             return
         }
 
-        // Cooldown: skip swap checks for a short period after each swap
-        // to prevent rapid bouncing when hovering near the threshold.
-        let now = Date()
-        guard now >= swapCooldownUntil else { return }
+        // Dragged tab follows the cursor directly (no model mutation)
+        dragOffset = translation
 
-        // Check if we should swap with the next tab (dragging right)
-        if dragOffset > 0, currentIndex < snapshot.count - 1 {
-            let neighborID = snapshot[currentIndex + 1].id
-            let neighborWidth = tabWidths[neighborID] ?? 100
-            // Threshold at 55% of the neighbor width — slightly past center
-            // prevents accidental triggers while still feeling responsive.
-            let moveThreshold = (neighborWidth + tabSpacing) * 0.55
+        // Compute which slot the dragged tab visually occupies by walking
+        // from home index and accumulating neighbor widths as thresholds.
+        var newSlot = dragHomeIndex
 
-            if dragOffset > moveThreshold {
-                // Disable animation for the model swap — the dragged tab is
-                // already visually positioned via dragOffset, and neighbor tabs
-                // reflow naturally.  Wrapping the swap in withAnimation forces
-                // SwiftUI to animate the full ForEach diff, including
-                // NSViewRepresentable terminals; that triggers an AppKit crash.
-                var t = Transaction()
-                t.disablesAnimations = true
-                withTransaction(t) {
-                    overlayModel.swapTabWithNeighbor(id: tab.id, direction: 1)
+        if translation > 0 {
+            // Dragging right: check each neighbor past home
+            var cumulative: CGFloat = 0
+            for i in (dragHomeIndex + 1)..<snapshot.count {
+                let neighborWidth = tabWidths[snapshot[i].id] ?? 100
+                cumulative += neighborWidth + tabSpacing
+                if translation > cumulative * 0.5 {
+                    newSlot = i
+                } else {
+                    break
                 }
-                // Compensate: tab's home shifted right, offset shifts left to cancel.
-                // Recalculate dragOffset in the SAME render pass so SwiftUI sees
-                // the updated offset together with the new tab order — without this,
-                // there's a 1-frame jump where home has shifted but offset hasn't.
-                dragAccumulatedOffset -= (neighborWidth + tabSpacing)
-                dragOffset = translation + dragAccumulatedOffset
-                swapCooldownUntil = now.addingTimeInterval(0.15)
+            }
+        } else if translation < 0 {
+            // Dragging left: check each neighbor before home
+            var cumulative: CGFloat = 0
+            for i in stride(from: dragHomeIndex - 1, through: 0, by: -1) {
+                let neighborWidth = tabWidths[snapshot[i].id] ?? 100
+                cumulative += neighborWidth + tabSpacing
+                if -translation > cumulative * 0.5 {
+                    newSlot = i
+                } else {
+                    break
+                }
             }
         }
-        // Check if we should swap with the previous tab (dragging left)
-        else if dragOffset < 0, currentIndex > 0 {
-            let neighborID = snapshot[currentIndex - 1].id
-            let neighborWidth = tabWidths[neighborID] ?? 100
-            let moveThreshold = (neighborWidth + tabSpacing) * 0.55
 
-            if dragOffset < -moveThreshold {
-                var t = Transaction()
-                t.disablesAnimations = true
-                withTransaction(t) {
-                    overlayModel.swapTabWithNeighbor(id: tab.id, direction: -1)
-                }
-                dragAccumulatedOffset += (neighborWidth + tabSpacing)
-                dragOffset = translation + dragAccumulatedOffset
-                swapCooldownUntil = now.addingTimeInterval(0.15)
-            }
-        }
+        dragCurrentSlot = newSlot
     }
 
     private func handleTabDragEnd(tab: OverlayTab, translation: CGFloat) {
         // Ignore if this isn't the tab being dragged (or no drag active)
         guard draggingTabID == tab.id else { return }
-        // Tab is already in the correct position from live reordering.
-        // Animate the dragged tab smoothly back to its slot position.
+
+        let from = dragHomeIndex
+        let to = dragCurrentSlot
+
+        // Animate the dragged tab to its final slot position
         withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
             draggingTabID = nil
             dragOffset = 0
-            dragAccumulatedOffset = 0
         }
-        Log.info("Tab drag ended: tabID=\(tab.id)")
+
+        // Commit the reorder to the model (after clearing drag state so
+        // the ForEach reorder doesn't fight with drag offsets)
+        if from != to {
+            overlayModel.moveTab(fromIndex: from, toIndex: to)
+        }
+
+        Log.info("Tab drag ended: tabID=\(tab.id), from=\(from), to=\(to)")
     }
 
 }
