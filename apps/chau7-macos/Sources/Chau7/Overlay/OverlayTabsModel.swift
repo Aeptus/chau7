@@ -225,8 +225,8 @@ struct SavedTerminalPaneState: Codable {
 /// Captures working directory, title, color, and the last N lines of
 /// terminal scrollback so the user has context when tabs are restored.
 struct SavedTabState: Codable {
-    let tabID: String? = nil // Persisted overlay tab ID
-    let selectedTabID: String? = nil // Explicit selected marker for stable restore
+    let tabID: String? // Persisted overlay tab ID
+    let selectedTabID: String? // Explicit selected marker for stable restore
     let customTitle: String?
     let color: String  // TabColor.rawValue
     let directory: String
@@ -724,8 +724,8 @@ final class OverlayTabsModel: ObservableObject {
     private static let restoreDelaySeconds: TimeInterval = 0.5
     private static let resumeCommandDelaySeconds: TimeInterval = 0.5
     private static let resumeCommandRetryDelaySeconds: TimeInterval = 0.4
-    private static let resumeCommandMaxRetryDelay: TimeInterval = 2.5
-    private static let resumeCommandMaxAttempts: Int = 6
+    private static let resumeCommandMaxRetryDelay: TimeInterval = 3.0
+    private static let resumeCommandMaxAttempts: Int = 10
 
     private static func paneStateMap(from states: [SavedTerminalPaneState]?) -> [UUID: SavedTerminalPaneState] {
         guard let states else { return [:] }
@@ -759,7 +759,7 @@ final class OverlayTabsModel: ObservableObject {
         var persistedStates: [SavedTabState] = []
 
         for (i, state) in states.enumerated() {
-            if selectedID == nil, let selected = UUID(uuidString: state.selectedTabID ?? "") {
+            if selectedID == nil, let selected = Self.validatedUUID(from: state.selectedTabID) {
                 selectedID = selected
             } else if state.selectedTabID != nil {
                 Log.warn("restoreSavedTabs: multiple selected tab markers found in state; using first match")
@@ -772,7 +772,7 @@ final class OverlayTabsModel: ObservableObject {
                 paneStates: state.paneStates
             )
 
-            let restoredTabID = UUID(uuidString: state.tabID ?? "") ?? UUID()
+            let restoredTabID = Self.validatedUUID(from: state.tabID) ?? UUID()
             var tab = OverlayTab(appModel: appModel, splitController: controller, id: restoredTabID)
             tab.customTitle = state.customTitle
             tab.color = TabColor(rawValue: state.color) ?? colors[i % colors.count]
@@ -800,17 +800,18 @@ final class OverlayTabsModel: ObservableObject {
             index < restoredTabs.count ? restoredTabs[index].id : nil
         }
 
-        let finalSelectedID = if let explicit = selectedID, restoredTabs.contains(where: { $0.id == explicit }) {
-            explicit
+        let finalSelectedID: UUID
+        if let explicit = selectedID, restoredTabs.contains(where: { $0.id == explicit }) {
+            finalSelectedID = explicit
         } else if let explicit = selectedID {
             if fallbackSelectedID != nil {
                 Log.warn("restoreSavedTabs: explicit selected tab ID \(explicit) not found; falling back to legacy marker")
             } else {
                 Log.warn("restoreSavedTabs: explicit selected tab ID \(explicit) not found; falling back to first tab")
             }
-            fallbackSelectedID ?? restoredTabs[0].id
+            finalSelectedID = fallbackSelectedID ?? restoredTabs[0].id
         } else {
-            fallbackSelectedID ?? restoredTabs[0].id
+            finalSelectedID = fallbackSelectedID ?? restoredTabs[0].id
         }
 
         if selectedID == nil && finalSelectedID != fallbackSelectedID && fallbackSelectedIndex == nil {
@@ -822,6 +823,14 @@ final class OverlayTabsModel: ObservableObject {
             selectedID: finalSelectedID,
             rawStates: persistedStates
         )
+    }
+
+    private static func validatedUUID(from raw: String?) -> UUID? {
+        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty else {
+            return nil
+        }
+        return UUID(uuidString: raw)
     }
 
     private static func buildRestorableController(
@@ -953,7 +962,7 @@ final class OverlayTabsModel: ObservableObject {
         }
     }
 
-    private static func canSendResumeCommand(to session: TerminalSessionModel) -> Bool {
+    private static func canPrefillResumeCommand(to session: TerminalSessionModel) -> Bool {
         guard !session.isShellLoading else { return false }
         guard session.isAtPrompt else { return false }
         guard session.existingRustTerminalView != nil else { return false }
@@ -991,7 +1000,7 @@ final class OverlayTabsModel: ObservableObject {
                 return
             }
 
-            if !Self.canSendResumeCommand(to: reResolvedSession) {
+            if !Self.canPrefillResumeCommand(to: reResolvedSession) {
                 let nextDelay = min(delay + Self.resumeCommandRetryDelaySeconds, Self.resumeCommandMaxRetryDelay)
                 Log.warn(
                     """
@@ -1012,8 +1021,8 @@ final class OverlayTabsModel: ObservableObject {
             }
 
             // Prefill the command in the active terminal so user can confirm with Enter.
-            reResolvedSession.sendInput(command)
-            Log.debug("restoreTabState: resume command sent for tab=\(targetTabID) pane=\(paneID)")
+            reResolvedSession.prefillInput(command)
+            Log.debug("restoreTabState: resume command prefilling for tab=\(targetTabID) pane=\(paneID)")
         }
     }
 

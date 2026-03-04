@@ -1954,6 +1954,15 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         activeTerminalView?.send(txt: text)
     }
 
+    /// Prefills the terminal input line without executing it.
+    /// This is used for restore-time resume workflows where the user should
+    /// explicitly confirm execution.
+    func prefillInput(_ text: String) {
+        guard !text.isEmpty else { return }
+        let insertion = SnippetInsertion(text: text, placeholders: [], finalCursorOffset: text.count)
+        activeTerminalView?.insertSnippet(insertion)
+    }
+
     // MARK: - F21: Snippet Insertion
 
     func insertSnippet(_ entry: SnippetEntry) {
