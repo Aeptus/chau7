@@ -1,5 +1,7 @@
 import AppKit
+import Combine
 import SwiftUI
+import Chau7Core
 
 /// Controls the menu bar status item and popover panel.
 /// Uses NSStatusItem + NSPopover for proper multi-monitor support instead of SwiftUI's
@@ -15,6 +17,7 @@ final class StatusBarController: NSObject {
     private var globalEventMonitor: Any?
     private var localEventMonitor: Any?
     private weak var model: AppModel?
+    private var badgeCancellable: AnyCancellable?
 
     private override init() {
         super.init()
@@ -82,12 +85,20 @@ final class StatusBarController: NSObject {
             name: NSNotification.Name("MonitoringStateChanged"),
             object: nil
         )
+
+        // Reactive badge updates from session state changes
+        badgeCancellable = model.$claudeCodeSessions
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] sessions in
+                self?.updateBadgeAndIcon(sessions: sessions)
+            }
     }
 
     /// Cleanup all resources. Call from applicationWillTerminate.
     func cleanup() {
-        // Remove notification observer to prevent crashes
         NotificationCenter.default.removeObserver(self)
+        badgeCancellable?.cancel()
+        badgeCancellable = nil
 
         // Remove event monitors to prevent memory leak
         if let globalEventMonitor {
@@ -125,10 +136,26 @@ final class StatusBarController: NSObject {
 
     /// Update the status bar icon based on monitoring state.
     @objc func updateIcon() {
+        updateBadgeAndIcon(sessions: model?.claudeCodeSessions ?? [])
+    }
+
+    /// Update icon and badge count based on session states.
+    /// Three states: bell (off), bell.badge.fill (on, clear), bell.badge.fill + count (attention needed).
+    private func updateBadgeAndIcon(sessions: [ClaudeCodeMonitor.ClaudeSessionInfo]) {
         guard let button = statusItem?.button else { return }
         let isMonitoring = model?.isMonitoring ?? false
-        let iconName = isMonitoring ? "bell.badge.fill" : "bell"
-        button.image = NSImage(systemSymbolName: iconName, accessibilityDescription: L("app.name", "Chau7"))
+        let attentionCount = sessions.filter { $0.state == .waitingPermission || $0.state == .waitingInput }.count
+
+        if !isMonitoring {
+            button.image = NSImage(systemSymbolName: "bell", accessibilityDescription: L("app.name", "Chau7"))
+            button.title = ""
+        } else if attentionCount > 0 {
+            button.image = NSImage(systemSymbolName: "bell.badge.fill", accessibilityDescription: L("app.name", "Chau7"))
+            button.title = "\(attentionCount)"
+        } else {
+            button.image = NSImage(systemSymbolName: "bell.badge.fill", accessibilityDescription: L("app.name", "Chau7"))
+            button.title = ""
+        }
     }
 
     @objc private func togglePopover(_ sender: Any?) {
