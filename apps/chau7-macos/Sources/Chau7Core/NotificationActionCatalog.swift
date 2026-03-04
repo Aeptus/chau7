@@ -333,6 +333,11 @@ public enum NotificationActionCatalog {
                 ActionConfigField(id: "bold", labelKey: "action.field.bold", labelFallback: "Bold", type: .toggle, defaultValue: "false"),
                 ActionConfigField(id: "pulse", labelKey: "action.field.pulse", labelFallback: "Pulse Animation", type: .toggle, defaultValue: "false"),
                 ActionConfigField(id: "borderWidth", labelKey: "action.field.borderWidth", labelFallback: "Border Width", type: .number, defaultValue: "0", placeholder: "0 = no border"),
+                ActionConfigField(id: "borderStyle", labelKey: "action.field.borderStyle", labelFallback: "Border Style", type: .picker, defaultValue: "solid", options: [
+                    ConfigOption(id: "solid", label: "Solid"),
+                    ConfigOption(id: "dotted", label: "Dotted"),
+                    ConfigOption(id: "dashed", label: "Dashed")
+                ]),
                 ActionConfigField(id: "autoClearSeconds", labelKey: "action.field.autoClearSeconds", labelFallback: "Auto-clear after (seconds)", type: .number, placeholder: "0 = never")
             ]
         ),

@@ -32,6 +32,9 @@ struct TabNotificationStyle: Equatable {
     /// Border width (default 0 = no border)
     var borderWidth: CGFloat = 0
 
+    /// Border dash pattern (nil = solid, e.g. [4, 3] = dotted)
+    var borderDash: [CGFloat]? = nil
+
     /// Badge text overlay (e.g., "!", "3") — nil = no badge
     var badgeText: String? = nil
 
@@ -1716,6 +1719,15 @@ final class OverlayTabsModel: ObservableObject {
                 style.borderColor = titleColor
             } else {
                 style.borderColor = .red  // Default border color
+            }
+            // Border dash pattern
+            switch config["borderStyle"]?.lowercased() {
+            case "dotted":
+                style.borderDash = [3, 3]
+            case "dashed":
+                style.borderDash = [6, 4]
+            default:
+                break  // solid — nil dash
             }
         }
 

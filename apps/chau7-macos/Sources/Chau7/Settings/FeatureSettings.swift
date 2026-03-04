@@ -159,13 +159,34 @@ struct NotificationSettings: Equatable {
     var groupActionBindings: [String: [NotificationActionConfig]]
     var groupConditions: [String: TriggerCondition]
 
+    static let defaultGroupActionBindings: [String: [NotificationActionConfig]] = [
+        "ai_coding.finished": [
+            NotificationActionConfig(actionType: .showNotification, enabled: true),
+            NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
+                "style": "custom",
+                "customColor": "green",
+                "borderWidth": "2",
+                "borderStyle": "solid"
+            ])
+        ],
+        "ai_coding.permission": [
+            NotificationActionConfig(actionType: .showNotification, enabled: true),
+            NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
+                "style": "custom",
+                "customColor": "orange",
+                "borderWidth": "2",
+                "borderStyle": "dotted"
+            ])
+        ]
+    ]
+
     static let `default` = NotificationSettings(
         triggerState: NotificationTriggerState(),
         filters: .defaults,
         triggerActionBindings: [:],
         rateLimitConfig: .default,
         triggerConditions: [:],
-        groupActionBindings: [:],
+        groupActionBindings: defaultGroupActionBindings,
         groupConditions: [:]
     )
 }
@@ -1957,10 +1978,11 @@ final class FeatureSettings: ObservableObject {
 
         let loadedGroupActionBindings: [String: [NotificationActionConfig]]
         if let data = defaults.data(forKey: Keys.groupActionBindings),
-           let bindings = JSONOperations.decode([String: [NotificationActionConfig]].self, from: data, context: "groupActionBindings") {
+           let bindings = JSONOperations.decode([String: [NotificationActionConfig]].self, from: data, context: "groupActionBindings"),
+           !bindings.isEmpty {
             loadedGroupActionBindings = bindings
         } else {
-            loadedGroupActionBindings = [:]
+            loadedGroupActionBindings = NotificationSettings.defaultGroupActionBindings
         }
 
         let loadedGroupConditions: [String: TriggerCondition]
