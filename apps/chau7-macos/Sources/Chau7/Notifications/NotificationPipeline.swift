@@ -66,8 +66,11 @@ enum NotificationPipeline {
             }
         }
 
-        // 4. No matching trigger → use default notification
+        // 4. No matching trigger → apply default conditions, then use default notification
         guard let trigger else {
+            if TriggerCondition.default.onlyWhenTabInactive && input.isToolTabActive {
+                return .drop(reason: "Tool tab is active (unmatched trigger, default condition)")
+            }
             return .fireDefault(triggerId: nil)
         }
 
