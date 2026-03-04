@@ -301,7 +301,7 @@ public enum NotificationTriggerCatalog {
         ("cost_threshold",  "costThreshold",   "Cost threshold",      "Session cost exceeded threshold.",      false),
         ("tool_called",     "toolCalled",      "Tool called",         "called a tool.",                       false),
         ("file_edited",     "fileEdited",      "File edited",         "edited a file.",                       false),
-        ("error",           "error",           "Error occurred",      "encountered an error.",                true),
+        ("error",           "error",           "Error occurred",      "encountered an error.",                false),
         ("context_limit",   "contextLimit",    "Context limit",       "approaching context window limit.",    false),
         (wildcardType,      "other",           "Other events",        "event types.",                         false),
     ]

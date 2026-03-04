@@ -1153,8 +1153,9 @@ struct UnifiedTabButton: View {
         let borderWidth = notificationStyle?.borderWidth ?? 0
         let borderColor = notificationStyle?.borderColor ?? .clear
         if borderWidth > 0 {
+            let dash = notificationStyle?.borderDash ?? []
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(borderColor, lineWidth: borderWidth)
+                .stroke(borderColor, style: StrokeStyle(lineWidth: borderWidth, dash: dash))
         }
     }
 
