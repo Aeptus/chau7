@@ -76,7 +76,7 @@ public struct TriggerCondition: Codable, Equatable, Sendable {
 
     public init(
         onlyWhenUnfocused: Bool = false,
-        onlyWhenTabInactive: Bool = false,
+        onlyWhenTabInactive: Bool = true,
         respectDND: Bool = true
     ) {
         self.onlyWhenUnfocused = onlyWhenUnfocused
