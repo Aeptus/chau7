@@ -1,5 +1,21 @@
 import Foundation
 
+// MARK: - Tool-Agnostic Event System
+//
+// AIEvent is the canonical event type for ALL monitored tools and sources.
+// It is produced by every monitor (file tailer, terminal sessions, Claude Code hooks,
+// API proxy, etc.) and consumed by:
+//   - `AppModel.recentEvents` — the unified event stream for UI
+//   - `NotificationPipeline` / `NotificationManager` — the notification decision engine
+//   - `NotificationHistory` — audit trail of fired notifications
+//   - Command center timeline — the unified activity feed in the menu bar panel
+//
+// If you are building UI or logic that processes events, use AIEvent.
+// Do NOT use `ClaudeCodeEvent` (in Monitoring/ClaudeCodeEvent.swift) unless you
+// specifically need Claude Code hook-level detail — it excludes all other tools.
+
+/// Identifies which tool or subsystem produced an event.
+/// Extensible via RawRepresentable — new sources can be added without enum changes.
 public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sendable {
     public let rawValue: String
 
@@ -29,6 +45,18 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sen
     public static let continueAI = AIEventSource(rawValue: "continue_ai")
 }
 
+/// A tool-agnostic event from any monitored source.
+///
+/// This is the **primary event type** for the entire app. All monitors produce AIEvents,
+/// and all cross-tool UI (notifications, timeline, badge counts) should consume AIEvents.
+///
+/// Fields:
+/// - `source`: Which tool/app produced this event (`.claudeCode`, `.cursor`, `.apiProxy`, etc.)
+/// - `type`: Event category as a string (`"finished"`, `"permission"`, `"tool_called"`, etc.)
+/// - `tool`: Tool or app name for display (varies by source — Claude Code uses internal names
+///   like `"Write"`, `"Bash"`; other sources may use different conventions)
+/// - `message`: Human-readable detail from the source
+/// - `ts`: ISO8601 timestamp string
 public struct AIEvent: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let source: AIEventSource
