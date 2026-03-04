@@ -639,6 +639,8 @@
 "a11y.navigation.back" = "Retour";
 "a11y.overlay.drag" = "Glisser pour repositionner";
 "a11y.slider.value" = "%@ pour cent";
+"a11y.status.session" = "%@, %@, %@";
+"a11y.status.session.hint" = "Focus this session";
 
 // MARK: - RTL Languages
 "language.arabic" = "Arabe";
@@ -648,6 +650,7 @@
 "time.just.now" = "À l'instant";
 "time.today" = "Aujourd'hui";
 "time.yesterday" = "Hier";
+"time.day.ago" = "il y a 1 jour";
 "time.days.ago" = "il y a %d jours";
 "time.week.ago" = "il y a 1 semaine";
 "time.weeks.ago" = "il y a %d semaines";
@@ -672,6 +675,60 @@
 "status.completed" = "Terminé";
 "status.failed" = "Échoué";
 "status.pending" = "En attente";
+
+// MARK: - Status Bar
+"statusBar.alert" = "Alerte";
+"statusBar.monitoring" = "Surveillance";
+"statusBar.liveSessions" = "Sessions actives";
+"statusBar.activity" = "Activité";
+"statusBar.noRecentActivity" = "Aucune activité récente";
+"statusBar.quickCommands" = "Commandes rapides";
+"statusBar.allSettings" = "Tous les paramètres";
+"statusBar.quit" = "Quitter";
+"statusBar.quit.confirm" = "Quitter Chau7 ?";
+"statusBar.go" = "Go";
+"statusBar.allClear" = "Tout est clair";
+"statusBar.doubleTapToToggle" = "Double-cliquez pour activer/désactiver";
+"statusBar.session.singular" = "1 session";
+"statusBar.session.plural" = "%d sessions";
+"statusBar.attention.singular" = "1 session nécessite une attention";
+"statusBar.attention.plural" = "%d sessions nécessitent une attention";
+"statusBar.session.starting" = "Démarrage";
+"statusBar.session.working" = "En cours";
+"statusBar.session.permission" = "Permission";
+"statusBar.session.input" = "Entrée";
+"statusBar.session.needsPermission" = "Nécessite une autorisation";
+"statusBar.session.waitingInput" = "En attente d'une entrée";
+"statusBar.session.closed" = "Fermée";
+"statusBar.session.tool" = "Outil";
+"statusBar.timeline.userPrompt" = "Invite envoyée";
+"statusBar.timeline.toolStart" = "Exécution de %@";
+"statusBar.timeline.toolComplete" = "%@ terminé";
+"statusBar.timeline.tool" = "Outil";
+"statusBar.timeline.permissionRequest" = "Nécessite une autorisation";
+"statusBar.timeline.responseComplete" = "Réponse terminée";
+"statusBar.timeline.sessionEnded" = "Session terminée";
+"statusBar.timeline.notification" = "Notification";
+"statusBar.timeline.event" = "Événement";
+"statusBar.timeline.toolCalled" = "Exécution de l'outil";
+"statusBar.timeline.sessionIdle" = "Session inactive";
+"statusBar.timeline.error" = "Erreur survenue";
+"statusBar.timeline.fileEdited" = "Fichier modifié";
+"statusBar.timeline.commandFinished" = "Commande terminée";
+"statusBar.timeline.contextLimit" = "Limite de contexte atteinte";
+"statusBar.timeline.usageThreshold" = "Seuil d'utilisation";
+"statusBar.timeline.type" = "%@";
+"statusBar.tool.fileWrite" = "Écriture de fichier";
+"statusBar.tool.fileRead" = "Lecture de fichier";
+"statusBar.tool.fileEdit" = "Édition de fichier";
+"statusBar.tool.shellCommand" = "Commande de shell";
+"statusBar.tool.fileSearch" = "Recherche de fichier";
+"statusBar.tool.contentSearch" = "Recherche de contenu";
+"statusBar.tool.webFetch" = "Récupération web";
+"statusBar.tool.webSearch" = "Recherche web";
+"statusBar.tool.notebookEdit" = "Édition de carnet";
+"statusBar.tool.taskUpdate" = "Mise à jour de tâche";
+"statusBar.tool.fileListing" = "Liste des fichiers";
 
 // MARK: - Validation
 "validation.required" = "Ce champ est obligatoire";

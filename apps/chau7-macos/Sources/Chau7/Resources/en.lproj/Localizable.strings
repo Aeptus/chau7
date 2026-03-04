@@ -639,6 +639,8 @@
 "a11y.navigation.back" = "Go back";
 "a11y.overlay.drag" = "Drag to reposition";
 "a11y.slider.value" = "%@ percent";
+"a11y.status.session" = "%@, %@, %@";
+"a11y.status.session.hint" = "Focus this session";
 
 // MARK: - RTL Languages
 "language.arabic" = "Arabic";
@@ -648,6 +650,7 @@
 "time.just.now" = "Just now";
 "time.today" = "Today";
 "time.yesterday" = "Yesterday";
+"time.day.ago" = "1 day ago";
 "time.days.ago" = "%d days ago";
 "time.week.ago" = "1 week ago";
 "time.weeks.ago" = "%d weeks ago";
@@ -672,6 +675,60 @@
 "status.completed" = "Completed";
 "status.failed" = "Failed";
 "status.pending" = "Pending";
+
+// MARK: - Status Bar
+"statusBar.alert" = "Alert";
+"statusBar.monitoring" = "Monitoring";
+"statusBar.liveSessions" = "Live Sessions";
+"statusBar.activity" = "Activity";
+"statusBar.noRecentActivity" = "No recent activity";
+"statusBar.quickCommands" = "Quick Commands";
+"statusBar.allSettings" = "All Settings";
+"statusBar.quit" = "Quit";
+"statusBar.quit.confirm" = "Quit Chau7?";
+"statusBar.go" = "Go";
+"statusBar.allClear" = "All clear";
+"statusBar.doubleTapToToggle" = "Double-tap to toggle";
+"statusBar.session.singular" = "1 session";
+"statusBar.session.plural" = "%d sessions";
+"statusBar.attention.singular" = "1 session needs attention";
+"statusBar.attention.plural" = "%d sessions need attention";
+"statusBar.session.starting" = "Starting";
+"statusBar.session.working" = "Working";
+"statusBar.session.permission" = "Permission";
+"statusBar.session.input" = "Input";
+"statusBar.session.needsPermission" = "Needs permission";
+"statusBar.session.waitingInput" = "Waiting for input";
+"statusBar.session.closed" = "Closed";
+"statusBar.session.tool" = "Tool";
+"statusBar.timeline.userPrompt" = "Prompt sent";
+"statusBar.timeline.toolStart" = "Running %@";
+"statusBar.timeline.toolComplete" = "%@ done";
+"statusBar.timeline.tool" = "Tool";
+"statusBar.timeline.permissionRequest" = "Needs permission";
+"statusBar.timeline.responseComplete" = "Finished responding";
+"statusBar.timeline.sessionEnded" = "Session ended";
+"statusBar.timeline.notification" = "Notification";
+"statusBar.timeline.event" = "Event";
+"statusBar.timeline.toolCalled" = "Tool running";
+"statusBar.timeline.sessionIdle" = "Session idle";
+"statusBar.timeline.error" = "Error occurred";
+"statusBar.timeline.fileEdited" = "File edited";
+"statusBar.timeline.commandFinished" = "Command finished";
+"statusBar.timeline.contextLimit" = "Context limit reached";
+"statusBar.timeline.usageThreshold" = "Usage threshold";
+"statusBar.timeline.type" = "%@";
+"statusBar.tool.fileWrite" = "File write";
+"statusBar.tool.fileRead" = "File read";
+"statusBar.tool.fileEdit" = "File edit";
+"statusBar.tool.shellCommand" = "Shell command";
+"statusBar.tool.fileSearch" = "File search";
+"statusBar.tool.contentSearch" = "Content search";
+"statusBar.tool.webFetch" = "Web fetch";
+"statusBar.tool.webSearch" = "Web search";
+"statusBar.tool.notebookEdit" = "Notebook edit";
+"statusBar.tool.taskUpdate" = "Task update";
+"statusBar.tool.fileListing" = "File listing";
 
 // MARK: - Validation
 "validation.required" = "This field is required";
