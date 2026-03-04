@@ -721,9 +721,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
         let event = AIEvent(
             source: .app,
-            type: "info",
+            type: "update_available",
             tool: "Chau7",
-            message: "Test notification",
+            message: "This is a test notification from Chau7.",
             ts: DateFormatters.nowISO8601()
         )
         NotificationManager.shared.notify(for: event)

@@ -146,6 +146,30 @@ enum ShellType: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Notification Settings (Value Type)
+
+/// Groups all notification-related settings into a single value type.
+/// Individual fields are persisted as separate UserDefaults keys for backward compatibility.
+struct NotificationSettings: Equatable {
+    var triggerState: NotificationTriggerState
+    var filters: NotificationFilters
+    var triggerActionBindings: [String: [NotificationActionConfig]]
+    var rateLimitConfig: NotificationRateLimiter.Config
+    var triggerConditions: [String: TriggerCondition]
+    var groupActionBindings: [String: [NotificationActionConfig]]
+    var groupConditions: [String: TriggerCondition]
+
+    static let `default` = NotificationSettings(
+        triggerState: NotificationTriggerState(),
+        filters: .defaults,
+        triggerActionBindings: [:],
+        rateLimitConfig: .default,
+        triggerConditions: [:],
+        groupActionBindings: [:],
+        groupConditions: [:]
+    )
+}
+
 // MARK: - Notification Event Types
 
 struct NotificationFilters: Codable, Equatable {
@@ -868,41 +892,94 @@ final class FeatureSettings: ObservableObject {
         customShortcuts = KeyboardShortcut.shortcuts(for: preset)
     }
 
-    // MARK: - Notification Filters (NEW)
+    // MARK: - Notification Settings
 
-    @Published var notificationTriggerState: NotificationTriggerState {
+    private var _isUpdatingNotificationSettings = false
+
+    @Published var notificationSettings: NotificationSettings {
         didSet {
-            var normalized = notificationTriggerState
-            normalized.normalize()
-            if normalized != notificationTriggerState {
-                notificationTriggerState = normalized
-                return
-            }
-            if let data = JSONOperations.encode(notificationTriggerState, context: "notificationTriggerState") {
-                UserDefaults.standard.set(data, forKey: Keys.notificationTriggerState)
-            }
-            let legacy = Self.legacyNotificationFilters(from: notificationTriggerState)
-            if legacy != notificationFilters {
-                notificationFilters = legacy
+            guard !_isUpdatingNotificationSettings else { return }
+            _isUpdatingNotificationSettings = true
+            defer { _isUpdatingNotificationSettings = false }
+
+            // Normalize trigger state
+            notificationSettings.triggerState.normalize()
+            // Sync legacy filters
+            notificationSettings.filters = Self.legacyNotificationFilters(from: notificationSettings.triggerState)
+            // Persist
+            persistNotificationSettings()
+            // Sync rate limiter if config changed
+            if notificationSettings.rateLimitConfig != oldValue.rateLimitConfig {
+                let newConfig = notificationSettings.rateLimitConfig
+                DispatchQueue.main.async {
+                    NotificationManager.shared.rateLimiter.config = newConfig
+                    NotificationManager.shared.rateLimiter.reset()
+                }
             }
         }
     }
 
-    @Published var notificationFilters: NotificationFilters {
-        didSet {
-            if let data = JSONOperations.encode(notificationFilters, context: "notificationFilters") {
-                UserDefaults.standard.set(data, forKey: Keys.notificationFilters)
-            }
+    private func persistNotificationSettings() {
+        let ns = notificationSettings
+        if let data = JSONOperations.encode(ns.triggerState, context: "notificationTriggerState") {
+            UserDefaults.standard.set(data, forKey: Keys.notificationTriggerState)
+        }
+        if let data = JSONOperations.encode(ns.filters, context: "notificationFilters") {
+            UserDefaults.standard.set(data, forKey: Keys.notificationFilters)
+        }
+        if let data = JSONOperations.encode(ns.triggerActionBindings, context: "triggerActionBindings") {
+            UserDefaults.standard.set(data, forKey: Keys.triggerActionBindings)
+        }
+        if let data = JSONOperations.encode(ns.rateLimitConfig, context: "notificationRateLimitConfig") {
+            UserDefaults.standard.set(data, forKey: Keys.notificationRateLimitConfig)
+        }
+        if let data = JSONOperations.encode(ns.triggerConditions, context: "triggerConditions") {
+            UserDefaults.standard.set(data, forKey: Keys.triggerConditions)
+        }
+        if let data = JSONOperations.encode(ns.groupActionBindings, context: "groupActionBindings") {
+            UserDefaults.standard.set(data, forKey: Keys.groupActionBindings)
+        }
+        if let data = JSONOperations.encode(ns.groupConditions, context: "groupConditions") {
+            UserDefaults.standard.set(data, forKey: Keys.groupConditions)
         }
     }
 
-    /// Trigger-to-actions bindings: maps trigger IDs to lists of configured actions
-    @Published var triggerActionBindings: [String: [NotificationActionConfig]] {
-        didSet {
-            if let data = JSONOperations.encode(triggerActionBindings, context: "triggerActionBindings") {
-                UserDefaults.standard.set(data, forKey: Keys.triggerActionBindings)
-            }
+    // Backward-compatible computed forwarders — existing code continues to work unchanged
+    var notificationTriggerState: NotificationTriggerState {
+        get { notificationSettings.triggerState }
+        set { notificationSettings.triggerState = newValue }
+    }
+    var notificationFilters: NotificationFilters {
+        get { notificationSettings.filters }
+        set { notificationSettings.filters = newValue }
+    }
+    var triggerActionBindings: [String: [NotificationActionConfig]] {
+        get { notificationSettings.triggerActionBindings }
+        set { notificationSettings.triggerActionBindings = newValue }
+    }
+    var notificationRateLimitConfig: NotificationRateLimiter.Config {
+        get { notificationSettings.rateLimitConfig }
+        set { notificationSettings.rateLimitConfig = newValue }
+    }
+    var triggerConditions: [String: TriggerCondition] {
+        get { notificationSettings.triggerConditions }
+        set { notificationSettings.triggerConditions = newValue }
+    }
+
+    /// Get the condition for a trigger (falls back to default)
+    func conditionForTrigger(_ triggerId: String) -> TriggerCondition {
+        triggerConditions[triggerId] ?? .default
+    }
+
+    /// Set the condition for a trigger
+    func setConditionForTrigger(_ triggerId: String, condition: TriggerCondition) {
+        var conditions = triggerConditions
+        if condition == .default {
+            conditions.removeValue(forKey: triggerId)
+        } else {
+            conditions[triggerId] = condition
         }
+        triggerConditions = conditions
     }
 
     /// Get actions for a specific trigger, with default "showNotification" if none configured
@@ -963,6 +1040,61 @@ final class FeatureSettings: ObservableObject {
             config: action.config
         )
         triggerActionBindings[triggerId] = actions
+    }
+
+    // MARK: - Group-Level Action/Condition Management
+
+    var groupActionBindings: [String: [NotificationActionConfig]] {
+        get { notificationSettings.groupActionBindings }
+        set { notificationSettings.groupActionBindings = newValue }
+    }
+    var groupConditions: [String: TriggerCondition] {
+        get { notificationSettings.groupConditions }
+        set { notificationSettings.groupConditions = newValue }
+    }
+
+    func actionsForGroup(_ groupTriggerId: String) -> [NotificationActionConfig] {
+        if let actions = groupActionBindings[groupTriggerId], !actions.isEmpty {
+            return actions
+        }
+        return [NotificationActionConfig(actionType: .showNotification, enabled: true)]
+    }
+
+    func addActionToGroup(_ groupTriggerId: String, action: NotificationActionConfig) {
+        var actions = groupActionBindings[groupTriggerId] ?? []
+        actions.append(action)
+        groupActionBindings[groupTriggerId] = actions
+    }
+
+    func removeActionFromGroup(_ groupTriggerId: String, actionId: UUID) {
+        guard var actions = groupActionBindings[groupTriggerId] else { return }
+        actions.removeAll { $0.id == actionId }
+        if actions.isEmpty {
+            groupActionBindings.removeValue(forKey: groupTriggerId)
+        } else {
+            groupActionBindings[groupTriggerId] = actions
+        }
+    }
+
+    func updateActionInGroup(_ groupTriggerId: String, action: NotificationActionConfig) {
+        guard var actions = groupActionBindings[groupTriggerId] else { return }
+        if let index = actions.firstIndex(where: { $0.id == action.id }) {
+            actions[index] = action
+            groupActionBindings[groupTriggerId] = actions
+        }
+    }
+
+    func setGroupActionEnabled(_ enabled: Bool, groupId: String, actionId: UUID) {
+        guard var actions = groupActionBindings[groupId],
+              let index = actions.firstIndex(where: { $0.id == actionId }) else { return }
+        let action = actions[index]
+        actions[index] = NotificationActionConfig(
+            id: action.id,
+            actionType: action.actionType,
+            enabled: enabled,
+            config: action.config
+        )
+        groupActionBindings[groupId] = actions
     }
 
     // MARK: - Find Defaults (NEW)
@@ -1609,6 +1741,10 @@ final class FeatureSettings: ObservableObject {
         static let notificationTriggerState = "notifications.triggerState"
         static let notificationFilters = "notifications.filters"
         static let triggerActionBindings = "notifications.triggerActionBindings"
+        static let notificationRateLimitConfig = "notifications.rateLimitConfig"
+        static let triggerConditions = "notifications.triggerConditions"
+        static let groupActionBindings = "notifications.groupActionBindings"
+        static let groupConditions = "notifications.groupConditions"
         // Find Defaults (NEW)
         static let findCaseSensitiveDefault = "search.defaultCaseSensitive"
         static let findRegexDefault = "search.defaultRegex"
@@ -1776,7 +1912,7 @@ final class FeatureSettings: ObservableObject {
         // Initialize early to ensure all properties are set before any are accessed
         self.isLocalEchoEnabled = defaults.object(forKey: Keys.localEchoEnabled) as? Bool ?? false
 
-        // Notification Filters (NEW)
+        // Notification Settings — load individual fields, assemble into struct
         let loadedFilters: NotificationFilters
         if let data = defaults.data(forKey: Keys.notificationFilters),
            let filters = JSONOperations.decode(NotificationFilters.self, from: data, context: "notificationFilters") {
@@ -1784,7 +1920,6 @@ final class FeatureSettings: ObservableObject {
         } else {
             loadedFilters = .defaults
         }
-        self.notificationFilters = loadedFilters
 
         let resolvedTriggerState: NotificationTriggerState
         if let data = defaults.data(forKey: Keys.notificationTriggerState),
@@ -1795,16 +1930,56 @@ final class FeatureSettings: ObservableObject {
         } else {
             resolvedTriggerState = Self.triggerState(from: loadedFilters)
         }
-        self.notificationTriggerState = resolvedTriggerState
-        self.notificationFilters = Self.legacyNotificationFilters(from: resolvedTriggerState)
 
-        // Trigger Action Bindings
+        let loadedBindings: [String: [NotificationActionConfig]]
         if let data = defaults.data(forKey: Keys.triggerActionBindings),
            let bindings = JSONOperations.decode([String: [NotificationActionConfig]].self, from: data, context: "triggerActionBindings") {
-            self.triggerActionBindings = bindings
+            loadedBindings = bindings
         } else {
-            self.triggerActionBindings = Self.defaultTriggerActionBindings()
+            loadedBindings = Self.defaultTriggerActionBindings()
         }
+
+        let loadedRateLimitConfig: NotificationRateLimiter.Config
+        if let data = defaults.data(forKey: Keys.notificationRateLimitConfig),
+           let config = JSONOperations.decode(NotificationRateLimiter.Config.self, from: data, context: "notificationRateLimitConfig") {
+            loadedRateLimitConfig = config
+        } else {
+            loadedRateLimitConfig = .default
+        }
+
+        let loadedConditions: [String: TriggerCondition]
+        if let data = defaults.data(forKey: Keys.triggerConditions),
+           let conditions = JSONOperations.decode([String: TriggerCondition].self, from: data, context: "triggerConditions") {
+            loadedConditions = conditions
+        } else {
+            loadedConditions = [:]
+        }
+
+        let loadedGroupActionBindings: [String: [NotificationActionConfig]]
+        if let data = defaults.data(forKey: Keys.groupActionBindings),
+           let bindings = JSONOperations.decode([String: [NotificationActionConfig]].self, from: data, context: "groupActionBindings") {
+            loadedGroupActionBindings = bindings
+        } else {
+            loadedGroupActionBindings = [:]
+        }
+
+        let loadedGroupConditions: [String: TriggerCondition]
+        if let data = defaults.data(forKey: Keys.groupConditions),
+           let conditions = JSONOperations.decode([String: TriggerCondition].self, from: data, context: "groupConditions") {
+            loadedGroupConditions = conditions
+        } else {
+            loadedGroupConditions = [:]
+        }
+
+        self.notificationSettings = NotificationSettings(
+            triggerState: resolvedTriggerState,
+            filters: Self.legacyNotificationFilters(from: resolvedTriggerState),
+            triggerActionBindings: loadedBindings,
+            rateLimitConfig: loadedRateLimitConfig,
+            triggerConditions: loadedConditions,
+            groupActionBindings: loadedGroupActionBindings,
+            groupConditions: loadedGroupConditions
+        )
 
         // Find Defaults (NEW)
         self.findCaseSensitiveDefault = defaults.object(forKey: Keys.findCaseSensitiveDefault) as? Bool ?? false
@@ -2167,6 +2342,11 @@ final class FeatureSettings: ObservableObject {
         var isShortcutHelperHintEnabled: Bool?
         var notificationTriggerState: NotificationTriggerState?
         var notificationFilters: NotificationFilters
+        var triggerActionBindings: [String: [NotificationActionConfig]]?
+        var notificationRateLimitConfig: NotificationRateLimiter.Config?
+        var triggerConditions: [String: TriggerCondition]?
+        var groupActionBindings: [String: [NotificationActionConfig]]?
+        var groupConditions: [String: TriggerCondition]?
         var findCaseSensitiveDefault: Bool?
         var findRegexDefault: Bool?
         var lastTabCloseBehavior: String?
@@ -2250,6 +2430,11 @@ final class FeatureSettings: ObservableObject {
             isShortcutHelperHintEnabled: isShortcutHelperHintEnabled,
             notificationTriggerState: notificationTriggerState,
             notificationFilters: notificationFilters,
+            triggerActionBindings: triggerActionBindings.isEmpty ? nil : triggerActionBindings,
+            notificationRateLimitConfig: notificationRateLimitConfig,
+            triggerConditions: triggerConditions.isEmpty ? nil : triggerConditions,
+            groupActionBindings: groupActionBindings.isEmpty ? nil : groupActionBindings,
+            groupConditions: groupConditions.isEmpty ? nil : groupConditions,
             findCaseSensitiveDefault: findCaseSensitiveDefault,
             findRegexDefault: findRegexDefault,
             lastTabCloseBehavior: lastTabCloseBehavior.rawValue,
@@ -2340,14 +2525,23 @@ final class FeatureSettings: ObservableObject {
         isLsColorsEnabled = imported.isLsColorsEnabled ?? true
         customShortcuts = imported.customShortcuts
         isShortcutHelperHintEnabled = imported.isShortcutHelperHintEnabled ?? true
+        // Notification settings — assemble struct from imported fields
+        var importedTriggerState: NotificationTriggerState
         if let state = imported.notificationTriggerState {
-            var normalized = state
-            normalized.normalize()
-            notificationTriggerState = normalized
+            importedTriggerState = state
+            importedTriggerState.normalize()
         } else {
-            notificationTriggerState = Self.triggerState(from: imported.notificationFilters)
+            importedTriggerState = Self.triggerState(from: imported.notificationFilters)
         }
-        notificationFilters = Self.legacyNotificationFilters(from: notificationTriggerState)
+        notificationSettings = NotificationSettings(
+            triggerState: importedTriggerState,
+            filters: Self.legacyNotificationFilters(from: importedTriggerState),
+            triggerActionBindings: imported.triggerActionBindings ?? notificationSettings.triggerActionBindings,
+            rateLimitConfig: imported.notificationRateLimitConfig ?? .default,
+            triggerConditions: imported.triggerConditions ?? [:],
+            groupActionBindings: imported.groupActionBindings ?? notificationSettings.groupActionBindings,
+            groupConditions: imported.groupConditions ?? notificationSettings.groupConditions
+        )
         findCaseSensitiveDefault = imported.findCaseSensitiveDefault ?? false
         findRegexDefault = imported.findRegexDefault ?? false
         if let behaviorRaw = imported.lastTabCloseBehavior,
@@ -2482,8 +2676,7 @@ final class FeatureSettings: ObservableObject {
         isShortcutHelperHintEnabled = true
 
         // Notifications
-        notificationTriggerState = NotificationTriggerState()
-        notificationFilters = Self.legacyNotificationFilters(from: notificationTriggerState)
+        notificationSettings = .default
         findCaseSensitiveDefault = false
         findRegexDefault = false
         lastTabCloseBehavior = .keepWindow
@@ -2747,6 +2940,10 @@ extension FeatureSettings {
             isShortcutHelperHintEnabled: true,
             notificationTriggerState: NotificationTriggerState(),
             notificationFilters: .defaults,
+            notificationRateLimitConfig: .default,
+            triggerConditions: nil,
+            groupActionBindings: nil,
+            groupConditions: nil,
             findCaseSensitiveDefault: false,
             findRegexDefault: false,
             lastTabCloseBehavior: "keepWindow",

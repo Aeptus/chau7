@@ -28,6 +28,9 @@ struct TabHoverCard: View {
                 TabHoverCardContent(
                     tab: tab,
                     session: session,
+                    isSuspended: overlayModel.suspendedTabIDs.contains(tab.id),
+                    isBroadcastIncluded: overlayModel.isBroadcastMode
+                        && !overlayModel.broadcastExcludedTabIDs.contains(tab.id),
                     onHoverChanged: { isHovering in
                         if isHovering {
                             overlayModel.hoverCardMouseEntered()
@@ -51,6 +54,8 @@ struct TabHoverCard: View {
 private struct TabHoverCardContent: View {
     let tab: OverlayTab
     @ObservedObject var session: TerminalSessionModel
+    let isSuspended: Bool
+    let isBroadcastIncluded: Bool
     let onHoverChanged: (Bool) -> Void
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
@@ -92,6 +97,10 @@ private struct TabHoverCardContent: View {
                 devServerRow
                 processInfoSection
                 lastCommandRow
+                tokenOptRow
+                broadcastRow
+                suspendedRow
+                notificationRow
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 10)
@@ -311,6 +320,136 @@ private struct TabHoverCardContent: View {
                             .font(.custom("Avenir Next", size: 11).weight(.medium))
                             .foregroundStyle(.secondary)
                     }
+                }
+            }
+        }
+    }
+
+    // MARK: - Token Optimization
+
+    @ViewBuilder
+    private var tokenOptRow: some View {
+        let mode = FeatureSettings.shared.tokenOptimizationMode
+        if mode != .off {
+            let isActive = tab.isTokenOptActive
+            let hasOverride = tab.optimizerOverrideState != nil
+            HStack(spacing: 8) {
+                Image(systemName: "wand.and.stars")
+                    .font(.system(size: 11))
+                    .foregroundStyle(isActive ? .yellow : .secondary)
+                    .frame(width: 16)
+
+                Text("Token Optimization")
+                    .font(.custom("Avenir Next", size: 12).weight(.medium))
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                if hasOverride {
+                    Text(isActive ? "Forced On" : "Forced Off")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(isActive ? .yellow : .red)
+                } else {
+                    Text(isActive ? "Active" : "Off")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(isActive ? .green : .secondary)
+                }
+            }
+        }
+    }
+
+    // MARK: - Broadcast
+
+    @ViewBuilder
+    private var broadcastRow: some View {
+        if isBroadcastIncluded {
+            HStack(spacing: 8) {
+                Image(systemName: "dot.radiowaves.left.and.right")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.orange)
+                    .frame(width: 16)
+
+                Text("Broadcast")
+                    .font(.custom("Avenir Next", size: 12).weight(.medium))
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                Text("Included")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    // MARK: - Suspended
+
+    @ViewBuilder
+    private var suspendedRow: some View {
+        if isSuspended {
+            HStack(spacing: 8) {
+                Image(systemName: "pause.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+
+                Text("Rendering")
+                    .font(.custom("Avenir Next", size: 12).weight(.medium))
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                Text("Suspended")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: - Notification State
+
+    @ViewBuilder
+    private var notificationRow: some View {
+        if let style = tab.notificationStyle {
+            HStack(spacing: 8) {
+                if let icon = style.icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 11))
+                        .foregroundStyle(style.iconColor ?? style.titleColor ?? .secondary)
+                        .frame(width: 16)
+                } else {
+                    Image(systemName: "bell.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(style.titleColor ?? .secondary)
+                        .frame(width: 16)
+                }
+
+                Text("Notification")
+                    .font(.custom("Avenir Next", size: 12).weight(.medium))
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                if style == .waiting {
+                    Text("Waiting")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.orange)
+                } else if style == .error {
+                    Text("Error")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.red)
+                } else if style == .success {
+                    Text("Success")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.green)
+                } else if style == .attention {
+                    Text("Attention")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.yellow)
+                } else {
+                    Text("Active")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(style.titleColor ?? .secondary)
                 }
             }
         }

@@ -316,6 +316,7 @@ public enum NotificationActionCatalog {
                     ConfigOption(id: "error", label: "Error (red bold)"),
                     ConfigOption(id: "success", label: "Success (green)"),
                     ConfigOption(id: "attention", label: "Attention (yellow bold + pulse)"),
+                    ConfigOption(id: "custom", label: "Custom (use config fields below)"),
                     ConfigOption(id: "clear", label: "Clear Style")
                 ]),
                 ActionConfigField(id: "customColor", labelKey: "action.field.customColor", labelFallback: "Custom Color (optional)", type: .picker, options: [
@@ -331,6 +332,7 @@ public enum NotificationActionCatalog {
                 ActionConfigField(id: "italic", labelKey: "action.field.italic", labelFallback: "Italic", type: .toggle, defaultValue: "false"),
                 ActionConfigField(id: "bold", labelKey: "action.field.bold", labelFallback: "Bold", type: .toggle, defaultValue: "false"),
                 ActionConfigField(id: "pulse", labelKey: "action.field.pulse", labelFallback: "Pulse Animation", type: .toggle, defaultValue: "false"),
+                ActionConfigField(id: "borderWidth", labelKey: "action.field.borderWidth", labelFallback: "Border Width", type: .number, defaultValue: "0", placeholder: "0 = no border"),
                 ActionConfigField(id: "autoClearSeconds", labelKey: "action.field.autoClearSeconds", labelFallback: "Auto-clear after (seconds)", type: .number, placeholder: "0 = never")
             ]
         ),
@@ -664,19 +666,21 @@ public enum NotificationActionCatalog {
             requiresConfig: true,
             configFields: [
                 ActionConfigField(id: "service", labelKey: "action.field.service", labelFallback: "Service", type: .picker, defaultValue: "file", options: [
-                    ConfigOption(id: "file", label: "Local File"),
-                    ConfigOption(id: "toggl", label: "Toggl Track"),
-                    ConfigOption(id: "clockify", label: "Clockify")
+                    ConfigOption(id: "file", label: "Local File")
                 ]),
-                ActionConfigField(id: "apiKey", labelKey: "action.field.apiKey", labelFallback: "API Key", type: .secretText, placeholder: "Required for Toggl/Clockify"),
                 ActionConfigField(id: "filePath", labelKey: "action.field.filePath", labelFallback: "Log File Path", type: .filePath, placeholder: "~/time-log.csv"),
                 ActionConfigField(id: "description", labelKey: "action.field.description", labelFallback: "Entry Description", type: .text, defaultValue: "${type}: ${message}")
             ]
         )
     ]
 
+    /// O(1) lookup index (built once at first access)
+    private static let index: [NotificationActionType: NotificationActionInfo] = {
+        Dictionary(uniqueKeysWithValues: all.map { ($0.type, $0) })
+    }()
+
     public static func action(for type: NotificationActionType) -> NotificationActionInfo? {
-        all.first { $0.type == type }
+        index[type]
     }
 
     public static func actions(in category: ActionCategory) -> [NotificationActionInfo] {

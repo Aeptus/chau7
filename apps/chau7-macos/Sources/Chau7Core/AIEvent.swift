@@ -73,6 +73,20 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
             return "\(name): Task finished"
         case "failed":
             return "\(name): Task failed"
+        case "permission":
+            return "\(name): Permission required"
+        case "error":
+            return "\(name): Error occurred"
+        case "context_limit":
+            return "\(name): Context limit"
+        case "tool_called":
+            return "\(name): Tool called"
+        case "file_edited":
+            return "\(name): File edited"
+        case "token_threshold":
+            return "\(name): Token threshold"
+        case "cost_threshold":
+            return "\(name): Cost threshold"
         default:
             return "\(name): Update"
         }
@@ -89,6 +103,14 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
             return message.isEmpty ? "Done." : message
         case "failed":
             return message.isEmpty ? "Check the logs." : message
+        case "permission":
+            return message.isEmpty ? "Needs your permission to continue." : message
+        case "error":
+            return message.isEmpty ? "An error occurred." : message
+        case "context_limit":
+            return message.isEmpty ? "Approaching context window limit." : message
+        case "token_threshold", "cost_threshold":
+            return message.isEmpty ? "Usage threshold exceeded." : message
         default:
             return message.isEmpty ? type : "\(type): \(message)"
         }

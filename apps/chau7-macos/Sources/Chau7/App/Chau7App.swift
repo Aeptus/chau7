@@ -18,10 +18,16 @@ struct Chau7App: App {
             overlayModel?.notificationTabTitle(forTool: tool)
         }
 
-        // Wire up tab style handler for notification actions
-        NotificationActionExecutor.shared.tabStyleHandler = { [weak overlayModel] tool, stylePreset, config in
-            guard let model = overlayModel else { return }
-            model.applyNotificationStyle(forTool: tool, stylePreset: stylePreset, config: config)
+        // Wire notification system — single delegate replaces 5 separate closures
+        NotificationActionExecutor.shared.delegate = NotificationActionAdapter(
+            overlayModel: overlayModel,
+            statusBar: StatusBarController.shared
+        )
+
+        // Wire activeTabChecker so onlyWhenTabInactive condition works
+        NotificationManager.shared.activeTabChecker = { [weak overlayModel] tool in
+            guard let overlay = overlayModel else { return false }
+            return overlay.isToolInSelectedTab(tool)
         }
 
         _overlayModel = StateObject(wrappedValue: overlayModel)
