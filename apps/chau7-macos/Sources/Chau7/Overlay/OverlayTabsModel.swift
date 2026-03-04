@@ -205,8 +205,8 @@ struct OverlayTab: Identifiable, Equatable {
         splitController.appendSelectionToEditor(text)
     }
 
-    init(appModel: AppModel, splitController: SplitPaneController) {
-        self.id = UUID()
+    init(appModel: AppModel, splitController: SplitPaneController, id: UUID = UUID()) {
+        self.id = id
         self.splitController = splitController
         self.createdAt = Date()
     }
@@ -225,6 +225,8 @@ struct SavedTerminalPaneState: Codable {
 /// Captures working directory, title, color, and the last N lines of
 /// terminal scrollback so the user has context when tabs are restored.
 struct SavedTabState: Codable {
+    let tabID: String? = nil // Persisted overlay tab ID
+    let selectedTabID: String? = nil // Explicit selected marker for stable restore
     let customTitle: String?
     let color: String  // TabColor.rawValue
     let directory: String
@@ -486,6 +488,8 @@ final class OverlayTabsModel: ObservableObject {
             let primaryResumeCommand = paneStates.first?.aiResumeCommand
 
             states.append(SavedTabState(
+                tabID: tab.id.uuidString,
+                selectedTabID: isSelected ? tab.id.uuidString : nil,
                 customTitle: tab.customTitle,
                 color: tab.color.rawValue,
                 directory: primaryDirectory,
@@ -541,6 +545,8 @@ final class OverlayTabsModel: ObservableObject {
 
         let overrideRaw = tab.tokenOptOverride == .default ? nil : tab.tokenOptOverride.rawValue
         let state = SavedTabState(
+            tabID: tab.id.uuidString,
+            selectedTabID: nil,
             customTitle: tab.customTitle,
             color: tab.color.rawValue,
             directory: primaryDirectory,
@@ -575,7 +581,7 @@ final class OverlayTabsModel: ObservableObject {
         let lowered = appName.lowercased()
 
         if lowered.contains("claude") {
-            if let sessionId = ClaudeCodeMonitor.shared.sessionId(forDirectory: directory),
+            if let sessionId = ClaudeCodeMonitor.shared.sessionId(forDirectory: directory)?.trimmingCharacters(in: .whitespacesAndNewlines),
                isValidSessionId(sessionId) {
                 return "claude --resume \(sessionId)"
             }
@@ -583,7 +589,7 @@ final class OverlayTabsModel: ObservableObject {
         }
 
         if lowered.contains("codex") {
-            if let sessionId = findCodexSessionId(forDirectory: directory),
+            if let sessionId = findCodexSessionId(forDirectory: directory)?.trimmingCharacters(in: .whitespacesAndNewlines),
                isValidSessionId(sessionId) {
                 return "codex resume \(sessionId)"
             }
@@ -671,7 +677,8 @@ final class OverlayTabsModel: ObservableObject {
               let id = payload["id"] as? String else {
             return nil
         }
-        return (cwd, id)
+        return (cwd.trimmingCharacters(in: .whitespacesAndNewlines),
+                id.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     private static func captureScrollback(from session: TerminalSessionModel?, maxLines: Int) -> String? {
@@ -748,9 +755,16 @@ final class OverlayTabsModel: ObservableObject {
         let colors = TabColor.allCases
         var restoredTabs: [OverlayTab] = []
         var selectedID: UUID?
+        var fallbackSelectedIndex: Int?
         var persistedStates: [SavedTabState] = []
 
         for (i, state) in states.enumerated() {
+            if selectedID == nil, let selected = UUID(uuidString: state.selectedTabID ?? "") {
+                selectedID = selected
+            } else if state.selectedTabID != nil {
+                Log.warn("restoreSavedTabs: multiple selected tab markers found in state; using first match")
+            }
+
             let controller = Self.buildRestorableController(
                 appModel: appModel,
                 splitLayout: state.splitLayout,
@@ -758,7 +772,8 @@ final class OverlayTabsModel: ObservableObject {
                 paneStates: state.paneStates
             )
 
-            var tab = OverlayTab(appModel: appModel, splitController: controller)
+            let restoredTabID = UUID(uuidString: state.tabID ?? "") ?? UUID()
+            var tab = OverlayTab(appModel: appModel, splitController: controller, id: restoredTabID)
             tab.customTitle = state.customTitle
             tab.color = TabColor(rawValue: state.color) ?? colors[i % colors.count]
 
@@ -771,7 +786,9 @@ final class OverlayTabsModel: ObservableObject {
             }
 
             if state.selectedIndex != nil {
-                selectedID = tab.id
+                if fallbackSelectedIndex == nil {
+                    fallbackSelectedIndex = i
+                }
             }
 
             restoredTabs.append(tab)
@@ -779,7 +796,27 @@ final class OverlayTabsModel: ObservableObject {
         }
 
         guard !restoredTabs.isEmpty else { return nil }
-        let finalSelectedID = selectedID ?? restoredTabs[0].id
+        let fallbackSelectedID = fallbackSelectedIndex.flatMap { index in
+            index < restoredTabs.count ? restoredTabs[index].id : nil
+        }
+
+        let finalSelectedID = if let explicit = selectedID, restoredTabs.contains(where: { $0.id == explicit }) {
+            explicit
+        } else if let explicit = selectedID {
+            if fallbackSelectedID != nil {
+                Log.warn("restoreSavedTabs: explicit selected tab ID \(explicit) not found; falling back to legacy marker")
+            } else {
+                Log.warn("restoreSavedTabs: explicit selected tab ID \(explicit) not found; falling back to first tab")
+            }
+            fallbackSelectedID ?? restoredTabs[0].id
+        } else {
+            fallbackSelectedID ?? restoredTabs[0].id
+        }
+
+        if selectedID == nil && finalSelectedID != fallbackSelectedID && fallbackSelectedIndex == nil {
+            Log.warn("restoreSavedTabs: falling back to first tab because no explicit or legacy selected marker was found")
+        }
+
         return RestorableTabsPayload(
             tabs: restoredTabs,
             selectedID: finalSelectedID,
@@ -857,6 +894,17 @@ final class OverlayTabsModel: ObservableObject {
                 restoredTab.splitController.setFocusedPane(activePaneID)
             }
 
+            let normalizedResumeCommands = currentSessions.compactMap { (paneID, _) -> (UUID, String)? in
+                guard let candidate = Self.normalizedResumeCommand(paneStatesToRestore[paneID]?.aiResumeCommand) else {
+                    return nil
+                }
+                return (paneID, candidate)
+            }
+            let resumeTarget = normalizedResumeCommands.first(where: { $0.0 == activePaneID }) ?? normalizedResumeCommands.first
+            if resumeTarget == nil {
+                Log.debug("restoreTabState: no resume command candidate found for tab=\(targetTabID)")
+            }
+
             let restoreToken = UUID().uuidString
             for (paneID, session) in currentSessions {
                 let paneState = paneStatesToRestore[paneID]
@@ -890,9 +938,9 @@ final class OverlayTabsModel: ObservableObject {
                     session.sendInput(commands.joined(separator: " && ") + "\n")
                 }
 
-                if paneID == activePaneID,
-                   let resumeCommand = paneState.aiResumeCommand,
-                   !resumeCommand.isEmpty {
+                if let (resumePaneID, resumeCommand) = resumeTarget,
+                   resumePaneID == paneID {
+                    Log.debug("restoreTabState: scheduling resume command for tab=\(targetTabID) pane=\(paneID)")
                     self.scheduleResumeCommand(
                         command: resumeCommand,
                         targetTabID: targetTabID,
@@ -965,7 +1013,15 @@ final class OverlayTabsModel: ObservableObject {
 
             // Prefill the command in the active terminal so user can confirm with Enter.
             reResolvedSession.sendInput(command)
+            Log.debug("restoreTabState: resume command sent for tab=\(targetTabID) pane=\(paneID)")
         }
+    }
+
+    private static func normalizedResumeCommand(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return trimmed
     }
 
     var selectedTab: OverlayTab? {
