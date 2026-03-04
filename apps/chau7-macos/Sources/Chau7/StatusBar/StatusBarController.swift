@@ -19,6 +19,9 @@ final class StatusBarController: NSObject {
     private weak var model: AppModel?
     private var badgeCancellable: AnyCancellable?
 
+    /// Panel view model — lives as long as the controller so popover doesn't recreate state.
+    private var panelViewModel: CommandCenterViewModel?
+
     private override init() {
         super.init()
     }
@@ -28,6 +31,9 @@ final class StatusBarController: NSObject {
     /// - Note: Must be called from main thread.
     func setup(model: AppModel) {
         self.model = model
+        self.panelViewModel = CommandCenterViewModel(model: model, onClose: { [weak self] in
+            self?.closePopover()
+        })
 
         // Create status item
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -38,16 +44,14 @@ final class StatusBarController: NSObject {
             button.target = self
         }
 
-        // Create popover
+        // Create popover with persistent content (fix #6: no recreation on every open)
+        guard let panelViewModel else { return }
         popover = NSPopover()
         popover?.contentSize = NSSize(width: 400, height: 520)
-        // Use applicationDefined for full control - we handle closing via toggle and global monitor
         popover?.behavior = .applicationDefined
         popover?.animates = true
         popover?.contentViewController = NSHostingController(
-            rootView: StatusBarPanelView(model: model, onClose: { [weak self] in
-                self?.closePopover()
-            })
+            rootView: StatusBarPanelView(viewModel: panelViewModel)
         )
 
         // Monitor for clicks outside to close popover (global events = clicks in other apps)
@@ -64,13 +68,10 @@ final class StatusBarController: NSObject {
                 return event
             }
 
-            // If click is not in the popover window and not on the status bar button, close
             if event.window != popoverWindow {
-                // Check if click is on the status bar button - if so, let togglePopover handle it
                 if let button = self.statusItem?.button,
                    let buttonWindow = button.window,
                    event.window == buttonWindow {
-                    // Click is on the status bar button, let togglePopover handle it
                     return event
                 }
                 self.closePopover()
@@ -100,7 +101,6 @@ final class StatusBarController: NSObject {
         badgeCancellable?.cancel()
         badgeCancellable = nil
 
-        // Remove event monitors to prevent memory leak
         if let globalEventMonitor {
             NSEvent.removeMonitor(globalEventMonitor)
             self.globalEventMonitor = nil
@@ -112,6 +112,7 @@ final class StatusBarController: NSObject {
 
         statusItem = nil
         popover = nil
+        panelViewModel = nil
     }
 
     /// Flash the status bar icon to draw attention (used by menuBarAlert action).
@@ -120,18 +121,26 @@ final class StatusBarController: NSObject {
         let originalImage = button.image
         let alertImage = NSImage(systemSymbolName: "bell.badge.fill", accessibilityDescription: "Alert")
 
+        button.image = alertImage
+
         if animate {
-            button.image = alertImage
+            // Pulse animation: alternate icon rapidly before restoring
+            let pulseCount = min(duration * 2, 10)
+            for i in 0..<pulseCount {
+                let delay = Double(i) * 0.5
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                    button.image = (i % 2 == 0) ? alertImage : originalImage
+                }
+            }
             DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(duration)) {
                 button.image = originalImage
             }
         } else {
-            button.image = alertImage
             DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(duration)) {
                 button.image = originalImage
             }
         }
-        Log.info("StatusBarController: Menu bar alert for \(duration)s")
+        Log.info("StatusBarController: Menu bar alert for \(duration)s (animate=\(animate))")
     }
 
     /// Update the status bar icon based on monitoring state.
@@ -168,19 +177,10 @@ final class StatusBarController: NSObject {
 
     private func showPopover() {
         guard let button = statusItem?.button,
-              let popover,
-              let model else { return }  // Safe unwrap - don't show if model is gone
-
-        // Update content before showing (ensures fresh data)
-        popover.contentViewController = NSHostingController(
-            rootView: StatusBarPanelView(model: model, onClose: { [weak self] in
-                self?.closePopover()
-            })
-        )
+              let popover else { return }
 
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
 
-        // Ensure popover window is on the correct screen (multi-monitor fix)
         if let popoverWindow = popover.contentViewController?.view.window {
             popoverWindow.level = .popUpMenu
         }
@@ -191,138 +191,230 @@ final class StatusBarController: NSObject {
     }
 }
 
-// MARK: - Improved Status Bar Panel View
+// MARK: - Command Center View Model
+
+/// Shared state for the command center panel — survives popover open/close cycles.
+/// All derived state is computed from model.claudeCodeSessions (which is @Published),
+/// so SwiftUI re-evaluates automatically. No manual sync needed.
+final class CommandCenterViewModel: ObservableObject {
+    let model: AppModel
+    let onClose: () -> Void
+    @Published var showQuitConfirmation = false
+
+    init(model: AppModel, onClose: @escaping () -> Void) {
+        self.model = model
+        self.onClose = onClose
+    }
+
+    /// Sessions needing user action (permission or input).
+    var attentionSessions: [ClaudeCodeMonitor.ClaudeSessionInfo] {
+        model.claudeCodeSessions.filter { $0.state == .waitingPermission || $0.state == .waitingInput }
+    }
+
+    var attentionCount: Int { attentionSessions.count }
+
+    /// Active sessions excluding idle/closed, sorted by most recent activity, max 5.
+    var liveSessions: [ClaudeCodeMonitor.ClaudeSessionInfo] {
+        model.claudeCodeSessions
+            .filter { $0.state != .idle && $0.state != .closed }
+            .sorted { $0.lastActivity > $1.lastActivity }
+            .prefix(5)
+            .map { $0 }
+    }
+
+    /// Merged feed of notification history + raw events, deduplicated, max 8.
+    /// Accepts history entries as parameter since NotificationHistory is @MainActor-isolated
+    /// and this view model is not. Callers in SwiftUI views can pass the snapshot directly.
+    func unifiedTimeline(historyEntries: [NotificationHistory.Entry]) -> [UnifiedTimelineEntry] {
+        let rawEvents = Array(model.claudeCodeEvents.suffix(8))
+
+        // Convert notification history entries (these win in dedup)
+        var entries: [UnifiedTimelineEntry] = historyEntries.map { entry in
+            let triggerLabel = NotificationTriggerCatalog.trigger(
+                source: AIEventSource(rawValue: entry.source),
+                type: entry.type
+            )?.localizedLabel
+
+            return UnifiedTimelineEntry(
+                id: entry.id,
+                icon: entry.wasRateLimited ? "bell.slash" : "bell.fill",
+                iconColor: entry.wasRateLimited ? .gray : .orange,
+                title: triggerLabel ?? entry.tool,
+                detail: entry.actionsExecuted.isEmpty ? entry.message : entry.actionsExecuted.joined(separator: ", "),
+                timestamp: entry.timestamp,
+                isRateLimited: entry.wasRateLimited
+            )
+        }
+
+        // Track notification timestamps for dedup (within 2s = same event)
+        let historyTimestamps = Set(historyEntries.map { Int($0.timestamp.timeIntervalSince1970) })
+
+        // Add raw events that don't match a notification history entry
+        for event in rawEvents {
+            let eventSecond = Int(event.timestamp.timeIntervalSince1970)
+            let isDuplicate = historyTimestamps.contains(where: { abs($0 - eventSecond) <= 2 })
+            if !isDuplicate {
+                entries.append(UnifiedTimelineEntry(
+                    id: event.id,
+                    icon: Self.eventIcon(for: event.type),
+                    iconColor: Self.eventColor(for: event.type),
+                    title: event.toolName.isEmpty ? Self.eventTitle(for: event) : event.toolName,
+                    detail: event.message,
+                    timestamp: event.timestamp,
+                    isRateLimited: false
+                ))
+            }
+        }
+
+        return entries
+            .sorted { $0.timestamp > $1.timestamp }
+            .prefix(8)
+            .map { $0 }
+    }
+
+    func focusSession(_ session: ClaudeCodeMonitor.ClaudeSessionInfo) {
+        if let delegate = NSApp.delegate as? AppDelegate,
+           let overlayModel = delegate.overlayModel {
+            delegate.showOverlay()
+            overlayModel.focusTabByTool(session.projectName)
+        }
+        onClose()
+    }
+
+    func executeSnippet(_ entry: SnippetEntry) {
+        if let delegate = NSApp.delegate as? AppDelegate,
+           let overlayModel = delegate.overlayModel,
+           let session = overlayModel.selectedTab?.session {
+            session.insertSnippet(entry)
+        } else {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(entry.snippet.body, forType: .string)
+        }
+        onClose()
+    }
+
+    // MARK: - Event Mapping Helpers
+
+    private static func eventIcon(for type: ClaudeEventType) -> String {
+        switch type {
+        case .userPrompt: return "person.fill"
+        case .toolStart: return "hammer"
+        case .toolComplete: return "checkmark.circle"
+        case .permissionRequest: return "exclamationmark.triangle"
+        case .responseComplete: return "text.bubble"
+        case .notification: return "bell"
+        case .sessionEnd: return "xmark.circle"
+        case .unknown: return "circle"
+        }
+    }
+
+    private static func eventColor(for type: ClaudeEventType) -> Color {
+        switch type {
+        case .userPrompt: return .green
+        case .permissionRequest: return .yellow
+        case .sessionEnd: return .red
+        case .responseComplete: return .blue
+        case .toolComplete: return .cyan
+        default: return .secondary
+        }
+    }
+
+    private static func eventTitle(for event: ClaudeCodeEvent) -> String {
+        switch event.type {
+        case .responseComplete: return "Response Complete"
+        case .sessionEnd: return "Session Ended"
+        default: return event.hook
+        }
+    }
+}
+
+// MARK: - Unified Timeline Entry
+
+struct UnifiedTimelineEntry: Identifiable {
+    let id: UUID
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let detail: String
+    let timestamp: Date
+    let isRateLimited: Bool
+}
+
+// MARK: - Status Bar Panel View
 
 struct StatusBarPanelView: View {
-    @ObservedObject var model: AppModel
-    let onClose: () -> Void
+    @ObservedObject var viewModel: CommandCenterViewModel
+
+    private var model: AppModel { viewModel.model }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            headerSection
+            HeroZoneView(viewModel: viewModel)
+
             Divider()
-            scrollableContent
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    liveSessionsSection
+                    unifiedFeedSection
+                    quickCommandsSection
+                }
+                .padding(12)
+            }
+            .frame(maxHeight: 400)
+
             Divider()
+
             footerSection
         }
         .frame(width: 400)
     }
 
-    // MARK: - Header
+    // MARK: - Live Sessions
 
-    private var headerSection: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "terminal.fill")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.secondary)
+    private var liveSessionsSection: some View {
+        let sessions = viewModel.liveSessions
+        return Group {
+            if !sessions.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(L("Live Sessions", "Live Sessions"), systemImage: "bubble.left.and.bubble.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.secondary)
 
-            Text(L("Chau7", "Chau7"))
-                .font(.system(size: 14, weight: .semibold))
-
-            statusIndicator
-
-            Spacer()
-
-            Button {
-                (NSApp.delegate as? AppDelegate)?.showOverlay()
-                onClose()
-            } label: {
-                Label(L("Open Terminal", "Open Terminal"), systemImage: "macwindow")
+                    ForEach(sessions) { session in
+                        LiveSessionCard(session: session, onTap: {
+                            viewModel.focusSession(session)
+                        })
+                    }
+                }
+                .padding(10)
+                .background(Color.accentColor.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.accentColor.opacity(0.2), lineWidth: 1)
+                )
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
         }
-        .padding(12)
-        .background(Color(nsColor: .windowBackgroundColor))
     }
 
-    private var statusIndicator: some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(model.isMonitoring ? Color.green : Color.gray)
-                .frame(width: 8, height: 8)
-            Text(model.isMonitoring ? L("status.active", "Active") : L("status.paused", "Paused"))
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            String(
-                format: L("accessibility.monitoringStatus", "Monitoring status: %@"),
-                model.isMonitoring ? L("status.active", "Active") : L("status.paused", "Paused")
-            )
-        )
-    }
+    // MARK: - Unified Feed
 
-    // MARK: - Scrollable Content
-
-    private var scrollableContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                claudeSessionsSection
-                recentActivitySection
-                quickActionsSection
-            }
-            .padding(12)
-        }
-        .frame(maxHeight: 380)
-    }
-
-    // MARK: - Claude Sessions (Most Useful!)
-
-    private var claudeSessionsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label(L("Active Sessions", "Active Sessions"), systemImage: "bubble.left.and.bubble.right")
+    private var unifiedFeedSection: some View {
+        let timeline = viewModel.unifiedTimeline(historyEntries: NotificationManager.shared.history.recent(limit: 8))
+        return VStack(alignment: .leading, spacing: 8) {
+            Label(L("Activity", "Activity"), systemImage: "clock")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
 
-            if model.claudeCodeSessions.isEmpty {
-                HStack {
-                    Image(systemName: "moon.zzz")
-                        .foregroundStyle(.tertiary)
-                    Text(L("No active Claude Code sessions", "No active Claude Code sessions"))
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.vertical, 8)
-            } else {
-                ForEach(Array(model.claudeCodeSessions.sorted(by: { $0.lastActivity > $1.lastActivity }).prefix(5))) { session in
-                    SessionRow(session: session)
-                }
-            }
-        }
-        .padding(10)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
-    // MARK: - Recent Activity
-
-    private var recentActivitySection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Label(L("Recent Activity", "Recent Activity"), systemImage: "clock")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                if !model.claudeCodeEvents.isEmpty {
-                    Button(L("Clear", "Clear")) {
-                        model.claudeCodeEvents.removeAll()
-                    }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                }
-            }
-
-            if model.claudeCodeEvents.isEmpty {
-                Text(L("No recent events", "No recent events"))
+            if timeline.isEmpty {
+                Text(L("No recent activity", "No recent activity"))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 4)
             } else {
-                ForEach(model.claudeCodeEvents.suffix(6).reversed()) { event in
-                    EventRow(event: event)
+                ForEach(timeline) { entry in
+                    TimelineRow(entry: entry)
                 }
             }
         }
@@ -331,105 +423,61 @@ struct StatusBarPanelView: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    // MARK: - Quick Settings
+    // MARK: - Quick Commands
 
-    private var quickActionsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Label(L("Quick Settings", "Quick Settings"), systemImage: "slider.horizontal.3")
+    private var quickCommandsSection: some View {
+        let pinnedSnippets = SnippetManager.shared.entries.filter { $0.snippet.isPinned }.prefix(3)
+        return VStack(alignment: .leading, spacing: 10) {
+            Label(L("Quick Commands", "Quick Commands"), systemImage: "command")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
 
-            // Row 1: Monitoring and Broadcast
-            HStack(spacing: 12) {
-                QuickSettingToggle(
-                    icon: "antenna.radiowaves.left.and.right",
-                    label: "Monitoring",
-                    isOn: $model.isMonitoring
-                )
-                .onChange(of: model.isMonitoring) { _ in
-                    model.applyMonitoringState()
-                    NotificationCenter.default.post(name: NSNotification.Name("MonitoringStateChanged"), object: nil)
+            if !pinnedSnippets.isEmpty {
+                ForEach(Array(pinnedSnippets)) { entry in
+                    Button {
+                        viewModel.executeSnippet(entry)
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 9))
+                                .foregroundColor(.accentColor)
+                                .frame(width: 16)
+                            Text(entry.snippet.title)
+                                .font(.system(size: 11, weight: .medium))
+                                .lineLimit(1)
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 4)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
 
-                QuickSettingToggle(
-                    icon: "dot.radiowaves.left.and.right",
-                    label: "Broadcast",
-                    isOn: Binding(
-                        get: { FeatureSettings.shared.isBroadcastEnabled },
-                        set: { FeatureSettings.shared.isBroadcastEnabled = $0 }
-                    )
-                )
+                Divider()
             }
 
-            // Row 2: Auto Theme and Syntax Highlight
-            HStack(spacing: 12) {
-                QuickSettingToggle(
-                    icon: "sparkles",
-                    label: "AI Themes",
-                    isOn: Binding(
-                        get: { FeatureSettings.shared.isAutoTabThemeEnabled },
-                        set: { FeatureSettings.shared.isAutoTabThemeEnabled = $0 }
-                    )
+            QuickSettingToggle(
+                icon: "antenna.radiowaves.left.and.right",
+                label: "Monitoring",
+                isOn: Binding(
+                    get: { self.model.isMonitoring },
+                    set: { newValue in
+                        self.model.isMonitoring = newValue
+                        self.model.applyMonitoringState()
+                        NotificationCenter.default.post(name: NSNotification.Name("MonitoringStateChanged"), object: nil)
+                    }
                 )
+            )
 
-                QuickSettingToggle(
-                    icon: "textformat",
-                    label: "Syntax",
-                    isOn: Binding(
-                        get: { FeatureSettings.shared.isSyntaxHighlightEnabled },
-                        set: { FeatureSettings.shared.isSyntaxHighlightEnabled = $0 }
-                    )
-                )
-            }
-
-            // Row 3: Window Opacity Slider
-            HStack(spacing: 8) {
-                Image(systemName: "square.dashed")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 20)
-
-                Text(L("Opacity", "Opacity"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-
-                Slider(
-                    value: Binding(
-                        get: { FeatureSettings.shared.windowOpacity },
-                        set: { FeatureSettings.shared.windowOpacity = $0 }
-                    ),
-                    in: 0.3...1.0,
-                    step: 0.1
-                )
-                .controlSize(.small)
-
-                Text(
-                    String(
-                        format: L("status.opacityPercent", "%d%%"),
-                        Int(FeatureSettings.shared.windowOpacity * 100)
-                    )
-                )
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 32)
-            }
-
-            Divider()
-
-            // Row 4: Action Buttons
-            HStack(spacing: 8) {
-                Button {
-                    model.sendTestNotification()
-                } label: {
-                    Label(L("Test Alert", "Test Alert"), systemImage: "bell.badge")
-                }
-                .controlSize(.small)
-
+            HStack {
                 Spacer()
-
                 Button {
                     (NSApp.delegate as? AppDelegate)?.showSettings()
-                    onClose()
+                    viewModel.onClose()
                 } label: {
                     Label(L("All Settings", "All Settings"), systemImage: "gearshape")
                 }
@@ -437,7 +485,7 @@ struct StatusBarPanelView: View {
             }
         }
         .padding(10)
-        .background(Color(nsColor: .controlBackgroundColor).opacity(0.5))
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.3))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
@@ -445,199 +493,274 @@ struct StatusBarPanelView: View {
 
     private var footerSection: some View {
         HStack {
-            Text(L("v1.0", "v1.0"))
+            Text("v\(bundleVersion)")
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
 
             Spacer()
 
             Button(L("Quit Chau7", "Quit Chau7")) {
-                NSApplication.shared.terminate(nil)
+                viewModel.showQuitConfirmation = true
             }
             .buttonStyle(.plain)
             .font(.system(size: 11))
             .foregroundStyle(.secondary)
+            .popover(isPresented: $viewModel.showQuitConfirmation) {
+                VStack(spacing: 10) {
+                    Text(L("Quit Chau7?", "Quit Chau7?"))
+                        .font(.system(size: 12, weight: .medium))
+                    HStack(spacing: 8) {
+                        Button(L("Cancel", "Cancel")) {
+                            viewModel.showQuitConfirmation = false
+                        }
+                        .controlSize(.small)
+                        Button(L("Quit", "Quit"), role: .destructive) {
+                            NSApplication.shared.terminate(nil)
+                        }
+                        .controlSize(.small)
+                        .buttonStyle(.borderedProminent)
+                        .tint(.red)
+                    }
+                }
+                .padding(12)
+            }
         }
         .padding(10)
         .background(Color(nsColor: .windowBackgroundColor))
     }
+
+    private var bundleVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+    }
 }
 
-// MARK: - Session Row
+// MARK: - Hero Zone
 
-private struct SessionRow: View {
-    let session: ClaudeCodeMonitor.ClaudeSessionInfo
+private struct HeroZoneView: View {
+    @ObservedObject var viewModel: CommandCenterViewModel
 
     var body: some View {
-        HStack(spacing: 8) {
-            // Animated indicator for active states
-            ZStack {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 8, height: 8)
+        if viewModel.attentionCount > 0 {
+            attentionCard
+        } else {
+            allClearBar
+        }
+    }
 
-                if isAnimated {
+    private var attentionCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.yellow)
+                Text("\(viewModel.attentionCount) session\(viewModel.attentionCount == 1 ? "" : "s") need\(viewModel.attentionCount == 1 ? "s" : "") attention")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+
+            ForEach(Array(viewModel.attentionSessions.prefix(3))) { session in
+                HStack(spacing: 8) {
                     Circle()
-                        .stroke(statusColor.opacity(0.5), lineWidth: 2)
-                        .frame(width: 14, height: 14)
-                        .opacity(0.6)
+                        .fill(session.state == .waitingPermission ? Color.yellow : Color.blue)
+                        .frame(width: 6, height: 6)
+                    Text(session.projectName)
+                        .font(.system(size: 11, weight: .medium))
+                        .lineLimit(1)
+                    Text(session.state == .waitingPermission ? L("Permission", "Permission") : L("Input", "Input"))
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(L("Go", "Go")) {
+                        viewModel.focusSession(session)
+                    }
+                    .controlSize(.small)
+                    .buttonStyle(.borderedProminent)
                 }
             }
-            .frame(width: 16, height: 16)
+        }
+        .padding(12)
+        .background(Color.yellow.opacity(0.1))
+    }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(session.projectName)
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
+    private var allClearBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+            Text(L("All clear", "All clear"))
+                .font(.system(size: 13, weight: .medium))
 
-                HStack(spacing: 4) {
-                    if let icon = stateIcon {
-                        Image(systemName: icon)
-                            .font(.system(size: 9))
-                    }
-                    Text(stateDescription)
-                        .font(.system(size: 10))
-                    if let tool = session.lastToolName, showTool {
-                        Text(String(format: L("status.toolSuffix", "(%@)"), tool))
-                            .font(.system(size: 9))
-                            .foregroundStyle(.tertiary)
-                    }
-                }
-                .foregroundStyle(stateColor)
+            let total = viewModel.model.claudeCodeSessions.count
+            if total > 0 {
+                Text("\(total) session\(total == 1 ? "" : "s")")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
 
             Spacer()
 
-            Text(timeAgo(session.lastActivity))
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(viewModel.model.isMonitoring ? Color.green : Color.gray)
+                    .frame(width: 6, height: 6)
+                Text(viewModel.model.isMonitoring ? L("status.active", "Active") : L("status.paused", "Paused"))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
         }
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            String(
-                format: L("accessibility.sessionSummary", "%@ session, %@, last active %@"),
-                session.projectName,
-                stateDescription,
-                timeAgo(session.lastActivity)
-            )
+        .padding(12)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+// MARK: - Live Session Card
+
+private struct LiveSessionCard: View {
+    let session: ClaudeCodeMonitor.ClaudeSessionInfo
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 8, height: 8)
+                    if isAnimated {
+                        Circle()
+                            .stroke(statusColor.opacity(0.5), lineWidth: 2)
+                            .frame(width: 14, height: 14)
+                            .opacity(0.6)
+                    }
+                }
+                .frame(width: 16, height: 16)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(session.projectName)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+
+                    HStack(spacing: 4) {
+                        if let icon = stateIcon {
+                            Image(systemName: icon)
+                                .font(.system(size: 9))
+                        }
+                        Text(stateDescription)
+                            .font(.system(size: 10))
+                        if let tool = session.lastToolName, showTool {
+                            Text("(\(tool))")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .foregroundStyle(stateColor)
+                }
+
+                Spacer()
+
+                Text(timeAgo(session.lastActivity))
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(needsAttention ? Color.yellow.opacity(0.08) : Color.primary.opacity(0.001))
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(session.projectName), \(stateDescription), \(timeAgo(session.lastActivity))")
+        .accessibilityHint("Tap to focus this session")
+    }
+
+    private var needsAttention: Bool {
+        session.state == .waitingPermission || session.state == .waitingInput
     }
 
     private var isAnimated: Bool {
-        switch session.state {
-        case .responding, .waitingPermission:
-            return true
-        default:
-            return false
-        }
+        session.state == .responding || session.state == .waitingPermission
     }
 
     private var showTool: Bool {
-        switch session.state {
-        case .responding, .waitingPermission:
-            return true
-        default:
-            return false
-        }
+        session.state == .responding || session.state == .waitingPermission
     }
 
     private var statusColor: Color {
         switch session.state {
-        case .active:
-            return .green
-        case .responding:
-            return .orange
-        case .waitingPermission:
-            return .yellow
-        case .waitingInput:
-            return .blue
-        case .idle:
-            return .gray
-        case .closed:
-            return .red
+        case .active: return .green
+        case .responding: return .orange
+        case .waitingPermission: return .yellow
+        case .waitingInput: return .blue
+        case .idle: return .gray
+        case .closed: return .red
         }
     }
 
     private var stateColor: Color {
         switch session.state {
-        case .waitingPermission:
-            return .yellow
-        case .waitingInput:
-            return .blue
-        default:
-            return .secondary
+        case .waitingPermission: return .yellow
+        case .waitingInput: return .blue
+        default: return .secondary
         }
     }
 
     private var stateIcon: String? {
         switch session.state {
-        case .responding:
-            return "gearshape.2"
-        case .waitingPermission:
-            return "exclamationmark.triangle"
-        case .waitingInput:
-            return "bubble.left.and.exclamationmark.bubble.right"
-        default:
-            return nil
+        case .responding: return "gearshape.2"
+        case .waitingPermission: return "exclamationmark.triangle"
+        case .waitingInput: return "bubble.left.and.exclamationmark.bubble.right"
+        default: return nil
         }
     }
 
     private var stateDescription: String {
         switch session.state {
-        case .active:
-            return "Starting..."
-        case .responding:
-            return "Working"
-        case .waitingPermission:
-            return "Needs Permission"
-        case .waitingInput:
-            return "Waiting for input"
-        case .idle:
-            return "Idle"
-        case .closed:
-            return "Closed"
+        case .active: return "Starting..."
+        case .responding: return "Working"
+        case .waitingPermission: return "Needs Permission"
+        case .waitingInput: return "Waiting for input"
+        case .idle: return "Idle"
+        case .closed: return "Closed"
         }
     }
 
     private func timeAgo(_ date: Date) -> String {
         let seconds = Int(-date.timeIntervalSinceNow)
-        if seconds < 60 {
-            return "now"
-        } else if seconds < 3600 {
-            return "\(seconds / 60)m ago"
-        } else {
-            return "\(seconds / 3600)h ago"
-        }
+        if seconds < 60 { return "now" }
+        if seconds < 3600 { return "\(seconds / 60)m ago" }
+        return "\(seconds / 3600)h ago"
     }
 }
 
-// MARK: - Event Row
+// MARK: - Timeline Row
 
-private struct EventRow: View {
-    let event: ClaudeCodeEvent
+private struct TimelineRow: View {
+    let entry: UnifiedTimelineEntry
 
-    // Static formatter to avoid recreating on every render (expensive)
     private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f
     }()
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: eventIcon)
+            Image(systemName: entry.icon)
                 .font(.system(size: 10))
-                .foregroundStyle(eventColor)
+                .foregroundStyle(entry.iconColor)
                 .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(displayTitle)
+                Text(entry.title)
                     .font(.system(size: 11, weight: .medium))
                     .lineLimit(1)
 
-                if !event.message.isEmpty {
-                    Text(event.message)
+                if !entry.detail.isEmpty {
+                    Text(entry.detail)
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -646,67 +769,12 @@ private struct EventRow: View {
 
             Spacer()
 
-            Text(timeString)
+            Text(Self.timeFormatter.string(from: entry.timestamp))
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 2)
-    }
-
-    private var displayTitle: String {
-        if !event.toolName.isEmpty {
-            return event.toolName
-        }
-        switch event.type {
-        case .responseComplete:
-            return "Response Complete"
-        case .sessionEnd:
-            return "Session Ended"
-        default:
-            return event.hook
-        }
-    }
-
-    private var eventIcon: String {
-        switch event.type {
-        case .userPrompt:
-            return "person.fill"
-        case .toolStart:
-            return "hammer"
-        case .toolComplete:
-            return "checkmark.circle"
-        case .permissionRequest:
-            return "exclamationmark.triangle"
-        case .responseComplete:
-            return "text.bubble"
-        case .notification:
-            return "bell"
-        case .sessionEnd:
-            return "xmark.circle"
-        case .unknown:
-            return "circle"
-        }
-    }
-
-    private var eventColor: Color {
-        switch event.type {
-        case .userPrompt:
-            return .green
-        case .permissionRequest:
-            return .yellow
-        case .sessionEnd:
-            return .red
-        case .responseComplete:
-            return .blue
-        case .toolComplete:
-            return .cyan
-        default:
-            return .secondary
-        }
-    }
-
-    private var timeString: String {
-        Self.timeFormatter.string(from: event.timestamp)
+        .opacity(entry.isRateLimited ? 0.5 : 1.0)
     }
 }
 
