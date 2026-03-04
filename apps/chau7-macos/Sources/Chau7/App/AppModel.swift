@@ -930,6 +930,20 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             guard let self else { return }
             self.claudeCodeEvents.append(event)
             self.claudeCodeEvents.trimToLast(50)
+
+            // Also feed into the tool-agnostic recentEvents stream so Claude Code
+            // events appear in the command center timeline alongside events from
+            // other tools (Cursor, Codex, etc.). Without this, only the notification
+            // system sees Claude Code events — the timeline would be empty.
+            let aiEvent = AIEvent(
+                source: .claudeCode,
+                type: event.type.rawValue,
+                tool: event.toolName.isEmpty ? "Claude Code" : event.toolName,
+                message: event.message,
+                ts: DateFormatters.iso8601.string(from: event.timestamp)
+            )
+            self.recentEvents.append(aiEvent)
+            self.recentEvents.trimToLast(25)
         }
 
         monitor.onSessionIdle = { [weak self] session in
