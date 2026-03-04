@@ -525,6 +525,49 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(rightTab.splitController.focusedTerminalSessionID(), terminalID)
     }
 
+    func testRestoreUsesPersistedSelectedTabID() {
+        let firstTabID = UUID()
+        let secondTabID = UUID()
+
+        storeSavedTabStates([
+            SavedTabState(
+                tabID: firstTabID.uuidString,
+                selectedTabID: nil,
+                customTitle: "First",
+                color: TabColor.green.rawValue,
+                directory: "/tmp/restore-1",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: nil,
+                focusedPaneID: nil,
+                paneStates: nil
+            ),
+            SavedTabState(
+                tabID: secondTabID.uuidString,
+                selectedTabID: secondTabID.uuidString,
+                customTitle: "Second",
+                color: TabColor.blue.rawValue,
+                directory: "/tmp/restore-2",
+                selectedIndex: nil,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: nil,
+                focusedPaneID: nil,
+                paneStates: nil
+            )
+        ])
+
+        let restoredModel = OverlayTabsModel(appModel: appModel)
+
+        XCTAssertEqual(restoredModel.tabs.count, 2, "restore should rebuild all saved tabs")
+        XCTAssertEqual(restoredModel.tabs[0].id, firstTabID)
+        XCTAssertEqual(restoredModel.tabs[1].id, secondTabID)
+        XCTAssertEqual(restoredModel.selectedTabID, secondTabID, "explicit selected tab marker should override legacy selectedIndex")
+    }
+
     func testReopenClosedTabReturnsToOriginalIndex() {
         model.newTab()
         model.newTab()
@@ -613,6 +656,99 @@ final class OverlayTabsModelTests: XCTestCase {
             readyExpectation.fulfill()
         }
         wait(for: [readyExpectation], timeout: 2.0)
+    }
+
+    func testRestorePrefersActivePaneIfNoResumeCommandThenFallsBackToFirstAvailableResumeCommand() {
+        let activePaneID = UUID()
+        let secondaryPaneID = UUID()
+        let split = SavedSplitNode(
+            kind: .split,
+            id: UUID().uuidString,
+            direction: .horizontal,
+            ratio: 0.5,
+            first: SavedSplitNode(
+                kind: .terminal,
+                id: activePaneID.uuidString,
+                direction: nil,
+                ratio: nil,
+                first: nil,
+                second: nil,
+                textEditorPath: nil
+            ),
+            second: SavedSplitNode(
+                kind: .terminal,
+                id: secondaryPaneID.uuidString,
+                direction: nil,
+                ratio: nil,
+                first: nil,
+                second: nil,
+                textEditorPath: nil
+            ),
+            textEditorPath: nil
+        )
+
+        let activePaneState = SavedTerminalPaneState(
+            paneID: activePaneID.uuidString,
+            directory: "/tmp/primary",
+            scrollbackContent: nil,
+            aiResumeCommand: nil
+        )
+        let fallbackPaneState = SavedTerminalPaneState(
+            paneID: secondaryPaneID.uuidString,
+            directory: "/tmp/secondary",
+            scrollbackContent: nil,
+            aiResumeCommand: "claude --resume fallback-001"
+        )
+
+        storeSavedTabStates([
+            SavedTabState(
+                customTitle: "Split AI",
+                color: TabColor.orange.rawValue,
+                directory: "/tmp/secondary",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: split,
+                focusedPaneID: activePaneID.uuidString,
+                paneStates: [activePaneState, fallbackPaneState]
+            )
+        ])
+
+        let restoredModel = OverlayTabsModel(appModel: appModel)
+        guard let tab = restoredModel.tabs.first else {
+            XCTFail("Expected restored tab")
+            return
+        }
+
+        guard let activeSession = tab.splitController.root.findSession(id: activePaneID),
+              let secondarySession = tab.splitController.root.findSession(id: secondaryPaneID) else {
+            XCTFail("Expected both restore sessions to exist")
+            return
+        }
+
+        let activeView = RustTerminalView(frame: .zero)
+        let secondaryView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        activeView.onInput = { capturedInputs.append("active:\($0)") }
+        secondaryView.onInput = { capturedInputs.append("secondary:\($0)") }
+        activeSession.attachRustTerminal(activeView)
+        secondarySession.attachRustTerminal(secondaryView)
+
+        activeSession.isShellLoading = false
+        activeSession.isAtPrompt = true
+        activeSession.status = .idle
+        secondarySession.isShellLoading = false
+        secondarySession.isAtPrompt = true
+        secondarySession.status = .idle
+
+        let expectationDone = expectation(description: "resume command routed to secondary pane fallback target")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            XCTAssertEqual(capturedInputs.count, 1)
+            XCTAssertEqual(capturedInputs.first, "secondary:claude --resume fallback-001")
+            expectationDone.fulfill()
+        }
+        wait(for: [expectationDone], timeout: 2.0)
     }
 }
 #endif
