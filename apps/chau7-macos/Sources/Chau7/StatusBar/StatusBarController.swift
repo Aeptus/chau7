@@ -387,7 +387,10 @@ final class CommandCenterViewModel: ObservableObject {
         switch normalizedEventType(event.type) {
         case "user_prompt", "userprompt":
             return L("statusBar.timeline.userPrompt", "Prompt sent")
-        case "tool_start", "toolstart", "tool_called", "toolcalled":
+        case "tool_start", "toolstart":
+            return L("statusBar.timeline.toolStart", "Running %@")
+                .replacingOccurrences(of: "%@", with: friendlyToolName(event.tool))
+        case "tool_called", "toolcalled":
             return L("statusBar.timeline.toolCalled", "Tool running")
         case "tool_complete":
             return L("statusBar.timeline.toolComplete", "%@ done")
@@ -427,7 +430,7 @@ final class CommandCenterViewModel: ObservableObject {
         let source = friendlySourceName(event.source)
 
         switch normalizedEventType(event.type) {
-        case "tool_start", "toolstart", "tool_complete", "file_edited":
+        case "tool_start", "toolstart", "tool_called", "toolcalled", "tool_complete", "file_edited":
             let file = extractFileName(from: event.message)
             if let file { return "\(source) — \(file)" }
             return event.message.isEmpty ? source : "\(source) — \(event.message)"
