@@ -245,7 +245,21 @@ final class ClaudeCodeMonitor: ObservableObject {
 
     // MARK: - Notifications
 
+    /// Suppression window after a permission request — if Claude finishes within
+    /// this window, the user was actively engaged (just granted permission) and
+    /// doesn't need a "finished" notification.
+    private let postPermissionSuppression: TimeInterval = 30.0
+
     private func notifyResponseComplete(_ event: ClaudeCodeEvent) {
+        // Suppress "finished" notification if the user recently granted permission
+        // for this session. They're already watching — the notification is noise.
+        if let lastPerm = lastPermissionRequestBySession[event.sessionId],
+           event.timestamp.timeIntervalSince(lastPerm.timestamp) < postPermissionSuppression {
+            Log.trace("Suppressing finished notification: session=\(event.shortSessionId) " +
+                       "completed \(Int(event.timestamp.timeIntervalSince(lastPerm.timestamp)))s after permission request")
+            return
+        }
+
         let aiEvent = AIEvent(
             source: .claudeCode,
             type: "finished",
