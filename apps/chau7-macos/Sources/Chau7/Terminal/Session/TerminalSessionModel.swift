@@ -116,6 +116,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private weak var rustTerminalView: RustTerminalView?
     /// Strong reference to keep the Rust terminal view alive across SwiftUI view recreations
     private var retainedRustTerminalView: RustTerminalView?
+    /// Prefill command queued when restore/restoration occurs before terminal is ready.
+    private var pendingPrefillInput: String?
     /// Cached snapshot of the last rendered terminal frame, used for instant tab-switch visuals
     /// when the actual NSView has been removed from the hierarchy (distant-tab optimization).
     var lastRenderedSnapshot: NSImage?
@@ -383,6 +385,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                 Log.trace("Auto-focused Rust terminal view on attach")
             }
         }
+
+        flushPendingPrefillInputIfReady()
     }
 
     func focusTerminal(in window: NSWindow?, retryCount: Int = 0) {
@@ -840,6 +844,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         isAtPrompt = true
         createDeferredRTKFlag()
         devServerMonitor.commandDidFinish()
+        flushPendingPrefillInputIfReady()
         guard hasPendingCommand, pendingCommandLine != nil else { return }
         promptSeenForPendingCommand = true
         if !commandFinishedNotified {
@@ -1959,8 +1964,30 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     /// explicitly confirm execution.
     func prefillInput(_ text: String) {
         guard !text.isEmpty else { return }
+        pendingPrefillInput = text
+        flushPendingPrefillInputIfReady()
+    }
+
+    private func flushPendingPrefillInputIfReady() {
+        guard let text = pendingPrefillInput else { return }
+        guard canPrefillInput() else { return }
+
         let insertion = SnippetInsertion(text: text, placeholders: [], finalCursorOffset: text.count)
+        pendingPrefillInput = nil
         activeTerminalView?.insertSnippet(insertion)
+    }
+
+    func canPrefillInput() -> Bool {
+        guard !isShellLoading else { return false }
+        guard isAtPrompt else { return false }
+        guard existingRustTerminalView != nil else { return false }
+
+        switch status {
+        case .running, .stuck, .exited:
+            return false
+        case .idle, .waitingForInput:
+            return true
+        }
     }
 
     // MARK: - F21: Snippet Insertion

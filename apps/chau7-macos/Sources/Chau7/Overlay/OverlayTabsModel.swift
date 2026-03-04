@@ -721,11 +721,11 @@ final class OverlayTabsModel: ObservableObject {
         "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
-    private static let restoreDelaySeconds: TimeInterval = 0.5
-    private static let resumeCommandDelaySeconds: TimeInterval = 0.5
-    private static let resumeCommandRetryDelaySeconds: TimeInterval = 0.4
-    private static let resumeCommandMaxRetryDelay: TimeInterval = 3.0
-    private static let resumeCommandMaxAttempts: Int = 10
+    private static let restoreDelaySeconds: TimeInterval = 0.8
+    private static let resumeCommandDelaySeconds: TimeInterval = 0.6
+    private static let resumeCommandRetryDelaySeconds: TimeInterval = 0.5
+    private static let resumeCommandMaxRetryDelay: TimeInterval = 4.0
+    private static let resumeCommandMaxAttempts: Int = 16
 
     private static func paneStateMap(from states: [SavedTerminalPaneState]?) -> [UUID: SavedTerminalPaneState] {
         guard let states else { return [:] }
@@ -856,6 +856,7 @@ final class OverlayTabsModel: ObservableObject {
     private func restoreTabState(for tab: OverlayTab, state: SavedTabState) {
         let targetTabID = tab.id
         let terminalSessions = tab.splitController.terminalSessions
+        Log.info("restoreTabState: scheduled for tab=\(targetTabID), panes=\(terminalSessions.count)")
         guard !terminalSessions.isEmpty else { return }
 
         // Keep the restored focus for the active terminal pane (or fallback to
@@ -911,7 +912,7 @@ final class OverlayTabsModel: ObservableObject {
             }
             let resumeTarget = normalizedResumeCommands.first(where: { $0.0 == activePaneID }) ?? normalizedResumeCommands.first
             if resumeTarget == nil {
-                Log.debug("restoreTabState: no resume command candidate found for tab=\(targetTabID)")
+                Log.info("restoreTabState: no resume command candidate found for tab=\(targetTabID)")
             }
 
             let restoreToken = UUID().uuidString
@@ -949,7 +950,7 @@ final class OverlayTabsModel: ObservableObject {
 
                 if let (resumePaneID, resumeCommand) = resumeTarget,
                    resumePaneID == paneID {
-                    Log.debug("restoreTabState: scheduling resume command for tab=\(targetTabID) pane=\(paneID)")
+                    Log.info("restoreTabState: scheduling resume command for tab=\(targetTabID) pane=\(paneID)")
                     self.scheduleResumeCommand(
                         command: resumeCommand,
                         targetTabID: targetTabID,
@@ -959,19 +960,6 @@ final class OverlayTabsModel: ObservableObject {
                     )
                 }
             }
-        }
-    }
-
-    private static func canPrefillResumeCommand(to session: TerminalSessionModel) -> Bool {
-        guard !session.isShellLoading else { return false }
-        guard session.isAtPrompt else { return false }
-        guard session.existingRustTerminalView != nil else { return false }
-
-        switch session.status {
-        case .running, .stuck, .exited:
-            return false
-        case .idle, .waitingForInput:
-            return true
         }
     }
 
@@ -1000,7 +988,12 @@ final class OverlayTabsModel: ObservableObject {
                 return
             }
 
-            if !Self.canPrefillResumeCommand(to: reResolvedSession) {
+            if !reResolvedSession.canPrefillInput() {
+                if reResolvedSession.existingRustTerminalView == nil {
+                    Log.warn("restoreTabState: pane missing terminal view, queueing resume prefill for tab=\(targetTabID) pane=\(paneID)")
+                    reResolvedSession.prefillInput(command)
+                    return
+                }
                 let nextDelay = min(delay + Self.resumeCommandRetryDelaySeconds, Self.resumeCommandMaxRetryDelay)
                 Log.warn(
                     """
@@ -1022,7 +1015,7 @@ final class OverlayTabsModel: ObservableObject {
 
             // Prefill the command in the active terminal so user can confirm with Enter.
             reResolvedSession.prefillInput(command)
-            Log.debug("restoreTabState: resume command prefilling for tab=\(targetTabID) pane=\(paneID)")
+            Log.info("restoreTabState: resume command prefilling for tab=\(targetTabID) pane=\(paneID)")
         }
     }
 
