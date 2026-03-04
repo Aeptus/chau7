@@ -204,9 +204,22 @@ struct OverlayTab: Identifiable, Equatable {
     func appendSelectionToEditor(_ text: String) {
         splitController.appendSelectionToEditor(text)
     }
+
+    init(appModel: AppModel, splitController: SplitPaneController) {
+        self.id = UUID()
+        self.splitController = splitController
+        self.createdAt = Date()
+    }
 }
 
 // MARK: - Tab State Persistence
+
+struct SavedTerminalPaneState: Codable {
+    let paneID: String
+    let directory: String
+    let scrollbackContent: String?  // last N lines of terminal output
+    let aiResumeCommand: String?  // e.g. "claude --resume abc123"
+}
 
 /// Lightweight Codable snapshot of a tab's restorable state.
 /// Captures working directory, title, color, and the last N lines of
@@ -217,8 +230,11 @@ struct SavedTabState: Codable {
     let directory: String
     let selectedIndex: Int?  // non-nil only for the selected tab
     let tokenOptOverride: String?  // TabTokenOptOverride.rawValue (nil = .default for backwards compat)
-    let scrollbackContent: String?  // last N lines of terminal output
-    let aiResumeCommand: String?  // e.g. "claude --resume abc123" — prefilled on restore
+    let scrollbackContent: String?  // backward compatibility (legacy single-pane restore)
+    let aiResumeCommand: String?  // backward compatibility (legacy single-pane restore)
+    let splitLayout: SavedSplitNode? // split tree including editor panes
+    let focusedPaneID: String? // persisted focused pane ID
+    let paneStates: [SavedTerminalPaneState]?
 
     static let userDefaultsKey = "com.chau7.savedTabState"
 }
@@ -343,15 +359,20 @@ final class OverlayTabsModel: ObservableObject {
     var onCloseLastTab: (() -> Void)?
 
     private let appModel: AppModel
+    private struct RestorableTabsPayload {
+        let tabs: [OverlayTab]
+        let selectedID: UUID
+        let rawStates: [SavedTabState]
+    }
 
     init(appModel: AppModel) {
         self.appModel = appModel
+        let restoredPayload = Self.restoreSavedTabs(appModel: appModel)
 
-        // Try to restore saved tab state from a previous session
-        if let restoredTabs = Self.restoreSavedTabs(appModel: appModel) {
-            self.tabs = restoredTabs.tabs
-            self.selectedTabID = restoredTabs.selectedID
-            Log.info("Restored \(restoredTabs.tabs.count) tab(s) from saved state")
+        if let restoredPayload {
+            self.tabs = restoredPayload.tabs
+            self.selectedTabID = restoredPayload.selectedID
+            Log.info("Restored \(restoredPayload.tabs.count) tab(s) from saved state")
         } else {
             // Fallback: create a single fresh tab
             var first = OverlayTab(appModel: appModel)
@@ -360,6 +381,14 @@ final class OverlayTabsModel: ObservableObject {
             }
             self.tabs = [first]
             self.selectedTabID = first.id
+        }
+
+        // Apply persisted terminal state (scrollback + resume command) after the
+        // instance is fully initialized.
+        if let restoredPayload {
+            for (index, state) in restoredPayload.rawStates.enumerated() where index < tabs.count {
+                restoreTabState(for: tabs[index], state: state)
+            }
         }
 
         // Setup task lifecycle observers (v1.1)
@@ -427,60 +456,54 @@ final class OverlayTabsModel: ObservableObject {
         let selectedID = selectedTabID
         let maxLines = FeatureSettings.shared.restoredScrollbackLines
         var states: [SavedTabState] = []
+
         for (i, tab) in tabs.enumerated() {
-            let dir = tab.session?.currentDirectory
-                ?? TerminalSessionModel.defaultStartDirectory()
+            let terminalSessions = tab.splitController.terminalSessions
             let isSelected = tab.id == selectedID
             let overrideRaw: String? = tab.tokenOptOverride == .default ? nil : tab.tokenOptOverride.rawValue
 
-            // Capture scrollback (last N lines of terminal output)
-            var scrollback: String? = nil
-            if maxLines > 0, let data = tab.session?.captureRemoteSnapshot() {
-                let text = String(decoding: data, as: UTF8.self)
-                // Strip trailing empty lines — the terminal buffer includes blank
-                // lines below the cursor to fill the viewport, which would appear
-                // as empty newlines when cat'd back on restore.
-                var lines = text.components(separatedBy: "\n")
-                while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
-                    lines.removeLast()
-                }
-                if lines.count > maxLines {
-                    scrollback = lines.suffix(maxLines).joined(separator: "\n")
-                } else if !lines.isEmpty {
-                    scrollback = lines.joined(separator: "\n")
-                }
-                // Don't save empty scrollback
-                if let s = scrollback, s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    scrollback = nil
-                }
-                // Cap total size to avoid UserDefaults bloat (500KB per tab max)
-                if let s = scrollback, s.utf8.count > 500_000 {
-                    let truncatedLines = s.components(separatedBy: "\n")
-                    scrollback = truncatedLines.suffix(maxLines / 2).joined(separator: "\n")
-                }
+            var paneStates: [SavedTerminalPaneState] = []
+            for (paneID, session) in terminalSessions {
+                let dir = session.currentDirectory
+                let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
+                let resumeCommand = Self.buildAIResumeCommand(
+                    appName: session.activeAppName,
+                    directory: dir
+                )
+
+                paneStates.append(SavedTerminalPaneState(
+                    paneID: paneID.uuidString,
+                    directory: dir,
+                    scrollbackContent: scrollback,
+                    aiResumeCommand: resumeCommand
+                ))
             }
 
-            // Build AI resume command if this tab was running an AI session
-            let resumeCommand = Self.buildAIResumeCommand(
-                appName: tab.session?.activeAppName,
-                directory: dir
-            )
+            let primaryDirectory = terminalSessions.first?.1.currentDirectory
+                ?? tab.session?.currentDirectory
+                ?? TerminalSessionModel.defaultStartDirectory()
+            let primaryScrollback = paneStates.first?.scrollbackContent
+            let primaryResumeCommand = paneStates.first?.aiResumeCommand
 
             states.append(SavedTabState(
                 customTitle: tab.customTitle,
                 color: tab.color.rawValue,
-                directory: dir,
+                directory: primaryDirectory,
                 selectedIndex: isSelected ? i : nil,
                 tokenOptOverride: overrideRaw,
-                scrollbackContent: scrollback,
-                aiResumeCommand: resumeCommand
+                scrollbackContent: primaryScrollback,
+                aiResumeCommand: primaryResumeCommand,
+                splitLayout: tab.splitController.exportLayout(),
+                focusedPaneID: tab.splitController.focusedTerminalSessionID()?.uuidString,
+                paneStates: paneStates.isEmpty ? nil : paneStates
             ))
         }
+
         guard !states.isEmpty else { return }
         do {
             let data = try JSONEncoder().encode(states)
             UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
-            Log.trace("Saved \(states.count) tab state(s) with scrollback")
+            Log.trace("Saved \(states.count) tab state(s) with split layout")
         } catch {
             Log.warn("Failed to save tab state: \(error)")
         }
@@ -490,45 +513,44 @@ final class OverlayTabsModel: ObservableObject {
     /// closed-tab stack. Must be called BEFORE `closeAllSessions()` kills the shell,
     /// because we need the live scrollback buffer and active app name.
     private func captureClosedTabSnapshot(tab: OverlayTab, at index: Int) {
-        let dir = tab.session?.currentDirectory
-            ?? TerminalSessionModel.defaultStartDirectory()
         let maxLines = FeatureSettings.shared.restoredScrollbackLines
+        let terminalSessions = tab.splitController.terminalSessions
 
-        var scrollback: String? = nil
-        if maxLines > 0, let data = tab.session?.captureRemoteSnapshot() {
-            let text = String(decoding: data, as: UTF8.self)
-            var lines = text.components(separatedBy: "\n")
-            while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty {
-                lines.removeLast()
-            }
-            if lines.count > maxLines {
-                scrollback = lines.suffix(maxLines).joined(separator: "\n")
-            } else if !lines.isEmpty {
-                scrollback = lines.joined(separator: "\n")
-            }
-            if let s = scrollback, s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                scrollback = nil
-            }
-            if let s = scrollback, s.utf8.count > 500_000 {
-                let truncatedLines = s.components(separatedBy: "\n")
-                scrollback = truncatedLines.suffix(maxLines / 2).joined(separator: "\n")
-            }
+        var paneStates: [SavedTerminalPaneState] = []
+        for (paneID, session) in terminalSessions {
+            let dir = session.currentDirectory
+            let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
+            let resumeCommand = Self.buildAIResumeCommand(
+                appName: session.activeAppName,
+                directory: dir
+            )
+
+            paneStates.append(SavedTerminalPaneState(
+                paneID: paneID.uuidString,
+                directory: dir,
+                scrollbackContent: scrollback,
+                aiResumeCommand: resumeCommand
+            ))
         }
 
-        let resumeCommand = Self.buildAIResumeCommand(
-            appName: tab.session?.activeAppName,
-            directory: dir
-        )
+        let primaryDirectory = terminalSessions.first?.1.currentDirectory
+            ?? tab.session?.currentDirectory
+            ?? TerminalSessionModel.defaultStartDirectory()
+        let primaryScrollback = paneStates.first?.scrollbackContent
+        let primaryResumeCommand = paneStates.first?.aiResumeCommand
 
         let overrideRaw = tab.tokenOptOverride == .default ? nil : tab.tokenOptOverride.rawValue
         let state = SavedTabState(
             customTitle: tab.customTitle,
             color: tab.color.rawValue,
-            directory: dir,
+            directory: primaryDirectory,
             selectedIndex: nil,
             tokenOptOverride: overrideRaw,
-            scrollbackContent: scrollback,
-            aiResumeCommand: resumeCommand
+            scrollbackContent: primaryScrollback,
+            aiResumeCommand: primaryResumeCommand,
+            splitLayout: tab.splitController.exportLayout(),
+            focusedPaneID: tab.splitController.focusedTerminalSessionID()?.uuidString,
+            paneStates: paneStates.isEmpty ? nil : paneStates
         )
 
         closedTabStack.append(ClosedTabEntry(
@@ -652,9 +674,65 @@ final class OverlayTabsModel: ObservableObject {
         return (cwd, id)
     }
 
+    private static func captureScrollback(from session: TerminalSessionModel?, maxLines: Int) -> String? {
+        guard maxLines > 0, let session, let data = session.captureRemoteSnapshot() else {
+            return nil
+        }
+
+        let text = String(decoding: data, as: UTF8.self)
+        var lines = text.components(separatedBy: "\n")
+
+        // Strip trailing empty lines — the terminal buffer includes blank lines below
+        // the cursor, which can otherwise pollute restore output.
+        while let last = lines.last, last.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lines.removeLast()
+        }
+
+        if lines.isEmpty {
+            return nil
+        }
+
+        if lines.count > maxLines {
+            lines = Array(lines.suffix(maxLines))
+        }
+
+        var restored = lines.joined(separator: "\n")
+        if restored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return nil
+        }
+
+        // Cap total size to avoid UserDefaults bloat (500KB per tab max)
+        if restored.utf8.count > 500_000 {
+            let reducedLineCount = max(1, maxLines / 2)
+            restored = restored.components(separatedBy: "\n").suffix(reducedLineCount).joined(separator: "\n")
+        }
+
+        return restored
+    }
+
+    private static func shellSafeSingleQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    private static let restoreDelaySeconds: TimeInterval = 0.5
+    private static let resumeCommandDelaySeconds: TimeInterval = 0.5
+    private static let resumeCommandRetryDelaySeconds: TimeInterval = 0.4
+    private static let resumeCommandMaxRetryDelay: TimeInterval = 2.5
+    private static let resumeCommandMaxAttempts: Int = 6
+
+    private static func paneStateMap(from states: [SavedTerminalPaneState]?) -> [UUID: SavedTerminalPaneState] {
+        guard let states else { return [:] }
+        var map: [UUID: SavedTerminalPaneState] = [:]
+        for state in states {
+            guard let uuid = UUID(uuidString: state.paneID) else { continue }
+            map[uuid] = state
+        }
+        return map
+    }
+
     /// Restores tabs from saved state. Returns nil if no saved state exists
     /// or if decoding fails.
-    private static func restoreSavedTabs(appModel: AppModel) -> (tabs: [OverlayTab], selectedID: UUID)? {
+    private static func restoreSavedTabs(appModel: AppModel) -> RestorableTabsPayload? {
         guard let data = UserDefaults.standard.data(forKey: SavedTabState.userDefaultsKey) else {
             return nil
         }
@@ -670,9 +748,17 @@ final class OverlayTabsModel: ObservableObject {
         let colors = TabColor.allCases
         var restoredTabs: [OverlayTab] = []
         var selectedID: UUID?
+        var persistedStates: [SavedTabState] = []
 
         for (i, state) in states.enumerated() {
-            var tab = OverlayTab(appModel: appModel)
+            let controller = Self.buildRestorableController(
+                appModel: appModel,
+                splitLayout: state.splitLayout,
+                focusedPaneID: state.focusedPaneID,
+                paneStates: state.paneStates
+            )
+
+            var tab = OverlayTab(appModel: appModel, splitController: controller)
             tab.customTitle = state.customTitle
             tab.color = TabColor(rawValue: state.color) ?? colors[i % colors.count]
 
@@ -684,60 +770,202 @@ final class OverlayTabsModel: ObservableObject {
                 tab.session?.tokenOptOverride = override
             }
 
-            // Restore working directory and scrollback once the shell is ready
-            let directory = state.directory
-            let scrollback = state.scrollbackContent
-            let resumeCommand = state.aiResumeCommand
-            let session = tab.session
-            let tabIndex = i
+            if state.selectedIndex != nil {
+                selectedID = tab.id
+            }
 
-            // The terminal shell starts asynchronously. We send commands after
-            // a short delay to let the shell initialize.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            restoredTabs.append(tab)
+            persistedStates.append(state)
+        }
+
+        guard !restoredTabs.isEmpty else { return nil }
+        let finalSelectedID = selectedID ?? restoredTabs[0].id
+        return RestorableTabsPayload(
+            tabs: restoredTabs,
+            selectedID: finalSelectedID,
+            rawStates: persistedStates
+        )
+    }
+
+    private static func buildRestorableController(
+        appModel: AppModel,
+        splitLayout: SavedSplitNode?,
+        focusedPaneID: String?,
+        paneStates: [SavedTerminalPaneState]?
+    ) -> SplitPaneController {
+        guard let splitLayout else {
+            let fallbackController = SplitPaneController(appModel: appModel)
+            if let focusedPaneID, let focusID = UUID(uuidString: focusedPaneID) {
+                fallbackController.setFocusedPane(focusID)
+            }
+            return fallbackController
+        }
+
+        let stateByPaneID = paneStateMap(from: paneStates)
+        let focusedUUID = focusedPaneID.flatMap(UUID.init)
+        let root = SplitNode.fromSavedNode(splitLayout, appModel: appModel, paneStates: stateByPaneID)
+        return SplitPaneController(appModel: appModel, root: root, focusedPaneID: focusedUUID)
+    }
+
+    private func restoreTabState(for tab: OverlayTab, state: SavedTabState) {
+        let targetTabID = tab.id
+        let terminalSessions = tab.splitController.terminalSessions
+        guard !terminalSessions.isEmpty else { return }
+
+        // Keep the restored focus for the active terminal pane (or fallback to
+        // first terminal if an editor pane was serialized).
+        if let restoredFocus = state.focusedPaneID.flatMap(UUID.init),
+           tab.splitController.root.paneType(for: restoredFocus) == .terminal {
+            tab.splitController.setFocusedPane(restoredFocus)
+        }
+
+        let paneStatesByID = Self.paneStateMap(from: state.paneStates)
+        var paneStatesToRestore = paneStatesByID
+
+        // Backward compatibility: legacy single-pane save has no per-pane states.
+        if paneStatesByID.isEmpty, let firstPaneID = terminalSessions.first?.0 {
+            paneStatesToRestore[firstPaneID] = SavedTerminalPaneState(
+                paneID: firstPaneID.uuidString,
+                directory: state.directory,
+                scrollbackContent: state.scrollbackContent,
+                aiResumeCommand: state.aiResumeCommand
+            )
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.restoreDelaySeconds) { [weak self] in
+            guard let self else { return }
+            guard let restoredTab = self.tabs.first(where: { $0.id == targetTabID }) else {
+                Log.warn("restoreTabState: tab no longer exists for id=\(targetTabID)")
+                return
+            }
+
+            let currentSessions = restoredTab.splitController.terminalSessions
+            guard !currentSessions.isEmpty else {
+                Log.warn("restoreTabState: tab \(targetTabID) has no terminal sessions")
+                return
+            }
+
+            let restoredFocus = state.focusedPaneID.flatMap(UUID.init)
+            let activePaneID: UUID = if let restoredFocus,
+                                      restoredTab.splitController.root.paneType(for: restoredFocus) == .terminal {
+                restoredFocus
+            } else {
+                restoredTab.splitController.focusedTerminalSessionID() ?? currentSessions[0].0
+            }
+
+            if restoredTab.splitController.root.paneType(for: activePaneID) == .terminal {
+                restoredTab.splitController.setFocusedPane(activePaneID)
+            }
+
+            let restoreToken = UUID().uuidString
+            for (paneID, session) in currentSessions {
+                let paneState = paneStatesToRestore[paneID]
+                    ?? SavedTerminalPaneState(
+                        paneID: paneID.uuidString,
+                        directory: session.currentDirectory,
+                        scrollbackContent: nil,
+                        aiResumeCommand: nil
+                    )
+
                 var commands: [String] = []
+                if let scrollback = paneState.scrollbackContent,
+                   !scrollback.isEmpty,
+                   let data = scrollback.data(using: .utf8) {
 
-                // Print previous scrollback content via a temp file
-                if let scrollback = scrollback, !scrollback.isEmpty {
-                    let tempFile = NSTemporaryDirectory() + "chau7_restore_\(tabIndex).txt"
+                    let tempFile = NSTemporaryDirectory() + "chau7_restore_\(restoreToken)_\(paneID.uuidString).txt"
                     do {
-                        try scrollback.write(toFile: tempFile, atomically: true, encoding: .utf8)
-                        let escapedTemp = "'" + tempFile.replacingOccurrences(of: "'", with: "'\\''") + "'"
+                        try data.write(to: URL(fileURLWithPath: tempFile))
+                        let escapedTemp = Self.shellSafeSingleQuote(tempFile)
                         commands.append("cat \(escapedTemp) && rm -f \(escapedTemp)")
                     } catch {
                         Log.warn("Failed to write scrollback restore file: \(error)")
                     }
                 }
 
-                // cd to previous directory
-                if !directory.isEmpty {
-                    let escaped = "'" + directory.replacingOccurrences(of: "'", with: "'\\''") + "'"
-                    commands.append("cd \(escaped)")
+                if !paneState.directory.isEmpty {
+                    commands.append("cd \(Self.shellSafeSingleQuote(paneState.directory))")
                 }
 
                 if !commands.isEmpty {
-                    session?.sendInput(commands.joined(separator: " && ") + "\n")
+                    session.sendInput(commands.joined(separator: " && ") + "\n")
                 }
 
-                // Prefill AI resume command after cd completes (without newline —
-                // user presses Enter to confirm). The 0.5s inner delay lets the
-                // shell process the cd and render a fresh prompt before we type.
-                if let resumeCmd = resumeCommand {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        session?.sendInput(resumeCmd)
-                    }
+                if paneID == activePaneID,
+                   let resumeCommand = paneState.aiResumeCommand,
+                   !resumeCommand.isEmpty {
+                    self.scheduleResumeCommand(
+                        command: resumeCommand,
+                        targetTabID: targetTabID,
+                        paneID: paneID,
+                        remainingAttempts: Self.resumeCommandMaxAttempts,
+                        delay: Self.resumeCommandDelaySeconds
+                    )
                 }
             }
+        }
+    }
 
-            if state.selectedIndex != nil {
-                selectedID = tab.id
-            }
+    private static func canSendResumeCommand(to session: TerminalSessionModel) -> Bool {
+        guard !session.isShellLoading else { return false }
+        guard session.isAtPrompt else { return false }
+        guard session.existingRustTerminalView != nil else { return false }
 
-            restoredTabs.append(tab)
+        switch session.status {
+        case .running, .stuck, .exited:
+            return false
+        case .idle, .waitingForInput:
+            return true
+        }
+    }
+
+    private func scheduleResumeCommand(
+        command: String,
+        targetTabID: UUID,
+        paneID: UUID,
+        remainingAttempts: Int,
+        delay: TimeInterval = 0
+    ) {
+        guard remainingAttempts > 0 else {
+            Log.warn("restoreTabState: exhausted resume retries for tab=\(targetTabID), pane=\(paneID)")
+            return
         }
 
-        guard !restoredTabs.isEmpty else { return nil }
-        let finalSelectedID = selectedID ?? restoredTabs[0].id
-        return (tabs: restoredTabs, selectedID: finalSelectedID)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+
+            guard let restoredTab = self.tabs.first(where: { $0.id == targetTabID }) else {
+                Log.warn("restoreTabState: cannot send resume command for missing tab=\(targetTabID)")
+                return
+            }
+
+            guard let reResolvedSession = restoredTab.splitController.root.findSession(id: paneID) else {
+                Log.warn("restoreTabState: cannot find pane=\(paneID) for tab=\(targetTabID)")
+                return
+            }
+
+            if !Self.canSendResumeCommand(to: reResolvedSession) {
+                let nextDelay = min(delay + Self.resumeCommandRetryDelaySeconds, Self.resumeCommandMaxRetryDelay)
+                Log.warn(
+                    """
+                    restoreTabState: resume command not ready for tab=\(targetTabID) pane=\(paneID) \
+                    (loading=\(reResolvedSession.isShellLoading), atPrompt=\(reResolvedSession.isAtPrompt), \
+                    status=\(reResolvedSession.status), hasView=\(reResolvedSession.existingRustTerminalView != nil)); \
+                    retry in \(String(format: "%.2f", nextDelay))s
+                    """
+                )
+                self.scheduleResumeCommand(
+                    command: command,
+                    targetTabID: targetTabID,
+                    paneID: paneID,
+                    remainingAttempts: remainingAttempts - 1,
+                    delay: nextDelay
+                )
+                return
+            }
+
+            // Prefill the command in the active terminal so user can confirm with Enter.
+            reResolvedSession.sendInput(command)
+        }
     }
 
     var selectedTab: OverlayTab? {
@@ -1382,61 +1610,28 @@ final class OverlayTabsModel: ObservableObject {
 
         let state = entry.state
         let insertIndex = min(entry.originalIndex, tabs.count)
+        let controller = Self.buildRestorableController(
+            appModel: appModel,
+            splitLayout: state.splitLayout,
+            focusedPaneID: state.focusedPaneID,
+            paneStates: state.paneStates
+        )
 
-        var tab = OverlayTab(appModel: appModel)
+        var tab = OverlayTab(appModel: appModel, splitController: controller)
         tab.customTitle = state.customTitle
         tab.color = TabColor(rawValue: state.color) ?? .blue
+        if let overrideRaw = state.tokenOptOverride,
+           let override = TabTokenOptOverride(rawValue: overrideRaw) {
+            tab.tokenOptOverride = override
+            tab.session?.tokenOptOverride = override
+        }
 
         tabs.insert(tab, at: insertIndex)
         selectedTabID = tab.id
 
+        restoreTabState(for: tab, state: state)
+
         Log.info("reopenClosedTab: restored \"\(tab.displayTitle)\" at index \(insertIndex) (stack remaining: \(closedTabStack.count))")
-
-        // Restore directory, scrollback, and AI resume command once the shell is ready.
-        // Same delayed-send pattern as restoreSavedTabs().
-        let directory = state.directory
-        let scrollback = state.scrollbackContent
-        let resumeCommand = state.aiResumeCommand
-        let tabId = tab.id
-        let tabIndex = insertIndex
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            // Look up the session at execution time — if the tab was closed
-            // before this fires, we bail instead of holding a stale reference.
-            guard let session = self?.tabs.first(where: { $0.id == tabId })?.session else { return }
-
-            var commands: [String] = []
-
-            // Print previous scrollback content via a temp file
-            if let scrollback = scrollback, !scrollback.isEmpty {
-                let tempFile = NSTemporaryDirectory() + "chau7_reopen_\(tabIndex).txt"
-                do {
-                    try scrollback.write(toFile: tempFile, atomically: true, encoding: .utf8)
-                    let escapedTemp = "'" + tempFile.replacingOccurrences(of: "'", with: "'\\''") + "'"
-                    commands.append("cat \(escapedTemp) && rm -f \(escapedTemp)")
-                } catch {
-                    Log.warn("reopenClosedTab: failed to write scrollback file: \(error)")
-                }
-            }
-
-            // cd to previous directory
-            if !directory.isEmpty {
-                let escaped = "'" + directory.replacingOccurrences(of: "'", with: "'\\''") + "'"
-                commands.append("cd \(escaped)")
-            }
-
-            if !commands.isEmpty {
-                session.sendInput(commands.joined(separator: " && ") + "\n")
-            }
-
-            // Prefill AI resume command (without newline — user presses Enter to confirm)
-            if let resumeCmd = resumeCommand {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                    guard let session = self?.tabs.first(where: { $0.id == tabId })?.session else { return }
-                    session.sendInput(resumeCmd)
-                }
-            }
-        }
 
         tabBarRefreshToken += 1
     }
@@ -1500,10 +1695,9 @@ final class OverlayTabsModel: ObservableObject {
         guard let window = overlayWindow else { return }
         guard let tab = selectedTab else { return }
 
-        // Always focus the terminal (shell) pane when switching tabs, not the text editor
-        // Update focusedPaneID to the first terminal pane so the split view knows which pane is active
-        if let firstTerminalID = tab.splitController.root.allTerminalIDs.first {
-            tab.splitController.focusedPaneID = firstTerminalID
+        // Always focus a terminal pane when switching tabs.
+        if let terminalID = tab.splitController.focusedTerminalSessionID() {
+            tab.splitController.focusedPaneID = terminalID
         }
 
         tab.session?.focusTerminal(in: window)

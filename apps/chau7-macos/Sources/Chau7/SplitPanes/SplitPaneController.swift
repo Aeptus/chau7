@@ -3,6 +3,50 @@ import AppKit
 
 // MARK: - F02: Native Split Panes with Text Editor Support
 
+enum SavedSplitNodeKind: String, Codable {
+    case terminal
+    case textEditor
+    case split
+}
+
+final class SavedSplitNode: Codable, Equatable {
+    let kind: SavedSplitNodeKind
+    let id: String
+    let direction: SplitDirection?
+    let ratio: Double?
+    let first: SavedSplitNode?
+    let second: SavedSplitNode?
+    let textEditorPath: String?
+
+    init(
+        kind: SavedSplitNodeKind,
+        id: String,
+        direction: SplitDirection?,
+        ratio: Double?,
+        first: SavedSplitNode?,
+        second: SavedSplitNode?,
+        textEditorPath: String?
+    ) {
+        self.kind = kind
+        self.id = id
+        self.direction = direction
+        self.ratio = ratio
+        self.first = first
+        self.second = second
+        self.textEditorPath = textEditorPath
+    }
+
+    static func == (lhs: SavedSplitNode, rhs: SavedSplitNode) -> Bool {
+        lhs.kind == rhs.kind &&
+            lhs.id == rhs.id &&
+            lhs.direction == rhs.direction &&
+            lhs.ratio == rhs.ratio &&
+            lhs.textEditorPath == rhs.textEditorPath &&
+            lhs.first == rhs.first &&
+            lhs.second == rhs.second
+    }
+}
+
 /// Direction for splitting a pane
 enum SplitDirection: String, Codable {
     case horizontal  // Side by side
@@ -68,6 +112,106 @@ indirect enum SplitNode: Identifiable {
         }
     }
 
+    /// Returns terminal panes as `(id, session)` pairs in tree order.
+    var terminalSessionPairs: [(id: UUID, session: TerminalSessionModel)] {
+        switch self {
+        case .terminal(let id, let session):
+            return [(id: id, session: session)]
+        case .textEditor:
+            return []
+        case .split(_, _, let first, let second, _):
+            return first.terminalSessionPairs + second.terminalSessionPairs
+        }
+    }
+
+    /// Returns a persistence-safe snapshot of this node.
+    var savedRepresentation: SavedSplitNode {
+        switch self {
+        case .terminal(let id, _):
+            return SavedSplitNode(
+                kind: .terminal,
+                id: id.uuidString,
+                direction: nil,
+                ratio: nil,
+                first: nil,
+                second: nil,
+                textEditorPath: nil
+            )
+        case .textEditor(let id, let editor):
+            return SavedSplitNode(
+                kind: .textEditor,
+                id: id.uuidString,
+                direction: nil,
+                ratio: nil,
+                first: nil,
+                second: nil,
+                textEditorPath: editor.filePath
+            )
+        case .split(let id, let direction, let first, let second, let ratio):
+            return SavedSplitNode(
+                kind: .split,
+                id: id.uuidString,
+                direction: direction,
+                ratio: Double(ratio),
+                first: first.savedRepresentation,
+                second: second.savedRepresentation,
+                textEditorPath: nil
+            )
+        }
+    }
+}
+
+extension SplitNode {
+    /// Reconstructs a split tree from persisted data.
+    static func fromSavedNode(
+        _ node: SavedSplitNode,
+        appModel: AppModel
+    ) -> SplitNode {
+        return fromSavedNode(node, appModel: appModel, paneStates: [:])
+    }
+
+    /// Reconstructs a split tree from persisted data.
+    static func fromSavedNode(
+        _ node: SavedSplitNode,
+        appModel: AppModel,
+        paneStates: [UUID: SavedTerminalPaneState]
+    ) -> SplitNode {
+        let resolvedID = UUID(uuidString: node.id) ?? UUID()
+
+        switch node.kind {
+        case .terminal:
+            let session = TerminalSessionModel(appModel: appModel)
+            if let state = paneStates[resolvedID], !state.directory.isEmpty {
+                session.updateCurrentDirectory(state.directory)
+            }
+            return .terminal(id: resolvedID, session: session)
+        case .textEditor:
+            let editor = TextEditorModel()
+            if let path = node.textEditorPath,
+               !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                editor.loadFile(at: path)
+            }
+            return .textEditor(id: resolvedID, editor: editor)
+        case .split:
+            guard let firstSaved = node.first, let secondSaved = node.second else {
+                return .terminal(id: resolvedID, session: TerminalSessionModel(appModel: appModel))
+            }
+            return .split(
+                id: resolvedID,
+                direction: node.direction ?? .horizontal,
+                first: fromSavedNode(firstSaved, appModel: appModel, paneStates: paneStates),
+                second: fromSavedNode(secondSaved, appModel: appModel, paneStates: paneStates),
+                ratio: CGFloat(node.ratio ?? 0.5)
+            )
+        }
+    }
+    /// Closes all terminal sessions in this subtree
+    /// NOTE: Methods below are kept in an extension to keep SplitNode behavior
+    /// in one cohesive area and to avoid moving the core tree-representation
+    /// model around.
+}
+
+extension SplitNode {
     /// Closes all terminal sessions in this subtree
     func closeAllSessions() {
         switch self {
@@ -293,6 +437,42 @@ final class SplitPaneController: ObservableObject {
         let id = UUID()
         self.root = .terminal(id: id, session: session)
         self.focusedPaneID = id
+    }
+
+    init(appModel: AppModel, root: SplitNode, focusedPaneID: UUID? = nil) {
+        self.appModel = appModel
+        self.root = root
+        if let focusedPaneID, root.allPaneIDs.contains(focusedPaneID) {
+            self.focusedPaneID = focusedPaneID
+        } else if let firstTerminalID = root.allTerminalIDs.first {
+            self.focusedPaneID = firstTerminalID
+        } else {
+            self.focusedPaneID = root.allPaneIDs.first ?? UUID()
+        }
+    }
+
+    /// Returns all terminal sessions with their pane IDs.
+    var terminalSessions: [(UUID, TerminalSessionModel)] {
+        root.terminalSessionPairs
+    }
+
+    /// Exports the current split layout for persistence.
+    func exportLayout() -> SavedSplitNode {
+        root.savedRepresentation
+    }
+
+    /// Restores focus for a pane if it still exists in the current tree.
+    func setFocusedPane(_ paneID: UUID) {
+        guard root.allPaneIDs.contains(paneID) else { return }
+        focusedPaneID = paneID
+    }
+
+    /// Returns the focused terminal pane ID when applicable; otherwise nil.
+    func focusedTerminalSessionID() -> UUID? {
+        if root.paneType(for: focusedPaneID) == .terminal {
+            return focusedPaneID
+        }
+        return root.allTerminalIDs.first
     }
 
     // MARK: - Split Operations
