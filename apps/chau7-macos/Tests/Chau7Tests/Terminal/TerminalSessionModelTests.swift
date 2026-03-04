@@ -276,5 +276,83 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertNil(session.lastRenderedSnapshot,
             "No snapshot should exist for a fresh session")
     }
+
+    // MARK: - Prefill Input
+
+    func testPrefillInputQueuesUntilTerminalViewAttached() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        session.isShellLoading = false
+        session.isAtPrompt = true
+        session.status = .idle
+
+        let terminalView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        terminalView.onInput = { capturedInputs.append($0) }
+
+        session.prefillInput("claude --resume abc123")
+        XCTAssertTrue(capturedInputs.isEmpty, "command should be deferred before terminal is attached")
+
+        session.attachRustTerminal(terminalView)
+
+        let expectationDone = expectation(description: "queued prefill is flushed on attach")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            XCTAssertEqual(capturedInputs, ["claude --resume abc123"])
+            expectationDone.fulfill()
+        }
+        wait(for: [expectationDone], timeout: 1.0)
+    }
+
+    func testPrefillInputAppliesImmediatelyWhenTerminalIsReady() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        session.isShellLoading = false
+        session.isAtPrompt = true
+        session.status = .idle
+
+        let terminalView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        terminalView.onInput = { capturedInputs.append($0) }
+        session.attachRustTerminal(terminalView)
+        session.prefillInput("claude --resume xyz789")
+
+        let expectationDone = expectation(description: "prefill inserted on ready terminal")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            XCTAssertEqual(capturedInputs, ["claude --resume xyz789"])
+            expectationDone.fulfill()
+        }
+        wait(for: [expectationDone], timeout: 1.0)
+    }
+
+    func testPrefillInputWaitsForReadySessionState() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        session.isShellLoading = false
+        session.isAtPrompt = true
+        session.status = .running
+
+        let terminalView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        terminalView.onInput = { capturedInputs.append($0) }
+        session.attachRustTerminal(terminalView)
+
+        session.prefillInput("claude --resume blocked")
+        let notReadyExpectation = expectation(description: "command waits while session is running")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            XCTAssertTrue(capturedInputs.isEmpty)
+            notReadyExpectation.fulfill()
+        }
+        wait(for: [notReadyExpectation], timeout: 1.0)
+
+        session.status = .idle
+        session.prefillInput("claude --resume now")
+
+        let readyExpectation = expectation(description: "command inserts once session becomes ready")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            XCTAssertEqual(capturedInputs, ["claude --resume now"])
+            readyExpectation.fulfill()
+        }
+        wait(for: [readyExpectation], timeout: 1.0)
+    }
 }
 #endif
