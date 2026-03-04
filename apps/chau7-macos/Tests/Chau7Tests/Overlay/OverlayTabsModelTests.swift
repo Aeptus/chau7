@@ -568,6 +568,40 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(restoredModel.selectedTabID, secondTabID, "explicit selected tab marker should override legacy selectedIndex")
     }
 
+    func testRestoreFallsBackToLegacySelectedIndexWhenTabIDIsMissing() {
+        storeSavedTabStates([
+            SavedTabState(
+                customTitle: "First",
+                color: TabColor.green.rawValue,
+                directory: "/tmp/fallback-1",
+                selectedIndex: nil,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: nil,
+                focusedPaneID: nil,
+                paneStates: nil
+            ),
+            SavedTabState(
+                customTitle: "Second",
+                color: TabColor.blue.rawValue,
+                directory: "/tmp/fallback-2",
+                selectedIndex: 1,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: nil,
+                focusedPaneID: nil,
+                paneStates: nil
+            )
+        ])
+
+        let restoredModel = OverlayTabsModel(appModel: appModel)
+        let selectedIndex = restoredModel.tabs.firstIndex(where: { $0.id == restoredModel.selectedTabID })
+        XCTAssertEqual(selectedIndex, 1, "legacy selectedIndex should be honored when tab IDs are missing")
+        XCTAssertEqual(restoredModel.tabs[1].customTitle, "Second")
+    }
+
     func testReopenClosedTabReturnsToOriginalIndex() {
         model.newTab()
         model.newTab()
@@ -587,7 +621,7 @@ final class OverlayTabsModelTests: XCTestCase {
         XCTAssertEqual(model.tabs.map(\.id), [originalIDs[0], middleID, originalIDs[2], originalIDs[3]])
     }
 
-    func testRestoreRestoresResumeCommandAfterTerminalBecomesReady() {
+    func testRestorePrefillsResumeCommandAfterTerminalBecomesReady() {
         let paneID = UUID()
         let split = SavedSplitNode(
             kind: .terminal,
@@ -658,7 +692,7 @@ final class OverlayTabsModelTests: XCTestCase {
         wait(for: [readyExpectation], timeout: 2.0)
     }
 
-    func testRestorePrefersActivePaneIfNoResumeCommandThenFallsBackToFirstAvailableResumeCommand() {
+    func testRestorePrefillsResumeCommandInActiveOrAvailablePane() {
         let activePaneID = UUID()
         let secondaryPaneID = UUID()
         let split = SavedSplitNode(
