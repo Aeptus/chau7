@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 #if !SWIFT_PACKAGE
 @testable import Chau7
 
@@ -7,6 +8,14 @@ final class OverlayTabsModelTests: XCTestCase {
 
     private var model: OverlayTabsModel!
     private var appModel: AppModel!
+
+    private func storeSavedTabStates(_ states: [SavedTabState]) {
+        guard let data = try? JSONEncoder().encode(states) else {
+            XCTFail("Failed to encode saved tab states")
+            return
+        }
+        UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
+    }
 
     override func setUp() {
         super.setUp()
@@ -433,6 +442,177 @@ final class OverlayTabsModelTests: XCTestCase {
 
         model.isSnippetManagerVisible = true
         XCTAssertTrue(model.hasActiveOverlay)
+    }
+
+    // MARK: - Advanced Restore Metadata
+
+    func testRestoreFromSavedStatePreservesTabOrderAndSelectionIndex() {
+        let terminalID = UUID()
+        let editorID = UUID()
+        let split = SavedSplitNode(
+            kind: .split,
+            id: UUID().uuidString,
+            direction: .horizontal,
+            ratio: 0.5,
+            first: SavedSplitNode(
+                kind: .terminal,
+                id: terminalID.uuidString,
+                direction: nil,
+                ratio: nil,
+                first: nil,
+                second: nil,
+                textEditorPath: nil
+            ),
+            second: SavedSplitNode(
+                kind: .textEditor,
+                id: editorID.uuidString,
+                direction: nil,
+                ratio: nil,
+                first: nil,
+                second: nil,
+                textEditorPath: "/tmp/example.swift"
+            ),
+            textEditorPath: nil
+        )
+
+        let primaryPaneState = SavedTerminalPaneState(
+            paneID: terminalID.uuidString,
+            directory: "/tmp/advanced-restore",
+            scrollbackContent: "previous output",
+            aiResumeCommand: "claude --resume abc123"
+        )
+
+        storeSavedTabStates([
+            SavedTabState(
+                customTitle: "Left",
+                color: TabColor.green.rawValue,
+                directory: "/tmp/fallback-1",
+                selectedIndex: nil,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: nil,
+                focusedPaneID: nil,
+                paneStates: nil
+            ),
+            SavedTabState(
+                customTitle: "Right",
+                color: TabColor.purple.rawValue,
+                directory: "/tmp/advanced-restore",
+                selectedIndex: 1,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: split,
+                focusedPaneID: terminalID.uuidString,
+                paneStates: [primaryPaneState]
+            )
+        ])
+
+        let restoredModel = OverlayTabsModel(appModel: appModel)
+
+        XCTAssertEqual(restoredModel.tabs.count, 2)
+        XCTAssertEqual(restoredModel.tabs[0].customTitle, "Left")
+        XCTAssertEqual(restoredModel.tabs[1].customTitle, "Right")
+        XCTAssertEqual(restoredModel.selectedTabID, restoredModel.tabs[1].id)
+
+        let rightTab = restoredModel.tabs[1]
+        guard let terminalPair = rightTab.splitController.terminalSessions.first(where: { $0.0 == terminalID }) else {
+            XCTFail("Expected restored terminal pane ID \(terminalID)")
+            return
+        }
+        XCTAssertEqual(terminalPair.1.currentDirectory, "/tmp/advanced-restore")
+        XCTAssertEqual(rightTab.splitController.focusedTerminalSessionID(), terminalID)
+    }
+
+    func testReopenClosedTabReturnsToOriginalIndex() {
+        model.newTab()
+        model.newTab()
+        model.newTab()
+        XCTAssertEqual(model.tabs.count, 4)
+
+        let originalIDs = model.tabs.map(\.id)
+        let middleID = originalIDs[1]
+
+        FeatureSettings.shared.warnOnCloseWithRunningProcess = false
+        FeatureSettings.shared.alwaysWarnOnTabClose = false
+
+        model.closeTab(id: middleID)
+        XCTAssertEqual(model.tabs.map(\.id), [originalIDs[0], originalIDs[2], originalIDs[3]])
+
+        model.reopenClosedTab()
+        XCTAssertEqual(model.tabs.map(\.id), [originalIDs[0], middleID, originalIDs[2], originalIDs[3]])
+    }
+
+    func testRestoreRestoresResumeCommandAfterTerminalBecomesReady() {
+        let paneID = UUID()
+        let split = SavedSplitNode(
+            kind: .terminal,
+            id: paneID.uuidString,
+            direction: nil,
+            ratio: nil,
+            first: nil,
+            second: nil,
+            textEditorPath: nil
+        )
+        let resumeCommand = "claude --resume abc123"
+
+        let paneState = SavedTerminalPaneState(
+            paneID: paneID.uuidString,
+            directory: "",
+            scrollbackContent: nil,
+            aiResumeCommand: resumeCommand
+        )
+
+        storeSavedTabStates([
+            SavedTabState(
+                customTitle: "AI Session",
+                color: TabColor.purple.rawValue,
+                directory: "",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: split,
+                focusedPaneID: paneID.uuidString,
+                paneStates: [paneState]
+            )
+        ])
+
+        let restoredModel = OverlayTabsModel(appModel: appModel)
+        guard let session = restoredModel.tabs.first?.splitController.terminalSessions
+            .first(where: { $0.0 == paneID })?.1 else {
+            XCTFail("Expected restored session for pane \(paneID)")
+            return
+        }
+
+        session.isShellLoading = true
+        session.isAtPrompt = false
+        session.status = .running
+
+        let terminalView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        terminalView.onInput = { text in
+            capturedInputs.append(text)
+        }
+        session.attachRustTerminal(terminalView)
+
+        let notReadyExpectation = expectation(description: "resume command not sent before terminal becomes ready")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.15) {
+            XCTAssertTrue(capturedInputs.isEmpty)
+            session.isShellLoading = false
+            session.isAtPrompt = true
+            session.status = .idle
+            notReadyExpectation.fulfill()
+        }
+        wait(for: [notReadyExpectation], timeout: 2.0)
+
+        let readyExpectation = expectation(description: "resume command sent after terminal is ready")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            XCTAssertEqual(capturedInputs, [resumeCommand])
+            readyExpectation.fulfill()
+        }
+        wait(for: [readyExpectation], timeout: 2.0)
     }
 }
 #endif
