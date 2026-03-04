@@ -239,8 +239,8 @@ final class CommandCenterViewModel: ObservableObject {
                 id: entry.id,
                 icon: entry.wasRateLimited ? "bell.slash" : "bell.fill",
                 iconColor: entry.wasRateLimited ? .gray : .orange,
-                title: triggerLabel ?? entry.tool,
-                detail: entry.actionsExecuted.isEmpty ? entry.message : entry.actionsExecuted.joined(separator: ", "),
+                title: triggerLabel ?? CommandCenterViewModel.humanReadableType(entry.type),
+                detail: CommandCenterViewModel.cleanDetail(tool: entry.tool, message: entry.message),
                 timestamp: entry.timestamp,
                 isRateLimited: entry.wasRateLimited
             )
@@ -256,10 +256,10 @@ final class CommandCenterViewModel: ObservableObject {
             if !isDuplicate {
                 entries.append(UnifiedTimelineEntry(
                     id: event.id,
-                    icon: Self.eventIcon(for: event.type),
-                    iconColor: Self.eventColor(for: event.type),
-                    title: event.toolName.isEmpty ? Self.eventTitle(for: event) : event.toolName,
-                    detail: event.message,
+                    icon: CommandCenterViewModel.eventIcon(for: event.type),
+                    iconColor: CommandCenterViewModel.eventColor(for: event.type),
+                    title: CommandCenterViewModel.humanReadableEvent(event),
+                    detail: CommandCenterViewModel.humanReadableDetail(event),
                     timestamp: event.timestamp,
                     isRateLimited: false
                 ))
@@ -293,7 +293,7 @@ final class CommandCenterViewModel: ObservableObject {
         onClose()
     }
 
-    // MARK: - Event Mapping Helpers
+    // MARK: - Human-Readable Event Mapping
 
     private static func eventIcon(for type: ClaudeEventType) -> String {
         switch type {
@@ -319,12 +319,108 @@ final class CommandCenterViewModel: ObservableObject {
         }
     }
 
-    private static func eventTitle(for event: ClaudeCodeEvent) -> String {
+    /// Human-readable title from a raw ClaudeCodeEvent.
+    private static func humanReadableEvent(_ event: ClaudeCodeEvent) -> String {
         switch event.type {
-        case .responseComplete: return "Response Complete"
-        case .sessionEnd: return "Session Ended"
-        default: return event.hook
+        case .userPrompt:
+            return "Prompt sent"
+        case .toolStart:
+            return "Running \(friendlyToolName(event.toolName))"
+        case .toolComplete:
+            return "\(friendlyToolName(event.toolName)) done"
+        case .permissionRequest:
+            return "Needs permission"
+        case .responseComplete:
+            return "Finished responding"
+        case .sessionEnd:
+            return "Session ended"
+        case .notification:
+            return event.message.isEmpty ? "Notification" : event.message
+        case .unknown:
+            return "Event"
         }
+    }
+
+    /// Human-readable detail line (project name + context).
+    private static func humanReadableDetail(_ event: ClaudeCodeEvent) -> String {
+        let project = event.projectName
+        switch event.type {
+        case .toolStart, .toolComplete:
+            // Show project + file context from message if available
+            let file = extractFileName(from: event.message)
+            if let file { return "\(project) — \(file)" }
+            return project
+        case .permissionRequest:
+            if !event.toolName.isEmpty {
+                return "\(project) — \(friendlyToolName(event.toolName))"
+            }
+            return project
+        case .responseComplete, .sessionEnd, .userPrompt:
+            return project
+        default:
+            return event.message.isEmpty ? project : event.message
+        }
+    }
+
+    /// Human-readable type string for notification history entries.
+    private static func humanReadableType(_ type: String) -> String {
+        switch type {
+        case "finished", "response_complete": return "Finished responding"
+        case "permission", "permission_request": return "Needs permission"
+        case "idle": return "Session idle"
+        case "tool_called", "tool_start": return "Tool running"
+        case "tool_complete": return "Tool finished"
+        case "session_end": return "Session ended"
+        case "user_prompt": return "Prompt sent"
+        case "error": return "Error occurred"
+        case "file_edited": return "File edited"
+        case "command_finished": return "Command finished"
+        default: return type.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    /// Clean detail for notification history entries.
+    private static func cleanDetail(tool: String, message: String) -> String {
+        // If message has useful content, prefer it; otherwise show tool context
+        if !message.isEmpty {
+            let file = extractFileName(from: message)
+            if let file { return file }
+            // Truncate long messages
+            if message.count > 60 { return String(message.prefix(57)) + "..." }
+            return message
+        }
+        if !tool.isEmpty { return friendlyToolName(tool) }
+        return ""
+    }
+
+    /// Map internal tool names to readable labels.
+    private static func friendlyToolName(_ tool: String) -> String {
+        switch tool.lowercased() {
+        case "write": return "file write"
+        case "read": return "file read"
+        case "edit": return "file edit"
+        case "bash": return "shell command"
+        case "glob": return "file search"
+        case "grep": return "content search"
+        case "webfetch": return "web fetch"
+        case "websearch": return "web search"
+        case "notebookedit": return "notebook edit"
+        case "todowrite": return "task update"
+        case "listtool": return "file listing"
+        default: return tool
+        }
+    }
+
+    /// Extract a filename from a message string (e.g. path or "Editing foo.swift").
+    private static func extractFileName(from message: String) -> String? {
+        // Look for file paths
+        if message.contains("/") {
+            let components = message.components(separatedBy: "/")
+            if let last = components.last, !last.isEmpty, last.contains(".") {
+                return last
+            }
+        }
+        return nil
     }
 }
 
