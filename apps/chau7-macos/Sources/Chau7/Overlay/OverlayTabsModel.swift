@@ -32,6 +32,12 @@ struct TabNotificationStyle: Equatable {
     /// Border width (default 0 = no border)
     var borderWidth: CGFloat = 0
 
+    /// Badge text overlay (e.g., "!", "3") — nil = no badge
+    var badgeText: String? = nil
+
+    /// Badge color (defaults to red)
+    var badgeColor: Color = .red
+
     /// Predefined styles for common states
     static let waiting = TabNotificationStyle(
         titleColor: .orange,
@@ -163,6 +169,7 @@ struct OverlayTab: Identifiable, Equatable {
     static func == (lhs: OverlayTab, rhs: OverlayTab) -> Bool {
         lhs.id == rhs.id
             && lhs.tokenOptOverride == rhs.tokenOptOverride
+            && lhs.notificationStyle == rhs.notificationStyle
     }
 
     // MARK: - Split Pane Operations
@@ -735,16 +742,7 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     func notificationTabTitle(forTool tool: String) -> String? {
-        let trimmed = tool.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        let lowerTool = trimmed.lowercased()
-        let matches = tabs.filter { tab in
-            let display = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let active = tab.session?.activeAppName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return display == lowerTool || active == lowerTool
-        }
-        let preferred = matches.first { $0.id == selectedTabID } ?? matches.first
-        return preferred?.displayTitle
+        tabMatchingTool(tool)?.displayTitle
     }
 
     var overlayWorkspaceIdentifier: String? {
@@ -805,6 +803,11 @@ final class OverlayTabsModel: ObservableObject {
         }
         previousTabIndex = oldIndex
         selectedTabID = id
+
+        // Clear notification style when switching to a tab (user acknowledged it)
+        if let index = tabs.firstIndex(where: { $0.id == id }), tabs[index].notificationStyle != nil {
+            tabs[index].notificationStyle = nil
+        }
 
         // 5. Pre-cancel suspension before focus (optimization)
         cancelSuspension(for: id)
@@ -1646,52 +1649,18 @@ final class OverlayTabsModel: ObservableObject {
         setNotificationStyle(nil, for: tabID)
     }
 
-    /// Clears notification styles from all tabs
-    func clearAllNotificationStyles() {
-        for i in tabs.indices {
-            tabs[i].notificationStyle = nil
-        }
-    }
-
     /// Applies a notification style to a tab based on tool name (used by notification action system)
-    /// - Parameters:
-    ///   - tool: The tool/app name to match (e.g., "Codex", "Claude Code")
-    ///   - stylePreset: Preset name ("waiting", "error", "success", "attention", "clear")
-    ///   - config: Additional configuration (customColor, italic, bold, pulse)
     func applyNotificationStyle(forTool tool: String, stylePreset: String, config: [String: String]) {
         dispatchPrecondition(condition: .onQueue(.main))
 
-        // Find tab matching the tool - prefer exact matches, fall back to contains
-        let lowerTool = tool.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-
-        // First try exact match
-        var matchedTab = tabs.first { tab in
-            let display = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let active = tab.session?.activeAppName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return display == lowerTool || active == lowerTool
-        }
-
-        // Fall back to contains match if no exact match
-        if matchedTab == nil {
-            matchedTab = tabs.first { tab in
-                let display = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                let active = tab.session?.activeAppName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                return display.contains(lowerTool) || (active?.contains(lowerTool) == true)
-            }
-        }
-
-        guard let tab = matchedTab else {
+        guard let tab = tabMatchingTool(tool) else {
             Log.info("applyNotificationStyle: No tab found matching tool '\(tool)'")
             return
         }
 
-        // Build the style
-        let style: TabNotificationStyle?
-        if stylePreset == "clear" {
-            style = nil
-        } else {
-            style = buildNotificationStyle(preset: stylePreset, config: config)
-        }
+        let style: TabNotificationStyle? = stylePreset == "clear"
+            ? nil
+            : buildNotificationStyle(preset: stylePreset, config: config)
 
         setNotificationStyle(style, for: tab.id)
     }
@@ -1709,6 +1678,9 @@ final class OverlayTabsModel: ObservableObject {
             style = .success
         case "attention":
             style = .attention
+        case "custom":
+            // Explicit custom: start blank, all fields come from config overrides below
+            style = TabNotificationStyle()
         default:
             style = TabNotificationStyle()
         }
@@ -1761,6 +1733,68 @@ final class OverlayTabsModel: ObservableObject {
         case "purple": return .purple
         case "pink": return .pink
         default: return .primary
+        }
+    }
+
+    // MARK: - Notification Action Handlers
+
+    /// Finds the tab matching the tool name and selects it.
+    func focusTabByTool(_ tool: String) {
+        guard let tab = tabMatchingTool(tool) else {
+            Log.info("focusTabByTool: No tab found for '\(tool)'")
+            return
+        }
+        selectTab(id: tab.id)
+    }
+
+    /// Sets a badge on the tab matching the tool name via the unified TabNotificationStyle.
+    func setBadgeByTool(_ tool: String, text: String, color: String) {
+        guard let tab = tabMatchingTool(tool) else {
+            Log.info("setBadgeByTool: No tab found for '\(tool)'")
+            return
+        }
+        var style = tab.notificationStyle ?? TabNotificationStyle()
+        style.badgeText = text
+        style.badgeColor = colorFromString(color)
+        setNotificationStyle(style, for: tab.id)
+        Log.info("setBadgeByTool: Set badge '\(text)' on tab for '\(tool)'")
+    }
+
+    /// Inserts a snippet by ID into the tab matching the tool name.
+    func insertSnippetById(_ snippetId: String, forTool tool: String, autoExecute: Bool) {
+        guard let entry = SnippetManager.shared.entries.first(where: { $0.snippet.id == snippetId }) else {
+            Log.warn("insertSnippetById: Snippet '\(snippetId)' not found")
+            return
+        }
+        if let tab = tabMatchingTool(tool) {
+            selectTab(id: tab.id)
+        }
+        insertSnippet(entry)
+        Log.info("insertSnippetById: Inserted snippet '\(snippetId)' for tool '\(tool)'")
+    }
+
+    /// Returns true if the given tool name matches the currently selected tab.
+    func isToolInSelectedTab(_ tool: String) -> Bool {
+        guard let matched = tabMatchingTool(tool) else { return false }
+        return matched.id == selectedTabID
+    }
+
+    /// Shared tool→tab matching logic (same 3-priority algorithm as applyNotificationStyle)
+    private func tabMatchingTool(_ tool: String) -> OverlayTab? {
+        let lowerTool = tool.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+        if let tab = tabs.first(where: {
+            $0.session?.activeAppName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == lowerTool
+        }) { return tab }
+
+        if let tab = tabs.first(where: {
+            $0.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == lowerTool
+        }) { return tab }
+
+        return tabs.first { tab in
+            let display = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let active = tab.session?.activeAppName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return display.contains(lowerTool) || (active?.contains(lowerTool) == true)
         }
     }
 

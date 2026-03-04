@@ -45,13 +45,13 @@ final class NotificationTriggerCatalogTests: XCTestCase {
     func testTriggerLookupMatchesExact() {
         let event = AIEvent(
             source: .terminalSession,
-            type: "finished",
+            type: "idle",
             tool: "Shell",
             message: "",
             ts: "2024-01-01T00:00:00Z"
         )
         let trigger = NotificationTriggerCatalog.trigger(for: event)
-        XCTAssertEqual(trigger?.id, "terminal_session.finished")
+        XCTAssertEqual(trigger?.id, "terminal_session.idle")
     }
 
     func testTriggerLookupUsesWildcardForEventsLog() {
@@ -149,10 +149,14 @@ final class NotificationTriggerCatalogTests: XCTestCase {
     }
 
     func testActivityOnlyTriggerNotInSettings() {
-        // app.info has displayContexts: [.activity] only
+        // app.docker_event has displayContexts: [.activity] only (no event emitter yet)
         let settingsTriggers = NotificationTriggerCatalog.displayableTriggers(in: .settings)
-        let hasAppInfo = settingsTriggers.contains { $0.id == "app.info" }
-        XCTAssertFalse(hasAppInfo, "app.info should only appear in activity context")
+        let hasDockerEvent = settingsTriggers.contains { $0.id == "app.docker_event" }
+        XCTAssertFalse(hasDockerEvent, "app.docker_event should only appear in activity context")
+        // Verify it does appear in activity
+        let activityTriggers = NotificationTriggerCatalog.displayableTriggers(in: .activity)
+        let hasDockerEventInActivity = activityTriggers.contains { $0.id == "app.docker_event" }
+        XCTAssertTrue(hasDockerEventInActivity, "app.docker_event should appear in activity context")
     }
 
     // MARK: - NotificationTrigger Properties
@@ -278,5 +282,202 @@ final class NotificationTriggerCatalogTests: XCTestCase {
     func testSourcesIdentifiable() {
         let source = NotificationTriggerCatalog.sources.first!
         XCTAssertEqual(source.id, source.id) // Identifiable via AIEventSource
+    }
+
+    // MARK: - Group Catalog Tests
+
+    func testAiCodingGroupContainsAllSources() {
+        let group = NotificationTriggerCatalog.aiCodingGroup
+        let expectedSources: [AIEventSource] = [.claudeCode, .codex, .cursor, .windsurf, .copilot, .aider, .cline, .continueAI]
+        XCTAssertEqual(group.sources.count, expectedSources.count)
+        for source in expectedSources {
+            XCTAssertTrue(group.contains(source: source), "Group should contain \(source.rawValue)")
+        }
+    }
+
+    func testGroupTriggerIdFormat() {
+        let group = NotificationTriggerCatalog.aiCodingGroup
+        XCTAssertEqual(group.groupTriggerId(for: "finished"), "ai_coding.finished")
+        XCTAssertEqual(group.groupTriggerId(for: "permission"), "ai_coding.permission")
+    }
+
+    func testGroupForAiSource() {
+        let group = NotificationTriggerCatalog.group(for: .claudeCode)
+        XCTAssertNotNil(group)
+        XCTAssertEqual(group?.id, "ai_coding")
+    }
+
+    func testGroupForNonAiSourceIsNil() {
+        XCTAssertNil(NotificationTriggerCatalog.group(for: .eventsLog))
+        XCTAssertNil(NotificationTriggerCatalog.group(for: .shell))
+        XCTAssertNil(NotificationTriggerCatalog.group(for: .app))
+    }
+
+    func testGroupTriggerInfosCount() {
+        let group = NotificationTriggerCatalog.aiCodingGroup
+        let infos = NotificationTriggerCatalog.groupTriggerInfos(for: group)
+        XCTAssertEqual(infos.count, group.triggerTypes.count)
+        // Each info should have a valid ID
+        for info in infos {
+            XCTAssertTrue(info.id.hasPrefix("ai_coding."))
+            XCTAssertFalse(info.labelFallback.isEmpty)
+        }
+    }
+
+    func testAllGroupTriggerIds() {
+        let ids = NotificationTriggerCatalog.allGroupTriggerIds
+        let group = NotificationTriggerCatalog.aiCodingGroup
+        // Should have one ID per trigger type
+        XCTAssertEqual(ids.count, group.triggerTypes.count)
+        XCTAssertTrue(ids.contains("ai_coding.finished"))
+        XCTAssertTrue(ids.contains("ai_coding.permission"))
+    }
+
+    // MARK: - 3-Tier Resolution Tests
+
+    func testPerTriggerOverrideWinsOverGroup() {
+        let trigger = NotificationTriggerCatalog.trigger(source: .claudeCode, type: "finished")!
+        // Group says enabled, per-trigger says disabled → disabled wins
+        var state = NotificationTriggerState(
+            overrides: [trigger.id: false],
+            groupOverrides: ["ai_coding.finished": true]
+        )
+        XCTAssertFalse(state.isEnabled(for: trigger))
+
+        // Flip: group says disabled, per-trigger says enabled → enabled wins
+        state = NotificationTriggerState(
+            overrides: [trigger.id: true],
+            groupOverrides: ["ai_coding.finished": false]
+        )
+        XCTAssertTrue(state.isEnabled(for: trigger))
+    }
+
+    func testGroupOverrideWinsOverDefault() {
+        let trigger = NotificationTriggerCatalog.trigger(source: .claudeCode, type: "finished")!
+        // Default is true for "finished", group says false → false
+        let state = NotificationTriggerState(
+            overrides: [:],
+            groupOverrides: ["ai_coding.finished": false]
+        )
+        XCTAssertFalse(state.isEnabled(for: trigger))
+    }
+
+    func testDefaultUsedWhenNoOverrides() {
+        let finishedTrigger = NotificationTriggerCatalog.trigger(source: .claudeCode, type: "finished")!
+        let idleTrigger = NotificationTriggerCatalog.trigger(source: .claudeCode, type: "idle")!
+        let state = NotificationTriggerState()
+        // "finished" defaults to true
+        XCTAssertTrue(state.isEnabled(for: finishedTrigger))
+        // "idle" defaults to false
+        XCTAssertFalse(state.isEnabled(for: idleTrigger))
+    }
+
+    func testPerTriggerFalseOverridesGroupTrue() {
+        // All AI sources: group=true but one specific source overridden to false
+        let cursorFinished = NotificationTriggerCatalog.trigger(source: .cursor, type: "finished")!
+        let claudeFinished = NotificationTriggerCatalog.trigger(source: .claudeCode, type: "finished")!
+
+        let state = NotificationTriggerState(
+            overrides: [cursorFinished.id: false],
+            groupOverrides: ["ai_coding.finished": true]
+        )
+        XCTAssertFalse(state.isEnabled(for: cursorFinished))
+        XCTAssertTrue(state.isEnabled(for: claudeFinished))
+    }
+
+    // MARK: - Group Override Helpers
+
+    func testHasPerTriggerOverride() {
+        let trigger = NotificationTriggerCatalog.trigger(source: .claudeCode, type: "finished")!
+        var state = NotificationTriggerState()
+        XCTAssertFalse(state.hasPerTriggerOverride(for: trigger))
+        state.setEnabled(false, for: trigger)
+        XCTAssertTrue(state.hasPerTriggerOverride(for: trigger))
+    }
+
+    func testIsGroupEnabled() {
+        var state = NotificationTriggerState()
+        // No override → uses default
+        XCTAssertTrue(state.isGroupEnabled(groupId: "ai_coding", type: "finished", defaultEnabled: true))
+        XCTAssertFalse(state.isGroupEnabled(groupId: "ai_coding", type: "idle", defaultEnabled: false))
+
+        // With override
+        state.setGroupEnabled(false, groupId: "ai_coding", type: "finished")
+        XCTAssertFalse(state.isGroupEnabled(groupId: "ai_coding", type: "finished", defaultEnabled: true))
+    }
+
+    func testRemoveGroupOverride() {
+        var state = NotificationTriggerState()
+        state.setGroupEnabled(false, groupId: "ai_coding", type: "finished")
+        XCTAssertFalse(state.isGroupEnabled(groupId: "ai_coding", type: "finished", defaultEnabled: true))
+        state.removeGroupOverride(groupId: "ai_coding", type: "finished")
+        XCTAssertTrue(state.isGroupEnabled(groupId: "ai_coding", type: "finished", defaultEnabled: true))
+    }
+
+    func testRemoveOverride() {
+        let trigger = NotificationTriggerCatalog.trigger(source: .claudeCode, type: "finished")!
+        var state = NotificationTriggerState()
+        state.setEnabled(false, for: trigger)
+        XCTAssertTrue(state.hasPerTriggerOverride(for: trigger))
+        state.removeOverride(for: trigger)
+        XCTAssertFalse(state.hasPerTriggerOverride(for: trigger))
+    }
+
+    // MARK: - Codable Backward Compat
+
+    func testCodableRoundTripWithGroupOverrides() throws {
+        let original = NotificationTriggerState(
+            overrides: ["claude_code.finished": false],
+            groupOverrides: ["ai_coding.finished": true, "ai_coding.idle": false]
+        )
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(NotificationTriggerState.self, from: data)
+        XCTAssertEqual(decoded, original)
+    }
+
+    func testCodableBackwardCompat_NoGroupOverrides() throws {
+        // Simulate old format without groupOverrides key
+        let json = """
+        {"overrides":{"claude_code.finished":false}}
+        """
+        let data = json.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(NotificationTriggerState.self, from: data)
+        XCTAssertEqual(decoded.overrides, ["claude_code.finished": false])
+        XCTAssertEqual(decoded.groupOverrides, [:])
+    }
+
+    // MARK: - Normalize
+
+    func testNormalizeDropsOrphanedGroupOverrides() {
+        var state = NotificationTriggerState(
+            overrides: [:],
+            groupOverrides: ["ai_coding.finished": true, "bogus_group.finished": false]
+        )
+        state.normalize()
+        XCTAssertEqual(state.groupOverrides.count, 1)
+        XCTAssertNotNil(state.groupOverrides["ai_coding.finished"])
+        XCTAssertNil(state.groupOverrides["bogus_group.finished"])
+    }
+
+    func testNormalizeKeepsValidGroupOverrides() {
+        var state = NotificationTriggerState(
+            overrides: [:],
+            groupOverrides: ["ai_coding.finished": true, "ai_coding.permission": false]
+        )
+        state.normalize()
+        XCTAssertEqual(state.groupOverrides.count, 2)
+    }
+
+    // MARK: - Non-Group Triggers Unaffected by Group Overrides
+
+    func testNonGroupTriggerIgnoresGroupOverrides() {
+        // Shell triggers should not be affected by AI group overrides
+        let shellTrigger = NotificationTriggerCatalog.trigger(source: .shell, type: "command_finished")!
+        let state = NotificationTriggerState(
+            overrides: [:],
+            groupOverrides: ["ai_coding.command_finished": false]
+        )
+        // Should use catalog default (true for command_finished)
+        XCTAssertEqual(state.isEnabled(for: shellTrigger), shellTrigger.defaultEnabled)
     }
 }

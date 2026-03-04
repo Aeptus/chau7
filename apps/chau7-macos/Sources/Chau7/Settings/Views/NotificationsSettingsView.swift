@@ -27,8 +27,12 @@ struct NotificationsSettingsView: View {
                 TriggersTabView(model: model)
             case .thresholds:
                 EventDetectionThresholdsSection()
+            case .behavior:
+                BehaviorTabView()
             case .monitoring:
                 EventMonitoringSection(model: model)
+            case .history:
+                NotificationHistoryTabView()
             }
         }
     }
@@ -39,13 +43,17 @@ struct NotificationsSettingsView: View {
 private enum NotificationTab: String, CaseIterable {
     case triggers
     case thresholds
+    case behavior
     case monitoring
+    case history
 
     var label: String {
         switch self {
         case .triggers: return L("settings.notifications.tab.triggers", "Triggers")
         case .thresholds: return L("settings.notifications.tab.thresholds", "Thresholds")
+        case .behavior: return L("settings.notifications.tab.behavior", "Behavior")
         case .monitoring: return L("settings.notifications.tab.monitoring", "Monitoring")
+        case .history: return L("settings.notifications.tab.history", "History")
         }
     }
 }
@@ -181,7 +189,7 @@ fileprivate enum TriggerCategory: String, CaseIterable, Identifiable {
         case .aiApps:
             return [.claudeCode, .codex, .cursor, .windsurf, .copilot, .aider, .cline, .continueAI]
         case .app:
-            return [.app]
+            return [.app, .apiProxy, .unknown]
         }
     }
 }
@@ -204,6 +212,10 @@ private struct UnifiedTriggerSection: View {
     @State private var showingActionPicker = false
     @State private var selectedTriggerId: String? = nil
     @State private var editingAction: (triggerId: String, config: NotificationActionConfig)? = nil
+
+    private func isGroupTriggerId(_ id: String) -> Bool {
+        NotificationTriggerCatalog.allGroupTriggerIds.contains(id)
+    }
 
     private func triggerGroups(for category: TriggerCategory) -> [TriggerGroup] {
         category.sources.compactMap { sourceId in
@@ -230,21 +242,49 @@ private struct UnifiedTriggerSection: View {
     }
 
     private func enableAll(for category: TriggerCategory) {
-        let allTriggersForCategory = triggerGroups(for: category).flatMap(\.triggers)
-        var state = settings.notificationTriggerState
-        for trigger in allTriggersForCategory {
-            state.setEnabled(true, for: trigger)
+        if category == .aiApps {
+            // Set group overrides (not 80 individual overrides)
+            var state = settings.notificationTriggerState
+            let group = NotificationTriggerCatalog.aiCodingGroup
+            for type in group.triggerTypes {
+                state.setGroupEnabled(true, groupId: group.id, type: type)
+            }
+            // Clear all per-source overrides so they inherit cleanly
+            let allTriggersForCategory = triggerGroups(for: category).flatMap(\.triggers)
+            for trigger in allTriggersForCategory {
+                state.removeOverride(for: trigger)
+            }
+            settings.notificationTriggerState = state
+        } else {
+            let allTriggersForCategory = triggerGroups(for: category).flatMap(\.triggers)
+            var state = settings.notificationTriggerState
+            for trigger in allTriggersForCategory {
+                state.setEnabled(true, for: trigger)
+            }
+            settings.notificationTriggerState = state
         }
-        settings.notificationTriggerState = state
     }
 
     private func disableAll(for category: TriggerCategory) {
-        let allTriggersForCategory = triggerGroups(for: category).flatMap(\.triggers)
-        var state = settings.notificationTriggerState
-        for trigger in allTriggersForCategory {
-            state.setEnabled(false, for: trigger)
+        if category == .aiApps {
+            var state = settings.notificationTriggerState
+            let group = NotificationTriggerCatalog.aiCodingGroup
+            for type in group.triggerTypes {
+                state.setGroupEnabled(false, groupId: group.id, type: type)
+            }
+            let allTriggersForCategory = triggerGroups(for: category).flatMap(\.triggers)
+            for trigger in allTriggersForCategory {
+                state.removeOverride(for: trigger)
+            }
+            settings.notificationTriggerState = state
+        } else {
+            let allTriggersForCategory = triggerGroups(for: category).flatMap(\.triggers)
+            var state = settings.notificationTriggerState
+            for trigger in allTriggersForCategory {
+                state.setEnabled(false, for: trigger)
+            }
+            settings.notificationTriggerState = state
         }
-        settings.notificationTriggerState = state
     }
 
     var body: some View {
@@ -286,10 +326,18 @@ private struct UnifiedTriggerSection: View {
                             editingAction = (triggerId, config)
                         },
                         onDeleteAction: { triggerId, actionId in
-                            settings.removeActionFromTrigger(triggerId, actionId: actionId)
+                            if isGroupTriggerId(triggerId) {
+                                settings.removeActionFromGroup(triggerId, actionId: actionId)
+                            } else {
+                                settings.removeActionFromTrigger(triggerId, actionId: actionId)
+                            }
                         },
                         onToggleAction: { triggerId, actionId, enabled in
-                            settings.setActionEnabled(enabled, triggerId: triggerId, actionId: actionId)
+                            if isGroupTriggerId(triggerId) {
+                                settings.setGroupActionEnabled(enabled, groupId: triggerId, actionId: actionId)
+                            } else {
+                                settings.setActionEnabled(enabled, triggerId: triggerId, actionId: actionId)
+                            }
                         }
                     )
                 }
@@ -299,7 +347,11 @@ private struct UnifiedTriggerSection: View {
             if let triggerId = selectedTriggerId {
                 ActionPickerSheet(triggerId: triggerId) { actionType in
                     let newAction = NotificationActionConfig(actionType: actionType, enabled: true)
-                    settings.addActionToTrigger(triggerId, action: newAction)
+                    if isGroupTriggerId(triggerId) {
+                        settings.addActionToGroup(triggerId, action: newAction)
+                    } else {
+                        settings.addActionToTrigger(triggerId, action: newAction)
+                    }
                     if let info = NotificationActionCatalog.action(for: actionType), info.requiresConfig {
                         editingAction = (triggerId, newAction)
                     }
@@ -311,7 +363,11 @@ private struct UnifiedTriggerSection: View {
             set: { editingAction = $0.map { ($0.triggerId, $0.config) } }
         )) { item in
             ActionConfigSheet(triggerId: item.triggerId, actionConfig: item.config) { updatedConfig in
-                settings.updateActionInTrigger(item.triggerId, action: updatedConfig)
+                if isGroupTriggerId(item.triggerId) {
+                    settings.updateActionInGroup(item.triggerId, action: updatedConfig)
+                } else {
+                    settings.updateActionInTrigger(item.triggerId, action: updatedConfig)
+                }
             }
         }
     }
@@ -406,26 +462,52 @@ private struct UnifiedCategorySection: View {
                         .padding(.top, 4)
                     }
 
-                    ForEach(groups) { group in
-                        let groupEnabledCount = group.triggers.filter { triggerBinding($0).wrappedValue }.count
-                        UnifiedSourceSection(
-                            group: group,
-                            enabledCount: groupEnabledCount,
-                            isExpanded: expandedSources.contains(group.id),
+                    if category == .aiApps {
+                        // Group-level triggers
+                        AICodingGroupSection(
                             expandedTriggerId: $expandedTriggerId,
-                            onToggleExpand: {
-                                if expandedSources.contains(group.id) {
-                                    expandedSources.remove(group.id)
-                                } else {
-                                    expandedSources.insert(group.id)
-                                }
-                            },
+                            onAddAction: onAddAction,
+                            onEditAction: onEditAction,
+                            onDeleteAction: onDeleteAction,
+                            onToggleAction: onToggleAction
+                        )
+
+                        Divider()
+                            .padding(.horizontal, 8)
+
+                        // Per-source overrides (collapsible)
+                        PerSourceOverridesSection(
+                            groups: groups,
+                            expandedSources: $expandedSources,
+                            expandedTriggerId: $expandedTriggerId,
                             triggerBinding: triggerBinding,
                             onAddAction: onAddAction,
                             onEditAction: onEditAction,
                             onDeleteAction: onDeleteAction,
                             onToggleAction: onToggleAction
                         )
+                    } else {
+                        ForEach(groups) { group in
+                            let groupEnabledCount = group.triggers.filter { triggerBinding($0).wrappedValue }.count
+                            UnifiedSourceSection(
+                                group: group,
+                                enabledCount: groupEnabledCount,
+                                isExpanded: expandedSources.contains(group.id),
+                                expandedTriggerId: $expandedTriggerId,
+                                onToggleExpand: {
+                                    if expandedSources.contains(group.id) {
+                                        expandedSources.remove(group.id)
+                                    } else {
+                                        expandedSources.insert(group.id)
+                                    }
+                                },
+                                triggerBinding: triggerBinding,
+                                onAddAction: onAddAction,
+                                onEditAction: onEditAction,
+                                onDeleteAction: onDeleteAction,
+                                onToggleAction: onToggleAction
+                            )
+                        }
                     }
                 }
                 .padding(.leading, 16)
@@ -629,6 +711,468 @@ private struct UnifiedTriggerRow: View {
     }
 }
 
+// MARK: - AI Coding Group Section
+
+private struct AICodingGroupSection: View {
+    @ObservedObject private var settings = FeatureSettings.shared
+    @Binding var expandedTriggerId: String?
+    let onAddAction: (String) -> Void
+    let onEditAction: (String, NotificationActionConfig) -> Void
+    let onDeleteAction: (String, UUID) -> Void
+    let onToggleAction: (String, UUID, Bool) -> Void
+
+    private let group = NotificationTriggerCatalog.aiCodingGroup
+    private let groupInfos = NotificationTriggerCatalog.groupTriggerInfos(for: NotificationTriggerCatalog.aiCodingGroup)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: "square.stack.3d.up")
+                    .font(.caption2)
+                    .foregroundStyle(Color.accentColor)
+                Text(L("settings.notifications.allAISources", "All AI Sources"))
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Spacer()
+            }
+            .padding(.bottom, 2)
+
+            ForEach(groupInfos) { info in
+                GroupTriggerRow(
+                    info: info,
+                    group: group,
+                    isExpanded: expandedTriggerId == info.id,
+                    onToggleExpand: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            expandedTriggerId = expandedTriggerId == info.id ? nil : info.id
+                        }
+                    },
+                    onAddAction: { onAddAction(info.id) },
+                    onEditAction: { config in onEditAction(info.id, config) },
+                    onDeleteAction: { actionId in onDeleteAction(info.id, actionId) },
+                    onToggleAction: { actionId, enabled in onToggleAction(info.id, actionId, enabled) }
+                )
+            }
+        }
+    }
+}
+
+// MARK: - Group Trigger Row
+
+private struct GroupTriggerRow: View {
+    let info: GroupTriggerInfo
+    let group: NotificationTriggerGroup
+    let isExpanded: Bool
+    let onToggleExpand: () -> Void
+    let onAddAction: () -> Void
+    let onEditAction: (NotificationActionConfig) -> Void
+    let onDeleteAction: (UUID) -> Void
+    let onToggleAction: (UUID, Bool) -> Void
+
+    @ObservedObject private var settings = FeatureSettings.shared
+
+    private var isOn: Bool {
+        settings.notificationTriggerState.isGroupEnabled(
+            groupId: group.id,
+            type: info.type,
+            defaultEnabled: info.defaultEnabled
+        )
+    }
+
+    private var overrideCount: Int {
+        // Count how many per-source triggers have per-trigger overrides for this type
+        let triggers = NotificationTriggerCatalog.all.filter {
+            group.contains(source: $0.source) && $0.type == info.type
+        }
+        return triggers.filter { settings.notificationTriggerState.hasPerTriggerOverride(for: $0) }.count
+    }
+
+    private var actions: [NotificationActionConfig] {
+        settings.groupActionBindings[info.id] ?? []
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Toggle("", isOn: Binding(
+                    get: { isOn },
+                    set: { newValue in
+                        var state = settings.notificationTriggerState
+                        state.setGroupEnabled(newValue, groupId: group.id, type: info.type)
+                        settings.notificationTriggerState = state
+                    }
+                ))
+                .toggleStyle(.checkbox)
+                .labelsHidden()
+
+                Button(action: onToggleExpand) {
+                    HStack(spacing: 6) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(info.labelFallback)
+                                .font(.caption)
+                                .foregroundStyle(isOn ? .primary : .secondary)
+
+                            Text(info.descriptionFallback)
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+
+                        Spacer()
+
+                        // Override count badge
+                        if overrideCount > 0 {
+                            Text("\(overrideCount)/\(group.sources.count) overridden")
+                                .font(.caption2)
+                                .foregroundStyle(.orange)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.1))
+                                .cornerRadius(4)
+                        }
+
+                        // Action count badge
+                        if !actions.isEmpty {
+                            Text(actions.count.formatted())
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.accentColor.opacity(0.2))
+                                .foregroundColor(.accentColor)
+                                .cornerRadius(4)
+                        }
+
+                        Circle()
+                            .fill(isOn ? Color.green : Color.gray.opacity(0.3))
+                            .frame(width: 8, height: 8)
+
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 12)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 4)
+            .background(isExpanded ? Color.secondary.opacity(0.05) : Color.clear)
+            .cornerRadius(4)
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 4) {
+                    if actions.isEmpty {
+                        HStack {
+                            Image(systemName: "info.circle")
+                                .foregroundStyle(.secondary)
+                            Text(L("settings.notifications.noGroupActions", "No group actions configured. Using default notification."))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 28)
+                        .padding(.vertical, 4)
+                    } else {
+                        ForEach(actions) { action in
+                            ActionRow(
+                                action: action,
+                                onEdit: { onEditAction(action) },
+                                onDelete: { onDeleteAction(action.id) },
+                                onToggle: { enabled in onToggleAction(action.id, enabled) }
+                            )
+                        }
+                    }
+
+                    Button(action: onAddAction) {
+                        HStack {
+                            Image(systemName: "plus.circle.fill")
+                            Text(L("settings.notifications.addAction", "Add Action"))
+                        }
+                        .font(.caption)
+                        .foregroundColor(.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 4)
+                }
+                .padding(.top, 4)
+                .padding(.leading, 20)
+                .background(Color.secondary.opacity(0.03))
+            }
+        }
+    }
+}
+
+// MARK: - Per-Source Overrides Section
+
+private struct PerSourceOverridesSection: View {
+    let groups: [TriggerGroup]
+    @Binding var expandedSources: Set<String>
+    @Binding var expandedTriggerId: String?
+    let triggerBinding: (NotificationTrigger) -> Binding<Bool>
+    let onAddAction: (String) -> Void
+    let onEditAction: (String, NotificationActionConfig) -> Void
+    let onDeleteAction: (String, UUID) -> Void
+    let onToggleAction: (String, UUID, Bool) -> Void
+
+    @State private var isOverridesExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button(action: { withAnimation { isOverridesExpanded.toggle() } }) {
+                HStack(spacing: 6) {
+                    Image(systemName: isOverridesExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 10)
+                    Image(systemName: "person.2")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(L("settings.notifications.perSourceOverrides", "Per-Source Overrides"))
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+            }
+            .buttonStyle(.plain)
+
+            if isOverridesExpanded {
+                ForEach(groups) { group in
+                    let groupEnabledCount = group.triggers.filter { triggerBinding($0).wrappedValue }.count
+                    OverrideSourceSection(
+                        group: group,
+                        enabledCount: groupEnabledCount,
+                        isExpanded: expandedSources.contains(group.id),
+                        expandedTriggerId: $expandedTriggerId,
+                        onToggleExpand: {
+                            if expandedSources.contains(group.id) {
+                                expandedSources.remove(group.id)
+                            } else {
+                                expandedSources.insert(group.id)
+                            }
+                        },
+                        triggerBinding: triggerBinding,
+                        onAddAction: onAddAction,
+                        onEditAction: onEditAction,
+                        onDeleteAction: onDeleteAction,
+                        onToggleAction: onToggleAction
+                    )
+                }
+                .padding(.leading, 16)
+            }
+        }
+    }
+}
+
+// MARK: - Override Source Section (per-source with inheritance)
+
+private struct OverrideSourceSection: View {
+    let group: TriggerGroup
+    let enabledCount: Int
+    let isExpanded: Bool
+    @Binding var expandedTriggerId: String?
+    let onToggleExpand: () -> Void
+    let triggerBinding: (NotificationTrigger) -> Binding<Bool>
+    let onAddAction: (String) -> Void
+    let onEditAction: (String, NotificationActionConfig) -> Void
+    let onDeleteAction: (String, UUID) -> Void
+    let onToggleAction: (String, UUID, Bool) -> Void
+
+    @ObservedObject private var settings = FeatureSettings.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button(action: onToggleExpand) {
+                HStack(spacing: 6) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 10)
+
+                    Text(group.source.localizedLabel)
+                        .font(.caption)
+                        .fontWeight(.medium)
+
+                    Text(
+                        String(
+                            format: L("notifications.enabledCount", "(%d/%d)"),
+                            enabledCount,
+                            group.triggers.count
+                        )
+                    )
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    Spacer()
+                }
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(group.triggers) { trigger in
+                        OverrideTriggerRow(
+                            trigger: trigger,
+                            isOn: triggerBinding(trigger),
+                            isExpanded: expandedTriggerId == trigger.id,
+                            onToggleExpand: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    expandedTriggerId = expandedTriggerId == trigger.id ? nil : trigger.id
+                                }
+                            },
+                            onAddAction: { onAddAction(trigger.id) },
+                            onEditAction: { config in onEditAction(trigger.id, config) },
+                            onDeleteAction: { actionId in onDeleteAction(trigger.id, actionId) },
+                            onToggleAction: { actionId, enabled in onToggleAction(trigger.id, actionId, enabled) }
+                        )
+                    }
+                }
+                .padding(.leading, 16)
+            }
+        }
+    }
+}
+
+// MARK: - Override Trigger Row (shows inheritance)
+
+private struct OverrideTriggerRow: View {
+    let trigger: NotificationTrigger
+    @Binding var isOn: Bool
+    let isExpanded: Bool
+    let onToggleExpand: () -> Void
+    let onAddAction: () -> Void
+    let onEditAction: (NotificationActionConfig) -> Void
+    let onDeleteAction: (UUID) -> Void
+    let onToggleAction: (UUID, Bool) -> Void
+
+    @ObservedObject private var settings = FeatureSettings.shared
+
+    private var hasOverride: Bool {
+        settings.notificationTriggerState.hasPerTriggerOverride(for: trigger)
+    }
+
+    private var actions: [NotificationActionConfig] {
+        settings.triggerActionBindings[trigger.id] ?? []
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Toggle("", isOn: $isOn)
+                    .toggleStyle(.checkbox)
+                    .labelsHidden()
+
+                Button(action: onToggleExpand) {
+                    HStack(spacing: 6) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(trigger.localizedLabel)
+                                .font(.caption)
+                                .foregroundStyle(hasOverride ? (isOn ? .primary : .secondary) : .secondary)
+                                .italic(!hasOverride)
+
+                            if !hasOverride {
+                                Text(L("settings.notifications.inheritedFromGroup", "Inherited from group"))
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                    .italic()
+                            } else if !trigger.localizedDescription.isEmpty {
+                                Text(trigger.localizedDescription)
+                                    .font(.caption2)
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                            }
+                        }
+
+                        Spacer()
+
+                        // Reset button when per-trigger override exists
+                        if hasOverride {
+                            Button(action: {
+                                var state = settings.notificationTriggerState
+                                state.removeOverride(for: trigger)
+                                settings.notificationTriggerState = state
+                            }) {
+                                Text(L("settings.notifications.reset", "Reset"))
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        if !actions.isEmpty {
+                            Text(actions.count.formatted())
+                                .font(.caption2)
+                                .fontWeight(.medium)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.accentColor.opacity(0.2))
+                                .foregroundColor(.accentColor)
+                                .cornerRadius(4)
+                        }
+
+                        Circle()
+                            .fill(isOn ? Color.green : Color.gray.opacity(0.3))
+                            .frame(width: 8, height: 8)
+
+                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .frame(width: 12)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 4)
+            .background(isExpanded ? Color.secondary.opacity(0.05) : Color.clear)
+            .cornerRadius(4)
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 4) {
+                    if actions.isEmpty {
+                        HStack {
+                            Image(systemName: "info.circle")
+                                .foregroundStyle(.secondary)
+                            Text(L("settings.notifications.noActions", "No actions configured. Using default notification."))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 28)
+                        .padding(.vertical, 4)
+                    } else {
+                        ForEach(actions) { action in
+                            ActionRow(
+                                action: action,
+                                onEdit: { onEditAction(action) },
+                                onDelete: { onDeleteAction(action.id) },
+                                onToggle: { enabled in onToggleAction(action.id, enabled) }
+                            )
+                        }
+                    }
+
+                    Button(action: onAddAction) {
+                        HStack {
+                            Image(systemName: "plus.circle.fill")
+                            Text(L("settings.notifications.addAction", "Add Action"))
+                        }
+                        .font(.caption)
+                        .foregroundColor(.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 4)
+                }
+                .padding(.top, 4)
+                .padding(.leading, 20)
+                .background(Color.secondary.opacity(0.03))
+            }
+        }
+    }
+}
+
 // MARK: - Event Detection Thresholds Section
 
 private struct EventDetectionThresholdsSection: View {
@@ -784,5 +1328,356 @@ private struct EventMonitoringSection: View {
                 }
             ])
         }
+    }
+}
+
+// MARK: - Behavior Tab (Conditions + Rate Limiting)
+
+private struct BehaviorTabView: View {
+    @ObservedObject private var settings = FeatureSettings.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Rate Limiting
+            RateLimitingSection()
+
+            Divider()
+                .padding(.vertical, 4)
+
+            // Default Conditions
+            DefaultConditionsSection()
+        }
+    }
+}
+
+// MARK: - Rate Limiting Section
+
+private struct RateLimitingSection: View {
+    @ObservedObject private var settings = FeatureSettings.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsSectionHeader(L("settings.notifications.rateLimiting", "Rate Limiting"), icon: "gauge.with.dots.needle.33percent")
+
+            Text(L("settings.notifications.rateLimiting.description", "Prevent notification spam from burst events. Applies per-trigger independently."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 4)
+
+            HStack(spacing: 24) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("settings.notifications.maxPerMinute", "Max per minute"))
+                        .font(.caption)
+                    TextField(
+                        "5",
+                        value: Binding(
+                            get: { settings.notificationRateLimitConfig.maxPerMinute },
+                            set: { settings.notificationRateLimitConfig.maxPerMinute = max(1, $0) }
+                        ),
+                        formatter: NumberFormatter()
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 60)
+                    Text(L("settings.notifications.maxPerMinute.help", "Token refill rate"))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("settings.notifications.burstAllowance", "Burst allowance"))
+                        .font(.caption)
+                    TextField(
+                        "3",
+                        value: Binding(
+                            get: { settings.notificationRateLimitConfig.burstAllowance },
+                            set: { settings.notificationRateLimitConfig.burstAllowance = max(0, $0) }
+                        ),
+                        formatter: NumberFormatter()
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 60)
+                    Text(L("settings.notifications.burstAllowance.help", "Extra burst above rate"))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L("settings.notifications.cooldown", "Cooldown (seconds)"))
+                        .font(.caption)
+                    TextField(
+                        "10",
+                        value: Binding(
+                            get: { Int(settings.notificationRateLimitConfig.cooldownSeconds) },
+                            set: { settings.notificationRateLimitConfig.cooldownSeconds = TimeInterval(max(0, $0)) }
+                        ),
+                        formatter: NumberFormatter()
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 60)
+                    Text(L("settings.notifications.cooldown.help", "Min gap between same trigger"))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.leading, 8)
+        }
+    }
+}
+
+// MARK: - Default Conditions Section
+
+private struct DefaultConditionsSection: View {
+    @ObservedObject private var settings = FeatureSettings.shared
+    @State private var selectedTriggerId: String? = nil
+
+    private var configuredTriggers: [(trigger: NotificationTrigger, condition: TriggerCondition)] {
+        NotificationTriggerCatalog.all
+            .filter { settings.notificationTriggerState.isEnabled(for: $0) }
+            .map { ($0, settings.conditionForTrigger($0.id)) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsSectionHeader(L("settings.notifications.conditions", "Trigger Conditions"), icon: "checklist")
+
+            Text(L("settings.notifications.conditions.description", "Control when enabled triggers are allowed to fire. Conditions are evaluated before rate limiting."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 4)
+
+            // Per-trigger condition editor
+            ForEach(configuredTriggers, id: \.trigger.id) { item in
+                ConditionRow(
+                    trigger: item.trigger,
+                    condition: item.condition,
+                    isExpanded: selectedTriggerId == item.trigger.id,
+                    onToggleExpand: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedTriggerId = selectedTriggerId == item.trigger.id ? nil : item.trigger.id
+                        }
+                    },
+                    onChange: { newCondition in
+                        settings.setConditionForTrigger(item.trigger.id, condition: newCondition)
+                    }
+                )
+            }
+
+            if configuredTriggers.isEmpty {
+                SettingsHint(
+                    icon: "bell.slash",
+                    text: L("settings.notifications.noEnabledTriggers", "No triggers are currently enabled. Enable triggers in the Triggers tab first.")
+                )
+            }
+        }
+    }
+}
+
+private struct ConditionRow: View {
+    let trigger: NotificationTrigger
+    let condition: TriggerCondition
+    let isExpanded: Bool
+    let onToggleExpand: () -> Void
+    let onChange: (TriggerCondition) -> Void
+
+    private var hasCustomConditions: Bool {
+        condition != .default
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button(action: onToggleExpand) {
+                HStack(spacing: 6) {
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 10)
+
+                    Text(trigger.localizedLabel)
+                        .font(.caption)
+
+                    if hasCustomConditions {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.caption2)
+                            .foregroundColor(.accentColor)
+                    }
+
+                    Spacer()
+
+                    Text(trigger.source.rawValue)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .buttonStyle(.plain)
+            .padding(.vertical, 3)
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle(
+                        L("settings.notifications.condition.respectDND", "Respect Focus/DND mode"),
+                        isOn: Binding(
+                            get: { condition.respectDND },
+                            set: { var c = condition; c.respectDND = $0; onChange(c) }
+                        )
+                    )
+                    .font(.caption)
+
+                    Toggle(
+                        L("settings.notifications.condition.onlyWhenUnfocused", "Only when app is in background"),
+                        isOn: Binding(
+                            get: { condition.onlyWhenUnfocused },
+                            set: { var c = condition; c.onlyWhenUnfocused = $0; onChange(c) }
+                        )
+                    )
+                    .font(.caption)
+
+                    Toggle(
+                        L("settings.notifications.condition.onlyWhenTabInactive", "Only when triggering tab is not selected"),
+                        isOn: Binding(
+                            get: { condition.onlyWhenTabInactive },
+                            set: { var c = condition; c.onlyWhenTabInactive = $0; onChange(c) }
+                        )
+                    )
+                    .font(.caption)
+
+                    if condition != .default {
+                        Button(action: { onChange(.default) }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.uturn.backward")
+                                Text(L("settings.notifications.condition.reset", "Reset to defaults"))
+                            }
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.leading, 24)
+                .padding(.vertical, 4)
+                .padding(.bottom, 4)
+            }
+        }
+        .padding(.horizontal, 4)
+    }
+}
+
+// MARK: - Notification History Tab
+
+private struct NotificationHistoryTabView: View {
+    @State private var entries: [NotificationHistory.Entry] = []
+    @State private var refreshToken = UUID()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SettingsSectionHeader(L("settings.notifications.history", "Notification History"), icon: "clock.arrow.circlepath")
+
+            HStack {
+                Text(L("settings.notifications.history.description", "Recent notification events (last 100, in-memory only)."))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button(action: refreshHistory) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+
+                Button(action: clearHistory) {
+                    Text(L("settings.notifications.history.clear", "Clear"))
+                        .font(.caption)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+            }
+
+            if entries.isEmpty {
+                SettingsHint(
+                    icon: "clock",
+                    text: L("settings.notifications.history.empty", "No notification events recorded yet.")
+                )
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2) {
+                        ForEach(entries) { entry in
+                            NotificationHistoryEntryRow(entry: entry)
+                        }
+                    }
+                }
+                .frame(maxHeight: 400)
+            }
+        }
+        .onAppear { refreshHistory() }
+        .id(refreshToken)
+    }
+
+    private func refreshHistory() {
+        Task { @MainActor in
+            entries = NotificationManager.shared.history.recent(limit: 100)
+            refreshToken = UUID()
+        }
+    }
+
+    private func clearHistory() {
+        Task { @MainActor in
+            NotificationManager.shared.history.clear()
+            entries = []
+            refreshToken = UUID()
+        }
+    }
+}
+
+private struct NotificationHistoryEntryRow: View {
+    let entry: NotificationHistory.Entry
+
+    private var timeString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: entry.timestamp)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(timeString)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .frame(width: 60, alignment: .leading)
+
+            if entry.wasRateLimited {
+                Image(systemName: "gauge.with.dots.needle.100percent")
+                    .font(.caption2)
+                    .foregroundColor(.orange)
+                    .help("Rate limited")
+            } else {
+                Image(systemName: "bell.fill")
+                    .font(.caption2)
+                    .foregroundColor(.green)
+            }
+
+            Text(entry.triggerId)
+                .font(.caption.monospaced())
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+
+            if !entry.actionsExecuted.isEmpty {
+                Text(entry.actionsExecuted.joined(separator: ", "))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Text(entry.message.prefix(40) + (entry.message.count > 40 ? "..." : ""))
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+        }
+        .padding(.vertical, 2)
+        .padding(.horizontal, 6)
+        .background(entry.wasRateLimited ? Color.orange.opacity(0.05) : Color.clear)
+        .cornerRadius(3)
     }
 }

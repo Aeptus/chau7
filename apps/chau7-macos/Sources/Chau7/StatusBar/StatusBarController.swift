@@ -103,6 +103,26 @@ final class StatusBarController: NSObject {
         popover = nil
     }
 
+    /// Flash the status bar icon to draw attention (used by menuBarAlert action).
+    func flashAlert(duration: Int, animate: Bool) {
+        guard let button = statusItem?.button else { return }
+        let originalImage = button.image
+        let alertImage = NSImage(systemSymbolName: "bell.badge.fill", accessibilityDescription: "Alert")
+
+        if animate {
+            button.image = alertImage
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(duration)) {
+                button.image = originalImage
+            }
+        } else {
+            button.image = alertImage
+            DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(duration)) {
+                button.image = originalImage
+            }
+        }
+        Log.info("StatusBarController: Menu bar alert for \(duration)s")
+    }
+
     /// Update the status bar icon based on monitoring state.
     @objc func updateIcon() {
         guard let button = statusItem?.button else { return }
