@@ -119,7 +119,10 @@ final class StatusBarController: NSObject {
     func flashAlert(duration: Int, animate: Bool) {
         guard let button = statusItem?.button else { return }
         let originalImage = button.image
-        let alertImage = NSImage(systemSymbolName: "bell.badge.fill", accessibilityDescription: "Alert")
+        let alertImage = NSImage(
+            systemSymbolName: "bell.badge.fill",
+            accessibilityDescription: L("statusBar.alert", "Alert")
+        )
 
         button.image = alertImage
 
@@ -194,8 +197,17 @@ final class StatusBarController: NSObject {
 // MARK: - Command Center View Model
 
 /// Shared state for the command center panel — survives popover open/close cycles.
-/// All derived state is computed from model.claudeCodeSessions (which is @Published),
-/// so SwiftUI re-evaluates automatically. No manual sync needed.
+///
+/// **Data sources** (all tool-agnostic — not Claude Code specific):
+/// - `model.claudeCodeSessions` → hero zone + live sessions (session state is Claude Code-specific today,
+///   but the panel layout works for any tool's sessions in the future)
+/// - `model.recentEvents` (`[AIEvent]`) → unified timeline. This is the **tool-agnostic** event stream
+///   fed by all monitors (file tailer, terminal sessions, API proxy, etc.). Do NOT use
+///   `model.claudeCodeEvents` here — that stream is Claude Code hook-specific and would exclude events
+///   from Cursor, Codex, Copilot, Aider, and other monitored tools.
+/// - `NotificationHistory` → unified timeline (notification-fired events, also tool-agnostic via `AIEvent`)
+///
+/// All derived state is computed from @Published properties, so SwiftUI re-evaluates automatically.
 final class CommandCenterViewModel: ObservableObject {
     let model: AppModel
     let onClose: () -> Void
@@ -222,11 +234,17 @@ final class CommandCenterViewModel: ObservableObject {
             .map { $0 }
     }
 
-    /// Merged feed of notification history + raw events, deduplicated, max 8.
+    /// Merged feed of notification history + recent tool-agnostic events, deduplicated, max 8.
+    ///
+    /// Uses `model.recentEvents` (`[AIEvent]`) — the **tool-agnostic** event stream that
+    /// includes events from all monitored tools (Claude Code, Cursor, Codex, Copilot, etc.).
+    /// NOT `model.claudeCodeEvents` which is Claude Code hook-specific.
+    ///
     /// Accepts history entries as parameter since NotificationHistory is @MainActor-isolated
     /// and this view model is not. Callers in SwiftUI views can pass the snapshot directly.
     func unifiedTimeline(historyEntries: [NotificationHistory.Entry]) -> [UnifiedTimelineEntry] {
-        let rawEvents = Array(model.claudeCodeEvents.suffix(8))
+        // Use recentEvents (AIEvent) — tool-agnostic stream from all monitors
+        let rawEvents = Array(model.recentEvents.suffix(8))
 
         // Convert notification history entries (these win in dedup)
         var entries: [UnifiedTimelineEntry] = historyEntries.map { entry in
@@ -239,8 +257,8 @@ final class CommandCenterViewModel: ObservableObject {
                 id: entry.id,
                 icon: entry.wasRateLimited ? "bell.slash" : "bell.fill",
                 iconColor: entry.wasRateLimited ? .gray : .orange,
-                title: triggerLabel ?? CommandCenterViewModel.humanReadableType(entry.type),
-                detail: CommandCenterViewModel.cleanDetail(tool: entry.tool, message: entry.message),
+                title: triggerLabel ?? Self.humanReadableType(entry.type),
+                detail: Self.cleanDetail(tool: entry.tool, message: entry.message),
                 timestamp: entry.timestamp,
                 isRateLimited: entry.wasRateLimited
             )
@@ -251,16 +269,17 @@ final class CommandCenterViewModel: ObservableObject {
 
         // Add raw events that don't match a notification history entry
         for event in rawEvents {
-            let eventSecond = Int(event.timestamp.timeIntervalSince1970)
+            let ts = DateFormatters.iso8601.date(from: event.ts) ?? Date()
+            let eventSecond = Int(ts.timeIntervalSince1970)
             let isDuplicate = historyTimestamps.contains(where: { abs($0 - eventSecond) <= 2 })
             if !isDuplicate {
                 entries.append(UnifiedTimelineEntry(
                     id: event.id,
-                    icon: CommandCenterViewModel.eventIcon(for: event.type),
-                    iconColor: CommandCenterViewModel.eventColor(for: event.type),
-                    title: CommandCenterViewModel.humanReadableEvent(event),
-                    detail: CommandCenterViewModel.humanReadableDetail(event),
-                    timestamp: event.timestamp,
+                    icon: Self.eventIcon(for: event),
+                    iconColor: Self.eventColor(for: event),
+                    title: Self.humanReadableEvent(event),
+                    detail: Self.humanReadableDetail(event),
+                    timestamp: ts,
                     isRateLimited: false
                 ))
             }
@@ -293,99 +312,195 @@ final class CommandCenterViewModel: ObservableObject {
         onClose()
     }
 
-    // MARK: - Human-Readable Event Mapping
+    // MARK: - Human-Readable Event Mapping (AIEvent — tool-agnostic)
+    //
+    // These helpers map AIEvent fields to user-friendly strings for the unified timeline.
+    // AIEvent is the tool-agnostic event model (from Chau7Core) used by ALL monitors —
+    // Claude Code, Cursor, Codex, Copilot, Aider, shell sessions, API proxy, etc.
+    //
+    // Key AIEvent fields:
+    //   source: AIEventSource  — which tool/app produced the event (.claudeCode, .cursor, etc.)
+    //   type: String           — event category ("finished", "permission", "tool_called", etc.)
+    //   tool: String           — tool/app name for display (e.g. "Claude Code", "Write", "Bash")
+    //   message: String        — human-readable detail from the source
+    //   ts: String             — ISO8601 timestamp
+    //
+    // ⚠️  Do NOT use ClaudeCodeEvent here. ClaudeCodeEvent is a Claude Code hook-specific
+    //     type (see Monitoring/ClaudeCodeEvent.swift) that only captures events from Claude
+    //     Code's hook scripts. Using it would silently exclude events from all other tools.
 
-    private static func eventIcon(for type: ClaudeEventType) -> String {
-        switch type {
-        case .userPrompt: return "person.fill"
-        case .toolStart: return "hammer"
-        case .toolComplete: return "checkmark.circle"
-        case .permissionRequest: return "exclamationmark.triangle"
-        case .responseComplete: return "text.bubble"
-        case .notification: return "bell"
-        case .sessionEnd: return "xmark.circle"
-        case .unknown: return "circle"
+    /// Normalize event type strings for consistent matching.
+    /// Different sources may use different conventions (camelCase, snake_case, hyphens).
+    private static func normalizedEventType(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+    }
+
+    /// Icon for an AIEvent, chosen by type first, then by source for unknown types.
+    private static func eventIcon(for event: AIEvent) -> String {
+        switch normalizedEventType(event.type) {
+        case "user_prompt", "userprompt": return "person.fill"
+        case "tool_start", "toolstart", "tool_called", "toolcalled": return "hammer"
+        case "tool_complete": return "checkmark.circle"
+        case "permission", "permission_request": return "exclamationmark.triangle"
+        case "response_complete", "finished": return "text.bubble"
+        case "session_end": return "xmark.circle"
+        case "idle": return "moon"
+        case "error", "failed": return "exclamationmark.circle"
+        case "api_call": return "arrow.up.arrow.down"
+        case "file_edited": return "doc.text"
+        case "context_limit": return "gauge.with.dots.needle.33percent"
+        case "token_threshold", "cost_threshold": return "dollarsign.circle"
+        case "notification": return "bell"
+        default:
+            // Fall back to source-based icon for unrecognized types
+            switch event.source {
+            case .terminalSession: return "terminal.fill"
+            case .shell: return "terminal"
+            case .historyMonitor, .eventsLog: return "clock.arrow.circlepath"
+            case .app: return "app.badge"
+            case .apiProxy: return "arrow.up.arrow.down"
+            default: return "circle"
+            }
         }
     }
 
-    private static func eventColor(for type: ClaudeEventType) -> Color {
-        switch type {
-        case .userPrompt: return .green
-        case .permissionRequest: return .yellow
-        case .sessionEnd: return .red
-        case .responseComplete: return .blue
-        case .toolComplete: return .cyan
+    /// Color for an AIEvent based on its type string.
+    private static func eventColor(for event: AIEvent) -> Color {
+        switch normalizedEventType(event.type) {
+        case "user_prompt": return .green
+        case "permission", "permission_request": return .yellow
+        case "session_end", "error", "failed": return .red
+        case "response_complete", "finished": return .blue
+        case "tool_complete": return .cyan
+        case "idle": return .gray
+        case "api_call": return .purple
         default: return .secondary
         }
     }
 
-    /// Human-readable title from a raw ClaudeCodeEvent.
-    private static func humanReadableEvent(_ event: ClaudeCodeEvent) -> String {
-        switch event.type {
-        case .userPrompt:
-            return "Prompt sent"
-        case .toolStart:
-            return "Running \(friendlyToolName(event.toolName))"
-        case .toolComplete:
-            return "\(friendlyToolName(event.toolName)) done"
-        case .permissionRequest:
-            return "Needs permission"
-        case .responseComplete:
-            return "Finished responding"
-        case .sessionEnd:
-            return "Session ended"
-        case .notification:
-            return event.message.isEmpty ? "Notification" : event.message
-        case .unknown:
-            return "Event"
+    /// Human-readable title from an AIEvent.
+    /// Works across all tool sources — not Claude Code specific.
+    private static func humanReadableEvent(_ event: AIEvent) -> String {
+        switch normalizedEventType(event.type) {
+        case "user_prompt", "userprompt":
+            return L("statusBar.timeline.userPrompt", "Prompt sent")
+        case "tool_start", "toolstart", "tool_called", "toolcalled":
+            return L("statusBar.timeline.toolCalled", "Tool running")
+        case "tool_complete":
+            return L("statusBar.timeline.toolComplete", "%@ done")
+                .replacingOccurrences(of: "%@", with: friendlyToolName(event.tool))
+        case "permission", "permission_request":
+            return L("statusBar.timeline.permissionRequest", "Needs permission")
+        case "response_complete", "finished":
+            return L("statusBar.timeline.responseComplete", "Finished responding")
+        case "session_end":
+            return L("statusBar.timeline.sessionEnded", "Session ended")
+        case "idle":
+            return L("statusBar.timeline.sessionIdle", "Session idle")
+        case "error", "failed":
+            return L("statusBar.timeline.error", "Error occurred")
+        case "api_call":
+            return "\(friendlySourceName(event.source)) API call"
+        case "file_edited":
+            return L("statusBar.timeline.fileEdited", "File edited")
+        case "context_limit":
+            return L("statusBar.timeline.contextLimit", "Context limit reached")
+        case "token_threshold", "cost_threshold":
+            return L("statusBar.timeline.usageThreshold", "Usage threshold")
+        case "notification":
+            return event.message.isEmpty
+                ? L("statusBar.timeline.notification", "Notification")
+                : event.message
+        case "command_finished":
+            return L("statusBar.timeline.commandFinished", "Command finished")
+        default:
+            return humanReadableType(normalizedEventType(event.type))
         }
     }
 
-    /// Human-readable detail line (project name + context).
-    private static func humanReadableDetail(_ event: ClaudeCodeEvent) -> String {
-        let project = event.projectName
-        switch event.type {
-        case .toolStart, .toolComplete:
-            // Show project + file context from message if available
+    /// Human-readable detail line for an AIEvent.
+    /// Shows source tool name + extracted file context from message when available.
+    private static func humanReadableDetail(_ event: AIEvent) -> String {
+        let source = friendlySourceName(event.source)
+
+        switch normalizedEventType(event.type) {
+        case "tool_start", "toolstart", "tool_complete", "file_edited":
             let file = extractFileName(from: event.message)
-            if let file { return "\(project) — \(file)" }
-            return project
-        case .permissionRequest:
-            if !event.toolName.isEmpty {
-                return "\(project) — \(friendlyToolName(event.toolName))"
+            if let file { return "\(source) — \(file)" }
+            return event.message.isEmpty ? source : "\(source) — \(event.message)"
+        case "permission", "permission_request":
+            if !event.tool.isEmpty {
+                return "\(source) — \(friendlyToolName(event.tool))"
             }
-            return project
-        case .responseComplete, .sessionEnd, .userPrompt:
-            return project
+            return source
+        case "api_call":
+            return event.message.isEmpty ? source : event.message
         default:
-            return event.message.isEmpty ? project : event.message
+            return event.message.isEmpty ? source : event.message
         }
+    }
+
+    static func sessionCount(_ count: Int) -> String {
+        if count == 1 {
+            return L("statusBar.session.singular", "1 session")
+        }
+        return String(format: L("statusBar.session.plural", "%d sessions"), count)
+    }
+
+    static func attentionSummary(count: Int) -> String {
+        if count == 1 {
+            return L("statusBar.attention.singular", "1 session needs attention")
+        }
+        return String(format: L("statusBar.attention.plural", "%d sessions need attention"), count)
     }
 
     /// Human-readable type string for notification history entries.
+    /// NotificationHistory stores AIEvent.type as a string — these are the same
+    /// tool-agnostic type values used across all monitored tools.
     private static func humanReadableType(_ type: String) -> String {
         switch type {
-        case "finished", "response_complete": return "Finished responding"
-        case "permission", "permission_request": return "Needs permission"
-        case "idle": return "Session idle"
-        case "tool_called", "tool_start": return "Tool running"
-        case "tool_complete": return "Tool finished"
-        case "session_end": return "Session ended"
-        case "user_prompt": return "Prompt sent"
-        case "error": return "Error occurred"
-        case "file_edited": return "File edited"
-        case "command_finished": return "Command finished"
-        default: return type.replacingOccurrences(of: "_", with: " ").capitalized
+        case "finished", "response_complete":
+            return L("statusBar.timeline.responseComplete", "Finished responding")
+        case "permission", "permission_request":
+            return L("statusBar.timeline.permissionRequest", "Needs permission")
+        case "idle":
+            return L("statusBar.timeline.sessionIdle", "Session idle")
+        case "tool_called", "tool_start":
+            return L("statusBar.timeline.toolCalled", "Tool running")
+        case "tool_complete":
+            return L("statusBar.timeline.toolComplete", "%@ done")
+                .replacingOccurrences(of: "%@", with: L("statusBar.timeline.tool", "Tool"))
+        case "session_end":
+            return L("statusBar.timeline.sessionEnded", "Session ended")
+        case "user_prompt":
+            return L("statusBar.timeline.userPrompt", "Prompt sent")
+        case "error", "failed":
+            return L("statusBar.timeline.error", "Error occurred")
+        case "file_edited":
+            return L("statusBar.timeline.fileEdited", "File edited")
+        case "command_finished":
+            return L("statusBar.timeline.commandFinished", "Command finished")
+        case "api_call":
+            return "API call"
+        case "context_limit":
+            return L("statusBar.timeline.contextLimit", "Context limit reached")
+        case "token_threshold", "cost_threshold":
+            return L("statusBar.timeline.usageThreshold", "Usage threshold")
+        default:
+            let key = "statusBar.timeline.type.\(type)"
+            let fallback = type.replacingOccurrences(of: "_", with: " ").capitalized
+            return L(key, fallback)
         }
     }
 
     /// Clean detail for notification history entries.
     private static func cleanDetail(tool: String, message: String) -> String {
-        // If message has useful content, prefer it; otherwise show tool context
         if !message.isEmpty {
             let file = extractFileName(from: message)
             if let file { return file }
-            // Truncate long messages
             if message.count > 60 { return String(message.prefix(57)) + "..." }
             return message
         }
@@ -393,27 +508,51 @@ final class CommandCenterViewModel: ObservableObject {
         return ""
     }
 
-    /// Map internal tool names to readable labels.
+    /// Map AIEventSource to a human-readable tool/app name.
+    /// This is the primary source label shown in the timeline detail line.
+    private static func friendlySourceName(_ source: AIEventSource) -> String {
+        switch source {
+        case .claudeCode: return "Claude Code"
+        case .codex: return "Codex"
+        case .cursor: return "Cursor"
+        case .windsurf: return "Windsurf"
+        case .copilot: return "Copilot"
+        case .aider: return "Aider"
+        case .cline: return "Cline"
+        case .continueAI: return "Continue"
+        case .apiProxy: return "API Proxy"
+        case .terminalSession: return "Terminal"
+        case .shell: return "Shell"
+        case .eventsLog: return "Events"
+        case .historyMonitor: return "History"
+        case .app: return "Chau7"
+        default: return source.rawValue
+        }
+    }
+
+    /// Map internal tool names (from AIEvent.tool) to readable labels.
+    /// These tool names come from various sources — Claude Code uses names like "Write", "Bash",
+    /// while other tools may use different conventions. Falls through to raw name for unknown tools.
     private static func friendlyToolName(_ tool: String) -> String {
         switch tool.lowercased() {
-        case "write": return "file write"
-        case "read": return "file read"
-        case "edit": return "file edit"
-        case "bash": return "shell command"
-        case "glob": return "file search"
-        case "grep": return "content search"
-        case "webfetch": return "web fetch"
-        case "websearch": return "web search"
-        case "notebookedit": return "notebook edit"
-        case "todowrite": return "task update"
-        case "listtool": return "file listing"
+        case "write": return L("statusBar.tool.fileWrite", "file write")
+        case "read": return L("statusBar.tool.fileRead", "file read")
+        case "edit": return L("statusBar.tool.fileEdit", "file edit")
+        case "bash": return L("statusBar.tool.shellCommand", "shell command")
+        case "glob": return L("statusBar.tool.fileSearch", "file search")
+        case "grep": return L("statusBar.tool.contentSearch", "content search")
+        case "webfetch": return L("statusBar.tool.webFetch", "web fetch")
+        case "websearch": return L("statusBar.tool.webSearch", "web search")
+        case "notebookedit": return L("statusBar.tool.notebookEdit", "notebook edit")
+        case "todowrite": return L("statusBar.tool.taskUpdate", "task update")
+        case "listtool": return L("statusBar.tool.fileListing", "file listing")
+        case "cli": return "CLI"
         default: return tool
         }
     }
 
-    /// Extract a filename from a message string (e.g. path or "Editing foo.swift").
+    /// Extract a filename from a message string (e.g. "/path/to/config.json" → "config.json").
     private static func extractFileName(from message: String) -> String? {
-        // Look for file paths
         if message.contains("/") {
             let components = message.components(separatedBy: "/")
             if let last = components.last, !last.isEmpty, last.contains(".") {
@@ -473,7 +612,7 @@ struct StatusBarPanelView: View {
         return Group {
             if !sessions.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label(L("Live Sessions", "Live Sessions"), systemImage: "bubble.left.and.bubble.right")
+                    Label(L("statusBar.liveSessions", "Live Sessions"), systemImage: "bubble.left.and.bubble.right")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.secondary)
 
@@ -499,12 +638,12 @@ struct StatusBarPanelView: View {
     private var unifiedFeedSection: some View {
         let timeline = viewModel.unifiedTimeline(historyEntries: NotificationManager.shared.history.recent(limit: 8))
         return VStack(alignment: .leading, spacing: 8) {
-            Label(L("Activity", "Activity"), systemImage: "clock")
+            Label(L("statusBar.activity", "Activity"), systemImage: "clock")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
 
             if timeline.isEmpty {
-                Text(L("No recent activity", "No recent activity"))
+                Text(L("statusBar.noRecentActivity", "No recent activity"))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 4)
@@ -524,7 +663,7 @@ struct StatusBarPanelView: View {
     private var quickCommandsSection: some View {
         let pinnedSnippets = SnippetManager.shared.entries.filter { $0.snippet.isPinned }.prefix(3)
         return VStack(alignment: .leading, spacing: 10) {
-            Label(L("Quick Commands", "Quick Commands"), systemImage: "command")
+            Label(L("statusBar.quickCommands", "Quick Commands"), systemImage: "command")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
 
@@ -558,7 +697,7 @@ struct StatusBarPanelView: View {
 
             QuickSettingToggle(
                 icon: "antenna.radiowaves.left.and.right",
-                label: "Monitoring",
+                label: L("statusBar.monitoring", "Monitoring"),
                 isOn: Binding(
                     get: { self.model.isMonitoring },
                     set: { newValue in
@@ -575,7 +714,7 @@ struct StatusBarPanelView: View {
                     (NSApp.delegate as? AppDelegate)?.showSettings()
                     viewModel.onClose()
                 } label: {
-                    Label(L("All Settings", "All Settings"), systemImage: "gearshape")
+                    Label(L("statusBar.allSettings", "All Settings"), systemImage: "gearshape")
                 }
                 .controlSize(.small)
             }
@@ -595,7 +734,7 @@ struct StatusBarPanelView: View {
 
             Spacer()
 
-            Button(L("Quit Chau7", "Quit Chau7")) {
+            Button(L("statusBar.quit", "Quit Chau7")) {
                 viewModel.showQuitConfirmation = true
             }
             .buttonStyle(.plain)
@@ -603,14 +742,14 @@ struct StatusBarPanelView: View {
             .foregroundStyle(.secondary)
             .popover(isPresented: $viewModel.showQuitConfirmation) {
                 VStack(spacing: 10) {
-                    Text(L("Quit Chau7?", "Quit Chau7?"))
+                    Text(L("statusBar.quit.confirm", "Quit Chau7?"))
                         .font(.system(size: 12, weight: .medium))
                     HStack(spacing: 8) {
-                        Button(L("Cancel", "Cancel")) {
+                        Button(L("action.cancel", "Cancel")) {
                             viewModel.showQuitConfirmation = false
                         }
                         .controlSize(.small)
-                        Button(L("Quit", "Quit"), role: .destructive) {
+                        Button(L("statusBar.quit", "Quit"), role: .destructive) {
                             NSApplication.shared.terminate(nil)
                         }
                         .controlSize(.small)
@@ -648,7 +787,7 @@ private struct HeroZoneView: View {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.yellow)
-                Text("\(viewModel.attentionCount) session\(viewModel.attentionCount == 1 ? "" : "s") need\(viewModel.attentionCount == 1 ? "s" : "") attention")
+                Text(CommandCenterViewModel.attentionSummary(count: viewModel.attentionCount))
                     .font(.system(size: 13, weight: .semibold))
             }
 
@@ -660,11 +799,13 @@ private struct HeroZoneView: View {
                     Text(session.projectName)
                         .font(.system(size: 11, weight: .medium))
                         .lineLimit(1)
-                    Text(session.state == .waitingPermission ? L("Permission", "Permission") : L("Input", "Input"))
+                    Text(session.state == .waitingPermission
+                        ? L("statusBar.session.permission", "Permission")
+                        : L("statusBar.session.input", "Input"))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button(L("Go", "Go")) {
+                    Button(L("statusBar.go", "Go")) {
                         viewModel.focusSession(session)
                     }
                     .controlSize(.small)
@@ -680,12 +821,12 @@ private struct HeroZoneView: View {
         HStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
-            Text(L("All clear", "All clear"))
+            Text(L("statusBar.allClear", "All clear"))
                 .font(.system(size: 13, weight: .medium))
 
             let total = viewModel.model.claudeCodeSessions.count
             if total > 0 {
-                Text("\(total) session\(total == 1 ? "" : "s")")
+                Text(CommandCenterViewModel.sessionCount(total))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -769,8 +910,16 @@ private struct LiveSessionCard: View {
                 .fill(needsAttention ? Color.yellow.opacity(0.08) : Color.primary.opacity(0.001))
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(session.projectName), \(stateDescription), \(timeAgo(session.lastActivity))")
-        .accessibilityHint("Tap to focus this session")
+        .accessibilityLabel(
+            L(
+                "a11y.status.session",
+                "%@, %@, %@",
+                session.projectName,
+                stateDescription,
+                timeAgo(session.lastActivity)
+            )
+        )
+        .accessibilityHint(L("a11y.status.session.hint", "Focus this session"))
     }
 
     private var needsAttention: Bool {
@@ -815,21 +964,39 @@ private struct LiveSessionCard: View {
 
     private var stateDescription: String {
         switch session.state {
-        case .active: return "Starting..."
-        case .responding: return "Working"
-        case .waitingPermission: return "Needs Permission"
-        case .waitingInput: return "Waiting for input"
-        case .idle: return "Idle"
-        case .closed: return "Closed"
+        case .active: return L("statusBar.session.starting", "Starting")
+        case .responding: return L("statusBar.session.working", "Working")
+        case .waitingPermission: return L("statusBar.session.needsPermission", "Needs permission")
+        case .waitingInput: return L("statusBar.session.waitingInput", "Waiting for input")
+        case .idle: return L("status.idle", "Idle")
+        case .closed: return L("statusBar.session.closed", "Closed")
         }
     }
 
     private func timeAgo(_ date: Date) -> String {
         let seconds = Int(-date.timeIntervalSinceNow)
-        if seconds < 60 { return "now" }
-        if seconds < 3600 { return "\(seconds / 60)m ago" }
-        return "\(seconds / 3600)h ago"
+        if seconds < 60 { return L("time.now", "now") }
+        if seconds < 3600 {
+            let minutes = seconds / 60
+            if minutes == 1 {
+                return L("time.minute.ago", "1 minute ago")
+            }
+            return String(format: L("time.minutes.ago", "%d minutes ago"), minutes)
+        }
+        if seconds < 86_400 {
+            let hours = seconds / 3600
+            if hours == 1 {
+                return L("time.hour.ago", "1 hour ago")
+            }
+            return String(format: L("time.hours.ago", "%d hours ago"), hours)
+        }
+        let days = seconds / 86_400
+        if days == 1 {
+            return L("time.day.ago", "1 day ago")
+        }
+        return String(format: L("time.days.ago", "%d days ago"), days)
     }
+
 }
 
 // MARK: - Timeline Row
@@ -912,7 +1079,7 @@ private struct QuickSettingToggle: View {
         .buttonStyle(.plain)
         .accessibilityLabel(label)
         .accessibilityValue(isOn ? L("status.on", "On") : L("status.off", "Off"))
-        .accessibilityHint(L("Double-tap to toggle", "Double-tap to toggle"))
+        .accessibilityHint(L("statusBar.doubleTapToToggle", "Double-tap to toggle"))
         .accessibilityAddTraits(.isButton)
     }
 }

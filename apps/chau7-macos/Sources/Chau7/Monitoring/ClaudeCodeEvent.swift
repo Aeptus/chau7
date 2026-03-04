@@ -1,8 +1,27 @@
 import Foundation
 
 // MARK: - Claude Code Hook Events
+//
+// ⚠️  SCOPE: These types are specific to Claude Code's hook system.
+// They only capture events from Claude Code hook scripts (PreToolUse, PostToolUse, etc.).
+// Events from other monitored tools (Cursor, Codex, Copilot, Aider, etc.) do NOT
+// flow through these types.
+//
+// For tool-agnostic event handling, use `AIEvent` (in Chau7Core/AIEvent.swift) which
+// is fed by ALL monitors via `AppModel.recentEvents`. The notification system, command
+// center timeline, and any new UI should consume `AIEvent`, not `ClaudeCodeEvent`.
+//
+// `ClaudeCodeEvent` is consumed by:
+// - `AppModel.claudeCodeEvents` — Claude Code-specific raw event log
+// - `ClaudeCodeMonitor` — the monitor that produces these events
+//
+// It is NOT consumed by (and should not be added to):
+// - Command center timeline (uses `AIEvent` via `model.recentEvents`)
+// - Notification pipeline (uses `AIEvent`)
+// - Any cross-tool UI
 
-/// Event types from Claude Code hooks
+/// Event types from Claude Code hooks.
+/// See `AIEvent.type` (String) for the tool-agnostic equivalent used across all sources.
 enum ClaudeEventType: String, Codable {
     case userPrompt = "user_prompt"           // User submitted a prompt
     case toolStart = "tool_start"             // Tool about to execute
@@ -14,7 +33,10 @@ enum ClaudeEventType: String, Codable {
     case unknown = "unknown"
 }
 
-/// Event received from Claude Code hook script
+/// Event received from Claude Code hook script.
+///
+/// ⚠️  This is a **Claude Code-specific** type. For cross-tool event handling,
+/// use `AIEvent` (Chau7Core) instead. See file header comment for details.
 struct ClaudeCodeEvent: Identifiable, Equatable {
     let id = UUID()
     let type: ClaudeEventType

@@ -220,7 +220,11 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     @Published var codexTerminalLines: [String] = []
     @Published var claudeTerminalLines: [String] = []
     @Published var sessionStatuses: [SessionStatus] = []
+    /// Tool-agnostic event stream from ALL monitors (file tailer, terminal, API proxy, hooks, etc.).
+    /// This is the canonical event feed for cross-tool UI — command center timeline, notifications, etc.
     @Published var recentEvents: [AIEvent] = []
+    /// Claude Code hook-specific events. Only use for Claude Code-specific UI (e.g. hook debugging).
+    /// For cross-tool UI, use `recentEvents` instead — see AIEvent.swift header for rationale.
     @Published var claudeCodeEvents: [ClaudeCodeEvent] = []
     @Published var claudeCodeSessions: [ClaudeCodeMonitor.ClaudeSessionInfo] = []
     @Published var apiCallEvents: [APICallEvent] = []
