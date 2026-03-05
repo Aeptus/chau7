@@ -63,10 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             Log.info("API proxy subsystem initialized")
         }
 
-        // RTK: setup wrapper scripts if token optimization is enabled
+        // CTO: setup wrapper scripts if token optimization is enabled
         if FeatureSettings.shared.tokenOptimizationMode != .off {
-            RTKManager.shared.setup()
-            Log.info("RTK wrapper scripts installed")
+            CTOManager.shared.setup()
+            Log.info("CTO wrapper scripts installed")
         }
 
         NSApp.activate(ignoringOtherApps: true)
@@ -171,8 +171,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         Log.info("Saved tab state for restoration")
 
-        // RTK: clean up all flag files and wrappers (no-op if mode was .off)
-        RTKManager.shared.teardown()
+        // CTO: clean up all flag files and wrappers (no-op if mode was .off)
+        CTOManager.shared.teardown()
 
         // Stop API analytics proxy
         Task { @MainActor in

@@ -163,7 +163,7 @@ final class FeatureSettingsTests: XCTestCase {
         _ = settings.showTabIcons                // default: true
         _ = settings.showTabPath                 // default: true
         _ = settings.showTabGitIndicator         // default: true
-        _ = settings.showTabRTKIndicator         // default: true
+        _ = settings.showTabCTOIndicator         // default: true
         _ = settings.showTabBroadcastIndicator   // default: true
         _ = settings.customTitleOnly             // default: false
         _ = settings.isLastCommandBadgeEnabled   // default: true
@@ -195,7 +195,7 @@ final class FeatureSettingsTests: XCTestCase {
         _ = settings.isTmuxIntegrationEnabled    // default: false
         _ = settings.isTmuxAutoAttachEnabled     // default: false
         _ = settings.errorExplainEnabled         // default: false
-        _ = settings.isRTKEnabled                // default: false
+        _ = settings.isCTOEnabled                // default: false
     }
 
     // MARK: - Numeric Defaults
@@ -362,13 +362,13 @@ final class FeatureSettingsTests: XCTestCase {
         XCTAssertTrue(patterns.contains("drop database"), "Should include drop database")
     }
 
-    // MARK: - RTK Tab Overrides
+    // MARK: - CTO Tab Overrides
 
-    func testRTKDefaultTabOverridesEmpty() {
+    func testCTODefaultTabOverridesEmpty() {
         let settings = FeatureSettings.shared
-        // rtkTabOverrides may or may not be empty depending on prior test runs,
+        // ctoTabOverrides may or may not be empty depending on prior test runs,
         // but the type should be valid
-        XCTAssertNotNil(settings.rtkTabOverrides)
+        XCTAssertNotNil(settings.ctoTabOverrides)
     }
 }
 

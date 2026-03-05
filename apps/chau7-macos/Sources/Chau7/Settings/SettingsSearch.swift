@@ -106,7 +106,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .keyboardMouse:     return L("settings.keyboardMouse", "Keyboard & Mouse")
         case .snippetsTools:     return L("settings.snippetsTools", "Snippets & Tools")
         case .aiDetection:       return L("settings.aiDetection", "AI Detection")
-        case .tokenOptimization: return L("settings.tokenOptimization", "Token Optimization (RTK)")
+        case .tokenOptimization: return L("settings.tokenOptimization", "Token Optimization (CTO)")
         case .remoteControl:     return L("settings.remoteControl", "Remote Control")
         case .apiProxy:          return L("settings.apiProxy", "API Proxy")
         case .notifications:     return L("settings.notifications", "Notifications")
@@ -154,7 +154,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .keyboardMouse:     return L("settings.keyboardMouse.description", "Keyboard shortcuts and mouse behavior")
         case .snippetsTools:     return L("settings.snippetsTools.description", "Snippets, clipboard, bookmarks, and search")
         case .aiDetection:       return L("settings.aiDetection.description", "AI CLI detection, theming, and LLM provider")
-        case .tokenOptimization: return L("settings.tokenOptimization.description", "RTK wrapper scripts, per-tab control, and prefix")
+        case .tokenOptimization: return L("settings.tokenOptimization.description", "CTO wrapper scripts, per-tab control, and prefix")
         case .remoteControl:     return L("settings.remoteControl.description", "Remote access, pairing, and SSH profiles")
         case .apiProxy:          return L("settings.apiProxy.description", "API call tracking and analytics proxy")
         case .notifications:     return L("settings.notifications.description", "Alert preferences and event filters")
@@ -670,36 +670,36 @@ extension FeatureSettings {
             description: L("settings.search.llmProvider.description", "Configure LLM provider and API keys")
         ),
 
-        // Token Optimization (RTK)
+        // Token Optimization (CTO)
         SearchableSetting(
-            id: "rtkMode",
+            id: "ctoMode",
             section: .tokenOptimization,
-            title: L("settings.search.rtkMode.title", "Optimization Mode"),
+            title: L("settings.search.ctoMode.title", "Optimization Mode"),
             keywords: localizedKeywords(
-                "settings.search.rtkMode.keywords",
-                "rtk,token,optimization,mode,wrapper,all,ai,manual"
+                "settings.search.ctoMode.keywords",
+                "cto,token,optimization,mode,wrapper,all,ai,manual"
             ),
-            description: L("settings.search.rtkMode.description", "Controls when token-optimized output is active")
+            description: L("settings.search.ctoMode.description", "Controls when token-optimized output is active")
         ),
         SearchableSetting(
-            id: "rtkPrefix",
+            id: "ctoPrefix",
             section: .tokenOptimization,
-            title: L("settings.search.rtkPrefix.title", "RTK Prefix"),
+            title: L("settings.search.ctoPrefix.title", "CTO Prefix"),
             keywords: localizedKeywords(
-                "settings.search.rtkPrefix.keywords",
-                "rtk,prefix,prepend,tab,override,integration"
+                "settings.search.ctoPrefix.keywords",
+                "cto,prefix,prepend,tab,override,integration"
             ),
-            description: L("settings.search.rtkPrefix.description", "Prefix text prepended to terminal commands")
+            description: L("settings.search.ctoPrefix.description", "Prefix text prepended to terminal commands")
         ),
         SearchableSetting(
-            id: "rtkPerTab",
+            id: "ctoPerTab",
             section: .tokenOptimization,
-            title: L("settings.search.rtkPerTab.title", "Per-Tab RTK"),
+            title: L("settings.search.ctoPerTab.title", "Per-Tab CTO"),
             keywords: localizedKeywords(
-                "settings.search.rtkPerTab.keywords",
+                "settings.search.ctoPerTab.keywords",
                 "tab,override,force,enable,disable,bolt"
             ),
-            description: L("settings.search.rtkPerTab.description", "Override RTK settings per tab")
+            description: L("settings.search.ctoPerTab.description", "Override CTO settings per tab")
         ),
 
         // Remote Control

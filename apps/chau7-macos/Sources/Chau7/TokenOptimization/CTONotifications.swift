@@ -1,6 +1,7 @@
 import Foundation
+import Chau7Core
 
 extension Notification.Name {
     static let tokenOptimizationModeChanged = Notification.Name("com.chau7.tokenOptimizationModeChanged")
-    static let rtkFlagRecalculated = Notification.Name("com.chau7.rtkFlagRecalculated")
+    static let ctoFlagRecalculated = Notification.Name("com.chau7.ctoFlagRecalculated")
 }

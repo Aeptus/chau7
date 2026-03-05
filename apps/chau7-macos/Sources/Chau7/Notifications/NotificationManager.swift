@@ -13,6 +13,10 @@ final class NotificationManager {
     private var hasCachedAuthorization = false
     private var loggedAuthorizationStatuses: Set<UNAuthorizationStatus> = []
     private var didLogNativeError = false
+    private var nativeNotificationFailureCount = 0
+    private var nativeNotificationErrorCooldownUntil: Date?
+    private let nativeNotificationBaseCooldown: TimeInterval = 15
+    private let nativeNotificationMaxCooldown: TimeInterval = 300
 
     var tabTitleProvider: ((String) -> String?)?
 
@@ -45,10 +49,13 @@ final class NotificationManager {
         hasCachedAuthorization = true
         switch status {
         case .authorized, .provisional, .ephemeral:
+            resetNativeNotificationState()
             useNativeNotifications = true
         case .denied:
+            resetNativeNotificationState()
             useNativeNotifications = false
         case .notDetermined:
+            resetNativeNotificationState()
             break
         @unknown default:
             break
@@ -151,7 +158,7 @@ final class NotificationManager {
     // MARK: - Notification Dispatch
 
     private func showDefaultNotification(for event: AIEvent) {
-        if useNativeNotifications {
+        if shouldUseNativeNotifications() {
             tryNativeNotification(for: event)
         } else {
             let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tool))
@@ -160,7 +167,7 @@ final class NotificationManager {
     }
 
     private func tryNativeNotification(for event: AIEvent) {
-        guard useNativeNotifications else {
+        guard shouldUseNativeNotifications() else {
             let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tool))
             sendAppleScriptNotification(title: title, body: event.notificationBody)
             return
@@ -185,6 +192,7 @@ final class NotificationManager {
     private func handleAuthorizationResult(_ status: UNAuthorizationStatus, for event: AIEvent) {
         switch status {
         case .authorized, .provisional, .ephemeral:
+            resetNativeNotificationState()
             scheduleNativeNotification(for: event)
         case .denied:
             logAuthorizationOnce(status: .denied, message: "Native notifications denied, using AppleScript fallback")
@@ -229,15 +237,46 @@ final class NotificationManager {
     }
 
     private func handleNativeNotificationError(_ error: Error, for event: AIEvent) {
+        nativeNotificationFailureCount += 1
+        nativeNotificationErrorCooldownUntil = Date().addingTimeInterval(nextNativeCooldown())
+        let cooldown = Int(nativeNotificationErrorCooldownUntil!.timeIntervalSinceNow.rounded(.up))
         if !didLogNativeError {
             Log.error("Native notification error: \(error.localizedDescription)")
             didLogNativeError = true
         } else {
-            Log.warn("Native notification error (suppressed): \(error.localizedDescription)")
+            Log.warn("Native notification error: \(error.localizedDescription) (failure #\(nativeNotificationFailureCount), cooldown=\(cooldown)s)")
         }
-        useNativeNotifications = false
+        let source = tabTitleProvider?(event.tool) ?? event.tool
+        Log.warn("Temporarily disabling native notifications for \(source) events for \(cooldown)s to allow retry.")
         let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tool))
         sendAppleScriptNotification(title: title, body: event.notificationBody)
+    }
+
+    private func shouldUseNativeNotifications() -> Bool {
+        if !useNativeNotifications {
+            return false
+        }
+
+        guard let until = nativeNotificationErrorCooldownUntil else { return true }
+
+        if until <= Date() {
+            nativeNotificationErrorCooldownUntil = nil
+            didLogNativeError = false
+            return true
+        }
+        return false
+    }
+
+    private func nextNativeCooldown() -> TimeInterval {
+        let failureExponent = min(max(0, nativeNotificationFailureCount), 5)
+        let backoff = nativeNotificationBaseCooldown * pow(2.0, Double(failureExponent))
+        return min(backoff, nativeNotificationMaxCooldown)
+    }
+
+    private func resetNativeNotificationState() {
+        nativeNotificationFailureCount = 0
+        nativeNotificationErrorCooldownUntil = nil
+        didLogNativeError = false
     }
 
     private func logAuthorizationOnce(status: UNAuthorizationStatus, message: String) {

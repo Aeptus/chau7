@@ -16,6 +16,7 @@ enum LogCategory: String, CaseIterable {
     case performance = "Perf"
     case memory = "Memory"
     case recovery = "Recovery"
+    case cto = "CTO"
 
     var emoji: String {
         switch self {
@@ -30,6 +31,7 @@ enum LogCategory: String, CaseIterable {
         case .performance: return "⚡"
         case .memory: return "🧠"
         case .recovery: return "🔧"
+        case .cto: return "🧩"
         }
     }
 
@@ -300,29 +302,20 @@ enum LogEnhanced {
             if Log.isVerbose {
                 print(json)
             }
+            Log.writeRaw(json)
         } else {
             let text = entry.formattedText
             Log.sink?(text)
             if Log.isVerbose {
                 print(text)
             }
-        }
 
-        // Also write to file via existing Log infrastructure
-        writeToFile(entry)
+            // Also write to file as plain text
+            Log.writeRaw(text)
+        }
 
         // Also log to OSLog for Console.app integration
         logToOSLog(entry, category: category)
-    }
-
-    private static func writeToFile(_ entry: LogEntry) {
-        // Use existing Log infrastructure for file writing
-        switch entry.level {
-        case "ERROR": Log.error("[\(entry.category)] \(entry.message)")
-        case "WARN": Log.warn("[\(entry.category)] \(entry.message)")
-        case "TRACE": Log.trace("[\(entry.category)] \(entry.message)")
-        default: Log.info("[\(entry.category)] \(entry.message)")
-        }
     }
 
     private static func logToOSLog(_ entry: LogEntry, category: LogCategory) {

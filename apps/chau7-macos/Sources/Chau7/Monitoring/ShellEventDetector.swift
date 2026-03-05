@@ -56,6 +56,9 @@ final class ShellEventDetector {
 
     /// Called when a command starts executing
     func commandStarted(command: String?, in directory: String) {
+        if lastDirectory == nil, !directory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lastDirectory = directory
+        }
         commandStartTime = Date()
         emittedTiers.removeAll()
         startLongRunningTimer()
@@ -138,15 +141,16 @@ final class ShellEventDetector {
 
     /// Called when directory changes (from OSC 7)
     func directoryChanged(to newDirectory: String) {
+        let normalizedDirectory = URL(fileURLWithPath: newDirectory).standardized.path
         let oldDirectory = lastDirectory
-        lastDirectory = newDirectory
+        lastDirectory = normalizedDirectory
 
-        guard let old = oldDirectory, old != newDirectory else { return }
+        guard let old = oldDirectory, old != normalizedDirectory else { return }
         guard config.notifyOnDirectoryChange else { return }
 
         emitEvent(
             type: "directory_changed",
-            message: "Changed to \(newDirectory)"
+            message: "Changed to \(normalizedDirectory)"
         )
     }
 

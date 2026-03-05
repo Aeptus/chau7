@@ -85,9 +85,9 @@ struct TabsSettingsView: View {
             .disabled(settings.customTitleOnly)
 
             SettingsToggle(
-                label: L("settings.tabs.showRTKIndicator", "Token Optimization Indicator"),
-                help: L("settings.tabs.showRTKIndicator.help", "Show the bolt icon for RTK token optimization status"),
-                isOn: $settings.showTabRTKIndicator
+                label: L("settings.tabs.showCTOIndicator", "Token Optimization Indicator"),
+                help: L("settings.tabs.showCTOIndicator.help", "Show the bolt icon for CTO token optimization status"),
+                isOn: $settings.showTabCTOIndicator
             )
             .disabled(settings.customTitleOnly)
 

@@ -105,6 +105,12 @@ struct OverlayTab: Identifiable, Equatable {
         splitController.primarySession
     }
 
+    /// Session shown in tab chrome, based on current split focus.
+    /// Keeps tab metadata and icons aligned with what the user currently sees.
+    var displaySession: TerminalSessionModel? {
+        splitController.focusedSession ?? splitController.primarySession
+    }
+
     init(appModel: AppModel) {
         self.id = UUID()
         self.splitController = SplitPaneController(appModel: appModel)
@@ -115,7 +121,7 @@ struct OverlayTab: Identifiable, Equatable {
         if let customTitle, !customTitle.isEmpty {
             return customTitle
         }
-        if let activeName = session?.activeAppName, !activeName.isEmpty {
+        if let activeName = displaySession?.aiDisplayAppName, !activeName.isEmpty {
             return activeName
         }
         if let devName = session?.devServer?.name,
@@ -149,7 +155,7 @@ struct OverlayTab: Identifiable, Equatable {
     /// Whether CTO (token optimization) is currently active on this tab.
     var isTokenOptActive: Bool {
         let mode = FeatureSettings.shared.tokenOptimizationMode
-        let isAI = session?.activeAppName != nil
+        let isAI = displaySession?.aiDisplayAppName != nil
         return shouldBeActive(mode: mode, override: tokenOptOverride, isAIActive: isAI)
     }
 
@@ -498,7 +504,7 @@ final class OverlayTabsModel: ObservableObject {
                 let dir = session.currentDirectory
                 let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
                 let detectedApp = Self.detectAIAppName(fromOutput: scrollback)
-                let resumeAppName = session.activeAppName ?? detectedApp
+                let resumeAppName = session.aiDisplayAppName ?? detectedApp
                 let resumeMetadata = Self.resolveAIResumeMetadata(
                     appName: resumeAppName,
                     directory: dir,
@@ -569,7 +575,7 @@ final class OverlayTabsModel: ObservableObject {
             let dir = session.currentDirectory
             let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
             let detectedApp = Self.detectAIAppName(fromOutput: scrollback)
-            let resumeAppName = session.activeAppName ?? detectedApp
+            let resumeAppName = session.aiDisplayAppName ?? detectedApp
             let resumeMetadata = Self.resolveAIResumeMetadata(
                 appName: resumeAppName,
                 directory: dir,
@@ -2526,7 +2532,7 @@ final class OverlayTabsModel: ObservableObject {
         let lowerTool = tool.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
 
         if let tab = tabs.first(where: {
-            $0.session?.activeAppName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == lowerTool
+            $0.displaySession?.aiDisplayAppName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == lowerTool
         }) { return tab }
 
         if let tab = tabs.first(where: {
@@ -2535,7 +2541,7 @@ final class OverlayTabsModel: ObservableObject {
 
         return tabs.first { tab in
             let display = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let active = tab.session?.activeAppName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let active = tab.displaySession?.aiDisplayAppName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             return display.contains(lowerTool) || (active?.contains(lowerTool) == true)
         }
     }
@@ -3266,8 +3272,8 @@ final class OverlayTabsModel: ObservableObject {
     func logVisualState(reason: String) {
         guard isDiagnosticsLoggingEnabled else { return }
         let selectedIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) ?? -1
-        let selectedSession = selectedTab?.session
-        let activeApp = selectedSession?.activeAppName ?? "nil"
+        let selectedSession = selectedTab?.displaySession
+        let activeApp = selectedSession?.aiDisplayAppName ?? "nil"
         let displayPath = selectedSession?.displayPath() ?? ""
         let selectedSuspended = suspendedTabIDs.contains(selectedTabID)
         let overlayFlags = "search=\(isSearchVisible) rename=\(isRenameVisible) clipboard=\(isClipboardHistoryVisible) bookmarks=\(isBookmarkListVisible) snippets=\(isSnippetManagerVisible) candidate=\(currentCandidate != nil) task=\(currentTask != nil) assessment=\(isTaskAssessmentVisible)"

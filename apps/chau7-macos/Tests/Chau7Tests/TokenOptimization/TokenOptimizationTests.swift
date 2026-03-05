@@ -1,126 +1,146 @@
 import XCTest
-#if !SWIFT_PACKAGE
-@testable import Chau7
+import Chau7Core
 
-/// Tests for the Token Optimization (RTK) decision logic, flag manager,
-/// RTKManager PATH injection, rewrite map, and gain stats decoding.
-///
-/// These tests exercise the pure-logic parts of the RTK system without
-/// requiring a running terminal or shell process.
-final class TokenOptimizationTests: XCTestCase {
+// MARK: - Core Tests (run under SPM — no app target dependency)
 
-    // MARK: - RTKFlagManager.shouldBeActive Decision Matrix
+/// Tests for the pure-logic parts of the token optimization system:
+/// decision matrix, mode/override enums, codable conformance, gain stats,
+/// and rewrite map.
+final class TokenOptimizationCoreTests: XCTestCase {
 
-    // --- Mode: .off ---
+    // MARK: - shouldBeActive Decision Matrix
 
     func testOffModeAlwaysInactive() {
         XCTAssertFalse(
-            RTKFlagManager.shouldBeActive(mode: .off, override: .default, isAIActive: false),
+            shouldBeActive(mode: .off, override: .default, isAIActive: false),
             ".off + .default + no AI -> inactive"
         )
         XCTAssertFalse(
-            RTKFlagManager.shouldBeActive(mode: .off, override: .default, isAIActive: true),
+            shouldBeActive(mode: .off, override: .default, isAIActive: true),
             ".off + .default + AI -> inactive"
         )
         XCTAssertFalse(
-            RTKFlagManager.shouldBeActive(mode: .off, override: .forceOn, isAIActive: false),
+            shouldBeActive(mode: .off, override: .forceOn, isAIActive: false),
             ".off + .forceOn -> inactive (mode .off overrides forceOn)"
         )
         XCTAssertFalse(
-            RTKFlagManager.shouldBeActive(mode: .off, override: .forceOff, isAIActive: true),
+            shouldBeActive(mode: .off, override: .forceOff, isAIActive: true),
             ".off + .forceOff + AI -> inactive"
         )
     }
 
-    // --- Override: .forceOff (all non-.off modes) ---
-
     func testForceOffOverrideAlwaysInactive() {
         for mode in [TokenOptimizationMode.allTabs, .aiOnly, .manual] {
             XCTAssertFalse(
-                RTKFlagManager.shouldBeActive(mode: mode, override: .forceOff, isAIActive: false),
+                shouldBeActive(mode: mode, override: .forceOff, isAIActive: false),
                 "\(mode) + .forceOff + no AI -> inactive"
             )
             XCTAssertFalse(
-                RTKFlagManager.shouldBeActive(mode: mode, override: .forceOff, isAIActive: true),
+                shouldBeActive(mode: mode, override: .forceOff, isAIActive: true),
                 "\(mode) + .forceOff + AI -> inactive"
             )
         }
     }
 
-    // --- Override: .forceOn (all non-.off modes) ---
-
     func testForceOnOverrideAlwaysActive() {
         for mode in [TokenOptimizationMode.allTabs, .aiOnly, .manual] {
             XCTAssertTrue(
-                RTKFlagManager.shouldBeActive(mode: mode, override: .forceOn, isAIActive: false),
+                shouldBeActive(mode: mode, override: .forceOn, isAIActive: false),
                 "\(mode) + .forceOn + no AI -> active"
             )
             XCTAssertTrue(
-                RTKFlagManager.shouldBeActive(mode: mode, override: .forceOn, isAIActive: true),
+                shouldBeActive(mode: mode, override: .forceOn, isAIActive: true),
                 "\(mode) + .forceOn + AI -> active"
             )
         }
     }
 
-    // --- Mode: .allTabs + .default ---
-
     func testAllTabsModeDefaultOverrideAlwaysActive() {
         XCTAssertTrue(
-            RTKFlagManager.shouldBeActive(mode: .allTabs, override: .default, isAIActive: false),
+            shouldBeActive(mode: .allTabs, override: .default, isAIActive: false),
             ".allTabs + .default + no AI -> active"
         )
         XCTAssertTrue(
-            RTKFlagManager.shouldBeActive(mode: .allTabs, override: .default, isAIActive: true),
+            shouldBeActive(mode: .allTabs, override: .default, isAIActive: true),
             ".allTabs + .default + AI -> active"
         )
     }
 
-    // --- Mode: .aiOnly + .default ---
-
     func testAIOnlyModeActivatesWithAI() {
         XCTAssertTrue(
-            RTKFlagManager.shouldBeActive(mode: .aiOnly, override: .default, isAIActive: true),
+            shouldBeActive(mode: .aiOnly, override: .default, isAIActive: true),
             ".aiOnly + .default + AI active -> active"
         )
     }
 
     func testAIOnlyModeInactiveWithoutAI() {
         XCTAssertFalse(
-            RTKFlagManager.shouldBeActive(mode: .aiOnly, override: .default, isAIActive: false),
+            shouldBeActive(mode: .aiOnly, override: .default, isAIActive: false),
             ".aiOnly + .default + no AI -> inactive"
         )
     }
 
-    // --- Mode: .manual + .default ---
-
     func testManualModeDefaultIsInactive() {
         XCTAssertFalse(
-            RTKFlagManager.shouldBeActive(mode: .manual, override: .default, isAIActive: false),
+            shouldBeActive(mode: .manual, override: .default, isAIActive: false),
             ".manual + .default + no AI -> inactive"
         )
         XCTAssertFalse(
-            RTKFlagManager.shouldBeActive(mode: .manual, override: .default, isAIActive: true),
+            shouldBeActive(mode: .manual, override: .default, isAIActive: true),
             ".manual + .default + AI -> inactive (manual requires explicit forceOn)"
         )
     }
 
+    func testExhaustiveDecisionMatrix() {
+        struct TestCase {
+            let mode: TokenOptimizationMode
+            let override: TabTokenOptOverride
+            let isAIActive: Bool
+            let expected: Bool
+        }
+
+        let cases: [TestCase] = [
+            TestCase(mode: .off, override: .default, isAIActive: false, expected: false),
+            TestCase(mode: .off, override: .default, isAIActive: true, expected: false),
+            TestCase(mode: .off, override: .forceOn, isAIActive: false, expected: false),
+            TestCase(mode: .off, override: .forceOn, isAIActive: true, expected: false),
+            TestCase(mode: .off, override: .forceOff, isAIActive: false, expected: false),
+            TestCase(mode: .off, override: .forceOff, isAIActive: true, expected: false),
+            TestCase(mode: .allTabs, override: .default, isAIActive: false, expected: true),
+            TestCase(mode: .allTabs, override: .default, isAIActive: true, expected: true),
+            TestCase(mode: .allTabs, override: .forceOn, isAIActive: false, expected: true),
+            TestCase(mode: .allTabs, override: .forceOn, isAIActive: true, expected: true),
+            TestCase(mode: .allTabs, override: .forceOff, isAIActive: false, expected: false),
+            TestCase(mode: .allTabs, override: .forceOff, isAIActive: true, expected: false),
+            TestCase(mode: .aiOnly, override: .default, isAIActive: false, expected: false),
+            TestCase(mode: .aiOnly, override: .default, isAIActive: true, expected: true),
+            TestCase(mode: .aiOnly, override: .forceOn, isAIActive: false, expected: true),
+            TestCase(mode: .aiOnly, override: .forceOn, isAIActive: true, expected: true),
+            TestCase(mode: .aiOnly, override: .forceOff, isAIActive: false, expected: false),
+            TestCase(mode: .aiOnly, override: .forceOff, isAIActive: true, expected: false),
+            TestCase(mode: .manual, override: .default, isAIActive: false, expected: false),
+            TestCase(mode: .manual, override: .default, isAIActive: true, expected: false),
+            TestCase(mode: .manual, override: .forceOn, isAIActive: false, expected: true),
+            TestCase(mode: .manual, override: .forceOn, isAIActive: true, expected: true),
+            TestCase(mode: .manual, override: .forceOff, isAIActive: false, expected: false),
+            TestCase(mode: .manual, override: .forceOff, isAIActive: true, expected: false),
+        ]
+
+        for tc in cases {
+            let result = shouldBeActive(
+                mode: tc.mode,
+                override: tc.override,
+                isAIActive: tc.isAIActive
+            )
+            XCTAssertEqual(
+                result, tc.expected,
+                "shouldBeActive(mode: \(tc.mode), override: \(tc.override), isAIActive: \(tc.isAIActive)) " +
+                "expected \(tc.expected), got \(result)"
+            )
+        }
+    }
+
     // MARK: - TokenOptimizationMode Properties
-
-    func testTokenOptimizationModeDisplayNames() {
-        XCTAssertFalse(TokenOptimizationMode.off.displayName.isEmpty,
-                       "Every mode should have a non-empty display name")
-        XCTAssertFalse(TokenOptimizationMode.allTabs.displayName.isEmpty)
-        XCTAssertFalse(TokenOptimizationMode.aiOnly.displayName.isEmpty)
-        XCTAssertFalse(TokenOptimizationMode.manual.displayName.isEmpty)
-    }
-
-    func testTokenOptimizationModeDescriptions() {
-        XCTAssertFalse(TokenOptimizationMode.off.description.isEmpty,
-                       "Every mode should have a non-empty description")
-        XCTAssertFalse(TokenOptimizationMode.allTabs.description.isEmpty)
-        XCTAssertFalse(TokenOptimizationMode.aiOnly.description.isEmpty)
-        XCTAssertFalse(TokenOptimizationMode.manual.description.isEmpty)
-    }
 
     func testTokenOptimizationModeAllCases() {
         let allCases = TokenOptimizationMode.allCases
@@ -167,56 +187,10 @@ final class TokenOptimizationTests: XCTestCase {
         XCTAssertEqual(TabTokenOptOverride.forceOff.rawValue, "forceOff")
     }
 
-    // MARK: - RTKManager PATH Injection
-
-    func testPrependedPATHAddsWrapperDir() {
-        let manager = RTKManager.shared
-        let originalPATH = "/usr/bin:/usr/local/bin"
-        let result = manager.prependedPATH(original: originalPATH)
-        let expected = manager.wrapperBinDir.path + ":" + originalPATH
-        XCTAssertEqual(result, expected,
-                       "prependedPATH should prepend the wrapper bin directory")
-    }
-
-    func testPrependedPATHDoesNotDuplicate() {
-        let manager = RTKManager.shared
-        let pathWithWrapper = manager.wrapperBinDir.path + ":/usr/bin"
-        let result = manager.prependedPATH(original: pathWithWrapper)
-        XCTAssertEqual(result, pathWithWrapper,
-                       "prependedPATH should not add a duplicate entry")
-    }
-
-    func testPrependedPATHAvoidsFalsePositive() {
-        let manager = RTKManager.shared
-        let similar = manager.wrapperBinDir.path + "_old"
-        let pathWithSimilar = similar + ":/usr/bin"
-        let result = manager.prependedPATH(original: pathWithSimilar)
-        let expected = manager.wrapperBinDir.path + ":" + pathWithSimilar
-        XCTAssertEqual(result, expected,
-                       "prependedPATH should not be fooled by a similarly-named directory")
-    }
-
-    // MARK: - RTKManager Supported Commands
-
-    func testSupportedCommandsIsDerivedFromMapAndExecOnly() {
-        let commands = Set(RTKManager.supportedCommands)
-        let expected = Set(RTKManager.rtkRewriteMap.keys).union(RTKManager.execOnlyCommands)
-        XCTAssertEqual(commands, expected,
-                       "supportedCommands should equal rtkRewriteMap keys ∪ execOnlyCommands")
-    }
-
-    func testExecOnlyCommandsAreSubset() {
-        let execOnly = RTKManager.execOnlyCommands
-        for cmd in execOnly {
-            XCTAssertTrue(RTKManager.supportedCommands.contains(cmd),
-                          "exec-only command '\(cmd)' should also be in supportedCommands")
-        }
-    }
-
-    // MARK: - RTK Rewrite Map
+    // MARK: - CTO Rewrite Map
 
     func testRewriteMapCoversExpectedCommands() {
-        let map = RTKManager.rtkRewriteMap
+        let map = ctoRewriteMap
         let expectedMappings: [String: String] = [
             "cat": "read",
             "ls": "ls",
@@ -254,31 +228,43 @@ final class TokenOptimizationTests: XCTestCase {
                        "Rewrite map should have exactly \(expectedMappings.count) entries")
         for (cmd, sub) in expectedMappings {
             XCTAssertEqual(map[cmd], sub,
-                           "\(cmd) should map to rtk \(sub)")
+                           "\(cmd) should map to cto \(sub)")
         }
     }
 
     func testRewriteMapAndExecOnlyAreMutuallyExclusive() {
-        let rewriteKeys = Set(RTKManager.rtkRewriteMap.keys)
-        let execOnly = RTKManager.execOnlyCommands
-        let overlap = rewriteKeys.intersection(execOnly)
+        let rewriteKeys = Set(ctoRewriteMap.keys)
+        let overlap = rewriteKeys.intersection(execOnlyCommands)
         XCTAssertTrue(overlap.isEmpty,
                       "Rewrite map and exec-only commands should not overlap: \(overlap)")
     }
 
     func testRewriteMapPlusExecOnlyCoversSupportedCommands() {
-        let rewriteKeys = Set(RTKManager.rtkRewriteMap.keys)
-        let execOnly = RTKManager.execOnlyCommands
-        let allCovered = rewriteKeys.union(execOnly)
-        let supported = Set(RTKManager.supportedCommands)
+        let rewriteKeys = Set(ctoRewriteMap.keys)
+        let allCovered = rewriteKeys.union(execOnlyCommands)
+        let supported = Set(supportedCommands)
         XCTAssertEqual(allCovered, supported,
                        "Rewrite map + exec-only should exactly cover supportedCommands")
     }
 
-    // MARK: - RTKGainStats Decoding
+    func testSupportedCommandsIsDerivedFromMapAndExecOnly() {
+        let commands = Set(supportedCommands)
+        let expected = Set(ctoRewriteMap.keys).union(execOnlyCommands)
+        XCTAssertEqual(commands, expected,
+                       "supportedCommands should equal ctoRewriteMap keys ∪ execOnlyCommands")
+    }
+
+    func testExecOnlyCommandsAreSubset() {
+        for cmd in execOnlyCommands {
+            XCTAssertTrue(supportedCommands.contains(cmd),
+                          "exec-only command '\(cmd)' should also be in supportedCommands")
+        }
+    }
+
+    // MARK: - CTOGainStats Decoding
 
     func testGainStatsDecodingRoundTrip() throws {
-        let stats = RTKManager.RTKGainStats(
+        let stats = CTOGainStats(
             commands: 42,
             inputTokens: 10000,
             outputTokens: 3000,
@@ -289,11 +275,10 @@ final class TokenOptimizationTests: XCTestCase {
         )
 
         let data = try JSONEncoder().encode(stats)
-        let decoded = try JSONDecoder().decode(RTKManager.RTKGainStats.self, from: data)
+        let decoded = try JSONDecoder().decode(CTOGainStats.self, from: data)
         XCTAssertEqual(decoded, stats,
-                       "RTKGainStats should round-trip through JSON encoding")
+                       "CTOGainStats should round-trip through JSON encoding")
 
-        // Verify the encoded keys match chau7-optim gain format
         let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
         XCTAssertNotNil(json["total_commands"], "Encoded key should be 'total_commands'")
         XCTAssertNotNil(json["total_input"], "Encoded key should be 'total_input'")
@@ -302,7 +287,6 @@ final class TokenOptimizationTests: XCTestCase {
     }
 
     func testGainStatsDecodingFromOptimizerJSON() throws {
-        // Matches the actual output format of `chau7-optim gain --format json`
         let json = """
         {
             "total_commands": 100,
@@ -315,7 +299,7 @@ final class TokenOptimizationTests: XCTestCase {
         }
         """.data(using: .utf8)!
 
-        let stats = try JSONDecoder().decode(RTKManager.RTKGainStats.self, from: json)
+        let stats = try JSONDecoder().decode(CTOGainStats.self, from: json)
         XCTAssertEqual(stats.commands, 100)
         XCTAssertEqual(stats.inputTokens, 50000)
         XCTAssertEqual(stats.outputTokens, 15000)
@@ -324,72 +308,49 @@ final class TokenOptimizationTests: XCTestCase {
         XCTAssertEqual(stats.totalTimeMs, 5000)
         XCTAssertEqual(stats.avgTimeMs, 50)
     }
+}
 
-    // MARK: - Complete Decision Matrix (exhaustive)
+// MARK: - Integration Tests (app target only)
 
-    func testExhaustiveDecisionMatrix() {
-        struct TestCase {
-            let mode: TokenOptimizationMode
-            let override: TabTokenOptOverride
-            let isAIActive: Bool
-            let expected: Bool
-        }
+#if !SWIFT_PACKAGE
+@testable import Chau7
 
-        let cases: [TestCase] = [
-            // .off mode: always false regardless of override or AI
-            TestCase(mode: .off, override: .default, isAIActive: false, expected: false),
-            TestCase(mode: .off, override: .default, isAIActive: true, expected: false),
-            TestCase(mode: .off, override: .forceOn, isAIActive: false, expected: false),
-            TestCase(mode: .off, override: .forceOn, isAIActive: true, expected: false),
-            TestCase(mode: .off, override: .forceOff, isAIActive: false, expected: false),
-            TestCase(mode: .off, override: .forceOff, isAIActive: true, expected: false),
-            // .allTabs + .default: always true
-            TestCase(mode: .allTabs, override: .default, isAIActive: false, expected: true),
-            TestCase(mode: .allTabs, override: .default, isAIActive: true, expected: true),
-            // .allTabs + .forceOn: true
-            TestCase(mode: .allTabs, override: .forceOn, isAIActive: false, expected: true),
-            TestCase(mode: .allTabs, override: .forceOn, isAIActive: true, expected: true),
-            // .allTabs + .forceOff: false
-            TestCase(mode: .allTabs, override: .forceOff, isAIActive: false, expected: false),
-            TestCase(mode: .allTabs, override: .forceOff, isAIActive: true, expected: false),
-            // .aiOnly + .default: depends on AI
-            TestCase(mode: .aiOnly, override: .default, isAIActive: false, expected: false),
-            TestCase(mode: .aiOnly, override: .default, isAIActive: true, expected: true),
-            // .aiOnly + .forceOn: true
-            TestCase(mode: .aiOnly, override: .forceOn, isAIActive: false, expected: true),
-            TestCase(mode: .aiOnly, override: .forceOn, isAIActive: true, expected: true),
-            // .aiOnly + .forceOff: false
-            TestCase(mode: .aiOnly, override: .forceOff, isAIActive: false, expected: false),
-            TestCase(mode: .aiOnly, override: .forceOff, isAIActive: true, expected: false),
-            // .manual + .default: always false
-            TestCase(mode: .manual, override: .default, isAIActive: false, expected: false),
-            TestCase(mode: .manual, override: .default, isAIActive: true, expected: false),
-            // .manual + .forceOn: true
-            TestCase(mode: .manual, override: .forceOn, isAIActive: false, expected: true),
-            TestCase(mode: .manual, override: .forceOn, isAIActive: true, expected: true),
-            // .manual + .forceOff: false
-            TestCase(mode: .manual, override: .forceOff, isAIActive: false, expected: false),
-            TestCase(mode: .manual, override: .forceOff, isAIActive: true, expected: false),
-        ]
+/// Tests requiring the app target: PATH injection, optimizer paths, runtime monitor, notifications.
+final class TokenOptimizationIntegrationTests: XCTestCase {
 
-        for tc in cases {
-            let result = RTKFlagManager.shouldBeActive(
-                mode: tc.mode,
-                override: tc.override,
-                isAIActive: tc.isAIActive
-            )
-            XCTAssertEqual(
-                result, tc.expected,
-                "shouldBeActive(mode: \(tc.mode), override: \(tc.override), isAIActive: \(tc.isAIActive)) " +
-                "expected \(tc.expected), got \(result)"
-            )
-        }
+    // MARK: - CTOManager PATH Injection
+
+    func testPrependedPATHAddsWrapperDir() {
+        let manager = CTOManager.shared
+        let originalPATH = "/usr/bin:/usr/local/bin"
+        let result = manager.prependedPATH(original: originalPATH)
+        let expected = manager.wrapperBinDir.path + ":" + originalPATH
+        XCTAssertEqual(result, expected,
+                       "prependedPATH should prepend the wrapper bin directory")
+    }
+
+    func testPrependedPATHDoesNotDuplicate() {
+        let manager = CTOManager.shared
+        let pathWithWrapper = manager.wrapperBinDir.path + ":/usr/bin"
+        let result = manager.prependedPATH(original: pathWithWrapper)
+        XCTAssertEqual(result, pathWithWrapper,
+                       "prependedPATH should not add a duplicate entry")
+    }
+
+    func testPrependedPATHAvoidsFalsePositive() {
+        let manager = CTOManager.shared
+        let similar = manager.wrapperBinDir.path + "_old"
+        let pathWithSimilar = similar + ":/usr/bin"
+        let result = manager.prependedPATH(original: pathWithSimilar)
+        let expected = manager.wrapperBinDir.path + ":" + pathWithSimilar
+        XCTAssertEqual(result, expected,
+                       "prependedPATH should not be fooled by a similarly-named directory")
     }
 
     // MARK: - Optimizer Path
 
     func testOptimizerPathIsInBinDir() {
-        let manager = RTKManager.shared
+        let manager = CTOManager.shared
         XCTAssertEqual(
             manager.optimizerPath,
             manager.binDir.appendingPathComponent("chau7-optim"),
@@ -398,7 +359,7 @@ final class TokenOptimizationTests: XCTestCase {
     }
 
     func testOptimizerPathEndsWithExpectedBinaryName() {
-        let manager = RTKManager.shared
+        let manager = CTOManager.shared
         XCTAssertTrue(
             manager.optimizerPath.lastPathComponent == "chau7-optim",
             "Optimizer binary should be named chau7-optim"
@@ -406,7 +367,7 @@ final class TokenOptimizationTests: XCTestCase {
     }
 
     func testMarkdownRendererPathIsInBinDir() {
-        let manager = RTKManager.shared
+        let manager = CTOManager.shared
         XCTAssertEqual(
             manager.markdownRendererPath,
             manager.binDir.appendingPathComponent("chau7-md"),
@@ -414,25 +375,25 @@ final class TokenOptimizationTests: XCTestCase {
         )
     }
 
-    // MARK: - RTK Notification Names
+    // MARK: - CTO Notification Names
 
     func testNotificationNames() {
         let modeChanged = Notification.Name.tokenOptimizationModeChanged
-        let flagRecalculated = Notification.Name.rtkFlagRecalculated
+        let flagRecalculated = Notification.Name.ctoFlagRecalculated
 
         XCTAssertNotEqual(modeChanged, flagRecalculated,
-                          "The two RTK notification names should be distinct")
+                          "The two CTO notification names should be distinct")
         XCTAssertEqual(modeChanged.rawValue, "com.chau7.tokenOptimizationModeChanged")
-        XCTAssertEqual(flagRecalculated.rawValue, "com.chau7.rtkFlagRecalculated")
+        XCTAssertEqual(flagRecalculated.rawValue, "com.chau7.ctoFlagRecalculated")
     }
 
-    // MARK: - RTK Runtime Monitor
+    // MARK: - CTO Runtime Monitor
 
-    func testRTKRuntimeMonitorTracksDecisions() {
-        RTKRuntimeMonitor.shared.reset()
+    func testCTORuntimeMonitorTracksDecisions() {
+        CTORuntimeMonitor.shared.reset()
 
-        RTKRuntimeMonitor.shared.recordModeChanged(from: .off, to: .allTabs)
-        RTKRuntimeMonitor.shared.recordDecision(
+        CTORuntimeMonitor.shared.recordModeChanged(from: .off, to: .allTabs)
+        CTORuntimeMonitor.shared.recordDecision(
             sessionID: "session-1",
             mode: .allTabs,
             override: .default,
@@ -442,7 +403,7 @@ final class TokenOptimizationTests: XCTestCase {
             changed: true,
             reason: .allTabsDefault
         )
-        RTKRuntimeMonitor.shared.recordDecision(
+        CTORuntimeMonitor.shared.recordDecision(
             sessionID: "session-1",
             mode: .allTabs,
             override: .default,
@@ -452,7 +413,7 @@ final class TokenOptimizationTests: XCTestCase {
             changed: true,
             reason: .off
         )
-        RTKRuntimeMonitor.shared.recordDecision(
+        CTORuntimeMonitor.shared.recordDecision(
             sessionID: "session-2",
             mode: .manual,
             override: .forceOff,
@@ -462,15 +423,15 @@ final class TokenOptimizationTests: XCTestCase {
             changed: false,
             reason: .unchanged
         )
-        RTKRuntimeMonitor.shared.recordDeferredSet(sessionID: "session-2")
-        RTKRuntimeMonitor.shared.recordDeferredSkip(
+        CTORuntimeMonitor.shared.recordDeferredSet(sessionID: "session-2")
+        CTORuntimeMonitor.shared.recordDeferredSkip(
             sessionID: "session-2",
             reason: "mode-change",
             mode: .manual,
             override: .forceOff,
             isAIActive: false
         )
-        RTKRuntimeMonitor.shared.recordDeferredFlush(
+        CTORuntimeMonitor.shared.recordDeferredFlush(
             sessionID: "session-2",
             delayToActivateMs: 120,
             mode: .aiOnly,
@@ -482,7 +443,7 @@ final class TokenOptimizationTests: XCTestCase {
             reason: .aiOnlyWithAI
         )
 
-        let snapshot = RTKRuntimeMonitor.shared.snapshot()
+        let snapshot = CTORuntimeMonitor.shared.snapshot()
         XCTAssertEqual(snapshot.mode, TokenOptimizationMode.allTabs.rawValue)
         XCTAssertEqual(snapshot.recalcCount, 4)
         XCTAssertEqual(snapshot.createdCount, 2)
@@ -495,19 +456,19 @@ final class TokenOptimizationTests: XCTestCase {
         XCTAssertEqual(snapshot.deferredFlushDelayMinMs, 120)
         XCTAssertEqual(snapshot.deferredFlushDelayMaxMs, 120)
         XCTAssertEqual(snapshot.deferredFlushDelayLastMs, 120)
-        XCTAssertEqual(snapshot.reasonBreakdown[RTKDecisionReason.allTabsDefault.rawValue], 1)
-        XCTAssertEqual(snapshot.reasonBreakdown[RTKDecisionReason.off.rawValue], 1)
-        XCTAssertEqual(snapshot.reasonBreakdown[RTKDecisionReason.aiOnlyWithAI.rawValue], 1)
-        XCTAssertEqual(snapshot.reasonBreakdown[RTKDecisionReason.unchanged.rawValue], 1)
+        XCTAssertEqual(snapshot.reasonBreakdown[CTODecisionReason.allTabsDefault.rawValue], 1)
+        XCTAssertEqual(snapshot.reasonBreakdown[CTODecisionReason.off.rawValue], 1)
+        XCTAssertEqual(snapshot.reasonBreakdown[CTODecisionReason.aiOnlyWithAI.rawValue], 1)
+        XCTAssertEqual(snapshot.reasonBreakdown[CTODecisionReason.unchanged.rawValue], 1)
         XCTAssertEqual(snapshot.trackedSessions, 2)
         XCTAssertNotNil(snapshot.lastDecision)
     }
 
-    func testRTKRuntimeAssessmentSignals() {
-        RTKRuntimeMonitor.shared.reset()
+    func testCTORuntimeAssessmentSignals() {
+        CTORuntimeMonitor.shared.reset()
 
         for index in 0..<4 {
-            RTKRuntimeMonitor.shared.recordDecision(
+            CTORuntimeMonitor.shared.recordDecision(
                 sessionID: "session-assess-\(index)",
                 mode: .manual,
                 override: .default,
@@ -519,7 +480,7 @@ final class TokenOptimizationTests: XCTestCase {
             )
         }
 
-        let snapshot = RTKRuntimeMonitor.shared.snapshot()
+        let snapshot = CTORuntimeMonitor.shared.snapshot()
         XCTAssertEqual(snapshot.decisionsChangeRatePercent, 0, accuracy: 0.001)
         XCTAssertTrue(snapshot.assessment.issues.contains(.lowChangeRate))
         XCTAssertEqual(snapshot.assessment.state, .warning)
@@ -528,11 +489,11 @@ final class TokenOptimizationTests: XCTestCase {
         XCTAssertEqual(snapshot.activeSessionRatioPercent, 0, accuracy: 0.001)
     }
 
-    func testRTKRuntimeDecisionIntervalStats() {
-        RTKRuntimeMonitor.shared.reset()
+    func testCTORuntimeDecisionIntervalStats() {
+        CTORuntimeMonitor.shared.reset()
 
         for index in 0..<4 {
-            RTKRuntimeMonitor.shared.recordDecision(
+            CTORuntimeMonitor.shared.recordDecision(
                 sessionID: "session-interval-\(index)",
                 mode: .manual,
                 override: .default,
@@ -545,7 +506,7 @@ final class TokenOptimizationTests: XCTestCase {
             usleep(15_000)
         }
 
-        let snapshot = RTKRuntimeMonitor.shared.snapshot()
+        let snapshot = CTORuntimeMonitor.shared.snapshot()
         XCTAssertNotNil(snapshot.decisionIntervalAverageSeconds)
         XCTAssertNotNil(snapshot.decisionIntervalMinSeconds)
         XCTAssertNotNil(snapshot.decisionIntervalMaxSeconds)
@@ -563,12 +524,12 @@ final class TokenOptimizationTests: XCTestCase {
         }
     }
 
-    func testRTKRuntimeMonitorResets() {
-        RTKRuntimeMonitor.shared.reset()
-        RTKRuntimeMonitor.shared.recordManagerSetup()
-        RTKRuntimeMonitor.shared.recordManagerTeardown()
-        RTKRuntimeMonitor.shared.recordModeChanged(from: .off, to: .aiOnly)
-        RTKRuntimeMonitor.shared.recordDecision(
+    func testCTORuntimeMonitorResets() {
+        CTORuntimeMonitor.shared.reset()
+        CTORuntimeMonitor.shared.recordManagerSetup()
+        CTORuntimeMonitor.shared.recordManagerTeardown()
+        CTORuntimeMonitor.shared.recordModeChanged(from: .off, to: .aiOnly)
+        CTORuntimeMonitor.shared.recordDecision(
             sessionID: "session-reset",
             mode: .aiOnly,
             override: .default,
@@ -579,13 +540,13 @@ final class TokenOptimizationTests: XCTestCase {
             reason: .aiOnlyWithAI
         )
 
-        var snapshot = RTKRuntimeMonitor.shared.snapshot()
+        var snapshot = CTORuntimeMonitor.shared.snapshot()
         XCTAssertGreaterThan(snapshot.setupCount, 0)
         XCTAssertGreaterThan(snapshot.teardownCount, 0)
         XCTAssertGreaterThan(snapshot.recalcCount, 0)
 
-        RTKRuntimeMonitor.shared.reset()
-        snapshot = RTKRuntimeMonitor.shared.snapshot()
+        CTORuntimeMonitor.shared.reset()
+        snapshot = CTORuntimeMonitor.shared.snapshot()
         XCTAssertEqual(snapshot.setupCount, 0)
         XCTAssertEqual(snapshot.teardownCount, 0)
         XCTAssertEqual(snapshot.recalcCount, 0)

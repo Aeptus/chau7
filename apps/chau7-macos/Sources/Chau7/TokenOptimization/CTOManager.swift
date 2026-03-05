@@ -1,19 +1,20 @@
 import Foundation
+import Chau7Core
 
-// MARK: - RTK Manager
+// MARK: - CTO Manager
 
 /// Manages the token optimization wrapper layer: script generation, optimizer
 /// binary installation, PATH injection, and token-savings statistics.
 ///
 /// ## Architecture
 ///
-/// 1. **Wrapper scripts** live in `~/.chau7/rtk_bin/` and shadow real binaries
+/// 1. **Wrapper scripts** live in `~/.chau7/cto_bin/` and shadow real binaries
 ///    via PATH prepend.
-/// 2. Each wrapper checks a **flag file** in `~/.chau7/rtk_active/<SESSION_ID>`.
-///    When active, commands in `rtkRewriteMap` are routed through the built-in
+/// 2. Each wrapper checks a **flag file** in `~/.chau7/cto_active/<SESSION_ID>`.
+///    When active, commands in `ctoRewriteMap` are routed through the built-in
 ///    `chau7-optim` optimizer for token-optimized output. When the optimizer is
 ///    absent, the real binary is exec'd directly.
-/// 3. `RTKFlagManager` controls flag file creation/removal based on the global
+/// 3. `CTOFlagManager` controls flag file creation/removal based on the global
 ///    mode + per-tab override + AI detection state.
 ///
 /// ## Supported Commands
@@ -24,91 +25,54 @@ import Foundation
 ///                   `prettier`, `format`, `playwright`, `ruff`, `pytest`, `pip`,
 ///                   `go`, `golangci-lint`
 /// Exec-only (no optimizer subcommand): `head`, `tail`, `wc`
-final class RTKManager {
+final class CTOManager {
 
-    static let shared = RTKManager()
+    static let shared = CTOManager()
 
-    /// Directory containing RTK wrapper scripts (prepended to PATH).
+    /// Directory containing CTO wrapper scripts (prepended to PATH).
     let wrapperBinDir: URL
 
     /// Directory for helper binaries like `chau7-md`.
     let binDir: URL
 
-    /// Directory for RTK data/config files.
+    /// Directory for CTO data/config files.
     private let dataDir: URL
-
-    /// Maps shell command names to their optimizer subcommand equivalents.
-    /// Commands in this map are routed through `chau7-optim` when active.
-    static let rtkRewriteMap: [String: String] = [
-        "cat": "read",
-        "ls": "ls",
-        "find": "find",
-        "tree": "tree",
-        "grep": "grep",
-        "rg": "rg",
-        "git": "git",
-        "diff": "diff",
-        "cargo": "cargo",
-        "curl": "curl",
-        "docker": "docker",
-        "kubectl": "kubectl",
-        "gh": "gh",
-        "pnpm": "pnpm",
-        "wget": "wget",
-        "npm": "npm",
-        "npx": "npx",
-        "vitest": "vitest",
-        "prisma": "prisma",
-        "tsc": "tsc",
-        "next": "next",
-        "lint": "lint",
-        "prettier": "prettier",
-        "format": "format",
-        "playwright": "playwright",
-        "ruff": "ruff",
-        "pytest": "pytest",
-        "pip": "pip",
-        "go": "go",
-        "golangci-lint": "golangci-lint",
-    ]
-
-    /// All commands that have wrapper scripts (optimizer-routed + exec-only).
-    static let supportedCommands: [String] = {
-        (Array(rtkRewriteMap.keys) + Array(execOnlyCommands)).sorted()
-    }()
-
-    /// Commands that are exec-only (no optimizer subcommand mapping).
-    static let execOnlyCommands: Set<String> = ["head", "tail", "wc"]
 
     private init() {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let base = home.appendingPathComponent(".chau7", isDirectory: true)
-        self.wrapperBinDir = base.appendingPathComponent("rtk_bin", isDirectory: true)
+        self.wrapperBinDir = base.appendingPathComponent("cto_bin", isDirectory: true)
         self.binDir = base.appendingPathComponent("bin", isDirectory: true)
-        self.dataDir = base.appendingPathComponent("rtk_data", isDirectory: true)
+        self.dataDir = base.appendingPathComponent("cto_data", isDirectory: true)
     }
 
     // MARK: - Setup
 
     /// Performs first-time setup: creates directories and installs wrapper scripts.
-    /// Called once during app startup when RTK mode is not `.off`.
+    /// Called once during app startup when CTO mode is not `.off`.
     func setup() {
+        CTORuntimeMonitor.shared.recordManagerSetup()
         let fm = FileManager.default
+
+        // Migrate legacy RTK directories → CTO
+        migrateDirectoryIfNeeded(fm: fm, from: "rtk_bin", to: "cto_bin")
+        migrateDirectoryIfNeeded(fm: fm, from: "rtk_data", to: "cto_data")
+        migrateDirectoryIfNeeded(fm: fm, from: "rtk_active", to: "cto_active")
 
         for dir in [wrapperBinDir, binDir, dataDir] {
             if !fm.fileExists(atPath: dir.path) {
                 do {
                     try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-                    Log.info("RTKManager: created directory \(dir.path)")
+                    Log.info("CTOManager: created directory \(dir.path)")
                 } catch {
-                    Log.error("RTKManager: failed to create \(dir.path): \(error)")
+                    Log.error("CTOManager: failed to create \(dir.path): \(error)")
                 }
             }
         }
 
-        RTKFlagManager.ensureFlagDirectory()
+        CTOFlagManager.ensureFlagDirectory()
 
-        for command in Self.supportedCommands {
+        for command in supportedCommands {
             installWrapper(for: command)
         }
 
@@ -118,6 +82,22 @@ final class RTKManager {
         }
         if let bundlePath = Bundle.main.url(forResource: "chau7-optim", withExtension: nil) {
             installOptimizer(from: bundlePath)
+        }
+
+        rotateCommandLogIfNeeded()
+    }
+
+    /// Moves `~/.chau7/<old>` to `~/.chau7/<new>` if old exists and new does not.
+    private func migrateDirectoryIfNeeded(fm: FileManager, from oldName: String, to newName: String) {
+        let base = fm.homeDirectoryForCurrentUser.appendingPathComponent(".chau7", isDirectory: true)
+        let oldDir = base.appendingPathComponent(oldName, isDirectory: true)
+        let newDir = base.appendingPathComponent(newName, isDirectory: true)
+        guard fm.fileExists(atPath: oldDir.path), !fm.fileExists(atPath: newDir.path) else { return }
+        do {
+            try fm.moveItem(at: oldDir, to: newDir)
+            Log.info("CTOManager: migrated \(oldName) → \(newName)")
+        } catch {
+            Log.error("CTOManager: failed to migrate \(oldName) → \(newName): \(error)")
         }
     }
 
@@ -133,17 +113,18 @@ final class RTKManager {
         FileManager.default.isExecutableFile(atPath: optimizerPath.path)
     }
 
-    /// Installs the chau7-optim binary from a source path to `~/.chau7/bin/`.
-    @discardableResult
-    func installOptimizer(from sourcePath: URL) -> Bool {
+    // MARK: - Binary Installation
+
+    /// Installs a named binary from a source path to `~/.chau7/bin/`.
+    private func installBinary(name: String, from sourcePath: URL) -> Bool {
         let fm = FileManager.default
-        let dest = optimizerPath
+        let dest = binDir.appendingPathComponent(name)
 
         if !fm.fileExists(atPath: binDir.path) {
             do {
                 try fm.createDirectory(at: binDir, withIntermediateDirectories: true)
             } catch {
-                Log.error("RTKManager: failed to create bin dir: \(error)")
+                Log.error("CTOManager: failed to create bin dir: \(error)")
                 return false
             }
         }
@@ -154,12 +135,18 @@ final class RTKManager {
             }
             try fm.copyItem(at: sourcePath, to: dest)
             try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
-            Log.info("RTKManager: installed chau7-optim to \(dest.path)")
+            Log.info("CTOManager: installed \(name) to \(dest.path)")
             return true
         } catch {
-            Log.error("RTKManager: failed to install chau7-optim: \(error)")
+            Log.error("CTOManager: failed to install \(name): \(error)")
             return false
         }
+    }
+
+    /// Installs the chau7-optim binary from a source path to `~/.chau7/bin/`.
+    @discardableResult
+    func installOptimizer(from sourcePath: URL) -> Bool {
+        installBinary(name: "chau7-optim", from: sourcePath)
     }
 
     // MARK: - Wrapper Scripts
@@ -176,13 +163,13 @@ final class RTKManager {
                 [.posixPermissions: 0o755],
                 ofItemAtPath: wrapperPath.path
             )
-            Log.trace("RTKManager: installed wrapper for \(command) → \(realBin ?? "dynamic")")
+            Log.trace("CTOManager: installed wrapper for \(command) → \(realBin ?? "dynamic")")
         } catch {
-            Log.error("RTKManager: failed to install wrapper for \(command): \(error)")
+            Log.error("CTOManager: failed to install wrapper for \(command): \(error)")
         }
     }
 
-    /// Resolves the real binary path for a command by searching PATH (skipping rtk_bin).
+    /// Resolves the real binary path for a command by searching PATH (skipping cto_bin).
     /// Called once at wrapper-generation time so the path can be hardcoded into the script.
     private func resolveRealBinary(for command: String) -> String? {
         let fm = FileManager.default
@@ -210,47 +197,51 @@ final class RTKManager {
 
     /// Generic wrapper with hardcoded real binary path for near-zero passthrough overhead.
     ///
-    /// The fast path (no RTK session) reaches `exec` after just two shell tests and
+    /// The fast path (no CTO session) reaches `exec` after just two shell tests and
     /// zero variable assignments — critical for tools like NVM that invoke coreutils
     /// thousands of times during shell init.
     ///
-    /// When RTK is active:
+    /// When CTO is active:
     /// - If optimizer exists AND command has a rewrite mapping → `exec chau7-optim <subcommand> "$@"`
     /// - If optimizer not found or command is exec-only → `exec real_binary "$@"`
     private func generateGenericWrapperScript(for command: String, realBin: String?) -> String {
-        let rtkSubcommand = Self.rtkRewriteMap[command]
+        let ctoSubcommand = ctoRewriteMap[command]
 
         // Optimizer block: run chau7-optim WITHOUT exec so we can fall through
         // to the real binary if it can't handle the invocation (exit code 2 = clap
         // parse error). This is critical because tools like NVM call grep/ls/cat
         // with flags chau7-optim doesn't support (e.g. grep -q).
         let optimizerBlock: String
-        if let sub = rtkSubcommand {
+        if let sub = ctoSubcommand {
             optimizerBlock = """
             _CHAU7_OPTIM="$HOME/.chau7/bin/chau7-optim"
             if [ -x "$_CHAU7_OPTIM" ]; then
-                "$_CHAU7_OPTIM" \(sub) "$@" 2>/dev/null
+                "$_CHAU7_OPTIM" \(sub) "$@" 2>>"${CHAU7_CTO_LOG:-/dev/null}"
                 _rc=$?
-                [ $_rc -ne 2 ] && exit $_rc
+                if [ $_rc -ne 2 ]; then
+                    [ -n "$CHAU7_CTO_LOG" ] && echo "$(date +%s)|$CHAU7_CTO_SESSION|\(command)|$_rc|optimized" >>"$CHAU7_CTO_LOG"
+                    exit $_rc
+                fi
+                [ -n "$CHAU7_CTO_LOG" ] && echo "$(date +%s)|$CHAU7_CTO_SESSION|\(command)|$_rc|fallthrough" >>"$CHAU7_CTO_LOG"
             fi
             """
         } else {
             optimizerBlock = ""
         }
 
-        // Fast path: when we have a hardcoded binary, the non-RTK case is just
+        // Fast path: when we have a hardcoded binary, the non-CTO case is just
         // two tests + exec with no variable assignments at all.
         if let path = realBin {
             return """
             #!/bin/bash
-            # RTK wrapper for \(command) — generated by Chau7
+            # CTO wrapper for \(command) — generated by Chau7
 
-            # Fast path: no active RTK session → exec hardcoded binary immediately.
-            if [ -z "$CHAU7_RTK_SESSION" ] || [ ! -f "$HOME/.chau7/rtk_active/$CHAU7_RTK_SESSION" ]; then
+            # Fast path: no active CTO session → exec hardcoded binary immediately.
+            if [ -z "$CHAU7_CTO_SESSION" ] || [ ! -f "$HOME/.chau7/cto_active/$CHAU7_CTO_SESSION" ]; then
                 exec "\(path)" "$@"
             fi
 
-            # RTK is active — try optimizer, fall through to real binary on failure.
+            # CTO is active — try optimizer, fall through to real binary on failure.
             \(optimizerBlock)
             exec "\(path)" "$@"
             """
@@ -259,28 +250,28 @@ final class RTKManager {
         // No hardcoded path available — fall back to runtime PATH scan.
         return """
         #!/bin/bash
-        # RTK wrapper for \(command) — generated by Chau7
+        # CTO wrapper for \(command) — generated by Chau7
 
-        _RTK_WRAPPER_DIR="$HOME/.chau7/rtk_bin"
-        _RTK_REAL_BIN=""
+        _CTO_WRAPPER_DIR="$HOME/.chau7/cto_bin"
+        _CTO_REAL_BIN=""
         _OLD_IFS="$IFS"; IFS=':'
         for _dir in $PATH; do
-            [ "$_dir" = "$_RTK_WRAPPER_DIR" ] && continue
-            if [ -x "$_dir/\(command)" ]; then _RTK_REAL_BIN="$_dir/\(command)"; break; fi
+            [ "$_dir" = "$_CTO_WRAPPER_DIR" ] && continue
+            if [ -x "$_dir/\(command)" ]; then _CTO_REAL_BIN="$_dir/\(command)"; break; fi
         done
         IFS="$_OLD_IFS"
 
-        if [ -z "$_RTK_REAL_BIN" ]; then
+        if [ -z "$_CTO_REAL_BIN" ]; then
             echo "chau7: could not find real \(command) binary" >&2
             exit 127
         fi
 
-        if [ -z "$CHAU7_RTK_SESSION" ] || [ ! -f "$HOME/.chau7/rtk_active/$CHAU7_RTK_SESSION" ]; then
-            exec "$_RTK_REAL_BIN" "$@"
+        if [ -z "$CHAU7_CTO_SESSION" ] || [ ! -f "$HOME/.chau7/cto_active/$CHAU7_CTO_SESSION" ]; then
+            exec "$_CTO_REAL_BIN" "$@"
         fi
 
         \(optimizerBlock)
-        exec "$_RTK_REAL_BIN" "$@"
+        exec "$_CTO_REAL_BIN" "$@"
         """
     }
 
@@ -289,57 +280,54 @@ final class RTKManager {
     /// 2. Other files → `chau7-optim read "$@"` (when optimizer available)
     /// 3. Fallback → real cat
     private func generateCatWrapperScript(realBin: String?) -> String {
-        // The cat wrapper's RTK-active path is more complex (markdown rendering),
-        // so we use a helper variable for the real binary. The fast path (no RTK session)
-        // still reaches exec after just two tests when a hardcoded path is available.
         let realBinSetup: String
         let realBinFallback: String
 
         if let path = realBin {
             realBinSetup = """
-            # Fast path: no active RTK session → exec hardcoded binary immediately.
-            if [ -z "$CHAU7_RTK_SESSION" ] || [ ! -f "$HOME/.chau7/rtk_active/$CHAU7_RTK_SESSION" ]; then
+            # Fast path: no active CTO session → exec hardcoded binary immediately.
+            if [ -z "$CHAU7_CTO_SESSION" ] || [ ! -f "$HOME/.chau7/cto_active/$CHAU7_CTO_SESSION" ]; then
                 exec "\(path)" "$@"
             fi
-            _RTK_REAL_BIN="\(path)"
+            _CTO_REAL_BIN="\(path)"
             """
             realBinFallback = ""
         } else {
             realBinSetup = """
-            _RTK_WRAPPER_DIR="$HOME/.chau7/rtk_bin"
-            _RTK_REAL_BIN=""
+            _CTO_WRAPPER_DIR="$HOME/.chau7/cto_bin"
+            _CTO_REAL_BIN=""
             _OLD_IFS="$IFS"; IFS=':'
             for _dir in $PATH; do
-                [ "$_dir" = "$_RTK_WRAPPER_DIR" ] && continue
-                if [ -x "$_dir/cat" ]; then _RTK_REAL_BIN="$_dir/cat"; break; fi
+                [ "$_dir" = "$_CTO_WRAPPER_DIR" ] && continue
+                if [ -x "$_dir/cat" ]; then _CTO_REAL_BIN="$_dir/cat"; break; fi
             done
             IFS="$_OLD_IFS"
             """
             realBinFallback = """
 
-            if [ -z "$_RTK_REAL_BIN" ]; then
+            if [ -z "$_CTO_REAL_BIN" ]; then
                 echo "chau7: could not find real cat binary" >&2
                 exit 127
             fi
 
-            if [ -z "$CHAU7_RTK_SESSION" ] || [ ! -f "$HOME/.chau7/rtk_active/$CHAU7_RTK_SESSION" ]; then
-                exec "$_RTK_REAL_BIN" "$@"
+            if [ -z "$CHAU7_CTO_SESSION" ] || [ ! -f "$HOME/.chau7/cto_active/$CHAU7_CTO_SESSION" ]; then
+                exec "$_CTO_REAL_BIN" "$@"
             fi
             """
         }
 
         return """
         #!/bin/bash
-        # RTK wrapper for cat — generated by Chau7
+        # CTO wrapper for cat — generated by Chau7
         # Renders markdown files with chau7-md, routes others through chau7-optim read.
 
         \(realBinSetup)\(realBinFallback)
 
-        # RTK is active below this point.
+        # CTO is active below this point.
 
         # Cat with no args may read from stdin (e.g. pipes); avoid read-optimizer path.
         if [ "$#" -eq 0 ]; then
-            exec "$_RTK_REAL_BIN" "$@"
+            exec "$_CTO_REAL_BIN" "$@"
         fi
 
         # Markdown rendering: check if chau7-md is available,
@@ -368,24 +356,28 @@ final class RTKManager {
             done
 
             if [ "$_HAS_FILES" = true ] && [ "$_ALL_MD" = true ]; then
-                _RTK_EXIT=0
+                _CTO_EXIT=0
                 for _arg in "$@"; do
                     "$_CHAU7_MD" "$_arg"
-                    [ $? -ne 0 ] && _RTK_EXIT=1
+                    [ $? -ne 0 ] && _CTO_EXIT=1
                 done
-                exit $_RTK_EXIT
+                exit $_CTO_EXIT
             fi
         fi
 
         # Route through built-in optimizer for non-markdown files
         _CHAU7_OPTIM="$HOME/.chau7/bin/chau7-optim"
         if [ -x "$_CHAU7_OPTIM" ]; then
-            "$_CHAU7_OPTIM" read "$@" 2>/dev/null
+            "$_CHAU7_OPTIM" read "$@" 2>>"${CHAU7_CTO_LOG:-/dev/null}"
             _rc=$?
-            [ $_rc -ne 2 ] && exit $_rc
+            if [ $_rc -ne 2 ]; then
+                [ -n "$CHAU7_CTO_LOG" ] && echo "$(date +%s)|$CHAU7_CTO_SESSION|cat|$_rc|optimized" >>"$CHAU7_CTO_LOG"
+                exit $_rc
+            fi
+            [ -n "$CHAU7_CTO_LOG" ] && echo "$(date +%s)|$CHAU7_CTO_SESSION|cat|$_rc|fallthrough" >>"$CHAU7_CTO_LOG"
         fi
 
-        exec "$_RTK_REAL_BIN" "$@"
+        exec "$_CTO_REAL_BIN" "$@"
         """
     }
 
@@ -404,35 +396,12 @@ final class RTKManager {
     /// Installs the chau7-md binary from a source path to `~/.chau7/bin/`.
     @discardableResult
     func installMarkdownRenderer(from sourcePath: URL) -> Bool {
-        let fm = FileManager.default
-        let dest = markdownRendererPath
-
-        if !fm.fileExists(atPath: binDir.path) {
-            do {
-                try fm.createDirectory(at: binDir, withIntermediateDirectories: true)
-            } catch {
-                Log.error("RTKManager: failed to create bin dir: \(error)")
-                return false
-            }
-        }
-
-        do {
-            if fm.fileExists(atPath: dest.path) {
-                try fm.removeItem(at: dest)
-            }
-            try fm.copyItem(at: sourcePath, to: dest)
-            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
-            Log.info("RTKManager: installed chau7-md to \(dest.path)")
-            return true
-        } catch {
-            Log.error("RTKManager: failed to install chau7-md: \(error)")
-            return false
-        }
+        installBinary(name: "chau7-md", from: sourcePath)
     }
 
     // MARK: - PATH Injection
 
-    /// Returns the PATH string with the RTK wrapper directory prepended.
+    /// Returns the PATH string with the CTO wrapper directory prepended.
     func prependedPATH(original: String) -> String {
         let wrapperDir = wrapperBinDir.path
         let components = original.split(separator: ":", omittingEmptySubsequences: false)
@@ -444,29 +413,19 @@ final class RTKManager {
 
     // MARK: - Installation Health Check
 
-    /// Per-command installation status.
-    struct WrapperHealth: Identifiable {
-        let command: String
-        let isInstalled: Bool
-        let isExecutable: Bool
-        /// Whether this command routes through the optimizer (vs exec-only).
-        let hasRTKRoute: Bool
-        var id: String { command }
-    }
-
     /// Checks the installation status of every supported wrapper script.
     func checkInstallation() -> [WrapperHealth] {
         let fm = FileManager.default
-        return Self.supportedCommands.map { command in
+        return supportedCommands.map { command in
             let path = wrapperBinDir.appendingPathComponent(command).path
             let exists = fm.fileExists(atPath: path)
             let executable = exists && fm.isExecutableFile(atPath: path)
-            let hasRoute = Self.rtkRewriteMap[command] != nil
+            let hasRoute = ctoRewriteMap[command] != nil
             return WrapperHealth(
                 command: command,
                 isInstalled: exists,
                 isExecutable: executable,
-                hasRTKRoute: hasRoute
+                hasCTORoute: hasRoute
             )
         }
     }
@@ -476,66 +435,117 @@ final class RTKManager {
         checkInstallation().allSatisfy { $0.isInstalled && $0.isExecutable }
     }
 
-    // MARK: - RTK Gain Statistics
-
-    /// Token savings data returned by `chau7-optim gain --format json`.
-    struct RTKGainStats: Codable, Equatable {
-        let commands: Int
-        let inputTokens: Int
-        let outputTokens: Int
-        let savedTokens: Int
-        let savingsPct: Double
-        let totalTimeMs: Int
-        let avgTimeMs: Int
-
-        enum CodingKeys: String, CodingKey {
-            case commands = "total_commands"
-            case inputTokens = "total_input"
-            case outputTokens = "total_output"
-            case savedTokens = "total_saved"
-            case savingsPct = "avg_savings_pct"
-            case totalTimeMs = "total_time_ms"
-            case avgTimeMs = "avg_time_ms"
-        }
-    }
+    // MARK: - CTO Gain Statistics
 
     /// Wrapper for the JSON envelope from `chau7-optim gain --format json`.
     private struct GainResponse: Codable {
-        let summary: RTKGainStats
+        let summary: CTOGainStats
     }
 
     /// Fetches aggregated token savings from `chau7-optim gain --format json`.
     /// Returns nil if the optimizer is not installed or the command fails.
-    func fetchGainStats() async -> RTKGainStats? {
+    func fetchGainStats() async -> CTOGainStats? {
         guard isOptimizerInstalled else { return nil }
 
-        let process = Process()
-        process.executableURL = optimizerPath
-        process.arguments = ["gain", "--format", "json"]
+        let optimPath = optimizerPath
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                let process = Process()
+                process.executableURL = optimPath
+                process.arguments = ["gain", "--format", "json"]
 
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
+                let pipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = FileHandle.nullDevice
 
-        do {
-            try process.run()
-        } catch {
-            Log.error("RTKManager: failed to run chau7-optim gain: \(error)")
-            return nil
+                do {
+                    try process.run()
+                } catch {
+                    Log.error("CTOManager: failed to run chau7-optim gain: \(error)")
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+
+                guard process.terminationStatus == 0, !data.isEmpty else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                do {
+                    let response = try JSONDecoder().decode(GainResponse.self, from: data)
+                    continuation.resume(returning: response.summary)
+                } catch {
+                    Log.error("CTOManager: failed to decode chau7-optim gain output: \(error)")
+                    continuation.resume(returning: nil)
+                }
+            }
         }
+    }
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+    // MARK: - Command Log
 
-        guard process.terminationStatus == 0, !data.isEmpty else { return nil }
+    /// Path to the structured command log written by wrapper scripts.
+    var commandLogPath: URL {
+        dataDir.appendingPathComponent("commands.log")
+    }
 
-        do {
-            let response = try JSONDecoder().decode(GainResponse.self, from: data)
-            return response.summary
-        } catch {
-            Log.error("RTKManager: failed to decode chau7-optim gain output: \(error)")
-            return nil
+    /// Parsed entry from the command log.
+    struct CommandLogEntry: Identifiable {
+        let id = UUID()
+        let timestamp: Date
+        let sessionID: String
+        let command: String
+        let exitCode: Int
+        let outcome: String  // "optimized", "fallthrough", or "error"
+    }
+
+    /// Reads the most recent entries from the command log.
+    func readCommandLog(limit: Int = 100) -> [CommandLogEntry] {
+        guard let data = try? String(contentsOf: commandLogPath, encoding: .utf8) else { return [] }
+        let lines = data.components(separatedBy: "\n").filter { !$0.isEmpty }
+        let recent = lines.suffix(limit)
+        return recent.compactMap { line -> CommandLogEntry? in
+            let parts = line.split(separator: "|", maxSplits: 4)
+            guard parts.count == 5,
+                  let epoch = TimeInterval(parts[0]),
+                  let exitCode = Int(parts[3])
+            else { return nil }
+            return CommandLogEntry(
+                timestamp: Date(timeIntervalSince1970: epoch),
+                sessionID: String(parts[1]),
+                command: String(parts[2]),
+                exitCode: exitCode,
+                outcome: String(parts[4])
+            )
         }
+    }
+
+    /// Percentage of commands that were successfully optimized (vs fallthrough/error).
+    func commandSuccessRate() -> Double? {
+        let entries = readCommandLog(limit: 500)
+        guard !entries.isEmpty else { return nil }
+        let optimized = entries.filter { $0.outcome == "optimized" }.count
+        return (Double(optimized) / Double(entries.count)) * 100
+    }
+
+    /// Truncates the command log if it exceeds 1 MB. Called during setup().
+    func rotateCommandLogIfNeeded() {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: commandLogPath.path) else { return }
+        guard let attrs = try? fm.attributesOfItem(atPath: commandLogPath.path),
+              let size = attrs[.size] as? UInt64,
+              size > 1_048_576
+        else { return }
+
+        // Keep the last 500 lines
+        guard let data = try? String(contentsOf: commandLogPath, encoding: .utf8) else { return }
+        let lines = data.components(separatedBy: "\n").filter { !$0.isEmpty }
+        let kept = lines.suffix(500).joined(separator: "\n") + "\n"
+        try? kept.write(to: commandLogPath, atomically: true, encoding: .utf8)
+        Log.info("CTOManager: rotated command log (was \(size) bytes)")
     }
 
     // MARK: - Cleanup
@@ -543,7 +553,9 @@ final class RTKManager {
     /// Removes all wrapper scripts and flag files. Called on app quit or
     /// when switching to `.off` mode.
     func teardown() {
-        RTKFlagManager.removeAllFlags()
+        CTORuntimeMonitor.shared.recordManagerTeardown()
+        let removed = CTOFlagManager.removeAllFlags()
+        CTORuntimeMonitor.shared.recordManagerBulkRemove(count: removed)
 
         let fm = FileManager.default
         if fm.fileExists(atPath: wrapperBinDir.path) {
@@ -552,9 +564,9 @@ final class RTKManager {
                 for file in contents {
                     try fm.removeItem(atPath: wrapperBinDir.appendingPathComponent(file).path)
                 }
-                Log.info("RTKManager: removed \(contents.count) wrapper script(s)")
+                Log.info("CTOManager: removed \(contents.count) wrapper script(s)")
             } catch {
-                Log.error("RTKManager: failed to clean up wrappers: \(error)")
+                Log.error("CTOManager: failed to clean up wrappers: \(error)")
             }
         }
     }

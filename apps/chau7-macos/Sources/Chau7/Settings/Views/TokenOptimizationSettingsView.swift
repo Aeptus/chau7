@@ -1,4 +1,5 @@
 import SwiftUI
+import Chau7Core
 
 // MARK: - Token Optimization Settings
 
@@ -8,12 +9,12 @@ import SwiftUI
 struct TokenOptimizationSettingsView: View {
     @ObservedObject private var settings = FeatureSettings.shared
     let overlayModel: OverlayTabsModel?
-    @State private var wrapperHealth: [RTKManager.WrapperHealth] = []
+    @State private var wrapperHealth: [WrapperHealth] = []
     @State private var mdRendererInstalled = false
     @State private var optimizerInstalled = false
-    @State private var gainStats: RTKManager.RTKGainStats?
+    @State private var gainStats: CTOGainStats?
     @State private var isLoadingStats = false
-    @State private var runtimeSnapshot: RTKRuntimeSnapshot = RTKRuntimeMonitor.shared.snapshot()
+    @State private var runtimeSnapshot: CTORuntimeSnapshot = CTORuntimeMonitor.shared.snapshot()
 
     init(overlayModel: OverlayTabsModel? = nil) {
         self.overlayModel = overlayModel
@@ -23,13 +24,13 @@ struct TokenOptimizationSettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             // Mode Selection
             SettingsSectionHeader(
-                L("rtk.settings.mode", "Optimization Mode"),
+                L("cto.settings.mode", "Optimization Mode"),
                 icon: "bolt.horizontal.circle"
             )
 
             SettingsPicker(
-                label: L("rtk.settings.mode.label", "Mode"),
-                help: L("rtk.settings.mode.help", "Controls when token-optimized command output is active"),
+                label: L("cto.settings.mode.label", "Mode"),
+                help: L("cto.settings.mode.help", "Controls when token-optimized command output is active"),
                 selection: modeBinding,
                 options: TokenOptimizationMode.allCases.map { mode in
                     (value: mode.rawValue, label: mode.displayName)
@@ -43,30 +44,30 @@ struct TokenOptimizationSettingsView: View {
                     .padding(.vertical, 8)
 
                 // Input Prefix
-                SettingsSectionHeader(L("rtk.settings.prefix", "Input Prefix"), icon: "wand.and.stars")
+                SettingsSectionHeader(L("cto.settings.prefix", "Input Prefix"), icon: "wand.and.stars")
 
                 SettingsToggle(
-                    label: L("settings.ai.rtk.enabled", "Enable Input Prefix"),
+                    label: L("settings.ai.cto.enabled", "Enable Input Prefix"),
                     help: L(
-                        "settings.ai.rtk.enabledHelp",
+                        "settings.ai.cto.enabledHelp",
                         "When enabled, the prefix text is prepended to terminal input."
                     ),
                     isOn: Binding(
-                        get: { settings.isRTKEnabled },
-                        set: { settings.isRTKEnabled = $0 }
+                        get: { settings.isCTOEnabled },
+                        set: { settings.isCTOEnabled = $0 }
                     )
                 )
 
                 SettingsTextField(
-                    label: L("settings.ai.rtk.prefix", "Input Prefix"),
+                    label: L("settings.ai.cto.prefix", "Input Prefix"),
                     help: L(
-                        "settings.ai.rtk.prefixHelp",
+                        "settings.ai.cto.prefixHelp",
                         "Prefix text to prepend (supports per-tab overrides)."
                     ),
                     placeholder: "/think",
                     text: Binding(
-                        get: { settings.rtkPrefix },
-                        set: { settings.rtkPrefix = $0 }
+                        get: { settings.ctoPrefix },
+                        set: { settings.ctoPrefix = $0 }
                     ),
                     width: 220,
                     monospaced: true
@@ -77,7 +78,7 @@ struct TokenOptimizationSettingsView: View {
 
                 // Optimizer
                 SettingsSectionHeader(
-                    L("rtk.settings.optimizer", "Optimizer"),
+                    L("cto.settings.optimizer", "Optimizer"),
                     icon: "checkmark.shield"
                 )
 
@@ -89,20 +90,31 @@ struct TokenOptimizationSettingsView: View {
                 Divider()
                     .padding(.vertical, 8)
 
-                // RTK Runtime Telemetry
+                // CTO Runtime Telemetry
                 SettingsSectionHeader(
-                    L("rtk.settings.rtkRuntime", "RTK Runtime Telemetry"),
+                    L("cto.settings.ctoRuntime", "CTO Runtime Telemetry"),
                     icon: "chart.xyaxis.line"
                 )
 
-                rtkRuntimeStatsView
+                ctoRuntimeStatsView
+
+                Divider()
+                    .padding(.vertical, 8)
+
+                // Command Log
+                SettingsSectionHeader(
+                    L("cto.settings.commandLog", "Recent Optimizer Commands"),
+                    icon: "terminal"
+                )
+
+                commandLogView
 
                 Divider()
                     .padding(.vertical, 8)
 
                 // Token Savings
                 SettingsSectionHeader(
-                    L("rtk.settings.savings", "Token Savings"),
+                    L("cto.settings.savings", "Token Savings"),
                     icon: "chart.bar"
                 )
 
@@ -113,7 +125,7 @@ struct TokenOptimizationSettingsView: View {
 
                 // Per-Tab Control
                 SettingsSectionHeader(
-                    L("rtk.settings.perTab", "Per-Tab Control"),
+                    L("cto.settings.perTab", "Per-Tab Control"),
                     icon: "rectangle.stack"
                 )
 
@@ -128,7 +140,7 @@ struct TokenOptimizationSettingsView: View {
 
                 // Optimized Commands
                 SettingsSectionHeader(
-                    L("rtk.settings.commands", "Optimized Commands"),
+                    L("cto.settings.commands", "Optimized Commands"),
                     icon: "terminal"
                 )
 
@@ -139,7 +151,7 @@ struct TokenOptimizationSettingsView: View {
 
                 // How It Works
                 SettingsSectionHeader(
-                    L("rtk.settings.howItWorks", "How It Works"),
+                    L("cto.settings.howItWorks", "How It Works"),
                     icon: "questionmark.circle"
                 )
 
@@ -221,11 +233,11 @@ struct TokenOptimizationSettingsView: View {
         case .off:
             return ""
         case .allTabs:
-            return L("rtk.mode.allTabs.detail", "All tabs optimized by default. A red wand badge appears on tabs you opt out.")
+            return L("cto.mode.allTabs.detail", "All tabs optimized by default. A red wand badge appears on tabs you opt out.")
         case .aiOnly:
-            return L("rtk.mode.aiOnly.detail", "AI tabs auto-optimize. Yellow wand when you force a tab on, red wand when you force off.")
+            return L("cto.mode.aiOnly.detail", "AI tabs auto-optimize. Yellow wand when you force a tab on, red wand when you force off.")
         case .manual:
-            return L("rtk.mode.manual.detail", "No tabs optimized by default. A yellow wand badge appears on tabs you opt in.")
+            return L("cto.mode.manual.detail", "No tabs optimized by default. A yellow wand badge appears on tabs you opt in.")
         }
     }
 
@@ -234,7 +246,7 @@ struct TokenOptimizationSettingsView: View {
     @ViewBuilder
     private var optimizerStatusView: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(L("rtk.optimizer.desc", "The optimizer filters and compresses command output before it reaches your LLM context, typically saving 60-90% of tokens. It ships built-in — no external dependencies required."))
+            Text(L("cto.optimizer.desc", "The optimizer filters and compresses command output before it reaches your LLM context, typically saving 60-90% of tokens. It ships built-in — no external dependencies required."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -243,24 +255,24 @@ struct TokenOptimizationSettingsView: View {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.green)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(L("rtk.optimizer.installed", "Installed"))
+                        Text(L("cto.optimizer.installed", "Installed"))
                             .font(.body)
-                        Text(RTKManager.shared.optimizerPath.path)
+                        Text(CTOManager.shared.optimizerPath.path)
                             .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(.secondary)
                     }
                 } else {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.orange)
-                    Text(L("rtk.optimizer.notInstalled", "Not installed — commands will pass through unoptimized"))
+                    Text(L("cto.optimizer.notInstalled", "Not installed — commands will pass through unoptimized"))
                         .font(.body)
                 }
 
                 Spacer()
 
-                Button(L("rtk.optimizer.reinstall", "Reinstall from Bundle")) {
+                Button(L("cto.optimizer.reinstall", "Reinstall from Bundle")) {
                     if let bundlePath = Bundle.main.url(forResource: "chau7-optim", withExtension: nil) {
-                        RTKManager.shared.installOptimizer(from: bundlePath)
+                        CTOManager.shared.installOptimizer(from: bundlePath)
                     }
                     refreshAll()
                 }
@@ -281,12 +293,12 @@ struct TokenOptimizationSettingsView: View {
             Image(systemName: allGood ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                 .foregroundStyle(allGood ? .green : .orange)
             Text(allGood
-                ? L("rtk.health.allGood", "All wrapper scripts installed and executable")
-                : L("rtk.health.issues", "Some wrapper scripts need attention"))
+                ? L("cto.health.allGood", "All wrapper scripts installed and executable")
+                : L("cto.health.issues", "Some wrapper scripts need attention"))
                 .font(.body)
             Spacer()
-            Button(L("rtk.health.reinstall", "Reinstall")) {
-                RTKManager.shared.setup()
+            Button(L("cto.health.reinstall", "Reinstall")) {
+                CTOManager.shared.setup()
                 refreshAll()
             }
             .buttonStyle(.bordered)
@@ -313,11 +325,11 @@ struct TokenOptimizationSettingsView: View {
                     }
                     Spacer()
                     if !item.isInstalled {
-                        Text(L("rtk.health.missing", "Missing"))
+                        Text(L("cto.health.missing", "Missing"))
                             .font(.caption)
                             .foregroundStyle(.red)
                     } else if !item.isExecutable {
-                        Text(L("rtk.health.notExecutable", "Not executable"))
+                        Text(L("cto.health.notExecutable", "Not executable"))
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
@@ -332,18 +344,18 @@ struct TokenOptimizationSettingsView: View {
                     .foregroundStyle(mdRendererInstalled ? .green : .secondary)
                 Text("chau7-md")
                     .font(.system(.body, design: .monospaced))
-                Text(L("rtk.health.mdRenderer", "Markdown renderer"))
+                Text(L("cto.health.mdRenderer", "Markdown renderer"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
                 if !mdRendererInstalled {
-                    Text(L("rtk.health.mdNotInstalled", "Not installed"))
+                    Text(L("cto.health.mdNotInstalled", "Not installed"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
             if mdRendererInstalled {
-                Text(L("rtk.health.mdDesc", "cat README.md renders with ANSI formatting in terminal"))
+                Text(L("cto.health.mdDesc", "cat README.md renders with ANSI formatting in terminal"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.leading, 28)
@@ -355,7 +367,7 @@ struct TokenOptimizationSettingsView: View {
     // MARK: - Token Savings
 
     @ViewBuilder
-    private var rtkRuntimeStatsView: some View {
+    private var ctoRuntimeStatsView: some View {
         let health = runtimeSnapshot.assessment
         let healthColor: Color = switch health.state {
         case .healthy:
@@ -367,55 +379,55 @@ struct TokenOptimizationSettingsView: View {
         }
         let healthSummary = switch health.state {
         case .healthy:
-            L("rtk.runtime.healthSummaryHealthy", "Healthy")
+            L("cto.runtime.healthSummaryHealthy", "Healthy")
         case .warning:
-            L("rtk.runtime.healthSummaryWarning", "Needs review")
+            L("cto.runtime.healthSummaryWarning", "Needs review")
         case .critical:
-            L("rtk.runtime.healthSummaryCritical", "Requires attention")
+            L("cto.runtime.healthSummaryCritical", "Requires attention")
         }
 
         VStack(alignment: .leading, spacing: 8) {
             statRow(
                 icon: "checkmark.seal.fill",
                 iconColor: healthColor,
-                label: L("rtk.runtime.health", "Runtime health"),
+                label: L("cto.runtime.health", "Runtime health"),
                 value: healthSummary
             )
             statRow(
                 icon: "star.circle",
                 iconColor: healthColor,
-                label: L("rtk.runtime.healthScore", "Health score"),
+                label: L("cto.runtime.healthScore", "Health score"),
                 value: "\(health.score)/100"
             )
             statRow(
                 icon: "percent",
                 iconColor: .secondary,
-                label: L("rtk.runtime.changeRate", "Decision change rate"),
+                label: L("cto.runtime.changeRate", "Decision change rate"),
                 value: "\(String(format: "%.1f%%", runtimeSnapshot.decisionsChangeRatePercent))"
             )
             statRow(
                 icon: "clock",
                 iconColor: .secondary,
-                label: L("rtk.runtime.deferredSkipRate", "Deferred skip rate"),
+                label: L("cto.runtime.deferredSkipRate", "Deferred skip rate"),
                 value: "\(String(format: "%.1f%%", runtimeSnapshot.deferredSkipRatePercent))"
             )
             statRow(
                 icon: "clock.arrow.circlepath",
                 iconColor: .secondary,
-                label: L("rtk.runtime.deferredFlushRate", "Deferred flush rate"),
+                label: L("cto.runtime.deferredFlushRate", "Deferred flush rate"),
                 value: "\(String(format: "%.1f%%", runtimeSnapshot.deferredFlushRatePercent))"
             )
             statRow(
                 icon: "person.2.circle",
                 iconColor: .secondary,
-                label: L("rtk.runtime.activeSessionRatio", "Active sessions ratio"),
+                label: L("cto.runtime.activeSessionRatio", "Active sessions ratio"),
                 value: "\(String(format: "%.1f%%", runtimeSnapshot.activeSessionRatioPercent))"
             )
             if let lastDecisionAge = runtimeSnapshot.ageSinceLastDecisionSeconds {
                 statRow(
                     icon: "clock.fill",
                     iconColor: .secondary,
-                    label: L("rtk.runtime.lastDecisionAge", "Last decision age"),
+                    label: L("cto.runtime.lastDecisionAge", "Last decision age"),
                     value: formatDuration(lastDecisionAge)
                 )
             }
@@ -423,7 +435,7 @@ struct TokenOptimizationSettingsView: View {
                 statRow(
                     icon: "timer",
                     iconColor: .secondary,
-                    label: L("rtk.runtime.decisionIntervalAvg", "Decision interval (avg)"),
+                    label: L("cto.runtime.decisionIntervalAvg", "Decision interval (avg)"),
                     value: formatDuration(avgInterval)
                 )
             }
@@ -431,7 +443,7 @@ struct TokenOptimizationSettingsView: View {
                 statRow(
                     icon: "timer",
                     iconColor: .secondary,
-                    label: L("rtk.runtime.decisionIntervalMin", "Decision interval (min)"),
+                    label: L("cto.runtime.decisionIntervalMin", "Decision interval (min)"),
                     value: formatDuration(minInterval)
                 )
             }
@@ -439,13 +451,13 @@ struct TokenOptimizationSettingsView: View {
                 statRow(
                     icon: "timer",
                     iconColor: .secondary,
-                    label: L("rtk.runtime.decisionIntervalMax", "Decision interval (max)"),
+                    label: L("cto.runtime.decisionIntervalMax", "Decision interval (max)"),
                     value: formatDuration(maxInterval)
                 )
             }
 
             if !health.issues.isEmpty {
-                Text(L("rtk.runtime.healthSignals", "Health signals"))
+                Text(L("cto.runtime.healthSignals", "Health signals"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.top, 4)
@@ -460,7 +472,7 @@ struct TokenOptimizationSettingsView: View {
                     }
                 }
             } else {
-                Text(L("rtk.runtime.noHealthSignals", "No health signals"))
+                Text(L("cto.runtime.noHealthSignals", "No health signals"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -468,91 +480,91 @@ struct TokenOptimizationSettingsView: View {
             statRow(
                 icon: "clock",
                 iconColor: .secondary,
-                label: L("rtk.runtime.uptime", "Monitor uptime"),
+                label: L("cto.runtime.uptime", "Monitor uptime"),
                 value: formatDuration(runtimeSnapshot.uptimeSeconds)
             )
             statRow(
                 icon: "speedometer",
                 iconColor: .purple,
-                label: L("rtk.runtime.rate", "Decisions/min"),
+                label: L("cto.runtime.rate", "Decisions/min"),
                 value: String(format: "%.1f", runtimeSnapshot.decisionsPerMinute)
             )
             statRow(
                 icon: "arrow.clockwise",
                 iconColor: .blue,
-                label: L("rtk.runtime.recalcCount", "Decision recalculations"),
+                label: L("cto.runtime.recalcCount", "Decision recalculations"),
                 value: "\(runtimeSnapshot.recalcCount)"
             )
             statRow(
                 icon: "plus.circle",
                 iconColor: .green,
-                label: L("rtk.runtime.createdCount", "Created flags"),
+                label: L("cto.runtime.createdCount", "Created flags"),
                 value: "\(runtimeSnapshot.createdCount)"
             )
             statRow(
                 icon: "minus.circle",
                 iconColor: .red,
-                label: L("rtk.runtime.removedCount", "Removed flags"),
+                label: L("cto.runtime.removedCount", "Removed flags"),
                 value: "\(runtimeSnapshot.removedCount)"
             )
             statRow(
                 icon: "minus.circle",
                 iconColor: .secondary,
-                label: L("rtk.runtime.unchangedCount", "Unchanged"),
+                label: L("cto.runtime.unchangedCount", "Unchanged"),
                 value: "\(runtimeSnapshot.unchangedCount)"
             )
             statRow(
                 icon: "arrow.triangle.2.circlepath",
                 iconColor: .green,
-                label: L("rtk.runtime.setupCount", "Runtime setups"),
+                label: L("cto.runtime.setupCount", "Runtime setups"),
                 value: "\(runtimeSnapshot.setupCount)"
             )
             statRow(
                 icon: "arrow.triangle.2.circlepath.circle.fill",
                 iconColor: .orange,
-                label: L("rtk.runtime.teardownCount", "Runtime teardowns"),
+                label: L("cto.runtime.teardownCount", "Runtime teardowns"),
                 value: "\(runtimeSnapshot.teardownCount)"
             )
             statRow(
                 icon: "paintbrush.pointed.fill",
                 iconColor: .blue,
-                label: L("rtk.runtime.modeChangeCount", "Mode changes"),
+                label: L("cto.runtime.modeChangeCount", "Mode changes"),
                 value: "\(runtimeSnapshot.modeChangeCount)"
             )
             statRow(
                 icon: "clock.badge.questionmark",
                 iconColor: .secondary,
-                label: L("rtk.runtime.pendingDeferred", "Pending deferred sessions"),
+                label: L("cto.runtime.pendingDeferred", "Pending deferred sessions"),
                 value: "\(runtimeSnapshot.pendingDeferredSessions)"
             )
             statRow(
                 icon: "clock.arrow.2.circlepath",
                 iconColor: .orange,
-                label: L("rtk.runtime.deferredSet", "Deferred sets"),
+                label: L("cto.runtime.deferredSet", "Deferred sets"),
                 value: "\(runtimeSnapshot.deferredSetCount)"
             )
             statRow(
                 icon: "clock",
                 iconColor: .orange,
-                label: L("rtk.runtime.deferredFlush", "Deferred flushes"),
+                label: L("cto.runtime.deferredFlush", "Deferred flushes"),
                 value: "\(runtimeSnapshot.deferredFlushCount)"
             )
             statRow(
                 icon: "timer",
                 iconColor: .orange,
-                label: L("rtk.runtime.deferredSkip", "Deferred skips"),
+                label: L("cto.runtime.deferredSkip", "Deferred skips"),
                 value: "\(runtimeSnapshot.deferredSkipCount)"
             )
             statRow(
                 icon: "gauge.with.dots.needle.bottom.50percent",
                 iconColor: .orange,
-                label: L("rtk.runtime.deferredDelayCount", "Deferred delay samples"),
+                label: L("cto.runtime.deferredDelayCount", "Deferred delay samples"),
                 value: "\(runtimeSnapshot.deferredFlushDelayCount)"
             )
             statRow(
                 icon: "speedometer",
                 iconColor: .blue,
-                label: L("rtk.runtime.deferredDelayMin", "Deferred delay (min / max / avg / last)"),
+                label: L("cto.runtime.deferredDelayMin", "Deferred delay (min / max / avg / last)"),
                 value: "\(formatDelay(runtimeSnapshot.deferredFlushDelayMinMs)) / " +
                     "\(formatDelay(runtimeSnapshot.deferredFlushDelayMaxMs)) / " +
                     "\(formatDelay(runtimeSnapshot.deferredFlushDelayAverageMs.map { Int($0.rounded()) })) / " +
@@ -560,7 +572,7 @@ struct TokenOptimizationSettingsView: View {
             )
 
             if !runtimeSnapshot.reasonBreakdown.isEmpty {
-                Text(L("rtk.runtime.reasonBreakdown", "Decision reasons"))
+                Text(L("cto.runtime.reasonBreakdown", "Decision reasons"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.top, 4)
@@ -586,7 +598,7 @@ struct TokenOptimizationSettingsView: View {
             }
 
             if !runtimeSnapshot.recentDecisions.isEmpty {
-                Text(L("rtk.runtime.recentDecisions", "Recent decisions"))
+                Text(L("cto.runtime.recentDecisions", "Recent decisions"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.top, 4)
@@ -608,19 +620,19 @@ struct TokenOptimizationSettingsView: View {
                     }
                 }
             } else {
-                Text(L("rtk.runtime.noRecentDecisions", "No decisions recorded yet"))
+                Text(L("cto.runtime.noRecentDecisions", "No decisions recorded yet"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             HStack(spacing: 8) {
-                Button(L("rtk.runtime.refresh", "Refresh")) {
+                Button(L("cto.runtime.refresh", "Refresh")) {
                     refreshRuntimeStats()
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
 
-                Button(L("rtk.runtime.reset", "Reset")) {
+                Button(L("cto.runtime.reset", "Reset")) {
                     resetRuntimeStats()
                 }
                 .buttonStyle(.bordered)
@@ -629,7 +641,7 @@ struct TokenOptimizationSettingsView: View {
 
             HStack {
                 Spacer()
-                Text(L("rtk.runtime.trackedSessions", "Tracked") + ": \(runtimeSnapshot.trackedSessions)")
+                Text(L("cto.runtime.trackedSessions", "Tracked") + ": \(runtimeSnapshot.trackedSessions)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -651,20 +663,20 @@ struct TokenOptimizationSettingsView: View {
         return String(format: "%ds", secs)
     }
 
-    private func healthIssueLabel(_ issue: RTKRuntimeAssessmentIssue) -> String {
+    private func healthIssueLabel(_ issue: CTORuntimeAssessmentIssue) -> String {
         switch issue {
         case .lowChangeRate:
-            L("rtk.runtime.issue.lowChangeRate", "Decision change rate is low")
+            L("cto.runtime.issue.lowChangeRate", "Decision change rate is low")
         case .highDeferredSkips:
-            L("rtk.runtime.issue.highDeferredSkips", "Too many deferred skips")
+            L("cto.runtime.issue.highDeferredSkips", "Too many deferred skips")
         case .lowDeferredFlushRate:
-            L("rtk.runtime.issue.lowDeferredFlushRate", "Deferred flushes are not resolving")
+            L("cto.runtime.issue.lowDeferredFlushRate", "Deferred flushes are not resolving")
         case .staleDecisions:
-            L("rtk.runtime.issue.staleDecisions", "No recent decisions")
+            L("cto.runtime.issue.staleDecisions", "No recent decisions")
         case .modeOffWithTrackedSessions:
-            L("rtk.runtime.issue.modeOffWithTrackedSessions", "Mode is off while sessions are tracked")
+            L("cto.runtime.issue.modeOffWithTrackedSessions", "Mode is off while sessions are tracked")
         case .lowDecisionThroughput:
-            L("rtk.runtime.issue.lowDecisionThroughput", "No decisions despite tracked sessions")
+            L("cto.runtime.issue.lowDecisionThroughput", "No decisions despite tracked sessions")
         }
     }
 
@@ -681,12 +693,12 @@ struct TokenOptimizationSettingsView: View {
     }
 
     private func refreshRuntimeStats() {
-        runtimeSnapshot = RTKRuntimeMonitor.shared.snapshot()
+        runtimeSnapshot = CTORuntimeMonitor.shared.snapshot()
     }
 
     private func resetRuntimeStats() {
-        RTKRuntimeMonitor.shared.reset()
-        runtimeSnapshot = RTKRuntimeMonitor.shared.snapshot()
+        CTORuntimeMonitor.shared.reset()
+        runtimeSnapshot = CTORuntimeMonitor.shared.snapshot()
     }
 
     private var compactDateFormatter: DateFormatter {
@@ -696,12 +708,65 @@ struct TokenOptimizationSettingsView: View {
     }
 
     @ViewBuilder
+    private var commandLogView: some View {
+        let entries = CTOManager.shared.readCommandLog(limit: 50)
+        if entries.isEmpty {
+            Text(L("cto.debug.noCommands", "No optimizer commands recorded yet"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            let optimized = entries.filter { $0.outcome == "optimized" }.count
+            let fallthrough_ = entries.filter { $0.outcome == "fallthrough" }.count
+            let errors = entries.count - optimized - fallthrough_
+
+            HStack(spacing: 16) {
+                Label("\(optimized)", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Label("\(fallthrough_)", systemImage: "arrow.uturn.forward")
+                    .foregroundStyle(.orange)
+                Label("\(errors)", systemImage: "xmark.circle.fill")
+                    .foregroundStyle(.red)
+                Spacer()
+                if let rate = CTOManager.shared.commandSuccessRate() {
+                    Text(L("cto.debug.successRate", "Success rate: \(String(format: "%.0f", rate))%"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(.caption)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(entries.reversed()) { entry in
+                        HStack(spacing: 8) {
+                            Text(compactDateFormatter.string(from: entry.timestamp))
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(.tertiary)
+                            Text(entry.command)
+                                .font(.system(.caption, design: .monospaced))
+                                .fontWeight(.medium)
+                            Spacer()
+                            Text(entry.outcome)
+                                .font(.caption2)
+                                .foregroundStyle(
+                                    entry.outcome == "optimized" ? .green :
+                                    entry.outcome == "fallthrough" ? .orange : .red
+                                )
+                        }
+                    }
+                }
+            }
+            .frame(maxHeight: 200)
+        }
+    }
+
+    @ViewBuilder
     private var tokenSavingsView: some View {
         if isLoadingStats {
             HStack(spacing: 8) {
                 ProgressView()
                     .controlSize(.small)
-                Text(L("rtk.savings.loading", "Loading token savings..."))
+                Text(L("cto.savings.loading", "Loading token savings..."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -712,44 +777,44 @@ struct TokenOptimizationSettingsView: View {
                 statRow(
                     icon: "number",
                     iconColor: .blue,
-                    label: L("rtk.savings.totalCommands", "Total commands"),
+                    label: L("cto.savings.totalCommands", "Total commands"),
                     value: "\(stats.commands)"
                 )
                 statRow(
                     icon: "arrow.right.circle",
                     iconColor: .secondary,
-                    label: L("rtk.savings.inputTokens", "Input tokens"),
+                    label: L("cto.savings.inputTokens", "Input tokens"),
                     value: formatNumber(stats.inputTokens)
                 )
                 statRow(
                     icon: "arrow.left.circle",
                     iconColor: .secondary,
-                    label: L("rtk.savings.outputTokens", "Output tokens"),
+                    label: L("cto.savings.outputTokens", "Output tokens"),
                     value: formatNumber(stats.outputTokens)
                 )
                 statRow(
                     icon: "arrow.down.circle.fill",
                     iconColor: .green,
-                    label: L("rtk.savings.savedTokens", "Tokens saved"),
+                    label: L("cto.savings.savedTokens", "Tokens saved"),
                     value: formatNumber(stats.savedTokens)
                 )
                 statRow(
                     icon: "percent",
                     iconColor: .green,
-                    label: L("rtk.savings.avgSavings", "Avg savings"),
+                    label: L("cto.savings.avgSavings", "Avg savings"),
                     value: String(format: "%.1f%%", stats.savingsPct)
                 )
                 statRow(
                     icon: "clock",
                     iconColor: .secondary,
-                    label: L("rtk.savings.avgResponseTime", "Avg response time"),
+                    label: L("cto.savings.avgResponseTime", "Avg response time"),
                     value: "\(stats.avgTimeMs)ms"
                 )
             }
 
             HStack {
                 Spacer()
-                Button(L("rtk.savings.refresh", "Refresh")) {
+                Button(L("cto.savings.refresh", "Refresh")) {
                     loadGainStats()
                 }
                 .buttonStyle(.bordered)
@@ -760,11 +825,11 @@ struct TokenOptimizationSettingsView: View {
             HStack(spacing: 8) {
                 Image(systemName: "chart.bar")
                     .foregroundStyle(.secondary)
-                Text(L("rtk.savings.noData", "No token savings data yet. Run some commands with optimization active to see analytics."))
+                Text(L("cto.savings.noData", "No token savings data yet. Run some commands with optimization active to see analytics."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button(L("rtk.savings.refresh", "Refresh")) {
+                Button(L("cto.savings.refresh", "Refresh")) {
                     loadGainStats()
                 }
                 .buttonStyle(.bordered)
@@ -809,34 +874,34 @@ struct TokenOptimizationSettingsView: View {
                 infoRow(
                     icon: "wand.and.stars",
                     iconColor: .yellow,
-                    text: L("rtk.perTab.allTabs.default", "All tabs optimized by default — no badge shown")
+                    text: L("cto.perTab.allTabs.default", "All tabs optimized by default — no badge shown")
                 )
                 infoRow(
                     icon: "wand.and.stars",
                     iconColor: .red,
-                    text: L("rtk.perTab.allTabs.optOut", "Red wand appears on tabs you opt out")
+                    text: L("cto.perTab.allTabs.optOut", "Red wand appears on tabs you opt out")
                 )
             case .aiOnly:
                 infoRow(
                     icon: "wand.and.stars",
                     iconColor: .yellow,
-                    text: L("rtk.perTab.aiOnly.detected", "Yellow wand when you force a tab on")
+                    text: L("cto.perTab.aiOnly.detected", "Yellow wand when you force a tab on")
                 )
                 infoRow(
                     icon: "wand.and.stars",
                     iconColor: .red,
-                    text: L("rtk.perTab.aiOnly.cycle", "Red wand when you force a tab off")
+                    text: L("cto.perTab.aiOnly.cycle", "Red wand when you force a tab off")
                 )
             case .manual:
                 infoRow(
                     icon: "wand.and.stars",
                     iconColor: .yellow,
-                    text: L("rtk.perTab.manual.optIn", "Yellow wand appears on tabs you opt in")
+                    text: L("cto.perTab.manual.optIn", "Yellow wand appears on tabs you opt in")
                 )
                 infoRow(
                     icon: "wand.and.stars",
                     iconColor: .secondary,
-                    text: L("rtk.perTab.manual.default", "No badge on tabs following the default")
+                    text: L("cto.perTab.manual.default", "No badge on tabs following the default")
                 )
             }
         }
@@ -862,22 +927,22 @@ struct TokenOptimizationSettingsView: View {
         let tabRows = activeTabRows(from: overlayModel.tabs)
 
         if !tabRows.isEmpty {
-            SettingsRow(L("settings.ai.rtk.applyAll", "Apply to all open tabs")) {
+            SettingsRow(L("settings.ai.cto.applyAll", "Apply to all open tabs")) {
                 HStack(spacing: 8) {
-                    Button(L("settings.ai.rtk.enableAll", "Enable all")) {
-                        applyRTK(to: tabRows.map(\.id), enabled: true)
+                    Button(L("settings.ai.cto.enableAll", "Enable all")) {
+                        applyCTO(to: tabRows.map(\.id), enabled: true)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
 
-                    Button(L("settings.ai.rtk.disableAll", "Disable all")) {
-                        applyRTK(to: tabRows.map(\.id), enabled: false)
+                    Button(L("settings.ai.cto.disableAll", "Disable all")) {
+                        applyCTO(to: tabRows.map(\.id), enabled: false)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
 
-                    Button(L("settings.ai.rtk.clearAllOverrides", "Use global on all")) {
-                        clearRTKOverrides(overlayModel: overlayModel)
+                    Button(L("settings.ai.cto.clearAllOverrides", "Use global on all")) {
+                        clearCTOOverrides(overlayModel: overlayModel)
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
@@ -888,17 +953,17 @@ struct TokenOptimizationSettingsView: View {
                 SettingsRow(
                     row.tabTitle,
                     help: row.hasOverride
-                        ? L("settings.ai.rtk.tabOverride", "Overrides global optimization setting for this tab.")
-                        : L("settings.ai.rtk.tabInherit", "Uses global optimization setting.")
+                        ? L("settings.ai.cto.tabOverride", "Overrides global optimization setting for this tab.")
+                        : L("settings.ai.cto.tabInherit", "Uses global optimization setting.")
                 ) {
                     HStack(spacing: 12) {
                         Toggle("", isOn: Binding(
-                            get: { settings.isRTKEnabled(forTabIdentifier: row.id) },
+                            get: { settings.isCTOEnabled(forTabIdentifier: row.id) },
                             set: { value in
-                                if value == settings.isRTKEnabled {
-                                    settings.clearRTKOverride(forTabIdentifier: row.id)
+                                if value == settings.isCTOEnabled {
+                                    settings.clearCTOOverride(forTabIdentifier: row.id)
                                 } else {
-                                    settings.setRTKOverride(value, forTabIdentifier: row.id)
+                                    settings.setCTOOverride(value, forTabIdentifier: row.id)
                                 }
                             }
                         ))
@@ -906,8 +971,8 @@ struct TokenOptimizationSettingsView: View {
                         .labelsHidden()
 
                         if row.hasOverride {
-                            Button(L("settings.ai.rtk.clearOverride", "Use global")) {
-                                settings.clearRTKOverride(forTabIdentifier: row.id)
+                            Button(L("settings.ai.cto.clearOverride", "Use global")) {
+                                settings.clearCTOOverride(forTabIdentifier: row.id)
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
@@ -916,19 +981,19 @@ struct TokenOptimizationSettingsView: View {
                 }
             }
         } else {
-            SettingsRow(L("settings.ai.rtk.tabsUnavailable", "No active tabs")) {
-                Text(L("settings.ai.rtk.waitForTabs", "Open a tab to enable per-tab settings."))
+            SettingsRow(L("settings.ai.cto.tabsUnavailable", "No active tabs")) {
+                Text(L("settings.ai.cto.waitForTabs", "Open a tab to enable per-tab settings."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
     }
 
-    private func activeTabRows(from overlayTabs: [OverlayTab]) -> [RTKTabRow] {
-        overlayTabs.compactMap { tab -> RTKTabRow? in
+    private func activeTabRows(from overlayTabs: [OverlayTab]) -> [CTOTabRow] {
+        overlayTabs.compactMap { tab -> CTOTabRow? in
             guard let sessionIdentifier = tab.session?.tabIdentifier else { return nil }
-            let override = settings.rtkOverride(forTabIdentifier: sessionIdentifier)
-            return RTKTabRow(
+            let override = settings.ctoOverride(forTabIdentifier: sessionIdentifier)
+            return CTOTabRow(
                 id: sessionIdentifier,
                 tabTitle: tab.displayTitle.isEmpty ? "Tab" : tab.displayTitle,
                 hasOverride: override != nil
@@ -939,17 +1004,17 @@ struct TokenOptimizationSettingsView: View {
         }
     }
 
-    private func applyRTK(to tabIDs: [String], enabled: Bool) {
+    private func applyCTO(to tabIDs: [String], enabled: Bool) {
         let uniqueTabIDs = Set(tabIDs)
         uniqueTabIDs.forEach { tabID in
-            settings.setRTKOverride(enabled, forTabIdentifier: tabID)
+            settings.setCTOOverride(enabled, forTabIdentifier: tabID)
         }
     }
 
-    private func clearRTKOverrides(overlayModel: OverlayTabsModel) {
+    private func clearCTOOverrides(overlayModel: OverlayTabsModel) {
         for tab in overlayModel.tabs {
             guard let sessionIdentifier = tab.session?.tabIdentifier else { continue }
-            settings.clearRTKOverride(forTabIdentifier: sessionIdentifier)
+            settings.clearCTOOverride(forTabIdentifier: sessionIdentifier)
         }
     }
 
@@ -958,7 +1023,7 @@ struct TokenOptimizationSettingsView: View {
     @ViewBuilder
     private var commandsList: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(RTKManager.supportedCommands, id: \.self) { command in
+            ForEach(supportedCommands, id: \.self) { command in
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 12))
@@ -966,7 +1031,7 @@ struct TokenOptimizationSettingsView: View {
                     Text(command)
                         .font(.system(.body, design: .monospaced))
 
-                    if let sub = RTKManager.rtkRewriteMap[command] {
+                    if let sub = ctoRewriteMap[command] {
                         Text("→ optim \(sub)")
                             .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(.purple)
@@ -987,30 +1052,30 @@ struct TokenOptimizationSettingsView: View {
     private var howItWorksView: some View {
         VStack(alignment: .leading, spacing: 10) {
             // What the optimizer does
-            Text(L("rtk.howItWorks.optimizerTitle", "The Optimizer"))
+            Text(L("cto.howItWorks.optimizerTitle", "The Optimizer"))
                 .font(.caption)
                 .fontWeight(.semibold)
 
-            Text(L("rtk.howItWorks.optimizerDesc", "chau7-optim is a built-in binary (based on rtk) that intercepts command output and compresses it for LLM consumption. For example, `cat large_file.rs` strips comments and blank lines, `git diff` condenses to changed lines only, and `cargo build` filters out Compiling... progress, keeping only errors."))
+            Text(L("cto.howItWorks.optimizerDesc", "chau7-optim is a built-in binary that intercepts command output and compresses it for LLM consumption. For example, `cat large_file.rs` strips comments and blank lines, `git diff` condenses to changed lines only, and `cargo build` filters out Compiling... progress, keeping only errors."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
             codeRow("~/.chau7/bin/chau7-optim")
 
             // How wrappers work
-            Text(L("rtk.howItWorks.wrappersTitle", "Wrapper Scripts"))
+            Text(L("cto.howItWorks.wrappersTitle", "Wrapper Scripts"))
                 .font(.caption)
                 .fontWeight(.semibold)
                 .padding(.top, 4)
 
-            Text(L("rtk.howItWorks.desc", "When active, Chau7 prepends a directory of wrapper scripts to your PATH. Each wrapper shadows a real binary (cat, ls, git, etc.) and decides whether to optimize:"))
+            Text(L("cto.howItWorks.desc", "When active, Chau7 prepends a directory of wrapper scripts to your PATH. Each wrapper shadows a real binary (cat, ls, git, etc.) and decides whether to optimize:"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            codeRow("~/.chau7/rtk_bin/")
+            codeRow("~/.chau7/cto_bin/")
 
             // Decision flow
-            Text(L("rtk.howItWorks.flow", "Decision flow for each command:"))
+            Text(L("cto.howItWorks.flow", "Decision flow for each command:"))
                 .font(.caption)
                 .fontWeight(.semibold)
                 .padding(.top, 4)
@@ -1023,14 +1088,14 @@ struct TokenOptimizationSettingsView: View {
             }
 
             // Flag files
-            Text(L("rtk.howItWorks.flagDir", "Per-session flag files:"))
+            Text(L("cto.howItWorks.flagDir", "Per-session flag files:"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.top, 4)
 
-            codeRow("~/.chau7/rtk_active/<SESSION_ID>")
+            codeRow("~/.chau7/cto_active/<SESSION_ID>")
 
-            Text(L("rtk.howItWorks.cleanup", "All flag files and wrappers are cleaned up when the app quits or when the mode is set to Off."))
+            Text(L("cto.howItWorks.cleanup", "All flag files and wrappers are cleaned up when the app quits or when the mode is set to Off."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -1062,9 +1127,9 @@ struct TokenOptimizationSettingsView: View {
     // MARK: - Actions
 
     private func refreshAll() {
-        wrapperHealth = RTKManager.shared.checkInstallation()
-        mdRendererInstalled = RTKManager.shared.isMarkdownRendererInstalled
-        optimizerInstalled = RTKManager.shared.isOptimizerInstalled
+        wrapperHealth = CTOManager.shared.checkInstallation()
+        mdRendererInstalled = CTOManager.shared.isMarkdownRendererInstalled
+        optimizerInstalled = CTOManager.shared.isOptimizerInstalled
         loadGainStats()
         refreshRuntimeStats()
     }
@@ -1072,7 +1137,7 @@ struct TokenOptimizationSettingsView: View {
     private func loadGainStats() {
         isLoadingStats = true
         Task {
-            let stats = await RTKManager.shared.fetchGainStats()
+            let stats = await CTOManager.shared.fetchGainStats()
             await MainActor.run {
                 gainStats = stats
                 isLoadingStats = false
@@ -1080,7 +1145,7 @@ struct TokenOptimizationSettingsView: View {
         }
     }
 
-    private struct RTKTabRow: Identifiable {
+    private struct CTOTabRow: Identifiable {
         let id: String
         let tabTitle: String
         let hasOverride: Bool
