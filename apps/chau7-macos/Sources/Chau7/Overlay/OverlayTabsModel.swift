@@ -2576,21 +2576,107 @@ final class OverlayTabsModel: ObservableObject {
 
     /// Shared tool→tab matching logic (same 3-priority algorithm as applyNotificationStyle)
     private func tabMatchingTool(_ tool: String) -> OverlayTab? {
-        let lowerTool = tool.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let candidates = Self.toolMatchCandidates(for: tool)
+        guard !candidates.isEmpty else { return nil }
 
-        if let tab = tabs.first(where: {
-            $0.displaySession?.aiDisplayAppName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == lowerTool
-        }) { return tab }
-
-        if let tab = tabs.first(where: {
-            $0.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == lowerTool
-        }) { return tab }
-
-        return tabs.first { tab in
-            let display = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let active = tab.displaySession?.aiDisplayAppName?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            return display.contains(lowerTool) || (active?.contains(lowerTool) == true)
+        func matchesCandidate(_ rawName: String?) -> Bool {
+            guard let normalized = Self.normalizedToolLabel(rawName) else { return false }
+            if candidates.contains(normalized) { return true }
+            return candidates.contains { candidate in
+                normalized.contains(candidate) || candidate.contains(normalized)
+            }
         }
+
+        // 1) Fast exact match on focused session branding
+        if let tab = tabs.first(where: { matchesCandidate($0.displaySession?.aiDisplayAppName) }) {
+            return tab
+        }
+
+        // 2) Match on tab chrome title
+        if let tab = tabs.first(where: { matchesCandidate($0.displayTitle) }) {
+            return tab
+        }
+
+        // 3) Deep scan every terminal session in each tab to avoid missing
+        // background panes/focus mismatches.
+        if let tab = tabs.first(where: { tab in
+            tab.splitController.terminalSessions.contains { _, session in
+                if matchesCandidate(session.aiDisplayAppName) { return true }
+                if matchesCandidate(session.activeAppName) { return true }
+
+                if let provider = AIResumeParser.normalizeProviderName(session.lastAIProvider ?? ""),
+                   candidates.contains(provider) {
+                    return true
+                }
+                return false
+            }
+        }) {
+            return tab
+        }
+
+        // 4) Claude-specific fallback: correlate tabs by cwd against live
+        // Claude monitor sessions and pick the most recently active one.
+        if candidates.contains("claude") {
+            let bestByCwd = tabs.compactMap { tab -> (tab: OverlayTab, lastActivity: Date)? in
+                var activities: [Date] = []
+                for pair in tab.splitController.terminalSessions {
+                    let session = pair.1
+                    let dir = session.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !dir.isEmpty else { continue }
+                    let sessionCandidates = ClaudeCodeMonitor.shared.sessionCandidates(forDirectory: dir)
+                    if let lastActivity = sessionCandidates.map({ $0.lastActivity }).max() {
+                        activities.append(lastActivity)
+                    }
+                }
+                let bestActivity = activities.max()
+                guard let bestActivity else { return nil }
+                return (tab: tab, lastActivity: bestActivity)
+            }
+            .sorted { $0.lastActivity > $1.lastActivity }
+            .first?.tab
+
+            if let bestByCwd {
+                Log.info("tabMatchingTool: resolved '\(tool)' via Claude cwd fallback to tab=\(bestByCwd.id)")
+                return bestByCwd
+            }
+        }
+
+        return nil
+    }
+
+    private static func normalizedToolLabel(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !trimmed.isEmpty else { return nil }
+
+        if let provider = AIResumeParser.normalizeProviderName(trimmed) {
+            return provider
+        }
+        return trimmed
+    }
+
+    private static func toolMatchCandidates(for tool: String) -> [String] {
+        guard let normalized = normalizedToolLabel(tool) else { return [] }
+
+        var candidates: [String] = [normalized]
+        var seen = Set(candidates)
+
+        func append(_ value: String) {
+            guard seen.insert(value).inserted else { return }
+            candidates.append(value)
+        }
+
+        switch normalized {
+        case "claude":
+            append("claude code")
+            append("continue")
+        case "codex":
+            append("openai codex")
+        default:
+            break
+        }
+
+        return candidates
     }
 
     // MARK: - Tab Bar Recovery
