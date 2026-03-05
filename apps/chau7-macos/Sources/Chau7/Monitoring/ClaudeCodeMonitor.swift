@@ -237,33 +237,16 @@ final class ClaudeCodeMonitor: ObservableObject {
     }
 
     private func nextIdleCheckDelay(now: Date) -> TimeInterval? {
-        Self.nextIdleCheckDelay(
+        let activeDates = activeSessions.values
+            .filter { $0.state == .active || $0.state == .responding }
+            .map(\.lastActivity)
+
+        return MonitoringSchedule.nextIdleCheckDelay(
             now: now,
-            minimumIdleCheckInterval: minimumIdleCheckInterval,
+            minimumInterval: minimumIdleCheckInterval,
             idleThreshold: idleThreshold,
-            sessions: Array(activeSessions.values)
+            activeSessionDates: activeDates
         )
-    }
-
-    // MARK: - Testable schedule helper
-
-    internal static func nextIdleCheckDelay(
-        now: Date,
-        minimumIdleCheckInterval: TimeInterval,
-        idleThreshold: TimeInterval,
-        sessions: [ClaudeSessionInfo]
-    ) -> TimeInterval? {
-        let threshold = max(minimumIdleCheckInterval, idleThreshold)
-        var minimumRemaining = Double.infinity
-
-        for session in sessions {
-            guard session.state == .active || session.state == .responding else { continue }
-            let remaining = threshold - now.timeIntervalSince(session.lastActivity)
-            minimumRemaining = min(minimumRemaining, remaining)
-        }
-
-        guard minimumRemaining.isFinite else { return nil }
-        return max(minimumIdleCheckInterval, minimumRemaining)
     }
 
     private func checkIdleSessions() {

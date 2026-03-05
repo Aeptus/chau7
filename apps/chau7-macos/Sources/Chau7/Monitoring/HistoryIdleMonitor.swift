@@ -148,7 +148,7 @@ final class HistoryIdleMonitor {
             return
         }
 
-        guard let delay = Self.nextCheckDelay(
+        guard let delay = MonitoringSchedule.nextHistoryCheckDelay(
             now: now,
             minimumCheckInterval: minimumCheckInterval,
             idleSeconds: idleSecondsProvider(),
@@ -166,36 +166,5 @@ final class HistoryIdleMonitor {
         }
         timer.resume()
         self.timer = timer
-    }
-
-    // MARK: - Testable schedule helper
-
-    internal static func nextCheckDelay(
-        now: Date,
-        minimumCheckInterval: TimeInterval,
-        idleSeconds: TimeInterval,
-        staleSeconds: TimeInterval,
-        lastSeen: [String: Date]
-    ) -> TimeInterval? {
-        let safeIdleSeconds = max(minimumCheckInterval, idleSeconds)
-        let safeStaleSeconds = max(safeIdleSeconds + 1.0, staleSeconds)
-
-        var nextDeadline = Date.distantFuture
-        for (_, lastSeenAt) in lastSeen {
-            let nextIdle = lastSeenAt.addingTimeInterval(safeIdleSeconds)
-            if nextIdle < nextDeadline {
-                nextDeadline = nextIdle
-            }
-
-            let nextStale = lastSeenAt.addingTimeInterval(safeStaleSeconds)
-            if nextStale < nextDeadline {
-                nextDeadline = nextStale
-            }
-        }
-
-        guard nextDeadline != Date.distantFuture else { return nil }
-
-        let remaining = nextDeadline.timeIntervalSince(now)
-        return max(minimumCheckInterval, remaining)
     }
 }
