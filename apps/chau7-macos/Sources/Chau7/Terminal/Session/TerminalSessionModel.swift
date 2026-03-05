@@ -80,7 +80,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     @Published var gitRootPath: String? = nil
     @Published var activeAppName: String? = nil {
         didSet {
-            recalculateRTKFlag()
+            recalculateCTOFlag()
         }
     }
     @Published var devServer: DevServerMonitor.DevServerInfo? = nil
@@ -852,7 +852,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private func handlePromptDetected() {
         if isShellLoading { isShellLoading = false }
         isAtPrompt = true
-        createDeferredRTKFlag()
+        createDeferredCTOFlag()
         devServerMonitor.commandDidFinish()
         flushPendingPrefillInputIfReady()
         guard hasPendingCommand, pendingCommandLine != nil else { return }
@@ -1204,9 +1204,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         inputBuffer = parts.last ?? ""
     }
 
-    private func applyRTKPrefixIfNeeded(to line: String) -> String {
-        guard FeatureSettings.shared.isRTKEnabled(forTabIdentifier: tabIdentifier) else { return line }
-        let prefix = FeatureSettings.shared.rtkPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func applyCTOPrefixIfNeeded(to line: String) -> String {
+        guard FeatureSettings.shared.isCTOEnabled(forTabIdentifier: tabIdentifier) else { return line }
+        let prefix = FeatureSettings.shared.ctoPrefix.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prefix.isEmpty else { return line }
         guard !line.isEmpty else { return line }
         if line.hasPrefix(prefix) { return line }
@@ -1217,7 +1217,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private func handleInputLine(_ line: String) {
         // Sanitize input to remove escape sequences that contaminate history/logs
         let sanitized = EscapeSequenceSanitizer.sanitize(line)
-        let transformed = applyRTKPrefixIfNeeded(to: sanitized)
+        let transformed = applyCTOPrefixIfNeeded(to: sanitized)
         let trimmed = transformed.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             pendingCommandLine = nil
@@ -1377,6 +1377,24 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             lastAIProvider = detectedProvider
             lastAISessionId = nil
         }
+    }
+
+    /// Restores AI metadata from persisted tab state without waiting for user input.
+    /// This keeps explicit session metadata stable across restoration boundaries and
+    /// prevents fallback logic from collapsing multiple tabs into one inferred session.
+    func restoreAIMetadata(provider: String?, sessionId: String?) {
+        let normalizedProvider = AIResumeParser.normalizeProviderName(
+            provider ?? ""
+        )
+        lastAIProvider = normalizedProvider
+
+        if let sessionId {
+            let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+            lastAISessionId = AIResumeParser.isValidSessionId(trimmed) ? trimmed : nil
+            return
+        }
+
+        lastAISessionId = nil
     }
 
     private func isExitCommand(_ commandLine: String) -> Bool {
@@ -2196,25 +2214,29 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         dict["COLORTERM"] = "truecolor"
 
         let current = ProcessInfo.processInfo.environment
-        let rtkEnabled = FeatureSettings.shared.tokenOptimizationMode != .off
-        if let path = current["PATH"] {
-            // RTK: prepend wrapper directory if token optimization is not off
-            if rtkEnabled {
-                dict["PATH"] = RTKManager.shared.prependedPATH(original: path)
-            } else {
-                dict["PATH"] = path
-            }
+        let ctoEnabled = FeatureSettings.shared.tokenOptimizationMode != .off
+
+        // Guarantee a usable PATH even if the parent process env is corrupt.
+        let macOSDefault = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        let inherited = current["PATH"] ?? ""
+        let basePath = inherited.contains("/usr/bin") ? inherited : macOSDefault
+
+        if ctoEnabled {
+            dict["PATH"] = CTOManager.shared.prependedPATH(original: basePath)
+        } else {
+            dict["PATH"] = basePath
         }
         if let home = current["HOME"] {
             dict["HOME"] = home
         }
         dict["CHAU7_START_DIR"] = startDirectoryForLaunch()
 
-        // RTK: set session ID for flag file lookup by wrapper scripts.
+        // CTO: set session ID for flag file lookup by wrapper scripts.
         // Uses a dedicated env var to avoid conflicting with CHAU7_SESSION_ID
         // which the analytics proxy uses for per-shell-launch correlation.
-        if rtkEnabled {
-            dict["CHAU7_RTK_SESSION"] = tabIdentifier
+        if ctoEnabled {
+            dict["CHAU7_CTO_SESSION"] = tabIdentifier
+            dict["CHAU7_CTO_LOG"] = CTOManager.shared.commandLogPath.path
         }
 
         // Set startup command if configured
@@ -2335,51 +2357,54 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         let error: String?
     }
 
-    // MARK: - Token Optimization (RTK) Flag Recalculation
+    // MARK: - Token Optimization (CTO) Flag Recalculation
 
     /// Per-tab token optimization override. Set by `OverlayTabsModel` when the
-    /// user toggles per-tab RTK. Stored here so `activeAppName.didSet` can
+    /// user toggles per-tab CTO. Stored here so `activeAppName.didSet` can
     /// access it without a back-reference to the tab model.
     var tokenOptOverride: TabTokenOptOverride = .default
 
-    /// Whether the RTK flag creation was deferred until the first prompt.
+    /// Whether the CTO flag creation was deferred until the first prompt.
     /// This avoids optimizer overhead during shell init scripts (NVM, compinit, etc.)
     /// that invoke coreutils thousands of times with flags chau7-optim can't handle.
-    var rtkFlagDeferred = false
-    private var rtkFlagDeferredAt: Date?
+    var ctoFlagDeferred = false
+    private var ctoFlagDeferredAt: Date?
 
-    /// Creates the RTK flag file after the shell has finished initializing.
+    /// Creates the CTO flag file after the shell has finished initializing.
     /// Called once from `handlePromptDetected()` on the first prompt.
-    func createDeferredRTKFlag() {
-        guard rtkFlagDeferred else { return }
-        rtkFlagDeferred = false
-        let delayMs = rtkFlagDeferredAt.map {
+    func createDeferredCTOFlag() {
+        guard ctoFlagDeferred else { return }
+        ctoFlagDeferred = false
+        let delayMs = ctoFlagDeferredAt.map {
             Int(Date().timeIntervalSince($0) * 1000)
         } ?? 0
-        rtkFlagDeferredAt = nil
+        ctoFlagDeferredAt = nil
 
         let mode = FeatureSettings.shared.tokenOptimizationMode
+        let isAIActive = activeAppName != nil
         guard mode != .off else {
-            RTKRuntimeMonitor.shared.recordDeferredSkip(
+            CTORuntimeMonitor.shared.recordDeferredSkip(
                 sessionID: tabIdentifier,
-                reason: "mode-off"
+                reason: "mode-off",
+                mode: mode,
+                override: tokenOptOverride,
+                isAIActive: isAIActive
             )
             return
         }
 
-        let isAIActive = activeAppName != nil
-        let decision = RTKFlagManager.recalculate(
+        let decision = CTOFlagManager.recalculate(
             sessionID: tabIdentifier,
             mode: mode,
             override: tokenOptOverride,
             isAIActive: isAIActive
         )
-        let reason = RTKFlagManager.decisionReason(
+        let reason = decisionReason(
             mode: mode,
             override: tokenOptOverride,
             isAIActive: isAIActive
         )
-        RTKRuntimeMonitor.shared.recordDeferredFlush(
+        CTORuntimeMonitor.shared.recordDeferredFlush(
             sessionID: tabIdentifier,
             delayToActivateMs: delayMs,
             mode: mode,
@@ -2391,30 +2416,30 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             reason: reason
         )
         if decision.changed {
-            NotificationCenter.default.post(name: .rtkFlagRecalculated, object: nil)
+            NotificationCenter.default.post(name: .ctoFlagRecalculated, object: nil)
         }
     }
 
-    /// Recalculates the RTK flag file for this session based on the current
+    /// Recalculates the CTO flag file for this session based on the current
     /// global mode, per-tab override, and AI detection state.
     /// Called automatically when `activeAppName` changes.
-    func recalculateRTKFlag() {
+    func recalculateCTOFlag() {
         let mode = FeatureSettings.shared.tokenOptimizationMode
         guard mode != .off else { return }
-        guard !rtkFlagDeferred else { return }
+        guard !ctoFlagDeferred else { return }
         let isAIActive = activeAppName != nil
-        let decision = RTKFlagManager.recalculate(
+        let decision = CTOFlagManager.recalculate(
             sessionID: tabIdentifier,
             mode: mode,
             override: tokenOptOverride,
             isAIActive: isAIActive
         )
-        let reason = RTKFlagManager.decisionReason(
+        let reason = decisionReason(
             mode: mode,
             override: tokenOptOverride,
             isAIActive: isAIActive
         )
-        RTKRuntimeMonitor.shared.recordDecision(
+        CTORuntimeMonitor.shared.recordDecision(
             sessionID: tabIdentifier,
             mode: mode,
             override: tokenOptOverride,
@@ -2427,21 +2452,21 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
         // Notify tab bar to re-render bolt icon state (the OverlayTab struct
         // is a value type and doesn't observe session changes directly).
-        NotificationCenter.default.post(name: .rtkFlagRecalculated, object: nil)
+        NotificationCenter.default.post(name: .ctoFlagRecalculated, object: nil)
     }
 
     /// Marks this session as deferred for the first prompt in the current shell
-    /// lifecycle. Deferred state is cleared automatically in `createDeferredRTKFlag()`.
-    func markRTKFlagDeferred(mode: TokenOptimizationMode) {
+    /// lifecycle. Deferred state is cleared automatically in `createDeferredCTOFlag()`.
+    func markCTOFlagDeferred(mode: TokenOptimizationMode) {
         guard mode != .off else {
-            rtkFlagDeferred = false
-            rtkFlagDeferredAt = nil
+            ctoFlagDeferred = false
+            ctoFlagDeferredAt = nil
             return
         }
-        guard !rtkFlagDeferred else { return }
-        rtkFlagDeferred = true
-        rtkFlagDeferredAt = Date()
-        RTKRuntimeMonitor.shared.recordDeferredSet(sessionID: tabIdentifier)
+        guard !ctoFlagDeferred else { return }
+        ctoFlagDeferred = true
+        ctoFlagDeferredAt = Date()
+        CTORuntimeMonitor.shared.recordDeferredSet(sessionID: tabIdentifier)
     }
 
     weak var highlightView: TerminalHighlightView?

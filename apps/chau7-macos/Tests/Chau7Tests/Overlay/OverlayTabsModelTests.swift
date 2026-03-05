@@ -751,6 +751,107 @@ final class OverlayTabsModelTests: XCTestCase {
         wait(for: [readyExpectation], timeout: 2.0)
     }
 
+    func testRestorePrefillsLegacyTopLevelMetadataForSinglePaneStates() {
+        let firstPaneID = UUID()
+        let secondPaneID = UUID()
+        let firstSplit = SavedSplitNode(
+            kind: .terminal,
+            id: firstPaneID.uuidString,
+            direction: nil,
+            ratio: nil,
+            first: nil,
+            second: nil,
+            textEditorPath: nil
+        )
+        let secondSplit = SavedSplitNode(
+            kind: .terminal,
+            id: secondPaneID.uuidString,
+            direction: nil,
+            ratio: nil,
+            first: nil,
+            second: nil,
+            textEditorPath: nil
+        )
+        let firstPaneState = SavedTerminalPaneState(
+            paneID: firstPaneID.uuidString,
+            directory: "/tmp/legacy-top-level-restore",
+            scrollbackContent: nil,
+            aiResumeCommand: nil
+        )
+        let secondPaneState = SavedTerminalPaneState(
+            paneID: secondPaneID.uuidString,
+            directory: "/tmp/legacy-top-level-restore",
+            scrollbackContent: nil,
+            aiResumeCommand: nil
+        )
+
+        storeSavedTabStates([
+            SavedTabState(
+                customTitle: "First",
+                color: TabColor.purple.rawValue,
+                directory: "/tmp/legacy-top-level-restore",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                aiProvider: "claude",
+                aiSessionId: "legacy-111",
+                splitLayout: firstSplit,
+                focusedPaneID: firstPaneID.uuidString,
+                paneStates: [firstPaneState]
+            ),
+            SavedTabState(
+                customTitle: "Second",
+                color: TabColor.orange.rawValue,
+                directory: "/tmp/legacy-top-level-restore",
+                selectedIndex: nil,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                aiProvider: "claude",
+                aiSessionId: "legacy-222",
+                splitLayout: secondSplit,
+                focusedPaneID: secondPaneID.uuidString,
+                paneStates: [secondPaneState]
+            )
+        ])
+
+        let restoredModel = OverlayTabsModel(appModel: appModel)
+        guard let firstSession = restoredModel.tabs.first(where: { $0.customTitle == "First" })?
+            .splitController.terminalSessions.first(where: { $0.0 == firstPaneID })?.1,
+              let secondSession = restoredModel.tabs.first(where: { $0.customTitle == "Second" })?
+            .splitController.terminalSessions.first(where: { $0.0 == secondPaneID })?.1 else {
+            XCTFail("Expected restored sessions for both tabs")
+            return
+        }
+
+        let firstView = RustTerminalView(frame: .zero)
+        let secondView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        firstView.onInput = { capturedInputs.append($0) }
+        secondView.onInput = { capturedInputs.append($0) }
+        firstSession.attachRustTerminal(firstView)
+        secondSession.attachRustTerminal(secondView)
+        firstSession.isShellLoading = false
+        firstSession.isAtPrompt = true
+        firstSession.status = .idle
+        secondSession.isShellLoading = false
+        secondSession.isAtPrompt = true
+        secondSession.status = .idle
+
+        let expectationDone = expectation(description: "restore from legacy top-level metadata")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            let expected: Set<String> = [
+                "claude --resume legacy-111",
+                "claude --resume legacy-222"
+            ]
+            XCTAssertEqual(Set(capturedInputs), expected)
+            XCTAssertEqual(capturedInputs.count, 2)
+            expectationDone.fulfill()
+        }
+        wait(for: [expectationDone], timeout: 2.0)
+    }
+
     func testRestorePrefillsDistinctCodexResumeCommandsPerTab() {
         let firstPaneID = UUID()
         let secondPaneID = UUID()
