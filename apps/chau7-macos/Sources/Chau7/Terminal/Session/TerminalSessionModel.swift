@@ -1367,55 +1367,16 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         let trimmed = commandLine.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        if let explicitMetadata = Self.extractAIResumeMetadata(from: trimmed) {
-            lastAIProvider = explicitMetadata.provider
-            lastAISessionId = explicitMetadata.sessionId
+        if let metadata = AIResumeParser.extractMetadata(from: trimmed) {
+            lastAIProvider = metadata.provider
+            lastAISessionId = metadata.sessionId
             return
         }
 
-        if let detectedProvider = Self.normalizedAIProvider(from: trimmed) {
+        if let detectedProvider = AIResumeParser.detectProvider(from: trimmed) {
             lastAIProvider = detectedProvider
             lastAISessionId = nil
         }
-    }
-
-    private static func extractAIResumeMetadata(from commandLine: String) -> (provider: String, sessionId: String)? {
-        let trimmed = commandLine.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        let tokens = CommandDetection.tokenize(trimmed)
-        guard tokens.count >= 3 else { return nil }
-        let normalizedTokens = tokens.map { CommandDetection.normalizeToken($0).lowercased() }
-
-        guard let first = normalizedTokens.first else { return nil }
-        switch first {
-        case "claude":
-            if normalizedTokens.count > 2,
-               normalizedTokens[1] == "--resume",
-               isValidSessionId(normalizedTokens[2]) {
-                return ("claude", normalizedTokens[2])
-            }
-        case "codex":
-            if normalizedTokens.count > 2,
-               normalizedTokens[1] == "resume",
-               isValidSessionId(normalizedTokens[2]) {
-                return ("codex", normalizedTokens[2])
-            }
-        default:
-            break
-        }
-        return nil
-    }
-
-    private static func isValidSessionId(_ sessionId: String) -> Bool {
-        !sessionId.isEmpty && sessionId.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
-    }
-
-    private static func normalizedAIProvider(from commandLine: String) -> String? {
-        guard let appName = CommandDetection.detectApp(from: commandLine) else { return nil }
-        let lowered = appName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if lowered.contains("claude") { return "claude" }
-        if lowered.contains("codex") { return "codex" }
-        return nil
     }
 
     private func isExitCommand(_ commandLine: String) -> Bool {
