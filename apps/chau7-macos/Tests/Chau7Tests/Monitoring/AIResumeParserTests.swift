@@ -94,6 +94,34 @@ final class AIResumeParserTests: XCTestCase {
         XCTAssertNil(AIResumeParser.bestSessionMatch(candidates: candidates, referenceDate: nil))
     }
 
+    func testBestSessionMatchReturnsNilForMultipleWithUnusableDistantPastReference() {
+        let now = Date()
+        let candidates = [
+            (sessionId: "a", touchedAt: now),
+            (sessionId: "b", touchedAt: now.addingTimeInterval(-10))
+        ]
+        XCTAssertNil(
+            AIResumeParser.bestSessionMatch(
+                candidates: candidates,
+                referenceDate: .distantPast
+            )
+        )
+    }
+
+    func testBestSessionMatchReturnsNilForMultipleWithFutureReference() {
+        let now = Date()
+        let candidates = [
+            (sessionId: "a", touchedAt: now),
+            (sessionId: "b", touchedAt: now.addingTimeInterval(-10))
+        ]
+        XCTAssertNil(
+            AIResumeParser.bestSessionMatch(
+                candidates: candidates,
+                referenceDate: now.addingTimeInterval(3600)
+            )
+        )
+    }
+
     func testBestSessionMatchPicksClosestToReference() {
         let ref = Date()
         let candidates = [

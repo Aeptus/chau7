@@ -511,7 +511,7 @@ final class OverlayTabsModel: ObservableObject {
                     outputHint: scrollback,
                     explicitAIProvider: session.lastAIProvider,
                     explicitAISessionId: session.lastAISessionId,
-                    referenceDate: session.lastOutputDate
+                    referenceDate: Self.normalizedResumeReferenceDate(session.lastOutputDate)
                 )
                 let resumeCommand = Self.buildAIResumeCommand(
                     provider: resumeMetadata?.provider,
@@ -525,7 +525,7 @@ final class OverlayTabsModel: ObservableObject {
                     aiResumeCommand: resumeCommand,
                     aiProvider: resumeMetadata?.provider,
                     aiSessionId: resumeMetadata?.sessionId,
-                    lastOutputAt: session.lastOutputDate
+                    lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate)
                 ))
             }
 
@@ -582,7 +582,7 @@ final class OverlayTabsModel: ObservableObject {
                 outputHint: scrollback,
                 explicitAIProvider: session.lastAIProvider,
                 explicitAISessionId: session.lastAISessionId,
-                referenceDate: session.lastOutputDate
+                referenceDate: Self.normalizedResumeReferenceDate(session.lastOutputDate)
             )
             let resumeCommand = Self.buildAIResumeCommand(
                 provider: resumeMetadata?.provider,
@@ -593,12 +593,12 @@ final class OverlayTabsModel: ObservableObject {
                 paneID: paneID.uuidString,
                 directory: dir,
                 scrollbackContent: scrollback,
-                aiResumeCommand: resumeCommand,
-                aiProvider: resumeMetadata?.provider,
-                aiSessionId: resumeMetadata?.sessionId,
-                lastOutputAt: session.lastOutputDate
-            ))
-        }
+                    aiResumeCommand: resumeCommand,
+                    aiProvider: resumeMetadata?.provider,
+                    aiSessionId: resumeMetadata?.sessionId,
+                    lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate)
+                ))
+            }
 
         let primaryDirectory = terminalSessions.first?.1.currentDirectory
             ?? tab.session?.currentDirectory
@@ -716,6 +716,15 @@ final class OverlayTabsModel: ObservableObject {
         )
     }
 
+    private static func normalizedResumeReferenceDate(_ value: Date) -> Date? {
+        return value == .distantPast ? nil : value
+    }
+
+    private static func normalizedResumeReferenceDate(_ value: Date?) -> Date? {
+        guard let value else { return nil }
+        return value == .distantPast ? nil : value
+    }
+
     private static func resolveAIResumeMetadata(
         appName: String?,
         directory: String,
@@ -728,13 +737,22 @@ final class OverlayTabsModel: ObservableObject {
         let explicitProvider = normalizedAIProvider(from: explicitAIProvider)
         let explicitSessionId = normalizeAISessionId(explicitAISessionId)
 
-        if let resolved = resolvedAIResumeMetadata(
-            provider: explicitProvider,
-            sessionId: explicitSessionId,
-            directory: canonicalDirectory,
-            referenceDate: referenceDate
-        ) {
-            return resolved
+        if let explicitProvider {
+            if let resolved = resolvedAIResumeMetadata(
+                provider: explicitProvider,
+                sessionId: explicitSessionId,
+                directory: canonicalDirectory,
+                referenceDate: referenceDate
+            ) {
+                return resolved
+            }
+
+            // If we already have an explicit provider for a pane but no matching session
+            // can be found in that provider/directory, avoid guessing another provider.
+            // This keeps restore metadata deterministic and prevents cross-tab bleed-through.
+            if explicitSessionId == nil {
+                return nil
+            }
         }
 
         let inferredProviders = aiResumeProviderCandidates(
@@ -784,11 +802,7 @@ final class OverlayTabsModel: ObservableObject {
             )
         }
 
-        if explicitProvider == nil {
-            ["codex", "claude"].forEach { appendProvider($0) }
-        } else {
-            appendProvider(explicitProvider)
-        }
+        appendProvider(explicitProvider)
 
         return providers
     }
@@ -1284,7 +1298,7 @@ final class OverlayTabsModel: ObservableObject {
                     fallbackAISessionId: state.aiSessionId,
                     directory: paneState.directory,
                     outputHint: paneState.scrollbackContent,
-                    referenceDate: paneState.lastOutputAt
+                    referenceDate: Self.normalizedResumeReferenceDate(paneState.lastOutputAt)
                 )
                 let resolvedCommand = Self.buildAIResumeCommand(
                     provider: resolvedMetadata?.provider,

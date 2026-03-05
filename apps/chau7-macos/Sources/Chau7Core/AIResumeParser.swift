@@ -82,7 +82,8 @@ public enum AIResumeParser {
         if candidates.isEmpty { return nil }
         if candidates.count == 1 { return candidates[0].sessionId }
 
-        guard let referenceDate else {
+        guard let referenceDate,
+              isUsableReferenceDate(referenceDate) else {
             // Multiple candidates, no way to disambiguate — refuse to guess
             return nil
         }
@@ -96,5 +97,12 @@ public enum AIResumeParser {
             return $0.touchedAt > $1.touchedAt
         }
         return sorted.first?.sessionId
+    }
+
+    private static func isUsableReferenceDate(_ referenceDate: Date) -> Bool {
+        let now = Date()
+        return referenceDate != .distantPast &&
+            referenceDate <= now.addingTimeInterval(60) &&
+            referenceDate > .distantPast
     }
 }
