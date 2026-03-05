@@ -784,5 +784,63 @@ final class OverlayTabsModelTests: XCTestCase {
         }
         wait(for: [expectationDone], timeout: 2.0)
     }
+
+    func testRestoreIgnoresInvalidPersistedResumeCommand() {
+        let paneID = UUID()
+        let split = SavedSplitNode(
+            kind: .terminal,
+            id: paneID.uuidString,
+            direction: nil,
+            ratio: nil,
+            first: nil,
+            second: nil,
+            textEditorPath: nil
+        )
+        let paneState = SavedTerminalPaneState(
+            paneID: paneID.uuidString,
+            directory: "/tmp/chau7-restore-invalid-command",
+            scrollbackContent: nil,
+            aiResumeCommand: "rm -rf /"
+        )
+
+        storeSavedTabStates([
+            SavedTabState(
+                customTitle: "Invalid Resume",
+                color: TabColor.red.rawValue,
+                directory: "/tmp/chau7-restore-invalid-command",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: split,
+                focusedPaneID: paneID.uuidString,
+                paneStates: [paneState]
+            )
+        ])
+
+        let restoredModel = OverlayTabsModel(appModel: appModel)
+        guard let session = restoredModel.tabs.first?.splitController.terminalSessions
+            .first(where: { $0.0 == paneID })?.1 else {
+            XCTFail("Expected restored session for pane \(paneID)")
+            return
+        }
+
+        let terminalView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        terminalView.onInput = { text in
+            capturedInputs.append(text)
+        }
+        session.attachRustTerminal(terminalView)
+        session.isShellLoading = false
+        session.isAtPrompt = true
+        session.status = .idle
+
+        let expectationDone = expectation(description: "invalid resume command is ignored")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+            XCTAssertTrue(capturedInputs.isEmpty)
+            expectationDone.fulfill()
+        }
+        wait(for: [expectationDone], timeout: 2.5)
+    }
 }
 #endif

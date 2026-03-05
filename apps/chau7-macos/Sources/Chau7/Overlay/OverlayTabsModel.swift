@@ -468,9 +468,12 @@ final class OverlayTabsModel: ObservableObject {
             for (paneID, session) in terminalSessions {
                 let dir = session.currentDirectory
                 let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
+                let detectedApp = Self.detectAIAppName(fromOutput: scrollback)
+                let resumeAppName = session.activeAppName ?? detectedApp
                 let resumeCommand = Self.buildAIResumeCommand(
-                    appName: session.activeAppName,
-                    directory: dir
+                    appName: resumeAppName,
+                    directory: dir,
+                    outputHint: scrollback
                 )
 
                 paneStates.append(SavedTerminalPaneState(
@@ -524,9 +527,12 @@ final class OverlayTabsModel: ObservableObject {
         for (paneID, session) in terminalSessions {
             let dir = session.currentDirectory
             let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
+            let detectedApp = Self.detectAIAppName(fromOutput: scrollback)
+            let resumeAppName = session.activeAppName ?? detectedApp
             let resumeCommand = Self.buildAIResumeCommand(
-                appName: session.activeAppName,
-                directory: dir
+                appName: resumeAppName,
+                directory: dir,
+                outputHint: scrollback
             )
 
             paneStates.append(SavedTerminalPaneState(
@@ -575,28 +581,87 @@ final class OverlayTabsModel: ObservableObject {
 
     /// Build a resume command for an AI session running in the given directory.
     /// Returns nil if no resumable session is found.
-    private static func buildAIResumeCommand(appName: String?, directory: String) -> String? {
+    private static func buildAIResumeCommand(appName: String?, directory: String, outputHint: String? = nil) -> String? {
+        let canonicalDirectory = normalizedSessionDirectory(directory)
+        guard !canonicalDirectory.isEmpty else { return nil }
+
+        let explicitAppName = appName?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let command = buildAIResumeCommand(for: explicitAppName, directory: canonicalDirectory) {
+            return command
+        }
+
+        if explicitAppName == nil || explicitAppName!.isEmpty,
+           let outputHint,
+           let appNameFromOutput = CommandDetection.detectAppFromOutput(outputHint),
+           let command = buildAIResumeCommand(for: appNameFromOutput, directory: canonicalDirectory) {
+            return command
+        }
+
+        guard explicitAppName == nil || explicitAppName!.isEmpty else {
+            return nil
+        }
+
+        return buildFallbackAIResumeCommand(forDirectory: canonicalDirectory)
+    }
+
+    private static func buildAIResumeCommand(for appName: String?, directory: String) -> String? {
         guard let appName = appName?.trimmingCharacters(in: .whitespacesAndNewlines),
               !appName.isEmpty else { return nil }
         let lowered = appName.lowercased()
 
-        if lowered.contains("claude") {
-            if let sessionId = ClaudeCodeMonitor.shared.sessionId(forDirectory: directory)?.trimmingCharacters(in: .whitespacesAndNewlines),
-               isValidSessionId(sessionId) {
-                return "claude --resume \(sessionId)"
-            }
-            return nil
+        if lowered.contains("claude"),
+           let sessionId = findClaudeSessionId(forDirectory: directory)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           isValidSessionId(sessionId) {
+            return "claude --resume \(sessionId)"
         }
 
-        if lowered.contains("codex") {
-            if let sessionId = findCodexSessionId(forDirectory: directory)?.trimmingCharacters(in: .whitespacesAndNewlines),
-               isValidSessionId(sessionId) {
-                return "codex resume \(sessionId)"
-            }
-            return nil
+        if lowered.contains("codex"),
+           let sessionId = findCodexSessionId(forDirectory: directory)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           isValidSessionId(sessionId) {
+            return "codex resume \(sessionId)"
         }
 
         return nil
+    }
+
+    private static func buildFallbackAIResumeCommand(forDirectory directory: String) -> String? {
+        if let sessionId = findCodexSessionId(forDirectory: directory)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           isValidSessionId(sessionId) {
+            return "codex resume \(sessionId)"
+        }
+
+        if let sessionId = findClaudeSessionId(forDirectory: directory)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           isValidSessionId(sessionId) {
+            return "claude --resume \(sessionId)"
+        }
+
+        return nil
+    }
+
+    private static func findClaudeSessionId(forDirectory directory: String) -> String? {
+        let canonicalDirectory = normalizedSessionDirectory(directory)
+        guard !canonicalDirectory.isEmpty else { return nil }
+        return ClaudeCodeMonitor.shared.sessionId(forDirectory: canonicalDirectory)
+    }
+
+    private static func detectAIAppName(fromOutput output: String?) -> String? {
+        guard let output else { return nil }
+        return CommandDetection.detectAppFromOutput(output)
+    }
+
+    private static func normalizedSessionDirectory(_ directory: String) -> String {
+        let trimmed = directory.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        let expanded = NSString(string: trimmed).expandingTildeInPath
+        return URL(fileURLWithPath: expanded).standardized.path
+    }
+
+    private static func isSameSessionDirectory(_ lhs: String, as rhs: String) -> Bool {
+        let left = normalizedSessionDirectory(lhs)
+        let right = normalizedSessionDirectory(rhs)
+        guard !left.isEmpty, !right.isEmpty else { return false }
+        return left == right || left.hasPrefix(right + "/")
     }
 
     /// Validate that a session ID contains only safe characters (alphanumeric, hyphens,
@@ -648,7 +713,7 @@ final class OverlayTabsModel: ObservableObject {
                 guard let firstLine = readFirstLine(atPath: filePath) else { continue }
                 // Parse session_meta to extract cwd and id
                 if let (sessionCwd, sessionId) = parseCodexSessionMeta(firstLine),
-                   sessionCwd == dir || dir.hasPrefix(sessionCwd + "/") {
+                   Self.isSameSessionDirectory(dir, as: sessionCwd) {
                     return sessionId
                 }
             }
@@ -925,8 +990,23 @@ final class OverlayTabsModel: ObservableObject {
                         aiResumeCommand: nil
                     )
 
+                let inferredResumeCommand = Self.normalizedResumeCommand(
+                    Self.buildAIResumeCommand(
+                        appName: nil,
+                        directory: paneState.directory,
+                        outputHint: paneState.scrollbackContent
+                    )
+                )
+                let effectivePaneState = SavedTerminalPaneState(
+                    paneID: paneState.paneID,
+                    directory: paneState.directory,
+                    scrollbackContent: paneState.scrollbackContent,
+                    aiResumeCommand: Self.normalizedResumeCommand(paneState.aiResumeCommand) ?? inferredResumeCommand
+                )
+                paneStatesToRestore[paneID] = effectivePaneState
+
                 var commands: [String] = []
-                if let scrollback = paneState.scrollbackContent,
+                if let scrollback = effectivePaneState.scrollbackContent,
                    !scrollback.isEmpty,
                    let data = scrollback.data(using: .utf8) {
 
@@ -940,8 +1020,8 @@ final class OverlayTabsModel: ObservableObject {
                     }
                 }
 
-                if !paneState.directory.isEmpty {
-                    commands.append("cd \(Self.shellSafeSingleQuote(paneState.directory))")
+                if !effectivePaneState.directory.isEmpty {
+                    commands.append("cd \(Self.shellSafeSingleQuote(effectivePaneState.directory))")
                 }
 
                 if !commands.isEmpty {
@@ -1023,7 +1103,18 @@ final class OverlayTabsModel: ObservableObject {
         guard let value else { return nil }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
+        guard isSafeResumeCommand(trimmed) else { return nil }
         return trimmed
+    }
+
+    private static func isSafeResumeCommand(_ command: String) -> Bool {
+        if let sessionId = command.extractResumeSessionId(prefix: "claude --resume ") {
+            return isValidSessionId(sessionId)
+        }
+        if let sessionId = command.extractResumeSessionId(prefix: "codex resume ") {
+            return isValidSessionId(sessionId)
+        }
+        return false
     }
 
     var selectedTab: OverlayTab? {
@@ -3035,5 +3126,13 @@ final class OverlayTabsModel: ObservableObject {
                 Log.error("OverlayTabsModel: failed to assess task \(task.id)")
             }
         }
+    }
+}
+
+private extension String {
+    func extractResumeSessionId(prefix: String) -> String? {
+        guard hasPrefix(prefix) else { return nil }
+        let suffix = String(dropFirst(prefix.count))
+        return suffix.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : suffix
     }
 }
