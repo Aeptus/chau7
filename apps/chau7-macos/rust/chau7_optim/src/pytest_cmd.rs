@@ -96,7 +96,7 @@ fn which_command(cmd: &str) -> Option<String> {
 }
 
 /// Parse pytest output using state machine
-fn filter_pytest_output(output: &str) -> String {
+pub fn filter_pytest_output(output: &str) -> String {
     let mut state = ParseState::Header;
     let mut test_files: Vec<String> = Vec::new();
     let mut failures: Vec<String> = Vec::new();
@@ -121,9 +121,11 @@ fn filter_pytest_output(output: &str) -> String {
                 current_failure.clear();
             }
             continue;
-        } else if trimmed.starts_with("===")
-            && (trimmed.contains("passed") || trimmed.contains("failed"))
+        } else if (trimmed.contains("passed") || trimmed.contains("failed"))
+            && trimmed.contains(" in ")
         {
+            // Summary line: "=== 4 passed, 1 failed in 0.50s ===" (verbose)
+            // or just "1 failed, 1 passed in 0.01s" (quiet mode)
             summary_line = trimmed.to_string();
             continue;
         }

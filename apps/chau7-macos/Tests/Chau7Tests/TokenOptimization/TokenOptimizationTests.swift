@@ -222,6 +222,9 @@ final class TokenOptimizationCoreTests: XCTestCase {
             "pip": "pip",
             "go": "go",
             "golangci-lint": "golangci-lint",
+            "swift": "swift",
+            "python": "python",
+            "python3": "python",
         ]
 
         XCTAssertEqual(map.count, expectedMappings.count,
