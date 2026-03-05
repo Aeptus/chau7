@@ -61,28 +61,31 @@ final class ProcessResourceMonitor {
     private var timer: DispatchSourceTimer?
     /// All reads/writes of `isStopped` and `timer` are synchronized on `queue`.
     private var isStopped = true
+    private var shellPID: pid_t = 0
     private let queue = DispatchQueue(label: "com.chau7.processmonitor", qos: .utility)
+    private let minimumPollInterval: TimeInterval = 0.75
+    private let maxPollInterval: TimeInterval = 3.0
+    private let noDataBackoffMultiplier = 1.8
+    private let maxConsecutiveNoDataPolls = 8
+    private var consecutiveNoDataPolls = 0
 
     func start(shellPID: pid_t) {
         stop()
         guard shellPID > 0 else { return }
 
         queue.sync {
+            self.shellPID = shellPID
             isStopped = false
-
-            let timer = DispatchSource.makeTimerSource(queue: queue)
-            timer.schedule(deadline: .now(), repeating: 1.0)
-            timer.setEventHandler { [weak self] in
-                self?.poll(shellPID: shellPID)
-            }
-            timer.resume()
-            self.timer = timer
+            consecutiveNoDataPolls = 0
+            scheduleNextPollLocked()
         }
     }
 
     func stop() {
         queue.sync {
             isStopped = true
+            shellPID = 0
+            consecutiveNoDataPolls = 0
             timer?.cancel()
             timer = nil
         }
@@ -90,13 +93,56 @@ final class ProcessResourceMonitor {
 
     // MARK: - Private
 
-    private func poll(shellPID: pid_t) {
+    private func scheduleNextPollLocked() {
         guard !isStopped else { return }
-        let snapshot = captureSnapshot(shellPID: shellPID)
-        let stopped = isStopped
-        DispatchQueue.main.async { [weak self] in
-            guard let self, !stopped else { return }
-            self.onUpdate?(snapshot)
+
+        timer?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + intervalForNextPoll())
+        timer.setEventHandler { [weak self] in
+            self?.poll()
+        }
+        timer.resume()
+        self.timer = timer
+    }
+
+    private func intervalForNextPoll() -> TimeInterval {
+        guard consecutiveNoDataPolls > 0 else {
+            return minimumPollInterval
+        }
+
+        let backoff = pow(noDataBackoffMultiplier, Double(min(consecutiveNoDataPolls, maxConsecutiveNoDataPolls)))
+        return min(maxPollInterval, minimumPollInterval * backoff)
+    }
+
+    private func poll() {
+        guard !isStopped else { return }
+        let currentShellPID = shellPID
+        guard currentShellPID > 0 else {
+            stop()
+            return
+        }
+
+        let snapshot = captureSnapshot(shellPID: currentShellPID)
+        let shouldSchedule = !isStopped
+        let shouldPublish = !isStopped
+
+        if snapshot == nil || snapshot?.children.isEmpty == true {
+            consecutiveNoDataPolls = min(consecutiveNoDataPolls + 1, maxConsecutiveNoDataPolls)
+        } else {
+            consecutiveNoDataPolls = 0
+        }
+
+        if shouldPublish {
+            DispatchQueue.main.async { [weak self] in
+                self?.onUpdate?(snapshot)
+            }
+        }
+
+        if shouldSchedule {
+            queue.async { [weak self] in
+                self?.scheduleNextPollLocked()
+            }
         }
     }
 

@@ -50,8 +50,8 @@ final class ClaudeCodeMonitor: ObservableObject {
 
     private var eventTailer: FileTailer<ClaudeCodeEvent>?
     private var idleTimer: DispatchSourceTimer?
-    private let queue = DispatchQueue(label: "com.chau7.claudeMonitor")
     private var lastPermissionRequestBySession: [String: PermissionRequestState] = [:]
+    private let minimumIdleCheckInterval: TimeInterval = 1.0
 
     private struct PermissionRequestState {
         let tool: String
@@ -100,8 +100,7 @@ final class ClaudeCodeMonitor: ObservableObject {
         )
         eventTailer?.start()
 
-        // Start idle check timer
-        startIdleTimer()
+        scheduleNextIdleCheck()
 
         DispatchQueue.main.async {
             self.isMonitoring = true
@@ -172,6 +171,7 @@ final class ClaudeCodeMonitor: ObservableObject {
                     session.lastToolName = tool
                 }
                 self.activeSessions[sessionId] = session
+                self.scheduleNextIdleCheck()
             } else {
                 var session = ClaudeSessionInfo(
                     id: sessionId,
@@ -183,6 +183,7 @@ final class ClaudeCodeMonitor: ObservableObject {
                 )
                 session.lastToolName = toolName
                 self.activeSessions[sessionId] = session
+                self.scheduleNextIdleCheck()
             }
         }
     }
@@ -209,41 +210,67 @@ final class ClaudeCodeMonitor: ObservableObject {
     private func markSessionClosed(_ sessionId: String) {
         DispatchQueue.main.async {
             self.activeSessions[sessionId]?.state = .closed
+            self.scheduleNextIdleCheck()
         }
     }
 
     // MARK: - Idle Detection
 
-    private func startIdleTimer() {
+    private func scheduleNextIdleCheck() {
+        let now = Date()
+        let remainingDelay = nextIdleCheckDelay(now: now)
         idleTimer?.cancel()
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 1, repeating: 1.0)
+        idleTimer = nil
+
+        guard let delay = remainingDelay else {
+            return
+        }
+
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
+        timer.schedule(deadline: .now() + delay)
         timer.setEventHandler { [weak self] in
+            self?.idleTimer = nil
             self?.checkIdleSessions()
         }
         timer.resume()
         idleTimer = timer
     }
 
+    private func nextIdleCheckDelay(now: Date) -> TimeInterval? {
+        let threshold = max(minimumIdleCheckInterval, idleThreshold)
+        var minimumRemaining = Double.infinity
+
+        for session in activeSessions.values {
+            guard session.state == .active || session.state == .responding else { continue }
+            let remaining = threshold - now.timeIntervalSince(session.lastActivity)
+            minimumRemaining = min(minimumRemaining, remaining)
+        }
+
+        guard minimumRemaining.isFinite else { return nil }
+        return max(minimumIdleCheckInterval, minimumRemaining)
+    }
+
     private func checkIdleSessions() {
         let now = Date()
+        let threshold = max(minimumIdleCheckInterval, idleThreshold)
 
-        DispatchQueue.main.async {
-            for (sessionId, session) in self.activeSessions {
-                // Only check active/responding sessions for idle
-                // waitingInput/waitingPermission already indicate waiting state
-                guard session.state == .active || session.state == .responding else { continue }
+        for (sessionId, session) in activeSessions {
+            // Only check active/responding sessions for idle.
+            // waitingInput/waitingPermission already indicate waiting state.
+            guard session.state == .active || session.state == .responding else { continue }
 
-                let idleFor = now.timeIntervalSince(session.lastActivity)
-                if idleFor >= self.idleThreshold {
-                    var updated = session
-                    updated.state = .idle
-                    self.activeSessions[sessionId] = updated
-                    self.onSessionIdle?(updated)
-                    self.notifySessionIdle(updated, idleFor: idleFor)
-                }
+            let idleFor = now.timeIntervalSince(session.lastActivity)
+            if idleFor >= threshold {
+                var updated = session
+                updated.state = .idle
+                activeSessions[sessionId] = updated
+                onSessionIdle?(updated)
+                notifySessionIdle(updated, idleFor: idleFor)
+                continue
             }
         }
+
+        scheduleNextIdleCheck()
     }
 
     // MARK: - Notifications

@@ -9,6 +9,8 @@ final class NotificationManager {
 
     /// Tracks whether UNUserNotificationCenter is available and authorized
     private var useNativeNotifications = true
+    private var cachedAuthorizationStatus: UNAuthorizationStatus = .notDetermined
+    private var hasCachedAuthorization = false
     private var loggedAuthorizationStatuses: Set<UNAuthorizationStatus> = []
     private var didLogNativeError = false
 
@@ -27,11 +29,20 @@ final class NotificationManager {
     private var isFocusModeActive = false
     private var focusRefreshTimer: Timer?
 
+    // MARK: - Notification coalescing
+
+    private let coalescingWindow: TimeInterval = 0.25
+    private var pendingNotifications: [String: AIEvent] = [:]
+    private var pendingNotificationOrder: [String] = []
+    private var pendingNotificationFlushWorkItem: DispatchWorkItem?
+
     private init() {
         startFocusRefreshTimer()
     }
 
     func updateAuthorizationStatus(_ status: UNAuthorizationStatus) {
+        cachedAuthorizationStatus = status
+        hasCachedAuthorization = true
         switch status {
         case .authorized, .provisional, .ephemeral:
             useNativeNotifications = true
@@ -54,8 +65,47 @@ final class NotificationManager {
         }
 
         DispatchQueue.main.async { [weak self] in
-            self?.processEvent(event)
+            self?.enqueueEvent(event)
         }
+    }
+
+    private func enqueueEvent(_ event: AIEvent) {
+        let key = notificationCoalescingKey(for: event)
+        let isNewKey = pendingNotifications[key] == nil
+        pendingNotifications[key] = event
+
+        if isNewKey {
+            pendingNotificationOrder.append(key)
+        }
+
+        if pendingNotificationFlushWorkItem != nil {
+            return
+        }
+
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.flushPendingNotifications()
+        }
+        pendingNotificationFlushWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + coalescingWindow, execute: workItem)
+    }
+
+    private func flushPendingNotifications() {
+        let events = pendingNotificationOrder.compactMap { key in
+            pendingNotifications.removeValue(forKey: key)
+        }
+        pendingNotificationOrder.removeAll(keepingCapacity: true)
+        pendingNotificationFlushWorkItem = nil
+
+        for event in events {
+            processEvent(event)
+        }
+    }
+
+    private func notificationCoalescingKey(for event: AIEvent) -> String {
+        let normalizedTool = event.tool
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        return "\(event.source.rawValue)|\(event.type)|\(normalizedTool)"
     }
 
     /// All processing on main actor — delegates decision to pure pipeline, then executes.
@@ -117,12 +167,26 @@ final class NotificationManager {
     }
 
     private func tryNativeNotification(for event: AIEvent) {
-        let center = UNUserNotificationCenter.current()
-        center.getNotificationSettings { [weak self] settings in
-            DispatchQueue.main.async {
-                self?.handleAuthorizationResult(settings.authorizationStatus, for: event)
-            }
+        guard useNativeNotifications else {
+            let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tool))
+            sendAppleScriptNotification(title: title, body: event.notificationBody)
+            return
         }
+
+        guard hasCachedAuthorization else {
+            let center = UNUserNotificationCenter.current()
+            center.getNotificationSettings { [weak self] settings in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.cachedAuthorizationStatus = settings.authorizationStatus
+                    self.hasCachedAuthorization = true
+                    self.handleAuthorizationResult(settings.authorizationStatus, for: event)
+                }
+            }
+            return
+        }
+
+        handleAuthorizationResult(cachedAuthorizationStatus, for: event)
     }
 
     private func handleAuthorizationResult(_ status: UNAuthorizationStatus, for event: AIEvent) {
