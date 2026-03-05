@@ -659,69 +659,86 @@ final class OverlayTabsModel: ObservableObject {
         let explicitProvider = normalizedAIProvider(from: explicitAIProvider)
         let explicitSessionId = normalizeAISessionId(explicitAISessionId)
 
-        if let explicitProvider {
-            if let explicitSessionId {
-                Log.trace("resolveAIResumeMetadata: using explicit session metadata provider=\(explicitProvider), sessionId=\(explicitSessionId)")
-                return (provider: explicitProvider, sessionId: explicitSessionId)
-            }
-
-            if !canonicalDirectory.isEmpty,
-               let foundSessionId = findAIResumeSessionId(
-                for: explicitProvider,
-                directory: canonicalDirectory
-               ) {
-                return (provider: explicitProvider, sessionId: foundSessionId)
-            }
+        if let resolved = resolvedAIResumeMetadata(
+            provider: explicitProvider,
+            sessionId: explicitSessionId,
+            directory: canonicalDirectory
+        ) {
+            return resolved
         }
 
-        guard let explicitAppName = appName?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !explicitAppName.isEmpty else {
-            return resolveAIFallbackMetadata(
-                outputHint: outputHint,
-                directory: canonicalDirectory,
-                explicitProvider: explicitProvider
-            )
-        }
-
-        if let provider = normalizedAIProvider(from: explicitAppName),
-           let sessionId = findAIResumeSessionId(for: provider, directory: canonicalDirectory) {
-            return (provider: provider, sessionId: sessionId)
-        }
-
-        return resolveAIFallbackMetadata(
+        let inferredProviders = aiResumeProviderCandidates(
+            appName: appName,
             outputHint: outputHint,
-            directory: canonicalDirectory,
             explicitProvider: explicitProvider
         )
-    }
-
-    private static func resolveAIFallbackMetadata(
-        outputHint: String?,
-        directory: String,
-        explicitProvider: String?
-    ) -> (provider: String, sessionId: String)? {
-        if let outputHint,
-           let outputProvider = CommandDetection.detectAppFromOutput(outputHint).flatMap({ normalizedAIProvider(from: $0) }),
-           outputProvider != explicitProvider,
-           let sessionId = findAIResumeSessionId(for: outputProvider, directory: directory) {
-            return (provider: outputProvider, sessionId: sessionId)
-        }
-
-        if explicitProvider == nil {
-            if let sessionId = findAIResumeSessionId(for: "codex", directory: directory) {
-                return (provider: "codex", sessionId: sessionId)
+        for candidateProvider in inferredProviders {
+            if let sessionId = findAIResumeSessionId(
+                for: candidateProvider,
+                directory: canonicalDirectory
+            ) {
+                return (provider: candidateProvider, sessionId: sessionId)
             }
-            if let sessionId = findAIResumeSessionId(for: "claude", directory: directory) {
-                return (provider: "claude", sessionId: sessionId)
-            }
-        }
-
-        if let explicitProvider,
-           let sessionId = findAIResumeSessionId(for: explicitProvider, directory: directory) {
-            return (provider: explicitProvider, sessionId: sessionId)
         }
 
         return nil
+    }
+
+    private static func aiResumeProviderCandidates(
+        appName: String?,
+        outputHint: String?,
+        explicitProvider: String?
+    ) -> [String] {
+        var providers: [String] = []
+        var seenProviders = Set<String>()
+
+        func appendProvider(_ value: String?) {
+            guard let provider = value, !provider.isEmpty else { return }
+            guard seenProviders.insert(provider).inserted else { return }
+            providers.append(provider)
+        }
+
+        if let appNameProvider = appName?.trimmingCharacters(in: .whitespacesAndNewlines) {
+            appendProvider(normalizedAIProvider(from: appNameProvider))
+        }
+
+        appendProvider(
+            CommandDetection.detectAppFromOutput(outputHint)
+                .flatMap { normalizedAIProvider(from: $0) }
+                .flatMap { outputProvider in
+                    if outputProvider == explicitProvider { return nil }
+                    return outputProvider
+                }
+        )
+
+        if explicitProvider == nil {
+            ["codex", "claude"].forEach { appendProvider($0) }
+        } else {
+            appendProvider(explicitProvider)
+        }
+
+        return providers
+    }
+
+    private static func resolvedAIResumeMetadata(
+        provider: String?,
+        sessionId: String?,
+        directory: String
+    ) -> (provider: String, sessionId: String)? {
+        if let provider, let sessionId {
+            Log.trace("resolveAIResumeMetadata: using explicit session metadata provider=\(provider), sessionId=\(sessionId)")
+            return (provider: provider, sessionId: sessionId)
+        }
+
+        guard !directory.isEmpty,
+              let provider,
+              let foundSessionId = findAIResumeSessionId(
+                  for: provider,
+                  directory: directory
+              ) else {
+            return nil
+        }
+        return (provider: provider, sessionId: foundSessionId)
     }
 
     private static func findAIResumeSessionId(for provider: String, directory: String) -> String? {
