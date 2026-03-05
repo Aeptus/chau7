@@ -99,6 +99,16 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     /// Cleared automatically on first output.
     @Published var shellStartupSlow: Bool = false
 
+    /// Last time output was observed for this terminal session.
+    /// Used by tab restore logic to choose the best-matching AI session when
+    /// multiple candidate sessions exist for the same directory.
+    var lastOutputDate: Date {
+        lastOutputAt
+    }
+
+    private(set) var lastAIProvider: String?
+    private(set) var lastAISessionId: String?
+
     // MARK: - Latency Telemetry (non-Published for performance)
     // These change on every keystroke. Keeping them as @Published would cause
     // SwiftUI to trigger updateNSView on every keystroke, adding unnecessary overhead.
@@ -1225,6 +1235,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         let echoDisabled = activeTerminalView?.isPtyEchoDisabled ?? false
         CommandHistoryManager.shared.recordCommand(trimmed, tabID: tabIdentifier, isSensitive: echoDisabled)
         shellEventDetector.commandStarted(command: trimmed, in: currentDirectory)
+        trackAIResumeMetadata(from: trimmed)
         updateActiveAppName(from: trimmed)
         recordInputLineIfNeeded()
         trackSemanticCommand(trimmed)
@@ -1345,9 +1356,66 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         }
 
         if activeAppName != nil, isExitCommand(commandLine) {
+            lastAIProvider = nil
+            lastAISessionId = nil
             Log.trace("Clearing active app due to exit command input.")
             activeAppName = nil
         }
+    }
+
+    private func trackAIResumeMetadata(from commandLine: String) {
+        let trimmed = commandLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        if let explicitMetadata = Self.extractAIResumeMetadata(from: trimmed) {
+            lastAIProvider = explicitMetadata.provider
+            lastAISessionId = explicitMetadata.sessionId
+            return
+        }
+
+        if let detectedProvider = Self.normalizedAIProvider(from: trimmed) {
+            lastAIProvider = detectedProvider
+            lastAISessionId = nil
+        }
+    }
+
+    private static func extractAIResumeMetadata(from commandLine: String) -> (provider: String, sessionId: String)? {
+        let trimmed = commandLine.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let tokens = CommandDetection.tokenize(trimmed)
+        guard tokens.count >= 3 else { return nil }
+        let normalizedTokens = tokens.map { CommandDetection.normalizeToken($0).lowercased() }
+
+        guard let first = normalizedTokens.first else { return nil }
+        switch first {
+        case "claude":
+            if normalizedTokens.count > 2,
+               normalizedTokens[1] == "--resume",
+               isValidSessionId(normalizedTokens[2]) {
+                return ("claude", normalizedTokens[2])
+            }
+        case "codex":
+            if normalizedTokens.count > 2,
+               normalizedTokens[1] == "resume",
+               isValidSessionId(normalizedTokens[2]) {
+                return ("codex", normalizedTokens[2])
+            }
+        default:
+            break
+        }
+        return nil
+    }
+
+    private static func isValidSessionId(_ sessionId: String) -> Bool {
+        !sessionId.isEmpty && sessionId.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+    }
+
+    private static func normalizedAIProvider(from commandLine: String) -> String? {
+        guard let appName = CommandDetection.detectApp(from: commandLine) else { return nil }
+        let lowered = appName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if lowered.contains("claude") { return "claude" }
+        if lowered.contains("codex") { return "codex" }
+        return nil
     }
 
     private func isExitCommand(_ commandLine: String) -> Bool {
