@@ -1291,11 +1291,14 @@ final class OverlayTabsModel: ObservableObject {
                     aiSessionId: nil,
                     lastOutputAt: nil
                 )
+                let shouldFallbackFromTabState = paneStatesToRestore[paneID] == nil
+                let fallbackProvider = shouldFallbackFromTabState ? state.aiProvider : nil
+                let fallbackSessionId = shouldFallbackFromTabState ? state.aiSessionId : nil
 
                 let resolvedMetadata = Self.resolveAIResumeMetadataFromSavedState(
                     paneState: paneState,
-                    fallbackAIProvider: state.aiProvider,
-                    fallbackAISessionId: state.aiSessionId,
+                    fallbackAIProvider: fallbackProvider,
+                    fallbackAISessionId: fallbackSessionId,
                     directory: paneState.directory,
                     outputHint: paneState.scrollbackContent,
                     referenceDate: Self.normalizedResumeReferenceDate(paneState.lastOutputAt)
