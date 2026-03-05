@@ -751,6 +751,108 @@ final class OverlayTabsModelTests: XCTestCase {
         wait(for: [readyExpectation], timeout: 2.0)
     }
 
+    func testRestorePrefillsDistinctCodexResumeCommandsPerTab() {
+        let firstPaneID = UUID()
+        let secondPaneID = UUID()
+
+        let firstSplit = SavedSplitNode(
+            kind: .terminal,
+            id: firstPaneID.uuidString,
+            direction: nil,
+            ratio: nil,
+            first: nil,
+            second: nil,
+            textEditorPath: nil
+        )
+        let secondSplit = SavedSplitNode(
+            kind: .terminal,
+            id: secondPaneID.uuidString,
+            direction: nil,
+            ratio: nil,
+            first: nil,
+            second: nil,
+            textEditorPath: nil
+        )
+
+        let firstPaneState = SavedTerminalPaneState(
+            paneID: firstPaneID.uuidString,
+            directory: "/tmp/codex-shared-restore",
+            scrollbackContent: nil,
+            aiResumeCommand: nil,
+            aiProvider: "codex",
+            aiSessionId: "codex-session-111"
+        )
+        let secondPaneState = SavedTerminalPaneState(
+            paneID: secondPaneID.uuidString,
+            directory: "/tmp/codex-shared-restore",
+            scrollbackContent: nil,
+            aiResumeCommand: nil,
+            aiProvider: "codex",
+            aiSessionId: "codex-session-222"
+        )
+
+        storeSavedTabStates([
+            SavedTabState(
+                tabID: UUID().uuidString,
+                customTitle: "First",
+                color: TabColor.purple.rawValue,
+                directory: "/tmp/codex-shared-restore",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: firstSplit,
+                focusedPaneID: firstPaneID.uuidString,
+                paneStates: [firstPaneState]
+            ),
+            SavedTabState(
+                tabID: UUID().uuidString,
+                customTitle: "Second",
+                color: TabColor.blue.rawValue,
+                directory: "/tmp/codex-shared-restore",
+                selectedIndex: nil,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: secondSplit,
+                focusedPaneID: secondPaneID.uuidString,
+                paneStates: [secondPaneState]
+            )
+        ])
+
+        let restoredModel = OverlayTabsModel(appModel: appModel)
+        guard let firstSession = restoredModel.tabs.first(where: { $0.customTitle == "First" })?
+            .splitController.terminalSessions.first(where: { $0.0 == firstPaneID })?.1,
+              let secondSession = restoredModel.tabs.first(where: { $0.customTitle == "Second" })?
+            .splitController.terminalSessions.first(where: { $0.0 == secondPaneID })?.1 else {
+            XCTFail("Expected restored sessions for both saved tabs")
+            return
+        }
+
+        let firstView = RustTerminalView(frame: .zero)
+        let secondView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        firstView.onInput = { capturedInputs.append($0) }
+        secondView.onInput = { capturedInputs.append($0) }
+        firstSession.attachRustTerminal(firstView)
+        secondSession.attachRustTerminal(secondView)
+        firstSession.isShellLoading = false
+        firstSession.isAtPrompt = true
+        firstSession.status = .idle
+        secondSession.isShellLoading = false
+        secondSession.isAtPrompt = true
+        secondSession.status = .idle
+
+        let expectationDone = expectation(description: "restore restores each codex pane with distinct session id")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            let expected: Set<String> = ["codex resume codex-session-111", "codex resume codex-session-222"]
+            XCTAssertEqual(Set(capturedInputs), expected)
+            XCTAssertEqual(capturedInputs.count, 2)
+            expectationDone.fulfill()
+        }
+        wait(for: [expectationDone], timeout: 2.0)
+    }
+
     func testRestorePrefillsResumeCommandInActiveOrAvailablePane() {
         let activePaneID = UUID()
         let secondaryPaneID = UUID()

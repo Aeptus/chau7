@@ -222,6 +222,25 @@ struct SavedTerminalPaneState: Codable {
     let aiResumeCommand: String?  // e.g. "claude --resume abc123"
     let aiProvider: String?
     let aiSessionId: String?
+    let lastOutputAt: Date?
+
+    init(
+        paneID: String,
+        directory: String,
+        scrollbackContent: String?,
+        aiResumeCommand: String?,
+        aiProvider: String?,
+        aiSessionId: String?,
+        lastOutputAt: Date? = nil
+    ) {
+        self.paneID = paneID
+        self.directory = directory
+        self.scrollbackContent = scrollbackContent
+        self.aiResumeCommand = aiResumeCommand
+        self.aiProvider = aiProvider
+        self.aiSessionId = aiSessionId
+        self.lastOutputAt = lastOutputAt
+    }
 }
 
 /// Lightweight Codable snapshot of a tab's restorable state.
@@ -478,7 +497,10 @@ final class OverlayTabsModel: ObservableObject {
                 let resumeMetadata = Self.resolveAIResumeMetadata(
                     appName: resumeAppName,
                     directory: dir,
-                    outputHint: scrollback
+                    outputHint: scrollback,
+                    explicitAIProvider: session.lastAIProvider,
+                    explicitAISessionId: session.lastAISessionId,
+                    referenceDate: session.lastOutputDate
                 )
                 let resumeCommand = Self.buildAIResumeCommand(
                     provider: resumeMetadata?.provider,
@@ -491,7 +513,8 @@ final class OverlayTabsModel: ObservableObject {
                     scrollbackContent: scrollback,
                     aiResumeCommand: resumeCommand,
                     aiProvider: resumeMetadata?.provider,
-                    aiSessionId: resumeMetadata?.sessionId
+                    aiSessionId: resumeMetadata?.sessionId,
+                    lastOutputAt: session.lastOutputDate
                 ))
             }
 
@@ -538,15 +561,18 @@ final class OverlayTabsModel: ObservableObject {
 
         var paneStates: [SavedTerminalPaneState] = []
         for (paneID, session) in terminalSessions {
-            let dir = session.currentDirectory
-            let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
-            let detectedApp = Self.detectAIAppName(fromOutput: scrollback)
-            let resumeAppName = session.activeAppName ?? detectedApp
-            let resumeMetadata = Self.resolveAIResumeMetadata(
-                appName: resumeAppName,
-                directory: dir,
-                outputHint: scrollback
-            )
+                let dir = session.currentDirectory
+                let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
+                let detectedApp = Self.detectAIAppName(fromOutput: scrollback)
+                let resumeAppName = session.activeAppName ?? detectedApp
+                let resumeMetadata = Self.resolveAIResumeMetadata(
+                    appName: resumeAppName,
+                    directory: dir,
+                    outputHint: scrollback,
+                    explicitAIProvider: session.lastAIProvider,
+                    explicitAISessionId: session.lastAISessionId,
+                    referenceDate: session.lastOutputDate
+                )
             let resumeCommand = Self.buildAIResumeCommand(
                 provider: resumeMetadata?.provider,
                 sessionId: resumeMetadata?.sessionId
@@ -558,7 +584,8 @@ final class OverlayTabsModel: ObservableObject {
                 scrollbackContent: scrollback,
                 aiResumeCommand: resumeCommand,
                 aiProvider: resumeMetadata?.provider,
-                aiSessionId: resumeMetadata?.sessionId
+                aiSessionId: resumeMetadata?.sessionId,
+                lastOutputAt: session.lastOutputDate
             ))
         }
 
@@ -618,14 +645,16 @@ final class OverlayTabsModel: ObservableObject {
         directory: String,
         outputHint: String? = nil,
         aiProvider: String?,
-        aiSessionId: String?
+        aiSessionId: String?,
+        referenceDate: Date? = nil
     ) -> String? {
         guard let resolved = resolveAIResumeMetadata(
             appName: appName,
             directory: directory,
             outputHint: outputHint,
             explicitAIProvider: aiProvider,
-            explicitAISessionId: aiSessionId
+            explicitAISessionId: aiSessionId,
+            referenceDate: referenceDate
         ) else {
             return nil
         }
@@ -653,7 +682,8 @@ final class OverlayTabsModel: ObservableObject {
         directory: String,
         outputHint: String? = nil,
         explicitAIProvider: String? = nil,
-        explicitAISessionId: String? = nil
+        explicitAISessionId: String? = nil,
+        referenceDate: Date? = nil
     ) -> (provider: String, sessionId: String)? {
         let canonicalDirectory = normalizedSessionDirectory(directory)
         let explicitProvider = normalizedAIProvider(from: explicitAIProvider)
@@ -662,7 +692,8 @@ final class OverlayTabsModel: ObservableObject {
         if let resolved = resolvedAIResumeMetadata(
             provider: explicitProvider,
             sessionId: explicitSessionId,
-            directory: canonicalDirectory
+            directory: canonicalDirectory,
+            referenceDate: referenceDate
         ) {
             return resolved
         }
@@ -675,7 +706,8 @@ final class OverlayTabsModel: ObservableObject {
         for candidateProvider in inferredProviders {
             if let sessionId = findAIResumeSessionId(
                 for: candidateProvider,
-                directory: canonicalDirectory
+                directory: canonicalDirectory,
+                referenceDate: referenceDate
             ) {
                 return (provider: candidateProvider, sessionId: sessionId)
             }
@@ -725,7 +757,8 @@ final class OverlayTabsModel: ObservableObject {
     private static func resolvedAIResumeMetadata(
         provider: String?,
         sessionId: String?,
-        directory: String
+        directory: String,
+        referenceDate: Date?
     ) -> (provider: String, sessionId: String)? {
         if let provider, let sessionId {
             Log.trace("resolveAIResumeMetadata: using explicit session metadata provider=\(provider), sessionId=\(sessionId)")
@@ -736,22 +769,29 @@ final class OverlayTabsModel: ObservableObject {
               let provider,
               let foundSessionId = findAIResumeSessionId(
                   for: provider,
-                  directory: directory
+                  directory: directory,
+                  referenceDate: referenceDate
               ) else {
             return nil
         }
         return (provider: provider, sessionId: foundSessionId)
     }
 
-    private static func findAIResumeSessionId(for provider: String, directory: String) -> String? {
-        guard !directory.isEmpty else { return nil }
+    private static func findAIResumeSessionId(
+        for provider: String,
+        directory: String,
+        referenceDate: Date?
+    ) -> String? {
         switch provider {
         case "claude":
-            return findClaudeSessionId(forDirectory: directory)
-                .flatMap { normalizeAISessionId($0) }
+            return findClaudeSessionId(
+                forDirectory: directory
+            ).flatMap { normalizeAISessionId($0) }
         case "codex":
-            return findCodexSessionId(forDirectory: directory)
-                .flatMap { normalizeAISessionId($0) }
+            return findCodexSessionId(
+                forDirectory: directory,
+                referenceDate: referenceDate
+            ).flatMap { normalizeAISessionId($0) }
         default:
             return nil
         }
@@ -807,7 +847,10 @@ final class OverlayTabsModel: ObservableObject {
     /// Scans ~/.codex/sessions/ day directories for session files whose
     /// cwd matches the given directory. Caps total file reads to avoid
     /// blocking the main thread.
-    private static func findCodexSessionId(forDirectory dir: String) -> String? {
+    private static func findCodexSessionId(
+        forDirectory dir: String,
+        referenceDate: Date? = nil
+    ) -> String? {
         let fm = FileManager.default
         let sessionsDir = fm.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex/sessions")
@@ -835,6 +878,7 @@ final class OverlayTabsModel: ObservableObject {
         // Scan the 7 most recent day directories, capping total file reads
         var filesRead = 0
         var parsedLines = 0
+        var matches: [(sessionId: String, touchedAt: Date)] = []
         let maxFileReads = 30
         for dayDir in dayDirs.prefix(7) {
             guard let files = try? fm.contentsOfDirectory(atPath: dayDir.path) else { continue }
@@ -849,17 +893,43 @@ final class OverlayTabsModel: ObservableObject {
                 // Parse session_meta to extract cwd and id
                 if let (sessionCwd, sessionId) = parseCodexSessionMeta(firstLine),
                    Self.isSameSessionDirectory(dir, as: sessionCwd) {
-                    return sessionId
+                    let touchedAt = (try? FileManager.default.attributesOfItem(atPath: filePath)[.modificationDate] as? Date) ?? Date.distantPast
+                    matches.append((sessionId: sessionId, touchedAt: touchedAt))
                 }
             }
         }
-        if filesRead == 0 {
-            Log.warn("findCodexSessionId: no .jsonl files found in recent directories for dir=\(dir)")
-        } else if parsedLines == 0 {
-            Log.warn("findCodexSessionId: no readable first lines found while scanning \(filesRead) files for dir=\(dir)")
-        } else {
-            Log.trace("findCodexSessionId: scanned \(filesRead) files without finding a session_meta match for dir=\(dir)")
+
+        if matches.isEmpty {
+            if filesRead == 0 {
+                Log.warn("findCodexSessionId: no .jsonl files found in recent directories for dir=\(dir)")
+            } else if parsedLines == 0 {
+                Log.warn("findCodexSessionId: no readable first lines found while scanning \(filesRead) files for dir=\(dir)")
+            } else {
+                Log.trace("findCodexSessionId: scanned \(filesRead) files without finding a session_meta match for dir=\(dir)")
+            }
+            return nil
         }
+
+        if matches.count == 1 {
+            return matches[0].sessionId
+        }
+
+        if let referenceDate {
+            let sortedByDistance = matches.sorted {
+                let leftDistance = abs($0.touchedAt.timeIntervalSince(referenceDate))
+                let rightDistance = abs($1.touchedAt.timeIntervalSince(referenceDate))
+                if leftDistance != rightDistance {
+                    return leftDistance < rightDistance
+                }
+                return $0.touchedAt > $1.touchedAt
+            }
+            if let chosen = sortedByDistance.first {
+                Log.trace("findCodexSessionId: selected sessionId=\(chosen.sessionId) using activity hint for dir=\(dir)")
+                return chosen.sessionId
+            }
+        }
+
+        Log.warn("findCodexSessionId: multiple session candidates for dir=\(dir); skipping to avoid cross-tab contamination")
         return nil
     }
 
@@ -1183,7 +1253,8 @@ final class OverlayTabsModel: ObservableObject {
                         directory: paneState.directory,
                         outputHint: paneState.scrollbackContent,
                         aiProvider: paneState.aiProvider,
-                        aiSessionId: paneState.aiSessionId
+                        aiSessionId: paneState.aiSessionId,
+                        referenceDate: paneState.lastOutputAt
                     )
                 )
                 let effectivePaneState = SavedTerminalPaneState(
@@ -1192,7 +1263,8 @@ final class OverlayTabsModel: ObservableObject {
                     scrollbackContent: paneState.scrollbackContent,
                     aiResumeCommand: Self.normalizedResumeCommand(paneState.aiResumeCommand) ?? inferredResumeCommand,
                     aiProvider: paneState.aiProvider,
-                    aiSessionId: paneState.aiSessionId
+                    aiSessionId: paneState.aiSessionId,
+                    lastOutputAt: paneState.lastOutputAt
                 )
                 paneStatesToRestore[paneID] = effectivePaneState
 
