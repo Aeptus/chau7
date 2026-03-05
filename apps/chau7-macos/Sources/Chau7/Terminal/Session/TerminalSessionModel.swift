@@ -2346,13 +2346,53 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     /// This avoids optimizer overhead during shell init scripts (NVM, compinit, etc.)
     /// that invoke coreutils thousands of times with flags chau7-optim can't handle.
     var rtkFlagDeferred = false
+    private var rtkFlagDeferredAt: Date?
 
     /// Creates the RTK flag file after the shell has finished initializing.
     /// Called once from `handlePromptDetected()` on the first prompt.
     func createDeferredRTKFlag() {
         guard rtkFlagDeferred else { return }
         rtkFlagDeferred = false
-        recalculateRTKFlag()
+        let delayMs = rtkFlagDeferredAt.map {
+            Int(Date().timeIntervalSince($0) * 1000)
+        } ?? 0
+        rtkFlagDeferredAt = nil
+
+        let mode = FeatureSettings.shared.tokenOptimizationMode
+        guard mode != .off else {
+            RTKRuntimeMonitor.shared.recordDeferredSkip(
+                sessionID: tabIdentifier,
+                reason: "mode-off"
+            )
+            return
+        }
+
+        let isAIActive = activeAppName != nil
+        let decision = RTKFlagManager.recalculate(
+            sessionID: tabIdentifier,
+            mode: mode,
+            override: tokenOptOverride,
+            isAIActive: isAIActive
+        )
+        let reason = RTKFlagManager.decisionReason(
+            mode: mode,
+            override: tokenOptOverride,
+            isAIActive: isAIActive
+        )
+        RTKRuntimeMonitor.shared.recordDeferredFlush(
+            sessionID: tabIdentifier,
+            delayToActivateMs: delayMs,
+            mode: mode,
+            override: tokenOptOverride,
+            isAIActive: isAIActive,
+            previousState: decision.previousState,
+            nextState: decision.nextState,
+            changed: decision.changed,
+            reason: reason
+        )
+        if decision.changed {
+            NotificationCenter.default.post(name: .rtkFlagRecalculated, object: nil)
+        }
     }
 
     /// Recalculates the RTK flag file for this session based on the current
@@ -2361,17 +2401,47 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     func recalculateRTKFlag() {
         let mode = FeatureSettings.shared.tokenOptimizationMode
         guard mode != .off else { return }
-
-        RTKFlagManager.recalculate(
+        guard !rtkFlagDeferred else { return }
+        let isAIActive = activeAppName != nil
+        let decision = RTKFlagManager.recalculate(
             sessionID: tabIdentifier,
             mode: mode,
             override: tokenOptOverride,
-            isAIActive: activeAppName != nil
+            isAIActive: isAIActive
+        )
+        let reason = RTKFlagManager.decisionReason(
+            mode: mode,
+            override: tokenOptOverride,
+            isAIActive: isAIActive
+        )
+        RTKRuntimeMonitor.shared.recordDecision(
+            sessionID: tabIdentifier,
+            mode: mode,
+            override: tokenOptOverride,
+            isAIActive: isAIActive,
+            previousState: decision.previousState,
+            nextState: decision.nextState,
+            changed: decision.changed,
+            reason: reason
         )
 
         // Notify tab bar to re-render bolt icon state (the OverlayTab struct
         // is a value type and doesn't observe session changes directly).
         NotificationCenter.default.post(name: .rtkFlagRecalculated, object: nil)
+    }
+
+    /// Marks this session as deferred for the first prompt in the current shell
+    /// lifecycle. Deferred state is cleared automatically in `createDeferredRTKFlag()`.
+    func markRTKFlagDeferred(mode: TokenOptimizationMode) {
+        guard mode != .off else {
+            rtkFlagDeferred = false
+            rtkFlagDeferredAt = nil
+            return
+        }
+        guard !rtkFlagDeferred else { return }
+        rtkFlagDeferred = true
+        rtkFlagDeferredAt = Date()
+        RTKRuntimeMonitor.shared.recordDeferredSet(sessionID: tabIdentifier)
     }
 
     weak var highlightView: TerminalHighlightView?
