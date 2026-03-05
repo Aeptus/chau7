@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Chau7Core
 import Combine
 import SwiftUI
 
@@ -1980,6 +1981,14 @@ final class OverlayTabsModel: ObservableObject {
         dispatchPrecondition(condition: .onQueue(.main))
         let targetID = tabID ?? selectedTabID
         guard let index = tabs.firstIndex(where: { $0.id == targetID }) else { return }
+
+        // Don't apply notification styling to the tab the user is already looking at —
+        // the style is meant to draw attention to background tabs. Clearing (nil) always applies.
+        if style != nil && targetID == selectedTabID {
+            Log.trace("Skipping notification style for active tab \(targetID)")
+            return
+        }
+
         tabs[index].notificationStyle = style
         Log.info("Tab notification style set: \(style?.icon ?? "cleared") for tab \(targetID)")
     }
