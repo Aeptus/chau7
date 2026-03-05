@@ -702,6 +702,7 @@ final class OverlayTabsModel: ObservableObject {
 
         // Scan the 7 most recent day directories, capping total file reads
         var filesRead = 0
+        var parsedLines = 0
         let maxFileReads = 30
         for dayDir in dayDirs.prefix(7) {
             guard let files = try? fm.contentsOfDirectory(atPath: dayDir.path) else { continue }
@@ -712,12 +713,20 @@ final class OverlayTabsModel: ObservableObject {
                 filesRead += 1
                 let filePath = dayDir.appendingPathComponent(file).path
                 guard let firstLine = readFirstLine(atPath: filePath) else { continue }
+                parsedLines += 1
                 // Parse session_meta to extract cwd and id
                 if let (sessionCwd, sessionId) = parseCodexSessionMeta(firstLine),
                    Self.isSameSessionDirectory(dir, as: sessionCwd) {
                     return sessionId
                 }
             }
+        }
+        if filesRead == 0 {
+            Log.warn("findCodexSessionId: no .jsonl files found in recent directories for dir=\(dir)")
+        } else if parsedLines == 0 {
+            Log.warn("findCodexSessionId: no readable first lines found while scanning \(filesRead) files for dir=\(dir)")
+        } else {
+            Log.trace("findCodexSessionId: scanned \(filesRead) files without finding a session_meta match for dir=\(dir)")
         }
         return nil
     }
@@ -726,10 +735,51 @@ final class OverlayTabsModel: ObservableObject {
     private static func readFirstLine(atPath path: String) -> String? {
         guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
         defer { handle.closeFile() }
-        let chunk = handle.readData(ofLength: 8192)
-        guard !chunk.isEmpty else { return nil }
-        let text = String(decoding: chunk, as: UTF8.self)
-        return text.components(separatedBy: "\n").first
+
+        // Large JSONL session files can exceed small read buffers due embedded
+        // instructions/context, so read until the first newline (or a safe cap).
+        let chunkSize = 4096
+        let maxLineBytes = 262_144
+        var buffer = Data()
+
+        while buffer.count < maxLineBytes {
+            let chunk = handle.readData(ofLength: chunkSize)
+            guard !chunk.isEmpty else { break }
+            buffer.append(chunk)
+
+            if let newlineIndex = buffer.firstIndex(of: 10) {
+                buffer = Data(buffer.prefix(upTo: newlineIndex))
+                break
+            }
+
+            if buffer.count >= maxLineBytes {
+                Log.warn(
+                    """
+                    findCodexSessionId: first line exceeded cap while reading \
+                    \"\(path)\" (bufferBytes=\(buffer.count), cap=\(maxLineBytes))
+                    """
+                )
+                break
+            }
+        }
+
+        guard !buffer.isEmpty else { return nil }
+
+        return readFirstLine(from: buffer)
+    }
+
+    static func readFirstLine(from data: Data, maxBytes: Int = 262_144) -> String? {
+        guard data.count <= maxBytes else {
+            return nil
+        }
+
+        guard !data.isEmpty else { return nil }
+
+        if let newlineIndex = data.firstIndex(of: 10) {
+            return String(decoding: data[..<newlineIndex], as: UTF8.self)
+        }
+
+        return String(decoding: data, as: UTF8.self)
     }
 
     /// Parse the first line of a Codex session file (session_meta JSON)

@@ -842,5 +842,26 @@ final class OverlayTabsModelTests: XCTestCase {
         }
         wait(for: [expectationDone], timeout: 2.5)
     }
+
+    func testReadFirstLineFromDataSupportsVeryLongLine() {
+        let longLine = String(repeating: "a", count: 12_000) + "\n" + String(repeating: "b", count: 20)
+        guard let data = longLine.data(using: .utf8) else {
+            XCTFail("Failed to encode test payload")
+            return
+        }
+
+        let line = OverlayTabsModel.readFirstLine(from: data)
+        XCTAssertEqual(line, String(repeating: "a", count: 12_000))
+    }
+
+    func testReadFirstLineFromDataReturnsNilWhenAboveCap() {
+        let oversizedLine = String(repeating: "x", count: 20_000)
+        guard let data = oversizedLine.data(using: .utf8) else {
+            XCTFail("Failed to encode test payload")
+            return
+        }
+
+        XCTAssertNil(OverlayTabsModel.readFirstLine(from: data, maxBytes: 16_000))
+    }
 }
 #endif
