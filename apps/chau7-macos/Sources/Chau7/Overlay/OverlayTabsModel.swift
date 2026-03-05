@@ -702,14 +702,16 @@ final class OverlayTabsModel: ObservableObject {
             appendProvider(normalizedAIProvider(from: appNameProvider))
         }
 
-        appendProvider(
-            CommandDetection.detectAppFromOutput(outputHint)
-                .flatMap { normalizedAIProvider(from: $0) }
-                .flatMap { outputProvider in
-                    if outputProvider == explicitProvider { return nil }
-                    return outputProvider
-                }
-        )
+        if let hint = outputHint {
+            appendProvider(
+                CommandDetection.detectAppFromOutput(hint)
+                    .flatMap { normalizedAIProvider(from: $0) }
+                    .flatMap { outputProvider in
+                        if outputProvider == explicitProvider { return nil }
+                        return outputProvider
+                    }
+            )
+        }
 
         if explicitProvider == nil {
             ["codex", "claude"].forEach { appendProvider($0) }

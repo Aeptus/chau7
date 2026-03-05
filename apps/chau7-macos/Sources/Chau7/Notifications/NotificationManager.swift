@@ -31,7 +31,7 @@ final class NotificationManager {
 
     // MARK: - Notification coalescing
 
-    private let coalescingWindow: TimeInterval = Self.defaultCoalescingWindow
+    private let coalescingWindow: TimeInterval = MonitoringSchedule.defaultCoalescingWindow
     private var pendingNotifications: [String: AIEvent] = [:]
     private var pendingNotificationOrder: [String] = []
     private var pendingNotificationFlushWorkItem: DispatchWorkItem?
@@ -70,7 +70,7 @@ final class NotificationManager {
     }
 
     private func enqueueEvent(_ event: AIEvent) {
-        let key = Self.notificationCoalescingKey(for: event)
+        let key = MonitoringSchedule.notificationCoalescingKey(for: event)
         let isNewKey = pendingNotifications[key] == nil
         pendingNotifications[key] = event
 
@@ -99,18 +99,6 @@ final class NotificationManager {
         for event in events {
             processEvent(event)
         }
-    }
-
-    internal static let defaultCoalescingWindow: TimeInterval = 0.25
-
-    nonisolated static func notificationCoalescingKey(for event: AIEvent) -> String {
-        let normalizedTool = event.tool
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        let normalizedType = event.type
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
-        return "\(event.source.rawValue)|\(normalizedType)|\(normalizedTool)"
     }
 
     /// All processing on main actor — delegates decision to pure pipeline, then executes.

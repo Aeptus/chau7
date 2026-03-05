@@ -1,85 +1,69 @@
 import XCTest
-#if !SWIFT_PACKAGE
-@testable import Chau7
+import Chau7Core
 
 final class MonitoringScheduleTests: XCTestCase {
 
-    func testClaudeNextCheckDelayReturnsNilWithNoActiveSessions() {
-        let delay = ClaudeCodeMonitor.nextIdleCheckDelay(
+    // MARK: - Claude Code idle check
+
+    func testNextIdleCheckDelayReturnsNilWithNoActiveSessions() {
+        let delay = MonitoringSchedule.nextIdleCheckDelay(
             now: Date(),
-            minimumIdleCheckInterval: 1.0,
+            minimumInterval: 1.0,
             idleThreshold: 60.0,
-            sessions: []
+            activeSessionDates: []
         )
         XCTAssertNil(delay)
     }
 
-    func testClaudeNextCheckDelayUsesActiveSessionsOnly() {
+    func testNextIdleCheckDelayUsesClosestSession() {
         let now = Date()
-        let sessions = [
-            session(
-                state: .closed,
-                lastActivity: now.addingTimeInterval(-120)
-            ),
-            session(
-                state: .active,
-                lastActivity: now.addingTimeInterval(-10)
-            ),
-            session(
-                state: .waitingInput,
-                lastActivity: now.addingTimeInterval(-5)
-            ),
-            session(
-                state: .responding,
-                lastActivity: now.addingTimeInterval(-20)
-            )
+        // Two active sessions: one 10s ago, one 20s ago.
+        // With 60s threshold, remaining = 50s and 40s → picks 40s.
+        let dates = [
+            now.addingTimeInterval(-10),
+            now.addingTimeInterval(-20)
         ]
 
-        let delay = ClaudeCodeMonitor.nextIdleCheckDelay(
+        let delay = MonitoringSchedule.nextIdleCheckDelay(
             now: now,
-            minimumIdleCheckInterval: 1.0,
+            minimumInterval: 1.0,
             idleThreshold: 60.0,
-            sessions: sessions
+            activeSessionDates: dates
         )
-        XCTAssertEqual(delay, 40.0, accuracy: 0.0001)
+        XCTAssertEqual(delay!, 40.0, accuracy: 0.001)
     }
 
-    func testClaudeNextCheckDelayReturnsNilForNonMonitoredSessionStates() {
+    func testNextIdleCheckDelayAppliesMinimumFloorForOverdueSessions() {
         let now = Date()
-        let sessions = [
-            session(state: .waitingInput, lastActivity: now.addingTimeInterval(-10)),
-            session(state: .waitingPermission, lastActivity: now.addingTimeInterval(-20)),
-            session(state: .idle, lastActivity: now.addingTimeInterval(-30)),
-            session(state: .closed, lastActivity: now.addingTimeInterval(-40))
-        ]
+        // Session 200s ago with 60s threshold → remaining is -140s → clamped to minimumInterval
+        let dates = [now.addingTimeInterval(-200)]
 
-        let delay = ClaudeCodeMonitor.nextIdleCheckDelay(
+        let delay = MonitoringSchedule.nextIdleCheckDelay(
             now: now,
-            minimumIdleCheckInterval: 1.0,
+            minimumInterval: 120.0,
             idleThreshold: 60.0,
-            sessions: sessions
+            activeSessionDates: dates
         )
-        XCTAssertNil(delay)
+        XCTAssertEqual(delay!, 120.0, accuracy: 0.001)
     }
 
-    func testClaudeNextCheckDelayAppliesMinimumFloorForOverdueSessions() {
+    func testNextIdleCheckDelayUsesThresholdNotMinimumForNonOverdueSessions() {
         let now = Date()
-        let session = session(
-            state: .active,
-            lastActivity: now.addingTimeInterval(-200)
-        )
+        let dates = [now.addingTimeInterval(-10)]
 
-        let delay = ClaudeCodeMonitor.nextIdleCheckDelay(
+        let delay = MonitoringSchedule.nextIdleCheckDelay(
             now: now,
-            minimumIdleCheckInterval: 120.0,
+            minimumInterval: 1.0,
             idleThreshold: 60.0,
-            sessions: [session]
+            activeSessionDates: dates
         )
-        XCTAssertEqual(delay, 120.0, accuracy: 0.0001)
+        XCTAssertEqual(delay!, 50.0, accuracy: 0.001)
     }
 
-    func testHistoryIdleNextCheckDelayReturnsNilWithoutSessions() {
-        let delay = HistoryIdleMonitor.nextCheckDelay(
+    // MARK: - History idle check
+
+    func testNextHistoryCheckDelayReturnsNilWithoutSessions() {
+        let delay = MonitoringSchedule.nextHistoryCheckDelay(
             now: Date(),
             minimumCheckInterval: 1.0,
             idleSeconds: 60.0,
@@ -89,145 +73,116 @@ final class MonitoringScheduleTests: XCTestCase {
         XCTAssertNil(delay)
     }
 
-    func testHistoryIdleNextCheckDelayUsesMinimumIntervalFloor() {
+    func testNextHistoryCheckDelayUsesMinimumIntervalFloor() {
         let now = Date()
-        let lastSeen: [String: Date] = [
-            "near-threshold": now.addingTimeInterval(-59.3)
-        ]
+        // Session 59.3s ago → idle deadline at 60s → remaining = 0.7s → clamped to 1.0
+        let lastSeen = ["near-threshold": now.addingTimeInterval(-59.3)]
 
-        let delay = HistoryIdleMonitor.nextCheckDelay(
+        let delay = MonitoringSchedule.nextHistoryCheckDelay(
             now: now,
             minimumCheckInterval: 1.0,
             idleSeconds: 60.0,
             staleSeconds: 120.0,
             lastSeen: lastSeen
         )
-        XCTAssertEqual(delay, 1.0, accuracy: 0.0001)
+        XCTAssertEqual(delay!, 1.0, accuracy: 0.001)
     }
 
-    func testHistoryIdleNextCheckDelayPicksSoonestDeadlineAcrossSessions() {
+    func testNextHistoryCheckDelayPicksSoonestDeadlineAcrossSessions() {
         let now = Date()
-        let lastSeen: [String: Date] = [
-            "slow": now.addingTimeInterval(-75.0),
-            "fast": now.addingTimeInterval(-20.0)
+        // "recent" 10s ago: idle at 60s → 50s remaining, stale at 100s → 90s
+        // "older" 40s ago: idle at 60s → 20s remaining, stale at 100s → 60s
+        // Picks 20s (soonest non-overdue idle deadline)
+        let lastSeen = [
+            "recent": now.addingTimeInterval(-10.0),
+            "older": now.addingTimeInterval(-40.0)
         ]
 
-        let delay = HistoryIdleMonitor.nextCheckDelay(
+        let delay = MonitoringSchedule.nextHistoryCheckDelay(
             now: now,
             minimumCheckInterval: 1.0,
             idleSeconds: 60.0,
             staleSeconds: 100.0,
             lastSeen: lastSeen
         )
-        XCTAssertEqual(delay, 25.0, accuracy: 0.0001)
+        XCTAssertEqual(delay!, 20.0, accuracy: 0.001)
     }
 
-    func testHistoryIdleNextCheckDelayRespectsMinimumWhenSessionIsStaleSoon() {
+    func testNextHistoryCheckDelayRespectsMinimumWhenSessionIsStaleSoon() {
         let now = Date()
-        let lastSeen: [String: Date] = [
+        // "staleSoon" 75s ago: stale at 100s → 25s but also idle at 60s → -15s → clamp to 1.0
+        let lastSeen = [
             "staleSoon": now.addingTimeInterval(-75.0),
             "activeLong": now.addingTimeInterval(-10.0)
         ]
 
-        let delay = HistoryIdleMonitor.nextCheckDelay(
+        let delay = MonitoringSchedule.nextHistoryCheckDelay(
             now: now,
             minimumCheckInterval: 1.0,
             idleSeconds: 60.0,
             staleSeconds: 100.0,
             lastSeen: lastSeen
         )
-        XCTAssertEqual(delay, 1.0, accuracy: 0.0001)
+        XCTAssertEqual(delay!, 1.0, accuracy: 0.001)
     }
 
-    func testHistoryIdleNextCheckDelayClampsStaleToIdleThresholdPlusOneSecond() {
+    func testNextHistoryCheckDelayClampsStaleToIdlePlusOne() {
         let now = Date()
-        let lastSeen: [String: Date] = [
-            "session": now.addingTimeInterval(-10)
-        ]
+        // staleSeconds=1.0 is below idleSeconds+1 (61s), so clamped to 61s
+        let lastSeen = ["session": now.addingTimeInterval(-10)]
 
-        let delay = HistoryIdleMonitor.nextCheckDelay(
+        let delay = MonitoringSchedule.nextHistoryCheckDelay(
             now: now,
             minimumCheckInterval: 1.0,
             idleSeconds: 60.0,
             staleSeconds: 1.0,
             lastSeen: lastSeen
         )
-        XCTAssertEqual(delay, 1.0, accuracy: 0.0001)
+        // idle deadline = 50s remaining, stale deadline = 51s remaining → picks 50s
+        XCTAssertEqual(delay!, 50.0, accuracy: 0.001)
     }
 
-    func testHistoryIdleNextCheckDelayForOverdueStateFallsBackToMinimum() {
+    func testNextHistoryCheckDelayForOverdueStateFallsBackToMinimum() {
         let now = Date()
-        let lastSeen: [String: Date] = [
-            "session": now.addingTimeInterval(-400)
-        ]
+        // Session 400s ago → all deadlines in the past → clamped to 1.0
+        let lastSeen = ["session": now.addingTimeInterval(-400)]
 
-        let delay = HistoryIdleMonitor.nextCheckDelay(
+        let delay = MonitoringSchedule.nextHistoryCheckDelay(
             now: now,
             minimumCheckInterval: 1.0,
             idleSeconds: 60.0,
             staleSeconds: 100.0,
             lastSeen: lastSeen
         )
-        XCTAssertEqual(delay, 1.0, accuracy: 0.0001)
+        XCTAssertEqual(delay!, 1.0, accuracy: 0.001)
     }
 
-    func testProcessResourceNextPollIntervalStartsAtMinimum() {
-        let interval = ProcessResourceMonitor.nextPollInterval(
-            consecutiveNoDataPolls: 0,
-            minimumPollInterval: ProcessResourceMonitor.minimumPollInterval,
-            maxPollInterval: ProcessResourceMonitor.maxPollInterval,
-            noDataBackoffMultiplier: 1.8,
-            maxConsecutiveNoDataPolls: 8
+    // MARK: - Process resource polling
+
+    func testNextPollIntervalStartsAtMinimum() {
+        let interval = MonitoringSchedule.nextPollInterval(
+            consecutiveNoDataPolls: 0
         )
-        XCTAssertEqual(interval, ProcessResourceMonitor.minimumPollInterval, accuracy: 0.0001)
+        XCTAssertEqual(interval, MonitoringSchedule.defaultMinimumPollInterval, accuracy: 0.001)
     }
 
-    func testProcessResourceNextPollIntervalBacksOffAndCaps() {
-        let firstBackoff = ProcessResourceMonitor.nextPollInterval(
-            consecutiveNoDataPolls: 1,
-            minimumPollInterval: ProcessResourceMonitor.minimumPollInterval,
-            maxPollInterval: ProcessResourceMonitor.maxPollInterval,
-            noDataBackoffMultiplier: ProcessResourceMonitor.noDataBackoffMultiplier,
-            maxConsecutiveNoDataPolls: ProcessResourceMonitor.maxConsecutiveNoDataPolls
-        )
-        XCTAssertEqual(firstBackoff, 1.35, accuracy: 0.0001)
+    func testNextPollIntervalBacksOffExponentially() {
+        let first = MonitoringSchedule.nextPollInterval(consecutiveNoDataPolls: 1)
+        // 0.75 * 1.8^1 = 1.35
+        XCTAssertEqual(first, 1.35, accuracy: 0.001)
 
-        let capped = ProcessResourceMonitor.nextPollInterval(
-            consecutiveNoDataPolls: 100,
-            minimumPollInterval: ProcessResourceMonitor.minimumPollInterval,
-            maxPollInterval: ProcessResourceMonitor.maxPollInterval,
-            noDataBackoffMultiplier: ProcessResourceMonitor.noDataBackoffMultiplier,
-            maxConsecutiveNoDataPolls: ProcessResourceMonitor.maxConsecutiveNoDataPolls
-        )
-        XCTAssertEqual(capped, ProcessResourceMonitor.maxPollInterval, accuracy: 0.0001)
+        let second = MonitoringSchedule.nextPollInterval(consecutiveNoDataPolls: 2)
+        // 0.75 * 1.8^2 = 2.43
+        XCTAssertEqual(second, 2.43, accuracy: 0.001)
     }
 
-    func testProcessResourceNextPollIntervalUsesMinimumForInvalidInput() {
-        let interval = ProcessResourceMonitor.nextPollInterval(
-            consecutiveNoDataPolls: -3,
-            minimumPollInterval: ProcessResourceMonitor.minimumPollInterval,
-            maxPollInterval: ProcessResourceMonitor.maxPollInterval,
-            noDataBackoffMultiplier: ProcessResourceMonitor.noDataBackoffMultiplier,
-            maxConsecutiveNoDataPolls: ProcessResourceMonitor.maxConsecutiveNoDataPolls
-        )
-        XCTAssertEqual(interval, ProcessResourceMonitor.minimumPollInterval, accuracy: 0.0001)
+    func testNextPollIntervalCapsAtMaximum() {
+        let capped = MonitoringSchedule.nextPollInterval(consecutiveNoDataPolls: 100)
+        XCTAssertEqual(capped, MonitoringSchedule.defaultMaxPollInterval, accuracy: 0.001)
     }
 
-    // MARK: - Helpers
-
-    private func session(
-        state: ClaudeCodeMonitor.ClaudeSessionInfo.SessionState,
-        lastActivity: Date
-    ) -> ClaudeCodeMonitor.ClaudeSessionInfo {
-        ClaudeCodeMonitor.ClaudeSessionInfo(
-            id: UUID().uuidString,
-            projectName: "proj",
-            cwd: "/tmp",
-            transcriptPath: "/tmp/transcript",
-            lastActivity: lastActivity,
-            state: state,
-            lastToolName: nil
-        )
+    func testNextPollIntervalTreatsNegativeAsNoData() {
+        let interval = MonitoringSchedule.nextPollInterval(consecutiveNoDataPolls: -3)
+        XCTAssertEqual(interval, MonitoringSchedule.defaultMinimumPollInterval, accuracy: 0.001)
     }
 }
-#endif
