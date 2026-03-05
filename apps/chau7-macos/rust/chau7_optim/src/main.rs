@@ -227,31 +227,12 @@ enum Commands {
         command: Vec<String>,
     },
 
-    /// Compact grep - strips whitespace, truncates, groups by file
+    /// Compact grep - strips whitespace, truncates, groups by file.
+    /// Accepts full grep/rg flag syntax (parsed manually for compatibility).
     Grep {
-        /// Pattern to search
-        pattern: String,
-        /// Path to search in
-        #[arg(default_value = ".")]
-        path: String,
-        /// Max line length
-        #[arg(short = 'l', long, default_value = "80")]
-        max_len: usize,
-        /// Max results to show
-        #[arg(short, long, default_value = "50")]
-        max: usize,
-        /// Show only match context (not full line)
-        #[arg(short, long)]
-        context_only: bool,
-        /// Filter by file type (e.g., ts, py, rust)
-        #[arg(short = 't', long)]
-        file_type: Option<String>,
-        /// Show line numbers (always on, accepted for grep/rg compatibility)
-        #[arg(short = 'n', long)]
-        line_numbers: bool,
-        /// Extra ripgrep arguments (e.g., -i, -A 3, -w, --glob)
-        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
-        extra_args: Vec<String>,
+        /// All arguments — parsed manually to support standard grep flags
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, num_args = 1..)]
+        args: Vec<String>,
     },
 
     /// Download with compact output (strips progress bars)
@@ -749,6 +730,17 @@ enum GoCommands {
 }
 
 fn main() -> Result<()> {
+    // Strip CTO wrapper dir from PATH to prevent infinite recursion.
+    // Without this, `Command::new("ls")` inside ls.rs would resolve to the
+    // CTO wrapper script, which calls chau7-optim again → infinite loop.
+    if let Ok(path) = std::env::var("PATH") {
+        if let Ok(home) = std::env::var("HOME") {
+            let cto_bin = format!("{}/.chau7/cto_bin", home);
+            let clean: Vec<&str> = path.split(':').filter(|p| *p != cto_bin).collect();
+            std::env::set_var("PATH", clean.join(":"));
+        }
+    }
+
     let cli = Cli::parse();
 
     match cli.command {
@@ -981,26 +973,8 @@ fn main() -> Result<()> {
             summary::run(&cmd, cli.verbose)?;
         }
 
-        Commands::Grep {
-            pattern,
-            path,
-            max_len,
-            max,
-            context_only,
-            file_type,
-            line_numbers: _,
-            extra_args,
-        } => {
-            grep_cmd::run(
-                &pattern,
-                &path,
-                max_len,
-                max,
-                context_only,
-                file_type.as_deref(),
-                &extra_args,
-                cli.verbose,
-            )?;
+        Commands::Grep { args } => {
+            grep_cmd::run(&args, cli.verbose)?;
         }
 
         Commands::Wget { url, stdout, args } => {

@@ -216,7 +216,7 @@ final class CTOManager {
             optimizerBlock = """
             _CHAU7_OPTIM="$HOME/.chau7/bin/chau7-optim"
             if [ -x "$_CHAU7_OPTIM" ]; then
-                "$_CHAU7_OPTIM" \(sub) "$@" 2>>"${CHAU7_CTO_LOG:-/dev/null}"
+                "$_CHAU7_OPTIM" \(sub) "$@" 2>/dev/null
                 _rc=$?
                 if [ $_rc -ne 2 ]; then
                     [ -n "$CHAU7_CTO_LOG" ] && echo "$(date +%s)|$CHAU7_CTO_SESSION|\(command)|$_rc|optimized" >>"$CHAU7_CTO_LOG"
@@ -368,7 +368,7 @@ final class CTOManager {
         # Route through built-in optimizer for non-markdown files
         _CHAU7_OPTIM="$HOME/.chau7/bin/chau7-optim"
         if [ -x "$_CHAU7_OPTIM" ]; then
-            "$_CHAU7_OPTIM" read "$@" 2>>"${CHAU7_CTO_LOG:-/dev/null}"
+            "$_CHAU7_OPTIM" read "$@" 2>/dev/null
             _rc=$?
             if [ $_rc -ne 2 ]; then
                 [ -n "$CHAU7_CTO_LOG" ] && echo "$(date +%s)|$CHAU7_CTO_SESSION|cat|$_rc|optimized" >>"$CHAU7_CTO_LOG"
