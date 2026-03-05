@@ -40,7 +40,10 @@ final class ClaudeCodeMonitor: ObservableObject {
 
     private let eventsFilePath: String
     private let maxRecentEvents = 50
-    private let idleThreshold: TimeInterval = 5.0
+    /// How long a session must be silent before we consider it idle.
+    /// Must be long enough to avoid false positives during normal Claude
+    /// thinking/generation pauses between tool calls (typically 5–30s).
+    private let idleThreshold: TimeInterval = 60.0
     private let permissionRequestCooldown: TimeInterval = 20.0
 
     // MARK: - Internal State
