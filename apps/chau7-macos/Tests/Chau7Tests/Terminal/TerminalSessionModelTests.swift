@@ -174,6 +174,23 @@ final class TerminalSessionModelTests: XCTestCase {
             "Default lagTimeline should be empty")
     }
 
+    func testRestoreAIMetadata() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+
+        session.restoreAIMetadata(provider: "Claude", sessionId: "  abc123 ")
+        XCTAssertEqual(session.lastAIProvider, "claude")
+        XCTAssertEqual(session.lastAISessionId, "abc123")
+
+        session.restoreAIMetadata(provider: "codex", sessionId: "bad id")
+        XCTAssertEqual(session.lastAIProvider, "codex")
+        XCTAssertNil(session.lastAISessionId)
+
+        session.restoreAIMetadata(provider: nil, sessionId: nil)
+        XCTAssertNil(session.lastAIProvider)
+        XCTAssertNil(session.lastAISessionId)
+    }
+
     func testSessionTabIdentifierIsUnique() {
         let model = AppModel()
         let session1 = TerminalSessionModel(appModel: model)

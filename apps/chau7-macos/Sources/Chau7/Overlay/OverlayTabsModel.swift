@@ -83,7 +83,7 @@ struct OverlayTab: Identifiable, Equatable {
     var lastCommand: LastCommandInfo? = nil  // F20: Last command tracking
     var bookmarks: [BookmarkManager.Bookmark] = []  // F17: Bookmarks
 
-    // MARK: - Token Optimization (RTK) Per-Tab Override
+    // MARK: - Token Optimization (CTO) Per-Tab Override
     /// Per-tab override for token optimization. Defaults to `.default` which
     /// follows the global mode. Users can force-on or force-off per tab.
     var tokenOptOverride: TabTokenOptOverride = .default
@@ -146,11 +146,11 @@ struct OverlayTab: Identifiable, Equatable {
         return lastCommand?.badgeText
     }
 
-    /// Whether RTK (token optimization) is currently active on this tab.
+    /// Whether CTO (token optimization) is currently active on this tab.
     var isTokenOptActive: Bool {
         let mode = FeatureSettings.shared.tokenOptimizationMode
         let isAI = session?.activeAppName != nil
-        return RTKFlagManager.shouldBeActive(mode: mode, override: tokenOptOverride, isAIActive: isAI)
+        return shouldBeActive(mode: mode, override: tokenOptOverride, isAIActive: isAI)
     }
 
     /// Visual state for optimizer tab badge: nil = hidden, true = active override, false = inactive override.
@@ -377,9 +377,10 @@ final class OverlayTabsModel: ObservableObject {
     private var isDiagnosticsLoggingEnabled: Bool = false
     /// Periodic auto-save timer so tab state survives crashes (SIGABRT etc.)
     private var autoSaveTimer: DispatchSourceTimer?
-    /// RTK notification observer tokens (stored for cleanup in deinit)
-    private var rtkModeObserver: NSObjectProtocol?
-    private var rtkFlagObserver: NSObjectProtocol?
+    /// CTO notification observer tokens (stored for cleanup in deinit)
+    private var ctoModeObserver: NSObjectProtocol?
+    private var ctoFlagObserver: NSObjectProtocol?
+    private var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
 
     weak var overlayWindow: NSWindow?
     var onCloseLastTab: (() -> Void)?
@@ -440,25 +441,29 @@ final class OverlayTabsModel: ObservableObject {
         timer.resume()
         autoSaveTimer = timer
 
-        // RTK: listen for global mode changes and recalculate all tab flags
-        rtkModeObserver = NotificationCenter.default.addObserver(
+        // CTO: listen for global mode changes and recalculate all tab flags
+        ctoModeObserver = NotificationCenter.default.addObserver(
             forName: .tokenOptimizationModeChanged,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.recalculateAllRTKFlags()
-            // Also setup/teardown wrappers when mode changes at runtime
+            guard let self else { return }
+            let previousMode = self.lastObservedTokenOptimizationMode
             let mode = FeatureSettings.shared.tokenOptimizationMode
+            self.lastObservedTokenOptimizationMode = mode
+            CTORuntimeMonitor.shared.recordModeChanged(from: previousMode, to: mode)
+            self.recalculateAllCTOFlags()
+            // Also setup/teardown wrappers when mode changes at runtime
             if mode == .off {
-                RTKManager.shared.teardown()
+                CTOManager.shared.teardown()
             } else {
-                RTKManager.shared.setup()
+                CTOManager.shared.setup()
             }
         }
 
-        // RTK: refresh tab bar when a session's flag state changes (e.g. AI detected)
-        rtkFlagObserver = NotificationCenter.default.addObserver(
-            forName: .rtkFlagRecalculated,
+        // CTO: refresh tab bar when a session's flag state changes (e.g. AI detected)
+        ctoFlagObserver = NotificationCenter.default.addObserver(
+            forName: .ctoFlagRecalculated,
             object: nil,
             queue: .main
         ) { [weak self] _ in
@@ -470,8 +475,8 @@ final class OverlayTabsModel: ObservableObject {
         stopTabBarWatchdog()
         autoSaveTimer?.cancel()
         autoSaveTimer = nil
-        if let rtkModeObserver { NotificationCenter.default.removeObserver(rtkModeObserver) }
-        if let rtkFlagObserver { NotificationCenter.default.removeObserver(rtkFlagObserver) }
+        if let ctoModeObserver { NotificationCenter.default.removeObserver(ctoModeObserver) }
+        if let ctoFlagObserver { NotificationCenter.default.removeObserver(ctoFlagObserver) }
     }
 
     // MARK: - Tab State Persistence
@@ -675,6 +680,34 @@ final class OverlayTabsModel: ObservableObject {
         default:
             return nil
         }
+    }
+
+    private static func resolveAIResumeMetadataFromSavedState(
+        paneState: SavedTerminalPaneState,
+        fallbackAIProvider: String?,
+        fallbackAISessionId: String?,
+        directory: String,
+        outputHint: String?,
+        referenceDate: Date? = nil
+    ) -> (provider: String, sessionId: String)? {
+        let commandMetadata = AIResumeParser.extractMetadata(
+            from: paneState.aiResumeCommand ?? ""
+        )
+        let explicitProvider = normalizedAIProvider(from: paneState.aiProvider)
+            ?? commandMetadata?.provider
+            ?? normalizedAIProvider(from: fallbackAIProvider)
+        let explicitSessionId = normalizeAISessionId(paneState.aiSessionId)
+            ?? commandMetadata?.sessionId
+            ?? normalizeAISessionId(fallbackAISessionId)
+
+        return resolveAIResumeMetadata(
+            appName: nil,
+            directory: directory,
+            outputHint: outputHint,
+            explicitAIProvider: explicitProvider,
+            explicitAISessionId: explicitSessionId,
+            referenceDate: referenceDate
+        )
     }
 
     private static func resolveAIResumeMetadata(
@@ -1185,6 +1218,23 @@ final class OverlayTabsModel: ObservableObject {
             )
         }
 
+        if paneStatesToRestore.count == 1,
+           let firstEntry = paneStatesToRestore.first {
+            let firstPane = firstEntry.value
+            if firstPane.aiProvider == nil && firstPane.aiSessionId == nil {
+                let legacyCommand = firstPane.aiResumeCommand ?? state.aiResumeCommand
+                paneStatesToRestore[firstEntry.key] = SavedTerminalPaneState(
+                    paneID: firstPane.paneID,
+                    directory: firstPane.directory,
+                    scrollbackContent: firstPane.scrollbackContent,
+                    aiResumeCommand: legacyCommand,
+                    aiProvider: firstPane.aiProvider ?? state.aiProvider,
+                    aiSessionId: firstPane.aiSessionId ?? state.aiSessionId,
+                    lastOutputAt: firstPane.lastOutputAt
+                )
+            }
+        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.restoreDelaySeconds, execute: { [weak self] in
             guard let self else { return }
             guard let restoredTab = self.tabs.first(where: { $0.id == targetTabID }) else {
@@ -1210,8 +1260,51 @@ final class OverlayTabsModel: ObservableObject {
                 restoredTab.splitController.setFocusedPane(activePaneID)
             }
 
-            let normalizedResumeCommands = currentSessions.compactMap { (paneID, _) -> (UUID, String)? in
-                guard let candidate = Self.normalizedResumeCommand(paneStatesToRestore[paneID]?.aiResumeCommand) else {
+            var resolvedPaneStates: [UUID: SavedTerminalPaneState] = [:]
+            for (paneID, session) in currentSessions {
+                let paneState = paneStatesToRestore[paneID] ?? SavedTerminalPaneState(
+                    paneID: paneID.uuidString,
+                    directory: session.currentDirectory,
+                    scrollbackContent: nil,
+                    aiResumeCommand: nil,
+                    aiProvider: nil,
+                    aiSessionId: nil,
+                    lastOutputAt: nil
+                )
+
+                let resolvedMetadata = Self.resolveAIResumeMetadataFromSavedState(
+                    paneState: paneState,
+                    fallbackAIProvider: state.aiProvider,
+                    fallbackAISessionId: state.aiSessionId,
+                    directory: paneState.directory,
+                    outputHint: paneState.scrollbackContent,
+                    referenceDate: paneState.lastOutputAt
+                )
+                let resolvedCommand = Self.buildAIResumeCommand(
+                    provider: resolvedMetadata?.provider,
+                    sessionId: resolvedMetadata?.sessionId
+                )
+
+                session.restoreAIMetadata(
+                    provider: resolvedMetadata?.provider,
+                    sessionId: resolvedMetadata?.sessionId
+                )
+
+                let effectivePaneState = SavedTerminalPaneState(
+                    paneID: paneState.paneID,
+                    directory: paneState.directory,
+                    scrollbackContent: paneState.scrollbackContent,
+                    aiResumeCommand: resolvedCommand ?? Self.normalizedResumeCommand(paneState.aiResumeCommand),
+                    aiProvider: resolvedMetadata?.provider,
+                    aiSessionId: resolvedMetadata?.sessionId,
+                    lastOutputAt: paneState.lastOutputAt
+                )
+                resolvedPaneStates[paneID] = effectivePaneState
+                paneStatesToRestore[paneID] = effectivePaneState
+            }
+
+            let normalizedResumeCommands = resolvedPaneStates.compactMap { (paneID, paneState) -> (UUID, String)? in
+                guard let candidate = Self.normalizedResumeCommand(paneState.aiResumeCommand) else {
                     return nil
                 }
                 return (paneID, candidate)
@@ -1223,36 +1316,15 @@ final class OverlayTabsModel: ObservableObject {
 
             let restoreToken = UUID().uuidString
             for (paneID, session) in currentSessions {
-                let paneState = paneStatesToRestore[paneID]
-                    ?? SavedTerminalPaneState(
-                        paneID: paneID.uuidString,
-                        directory: session.currentDirectory,
-                        scrollbackContent: nil,
-                        aiResumeCommand: nil,
-                        aiProvider: nil,
-                        aiSessionId: nil
-                    )
-
-                let inferredResumeCommand = Self.normalizedResumeCommand(
-                    Self.buildAIResumeCommand(
-                        appName: nil,
-                        directory: paneState.directory,
-                        outputHint: paneState.scrollbackContent,
-                        aiProvider: paneState.aiProvider,
-                        aiSessionId: paneState.aiSessionId,
-                        referenceDate: paneState.lastOutputAt
-                    )
+                let effectivePaneState = resolvedPaneStates[paneID] ?? SavedTerminalPaneState(
+                    paneID: paneID.uuidString,
+                    directory: session.currentDirectory,
+                    scrollbackContent: nil,
+                    aiResumeCommand: nil,
+                    aiProvider: nil,
+                    aiSessionId: nil,
+                    lastOutputAt: nil
                 )
-                let effectivePaneState = SavedTerminalPaneState(
-                    paneID: paneState.paneID,
-                    directory: paneState.directory,
-                    scrollbackContent: paneState.scrollbackContent,
-                    aiResumeCommand: Self.normalizedResumeCommand(paneState.aiResumeCommand) ?? inferredResumeCommand,
-                    aiProvider: paneState.aiProvider,
-                    aiSessionId: paneState.aiSessionId,
-                    lastOutputAt: paneState.lastOutputAt
-                )
-                paneStatesToRestore[paneID] = effectivePaneState
 
                 var commands: [String] = []
                 if let scrollback = effectivePaneState.scrollbackContent,
@@ -1589,12 +1661,9 @@ final class OverlayTabsModel: ObservableObject {
             refreshSearch()
         }
 
-        // RTK: defer flag file creation until first prompt to avoid optimizer
+        // CTO: defer flag file creation until first prompt to avoid optimizer
         // overhead during shell init scripts (NVM, compinit, etc.).
-        let rtkMode = FeatureSettings.shared.tokenOptimizationMode
-        if rtkMode != .off {
-            tab.session?.rtkFlagDeferred = true
-        }
+        tab.session?.markCTOFlagDeferred(mode: FeatureSettings.shared.tokenOptimizationMode)
 
         // Emit tab_opened event if enabled
         if FeatureSettings.shared.appEventConfig.notifyOnTabOpen {
@@ -1618,6 +1687,7 @@ final class OverlayTabsModel: ObservableObject {
 
         // Set the starting directory for the new tab (triggers git status refresh)
         tab.session?.updateCurrentDirectory(directory)
+        tab.session?.markCTOFlagDeferred(mode: FeatureSettings.shared.tokenOptimizationMode)
 
         // Insert based on settings
         let position = FeatureSettings.shared.newTabPosition
@@ -1813,8 +1883,26 @@ final class OverlayTabsModel: ObservableObject {
         // Clean up per-tab command history
         if let sessionID = tabs[index].session?.tabIdentifier {
             CommandHistoryManager.shared.removeTab(sessionID)
-            // RTK: remove flag file for closed tab
-            RTKFlagManager.removeFlag(sessionID: sessionID)
+            // CTO: remove flag file for closed tab
+            let hadCTOFlag = CTOFlagManager.removeFlag(sessionID: sessionID)
+            if hadCTOFlag,
+               let session = tabs[index].session {
+                let isAI = session.activeAppName != nil
+                CTORuntimeMonitor.shared.recordDecision(
+                    sessionID: sessionID,
+                    mode: FeatureSettings.shared.tokenOptimizationMode,
+                    override: tabs[index].tokenOptOverride,
+                    isAIActive: isAI,
+                    previousState: true,
+                    nextState: false,
+                    changed: true,
+                    reason: decisionReason(
+                        mode: FeatureSettings.shared.tokenOptimizationMode,
+                        override: tabs[index].tokenOptOverride,
+                        isAIActive: isAI
+                    )
+                )
+            }
         }
 
         // Close all sessions in the split pane tree (not just primary)
@@ -2145,7 +2233,7 @@ final class OverlayTabsModel: ObservableObject {
         }
     }
 
-    // MARK: - Token Optimization (RTK) Per-Tab Control
+    // MARK: - Token Optimization (CTO) Per-Tab Control
 
     /// Toggles the token optimization override for a tab.
     /// Cycling depends on the global mode:
@@ -2187,34 +2275,76 @@ final class OverlayTabsModel: ObservableObject {
         // Recalculate flag file for this tab's session
         if let sessionID = tabs[index].session?.tabIdentifier {
             let isAI = tabs[index].session?.activeAppName != nil
-            RTKFlagManager.recalculate(
+            let decision = CTOFlagManager.recalculate(
                 sessionID: sessionID,
                 mode: mode,
                 override: next,
                 isAIActive: isAI
             )
+
+            CTORuntimeMonitor.shared.recordDecision(
+                sessionID: sessionID,
+                mode: mode,
+                override: next,
+                isAIActive: isAI,
+                previousState: decision.previousState,
+                nextState: decision.nextState,
+                changed: decision.changed,
+                reason: decisionReason(
+                    mode: mode,
+                    override: next,
+                    isAIActive: isAI
+                )
+            )
         }
 
-        Log.info("RTK toggle: tab \(tabID) override changed to \(next.rawValue)")
+        Log.info("CTO toggle: tab \(tabID) override changed to \(next.rawValue)")
     }
 
-    /// Recalculates RTK flag files for all open tabs.
+    /// Recalculates CTO flag files for all open tabs.
     /// Called when the global mode changes.
-    func recalculateAllRTKFlags() {
+    func recalculateAllCTOFlags() {
         let mode = FeatureSettings.shared.tokenOptimizationMode
         if mode == .off {
-            RTKFlagManager.removeAllFlags()
+            let removed = CTOFlagManager.removeAllFlags()
+            CTORuntimeMonitor.shared.recordManagerBulkRemove(count: removed)
             return
         }
 
         for tab in tabs {
             guard let sessionID = tab.session?.tabIdentifier else { continue }
+            guard let session = tab.session, !session.ctoFlagDeferred else {
+                if let session = tab.session {
+                    CTORuntimeMonitor.shared.recordDeferredSkip(
+                        sessionID: session.tabIdentifier,
+                        reason: "mode-change-before-first-prompt",
+                        mode: mode,
+                        override: tab.tokenOptOverride,
+                        isAIActive: tab.session?.activeAppName != nil
+                    )
+                }
+                continue
+            }
             let isAI = tab.session?.activeAppName != nil
-            RTKFlagManager.recalculate(
+            let decision = CTOFlagManager.recalculate(
                 sessionID: sessionID,
                 mode: mode,
                 override: tab.tokenOptOverride,
                 isAIActive: isAI
+            )
+            CTORuntimeMonitor.shared.recordDecision(
+                sessionID: sessionID,
+                mode: mode,
+                override: tab.tokenOptOverride,
+                isAIActive: isAI,
+                previousState: decision.previousState,
+                nextState: decision.nextState,
+                changed: decision.changed,
+                reason: decisionReason(
+                    mode: mode,
+                    override: tab.tokenOptOverride,
+                    isAIActive: isAI
+                )
             )
         }
     }
