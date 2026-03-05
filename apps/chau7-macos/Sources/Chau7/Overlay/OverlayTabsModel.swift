@@ -561,18 +561,18 @@ final class OverlayTabsModel: ObservableObject {
 
         var paneStates: [SavedTerminalPaneState] = []
         for (paneID, session) in terminalSessions {
-                let dir = session.currentDirectory
-                let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
-                let detectedApp = Self.detectAIAppName(fromOutput: scrollback)
-                let resumeAppName = session.activeAppName ?? detectedApp
-                let resumeMetadata = Self.resolveAIResumeMetadata(
-                    appName: resumeAppName,
-                    directory: dir,
-                    outputHint: scrollback,
-                    explicitAIProvider: session.lastAIProvider,
-                    explicitAISessionId: session.lastAISessionId,
-                    referenceDate: session.lastOutputDate
-                )
+            let dir = session.currentDirectory
+            let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
+            let detectedApp = Self.detectAIAppName(fromOutput: scrollback)
+            let resumeAppName = session.activeAppName ?? detectedApp
+            let resumeMetadata = Self.resolveAIResumeMetadata(
+                appName: resumeAppName,
+                directory: dir,
+                outputHint: scrollback,
+                explicitAIProvider: session.lastAIProvider,
+                explicitAISessionId: session.lastAISessionId,
+                referenceDate: session.lastOutputDate
+            )
             let resumeCommand = Self.buildAIResumeCommand(
                 provider: resumeMetadata?.provider,
                 sessionId: resumeMetadata?.sessionId
@@ -784,6 +784,9 @@ final class OverlayTabsModel: ObservableObject {
     ) -> String? {
         switch provider {
         case "claude":
+            // Claude sessions are looked up via ClaudeCodeMonitor which tracks
+            // session→directory mappings live. No referenceDate disambiguation
+            // needed — each directory maps to at most one active Claude session.
             return findClaudeSessionId(
                 forDirectory: directory
             ).flatMap { normalizeAISessionId($0) }
@@ -799,16 +802,13 @@ final class OverlayTabsModel: ObservableObject {
 
     private static func normalizedAIProvider(from value: String?) -> String? {
         guard let value else { return nil }
-        let lowered = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if lowered.contains("claude") { return "claude" }
-        if lowered.contains("codex") { return "codex" }
-        return nil
+        return AIResumeParser.normalizeProviderName(value)
     }
 
     private static func normalizeAISessionId(_ sessionId: String?) -> String? {
         guard let sessionId else { return nil }
         let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isValidSessionId(trimmed) else { return nil }
+        guard AIResumeParser.isValidSessionId(trimmed) else { return nil }
         return trimmed
     }
 
@@ -837,10 +837,8 @@ final class OverlayTabsModel: ObservableObject {
         return left == right || left.hasPrefix(right + "/")
     }
 
-    /// Validate that a session ID contains only safe characters (alphanumeric, hyphens,
-    /// underscores) to prevent shell injection when interpolated into a command string.
     private static func isValidSessionId(_ id: String) -> Bool {
-        !id.isEmpty && id.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+        AIResumeParser.isValidSessionId(id)
     }
 
     /// Find the most recent Codex session ID for a given directory.
@@ -910,23 +908,11 @@ final class OverlayTabsModel: ObservableObject {
             return nil
         }
 
-        if matches.count == 1 {
-            return matches[0].sessionId
-        }
-
-        if let referenceDate {
-            let sortedByDistance = matches.sorted {
-                let leftDistance = abs($0.touchedAt.timeIntervalSince(referenceDate))
-                let rightDistance = abs($1.touchedAt.timeIntervalSince(referenceDate))
-                if leftDistance != rightDistance {
-                    return leftDistance < rightDistance
-                }
-                return $0.touchedAt > $1.touchedAt
+        if let chosen = AIResumeParser.bestSessionMatch(candidates: matches, referenceDate: referenceDate) {
+            if matches.count > 1 {
+                Log.trace("findCodexSessionId: selected sessionId=\(chosen) from \(matches.count) candidates using activity hint for dir=\(dir)")
             }
-            if let chosen = sortedByDistance.first {
-                Log.trace("findCodexSessionId: selected sessionId=\(chosen.sessionId) using activity hint for dir=\(dir)")
-                return chosen.sessionId
-            }
+            return chosen
         }
 
         Log.warn("findCodexSessionId: multiple session candidates for dir=\(dir); skipping to avoid cross-tab contamination")
