@@ -1339,8 +1339,8 @@ fn main() -> Result<()> {
             {
                 python_cmd::run_manage_test(&args, cli.verbose)?;
             } else {
-                // One-liners, scripts, --version, etc. — fall through
-                std::process::exit(2);
+                // One-liners, scripts, --version, etc. — intentional skip
+                std::process::exit(3);
             }
         }
 

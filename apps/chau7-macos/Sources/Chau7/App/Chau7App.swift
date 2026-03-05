@@ -337,24 +337,28 @@ struct Chau7App: App {
 
                 Divider()
 
-                Button(L("Debug Console", "Debug Console")) {
-                    DebugConsoleController.shared.toggle()
-                }
-                .keyboardShortcut("l", modifiers: [.command, .shift])
-
-                Divider()
-
                 Button(L("Refresh Tab Bar", "Refresh Tab Bar")) {
                     appDelegate.refreshTabBar()
                 }
                 .keyboardShortcut("r", modifiers: [.command, .option])
             }
 
-            CommandGroup(after: .help) {
+            CommandGroup(replacing: .help) {
+                Button(L("Chau7 Help", "Chau7 Help")) {
+                    appDelegate.showHelp()
+                }
+
                 Button(L("Keyboard Shortcuts...", "Keyboard Shortcuts...")) {
                     appDelegate.showKeyboardShortcuts()
                 }
                 .keyboardShortcut("/", modifiers: [.command])
+
+                Divider()
+
+                Button(L("Debug Console", "Debug Console")) {
+                    DebugConsoleController.shared.toggle()
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
             }
         }
     }

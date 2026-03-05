@@ -55,6 +55,7 @@ This document tracks upstream changes and provides a repeatable process for port
 - `swift` optimizer: filters build progress lines, groups diagnostics by file, compact test summaries
 - `python` dispatcher: routes `python3 -m pytest/ruff/pip` to specialized optimizers, filters `manage.py test` (Django), falls through for one-liners/scripts
 - `discover` command: scans Claude Code sessions for top unhandled commands with false-positive filtering
+- Pipe-filter bypass: wrappers for `grep`/`rg`/`diff` detect piped stdin (`[ ! -t 0 ]`) and skip optimizer, preventing broken pipeline output
 
 ## Step-by-Step Sync Process
 

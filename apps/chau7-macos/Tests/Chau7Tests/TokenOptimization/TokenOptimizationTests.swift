@@ -264,6 +264,14 @@ final class TokenOptimizationCoreTests: XCTestCase {
         }
     }
 
+    func testPipeFilterCommandsAreSubsetOfRewriteMap() {
+        let rewriteKeys = Set(ctoRewriteMap.keys)
+        for cmd in pipeFilterCommands {
+            XCTAssertTrue(rewriteKeys.contains(cmd),
+                          "pipe-filter command '\(cmd)' should be in ctoRewriteMap")
+        }
+    }
+
     // MARK: - CTOGainStats Decoding
 
     func testGainStatsDecodingRoundTrip() throws {

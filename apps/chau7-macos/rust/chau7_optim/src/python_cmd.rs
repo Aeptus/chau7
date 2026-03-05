@@ -10,8 +10,8 @@ pub fn run_module(module: &str, args: &[String], verbose: u8) -> Result<()> {
         "pytest" => run_pytest(args, verbose),
         "ruff" | "pip" => run_passthrough(module, args, verbose),
         _ => {
-            // Unknown module — fall through to real python
-            std::process::exit(2);
+            // Unknown module — intentional skip
+            std::process::exit(3);
         }
     }
 }

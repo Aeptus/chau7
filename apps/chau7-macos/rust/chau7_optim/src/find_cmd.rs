@@ -153,8 +153,8 @@ pub fn run_from_args(args: &[String], verbose: u8) -> Result<()> {
                 run(&pattern, &path, max, &file_type, verbose)
             }
             None => {
-                // Unsupported flags — fallthrough to real find
-                std::process::exit(2);
+                // Unsupported native find flags — intentional skip
+                std::process::exit(3);
             }
         }
     } else {

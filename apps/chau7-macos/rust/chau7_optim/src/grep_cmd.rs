@@ -308,12 +308,12 @@ pub fn run(args: &[String], verbose: u8) -> Result<()> {
 
     // No pattern → nothing to do, let real grep show usage
     if parsed.pattern.is_empty() {
-        std::process::exit(2);
+        std::process::exit(3); // intentional skip
     }
 
     // Flags that produce non-standard output → fall through to real binary
     if parsed.quiet || parsed.count || parsed.files_only || parsed.files_without {
-        std::process::exit(2);
+        std::process::exit(3); // intentional skip
     }
 
     let timer = tracking::TimedExecution::start();
