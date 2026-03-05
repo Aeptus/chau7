@@ -220,8 +220,8 @@ struct SavedTerminalPaneState: Codable {
     let directory: String
     let scrollbackContent: String?  // last N lines of terminal output
     let aiResumeCommand: String?  // e.g. "claude --resume abc123"
-    let aiProvider: String? = nil
-    let aiSessionId: String? = nil
+    let aiProvider: String?
+    let aiSessionId: String?
 }
 
 /// Lightweight Codable snapshot of a tab's restorable state.
@@ -237,8 +237,8 @@ struct SavedTabState: Codable {
     let tokenOptOverride: String?  // TabTokenOptOverride.rawValue (nil = .default for backwards compat)
     let scrollbackContent: String?  // backward compatibility (legacy single-pane restore)
     let aiResumeCommand: String?  // backward compatibility (legacy single-pane restore)
-    let aiProvider: String? = nil
-    let aiSessionId: String? = nil
+    let aiProvider: String?
+    let aiSessionId: String?
     let splitLayout: SavedSplitNode? // split tree including editor panes
     let focusedPaneID: String? // persisted focused pane ID
     let paneStates: [SavedTerminalPaneState]?
@@ -1110,7 +1110,7 @@ final class OverlayTabsModel: ObservableObject {
             )
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.restoreDelaySeconds) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.restoreDelaySeconds, execute: { [weak self] in
             guard let self else { return }
             guard let restoredTab = self.tabs.first(where: { $0.id == targetTabID }) else {
                 Log.warn("restoreTabState: tab no longer exists for id=\(targetTabID)")
@@ -1212,7 +1212,7 @@ final class OverlayTabsModel: ObservableObject {
                     )
                 }
             }
-        }
+        })
     }
 
     private func scheduleResumeCommand(
