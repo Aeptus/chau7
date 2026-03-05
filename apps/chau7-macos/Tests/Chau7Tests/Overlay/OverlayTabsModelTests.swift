@@ -692,6 +692,65 @@ final class OverlayTabsModelTests: XCTestCase {
         wait(for: [readyExpectation], timeout: 2.0)
     }
 
+    func testRestorePrefillsUsingPersistedAiMetadata() {
+        let paneID = UUID()
+        let split = SavedSplitNode(
+            kind: .terminal,
+            id: paneID.uuidString,
+            direction: nil,
+            ratio: nil,
+            first: nil,
+            second: nil,
+            textEditorPath: nil
+        )
+
+        let paneState = SavedTerminalPaneState(
+            paneID: paneID.uuidString,
+            directory: "/tmp/meta-prefill",
+            scrollbackContent: nil,
+            aiResumeCommand: nil,
+            aiProvider: "claude",
+            aiSessionId: "meta-restore-001"
+        )
+
+        storeSavedTabStates([
+            SavedTabState(
+                customTitle: "Meta Restore",
+                color: TabColor.orange.rawValue,
+                directory: "/tmp/meta-prefill",
+                selectedIndex: 0,
+                tokenOptOverride: nil,
+                scrollbackContent: nil,
+                aiResumeCommand: nil,
+                splitLayout: split,
+                focusedPaneID: paneID.uuidString,
+                paneStates: [paneState]
+            )
+        ])
+
+        let restoredModel = OverlayTabsModel(appModel: appModel)
+        guard let session = restoredModel.tabs.first?.splitController.terminalSessions
+            .first(where: { $0.0 == paneID })?.1 else {
+            XCTFail("Expected restored session for pane \(paneID)")
+            return
+        }
+
+        let terminalView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        terminalView.onInput = { capturedInputs.append($0) }
+        session.attachRustTerminal(terminalView)
+        session.isShellLoading = false
+        session.isAtPrompt = true
+        session.status = .idle
+
+        let readyExpectation = expectation(description: "restore from persisted AI metadata")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
+            XCTAssertEqual(capturedInputs, ["claude --resume meta-restore-001"])
+            readyExpectation.fulfill()
+        }
+        wait(for: [readyExpectation], timeout: 2.0)
+    }
+
     func testRestorePrefillsResumeCommandInActiveOrAvailablePane() {
         let activePaneID = UUID()
         let secondaryPaneID = UUID()

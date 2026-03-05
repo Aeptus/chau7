@@ -220,6 +220,8 @@ struct SavedTerminalPaneState: Codable {
     let directory: String
     let scrollbackContent: String?  // last N lines of terminal output
     let aiResumeCommand: String?  // e.g. "claude --resume abc123"
+    let aiProvider: String? = nil
+    let aiSessionId: String? = nil
 }
 
 /// Lightweight Codable snapshot of a tab's restorable state.
@@ -235,6 +237,8 @@ struct SavedTabState: Codable {
     let tokenOptOverride: String?  // TabTokenOptOverride.rawValue (nil = .default for backwards compat)
     let scrollbackContent: String?  // backward compatibility (legacy single-pane restore)
     let aiResumeCommand: String?  // backward compatibility (legacy single-pane restore)
+    let aiProvider: String? = nil
+    let aiSessionId: String? = nil
     let splitLayout: SavedSplitNode? // split tree including editor panes
     let focusedPaneID: String? // persisted focused pane ID
     let paneStates: [SavedTerminalPaneState]?
@@ -471,17 +475,23 @@ final class OverlayTabsModel: ObservableObject {
                 let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
                 let detectedApp = Self.detectAIAppName(fromOutput: scrollback)
                 let resumeAppName = session.activeAppName ?? detectedApp
-                let resumeCommand = Self.buildAIResumeCommand(
+                let resumeMetadata = Self.resolveAIResumeMetadata(
                     appName: resumeAppName,
                     directory: dir,
                     outputHint: scrollback
+                )
+                let resumeCommand = Self.buildAIResumeCommand(
+                    provider: resumeMetadata?.provider,
+                    sessionId: resumeMetadata?.sessionId
                 )
 
                 paneStates.append(SavedTerminalPaneState(
                     paneID: paneID.uuidString,
                     directory: dir,
                     scrollbackContent: scrollback,
-                    aiResumeCommand: resumeCommand
+                    aiResumeCommand: resumeCommand,
+                    aiProvider: resumeMetadata?.provider,
+                    aiSessionId: resumeMetadata?.sessionId
                 ))
             }
 
@@ -501,6 +511,8 @@ final class OverlayTabsModel: ObservableObject {
                 tokenOptOverride: overrideRaw,
                 scrollbackContent: primaryScrollback,
                 aiResumeCommand: primaryResumeCommand,
+                aiProvider: paneStates.first?.aiProvider,
+                aiSessionId: paneStates.first?.aiSessionId,
                 splitLayout: tab.splitController.exportLayout(),
                 focusedPaneID: tab.splitController.focusedTerminalSessionID()?.uuidString,
                 paneStates: paneStates.isEmpty ? nil : paneStates
@@ -530,17 +542,23 @@ final class OverlayTabsModel: ObservableObject {
             let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
             let detectedApp = Self.detectAIAppName(fromOutput: scrollback)
             let resumeAppName = session.activeAppName ?? detectedApp
-            let resumeCommand = Self.buildAIResumeCommand(
+            let resumeMetadata = Self.resolveAIResumeMetadata(
                 appName: resumeAppName,
                 directory: dir,
                 outputHint: scrollback
+            )
+            let resumeCommand = Self.buildAIResumeCommand(
+                provider: resumeMetadata?.provider,
+                sessionId: resumeMetadata?.sessionId
             )
 
             paneStates.append(SavedTerminalPaneState(
                 paneID: paneID.uuidString,
                 directory: dir,
                 scrollbackContent: scrollback,
-                aiResumeCommand: resumeCommand
+                aiResumeCommand: resumeCommand,
+                aiProvider: resumeMetadata?.provider,
+                aiSessionId: resumeMetadata?.sessionId
             ))
         }
 
@@ -561,6 +579,8 @@ final class OverlayTabsModel: ObservableObject {
             tokenOptOverride: overrideRaw,
             scrollbackContent: primaryScrollback,
             aiResumeCommand: primaryResumeCommand,
+            aiProvider: paneStates.first?.aiProvider,
+            aiSessionId: paneStates.first?.aiSessionId,
             splitLayout: tab.splitController.exportLayout(),
             focusedPaneID: tab.splitController.focusedTerminalSessionID()?.uuidString,
             paneStates: paneStates.isEmpty ? nil : paneStates
@@ -583,61 +603,154 @@ final class OverlayTabsModel: ObservableObject {
     /// Build a resume command for an AI session running in the given directory.
     /// Returns nil if no resumable session is found.
     private static func buildAIResumeCommand(appName: String?, directory: String, outputHint: String? = nil) -> String? {
-        let canonicalDirectory = normalizedSessionDirectory(directory)
-        guard !canonicalDirectory.isEmpty else { return nil }
-
-        let explicitAppName = appName?.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        if let command = buildAIResumeCommand(for: explicitAppName, directory: canonicalDirectory) {
-            return command
+        guard let resolved = resolveAIResumeMetadata(
+            appName: appName,
+            directory: directory,
+            outputHint: outputHint
+        ) else {
+            return nil
         }
+        return buildAIResumeCommand(provider: resolved.provider, sessionId: resolved.sessionId)
+    }
 
-        if explicitAppName == nil || explicitAppName!.isEmpty,
-           let outputHint,
-           let appNameFromOutput = CommandDetection.detectAppFromOutput(outputHint),
-           let command = buildAIResumeCommand(for: appNameFromOutput, directory: canonicalDirectory) {
-            return command
+    private static func buildAIResumeCommand(
+        appName: String?,
+        directory: String,
+        outputHint: String? = nil,
+        aiProvider: String?,
+        aiSessionId: String?
+    ) -> String? {
+        guard let resolved = resolveAIResumeMetadata(
+            appName: appName,
+            directory: directory,
+            outputHint: outputHint,
+            explicitAIProvider: aiProvider,
+            explicitAISessionId: aiSessionId
+        ) else {
+            return nil
         }
+        return buildAIResumeCommand(provider: resolved.provider, sessionId: resolved.sessionId)
+    }
 
-        guard explicitAppName == nil || explicitAppName!.isEmpty else {
+    private static func buildAIResumeCommand(provider: String?, sessionId: String?) -> String? {
+        guard let provider = normalizedAIProvider(from: provider),
+              let sessionId = normalizeAISessionId(sessionId) else {
             return nil
         }
 
-        return buildFallbackAIResumeCommand(forDirectory: canonicalDirectory)
+        switch provider {
+        case "claude":
+            return "claude --resume \(sessionId)"
+        case "codex":
+            return "codex resume \(sessionId)"
+        default:
+            return nil
+        }
     }
 
-    private static func buildAIResumeCommand(for appName: String?, directory: String) -> String? {
-        guard let appName = appName?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !appName.isEmpty else { return nil }
-        let lowered = appName.lowercased()
+    private static func resolveAIResumeMetadata(
+        appName: String?,
+        directory: String,
+        outputHint: String? = nil,
+        explicitAIProvider: String? = nil,
+        explicitAISessionId: String? = nil
+    ) -> (provider: String, sessionId: String)? {
+        let canonicalDirectory = normalizedSessionDirectory(directory)
+        let explicitProvider = normalizedAIProvider(from: explicitAIProvider)
+        let explicitSessionId = normalizeAISessionId(explicitAISessionId)
 
-        if lowered.contains("claude"),
-           let sessionId = findClaudeSessionId(forDirectory: directory)?.trimmingCharacters(in: .whitespacesAndNewlines),
-           isValidSessionId(sessionId) {
-            return "claude --resume \(sessionId)"
+        if let explicitProvider {
+            if let explicitSessionId {
+                Log.trace("resolveAIResumeMetadata: using explicit session metadata provider=\(explicitProvider), sessionId=\(explicitSessionId)")
+                return (provider: explicitProvider, sessionId: explicitSessionId)
+            }
+
+            if !canonicalDirectory.isEmpty,
+               let foundSessionId = findAIResumeSessionId(
+                for: explicitProvider,
+                directory: canonicalDirectory
+               ) {
+                return (provider: explicitProvider, sessionId: foundSessionId)
+            }
         }
 
-        if lowered.contains("codex"),
-           let sessionId = findCodexSessionId(forDirectory: directory)?.trimmingCharacters(in: .whitespacesAndNewlines),
-           isValidSessionId(sessionId) {
-            return "codex resume \(sessionId)"
+        guard let explicitAppName = appName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !explicitAppName.isEmpty else {
+            return resolveAIFallbackMetadata(
+                outputHint: outputHint,
+                directory: canonicalDirectory,
+                explicitProvider: explicitProvider
+            )
+        }
+
+        if let provider = normalizedAIProvider(from: explicitAppName),
+           let sessionId = findAIResumeSessionId(for: provider, directory: canonicalDirectory) {
+            return (provider: provider, sessionId: sessionId)
+        }
+
+        return resolveAIFallbackMetadata(
+            outputHint: outputHint,
+            directory: canonicalDirectory,
+            explicitProvider: explicitProvider
+        )
+    }
+
+    private static func resolveAIFallbackMetadata(
+        outputHint: String?,
+        directory: String,
+        explicitProvider: String?
+    ) -> (provider: String, sessionId: String)? {
+        if let outputHint,
+           let outputProvider = CommandDetection.detectAppFromOutput(outputHint).flatMap({ normalizedAIProvider(from: $0) }),
+           outputProvider != explicitProvider,
+           let sessionId = findAIResumeSessionId(for: outputProvider, directory: directory) {
+            return (provider: outputProvider, sessionId: sessionId)
+        }
+
+        if explicitProvider == nil {
+            if let sessionId = findAIResumeSessionId(for: "codex", directory: directory) {
+                return (provider: "codex", sessionId: sessionId)
+            }
+            if let sessionId = findAIResumeSessionId(for: "claude", directory: directory) {
+                return (provider: "claude", sessionId: sessionId)
+            }
+        }
+
+        if let explicitProvider,
+           let sessionId = findAIResumeSessionId(for: explicitProvider, directory: directory) {
+            return (provider: explicitProvider, sessionId: sessionId)
         }
 
         return nil
     }
 
-    private static func buildFallbackAIResumeCommand(forDirectory directory: String) -> String? {
-        if let sessionId = findCodexSessionId(forDirectory: directory)?.trimmingCharacters(in: .whitespacesAndNewlines),
-           isValidSessionId(sessionId) {
-            return "codex resume \(sessionId)"
+    private static func findAIResumeSessionId(for provider: String, directory: String) -> String? {
+        guard !directory.isEmpty else { return nil }
+        switch provider {
+        case "claude":
+            return findClaudeSessionId(forDirectory: directory)
+                .flatMap { normalizeAISessionId($0) }
+        case "codex":
+            return findCodexSessionId(forDirectory: directory)
+                .flatMap { normalizeAISessionId($0) }
+        default:
+            return nil
         }
+    }
 
-        if let sessionId = findClaudeSessionId(forDirectory: directory)?.trimmingCharacters(in: .whitespacesAndNewlines),
-           isValidSessionId(sessionId) {
-            return "claude --resume \(sessionId)"
-        }
-
+    private static func normalizedAIProvider(from value: String?) -> String? {
+        guard let value else { return nil }
+        let lowered = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if lowered.contains("claude") { return "claude" }
+        if lowered.contains("codex") { return "codex" }
         return nil
+    }
+
+    private static func normalizeAISessionId(_ sessionId: String?) -> String? {
+        guard let sessionId else { return nil }
+        let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isValidSessionId(trimmed) else { return nil }
+        return trimmed
     }
 
     private static func findClaudeSessionId(forDirectory directory: String) -> String? {
@@ -991,7 +1104,9 @@ final class OverlayTabsModel: ObservableObject {
                 paneID: firstPaneID.uuidString,
                 directory: state.directory,
                 scrollbackContent: state.scrollbackContent,
-                aiResumeCommand: state.aiResumeCommand
+                aiResumeCommand: state.aiResumeCommand,
+                aiProvider: state.aiProvider,
+                aiSessionId: state.aiSessionId
             )
         }
 
@@ -1038,21 +1153,27 @@ final class OverlayTabsModel: ObservableObject {
                         paneID: paneID.uuidString,
                         directory: session.currentDirectory,
                         scrollbackContent: nil,
-                        aiResumeCommand: nil
+                        aiResumeCommand: nil,
+                        aiProvider: nil,
+                        aiSessionId: nil
                     )
 
                 let inferredResumeCommand = Self.normalizedResumeCommand(
                     Self.buildAIResumeCommand(
                         appName: nil,
                         directory: paneState.directory,
-                        outputHint: paneState.scrollbackContent
+                        outputHint: paneState.scrollbackContent,
+                        aiProvider: paneState.aiProvider,
+                        aiSessionId: paneState.aiSessionId
                     )
                 )
                 let effectivePaneState = SavedTerminalPaneState(
                     paneID: paneState.paneID,
                     directory: paneState.directory,
                     scrollbackContent: paneState.scrollbackContent,
-                    aiResumeCommand: Self.normalizedResumeCommand(paneState.aiResumeCommand) ?? inferredResumeCommand
+                    aiResumeCommand: Self.normalizedResumeCommand(paneState.aiResumeCommand) ?? inferredResumeCommand,
+                    aiProvider: paneState.aiProvider,
+                    aiSessionId: paneState.aiSessionId
                 )
                 paneStatesToRestore[paneID] = effectivePaneState
 
