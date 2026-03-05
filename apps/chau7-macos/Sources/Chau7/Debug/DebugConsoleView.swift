@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Chau7Core
 
 // MARK: - Debug Console View
 
@@ -18,7 +19,10 @@ struct DebugConsoleView: View {
     @State private var showAllLagEvents = false
     @State private var perfSnapshot: FeatureProfiler.Snapshot = .empty
     @State private var perfShowSlowOnly = true
-    @State private var rtkRuntimeSnapshot: RTKRuntimeSnapshot = RTKRuntimeMonitor.shared.snapshot()
+    @State private var ctoRuntimeSnapshot: CTORuntimeSnapshot = CTORuntimeMonitor.shared.snapshot()
+    @State private var ctoGainStats: CTOGainStats?
+    @State private var ctoCommandLog: [CTOManager.CommandLogEntry] = []
+    @State private var ctoShowAdvanced = false
     // Category & level filtering
     @State private var enabledCategories: Set<LogCategory> = Set(LogCategory.allCases)
     @State private var enabledLevels: Set<String> = ["INFO", "WARN", "ERROR", "TRACE", "DEBUG"]
@@ -76,7 +80,7 @@ struct DebugConsoleView: View {
         .onDisappear { stopRefresh() }
         .onChange(of: selectedTab) { newValue in
             if newValue == 1 {
-                refreshRTKRuntimeSnapshot()
+                refreshCTOData()
             }
         }
     }
@@ -159,7 +163,7 @@ struct DebugConsoleView: View {
 
                     Group {
                         stateRow(L("debug.title", "Title"), value: tab.customTitle ?? tab.session?.title ?? L("status.noTerminal", "(no terminal)"))
-                        stateRow(L("debug.app", "App"), value: tab.session?.activeAppName ?? L("status.none", "none"))
+                        stateRow(L("debug.app", "App"), value: tab.session?.aiDisplayAppName ?? L("status.none", "none"))
                         stateRow(L("debug.directory", "Directory"), value: tab.session?.currentDirectory ?? "")
                         stateRow(L("debug.inputLag", "Input Lag"), value: tab.session?.inputLatencySummary ?? L("status.notAvailable", "n/a"))
                         stateRow(L("debug.outputLag", "Output Lag"), value: tab.session?.outputLatencySummary ?? L("status.notAvailable", "n/a"))
@@ -283,159 +287,330 @@ struct DebugConsoleView: View {
     private var tokenOptimizerView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
-                let health = rtkRuntimeSnapshot.assessment
-                let healthColor: Color = switch health.state {
-                case .healthy:
-                    .green
-                case .warning:
-                    .orange
-                case .critical:
-                    .red
-                }
-                let healthSummary: String = switch health.state {
-                case .healthy:
-                    L("rtk.runtime.healthSummaryHealthy", "Healthy")
-                case .warning:
-                    L("rtk.runtime.healthSummaryWarning", "Needs review")
-                case .critical:
-                    L("rtk.runtime.healthSummaryCritical", "Requires attention")
-                }
+                // Hero: key metrics
+                ctoHeroSection
 
-                GroupBox(L("rtk.runtime.runtime", "RTK Runtime")) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        statRow(icon: "checkmark.seal.fill", iconColor: healthColor, label: L("rtk.runtime.health", "Runtime health"), value: healthSummary)
-                        statRow(icon: "star.circle", iconColor: healthColor, label: L("rtk.runtime.healthScore", "Health score"), value: "\(health.score)/100")
-                        statRow(icon: "arrow.clockwise", iconColor: .blue, label: L("rtk.runtime.mode", "Mode"), value: rtkRuntimeSnapshot.mode)
-                        if let lastDecisionAge = rtkRuntimeSnapshot.ageSinceLastDecisionSeconds {
-                            statRow(icon: "clock.fill", iconColor: .secondary, label: L("rtk.runtime.lastDecisionAge", "Last decision age"), value: rtkFormatDuration(lastDecisionAge))
-                        }
-                        if let avgInterval = rtkRuntimeSnapshot.decisionIntervalAverageSeconds {
-                            statRow(icon: "timer", iconColor: .secondary, label: L("rtk.runtime.decisionIntervalAvg", "Decision interval (avg)"), value: rtkFormatDuration(avgInterval))
-                        }
-                        if let minInterval = rtkRuntimeSnapshot.decisionIntervalMinSeconds {
-                            statRow(icon: "timer", iconColor: .secondary, label: L("rtk.runtime.decisionIntervalMin", "Decision interval (min)"), value: rtkFormatDuration(minInterval))
-                        }
-                        if let maxInterval = rtkRuntimeSnapshot.decisionIntervalMaxSeconds {
-                            statRow(icon: "timer", iconColor: .secondary, label: L("rtk.runtime.decisionIntervalMax", "Decision interval (max)"), value: rtkFormatDuration(maxInterval))
-                        }
-                    }
-                }
+                // Per-tab breakdown
+                ctoPerTabSection
 
-                GroupBox(L("rtk.runtime.decisions", "Decisions")) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        statRow(icon: "arrow.triangle.2.circlepath", iconColor: .blue, label: L("rtk.runtime.recalcCount", "Decision recalculations"), value: "\(rtkRuntimeSnapshot.recalcCount)")
-                        statRow(icon: "plus.circle", iconColor: .green, label: L("rtk.runtime.createdCount", "Created flags"), value: "\(rtkRuntimeSnapshot.createdCount)")
-                        statRow(icon: "minus.circle", iconColor: .red, label: L("rtk.runtime.removedCount", "Removed flags"), value: "\(rtkRuntimeSnapshot.removedCount)")
-                        statRow(icon: "minus.circle", iconColor: .secondary, label: L("rtk.runtime.unchangedCount", "Unchanged"), value: "\(rtkRuntimeSnapshot.unchangedCount)")
-                        statRow(icon: "paintbrush.pointed.fill", iconColor: .blue, label: L("rtk.runtime.modeChangeCount", "Mode changes"), value: "\(rtkRuntimeSnapshot.modeChangeCount)")
-                        statRow(icon: "clock.badge.questionmark", iconColor: .secondary, label: L("rtk.runtime.pendingDeferred", "Pending deferred sessions"), value: "\(rtkRuntimeSnapshot.pendingDeferredSessions)")
-                        statRow(icon: "clock.arrow.2.circlepath", iconColor: .orange, label: L("rtk.runtime.deferredSet", "Deferred sets"), value: "\(rtkRuntimeSnapshot.deferredSetCount)")
-                        statRow(icon: "clock", iconColor: .orange, label: L("rtk.runtime.deferredFlush", "Deferred flushes"), value: "\(rtkRuntimeSnapshot.deferredFlushCount)")
-                        statRow(icon: "clock", iconColor: .orange, label: L("rtk.runtime.deferredSkip", "Deferred skips"), value: "\(rtkRuntimeSnapshot.deferredSkipCount)")
-                        statRow(icon: "checklist", iconColor: .orange, label: L("rtk.runtime.setupCount", "Runtime setups"), value: "\(rtkRuntimeSnapshot.setupCount)")
-                        statRow(icon: "xmark.seal.fill", iconColor: .orange, label: L("rtk.runtime.teardownCount", "Runtime teardowns"), value: "\(rtkRuntimeSnapshot.teardownCount)")
-                    }
-                }
+                // Recent commands log
+                ctoRecentCommandsSection
 
-                GroupBox(L("rtk.runtime.metrics", "Live Metrics")) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        statRow(icon: "percent", iconColor: .secondary, label: L("rtk.runtime.changeRate", "Decision change rate"), value: "\(String(format: "%.1f%%", rtkRuntimeSnapshot.decisionsChangeRatePercent))")
-                        statRow(icon: "clock", iconColor: .secondary, label: L("rtk.runtime.deferredSkipRate", "Deferred skip rate"), value: "\(String(format: "%.1f%%", rtkRuntimeSnapshot.deferredSkipRatePercent))")
-                        statRow(icon: "clock.arrow.circlepath", iconColor: .secondary, label: L("rtk.runtime.deferredFlushRate", "Deferred flush rate"), value: "\(String(format: "%.1f%%", rtkRuntimeSnapshot.deferredFlushRatePercent))")
-                        statRow(icon: "person.2.circle", iconColor: .secondary, label: L("rtk.runtime.activeSessionRatio", "Active sessions ratio"), value: "\(String(format: "%.1f%%", rtkRuntimeSnapshot.activeSessionRatioPercent))")
-                        statRow(icon: "speedometer", iconColor: .blue, label: L("rtk.runtime.rate", "Decisions/min"), value: String(format: "%.1f", rtkRuntimeSnapshot.decisionsPerMinute))
-                        statRow(icon: "clock", iconColor: .secondary, label: L("rtk.runtime.uptime", "Monitor uptime"), value: rtkFormatDuration(rtkRuntimeSnapshot.uptimeSeconds))
-                        statRow(icon: "clock.arrow.2.circlepath", iconColor: .orange, label: L("rtk.runtime.deferredDelay", "Deferred delay (min / avg / max / last)"), value: "\(rtkFormatDelay(rtkRuntimeSnapshot.deferredFlushDelayMinMs)) / \(rtkFormatDelay(rtkRuntimeSnapshot.deferredFlushDelayAverageMs.map { Int($0.rounded()) })) / \(rtkFormatDelay(rtkRuntimeSnapshot.deferredFlushDelayMaxMs)) / \(rtkFormatDelay(rtkRuntimeSnapshot.deferredFlushDelayLastMs))")
-                    }
-                }
+                // Advanced telemetry (collapsible)
+                ctoAdvancedSection
 
-                if !health.issues.isEmpty {
-                    GroupBox(L("rtk.runtime.healthSignals", "Health signals")) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(health.issues, id: \.self) { issue in
-                                HStack(spacing: 8) {
-                                    Image(systemName: "exclamationmark.triangle")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.orange)
-                                    Text(tokenOptimizerHealthIssueLabel(issue))
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if !rtkRuntimeSnapshot.reasonBreakdown.isEmpty {
-                    GroupBox(L("rtk.runtime.reasonBreakdown", "Decision reasons")) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            let totalReasonCount = rtkRuntimeSnapshot.reasonBreakdown.values.reduce(0, +)
-                            ForEach(rtkRuntimeSnapshot.reasonBreakdown.sorted(by: { $0.key < $1.key }), id: \.key) { reason, count in
-                                let ratio = totalReasonCount > 0 ? (Double(count) / Double(totalReasonCount) * 100) : 0
-                                HStack(spacing: 8) {
-                                    Text(reason)
-                                        .font(.system(size: 10, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                        .frame(width: 150, alignment: .leading)
-                                    Text("\(count) (\(String(format: "%.1f%%", ratio)))")
-                                        .font(.system(size: 10, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if !rtkRuntimeSnapshot.recentDecisions.isEmpty {
-                    GroupBox(L("rtk.runtime.recentDecisions", "Recent decisions")) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(rtkRuntimeSnapshot.recentDecisions.prefix(8)) { decision in
-                                HStack(spacing: 8) {
-                                    Image(systemName: decision.changed ? "bolt.fill" : "clock.arrow.2.circlepath")
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(decision.changed ? .green : .orange)
-                                    Text(decision.timestamp, formatter: compactDateFormatter)
-                                        .font(.system(size: 10, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                        .frame(minWidth: 150, alignment: .leading)
-                                    Text(decision.sessionID.prefix(8))
-                                        .font(.system(size: 10, design: .monospaced))
-                                        .foregroundStyle(.secondary)
-                                    Text("\(decision.mode) \(decision.override) \(decision.reason.rawValue)")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    Text(L("rtk.runtime.noRecentDecisions", "No decisions recorded yet"))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-
+                // Actions
                 HStack(spacing: 8) {
-                    Button(L("rtk.runtime.refresh", "Refresh")) {
-                        refreshRTKRuntimeSnapshot()
+                    Button("Refresh") { refreshCTOData() }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    Button("Reset Monitor") {
+                        CTORuntimeMonitor.shared.reset()
+                        refreshCTOData()
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
-
-                    Button(L("rtk.runtime.reset", "Reset")) {
-                        RTKRuntimeMonitor.shared.reset()
-                        refreshRTKRuntimeSnapshot()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-
                     Spacer()
-                    Text(L("rtk.runtime.trackedSessions", "Tracked") + ": \(rtkRuntimeSnapshot.trackedSessions)")
+                    Text("Mode: \(ctoRuntimeSnapshot.mode)")
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }
             }
             .padding(8)
         }
+    }
+
+    // MARK: - CTO Hero Metrics
+
+    private var ctoHeroSection: some View {
+        GroupBox {
+            HStack(spacing: 0) {
+                ctoHeroMetric(
+                    title: "Optimization Rate",
+                    value: ctoCommandLogRate,
+                    color: ctoCommandLogRateColor
+                )
+                Divider().frame(height: 40)
+                ctoHeroMetric(
+                    title: "Tokens Saved",
+                    value: ctoGainStats.map { formatTokenCount($0.savedTokens) } ?? "--",
+                    color: .green
+                )
+                Divider().frame(height: 40)
+                ctoHeroMetric(
+                    title: "Commands Optimized",
+                    value: ctoCommandLog.isEmpty ? "--" : "\(ctoCommandLog.filter { $0.outcome == "optimized" }.count)",
+                    color: .blue
+                )
+                Divider().frame(height: 40)
+                ctoHeroMetric(
+                    title: "Fallthrough",
+                    value: ctoCommandLog.isEmpty ? "--" : "\(ctoCommandLog.filter { $0.outcome == "fallthrough" }.count)",
+                    color: .orange
+                )
+            }
+        }
+    }
+
+    private func ctoHeroMetric(title: String, value: String, color: Color) -> some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.system(size: 18, weight: .semibold, design: .rounded))
+                .foregroundStyle(color)
+            Text(title)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var ctoCommandLogRate: String {
+        guard !ctoCommandLog.isEmpty else { return "--" }
+        let optimized = ctoCommandLog.filter { $0.outcome == "optimized" }.count
+        let rate = Double(optimized) / Double(ctoCommandLog.count) * 100
+        return String(format: "%.0f%%", rate)
+    }
+
+    private var ctoCommandLogRateColor: Color {
+        guard !ctoCommandLog.isEmpty else { return .secondary }
+        let optimized = ctoCommandLog.filter { $0.outcome == "optimized" }.count
+        let rate = Double(optimized) / Double(ctoCommandLog.count) * 100
+        if rate >= 80 { return .green }
+        if rate >= 50 { return .orange }
+        return .red
+    }
+
+    private func formatTokenCount(_ count: Int) -> String {
+        if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
+        if count >= 1_000 { return String(format: "%.1fK", Double(count) / 1_000) }
+        return "\(count)"
+    }
+
+    // MARK: - CTO Per-Tab Breakdown
+
+    private var ctoPerTabSection: some View {
+        GroupBox("Per-Tab Stats") {
+            if ctoCommandLog.isEmpty {
+                Text("No command data yet")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Header row
+                    HStack(spacing: 0) {
+                        Text("Tab")
+                            .frame(width: 120, alignment: .leading)
+                        Text("Commands")
+                            .frame(width: 70, alignment: .trailing)
+                        Text("Optimized")
+                            .frame(width: 70, alignment: .trailing)
+                        Text("Fallthrough")
+                            .frame(width: 80, alignment: .trailing)
+                        Text("Rate")
+                            .frame(width: 60, alignment: .trailing)
+                        Spacer()
+                    }
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 4)
+
+                    Divider()
+
+                    ForEach(ctoPerTabStats, id: \.sessionID) { tabStat in
+                        HStack(spacing: 0) {
+                            Text(ctoTabLabel(for: tabStat.sessionID))
+                                .frame(width: 120, alignment: .leading)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Text("\(tabStat.total)")
+                                .frame(width: 70, alignment: .trailing)
+                            Text("\(tabStat.optimized)")
+                                .foregroundStyle(.green)
+                                .frame(width: 70, alignment: .trailing)
+                            Text("\(tabStat.fallthrough)")
+                                .foregroundStyle(.orange)
+                                .frame(width: 80, alignment: .trailing)
+                            Text(String(format: "%.0f%%", tabStat.rate))
+                                .foregroundStyle(tabStat.rate >= 80 ? .green : tabStat.rate >= 50 ? .orange : .red)
+                                .frame(width: 60, alignment: .trailing)
+                            Spacer()
+                        }
+                        .font(.system(size: 10, design: .monospaced))
+                        .padding(.vertical, 2)
+                    }
+                }
+            }
+        }
+    }
+
+    private struct CTOTabStat {
+        let sessionID: String
+        let total: Int
+        let optimized: Int
+        let `fallthrough`: Int
+        var rate: Double { total > 0 ? Double(optimized) / Double(total) * 100 : 0 }
+    }
+
+    private var ctoPerTabStats: [CTOTabStat] {
+        var grouped: [String: (optimized: Int, fallthrough: Int, total: Int)] = [:]
+        for entry in ctoCommandLog {
+            var stats = grouped[entry.sessionID, default: (0, 0, 0)]
+            stats.total += 1
+            if entry.outcome == "optimized" { stats.optimized += 1 }
+            if entry.outcome == "fallthrough" { stats.fallthrough += 1 }
+            grouped[entry.sessionID] = stats
+        }
+        return grouped.map { sessionID, stats in
+            CTOTabStat(sessionID: sessionID, total: stats.total, optimized: stats.optimized, fallthrough: stats.fallthrough)
+        }.sorted { $0.total > $1.total }
+    }
+
+    private func ctoTabLabel(for sessionID: String) -> String {
+        if let tab = overlayModel.tabs.first(where: { $0.session?.tabIdentifier == sessionID }) {
+            if let title = tab.customTitle { return title }
+            let index = overlayModel.tabs.firstIndex(where: { $0.id == tab.id }).map { $0 + 1 } ?? 0
+            return "Tab \(index)"
+        }
+        return String(sessionID.prefix(8))
+    }
+
+    // MARK: - CTO Recent Commands
+
+    private var ctoRecentCommandsSection: some View {
+        GroupBox("Recent Commands") {
+            if ctoCommandLog.isEmpty {
+                Text("No commands logged yet. Commands are logged when CTO is active.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(ctoCommandLog.suffix(15).reversed()) { entry in
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(entry.outcome == "optimized" ? Color.green : entry.outcome == "fallthrough" ? Color.orange : Color.red)
+                                .frame(width: 6, height: 6)
+                            Text(entry.timestamp, formatter: compactDateFormatter)
+                                .frame(width: 80, alignment: .leading)
+                            Text(entry.command)
+                                .frame(width: 80, alignment: .leading)
+                            Text(entry.outcome)
+                                .foregroundStyle(entry.outcome == "optimized" ? .green : entry.outcome == "fallthrough" ? .orange : .red)
+                                .frame(width: 80, alignment: .leading)
+                            if entry.exitCode != 0 && entry.outcome != "fallthrough" {
+                                Text("exit \(entry.exitCode)")
+                                    .foregroundStyle(.red)
+                            }
+                            Spacer()
+                        }
+                        .font(.system(size: 10, design: .monospaced))
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - CTO Advanced Telemetry
+
+    private var ctoAdvancedSection: some View {
+        DisclosureGroup("Advanced Telemetry", isExpanded: $ctoShowAdvanced) {
+            VStack(alignment: .leading, spacing: 8) {
+                let health = ctoRuntimeSnapshot.assessment
+                let healthColor: Color = switch health.state {
+                case .healthy: .green
+                case .warning: .orange
+                case .critical: .red
+                }
+
+                // Health + metrics
+                VStack(alignment: .leading, spacing: 6) {
+                    statRow(icon: "checkmark.seal.fill", iconColor: healthColor, label: "Runtime health", value: health.state.rawValue)
+                    statRow(icon: "star.circle", iconColor: healthColor, label: "Health score", value: "\(health.score)/100")
+                    statRow(icon: "arrow.triangle.2.circlepath", iconColor: .blue, label: "Recalculations", value: "\(ctoRuntimeSnapshot.recalcCount)")
+                    statRow(icon: "plus.circle", iconColor: .green, label: "Flags created", value: "\(ctoRuntimeSnapshot.createdCount)")
+                    statRow(icon: "minus.circle", iconColor: .red, label: "Flags removed", value: "\(ctoRuntimeSnapshot.removedCount)")
+                    statRow(icon: "equal.circle", iconColor: .secondary, label: "Unchanged", value: "\(ctoRuntimeSnapshot.unchangedCount)")
+                    statRow(icon: "percent", iconColor: .secondary, label: "Change rate", value: String(format: "%.1f%%", ctoRuntimeSnapshot.decisionsChangeRatePercent))
+                    statRow(icon: "speedometer", iconColor: .blue, label: "Decisions/min", value: String(format: "%.1f", ctoRuntimeSnapshot.decisionsPerMinute))
+                    statRow(icon: "clock", iconColor: .secondary, label: "Uptime", value: ctoFormatDuration(ctoRuntimeSnapshot.uptimeSeconds))
+                    statRow(icon: "person.2.circle", iconColor: .secondary, label: "Active sessions", value: "\(ctoRuntimeSnapshot.activeSessionCount) / \(ctoRuntimeSnapshot.trackedSessions)")
+                }
+
+                // Deferred stats
+                if ctoRuntimeSnapshot.deferredSetCount > 0 {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 6) {
+                        statRow(icon: "clock.arrow.2.circlepath", iconColor: .orange, label: "Deferred set / flush / skip", value: "\(ctoRuntimeSnapshot.deferredSetCount) / \(ctoRuntimeSnapshot.deferredFlushCount) / \(ctoRuntimeSnapshot.deferredSkipCount)")
+                        statRow(icon: "clock", iconColor: .orange, label: "Deferred delay (min/avg/max)", value: "\(ctoFormatDelay(ctoRuntimeSnapshot.deferredFlushDelayMinMs)) / \(ctoFormatDelay(ctoRuntimeSnapshot.deferredFlushDelayAverageMs.map { Int($0.rounded()) })) / \(ctoFormatDelay(ctoRuntimeSnapshot.deferredFlushDelayMaxMs))")
+                    }
+                }
+
+                // Health signals
+                if !health.issues.isEmpty {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(health.issues, id: \.self) { issue in
+                            HStack(spacing: 6) {
+                                Image(systemName: "exclamationmark.triangle")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.orange)
+                                Text(tokenOptimizerHealthIssueLabel(issue))
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                // Reason breakdown
+                if !ctoRuntimeSnapshot.reasonBreakdown.isEmpty {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Decision Reasons")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        let total = ctoRuntimeSnapshot.reasonBreakdown.values.reduce(0, +)
+                        ForEach(ctoRuntimeSnapshot.reasonBreakdown.sorted(by: { $0.key < $1.key }), id: \.key) { reason, count in
+                            HStack(spacing: 8) {
+                                Text(reason)
+                                    .frame(width: 140, alignment: .leading)
+                                Text("\(count) (\(String(format: "%.0f%%", total > 0 ? Double(count) / Double(total) * 100 : 0)))")
+                            }
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                // Recent decisions
+                if !ctoRuntimeSnapshot.recentDecisions.isEmpty {
+                    Divider()
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Recent Decisions")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        ForEach(ctoRuntimeSnapshot.recentDecisions.suffix(6).reversed()) { decision in
+                            HStack(spacing: 6) {
+                                Image(systemName: decision.changed ? "bolt.fill" : "equal.circle")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(decision.changed ? .green : .secondary)
+                                Text(decision.timestamp, formatter: compactDateFormatter)
+                                    .frame(width: 75, alignment: .leading)
+                                Text(String(decision.sessionID.prefix(8)))
+                                Text(decision.reason.rawValue)
+                            }
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .padding(.top, 4)
+        }
+        .font(.system(size: 11))
     }
 
     // MARK: - Events View
@@ -1122,11 +1297,16 @@ struct DebugConsoleView: View {
         }
     }
 
-    private func refreshRTKRuntimeSnapshot() {
-        rtkRuntimeSnapshot = RTKRuntimeMonitor.shared.snapshot()
+    private func refreshCTOData() {
+        ctoRuntimeSnapshot = CTORuntimeMonitor.shared.snapshot()
+        ctoCommandLog = CTOManager.shared.readCommandLog(limit: 200)
+        Task {
+            let stats = await CTOManager.shared.fetchGainStats()
+            await MainActor.run { ctoGainStats = stats }
+        }
     }
 
-    private func rtkFormatDuration(_ seconds: Int) -> String {
+    private func ctoFormatDuration(_ seconds: Int) -> String {
         guard seconds >= 0 else { return "0s" }
         let hrs = seconds / 3600
         let mins = (seconds % 3600) / 60
@@ -1141,32 +1321,32 @@ struct DebugConsoleView: View {
         return String(format: "%ds", secs)
     }
 
-    private func rtkFormatDuration(_ seconds: Double) -> String {
+    private func ctoFormatDuration(_ seconds: Double) -> String {
         if seconds < 1.0 {
             return String(format: "%.0fms", seconds * 1000.0)
         }
-        return rtkFormatDuration(Int(seconds))
+        return ctoFormatDuration(Int(seconds))
     }
 
-    private func rtkFormatDelay(_ value: Int?) -> String {
+    private func ctoFormatDelay(_ value: Int?) -> String {
         guard let value else { return "n/a" }
         return "\(value)ms"
     }
 
-    private func tokenOptimizerHealthIssueLabel(_ issue: RTKRuntimeAssessmentIssue) -> String {
+    private func tokenOptimizerHealthIssueLabel(_ issue: CTORuntimeAssessmentIssue) -> String {
         switch issue {
         case .lowChangeRate:
-            L("rtk.runtime.issue.lowChangeRate", "Decision change rate is low")
+            L("cto.runtime.issue.lowChangeRate", "Decision change rate is low")
         case .highDeferredSkips:
-            L("rtk.runtime.issue.highDeferredSkips", "Too many deferred skips")
+            L("cto.runtime.issue.highDeferredSkips", "Too many deferred skips")
         case .lowDeferredFlushRate:
-            L("rtk.runtime.issue.lowDeferredFlushRate", "Deferred flushes are not resolving")
+            L("cto.runtime.issue.lowDeferredFlushRate", "Deferred flushes are not resolving")
         case .staleDecisions:
-            L("rtk.runtime.issue.staleDecisions", "No recent decisions")
+            L("cto.runtime.issue.staleDecisions", "No recent decisions")
         case .modeOffWithTrackedSessions:
-            L("rtk.runtime.issue.modeOffWithTrackedSessions", "Mode is off while sessions are tracked")
+            L("cto.runtime.issue.modeOffWithTrackedSessions", "Mode is off while sessions are tracked")
         case .lowDecisionThroughput:
-            L("rtk.runtime.issue.lowDecisionThroughput", "No decisions despite tracked sessions")
+            L("cto.runtime.issue.lowDecisionThroughput", "No decisions despite tracked sessions")
         }
     }
 
@@ -1184,7 +1364,7 @@ struct DebugConsoleView: View {
                 perfSnapshot = FeatureProfiler.shared.snapshot()
             }
             if selectedTab == 1 {
-                refreshRTKRuntimeSnapshot()
+                refreshCTOData()
             }
             if selectedTab == 5 {
                 loadLogs()

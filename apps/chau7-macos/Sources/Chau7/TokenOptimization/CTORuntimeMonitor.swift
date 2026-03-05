@@ -1,237 +1,11 @@
 import Foundation
+import Chau7Core
 
-// MARK: - RTK Runtime Monitor
+// MARK: - CTO Runtime Monitor
 
-/// Runtime telemetry for token optimization decisions.
-///
-/// This keeps the optimizer behavior unchanged while making it easy to
-/// inspect why RTK flags were created/removed and how often deferred mode
-/// is actually being used.
-enum RTKDecisionReason: String, Codable {
-    case off
-    case allTabsDefault
-    case aiOnlyWithAI
-    case aiOnlyWithoutAI
-    case manualDefault
-    case forceOn
-    case forceOff
-    case skippedDueToDeferred
-    case unchanged
-}
-
-enum RTKRuntimeHealthState: String, Codable {
-    case healthy
-    case warning
-    case critical
-}
-
-enum RTKRuntimeAssessmentIssue: String, Codable, Equatable {
-    case lowChangeRate
-    case highDeferredSkips
-    case lowDeferredFlushRate
-    case staleDecisions
-    case modeOffWithTrackedSessions
-    case lowDecisionThroughput
-}
-
-struct RTKRuntimeAssessment: Codable, Equatable {
-    let state: RTKRuntimeHealthState
-    let score: Int
-    let issues: [RTKRuntimeAssessmentIssue]
-    let summary: String
-}
-
-/// Single RTK decision event used by the debug stats panel.
-struct RTKDecisionEvent: Codable, Equatable, Identifiable {
-    let id: UUID
-    let timestamp: Date
-    let sessionID: String
-    let mode: String
-    let override: String
-    let isAIActive: Bool
-    let previousState: Bool
-    let nextState: Bool
-    let changed: Bool
-    let reason: RTKDecisionReason
-    let deferred: Bool
-    let delayToActivateMs: Int?
-    let debugNote: String?
-
-    init(
-        sessionID: String,
-        mode: TokenOptimizationMode,
-        override: TabTokenOptOverride,
-        isAIActive: Bool,
-        previousState: Bool,
-        nextState: Bool,
-        reason: RTKDecisionReason,
-        deferred: Bool = false,
-        delayToActivateMs: Int? = nil,
-        changed: Bool = true,
-        debugNote: String? = nil
-    ) {
-        self.id = UUID()
-        self.timestamp = Date()
-        self.sessionID = sessionID
-        self.mode = mode.rawValue
-        self.override = override.rawValue
-        self.isAIActive = isAIActive
-        self.previousState = previousState
-        self.nextState = nextState
-        self.changed = changed
-        self.reason = reason
-        self.deferred = deferred
-        self.delayToActivateMs = delayToActivateMs
-        self.debugNote = debugNote
-    }
-}
-
-/// Snapshot of RTK runtime counters shown in settings/debug views.
-struct RTKRuntimeSnapshot: Codable, Equatable {
-    let mode: String
-    let recalcCount: Int
-    let createdCount: Int
-    let removedCount: Int
-    let unchangedCount: Int
-    let deferredSetCount: Int
-    let deferredFlushCount: Int
-    let deferredSkipCount: Int
-    let setupCount: Int
-    let teardownCount: Int
-    let modeChangeCount: Int
-    let lastModeChangeAt: Date?
-    let lastDecisionAt: Date?
-    let lastDecision: RTKDecisionEvent?
-    let activeSessionCount: Int
-    let trackedSessions: Int
-    let pendingDeferredSessions: Int
-    let reasonBreakdown: [String: Int]
-    let deferredFlushDelayCount: Int
-    let deferredFlushDelayMinMs: Int?
-    let deferredFlushDelayMaxMs: Int?
-    let deferredFlushDelayAverageMs: Double?
-    let deferredFlushDelayLastMs: Int?
-    let recentDecisions: [RTKDecisionEvent]
-    let firstSeenAt: Date
-    let uptimeSeconds: Int
-    let decisionsPerMinute: Double
-    let decisionIntervalAverageSeconds: Double?
-    let decisionIntervalMinSeconds: Double?
-    let decisionIntervalMaxSeconds: Double?
-}
-
-extension RTKRuntimeSnapshot {
-    var decisionsChangeRatePercent: Double {
-        guard recalcCount > 0 else { return 0 }
-        let changedCount = max(0, recalcCount - unchangedCount)
-        return (Double(changedCount) / Double(recalcCount)) * 100
-    }
-
-    var deferredSkipRatePercent: Double {
-        guard deferredSetCount > 0 else { return 0 }
-        let ratio = Double(deferredSkipCount) / Double(deferredSetCount)
-        return min(max(ratio, 0), 1) * 100
-    }
-
-    var deferredFlushRatePercent: Double {
-        guard deferredSetCount > 0 else { return 0 }
-        let ratio = Double(deferredFlushCount) / Double(deferredSetCount)
-        return min(max(ratio, 0), 1) * 100
-    }
-
-    var activeSessionRatioPercent: Double {
-        guard trackedSessions > 0 else { return 0 }
-        return (Double(activeSessionCount) / Double(trackedSessions)) * 100
-    }
-
-    var ageSinceLastDecisionSeconds: Int? {
-        guard let lastDecisionAt else { return nil }
-        return max(0, Int(Date().timeIntervalSince(lastDecisionAt)))
-    }
-
-    private var decisionIntervalsSeconds: [Double] {
-        guard recentDecisions.count > 1 else { return [] }
-        let sortedDecisions = recentDecisions.sorted(by: { $0.timestamp < $1.timestamp })
-        return zip(sortedDecisions, sortedDecisions.dropFirst()).map {
-            $1.timestamp.timeIntervalSince($0.timestamp)
-        }
-    }
-
-    var decisionIntervalAverageSeconds: Double? {
-        guard !decisionIntervalsSeconds.isEmpty else { return nil }
-        return decisionIntervalsSeconds.reduce(0, +) / Double(decisionIntervalsSeconds.count)
-    }
-
-    var decisionIntervalMinSeconds: Double? {
-        decisionIntervalsSeconds.min()
-    }
-
-    var decisionIntervalMaxSeconds: Double? {
-        decisionIntervalsSeconds.max()
-    }
-
-    var assessment: RTKRuntimeAssessment {
-        var score = 100
-        var issues: [RTKRuntimeAssessmentIssue] = []
-
-        if recalcCount > 0 && decisionsChangeRatePercent < 30.0 {
-            score -= 30
-            issues.append(.lowChangeRate)
-        }
-
-        if deferredSetCount > 0 && deferredSkipRatePercent > 35.0 {
-            score -= 30
-            issues.append(.highDeferredSkips)
-        }
-
-        if deferredSetCount > 0 && deferredFlushRatePercent < 80.0 {
-            score -= 20
-            issues.append(.lowDeferredFlushRate)
-        }
-
-        if let age = ageSinceLastDecisionSeconds, age > 300 {
-            score -= 15
-            issues.append(.staleDecisions)
-        }
-
-        if mode == TokenOptimizationMode.off.rawValue && trackedSessions > 0 {
-            score -= 20
-            issues.append(.modeOffWithTrackedSessions)
-        }
-
-        if recalcCount == 0 && trackedSessions > 0 && uptimeSeconds >= 60 {
-            score -= 10
-            issues.append(.lowDecisionThroughput)
-        }
-
-        let normalizedScore = max(0, min(100, score))
-        let state: RTKRuntimeHealthState = normalizedScore >= 85
-            ? .healthy
-            : normalizedScore >= 65
-            ? .warning
-            : .critical
-
-        let summary: String = switch state {
-        case .healthy:
-            "healthy"
-        case .warning:
-            "needsReview"
-        case .critical:
-            "requiresAttention"
-        }
-
-        return RTKRuntimeAssessment(
-            state: state,
-            score: normalizedScore,
-            issues: issues,
-            summary: summary
-        )
-    }
-}
-
-/// Runtime monitor that records RTK decisions and lifecycle events.
-final class RTKRuntimeMonitor {
-    static let shared = RTKRuntimeMonitor()
+/// Runtime monitor that records CTO decisions and lifecycle events.
+final class CTORuntimeMonitor {
+    static let shared = CTORuntimeMonitor()
 
     private let lock = NSLock()
     private var recalcCount = 0
@@ -246,14 +20,14 @@ final class RTKRuntimeMonitor {
     private var modeChangeCount = 0
     private var lastModeChangeAt: Date?
     private var lastDecisionAt: Date?
-    private var lastDecision: RTKDecisionEvent?
+    private var lastDecision: CTODecisionEvent?
     private var activeSessionCount = 0
     private var trackedSessions = 0
-    private var reasonBreakdown: [RTKDecisionReason: Int] = [:]
+    private var reasonBreakdown: [CTODecisionReason: Int] = [:]
     private var activeSessions: Set<String> = []
     private var trackedSessionIDs: Set<String> = []
     private var deferredSessionIDs: Set<String> = []
-    private var recentDecisions: [RTKDecisionEvent] = []
+    private var recentDecisions: [CTODecisionEvent] = []
     private var deferredFlushDelaySumMs: Int64 = 0
     private var deferredFlushDelayMinMs: Int = 0
     private var deferredFlushDelayMaxMs: Int = 0
@@ -270,21 +44,11 @@ final class RTKRuntimeMonitor {
 
     // MARK: - Public API
 
-    func snapshot() -> RTKRuntimeSnapshot {
+    func snapshot() -> CTORuntimeSnapshot {
         withLock {
             let elapsedSeconds = max(Date().timeIntervalSince(firstSeenAt), 1)
             let decisionsPerMinute = (Double(recalcCount) / elapsedSeconds) * 60
-            let recentDecisionsSnapshot = recentDecisions
-            let sortedDecisions = recentDecisionsSnapshot.sorted(by: { $0.timestamp < $1.timestamp })
-            let intervals = zip(sortedDecisions, sortedDecisions.dropFirst()).map {
-                $1.timestamp.timeIntervalSince($0.timestamp)
-            }
-            let intervalAvg: Double? = intervals.isEmpty
-                ? nil
-                : intervals.reduce(0, +) / Double(intervals.count)
-            let intervalMin = intervals.min()
-            let intervalMax = intervals.max()
-            return RTKRuntimeSnapshot(
+            return CTORuntimeSnapshot(
                 mode: currentMode.rawValue,
                 recalcCount: recalcCount,
                 createdCount: createdCount,
@@ -313,10 +77,7 @@ final class RTKRuntimeMonitor {
                 recentDecisions: recentDecisions,
                 firstSeenAt: firstSeenAt,
                 uptimeSeconds: Int(elapsedSeconds.rounded()),
-                decisionsPerMinute: decisionsPerMinute,
-                decisionIntervalAverageSeconds: intervalAvg,
-                decisionIntervalMinSeconds: intervalMin,
-                decisionIntervalMaxSeconds: intervalMax
+                decisionsPerMinute: decisionsPerMinute
             )
         }
     }
@@ -354,7 +115,7 @@ final class RTKRuntimeMonitor {
             deferredFlushDelayCount = 0
             currentMode = .off
         }
-        LogEnhanced.info(.rtk, "rtk monitor reset", metadata: ["scope": "manual"])
+        LogEnhanced.info(.cto, "cto monitor reset", metadata: ["scope": "manual"])
     }
 
     func recordModeChanged(from previousMode: TokenOptimizationMode, to currentMode: TokenOptimizationMode) {
@@ -377,7 +138,7 @@ final class RTKRuntimeMonitor {
                 "currentMode": currentMode.rawValue,
                 "modeChanges": "\(modeChangeCountSnapshot)"
             ]
-            LogEnhanced.info(.rtk, "RTK mode changed", metadata: metadata)
+            LogEnhanced.info(.cto, "CTO mode changed", metadata: metadata)
         }
     }
 
@@ -390,8 +151,8 @@ final class RTKRuntimeMonitor {
             shouldLogSummary = setupCount % 5 == 0
         }
         LogEnhanced.info(
-            .rtk,
-            "RTK manager setup observed",
+            .cto,
+            "CTO manager setup observed",
             metadata: ["setups": "\(setupCountSnapshot)", "mode": currentMode.rawValue]
         )
         if shouldLogSummary {
@@ -406,7 +167,7 @@ final class RTKRuntimeMonitor {
             teardownCountSnapshot = teardownCount
             deferredSessionIDs.removeAll()
         }
-        LogEnhanced.info(.rtk, "RTK manager teardown observed", metadata: ["teardowns": "\(teardownCountSnapshot)"])
+        LogEnhanced.info(.cto, "CTO manager teardown observed", metadata: ["teardowns": "\(teardownCountSnapshot)"])
     }
 
     func recordManagerBulkRemove(count: Int) {
@@ -421,8 +182,8 @@ final class RTKRuntimeMonitor {
         }
         if count > 0 {
             LogEnhanced.info(
-                .rtk,
-                "RTK bulk flag cleanup",
+                .cto,
+                "CTO bulk flag cleanup",
                 metadata: ["removed": "\(count)", "scope": "teardown/all"]
             )
         }
@@ -437,8 +198,8 @@ final class RTKRuntimeMonitor {
             trackSession(sessionID)
         }
         LogEnhanced.trace(
-            .rtk,
-            "RTK deferred set",
+            .cto,
+            "CTO deferred set",
             metadata: [
                 "session": sessionID,
                 "mode": currentMode.rawValue,
@@ -456,10 +217,10 @@ final class RTKRuntimeMonitor {
         previousState: Bool,
         nextState: Bool,
         changed: Bool,
-        reason: RTKDecisionReason,
+        reason: CTODecisionReason,
         note: String? = nil
     ) {
-        var event: RTKDecisionEvent?
+        var event: CTODecisionEvent?
         withLock {
             deferredFlushCount += 1
             deferredSessionIDs.remove(sessionID)
@@ -483,8 +244,8 @@ final class RTKRuntimeMonitor {
             logDecisionEvent(event)
         }
         LogEnhanced.trace(
-            .rtk,
-            "RTK deferred flush",
+            .cto,
+            "CTO deferred flush",
             metadata: [
                 "session": sessionID,
                 "delayMs": "\(delayToActivateMs)",
@@ -500,12 +261,12 @@ final class RTKRuntimeMonitor {
         override: TabTokenOptOverride,
         isAIActive: Bool
     ) {
-        var event: RTKDecisionEvent?
+        var event: CTODecisionEvent?
         withLock {
             deferredSkipCount += 1
             deferredSessionIDs.remove(sessionID)
             trackSession(sessionID)
-            event = RTKDecisionEvent(
+            event = CTODecisionEvent(
                 sessionID: sessionID,
                 mode: mode,
                 override: override,
@@ -523,8 +284,8 @@ final class RTKRuntimeMonitor {
             logDecisionEvent(event)
         }
         LogEnhanced.trace(
-            .rtk,
-            "RTK deferred skip",
+            .cto,
+            "CTO deferred skip",
             metadata: [
                 "session": sessionID,
                 "mode": mode.rawValue,
@@ -542,11 +303,11 @@ final class RTKRuntimeMonitor {
         previousState: Bool,
         nextState: Bool,
         changed: Bool,
-        reason: RTKDecisionReason,
+        reason: CTODecisionReason,
         delayToActivateMs: Int? = nil,
         note: String? = nil
     ) {
-        var event: RTKDecisionEvent?
+        var event: CTODecisionEvent?
         var shouldEmitSummary = false
         withLock {
             event = recordDecisionInternal(
@@ -610,9 +371,9 @@ final class RTKRuntimeMonitor {
 
         switch assessment.state {
         case .healthy:
-            LogEnhanced.info(.rtk, "RTK runtime summary", metadata: metadata)
+            LogEnhanced.info(.cto, "CTO runtime summary", metadata: metadata)
         case .warning, .critical:
-            LogEnhanced.warn(.rtk, "RTK runtime summary", metadata: metadata)
+            LogEnhanced.warn(.cto, "CTO runtime summary", metadata: metadata)
         }
     }
 
@@ -626,11 +387,11 @@ final class RTKRuntimeMonitor {
         previousState: Bool,
         nextState: Bool,
         changed: Bool,
-        reason: RTKDecisionReason,
+        reason: CTODecisionReason,
         deferred: Bool,
         delayToActivateMs: Int?,
         debugNote: String?
-    ) -> RTKDecisionEvent {
+    ) -> CTODecisionEvent {
         currentMode = mode
         recalcCount += 1
         reasonBreakdown[reason, default: 0] += 1
@@ -651,7 +412,7 @@ final class RTKRuntimeMonitor {
             activeSessions.remove(sessionID)
         }
         activeSessionCount = activeSessions.count
-        let event = RTKDecisionEvent(
+        let event = CTODecisionEvent(
             sessionID: sessionID,
             mode: mode,
             override: override,
@@ -670,7 +431,7 @@ final class RTKRuntimeMonitor {
         return event
     }
 
-    private func logDecisionEvent(_ event: RTKDecisionEvent) {
+    private func logDecisionEvent(_ event: CTODecisionEvent) {
         var metadata: [String: String] = [
             "session": event.sessionID,
             "mode": event.mode,
@@ -691,9 +452,9 @@ final class RTKRuntimeMonitor {
         }
 
         if event.changed {
-            LogEnhanced.info(.rtk, "RTK decision", metadata: metadata)
+            LogEnhanced.info(.cto, "CTO decision", metadata: metadata)
         } else {
-            LogEnhanced.trace(.rtk, "RTK decision unchanged", metadata: metadata)
+            LogEnhanced.trace(.cto, "CTO decision unchanged", metadata: metadata)
         }
     }
 
@@ -716,7 +477,8 @@ final class RTKRuntimeMonitor {
         }
     }
 
-    private func appendRecentDecision(_ event: RTKDecisionEvent) {
+    private func appendRecentDecision(_ event: CTODecisionEvent?) {
+        guard let event else { return }
         recentDecisions.append(event)
         if recentDecisions.count > maxRecentDecisions {
             recentDecisions.removeFirst(recentDecisions.count - maxRecentDecisions)

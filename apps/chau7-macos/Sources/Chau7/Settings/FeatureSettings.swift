@@ -1275,9 +1275,9 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(showTabGitIndicator, forKey: Keys.showTabGitIndicator) }
     }
 
-    /// Show the RTK bolt icon in tabs (independent of RTK being enabled)
-    @Published var showTabRTKIndicator: Bool {
-        didSet { UserDefaults.standard.set(showTabRTKIndicator, forKey: Keys.showTabRTKIndicator) }
+    /// Show the CTO bolt icon in tabs (independent of CTO being enabled)
+    @Published var showTabCTOIndicator: Bool {
+        didSet { UserDefaults.standard.set(showTabCTOIndicator, forKey: Keys.showTabCTOIndicator) }
     }
 
     /// Show the broadcast indicator in tabs
@@ -1625,7 +1625,7 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    // MARK: - Token Optimization (RTK) Settings
+    // MARK: - Token Optimization (CTO) Settings
 
     @Published var tokenOptimizationMode: TokenOptimizationMode {
         didSet {
@@ -1695,48 +1695,48 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(errorExplainEnabled, forKey: Keys.errorExplainEnabled) }
     }
 
-    // MARK: - RTK Integration
+    // MARK: - CTO Integration
 
-    @Published var isRTKEnabled: Bool {
-        didSet { UserDefaults.standard.set(isRTKEnabled, forKey: Keys.rtkEnabled) }
+    @Published var isCTOEnabled: Bool {
+        didSet { UserDefaults.standard.set(isCTOEnabled, forKey: Keys.ctoEnabled) }
     }
 
-    @Published var rtkPrefix: String {
+    @Published var ctoPrefix: String {
         didSet {
-            let trimmed = rtkPrefix.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .newlines)
-            if rtkPrefix != trimmed {
-                rtkPrefix = trimmed
+            let trimmed = ctoPrefix.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .newlines)
+            if ctoPrefix != trimmed {
+                ctoPrefix = trimmed
                 return
             }
-            UserDefaults.standard.set(rtkPrefix, forKey: Keys.rtkPrefix)
+            UserDefaults.standard.set(ctoPrefix, forKey: Keys.ctoPrefix)
         }
     }
 
-    @Published var rtkTabOverrides: [String: Bool] {
-        didSet { UserDefaults.standard.set(rtkTabOverrides, forKey: Keys.rtkTabOverrides) }
+    @Published var ctoTabOverrides: [String: Bool] {
+        didSet { UserDefaults.standard.set(ctoTabOverrides, forKey: Keys.ctoTabOverrides) }
     }
 
-    func isRTKEnabled(forTabIdentifier tabIdentifier: String?) -> Bool {
+    func isCTOEnabled(forTabIdentifier tabIdentifier: String?) -> Bool {
         guard let normalized = normalizeTabIdentifier(tabIdentifier),
-              let override = rtkTabOverrides[normalized] else {
-            return isRTKEnabled
+              let override = ctoTabOverrides[normalized] else {
+            return isCTOEnabled
         }
         return override
     }
 
-    func rtkOverride(forTabIdentifier tabIdentifier: String?) -> Bool? {
+    func ctoOverride(forTabIdentifier tabIdentifier: String?) -> Bool? {
         guard let normalized = normalizeTabIdentifier(tabIdentifier) else { return nil }
-        return rtkTabOverrides[normalized]
+        return ctoTabOverrides[normalized]
     }
 
-    func setRTKOverride(_ enabled: Bool, forTabIdentifier tabIdentifier: String?) {
+    func setCTOOverride(_ enabled: Bool, forTabIdentifier tabIdentifier: String?) {
         guard let normalized = normalizeTabIdentifier(tabIdentifier) else { return }
-        rtkTabOverrides[normalized] = enabled
+        ctoTabOverrides[normalized] = enabled
     }
 
-    func clearRTKOverride(forTabIdentifier tabIdentifier: String?) {
+    func clearCTOOverride(forTabIdentifier tabIdentifier: String?) {
         guard let normalized = normalizeTabIdentifier(tabIdentifier) else { return }
-        rtkTabOverrides.removeValue(forKey: normalized)
+        ctoTabOverrides.removeValue(forKey: normalized)
     }
 
     // MARK: - Keys
@@ -1798,7 +1798,7 @@ final class FeatureSettings: ObservableObject {
         static let showTabIcons = "tabs.display.showIcons"
         static let showTabPath = "tabs.display.showPath"
         static let showTabGitIndicator = "tabs.display.showGitIndicator"
-        static let showTabRTKIndicator = "tabs.display.showRTKIndicator"
+        static let showTabCTOIndicator = "tabs.display.showCTOIndicator"
         static let showTabBroadcastIndicator = "tabs.display.showBroadcastIndicator"
         static let customTitleOnly = "tabs.display.customTitleOnly"
         // F20
@@ -1863,8 +1863,8 @@ final class FeatureSettings: ObservableObject {
         static let apiAnalyticsEnabled = "analytics.api.enabled"
         static let apiAnalyticsPort = "analytics.api.port"
         static let apiAnalyticsLogPrompts = "analytics.api.logPrompts"
-        // Token Optimization (RTK)
-        static let tokenOptimizationMode = "rtk.mode"
+        // Token Optimization (CTO)
+        static let tokenOptimizationMode = "cto.mode"
         // Remote Control
         static let remoteEnabled = "remote.enabled"
         static let remoteRelayURL = "remote.relayURL"
@@ -1879,10 +1879,10 @@ final class FeatureSettings: ObservableObject {
         static let tmuxAutoAttachEnabled = "feature.tmuxAutoAttachEnabled"
         // LLM / Error Explanation
         static let errorExplainEnabled = "feature.errorExplainEnabled"
-        // RTK Integration
-        static let rtkEnabled = "feature.rtkEnabled"
-        static let rtkPrefix = "feature.rtkPrefix"
-        static let rtkTabOverrides = "feature.rtkTabOverrides"
+        // CTO Integration
+        static let ctoEnabled = "feature.ctoEnabled"
+        static let ctoPrefix = "feature.ctoPrefix"
+        static let ctoTabOverrides = "feature.ctoTabOverrides"
     }
 
     // MARK: - Init
@@ -1890,6 +1890,24 @@ final class FeatureSettings: ObservableObject {
     private init() {
         let defaults = UserDefaults.standard
         let home = FileManager.default.homeDirectoryForCurrentUser.path
+
+        // One-time migration: RTK → CTO UserDefaults keys
+        if !defaults.bool(forKey: "cto.migrated.v1") {
+            let migrations: [(old: String, new: String)] = [
+                ("tabs.display.showRTKIndicator", Keys.showTabCTOIndicator),
+                ("rtk.mode", Keys.tokenOptimizationMode),
+                ("feature.rtkEnabled", Keys.ctoEnabled),
+                ("feature.rtkPrefix", Keys.ctoPrefix),
+                ("feature.rtkTabOverrides", Keys.ctoTabOverrides),
+            ]
+            for (old, new) in migrations {
+                if let value = defaults.object(forKey: old), defaults.object(forKey: new) == nil {
+                    defaults.set(value, forKey: new)
+                }
+                defaults.removeObject(forKey: old)
+            }
+            defaults.set(true, forKey: "cto.migrated.v1")
+        }
 
         // Font Settings (NEW)
         self.fontFamily = defaults.string(forKey: Keys.fontFamily) ?? "SF Mono"
@@ -2064,7 +2082,7 @@ final class FeatureSettings: ObservableObject {
         self.showTabIcons = defaults.object(forKey: Keys.showTabIcons) as? Bool ?? true
         self.showTabPath = defaults.object(forKey: Keys.showTabPath) as? Bool ?? true
         self.showTabGitIndicator = defaults.object(forKey: Keys.showTabGitIndicator) as? Bool ?? true
-        self.showTabRTKIndicator = defaults.object(forKey: Keys.showTabRTKIndicator) as? Bool ?? true
+        self.showTabCTOIndicator = defaults.object(forKey: Keys.showTabCTOIndicator) as? Bool ?? true
         self.showTabBroadcastIndicator = defaults.object(forKey: Keys.showTabBroadcastIndicator) as? Bool ?? true
         self.customTitleOnly = defaults.object(forKey: Keys.customTitleOnly) as? Bool ?? false
 
@@ -2206,16 +2224,16 @@ final class FeatureSettings: ObservableObject {
         // LLM / Error Explanation
         self.errorExplainEnabled = defaults.object(forKey: Keys.errorExplainEnabled) as? Bool ?? false
 
-        // RTK Integration
-        self.isRTKEnabled = defaults.object(forKey: Keys.rtkEnabled) as? Bool ?? false
-        self.rtkPrefix = defaults.string(forKey: Keys.rtkPrefix) ?? ""
-        if let raw = defaults.dictionary(forKey: Keys.rtkTabOverrides) {
-            self.rtkTabOverrides = raw.compactMapValues { value in
+        // CTO Integration
+        self.isCTOEnabled = defaults.object(forKey: Keys.ctoEnabled) as? Bool ?? false
+        self.ctoPrefix = defaults.string(forKey: Keys.ctoPrefix) ?? ""
+        if let raw = defaults.dictionary(forKey: Keys.ctoTabOverrides) {
+            self.ctoTabOverrides = raw.compactMapValues { value in
                 guard let boolValue = value as? Bool else { return nil }
                 return boolValue
             }
         } else {
-            self.rtkTabOverrides = [:]
+            self.ctoTabOverrides = [:]
         }
     }
 
@@ -2397,7 +2415,7 @@ final class FeatureSettings: ObservableObject {
         var showTabIcons: Bool?
         var showTabPath: Bool?
         var showTabGitIndicator: Bool?
-        var showTabRTKIndicator: Bool?
+        var showTabCTOIndicator: Bool?
         var showTabBroadcastIndicator: Bool?
         var customTitleOnly: Bool?
         var isCopyOnSelectEnabled: Bool
@@ -2431,9 +2449,9 @@ final class FeatureSettings: ObservableObject {
         var keybindingPreset: String
         var isRemoteEnabled: Bool? = nil
         var remoteRelayURL: String? = nil
-        var isRTKEnabled: Bool = false
-        var rtkPrefix: String = ""
-        var rtkTabOverrides: [String: Bool] = [:]
+        var isCTOEnabled: Bool = false
+        var ctoPrefix: String = ""
+        var ctoTabOverrides: [String: Bool] = [:]
         var exportVersion: Int = 1
     }
 
@@ -2485,7 +2503,7 @@ final class FeatureSettings: ObservableObject {
             showTabIcons: showTabIcons,
             showTabPath: showTabPath,
             showTabGitIndicator: showTabGitIndicator,
-            showTabRTKIndicator: showTabRTKIndicator,
+            showTabCTOIndicator: showTabCTOIndicator,
             showTabBroadcastIndicator: showTabBroadcastIndicator,
             customTitleOnly: customTitleOnly,
             isCopyOnSelectEnabled: isCopyOnSelectEnabled,
@@ -2519,9 +2537,9 @@ final class FeatureSettings: ObservableObject {
             keybindingPreset: keybindingPreset,
             isRemoteEnabled: isRemoteEnabled,
             remoteRelayURL: remoteRelayURL,
-            isRTKEnabled: isRTKEnabled,
-            rtkPrefix: rtkPrefix,
-            rtkTabOverrides: rtkTabOverrides
+            isCTOEnabled: isCTOEnabled,
+            ctoPrefix: ctoPrefix,
+            ctoTabOverrides: ctoTabOverrides
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -2619,7 +2637,7 @@ final class FeatureSettings: ObservableObject {
         showTabIcons = imported.showTabIcons ?? true
         showTabPath = imported.showTabPath ?? true
         showTabGitIndicator = imported.showTabGitIndicator ?? true
-        showTabRTKIndicator = imported.showTabRTKIndicator ?? true
+        showTabCTOIndicator = imported.showTabCTOIndicator ?? true
         showTabBroadcastIndicator = imported.showTabBroadcastIndicator ?? true
         customTitleOnly = imported.customTitleOnly ?? false
         isCopyOnSelectEnabled = imported.isCopyOnSelectEnabled
@@ -2664,9 +2682,9 @@ final class FeatureSettings: ObservableObject {
         if let relayURL = imported.remoteRelayURL {
             remoteRelayURL = relayURL
         }
-        isRTKEnabled = imported.isRTKEnabled
-        rtkPrefix = imported.rtkPrefix
-        rtkTabOverrides = imported.rtkTabOverrides
+        isCTOEnabled = imported.isCTOEnabled
+        ctoPrefix = imported.ctoPrefix
+        ctoTabOverrides = imported.ctoTabOverrides
 
         return true
     }
@@ -2735,7 +2753,7 @@ final class FeatureSettings: ObservableObject {
         showTabIcons = true
         showTabPath = true
         showTabGitIndicator = true
-        showTabRTKIndicator = true
+        showTabCTOIndicator = true
         showTabBroadcastIndicator = true
         customTitleOnly = false
 
@@ -2771,9 +2789,9 @@ final class FeatureSettings: ObservableObject {
         isSplitPanesEnabled = true
         isRemoteEnabled = false
         remoteRelayURL = "wss://relay.example.com/connect"
-        isRTKEnabled = false
-        rtkPrefix = ""
-        rtkTabOverrides.removeAll()
+        isCTOEnabled = false
+        ctoPrefix = ""
+        ctoTabOverrides.removeAll()
         keybindingPreset = "default"
 
         // Overlay positions
@@ -2987,7 +3005,7 @@ extension FeatureSettings {
             showTabIcons: true,
             showTabPath: true,
             showTabGitIndicator: true,
-            showTabRTKIndicator: true,
+            showTabCTOIndicator: true,
             showTabBroadcastIndicator: true,
             customTitleOnly: false,
             isCopyOnSelectEnabled: false,
@@ -3020,9 +3038,9 @@ extension FeatureSettings {
             keybindingPreset: "default",
             isRemoteEnabled: false,
             remoteRelayURL: "wss://relay.example.com/connect",
-            isRTKEnabled: false,
-            rtkPrefix: "",
-            rtkTabOverrides: [:]
+            isCTOEnabled: false,
+            ctoPrefix: "",
+            ctoTabOverrides: [:]
         )
     }
 

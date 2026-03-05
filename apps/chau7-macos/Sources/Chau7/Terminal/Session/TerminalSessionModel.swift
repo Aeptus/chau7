@@ -83,6 +83,16 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             recalculateCTOFlag()
         }
     }
+    /// Effective app name for UI branding and diagnostics.
+    /// Falls back to the last known persisted metadata provider if active
+    /// detection from output/command history is not currently available.
+    var aiDisplayAppName: String? {
+        if let active = activeAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !active.isEmpty {
+            return active
+        }
+        return Self.displayName(fromProvider: lastAIProvider)
+    }
     @Published var devServer: DevServerMonitor.DevServerInfo? = nil
     @Published var processGroup: ProcessGroupSnapshot? = nil
     @Published var tabTitleOverride: String? = nil
@@ -108,6 +118,21 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
     private(set) var lastAIProvider: String?
     private(set) var lastAISessionId: String?
+
+    private static func displayName(fromProvider provider: String?) -> String? {
+        guard let normalized = AIResumeParser.normalizeProviderName(provider ?? "") else {
+            return nil
+        }
+
+        switch normalized {
+        case "claude":
+            return "Claude"
+        case "codex":
+            return "Codex"
+        default:
+            return normalized.capitalized
+        }
+    }
 
     // MARK: - Latency Telemetry (non-Published for performance)
     // These change on every keystroke. Keeping them as @Published would cause
@@ -1386,6 +1411,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         let normalizedProvider = AIResumeParser.normalizeProviderName(
             provider ?? ""
         )
+        let restoredDisplayName = Self.displayName(fromProvider: normalizedProvider)
+        activeAppName = restoredDisplayName
         lastAIProvider = normalizedProvider
 
         if let sessionId {

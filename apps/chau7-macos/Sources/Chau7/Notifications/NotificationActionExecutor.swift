@@ -14,6 +14,7 @@ import Chau7Core
 }
 
 /// Executes notification actions in response to events
+@MainActor
 final class NotificationActionExecutor {
     static let shared = NotificationActionExecutor()
 
@@ -23,8 +24,6 @@ final class NotificationActionExecutor {
 
     // MARK: - Time Tracking State
     private var activeTimers: [String: Date] = [:]
-    /// Concurrent queue — actions run in parallel. Use `.barrier` for activeTimers mutations.
-    private let queue = DispatchQueue(label: "com.chau7.actionExecutor", qos: .userInitiated, attributes: .concurrent)
 
     // MARK: - Tab Style Auto-Clear Tracking
     /// Tracks pending auto-clear work items per tool to allow cancellation.
@@ -42,10 +41,7 @@ final class NotificationActionExecutor {
 
     func execute(actions: [NotificationActionConfig], for event: AIEvent) {
         for actionConfig in actions where actionConfig.enabled {
-            let needsBarrier = actionConfig.actionType == .startTimer || actionConfig.actionType == .stopTimer
-            queue.async(flags: needsBarrier ? .barrier : [], execute: { [weak self] in
-                self?.executeAction(actionConfig, for: event)
-            })
+            executeAction(actionConfig, for: event)
         }
     }
 
@@ -848,7 +844,6 @@ final class NotificationActionExecutor {
         let timerName = ctx.interpolate(ctx.configValue("timerName") ?? ctx.event.tool)
         let project = ctx.configValue("project") ?? ""
 
-        // Already on self.queue from execute() dispatch — access activeTimers directly
         activeTimers[timerName] = Date()
 
         Log.info("Action startTimer: Started '\(timerName)' for project '\(project)'")
@@ -857,7 +852,6 @@ final class NotificationActionExecutor {
     private func executeStopTimer(_ ctx: ActionContext) {
         let timerName = ctx.configValue("timerName")
 
-        // Already on self.queue from execute() dispatch — access activeTimers directly
         var stoppedTimer: (name: String, start: Date)?
 
         if let name = timerName, !name.isEmpty {

@@ -105,6 +105,10 @@ enum Log {
     }
 
     private static func writeToFile(_ line: String) {
+        writeRaw(line)
+    }
+
+    static func writeRaw(_ line: String) {
         let data = (line + "\n").data(using: .utf8) ?? Data()
         fileQueue.async {
             // Lazy recovery: if fileHandle is nil (configure failed or trim broke it), retry once

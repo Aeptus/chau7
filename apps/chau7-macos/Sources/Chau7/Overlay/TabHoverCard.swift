@@ -15,7 +15,7 @@ struct TabHoverCard: View {
     }
 
     var body: some View {
-        if let tab, let session = tab.session {
+        if let tab, let session = tab.displaySession {
             GeometryReader { geo in
                 let cardWidth: CGFloat = 280
                 let padding: CGFloat = 12
@@ -80,7 +80,7 @@ private struct TabHoverCardContent: View {
     }
 
     private var aiLogo: Image? {
-        guard let appName = session.activeAppName else { return nil }
+        guard let appName = session.aiDisplayAppName else { return nil }
         return AIAgentLogo.image(forAppName: appName)
     }
 

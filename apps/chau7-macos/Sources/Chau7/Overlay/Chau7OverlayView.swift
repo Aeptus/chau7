@@ -797,7 +797,7 @@ struct Chau7OverlayView: View {
             // MARK: - Shell Loading Bar
             ForEach(overlayModel.tabs) { tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
-                if isSelected, let session = tab.session {
+                if isSelected, let session = tab.displaySession {
                     ShellLoadingBar(session: session)
                         .zIndex(4)
                 }
@@ -1164,7 +1164,7 @@ struct UnifiedTabButton: View {
     }
 
     private var resolvedPath: String {
-        tab.session?.tabPathDisplayName() ?? ""
+        tab.displaySession?.tabPathDisplayName() ?? ""
     }
 
 
@@ -1179,7 +1179,7 @@ struct UnifiedTabButton: View {
     var body: some View {
         HStack(spacing: 8) {
             // Session-dependent content (icon, title, path, git) in an observing subview
-            if let session = tab.session {
+            if let session = tab.displaySession {
                 TabSessionContent(
                     session: session,
                     customTitle: tab.customTitle,
@@ -1221,8 +1221,8 @@ struct UnifiedTabButton: View {
                         .foregroundStyle(.orange)
                 }
 
-                // RTK: Token optimization indicator (exception-only badge)
-                if FeatureSettings.shared.showTabRTKIndicator
+                // CTO: Token optimization indicator (exception-only badge)
+                if FeatureSettings.shared.showTabCTOIndicator
                     && FeatureSettings.shared.tokenOptimizationMode != .off {
                     if let overrideState = tab.optimizerOverrideState {
                         Button(action: { onToggleTokenOpt?() }) {
@@ -1243,11 +1243,11 @@ struct UnifiedTabButton: View {
                         }
                         .buttonStyle(.plain)
                         .help(overrideState
-                            ? L("rtk.tab.active", "Token optimization active (click to toggle)")
-                            : L("rtk.tab.inactive", "Token optimization inactive (click to toggle)"))
+                            ? L("cto.tab.active", "Token optimization active (click to toggle)")
+                            : L("cto.tab.inactive", "Token optimization inactive (click to toggle)"))
                         .accessibilityLabel(overrideState
-                            ? L("rtk.tab.a11y.active", "Token optimization on")
-                            : L("rtk.tab.a11y.inactive", "Token optimization off"))
+                            ? L("cto.tab.a11y.active", "Token optimization on")
+                            : L("cto.tab.a11y.inactive", "Token optimization off"))
                     } else {
                         // Invisible tap target so toggle still works on default-state tabs
                         Button(action: { onToggleTokenOpt?() }) {
@@ -1255,13 +1255,13 @@ struct UnifiedTabButton: View {
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .help(L("rtk.tab.toggle", "Click to override token optimization for this tab"))
-                        .accessibilityLabel(L("rtk.tab.a11y.default", "Token optimization default"))
+                        .help(L("cto.tab.toggle", "Click to override token optimization for this tab"))
+                        .accessibilityLabel(L("cto.tab.a11y.default", "Token optimization default"))
                     }
                 }
 
                 // Git indicator — observed via TabSessionContent, keep fallback here
-                if FeatureSettings.shared.showTabGitIndicator && (tab.session?.isGitRepo ?? false) {
+                if FeatureSettings.shared.showTabGitIndicator && (tab.displaySession?.isGitRepo ?? false) {
                     Image(systemName: "arrow.triangle.branch")
                         .font(.system(size: 11, weight: .semibold))
                 }
@@ -1340,8 +1340,8 @@ struct UnifiedTabButton: View {
 
 // MARK: - Tab Session Content (observes session for live updates)
 
-/// Subview that observes the `TerminalSessionModel` so icons, title, and path
-/// update reactively when `activeAppName`, `devServer`, or directory change.
+    /// Subview that observes the `TerminalSessionModel` so icons, title, and path
+/// update reactively when `aiDisplayAppName`, `devServer`, or directory change.
 /// Without this, `UnifiedTabButton` (which takes `OverlayTab` as a struct value)
 /// would never re-render for session property changes.
 struct TabSessionContent: View {
@@ -1353,7 +1353,7 @@ struct TabSessionContent: View {
     let titleColor: Color?
 
     private var aiProductLogo: Image? {
-        guard let appName = session.activeAppName else { return nil }
+        guard let appName = session.aiDisplayAppName else { return nil }
         return AIAgentLogo.image(forAppName: appName)
     }
 
@@ -1369,7 +1369,7 @@ struct TabSessionContent: View {
         if let customTitle, !customTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return customTitle
         }
-        if let activeName = session.activeAppName, !activeName.isEmpty {
+        if let activeName = session.aiDisplayAppName, !activeName.isEmpty {
             return activeName
         }
         if let devName = session.devServer?.name,
@@ -1440,7 +1440,7 @@ struct TabButton: View {
         if let customTitle, !customTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return customTitle
         }
-        if let activeName = session.activeAppName, !activeName.isEmpty {
+        if let activeName = session.aiDisplayAppName, !activeName.isEmpty {
             return activeName
         }
         return L("tab.shell", "Shell")
@@ -1454,7 +1454,7 @@ struct TabButton: View {
 
     /// Returns the bundled logo for the detected AI product, or nil for regular shell.
     private var aiProductLogo: Image? {
-        guard let appName = session.activeAppName else { return nil }
+        guard let appName = session.aiDisplayAppName else { return nil }
         return AIAgentLogo.image(forAppName: appName)
     }
 
