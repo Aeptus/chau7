@@ -1381,8 +1381,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         }
 
         if activeAppName != nil, isExitCommand(commandLine) {
-            lastAIProvider = nil
-            lastAISessionId = nil
+            // Keep lastAIProvider/lastAISessionId so tab restore can resume the
+            // most recent session for this pane even after shell-level exits.
             Log.trace("Clearing active app due to exit command input.")
             activeAppName = nil
         }
