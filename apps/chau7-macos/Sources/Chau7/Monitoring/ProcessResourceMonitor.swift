@@ -63,10 +63,12 @@ final class ProcessResourceMonitor {
     private var isStopped = true
     private var shellPID: pid_t = 0
     private let queue = DispatchQueue(label: "com.chau7.processmonitor", qos: .utility)
-    private let minimumPollInterval: TimeInterval = 0.75
-    private let maxPollInterval: TimeInterval = 3.0
-    private let noDataBackoffMultiplier = 1.8
-    private let maxConsecutiveNoDataPolls = 8
+    internal static let minimumPollInterval: TimeInterval = 0.75
+    internal static let maxPollInterval: TimeInterval = 3.0
+    internal static let maxConsecutiveNoDataPolls = 8
+    internal static let noDataBackoffMultiplier = 1.8
+    private let noDataBackoffMultiplier = Self.noDataBackoffMultiplier
+    private let maxConsecutiveNoDataPolls = Self.maxConsecutiveNoDataPolls
     private var consecutiveNoDataPolls = 0
 
     func start(shellPID: pid_t) {
@@ -107,11 +109,32 @@ final class ProcessResourceMonitor {
     }
 
     private func intervalForNextPoll() -> TimeInterval {
+        let interval = Self.nextPollInterval(
+            consecutiveNoDataPolls: consecutiveNoDataPolls,
+            minimumPollInterval: Self.minimumPollInterval,
+            maxPollInterval: Self.maxPollInterval,
+            noDataBackoffMultiplier: noDataBackoffMultiplier,
+            maxConsecutiveNoDataPolls: maxConsecutiveNoDataPolls
+        )
+
+        if interval <= 0 {
+            return Self.minimumPollInterval
+        }
+        return interval
+    }
+
+    internal static func nextPollInterval(
+        consecutiveNoDataPolls: Int,
+        minimumPollInterval: TimeInterval,
+        maxPollInterval: TimeInterval,
+        noDataBackoffMultiplier: Double,
+        maxConsecutiveNoDataPolls: Int
+    ) -> TimeInterval {
         guard consecutiveNoDataPolls > 0 else {
             return minimumPollInterval
         }
-
-        let backoff = pow(noDataBackoffMultiplier, Double(min(consecutiveNoDataPolls, maxConsecutiveNoDataPolls)))
+        let clampedConsecutive = min(consecutiveNoDataPolls, maxConsecutiveNoDataPolls)
+        let backoff = pow(noDataBackoffMultiplier, Double(clampedConsecutive))
         return min(maxPollInterval, minimumPollInterval * backoff)
     }
 
