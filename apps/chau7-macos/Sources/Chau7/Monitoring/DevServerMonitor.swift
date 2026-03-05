@@ -30,6 +30,10 @@ final class DevServerMonitor {
     private var shellPID: pid_t?
     private var currentServer: DevServerInfo?
     private var lastCommandHint: String?
+    private let childCacheTtl: TimeInterval = 0.5
+    private var cachedChildPIDs: [pid_t] = []
+    private var cachedChildParentPID: pid_t = 0
+    private var childProcessCacheAt = Date.distantPast
     private let queue = DispatchQueue(label: "com.chau7.devserver", qos: .utility)
 
     /// Burst timer for checking ports after a command hint.
@@ -48,6 +52,9 @@ final class DevServerMonitor {
     /// Does NOT start any timer — monitoring is purely event-driven.
     func start(shellPID: pid_t) {
         self.shellPID = shellPID
+        cachedChildPIDs.removeAll(keepingCapacity: true)
+        cachedChildParentPID = shellPID
+        childProcessCacheAt = Date.distantPast
         self.isStopped = false
     }
 
@@ -58,6 +65,8 @@ final class DevServerMonitor {
         burstChecksRemaining = 0
         shellPID = nil
         lastCommandHint = nil
+        cachedChildPIDs.removeAll(keepingCapacity: true)
+        childProcessCacheAt = Date.distantPast
         // Ensure no in-flight check on the background queue can start new work
         isStopped = true
         if currentServer != nil {
@@ -72,6 +81,9 @@ final class DevServerMonitor {
     /// Starts a burst of port checks since the server needs time to bind.
     func setCommandHint(_ serverName: String?) {
         lastCommandHint = serverName
+        if serverName != nil {
+            childProcessCacheAt = Date.distantPast
+        }
         if serverName != nil {
             startBurstCheck()
         }
@@ -155,7 +167,7 @@ final class DevServerMonitor {
         isCheckingPorts = true
         defer { isCheckingPorts = false }
 
-        let childPIDs = getChildProcesses(of: shellPID)
+        let childPIDs = getChildProcessesWithCache(of: shellPID)
         guard !childPIDs.isEmpty else {
             // No children — server has stopped
             if currentServer != nil {
@@ -232,14 +244,34 @@ final class DevServerMonitor {
         // BFS walk from parentPID to collect all descendants
         var result: [pid_t] = []
         var queue = childrenOf[parentPID] ?? []
-        while !queue.isEmpty {
-            let pid = queue.removeFirst()
+        var queueIndex = 0
+        while queueIndex < queue.count {
+            let pid = queue[queueIndex]
+            queueIndex += 1
             result.append(pid)
             if let grandchildren = childrenOf[pid] {
                 queue.append(contentsOf: grandchildren)
             }
         }
         return result
+    }
+
+    private func getChildProcessesWithCache(of parentPID: pid_t) -> [pid_t] {
+        if cachedChildParentPID != parentPID {
+            cachedChildPIDs.removeAll(keepingCapacity: true)
+            childProcessCacheAt = Date.distantPast
+            cachedChildParentPID = parentPID
+        }
+
+        let now = Date()
+        if now.timeIntervalSince(childProcessCacheAt) <= childCacheTtl {
+            return cachedChildPIDs
+        }
+
+        let childPIDs = getChildProcesses(of: parentPID)
+        cachedChildPIDs = childPIDs
+        childProcessCacheAt = now
+        return childPIDs
     }
 
     // MARK: - Port scanning (netstat, ~7ms)

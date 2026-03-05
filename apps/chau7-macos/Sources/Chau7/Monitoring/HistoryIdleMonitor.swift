@@ -22,6 +22,7 @@ final class HistoryIdleMonitor {
     private var lastEntry: [String: HistoryEntry] = [:]
     private var closedSessions = BoundedSet<String>(maxCount: AppConstants.Limits.maxClosedSessions)
     private let queue = DispatchQueue(label: "com.chau7.historyIdle")
+    private let minimumCheckInterval: TimeInterval = 1.0
 
     init(
         fileURL: URL,
@@ -49,14 +50,9 @@ final class HistoryIdleMonitor {
         }
         tailer.start()
         self.tailer = tailer
-
-        let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now(), repeating: .seconds(1))
-        timer.setEventHandler { [weak self] in
-            self?.checkIdle()
+        queue.async {
+            self.scheduleNextCheck(now: Date())
         }
-        timer.resume()
-        self.timer = timer
     }
 
     func stop() {
@@ -81,6 +77,7 @@ final class HistoryIdleMonitor {
                 self.lastNotified.removeValue(forKey: entry.sessionId)
                 self.onStateChange?(entry.sessionId, .closed, now, nil)
                 Log.trace("Idle monitor closed by exit marker. session=\(entry.sessionId)")
+                self.scheduleNextCheck(now: now)
                 return
             }
 
@@ -93,6 +90,7 @@ final class HistoryIdleMonitor {
             self.lastNotified.removeValue(forKey: entry.sessionId)
             self.onStateChange?(entry.sessionId, .active, now, nil)
             Log.trace("Idle monitor record. session=\(entry.sessionId)")
+            self.scheduleNextCheck(now: now)
         }
     }
 
@@ -100,18 +98,16 @@ final class HistoryIdleMonitor {
         let now = Date()
         let idleSeconds = max(1.0, idleSecondsProvider())
         let staleSeconds = max(idleSeconds + 1.0, staleSecondsProvider())
+        var staleSessionIds: [String] = []
 
-        for (sessionId, lastSeenAt) in Array(lastSeen) {
+        let snapshot = lastSeen
+        for (sessionId, lastSeenAt) in snapshot {
             let idleFor = now.timeIntervalSince(lastSeenAt)
             if idleFor < idleSeconds { continue }
 
             if idleFor >= staleSeconds {
                 closedSessions.insert(sessionId)
-                lastSeen.removeValue(forKey: sessionId)
-                lastEntry.removeValue(forKey: sessionId)
-                lastNotified.removeValue(forKey: sessionId)
-                onStateChange?(sessionId, .closed, lastSeenAt, idleFor)
-                Log.trace("Idle monitor marked stale. session=\(sessionId) idleFor=\(Int(idleFor))")
+                staleSessionIds.append(sessionId)
                 continue
             }
 
@@ -125,11 +121,59 @@ final class HistoryIdleMonitor {
                 summary: "",
                 isExit: false
             )
-
             onIdle(entry, idleFor)
             lastNotified[sessionId] = now
             onStateChange?(sessionId, .idle, lastSeenAt, idleFor)
             Log.trace("Idle monitor notify. session=\(sessionId) idleFor=\(Int(idleFor))")
         }
+
+        for sessionId in staleSessionIds {
+            guard let lastSeenAt = lastSeen[sessionId] else { continue }
+            let idleFor = now.timeIntervalSince(lastSeenAt)
+            onStateChange?(sessionId, .closed, lastSeenAt, idleFor)
+            Log.trace("Idle monitor marked stale. session=\(sessionId) idleFor=\(Int(idleFor))")
+
+            lastSeen.removeValue(forKey: sessionId)
+            lastNotified.removeValue(forKey: sessionId)
+            lastEntry.removeValue(forKey: sessionId)
+        }
+
+        scheduleNextCheck(now: now)
+    }
+
+    private func scheduleNextCheck(now: Date) {
+        guard !lastSeen.isEmpty else {
+            timer?.cancel()
+            timer = nil
+            return
+        }
+
+        let idleSeconds = max(minimumCheckInterval, idleSecondsProvider())
+        let staleSeconds = max(idleSeconds + 1.0, staleSecondsProvider())
+
+        var nextDeadline = Date.distantFuture
+        for (_, lastSeenAt) in lastSeen {
+            let nextIdle = lastSeenAt.addingTimeInterval(idleSeconds)
+            if nextIdle < nextDeadline {
+                nextDeadline = nextIdle
+            }
+
+            let nextStale = lastSeenAt.addingTimeInterval(staleSeconds)
+            if nextStale < nextDeadline {
+                nextDeadline = nextStale
+            }
+        }
+
+        guard nextDeadline != Date.distantFuture else { return }
+
+        timer?.cancel()
+        let delay = max(minimumCheckInterval, nextDeadline.timeIntervalSince(now))
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + delay)
+        timer.setEventHandler { [weak self] in
+            self?.checkIdle()
+        }
+        timer.resume()
+        self.timer = timer
     }
 }
