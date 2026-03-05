@@ -425,5 +425,175 @@ final class TokenOptimizationTests: XCTestCase {
         XCTAssertEqual(modeChanged.rawValue, "com.chau7.tokenOptimizationModeChanged")
         XCTAssertEqual(flagRecalculated.rawValue, "com.chau7.rtkFlagRecalculated")
     }
+
+    // MARK: - RTK Runtime Monitor
+
+    func testRTKRuntimeMonitorTracksDecisions() {
+        RTKRuntimeMonitor.shared.reset()
+
+        RTKRuntimeMonitor.shared.recordModeChanged(from: .off, to: .allTabs)
+        RTKRuntimeMonitor.shared.recordDecision(
+            sessionID: "session-1",
+            mode: .allTabs,
+            override: .default,
+            isAIActive: false,
+            previousState: false,
+            nextState: true,
+            changed: true,
+            reason: .allTabsDefault
+        )
+        RTKRuntimeMonitor.shared.recordDecision(
+            sessionID: "session-1",
+            mode: .allTabs,
+            override: .default,
+            isAIActive: false,
+            previousState: true,
+            nextState: false,
+            changed: true,
+            reason: .off
+        )
+        RTKRuntimeMonitor.shared.recordDecision(
+            sessionID: "session-2",
+            mode: .manual,
+            override: .forceOff,
+            isAIActive: false,
+            previousState: false,
+            nextState: false,
+            changed: false,
+            reason: .unchanged
+        )
+        RTKRuntimeMonitor.shared.recordDeferredSet(sessionID: "session-2")
+        RTKRuntimeMonitor.shared.recordDeferredSkip(
+            sessionID: "session-2",
+            reason: "mode-change",
+            mode: .manual,
+            override: .forceOff,
+            isAIActive: false
+        )
+        RTKRuntimeMonitor.shared.recordDeferredFlush(
+            sessionID: "session-2",
+            delayToActivateMs: 120,
+            mode: .aiOnly,
+            override: .default,
+            isAIActive: true,
+            previousState: false,
+            nextState: true,
+            changed: true,
+            reason: .aiOnlyWithAI
+        )
+
+        let snapshot = RTKRuntimeMonitor.shared.snapshot()
+        XCTAssertEqual(snapshot.mode, TokenOptimizationMode.allTabs.rawValue)
+        XCTAssertEqual(snapshot.recalcCount, 4)
+        XCTAssertEqual(snapshot.createdCount, 2)
+        XCTAssertEqual(snapshot.removedCount, 1)
+        XCTAssertEqual(snapshot.unchangedCount, 1)
+        XCTAssertEqual(snapshot.deferredSetCount, 1)
+        XCTAssertEqual(snapshot.deferredSkipCount, 1)
+        XCTAssertEqual(snapshot.deferredFlushCount, 1)
+        XCTAssertEqual(snapshot.deferredFlushDelayCount, 1)
+        XCTAssertEqual(snapshot.deferredFlushDelayMinMs, 120)
+        XCTAssertEqual(snapshot.deferredFlushDelayMaxMs, 120)
+        XCTAssertEqual(snapshot.deferredFlushDelayLastMs, 120)
+        XCTAssertEqual(snapshot.reasonBreakdown[RTKDecisionReason.allTabsDefault.rawValue], 1)
+        XCTAssertEqual(snapshot.reasonBreakdown[RTKDecisionReason.off.rawValue], 1)
+        XCTAssertEqual(snapshot.reasonBreakdown[RTKDecisionReason.aiOnlyWithAI.rawValue], 1)
+        XCTAssertEqual(snapshot.reasonBreakdown[RTKDecisionReason.unchanged.rawValue], 1)
+        XCTAssertEqual(snapshot.trackedSessions, 2)
+        XCTAssertNotNil(snapshot.lastDecision)
+    }
+
+    func testRTKRuntimeAssessmentSignals() {
+        RTKRuntimeMonitor.shared.reset()
+
+        for index in 0..<4 {
+            RTKRuntimeMonitor.shared.recordDecision(
+                sessionID: "session-assess-\(index)",
+                mode: .manual,
+                override: .default,
+                isAIActive: false,
+                previousState: false,
+                nextState: false,
+                changed: false,
+                reason: .unchanged
+            )
+        }
+
+        let snapshot = RTKRuntimeMonitor.shared.snapshot()
+        XCTAssertEqual(snapshot.decisionsChangeRatePercent, 0, accuracy: 0.001)
+        XCTAssertTrue(snapshot.assessment.issues.contains(.lowChangeRate))
+        XCTAssertEqual(snapshot.assessment.state, .warning)
+        XCTAssertEqual(snapshot.deferredSkipRatePercent, 0, accuracy: 0.001)
+        XCTAssertEqual(snapshot.deferredFlushRatePercent, 0, accuracy: 0.001)
+        XCTAssertEqual(snapshot.activeSessionRatioPercent, 0, accuracy: 0.001)
+    }
+
+    func testRTKRuntimeDecisionIntervalStats() {
+        RTKRuntimeMonitor.shared.reset()
+
+        for index in 0..<4 {
+            RTKRuntimeMonitor.shared.recordDecision(
+                sessionID: "session-interval-\(index)",
+                mode: .manual,
+                override: .default,
+                isAIActive: false,
+                previousState: false,
+                nextState: false,
+                changed: false,
+                reason: .unchanged
+            )
+            usleep(15_000)
+        }
+
+        let snapshot = RTKRuntimeMonitor.shared.snapshot()
+        XCTAssertNotNil(snapshot.decisionIntervalAverageSeconds)
+        XCTAssertNotNil(snapshot.decisionIntervalMinSeconds)
+        XCTAssertNotNil(snapshot.decisionIntervalMaxSeconds)
+        if let min = snapshot.decisionIntervalMinSeconds {
+            XCTAssertGreaterThanOrEqual(min, 0)
+        }
+        if let max = snapshot.decisionIntervalMaxSeconds {
+            XCTAssertGreaterThanOrEqual(max, 0)
+        }
+        if let avg = snapshot.decisionIntervalAverageSeconds,
+           let min = snapshot.decisionIntervalMinSeconds,
+           let max = snapshot.decisionIntervalMaxSeconds {
+            XCTAssertLessThanOrEqual(min, avg)
+            XCTAssertLessThanOrEqual(avg, max)
+        }
+    }
+
+    func testRTKRuntimeMonitorResets() {
+        RTKRuntimeMonitor.shared.reset()
+        RTKRuntimeMonitor.shared.recordManagerSetup()
+        RTKRuntimeMonitor.shared.recordManagerTeardown()
+        RTKRuntimeMonitor.shared.recordModeChanged(from: .off, to: .aiOnly)
+        RTKRuntimeMonitor.shared.recordDecision(
+            sessionID: "session-reset",
+            mode: .aiOnly,
+            override: .default,
+            isAIActive: true,
+            previousState: false,
+            nextState: true,
+            changed: true,
+            reason: .aiOnlyWithAI
+        )
+
+        var snapshot = RTKRuntimeMonitor.shared.snapshot()
+        XCTAssertGreaterThan(snapshot.setupCount, 0)
+        XCTAssertGreaterThan(snapshot.teardownCount, 0)
+        XCTAssertGreaterThan(snapshot.recalcCount, 0)
+
+        RTKRuntimeMonitor.shared.reset()
+        snapshot = RTKRuntimeMonitor.shared.snapshot()
+        XCTAssertEqual(snapshot.setupCount, 0)
+        XCTAssertEqual(snapshot.teardownCount, 0)
+        XCTAssertEqual(snapshot.recalcCount, 0)
+        XCTAssertEqual(snapshot.createdCount, 0)
+        XCTAssertEqual(snapshot.removedCount, 0)
+        XCTAssertEqual(snapshot.mode, TokenOptimizationMode.off.rawValue)
+        XCTAssertNil(snapshot.lastDecision)
+        XCTAssertNil(snapshot.lastDecisionAt)
+    }
 }
 #endif

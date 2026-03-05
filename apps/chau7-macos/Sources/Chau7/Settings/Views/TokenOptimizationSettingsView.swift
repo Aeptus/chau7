@@ -13,6 +13,7 @@ struct TokenOptimizationSettingsView: View {
     @State private var optimizerInstalled = false
     @State private var gainStats: RTKManager.RTKGainStats?
     @State private var isLoadingStats = false
+    @State private var runtimeSnapshot: RTKRuntimeSnapshot = RTKRuntimeMonitor.shared.snapshot()
 
     init(overlayModel: OverlayTabsModel? = nil) {
         self.overlayModel = overlayModel
@@ -84,6 +85,17 @@ struct TokenOptimizationSettingsView: View {
 
                 // Wrapper script health
                 installationHealthView
+
+                Divider()
+                    .padding(.vertical, 8)
+
+                // RTK Runtime Telemetry
+                SettingsSectionHeader(
+                    L("rtk.settings.rtkRuntime", "RTK Runtime Telemetry"),
+                    icon: "chart.xyaxis.line"
+                )
+
+                rtkRuntimeStatsView
 
                 Divider()
                     .padding(.vertical, 8)
@@ -341,6 +353,347 @@ struct TokenOptimizationSettingsView: View {
     }
 
     // MARK: - Token Savings
+
+    @ViewBuilder
+    private var rtkRuntimeStatsView: some View {
+        let health = runtimeSnapshot.assessment
+        let healthColor: Color = switch health.state {
+        case .healthy:
+            .green
+        case .warning:
+            .orange
+        case .critical:
+            .red
+        }
+        let healthSummary = switch health.state {
+        case .healthy:
+            L("rtk.runtime.healthSummaryHealthy", "Healthy")
+        case .warning:
+            L("rtk.runtime.healthSummaryWarning", "Needs review")
+        case .critical:
+            L("rtk.runtime.healthSummaryCritical", "Requires attention")
+        }
+
+        VStack(alignment: .leading, spacing: 8) {
+            statRow(
+                icon: "checkmark.seal.fill",
+                iconColor: healthColor,
+                label: L("rtk.runtime.health", "Runtime health"),
+                value: healthSummary
+            )
+            statRow(
+                icon: "star.circle",
+                iconColor: healthColor,
+                label: L("rtk.runtime.healthScore", "Health score"),
+                value: "\(health.score)/100"
+            )
+            statRow(
+                icon: "percent",
+                iconColor: .secondary,
+                label: L("rtk.runtime.changeRate", "Decision change rate"),
+                value: "\(String(format: "%.1f%%", runtimeSnapshot.decisionsChangeRatePercent))"
+            )
+            statRow(
+                icon: "clock",
+                iconColor: .secondary,
+                label: L("rtk.runtime.deferredSkipRate", "Deferred skip rate"),
+                value: "\(String(format: "%.1f%%", runtimeSnapshot.deferredSkipRatePercent))"
+            )
+            statRow(
+                icon: "clock.arrow.circlepath",
+                iconColor: .secondary,
+                label: L("rtk.runtime.deferredFlushRate", "Deferred flush rate"),
+                value: "\(String(format: "%.1f%%", runtimeSnapshot.deferredFlushRatePercent))"
+            )
+            statRow(
+                icon: "person.2.circle",
+                iconColor: .secondary,
+                label: L("rtk.runtime.activeSessionRatio", "Active sessions ratio"),
+                value: "\(String(format: "%.1f%%", runtimeSnapshot.activeSessionRatioPercent))"
+            )
+            if let lastDecisionAge = runtimeSnapshot.ageSinceLastDecisionSeconds {
+                statRow(
+                    icon: "clock.fill",
+                    iconColor: .secondary,
+                    label: L("rtk.runtime.lastDecisionAge", "Last decision age"),
+                    value: formatDuration(lastDecisionAge)
+                )
+            }
+            if let avgInterval = runtimeSnapshot.decisionIntervalAverageSeconds {
+                statRow(
+                    icon: "timer",
+                    iconColor: .secondary,
+                    label: L("rtk.runtime.decisionIntervalAvg", "Decision interval (avg)"),
+                    value: formatDuration(avgInterval)
+                )
+            }
+            if let minInterval = runtimeSnapshot.decisionIntervalMinSeconds {
+                statRow(
+                    icon: "timer",
+                    iconColor: .secondary,
+                    label: L("rtk.runtime.decisionIntervalMin", "Decision interval (min)"),
+                    value: formatDuration(minInterval)
+                )
+            }
+            if let maxInterval = runtimeSnapshot.decisionIntervalMaxSeconds {
+                statRow(
+                    icon: "timer",
+                    iconColor: .secondary,
+                    label: L("rtk.runtime.decisionIntervalMax", "Decision interval (max)"),
+                    value: formatDuration(maxInterval)
+                )
+            }
+
+            if !health.issues.isEmpty {
+                Text(L("rtk.runtime.healthSignals", "Health signals"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 4)
+                ForEach(health.issues, id: \.self) { issue in
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.orange)
+                        Text(healthIssueLabel(issue))
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                Text(L("rtk.runtime.noHealthSignals", "No health signals"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            statRow(
+                icon: "clock",
+                iconColor: .secondary,
+                label: L("rtk.runtime.uptime", "Monitor uptime"),
+                value: formatDuration(runtimeSnapshot.uptimeSeconds)
+            )
+            statRow(
+                icon: "speedometer",
+                iconColor: .purple,
+                label: L("rtk.runtime.rate", "Decisions/min"),
+                value: String(format: "%.1f", runtimeSnapshot.decisionsPerMinute)
+            )
+            statRow(
+                icon: "arrow.clockwise",
+                iconColor: .blue,
+                label: L("rtk.runtime.recalcCount", "Decision recalculations"),
+                value: "\(runtimeSnapshot.recalcCount)"
+            )
+            statRow(
+                icon: "plus.circle",
+                iconColor: .green,
+                label: L("rtk.runtime.createdCount", "Created flags"),
+                value: "\(runtimeSnapshot.createdCount)"
+            )
+            statRow(
+                icon: "minus.circle",
+                iconColor: .red,
+                label: L("rtk.runtime.removedCount", "Removed flags"),
+                value: "\(runtimeSnapshot.removedCount)"
+            )
+            statRow(
+                icon: "minus.circle",
+                iconColor: .secondary,
+                label: L("rtk.runtime.unchangedCount", "Unchanged"),
+                value: "\(runtimeSnapshot.unchangedCount)"
+            )
+            statRow(
+                icon: "arrow.triangle.2.circlepath",
+                iconColor: .green,
+                label: L("rtk.runtime.setupCount", "Runtime setups"),
+                value: "\(runtimeSnapshot.setupCount)"
+            )
+            statRow(
+                icon: "arrow.triangle.2.circlepath.circle.fill",
+                iconColor: .orange,
+                label: L("rtk.runtime.teardownCount", "Runtime teardowns"),
+                value: "\(runtimeSnapshot.teardownCount)"
+            )
+            statRow(
+                icon: "paintbrush.pointed.fill",
+                iconColor: .blue,
+                label: L("rtk.runtime.modeChangeCount", "Mode changes"),
+                value: "\(runtimeSnapshot.modeChangeCount)"
+            )
+            statRow(
+                icon: "clock.badge.questionmark",
+                iconColor: .secondary,
+                label: L("rtk.runtime.pendingDeferred", "Pending deferred sessions"),
+                value: "\(runtimeSnapshot.pendingDeferredSessions)"
+            )
+            statRow(
+                icon: "clock.arrow.2.circlepath",
+                iconColor: .orange,
+                label: L("rtk.runtime.deferredSet", "Deferred sets"),
+                value: "\(runtimeSnapshot.deferredSetCount)"
+            )
+            statRow(
+                icon: "clock",
+                iconColor: .orange,
+                label: L("rtk.runtime.deferredFlush", "Deferred flushes"),
+                value: "\(runtimeSnapshot.deferredFlushCount)"
+            )
+            statRow(
+                icon: "timer",
+                iconColor: .orange,
+                label: L("rtk.runtime.deferredSkip", "Deferred skips"),
+                value: "\(runtimeSnapshot.deferredSkipCount)"
+            )
+            statRow(
+                icon: "gauge.with.dots.needle.bottom.50percent",
+                iconColor: .orange,
+                label: L("rtk.runtime.deferredDelayCount", "Deferred delay samples"),
+                value: "\(runtimeSnapshot.deferredFlushDelayCount)"
+            )
+            statRow(
+                icon: "speedometer",
+                iconColor: .blue,
+                label: L("rtk.runtime.deferredDelayMin", "Deferred delay (min / max / avg / last)"),
+                value: "\(formatDelay(runtimeSnapshot.deferredFlushDelayMinMs)) / " +
+                    "\(formatDelay(runtimeSnapshot.deferredFlushDelayMaxMs)) / " +
+                    "\(formatDelay(runtimeSnapshot.deferredFlushDelayAverageMs.map { Int($0.rounded()) })) / " +
+                    "\(formatDelay(runtimeSnapshot.deferredFlushDelayLastMs))"
+            )
+
+            if !runtimeSnapshot.reasonBreakdown.isEmpty {
+                Text(L("rtk.runtime.reasonBreakdown", "Decision reasons"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 4)
+
+                let totalReasonCount = runtimeSnapshot.reasonBreakdown.values.reduce(0, +)
+                ForEach(runtimeSnapshot.reasonBreakdown.sorted(by: { $0.key < $1.key }), id: \.key) { reason, count in
+                    let ratio = totalReasonCount > 0
+                        ? (Double(count) / Double(totalReasonCount) * 100)
+                        : 0
+                    HStack(spacing: 8) {
+                        Image(systemName: "list.bullet.rectangle.portrait")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        Text(reason)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 160, alignment: .leading)
+                        Text("\(count) (\(String(format: "%.1f%%", ratio)))")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if !runtimeSnapshot.recentDecisions.isEmpty {
+                Text(L("rtk.runtime.recentDecisions", "Recent decisions"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 4)
+
+                ForEach(runtimeSnapshot.recentDecisions.prefix(5)) { decision in
+                    HStack(spacing: 8) {
+                        Image(systemName: decision.changed ? "bolt.fill" : "clock.arrow.2.circlepath")
+                            .font(.system(size: 11))
+                            .foregroundStyle(decision.changed ? .green : .orange)
+                        Text("\(decision.timestamp, formatter: compactDateFormatter)")
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .frame(minWidth: 150, alignment: .leading)
+                        Text("\(decision.sessionID.prefix(8))")
+                            .font(.system(.caption, design: .monospaced))
+                        Text("\(decision.mode) \(decision.override) \(decision.reason.rawValue)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                Text(L("rtk.runtime.noRecentDecisions", "No decisions recorded yet"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                Button(L("rtk.runtime.refresh", "Refresh")) {
+                    refreshRuntimeStats()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button(L("rtk.runtime.reset", "Reset")) {
+                    resetRuntimeStats()
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+
+            HStack {
+                Spacer()
+                Text(L("rtk.runtime.trackedSessions", "Tracked") + ": \(runtimeSnapshot.trackedSessions)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func formatDuration(_ seconds: Int) -> String {
+        guard seconds >= 0 else { return "0s" }
+        let hrs = seconds / 3600
+        let mins = (seconds % 3600) / 60
+        let secs = seconds % 60
+
+        if hrs > 0 {
+            return String(format: "%dh %02dm %02ds", hrs, mins, secs)
+        }
+        if mins > 0 {
+            return String(format: "%dm %02ds", mins, secs)
+        }
+        return String(format: "%ds", secs)
+    }
+
+    private func healthIssueLabel(_ issue: RTKRuntimeAssessmentIssue) -> String {
+        switch issue {
+        case .lowChangeRate:
+            L("rtk.runtime.issue.lowChangeRate", "Decision change rate is low")
+        case .highDeferredSkips:
+            L("rtk.runtime.issue.highDeferredSkips", "Too many deferred skips")
+        case .lowDeferredFlushRate:
+            L("rtk.runtime.issue.lowDeferredFlushRate", "Deferred flushes are not resolving")
+        case .staleDecisions:
+            L("rtk.runtime.issue.staleDecisions", "No recent decisions")
+        case .modeOffWithTrackedSessions:
+            L("rtk.runtime.issue.modeOffWithTrackedSessions", "Mode is off while sessions are tracked")
+        case .lowDecisionThroughput:
+            L("rtk.runtime.issue.lowDecisionThroughput", "No decisions despite tracked sessions")
+        }
+    }
+
+    private func formatDuration(_ seconds: Double) -> String {
+        if seconds < 1.0 {
+            return String(format: "%.0fms", seconds * 1000.0)
+        }
+        return formatDuration(Int(seconds))
+    }
+
+    private func formatDelay(_ value: Int?) -> String {
+        guard let value else { return "n/a" }
+        return "\(value)ms"
+    }
+
+    private func refreshRuntimeStats() {
+        runtimeSnapshot = RTKRuntimeMonitor.shared.snapshot()
+    }
+
+    private func resetRuntimeStats() {
+        RTKRuntimeMonitor.shared.reset()
+        runtimeSnapshot = RTKRuntimeMonitor.shared.snapshot()
+    }
+
+    private var compactDateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter
+    }
 
     @ViewBuilder
     private var tokenSavingsView: some View {
@@ -713,6 +1066,7 @@ struct TokenOptimizationSettingsView: View {
         mdRendererInstalled = RTKManager.shared.isMarkdownRendererInstalled
         optimizerInstalled = RTKManager.shared.isOptimizerInstalled
         loadGainStats()
+        refreshRuntimeStats()
     }
 
     private func loadGainStats() {
