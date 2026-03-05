@@ -470,6 +470,11 @@ public let ctoRewriteMap: [String: String] = [
 /// Commands that are exec-only (no optimizer subcommand mapping).
 public let execOnlyCommands: Set<String> = ["head", "tail", "wc"]
 
+/// Commands that are commonly used as pipe filters (`cmd | grep pattern`).
+/// When stdin is piped (not a terminal), these wrappers skip the optimizer
+/// and exec the real binary directly — the output IS the data stream.
+public let pipeFilterCommands: Set<String> = ["grep", "rg", "diff"]
+
 /// All commands that have wrapper scripts (optimizer-routed + exec-only).
 public let supportedCommands: [String] = {
     (Array(ctoRewriteMap.keys) + Array(execOnlyCommands)).sorted()

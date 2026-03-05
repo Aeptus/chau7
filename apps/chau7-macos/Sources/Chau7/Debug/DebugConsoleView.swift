@@ -23,6 +23,7 @@ struct DebugConsoleView: View {
     @State private var ctoGainStats: CTOGainStats?
     @State private var ctoCommandLog: [CTOManager.CommandLogEntry] = []
     @State private var ctoShowAdvanced = false
+    @State private var ctoTimePeriod: CTOTimePeriod = .session
     // Category & level filtering
     @State private var enabledCategories: Set<LogCategory> = Set(LogCategory.allCases)
     @State private var enabledLevels: Set<String> = ["INFO", "WARN", "ERROR", "TRACE", "DEBUG"]
@@ -287,6 +288,15 @@ struct DebugConsoleView: View {
     private var tokenOptimizerView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
+                // Time period picker
+                Picker("Period", selection: $ctoTimePeriod) {
+                    ForEach(CTOTimePeriod.allCases, id: \.self) { period in
+                        Text(period.rawValue).tag(period)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
                 // Hero: key metrics
                 ctoHeroSection
 
@@ -324,11 +334,12 @@ struct DebugConsoleView: View {
 
     private var ctoHeroSection: some View {
         GroupBox {
+            let log = ctoFilteredLog
             HStack(spacing: 0) {
                 ctoHeroMetric(
                     title: "Optimization Rate",
-                    value: ctoCommandLogRate,
-                    color: ctoCommandLogRateColor
+                    value: ctoFilteredRate,
+                    color: ctoFilteredRateColor
                 )
                 Divider().frame(height: 40)
                 ctoHeroMetric(
@@ -338,15 +349,21 @@ struct DebugConsoleView: View {
                 )
                 Divider().frame(height: 40)
                 ctoHeroMetric(
-                    title: "Commands Optimized",
-                    value: ctoCommandLog.isEmpty ? "--" : "\(ctoCommandLog.filter { $0.outcome == "optimized" }.count)",
+                    title: "Optimized",
+                    value: log.isEmpty ? "--" : "\(log.filter { $0.outcome == "optimized" }.count)",
                     color: .blue
                 )
                 Divider().frame(height: 40)
                 ctoHeroMetric(
                     title: "Fallthrough",
-                    value: ctoCommandLog.isEmpty ? "--" : "\(ctoCommandLog.filter { $0.outcome == "fallthrough" }.count)",
+                    value: log.isEmpty ? "--" : "\(log.filter { $0.outcome == "fallthrough" }.count)",
                     color: .orange
+                )
+                Divider().frame(height: 40)
+                ctoHeroMetric(
+                    title: "Skipped",
+                    value: log.isEmpty ? "--" : "\(log.filter { $0.outcome == "skipped" }.count)",
+                    color: .secondary
                 )
             }
         }
@@ -364,17 +381,20 @@ struct DebugConsoleView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private var ctoCommandLogRate: String {
-        guard !ctoCommandLog.isEmpty else { return "--" }
-        let optimized = ctoCommandLog.filter { $0.outcome == "optimized" }.count
-        let rate = Double(optimized) / Double(ctoCommandLog.count) * 100
+    /// Optimization rate excluding intentionally skipped commands.
+    private var ctoFilteredRate: String {
+        let log = ctoFilteredLog.filter { $0.outcome != "skipped" }
+        guard !log.isEmpty else { return "--" }
+        let optimized = log.filter { $0.outcome == "optimized" }.count
+        let rate = Double(optimized) / Double(log.count) * 100
         return String(format: "%.0f%%", rate)
     }
 
-    private var ctoCommandLogRateColor: Color {
-        guard !ctoCommandLog.isEmpty else { return .secondary }
-        let optimized = ctoCommandLog.filter { $0.outcome == "optimized" }.count
-        let rate = Double(optimized) / Double(ctoCommandLog.count) * 100
+    private var ctoFilteredRateColor: Color {
+        let log = ctoFilteredLog.filter { $0.outcome != "skipped" }
+        guard !log.isEmpty else { return .secondary }
+        let optimized = log.filter { $0.outcome == "optimized" }.count
+        let rate = Double(optimized) / Double(log.count) * 100
         if rate >= 80 { return .green }
         if rate >= 50 { return .orange }
         return .red
@@ -390,7 +410,8 @@ struct DebugConsoleView: View {
 
     private var ctoPerTabSection: some View {
         GroupBox("Per-Tab Stats") {
-            if ctoCommandLog.isEmpty {
+            let log = ctoFilteredLog
+            if log.isEmpty {
                 Text("No command data yet")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -401,15 +422,17 @@ struct DebugConsoleView: View {
                     // Header row
                     HStack(spacing: 0) {
                         Text("Tab")
-                            .frame(width: 120, alignment: .leading)
-                        Text("Commands")
-                            .frame(width: 70, alignment: .trailing)
-                        Text("Optimized")
-                            .frame(width: 70, alignment: .trailing)
-                        Text("Fallthrough")
-                            .frame(width: 80, alignment: .trailing)
+                            .frame(width: 110, alignment: .leading)
+                        Text("Cmds")
+                            .frame(width: 50, alignment: .trailing)
+                        Text("Opt")
+                            .frame(width: 50, alignment: .trailing)
+                        Text("Fall")
+                            .frame(width: 50, alignment: .trailing)
+                        Text("Skip")
+                            .frame(width: 50, alignment: .trailing)
                         Text("Rate")
-                            .frame(width: 60, alignment: .trailing)
+                            .frame(width: 50, alignment: .trailing)
                         Spacer()
                     }
                     .font(.system(size: 9, weight: .semibold))
@@ -418,23 +441,26 @@ struct DebugConsoleView: View {
 
                     Divider()
 
-                    ForEach(ctoPerTabStats, id: \.sessionID) { tabStat in
+                    ForEach(ctoPerTabStats(from: log), id: \.sessionID) { tabStat in
                         HStack(spacing: 0) {
                             Text(ctoTabLabel(for: tabStat.sessionID))
-                                .frame(width: 120, alignment: .leading)
+                                .frame(width: 110, alignment: .leading)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                             Text("\(tabStat.total)")
-                                .frame(width: 70, alignment: .trailing)
+                                .frame(width: 50, alignment: .trailing)
                             Text("\(tabStat.optimized)")
                                 .foregroundStyle(.green)
-                                .frame(width: 70, alignment: .trailing)
+                                .frame(width: 50, alignment: .trailing)
                             Text("\(tabStat.fallthrough)")
                                 .foregroundStyle(.orange)
-                                .frame(width: 80, alignment: .trailing)
+                                .frame(width: 50, alignment: .trailing)
+                            Text("\(tabStat.skipped)")
+                                .foregroundStyle(.secondary)
+                                .frame(width: 50, alignment: .trailing)
                             Text(String(format: "%.0f%%", tabStat.rate))
                                 .foregroundStyle(tabStat.rate >= 80 ? .green : tabStat.rate >= 50 ? .orange : .red)
-                                .frame(width: 60, alignment: .trailing)
+                                .frame(width: 50, alignment: .trailing)
                             Spacer()
                         }
                         .font(.system(size: 10, design: .monospaced))
@@ -450,20 +476,26 @@ struct DebugConsoleView: View {
         let total: Int
         let optimized: Int
         let `fallthrough`: Int
-        var rate: Double { total > 0 ? Double(optimized) / Double(total) * 100 : 0 }
+        let skipped: Int
+        /// Rate excludes skipped commands (intentional bypass).
+        var rate: Double {
+            let meaningful = total - skipped
+            return meaningful > 0 ? Double(optimized) / Double(meaningful) * 100 : 0
+        }
     }
 
-    private var ctoPerTabStats: [CTOTabStat] {
-        var grouped: [String: (optimized: Int, fallthrough: Int, total: Int)] = [:]
-        for entry in ctoCommandLog {
-            var stats = grouped[entry.sessionID, default: (0, 0, 0)]
+    private func ctoPerTabStats(from log: [CTOManager.CommandLogEntry]) -> [CTOTabStat] {
+        var grouped: [String: (optimized: Int, fallthrough: Int, skipped: Int, total: Int)] = [:]
+        for entry in log {
+            var stats = grouped[entry.sessionID, default: (0, 0, 0, 0)]
             stats.total += 1
             if entry.outcome == "optimized" { stats.optimized += 1 }
             if entry.outcome == "fallthrough" { stats.fallthrough += 1 }
+            if entry.outcome == "skipped" { stats.skipped += 1 }
             grouped[entry.sessionID] = stats
         }
         return grouped.map { sessionID, stats in
-            CTOTabStat(sessionID: sessionID, total: stats.total, optimized: stats.optimized, fallthrough: stats.fallthrough)
+            CTOTabStat(sessionID: sessionID, total: stats.total, optimized: stats.optimized, fallthrough: stats.fallthrough, skipped: stats.skipped)
         }.sorted { $0.total > $1.total }
     }
 
@@ -480,7 +512,8 @@ struct DebugConsoleView: View {
 
     private var ctoRecentCommandsSection: some View {
         GroupBox("Recent Commands") {
-            if ctoCommandLog.isEmpty {
+            let log = ctoFilteredLog
+            if log.isEmpty {
                 Text("No commands logged yet. Commands are logged when CTO is active.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -488,28 +521,38 @@ struct DebugConsoleView: View {
                     .padding(.vertical, 4)
             } else {
                 VStack(alignment: .leading, spacing: 2) {
-                    ForEach(ctoCommandLog.suffix(15).reversed()) { entry in
+                    ForEach(log.suffix(20).reversed()) { entry in
                         HStack(spacing: 6) {
                             Circle()
-                                .fill(entry.outcome == "optimized" ? Color.green : entry.outcome == "fallthrough" ? Color.orange : Color.red)
+                                .fill(ctoOutcomeColor(entry.outcome))
                                 .frame(width: 6, height: 6)
                             Text(entry.timestamp, formatter: compactDateFormatter)
                                 .frame(width: 80, alignment: .leading)
                             Text(entry.command)
                                 .frame(width: 80, alignment: .leading)
                             Text(entry.outcome)
-                                .foregroundStyle(entry.outcome == "optimized" ? .green : entry.outcome == "fallthrough" ? .orange : .red)
+                                .foregroundStyle(ctoOutcomeColor(entry.outcome))
                                 .frame(width: 80, alignment: .leading)
-                            if entry.exitCode != 0 && entry.outcome != "fallthrough" {
+                            if entry.exitCode != 0 && entry.outcome == "error" {
                                 Text("exit \(entry.exitCode)")
                                     .foregroundStyle(.red)
                             }
                             Spacer()
                         }
                         .font(.system(size: 10, design: .monospaced))
+                        .opacity(entry.isIntentionalSkip ? 0.5 : 1.0)
                     }
                 }
             }
+        }
+    }
+
+    private func ctoOutcomeColor(_ outcome: String) -> Color {
+        switch outcome {
+        case "optimized": return .green
+        case "fallthrough": return .orange
+        case "skipped": return Color(nsColor: .tertiaryLabelColor)
+        default: return .red
         }
     }
 
@@ -1299,11 +1342,27 @@ struct DebugConsoleView: View {
 
     private func refreshCTOData() {
         ctoRuntimeSnapshot = CTORuntimeMonitor.shared.snapshot()
-        ctoCommandLog = CTOManager.shared.readCommandLog(limit: 200)
+        ctoCommandLog = CTOManager.shared.readCommandLog()
         Task {
             let stats = await CTOManager.shared.fetchGainStats()
             await MainActor.run { ctoGainStats = stats }
         }
+    }
+
+    /// Command log filtered by the selected time period.
+    private var ctoFilteredLog: [CTOManager.CommandLogEntry] {
+        let cutoff: Date
+        switch ctoTimePeriod {
+        case .session:
+            cutoff = ctoRuntimeSnapshot.firstSeenAt
+        case .today:
+            cutoff = Calendar.current.startOfDay(for: Date())
+        case .week:
+            cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? .distantPast
+        case .all:
+            return ctoCommandLog
+        }
+        return ctoCommandLog.filter { $0.timestamp >= cutoff }
     }
 
     private func ctoFormatDuration(_ seconds: Int) -> String {
@@ -1376,6 +1435,15 @@ struct DebugConsoleView: View {
         refreshTimer?.invalidate()
         refreshTimer = nil
     }
+}
+
+// MARK: - CTO Time Period
+
+enum CTOTimePeriod: String, CaseIterable {
+    case session = "Session"
+    case today = "Today"
+    case week = "7 Days"
+    case all = "All Time"
 }
 
 // MARK: - Debug Console Controller

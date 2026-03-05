@@ -717,13 +717,16 @@ struct TokenOptimizationSettingsView: View {
         } else {
             let optimized = entries.filter { $0.outcome == "optimized" }.count
             let fallthrough_ = entries.filter { $0.outcome == "fallthrough" }.count
-            let errors = entries.count - optimized - fallthrough_
+            let skipped = entries.filter { $0.outcome == "skipped" }.count
+            let errors = entries.count - optimized - fallthrough_ - skipped
 
             HStack(spacing: 16) {
                 Label("\(optimized)", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                 Label("\(fallthrough_)", systemImage: "arrow.uturn.forward")
                     .foregroundStyle(.orange)
+                Label("\(skipped)", systemImage: "minus.circle")
+                    .foregroundStyle(.secondary)
                 Label("\(errors)", systemImage: "xmark.circle.fill")
                     .foregroundStyle(.red)
                 Spacer()
@@ -748,15 +751,22 @@ struct TokenOptimizationSettingsView: View {
                             Spacer()
                             Text(entry.outcome)
                                 .font(.caption2)
-                                .foregroundStyle(
-                                    entry.outcome == "optimized" ? .green :
-                                    entry.outcome == "fallthrough" ? .orange : .red
-                                )
+                                .foregroundStyle(settingsOutcomeColor(entry.outcome))
                         }
+                        .opacity(entry.isIntentionalSkip ? 0.5 : 1.0)
                     }
                 }
             }
             .frame(maxHeight: 200)
+        }
+    }
+
+    private func settingsOutcomeColor(_ outcome: String) -> Color {
+        switch outcome {
+        case "optimized": return .green
+        case "fallthrough": return .orange
+        case "skipped": return .secondary
+        default: return .red
         }
     }
 
