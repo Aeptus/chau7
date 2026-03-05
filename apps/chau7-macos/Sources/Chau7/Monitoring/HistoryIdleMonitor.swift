@@ -148,26 +148,17 @@ final class HistoryIdleMonitor {
             return
         }
 
-        let idleSeconds = max(minimumCheckInterval, idleSecondsProvider())
-        let staleSeconds = max(idleSeconds + 1.0, staleSecondsProvider())
-
-        var nextDeadline = Date.distantFuture
-        for (_, lastSeenAt) in lastSeen {
-            let nextIdle = lastSeenAt.addingTimeInterval(idleSeconds)
-            if nextIdle < nextDeadline {
-                nextDeadline = nextIdle
-            }
-
-            let nextStale = lastSeenAt.addingTimeInterval(staleSeconds)
-            if nextStale < nextDeadline {
-                nextDeadline = nextStale
-            }
+        guard let delay = Self.nextCheckDelay(
+            now: now,
+            minimumCheckInterval: minimumCheckInterval,
+            idleSeconds: idleSecondsProvider(),
+            staleSeconds: staleSecondsProvider(),
+            lastSeen: lastSeen
+        ) else {
+            return
         }
 
-        guard nextDeadline != Date.distantFuture else { return }
-
         timer?.cancel()
-        let delay = max(minimumCheckInterval, nextDeadline.timeIntervalSince(now))
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + delay)
         timer.setEventHandler { [weak self] in
@@ -175,5 +166,36 @@ final class HistoryIdleMonitor {
         }
         timer.resume()
         self.timer = timer
+    }
+
+    // MARK: - Testable schedule helper
+
+    internal static func nextCheckDelay(
+        now: Date,
+        minimumCheckInterval: TimeInterval,
+        idleSeconds: TimeInterval,
+        staleSeconds: TimeInterval,
+        lastSeen: [String: Date]
+    ) -> TimeInterval? {
+        let safeIdleSeconds = max(minimumCheckInterval, idleSeconds)
+        let safeStaleSeconds = max(safeIdleSeconds + 1.0, staleSeconds)
+
+        var nextDeadline = Date.distantFuture
+        for (_, lastSeenAt) in lastSeen {
+            let nextIdle = lastSeenAt.addingTimeInterval(safeIdleSeconds)
+            if nextIdle < nextDeadline {
+                nextDeadline = nextIdle
+            }
+
+            let nextStale = lastSeenAt.addingTimeInterval(safeStaleSeconds)
+            if nextStale < nextDeadline {
+                nextDeadline = nextStale
+            }
+        }
+
+        guard nextDeadline != Date.distantFuture else { return nil }
+
+        let remaining = nextDeadline.timeIntervalSince(now)
+        return max(minimumCheckInterval, remaining)
     }
 }
