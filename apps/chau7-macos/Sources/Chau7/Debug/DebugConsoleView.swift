@@ -4,12 +4,13 @@ import AppKit
 // MARK: - Debug Console View
 
 /// A hidden debug console accessible via Cmd+Shift+L (when enabled).
-/// Shows real-time state, active contexts, event history, and allows generating bug reports.
+/// Shows real-time state, token optimizer runtime, event history, and allows generating bug reports.
 struct DebugConsoleView: View {
     @ObservedObject var appModel: AppModel
     @ObservedObject var overlayModel: OverlayTabsModel
     @ObservedObject private var settings = FeatureSettings.shared
     @State private var selectedTab = 0
+    @State private var showAllEvents = true
     @State private var logFilter = ""
     @State private var autoRefresh = true
     @State private var refreshTimer: Timer?
@@ -17,9 +18,10 @@ struct DebugConsoleView: View {
     @State private var showAllLagEvents = false
     @State private var perfSnapshot: FeatureProfiler.Snapshot = .empty
     @State private var perfShowSlowOnly = true
+    @State private var rtkRuntimeSnapshot: RTKRuntimeSnapshot = RTKRuntimeMonitor.shared.snapshot()
     // Category & level filtering
     @State private var enabledCategories: Set<LogCategory> = Set(LogCategory.allCases)
-    @State private var enabledLevels: Set<String> = ["INFO", "WARN", "ERROR", "TRACE"]
+    @State private var enabledLevels: Set<String> = ["INFO", "WARN", "ERROR", "TRACE", "DEBUG"]
     @State private var bugReportDescription = ""
     @State private var lastReportPath: String?
 
@@ -41,7 +43,7 @@ struct DebugConsoleView: View {
             // Tab picker
             Picker("", selection: $selectedTab) {
                 Text(L("State", "State")).tag(0)
-                Text(L("Contexts", "Contexts")).tag(1)
+                Text(L("debug.optimizer", "Token Optimizer")).tag(1)
                 Text(L("Events", "Events")).tag(2)
                 Text(L("Lag", "Lag")).tag(3)
                 Text(L("debug.perfTab", "Perf")).tag(4)
@@ -57,7 +59,7 @@ struct DebugConsoleView: View {
             Group {
                 switch selectedTab {
                 case 0: stateView
-                case 1: contextsView
+                case 1: tokenOptimizerView
                 case 2: eventsView
                 case 3: lagTimelineView
                 case 4: performanceView
@@ -72,6 +74,11 @@ struct DebugConsoleView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { startRefresh() }
         .onDisappear { stopRefresh() }
+        .onChange(of: selectedTab) { newValue in
+            if newValue == 1 {
+                refreshRTKRuntimeSnapshot()
+            }
+        }
     }
 
     // MARK: - Header
@@ -126,7 +133,8 @@ struct DebugConsoleView: View {
                 stateRow(L("debug.tabs", "Tabs"), value: overlayModel.tabs.count.formatted())
                 stateRow(L("debug.activeTab", "Active Tab"), value: ((overlayModel.tabs.firstIndex { $0.id == overlayModel.selectedTabID } ?? 0) + 1).formatted())
                 stateRow(L("debug.claudeSessions", "Claude Sessions"), value: appModel.claudeCodeSessions.count.formatted())
-                stateRow(L("debug.eventCount", "Event Count"), value: appModel.claudeCodeEvents.count.formatted())
+                stateRow(L("debug.eventCount", "Event Count"), value: appModel.recentEvents.count.formatted())
+                stateRow(L("debug.claudeEventCount", "Claude Event Count"), value: appModel.claudeCodeEvents.count.formatted())
             }
         }
     }
@@ -270,93 +278,224 @@ struct DebugConsoleView: View {
         }
     }
 
-    // MARK: - Contexts View
+    // MARK: - Token Optimizer View
 
-    private var contextsView: some View {
-        VStack(spacing: 0) {
-            // Active contexts
-            GroupBox(String(format: L("debug.activeContexts", "Active Contexts (%d)"), DebugContext.active.count)) {
-                if DebugContext.active.isEmpty {
-                    Text(L("No active contexts", "No active contexts"))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding()
-                } else {
-                    ForEach(DebugContext.active, id: \.id) { ctx in
-                        contextRow(ctx, isActive: true)
-                    }
+    private var tokenOptimizerView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                let health = rtkRuntimeSnapshot.assessment
+                let healthColor: Color = switch health.state {
+                case .healthy:
+                    .green
+                case .warning:
+                    .orange
+                case .critical:
+                    .red
                 }
-            }
-            .padding()
+                let healthSummary: String = switch health.state {
+                case .healthy:
+                    L("rtk.runtime.healthSummaryHealthy", "Healthy")
+                case .warning:
+                    L("rtk.runtime.healthSummaryWarning", "Needs review")
+                case .critical:
+                    L("rtk.runtime.healthSummaryCritical", "Requires attention")
+                }
 
-            Divider()
-
-            // History
-            GroupBox(String(format: L("debug.recentHistory", "Recent History (%d)"), DebugContext.history.count)) {
-                ScrollView {
-                    LazyVStack(spacing: 4) {
-                        ForEach(DebugContext.history.reversed(), id: \.id) { ctx in
-                            contextRow(ctx, isActive: false)
+                GroupBox(L("rtk.runtime.runtime", "RTK Runtime")) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        statRow(icon: "checkmark.seal.fill", iconColor: healthColor, label: L("rtk.runtime.health", "Runtime health"), value: healthSummary)
+                        statRow(icon: "star.circle", iconColor: healthColor, label: L("rtk.runtime.healthScore", "Health score"), value: "\(health.score)/100")
+                        statRow(icon: "arrow.clockwise", iconColor: .blue, label: L("rtk.runtime.mode", "Mode"), value: rtkRuntimeSnapshot.mode)
+                        if let lastDecisionAge = rtkRuntimeSnapshot.ageSinceLastDecisionSeconds {
+                            statRow(icon: "clock.fill", iconColor: .secondary, label: L("rtk.runtime.lastDecisionAge", "Last decision age"), value: rtkFormatDuration(lastDecisionAge))
+                        }
+                        if let avgInterval = rtkRuntimeSnapshot.decisionIntervalAverageSeconds {
+                            statRow(icon: "timer", iconColor: .secondary, label: L("rtk.runtime.decisionIntervalAvg", "Decision interval (avg)"), value: rtkFormatDuration(avgInterval))
+                        }
+                        if let minInterval = rtkRuntimeSnapshot.decisionIntervalMinSeconds {
+                            statRow(icon: "timer", iconColor: .secondary, label: L("rtk.runtime.decisionIntervalMin", "Decision interval (min)"), value: rtkFormatDuration(minInterval))
+                        }
+                        if let maxInterval = rtkRuntimeSnapshot.decisionIntervalMaxSeconds {
+                            statRow(icon: "timer", iconColor: .secondary, label: L("rtk.runtime.decisionIntervalMax", "Decision interval (max)"), value: rtkFormatDuration(maxInterval))
                         }
                     }
                 }
+
+                GroupBox(L("rtk.runtime.decisions", "Decisions")) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        statRow(icon: "arrow.triangle.2.circlepath", iconColor: .blue, label: L("rtk.runtime.recalcCount", "Decision recalculations"), value: "\(rtkRuntimeSnapshot.recalcCount)")
+                        statRow(icon: "plus.circle", iconColor: .green, label: L("rtk.runtime.createdCount", "Created flags"), value: "\(rtkRuntimeSnapshot.createdCount)")
+                        statRow(icon: "minus.circle", iconColor: .red, label: L("rtk.runtime.removedCount", "Removed flags"), value: "\(rtkRuntimeSnapshot.removedCount)")
+                        statRow(icon: "minus.circle", iconColor: .secondary, label: L("rtk.runtime.unchangedCount", "Unchanged"), value: "\(rtkRuntimeSnapshot.unchangedCount)")
+                        statRow(icon: "paintbrush.pointed.fill", iconColor: .blue, label: L("rtk.runtime.modeChangeCount", "Mode changes"), value: "\(rtkRuntimeSnapshot.modeChangeCount)")
+                        statRow(icon: "clock.badge.questionmark", iconColor: .secondary, label: L("rtk.runtime.pendingDeferred", "Pending deferred sessions"), value: "\(rtkRuntimeSnapshot.pendingDeferredSessions)")
+                        statRow(icon: "clock.arrow.2.circlepath", iconColor: .orange, label: L("rtk.runtime.deferredSet", "Deferred sets"), value: "\(rtkRuntimeSnapshot.deferredSetCount)")
+                        statRow(icon: "clock", iconColor: .orange, label: L("rtk.runtime.deferredFlush", "Deferred flushes"), value: "\(rtkRuntimeSnapshot.deferredFlushCount)")
+                        statRow(icon: "clock", iconColor: .orange, label: L("rtk.runtime.deferredSkip", "Deferred skips"), value: "\(rtkRuntimeSnapshot.deferredSkipCount)")
+                        statRow(icon: "checklist", iconColor: .orange, label: L("rtk.runtime.setupCount", "Runtime setups"), value: "\(rtkRuntimeSnapshot.setupCount)")
+                        statRow(icon: "xmark.seal.fill", iconColor: .orange, label: L("rtk.runtime.teardownCount", "Runtime teardowns"), value: "\(rtkRuntimeSnapshot.teardownCount)")
+                    }
+                }
+
+                GroupBox(L("rtk.runtime.metrics", "Live Metrics")) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        statRow(icon: "percent", iconColor: .secondary, label: L("rtk.runtime.changeRate", "Decision change rate"), value: "\(String(format: "%.1f%%", rtkRuntimeSnapshot.decisionsChangeRatePercent))")
+                        statRow(icon: "clock", iconColor: .secondary, label: L("rtk.runtime.deferredSkipRate", "Deferred skip rate"), value: "\(String(format: "%.1f%%", rtkRuntimeSnapshot.deferredSkipRatePercent))")
+                        statRow(icon: "clock.arrow.circlepath", iconColor: .secondary, label: L("rtk.runtime.deferredFlushRate", "Deferred flush rate"), value: "\(String(format: "%.1f%%", rtkRuntimeSnapshot.deferredFlushRatePercent))")
+                        statRow(icon: "person.2.circle", iconColor: .secondary, label: L("rtk.runtime.activeSessionRatio", "Active sessions ratio"), value: "\(String(format: "%.1f%%", rtkRuntimeSnapshot.activeSessionRatioPercent))")
+                        statRow(icon: "speedometer", iconColor: .blue, label: L("rtk.runtime.rate", "Decisions/min"), value: String(format: "%.1f", rtkRuntimeSnapshot.decisionsPerMinute))
+                        statRow(icon: "clock", iconColor: .secondary, label: L("rtk.runtime.uptime", "Monitor uptime"), value: rtkFormatDuration(rtkRuntimeSnapshot.uptimeSeconds))
+                        statRow(icon: "clock.arrow.2.circlepath", iconColor: .orange, label: L("rtk.runtime.deferredDelay", "Deferred delay (min / avg / max / last)"), value: "\(rtkFormatDelay(rtkRuntimeSnapshot.deferredFlushDelayMinMs)) / \(rtkFormatDelay(rtkRuntimeSnapshot.deferredFlushDelayAverageMs.map { Int($0.rounded()) })) / \(rtkFormatDelay(rtkRuntimeSnapshot.deferredFlushDelayMaxMs)) / \(rtkFormatDelay(rtkRuntimeSnapshot.deferredFlushDelayLastMs))")
+                    }
+                }
+
+                if !health.issues.isEmpty {
+                    GroupBox(L("rtk.runtime.healthSignals", "Health signals")) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(health.issues, id: \.self) { issue in
+                                HStack(spacing: 8) {
+                                    Image(systemName: "exclamationmark.triangle")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.orange)
+                                    Text(tokenOptimizerHealthIssueLabel(issue))
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !rtkRuntimeSnapshot.reasonBreakdown.isEmpty {
+                    GroupBox(L("rtk.runtime.reasonBreakdown", "Decision reasons")) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            let totalReasonCount = rtkRuntimeSnapshot.reasonBreakdown.values.reduce(0, +)
+                            ForEach(rtkRuntimeSnapshot.reasonBreakdown.sorted(by: { $0.key < $1.key }), id: \.key) { reason, count in
+                                let ratio = totalReasonCount > 0 ? (Double(count) / Double(totalReasonCount) * 100) : 0
+                                HStack(spacing: 8) {
+                                    Text(reason)
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 150, alignment: .leading)
+                                    Text("\(count) (\(String(format: "%.1f%%", ratio)))")
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !rtkRuntimeSnapshot.recentDecisions.isEmpty {
+                    GroupBox(L("rtk.runtime.recentDecisions", "Recent decisions")) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(rtkRuntimeSnapshot.recentDecisions.prefix(8)) { decision in
+                                HStack(spacing: 8) {
+                                    Image(systemName: decision.changed ? "bolt.fill" : "clock.arrow.2.circlepath")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(decision.changed ? .green : .orange)
+                                    Text(decision.timestamp, formatter: compactDateFormatter)
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                        .frame(minWidth: 150, alignment: .leading)
+                                    Text(decision.sessionID.prefix(8))
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                    Text("\(decision.mode) \(decision.override) \(decision.reason.rawValue)")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Text(L("rtk.runtime.noRecentDecisions", "No decisions recorded yet"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 8) {
+                    Button(L("rtk.runtime.refresh", "Refresh")) {
+                        refreshRTKRuntimeSnapshot()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button(L("rtk.runtime.reset", "Reset")) {
+                        RTKRuntimeMonitor.shared.reset()
+                        refreshRTKRuntimeSnapshot()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Spacer()
+                    Text(L("rtk.runtime.trackedSessions", "Tracked") + ": \(rtkRuntimeSnapshot.trackedSessions)")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
             }
-            .padding()
+            .padding(8)
         }
-    }
-
-    private func contextRow(_ ctx: DebugContext, isActive: Bool) -> some View {
-        HStack {
-            Text(ctx.id)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(isActive ? .orange : .secondary)
-                .frame(width: 60, alignment: .leading)
-
-            Text(ctx.operation)
-                .font(.system(size: 11))
-                .lineLimit(1)
-
-            Spacer()
-
-            let duration = Int(Date().timeIntervalSince(ctx.startTime) * 1000)
-            Text(String(format: L("debug.durationMs", "%dms"), duration))
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(.secondary)
-        }
-        .padding(.vertical, 2)
     }
 
     // MARK: - Events View
 
     private var eventsView: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 4) {
-                ForEach(appModel.claudeCodeEvents.reversed()) { event in
-                    eventRow(event)
-                }
+        VStack(spacing: 0) {
+            Picker("", selection: $showAllEvents) {
+                Text("All Events").tag(true)
+                Text("Claude Events").tag(false)
             }
-            .padding()
+            .pickerStyle(.segmented)
+            .padding(8)
+
+            Divider()
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    ForEach(eventsForDisplay) { event in
+                        aiEventRow(event)
+                    }
+                }
+                .padding()
+            }
         }
     }
 
-    private func eventRow(_ event: ClaudeCodeEvent) -> some View {
+    private var eventsForDisplay: [AIEvent] {
+        let mappedClaudeEvents = appModel.claudeCodeEvents.map { event in
+            AIEvent(
+                source: .claudeCode,
+                type: event.type.rawValue,
+                tool: event.toolName.isEmpty ? (event.hook.isEmpty ? "Claude" : event.hook) : event.toolName,
+                message: event.message,
+                ts: DateFormatters.iso8601.string(from: event.timestamp)
+            )
+        }
+
+        if showAllEvents {
+            return Array(appModel.recentEvents.reversed())
+        }
+        return Array(mappedClaudeEvents.reversed())
+    }
+
+    private func aiEventRow(_ event: AIEvent) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
-                Text(event.type.rawValue)
+                Text(event.type.uppercased())
                     .font(.system(size: 10, design: .monospaced))
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
-                    .background(eventTypeColor(event.type).opacity(0.2))
-                    .foregroundStyle(eventTypeColor(event.type))
+                    .background(aiEventTypeColor(event.type).opacity(0.2))
+                    .foregroundStyle(aiEventTypeColor(event.type))
                     .clipShape(RoundedRectangle(cornerRadius: 3))
 
-                Text(event.toolName.isEmpty ? event.hook : event.toolName)
+                Text(event.tool.isEmpty ? event.source.rawValue : event.tool)
                     .font(.system(size: 11, weight: .medium))
 
                 Spacer()
 
-                Text(formatTime(event.timestamp))
+                Text(formatEventTime(event.ts))
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
@@ -374,17 +513,31 @@ struct DebugConsoleView: View {
         .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 
-    private func eventTypeColor(_ type: ClaudeEventType) -> Color {
-        switch type {
-        case .userPrompt: return .green
-        case .toolStart: return .blue
-        case .toolComplete: return .cyan
-        case .permissionRequest: return .yellow
-        case .responseComplete: return .purple
-        case .notification: return .orange
-        case .sessionEnd: return .red
-        case .unknown: return .gray
+    private func aiEventTypeColor(_ type: String) -> Color {
+        let normalized = type.lowercased()
+        if normalized.contains("error") || normalized.contains("failed") {
+            return .red
         }
+        if normalized.contains("permission") {
+            return .yellow
+        }
+        if normalized.contains("idle") {
+            return .orange
+        }
+        if normalized == "responsecomplete" || normalized == "response_complete" || normalized == "finished" {
+            return .purple
+        }
+        if normalized.contains("tool") || normalized.contains("process_") {
+            return .blue
+        }
+        return .gray
+    }
+
+    private func formatEventTime(_ timestamp: String) -> String {
+        if let parsed = DateFormatters.iso8601.date(from: timestamp) {
+            return formatTime(parsed)
+        }
+        return timestamp
     }
 
     // MARK: - Lag Timeline View
@@ -693,12 +846,12 @@ struct DebugConsoleView: View {
                 Text(L("Level:", "Level:"))
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
-                ForEach(["TRACE", "INFO", "WARN", "ERROR"], id: \.self) { level in
+                ForEach(["TRACE", "DEBUG", "INFO", "WARN", "ERROR"], id: \.self) { level in
                     levelFilterChip(level)
                 }
                 Spacer()
                 Button(L("All", "All")) {
-                    enabledLevels = ["INFO", "WARN", "ERROR", "TRACE"]
+                    enabledLevels = ["INFO", "DEBUG", "WARN", "ERROR", "TRACE"]
                 }
                 .controlSize(.mini)
                 Button(L("Errors", "Errors")) {
@@ -804,6 +957,7 @@ struct DebugConsoleView: View {
         switch level {
         case "ERROR": return .red
         case "WARN": return .yellow
+        case "DEBUG": return .orange
         case "TRACE": return .gray
         default: return .blue
         }
@@ -813,19 +967,19 @@ struct DebugConsoleView: View {
         logs.filter { line in
             // Level filter
             let levelMatch = enabledLevels.contains { level in
-                line.contains("[\(level)]")
+                logLineContains(level, in: line)
             }
             guard levelMatch else { return false }
 
             // Category filter
             // Check if line has ANY category tag (LogEnhanced format)
             let hasAnyCategory = LogCategory.allCases.contains { category in
-                line.contains("[\(category.rawValue)]")
+                lineContains(category: category.rawValue, in: line)
             }
             if hasAnyCategory {
                 // If it has a category, check if that category is enabled
                 let categoryMatch = enabledCategories.contains { category in
-                    line.contains("[\(category.rawValue)]")
+                    lineContains(category: category.rawValue, in: line)
                 }
                 guard categoryMatch else { return false }
             }
@@ -839,25 +993,27 @@ struct DebugConsoleView: View {
         }
     }
 
-    private func logLine(_ line: String) -> some View {
-        Text(line)
-            .foregroundStyle(logLineColor(line))
-            .textSelection(.enabled)
-    }
-
-    private func logLineColor(_ line: String) -> Color {
-        if line.contains("[ERROR]") { return .red }
-        if line.contains("[WARN]") { return .yellow }
-        if line.contains("[TRACE]") { return .secondary }
-        return .primary
-    }
-
     private func loadLogs() {
         guard let content = FileOperations.readString(from: Log.filePath) else {
             logs = ["(Unable to read log file)"]
             return
         }
-        logs = content.components(separatedBy: .newlines).suffix(200).reversed()
+        logs = Array(content.components(separatedBy: .newlines).suffix(200).reversed())
+    }
+
+    private func logLineContains(_ level: String, in line: String) -> Bool {
+        let upper = level.uppercased()
+        if line.contains("[\(upper)]") { return true }
+        if line.contains("\"level\":\"\(upper)\"") { return true }
+        if line.contains("\"level\":\"\(upper.lowercased())\"") { return true }
+        return false
+    }
+
+    private func lineContains(category: String, in line: String) -> Bool {
+        if line.contains("[\(category)]") { return true }
+        if line.contains("\"category\":\"\(category)\"") { return true }
+        if line.contains("\"category\":\"\(category.lowercased())\"") { return true }
+        return false
     }
 
     // MARK: - Report View
@@ -929,6 +1085,7 @@ struct DebugConsoleView: View {
 
                     Button(L("Clear Event History", "Clear Event History")) {
                         appModel.claudeCodeEvents.removeAll()
+                        appModel.recentEvents.removeAll()
                     }
                     .foregroundStyle(.red)
                 }
@@ -947,12 +1104,87 @@ struct DebugConsoleView: View {
         return formatter.string(from: date)
     }
 
+    private func statRow(icon: String, iconColor: Color, label: String, value: String) -> some View {
+        HStack {
+            Image(systemName: icon)
+                .font(.system(size: 11))
+                .foregroundStyle(iconColor)
+                .frame(width: 18)
+            Text(label)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+    }
+
+    private func refreshRTKRuntimeSnapshot() {
+        rtkRuntimeSnapshot = RTKRuntimeMonitor.shared.snapshot()
+    }
+
+    private func rtkFormatDuration(_ seconds: Int) -> String {
+        guard seconds >= 0 else { return "0s" }
+        let hrs = seconds / 3600
+        let mins = (seconds % 3600) / 60
+        let secs = seconds % 60
+
+        if hrs > 0 {
+            return String(format: "%dh %02dm %02ds", hrs, mins, secs)
+        }
+        if mins > 0 {
+            return String(format: "%dm %02ds", mins, secs)
+        }
+        return String(format: "%ds", secs)
+    }
+
+    private func rtkFormatDuration(_ seconds: Double) -> String {
+        if seconds < 1.0 {
+            return String(format: "%.0fms", seconds * 1000.0)
+        }
+        return rtkFormatDuration(Int(seconds))
+    }
+
+    private func rtkFormatDelay(_ value: Int?) -> String {
+        guard let value else { return "n/a" }
+        return "\(value)ms"
+    }
+
+    private func tokenOptimizerHealthIssueLabel(_ issue: RTKRuntimeAssessmentIssue) -> String {
+        switch issue {
+        case .lowChangeRate:
+            L("rtk.runtime.issue.lowChangeRate", "Decision change rate is low")
+        case .highDeferredSkips:
+            L("rtk.runtime.issue.highDeferredSkips", "Too many deferred skips")
+        case .lowDeferredFlushRate:
+            L("rtk.runtime.issue.lowDeferredFlushRate", "Deferred flushes are not resolving")
+        case .staleDecisions:
+            L("rtk.runtime.issue.staleDecisions", "No recent decisions")
+        case .modeOffWithTrackedSessions:
+            L("rtk.runtime.issue.modeOffWithTrackedSessions", "Mode is off while sessions are tracked")
+        case .lowDecisionThroughput:
+            L("rtk.runtime.issue.lowDecisionThroughput", "No decisions despite tracked sessions")
+        }
+    }
+
+    private var compactDateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter
+    }
+
     private func startRefresh() {
         stopRefresh()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
             // Force view refresh
             if selectedTab == 4 {
                 perfSnapshot = FeatureProfiler.shared.snapshot()
+            }
+            if selectedTab == 1 {
+                refreshRTKRuntimeSnapshot()
             }
             if selectedTab == 5 {
                 loadLogs()
