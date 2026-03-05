@@ -23,6 +23,146 @@ fn glob_match_inner(pat: &[u8], name: &[u8]) -> bool {
     }
 }
 
+/// Native find flags that we can't optimize — fallthrough to real `find`.
+const UNSUPPORTED_FIND_FLAGS: &[&str] = &[
+    "-exec", "-execdir", "-ok", "-okdir", "-delete", "-print0", "-printf", "-fprintf",
+    "-fprint", "-ls", "-fls", "-prune", "-quit", "-perm", "-user", "-group", "-uid",
+    "-gid", "-newer", "-newerXY", "-anewer", "-cnewer", "-amin", "-cmin", "-mmin",
+    "-atime", "-ctime", "-mtime", "-size", "-empty", "-links", "-inum", "-samefile",
+    "-regex", "-iregex", "-path", "-ipath", "-wholename", "-iwholename",
+];
+
+/// Detect whether args use native find syntax (e.g., `-name`, `-type`).
+fn has_native_find_flags(args: &[String]) -> bool {
+    args.iter().any(|a| {
+        a == "-name" || a == "-iname" || a == "-type" || a == "-maxdepth" || a == "-mindepth"
+            || UNSUPPORTED_FIND_FLAGS.iter().any(|f| a == *f)
+    })
+}
+
+/// Parse native find arguments into (pattern, path, max_results, file_type).
+/// Returns None if unsupported flags are found (should fallthrough).
+fn parse_native_find_args(args: &[String]) -> Option<(String, String, usize, String)> {
+    // Check for unsupported flags first
+    for arg in args {
+        if UNSUPPORTED_FIND_FLAGS.iter().any(|f| arg == *f) {
+            return None; // Fallthrough to real find
+        }
+    }
+
+    let mut pattern = "*".to_string();
+    let mut path = ".".to_string();
+    let max_results: usize = 50;
+    let mut file_type = "f".to_string();
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-name" | "-iname" => {
+                if i + 1 < args.len() {
+                    pattern = args[i + 1].clone();
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "-type" => {
+                if i + 1 < args.len() {
+                    file_type = args[i + 1].clone();
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "-maxdepth" | "-mindepth" => {
+                // Skip these — our walker doesn't support them but don't fail
+                if i + 1 < args.len() {
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            arg if !arg.starts_with('-') => {
+                // Positional arg before flags = search path
+                path = arg.to_string();
+                i += 1;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+
+    Some((pattern, path, max_results, file_type))
+}
+
+/// Parse RTK-style positional args: `find <pattern> [path] [--max N] [-t type]`
+fn parse_rtk_find_args(args: &[String]) -> (String, String, usize, String) {
+    let mut pattern = ".".to_string();
+    let mut path = ".".to_string();
+    let mut max_results: usize = 50;
+    let mut file_type = "f".to_string();
+
+    let mut positional_idx = 0;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--max" | "-m" => {
+                if i + 1 < args.len() {
+                    max_results = args[i + 1].parse().unwrap_or(50);
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            "-t" | "--file-type" => {
+                if i + 1 < args.len() {
+                    file_type = args[i + 1].clone();
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            arg if !arg.starts_with('-') => {
+                match positional_idx {
+                    0 => pattern = arg.to_string(),
+                    1 => path = arg.to_string(),
+                    _ => {}
+                }
+                positional_idx += 1;
+                i += 1;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+
+    (pattern, path, max_results, file_type)
+}
+
+/// Entry point from main.rs — detects native vs RTK syntax and dispatches.
+pub fn run_from_args(args: &[String], verbose: u8) -> Result<()> {
+    if args.is_empty() {
+        return run("*", ".", 50, "f", verbose);
+    }
+
+    if has_native_find_flags(args) {
+        match parse_native_find_args(args) {
+            Some((pattern, path, max, file_type)) => {
+                run(&pattern, &path, max, &file_type, verbose)
+            }
+            None => {
+                // Unsupported flags — fallthrough to real find
+                std::process::exit(2);
+            }
+        }
+    } else {
+        let (pattern, path, max, file_type) = parse_rtk_find_args(args);
+        run(&pattern, &path, max, &file_type, verbose)
+    }
+}
+
 pub fn run(
     pattern: &str,
     path: &str,
@@ -278,6 +418,58 @@ mod tests {
         // With max=2, should not error
         let result = run("*.rs", "src", 2, "f", 0);
         assert!(result.is_ok());
+    }
+
+    // --- native find flag detection ---
+
+    #[test]
+    fn detect_native_flags() {
+        assert!(has_native_find_flags(&[".".into(), "-name".into(), "*.rs".into()]));
+        assert!(has_native_find_flags(&[".".into(), "-type".into(), "f".into()]));
+        assert!(has_native_find_flags(&["-exec".into(), "rm".into()]));
+        assert!(!has_native_find_flags(&["*.rs".into(), ".".into()]));
+        assert!(!has_native_find_flags(&["*.rs".into()]));
+    }
+
+    #[test]
+    fn parse_native_name_type() {
+        let args: Vec<String> = vec![".".into(), "-name".into(), "*.rs".into(), "-type".into(), "f".into()];
+        let result = parse_native_find_args(&args);
+        assert!(result.is_some());
+        let (pattern, path, _, file_type) = result.unwrap();
+        assert_eq!(pattern, "*.rs");
+        assert_eq!(path, ".");
+        assert_eq!(file_type, "f");
+    }
+
+    #[test]
+    fn parse_native_unsupported_returns_none() {
+        let args: Vec<String> = vec![".".into(), "-name".into(), "*.rs".into(), "-exec".into(), "rm".into()];
+        assert!(parse_native_find_args(&args).is_none());
+    }
+
+    #[test]
+    fn parse_rtk_positional() {
+        let args: Vec<String> = vec!["*.rs".into(), "src".into()];
+        let (pattern, path, max, file_type) = parse_rtk_find_args(&args);
+        assert_eq!(pattern, "*.rs");
+        assert_eq!(path, "src");
+        assert_eq!(max, 50);
+        assert_eq!(file_type, "f");
+    }
+
+    #[test]
+    fn parse_rtk_with_max() {
+        let args: Vec<String> = vec!["*.rs".into(), "src".into(), "--max".into(), "10".into()];
+        let (_, _, max, _) = parse_rtk_find_args(&args);
+        assert_eq!(max, 10);
+    }
+
+    #[test]
+    fn parse_native_dirs() {
+        let args: Vec<String> = vec![".".into(), "-type".into(), "d".into()];
+        let result = parse_native_find_args(&args).unwrap();
+        assert_eq!(result.3, "d");
     }
 
     #[test]

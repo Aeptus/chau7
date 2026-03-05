@@ -462,6 +462,9 @@ public let ctoRewriteMap: [String: String] = [
     "pip": "pip",
     "go": "go",
     "golangci-lint": "golangci-lint",
+    "swift": "swift",
+    "python": "python",
+    "python3": "python",
 ]
 
 /// Commands that are exec-only (no optimizer subcommand mapping).

@@ -28,6 +28,8 @@ struct PackageResult {
     pass: usize,
     fail: usize,
     skip: usize,
+    build_failed: bool,
+    build_errors: Vec<String>,
     failed_tests: Vec<(String, Vec<String>)>, // (test_name, output_lines)
 }
 
@@ -281,15 +283,29 @@ fn filter_go_test_json(output: &str) -> String {
                     pkg_result.skip += 1;
                 }
             }
-            "output" => {
-                // Collect output for current test
-                if let (Some(test), Some(output_text)) = (&event.test, &event.output) {
-                    let key = (package.clone(), test.clone());
-                    current_test_output
-                        .entry(key)
-                        .or_default()
-                        .push(output_text.trim_end().to_string());
+            "output" | "build-output" => {
+                if event.action == "build-output" {
+                    // Build output goes to build errors for the package
+                    if let Some(output_text) = &event.output {
+                        let trimmed = output_text.trim_end().to_string();
+                        if !trimmed.is_empty() {
+                            pkg_result.build_errors.push(trimmed);
+                        }
+                    }
+                } else {
+                    // Collect output for current test
+                    if let (Some(test), Some(output_text)) = (&event.test, &event.output) {
+                        let key = (package.clone(), test.clone());
+                        current_test_output
+                            .entry(key)
+                            .or_default()
+                            .push(output_text.trim_end().to_string());
+                    }
                 }
+            }
+            "build-fail" => {
+                pkg_result.build_failed = true;
+                pkg_result.fail += 1;
             }
             _ => {} // run, pause, cont, etc.
         }
@@ -325,7 +341,18 @@ fn filter_go_test_json(output: &str) -> String {
 
     // Show failed tests grouped by package
     for (package, pkg_result) in packages.iter() {
-        if pkg_result.fail == 0 {
+        if pkg_result.fail == 0 && !pkg_result.build_failed {
+            continue;
+        }
+
+        if pkg_result.build_failed {
+            result.push_str(&format!(
+                "\n📦 {} (BUILD FAILED)\n",
+                compact_package_name(package),
+            ));
+            for err in &pkg_result.build_errors {
+                result.push_str(&format!("     {}\n", truncate(err, 120)));
+            }
             continue;
         }
 
@@ -518,6 +545,16 @@ utils.go:15:5: unreachable code"#;
         assert!(result.contains("2 issues"));
         assert!(result.contains("Printf format"));
         assert!(result.contains("unreachable code"));
+    }
+
+    #[test]
+    fn test_filter_go_test_build_failure() {
+        let output = r#"{"Action":"build-output","Package":"example.com/foo","Output":"main.go:5:2: undefined: bar\n"}
+{"Action":"build-fail","Package":"example.com/foo"}"#;
+
+        let result = filter_go_test_json(output);
+        assert!(result.contains("BUILD FAILED"));
+        assert!(result.contains("undefined: bar"));
     }
 
     #[test]

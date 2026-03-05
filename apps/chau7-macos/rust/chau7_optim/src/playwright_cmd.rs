@@ -40,7 +40,6 @@ struct PlaywrightSuite {
 #[derive(Debug, Deserialize)]
 struct PlaywrightSpec {
     title: String,
-    #[serde(default)]
     ok: bool,
     #[serde(default)]
     tests: Vec<PlaywrightExecution>,
@@ -48,7 +47,6 @@ struct PlaywrightSpec {
 
 #[derive(Debug, Deserialize)]
 struct PlaywrightExecution {
-    #[serde(default)]
     status: String,
     #[serde(default)]
     results: Vec<PlaywrightAttempt>,
@@ -56,7 +54,6 @@ struct PlaywrightExecution {
 
 #[derive(Debug, Deserialize)]
 struct PlaywrightAttempt {
-    #[serde(default)]
     status: String,
     #[serde(default)]
     errors: Vec<PlaywrightError>,

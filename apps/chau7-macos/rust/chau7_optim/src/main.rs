@@ -7,6 +7,7 @@ mod config;
 mod container;
 mod curl_cmd;
 mod deps;
+mod discover;
 mod diff_cmd;
 mod display_helpers;
 mod env_cmd;
@@ -33,10 +34,12 @@ mod pnpm_cmd;
 mod prettier_cmd;
 mod prisma_cmd;
 mod pytest_cmd;
+mod python_cmd;
 mod read;
 mod ruff_cmd;
 mod runner;
 mod summary;
+mod swift_cmd;
 mod tee;
 mod tracking;
 mod tree;
@@ -179,19 +182,11 @@ enum Commands {
         show_all: bool,
     },
 
-    /// Find files with compact tree output
+    /// Find files with compact tree output (supports native find flags)
     Find {
-        /// Pattern to search (glob)
-        pattern: String,
-        /// Path to search in
-        #[arg(default_value = ".")]
-        path: String,
-        /// Maximum results to show
-        #[arg(short, long, default_value = "50")]
-        max: usize,
-        /// Filter by type: f (file), d (directory)
-        #[arg(short = 't', long, default_value = "f")]
-        file_type: String,
+        /// All arguments — supports both native (`-name "*.rs" -type f`) and RTK (`*.rs .`) syntax
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
 
     /// Ultra-condensed diff (only changed lines)
@@ -407,12 +402,38 @@ enum Commands {
         command: GoCommands,
     },
 
+    /// Swift commands with compact output
+    Swift {
+        #[command(subcommand)]
+        command: SwiftCommands,
+    },
+
+    /// Python dispatcher — routes `-m pytest/ruff/pip` to optimizers, filters `manage.py test`, falls through otherwise
+    Python {
+        /// Python arguments — optimizes: `-m pytest`, `-m ruff`, `-m pip`, `manage.py test`. All other invocations (`-c`, scripts, `--version`) fall through to the real python binary
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+
     /// golangci-lint with compact output
     #[command(name = "golangci-lint")]
     GolangciLint {
         /// golangci-lint arguments
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
+    },
+
+    /// Scan Claude Code sessions to find top unhandled commands
+    Discover {
+        /// Filter to a specific project (substring match on project directory name)
+        #[arg(short, long)]
+        project: Option<String>,
+        /// Only scan sessions from the last N days
+        #[arg(short, long, default_value = "30")]
+        since: u64,
+        /// Maximum commands to show
+        #[arg(short, long, default_value = "20")]
+        limit: usize,
     },
 }
 
@@ -729,6 +750,76 @@ enum GoCommands {
     Other(Vec<OsString>),
 }
 
+/// Git global options that appear before the subcommand (e.g., `git -C /path status`).
+/// These must be extracted before Clap parsing since Clap can't handle them.
+const GIT_GLOBAL_FLAGS_WITH_VALUE: &[&str] = &["-C", "-c", "--git-dir", "--work-tree", "--namespace"];
+const GIT_GLOBAL_FLAGS_STANDALONE: &[&str] = &["--no-pager", "--bare", "--no-replace-objects", "--literal-pathspecs"];
+
+/// Extract git global options from raw args, returning (global_opts, cleaned_args).
+/// Rewrites `["chau7-optim", "git", "-C", "/path", "status", ...]`
+/// into cleaned `["chau7-optim", "git", "status", ...]` with global = `["-C", "/path"]`.
+fn extract_git_global_args(raw: &[String]) -> (Vec<String>, Vec<String>) {
+    // Find position of "git" in args
+    let git_pos = match raw.iter().position(|a| a == "git") {
+        Some(p) => p,
+        None => return (vec![], raw.to_vec()),
+    };
+
+    let mut global_args = Vec::new();
+    let mut cleaned = raw[..=git_pos].to_vec(); // everything up to and including "git"
+    let rest = &raw[git_pos + 1..]; // args after "git"
+
+    let mut i = 0;
+    while i < rest.len() {
+        let arg = &rest[i];
+        if GIT_GLOBAL_FLAGS_WITH_VALUE.contains(&arg.as_str()) {
+            global_args.push(arg.clone());
+            if i + 1 < rest.len() {
+                global_args.push(rest[i + 1].clone());
+                i += 2;
+            } else {
+                i += 1;
+            }
+        } else if arg.starts_with("-C") && arg.len() > 2 {
+            // Handle -C/path (no space)
+            global_args.push("-C".to_string());
+            global_args.push(arg[2..].to_string());
+            i += 1;
+        } else if arg.starts_with("--git-dir=") || arg.starts_with("--work-tree=") || arg.starts_with("--namespace=") || arg.starts_with("-c") && arg.contains('=') {
+            global_args.push(arg.clone());
+            i += 1;
+        } else if GIT_GLOBAL_FLAGS_STANDALONE.contains(&arg.as_str()) {
+            global_args.push(arg.clone());
+            i += 1;
+        } else {
+            // Not a global option — this is the subcommand or its args
+            cleaned.extend_from_slice(&rest[i..]);
+            break;
+        }
+    }
+
+    (global_args, cleaned)
+}
+
+#[derive(Subcommand)]
+enum SwiftCommands {
+    /// Build with compact output (strip Compiling lines, show errors/warnings grouped)
+    Build {
+        /// Additional swift build arguments
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Test with failures-only output
+    Test {
+        /// Additional swift test arguments
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Passthrough: runs any unsupported swift subcommand directly
+    #[command(external_subcommand)]
+    Other(Vec<OsString>),
+}
+
 fn main() -> Result<()> {
     // Strip CTO wrapper dir from PATH to prevent infinite recursion.
     // Without this, `Command::new("ls")` inside ls.rs would resolve to the
@@ -741,7 +832,11 @@ fn main() -> Result<()> {
         }
     }
 
-    let cli = Cli::parse();
+    // Extract git global options before Clap parses (Clap can't handle `-C path` before subcommand)
+    let raw_args: Vec<String> = std::env::args().collect();
+    let (git_global_args, cleaned_args) = extract_git_global_args(&raw_args);
+
+    let cli = Cli::parse_from(&cleaned_args);
 
     match cli.command {
         Commands::Ls { args } => {
@@ -775,19 +870,19 @@ fn main() -> Result<()> {
 
         Commands::Git { command } => match command {
             GitCommands::Diff { args } => {
-                git::run(git::GitCommand::Diff, &args, None, cli.verbose)?;
+                git::run(git::GitCommand::Diff, &args, None, cli.verbose, &git_global_args)?;
             }
             GitCommands::Log { args } => {
-                git::run(git::GitCommand::Log, &args, None, cli.verbose)?;
+                git::run(git::GitCommand::Log, &args, None, cli.verbose, &git_global_args)?;
             }
             GitCommands::Status { args } => {
-                git::run(git::GitCommand::Status, &args, None, cli.verbose)?;
+                git::run(git::GitCommand::Status, &args, None, cli.verbose, &git_global_args)?;
             }
             GitCommands::Show { args } => {
-                git::run(git::GitCommand::Show, &args, None, cli.verbose)?;
+                git::run(git::GitCommand::Show, &args, None, cli.verbose, &git_global_args)?;
             }
             GitCommands::Add { args } => {
-                git::run(git::GitCommand::Add, &args, None, cli.verbose)?;
+                git::run(git::GitCommand::Add, &args, None, cli.verbose, &git_global_args)?;
             }
             GitCommands::Commit { message } => {
                 git::run(
@@ -795,19 +890,20 @@ fn main() -> Result<()> {
                     &[],
                     None,
                     cli.verbose,
+                    &git_global_args,
                 )?;
             }
             GitCommands::Push { args } => {
-                git::run(git::GitCommand::Push, &args, None, cli.verbose)?;
+                git::run(git::GitCommand::Push, &args, None, cli.verbose, &git_global_args)?;
             }
             GitCommands::Pull { args } => {
-                git::run(git::GitCommand::Pull, &args, None, cli.verbose)?;
+                git::run(git::GitCommand::Pull, &args, None, cli.verbose, &git_global_args)?;
             }
             GitCommands::Branch { args } => {
-                git::run(git::GitCommand::Branch, &args, None, cli.verbose)?;
+                git::run(git::GitCommand::Branch, &args, None, cli.verbose, &git_global_args)?;
             }
             GitCommands::Fetch { args } => {
-                git::run(git::GitCommand::Fetch, &args, None, cli.verbose)?;
+                git::run(git::GitCommand::Fetch, &args, None, cli.verbose, &git_global_args)?;
             }
             GitCommands::Stash { subcommand, args } => {
                 git::run(
@@ -815,13 +911,14 @@ fn main() -> Result<()> {
                     &args,
                     None,
                     cli.verbose,
+                    &git_global_args,
                 )?;
             }
             GitCommands::Worktree { args } => {
-                git::run(git::GitCommand::Worktree, &args, None, cli.verbose)?;
+                git::run(git::GitCommand::Worktree, &args, None, cli.verbose, &git_global_args)?;
             }
             GitCommands::Other(args) => {
-                git::run_passthrough(&args, cli.verbose)?;
+                git::run_passthrough(&args, cli.verbose, &git_global_args)?;
             }
         },
 
@@ -880,13 +977,8 @@ fn main() -> Result<()> {
             env_cmd::run(filter.as_deref(), show_all, cli.verbose)?;
         }
 
-        Commands::Find {
-            pattern,
-            path,
-            max,
-            file_type,
-        } => {
-            find_cmd::run(&pattern, &path, max, &file_type, cli.verbose)?;
+        Commands::Find { args } => {
+            find_cmd::run_from_args(&args, cli.verbose)?;
         }
 
         Commands::Diff { file1, file2 } => {
@@ -1224,8 +1316,44 @@ fn main() -> Result<()> {
             }
         },
 
+        Commands::Swift { command } => match command {
+            SwiftCommands::Build { args } => {
+                swift_cmd::run_build(&args, cli.verbose)?;
+            }
+            SwiftCommands::Test { args } => {
+                swift_cmd::run_test(&args, cli.verbose)?;
+            }
+            SwiftCommands::Other(args) => {
+                swift_cmd::run_other(&args, cli.verbose)?;
+            }
+        },
+
+        Commands::Python { args } => {
+            // Dispatch python -m <module> to the appropriate optimizer.
+            // Everything else falls through to the real python binary.
+            if args.len() >= 2 && args[0] == "-m" {
+                python_cmd::run_module(&args[1], &args[2..], cli.verbose)?;
+            } else if args.len() >= 2
+                && args[0].ends_with("manage.py")
+                && args[1] == "test"
+            {
+                python_cmd::run_manage_test(&args, cli.verbose)?;
+            } else {
+                // One-liners, scripts, --version, etc. — fall through
+                std::process::exit(2);
+            }
+        }
+
         Commands::GolangciLint { args } => {
             golangci_cmd::run(&args, cli.verbose)?;
+        }
+
+        Commands::Discover {
+            project,
+            since,
+            limit,
+        } => {
+            discover::run(project.as_deref(), since, limit, cli.verbose)?;
         }
 
         Commands::Proxy { args } => {
