@@ -837,11 +837,12 @@ final class OverlayTabsModel: ObservableObject {
     ) -> String? {
         switch provider {
         case "claude":
-            // Claude sessions are looked up via ClaudeCodeMonitor which tracks
-            // session→directory mappings live. No referenceDate disambiguation
-            // needed — each directory maps to at most one active Claude session.
+            // Claude sessions are looked up from monitor candidates and may
+            // require referenceDate disambiguation when multiple sessions share
+            // the same directory tree.
             return findClaudeSessionId(
-                forDirectory: directory
+                forDirectory: directory,
+                referenceDate: referenceDate
             ).flatMap { normalizeAISessionId($0) }
         case "codex":
             return findCodexSessionId(
@@ -865,10 +866,35 @@ final class OverlayTabsModel: ObservableObject {
         return trimmed
     }
 
-    private static func findClaudeSessionId(forDirectory directory: String) -> String? {
+    private static func findClaudeSessionId(
+        forDirectory directory: String,
+        referenceDate: Date? = nil
+    ) -> String? {
         let canonicalDirectory = normalizedSessionDirectory(directory)
         guard !canonicalDirectory.isEmpty else { return nil }
-        return ClaudeCodeMonitor.shared.sessionId(forDirectory: canonicalDirectory)
+
+        let matches = ClaudeCodeMonitor.shared
+            .sessionCandidates(forDirectory: canonicalDirectory)
+            .compactMap { candidate -> (sessionId: String, touchedAt: Date)? in
+                guard let normalizedSessionId = normalizeAISessionId(candidate.sessionId) else {
+                    return nil
+                }
+                return (sessionId: normalizedSessionId, touchedAt: candidate.lastActivity)
+            }
+
+        guard !matches.isEmpty else { return nil }
+
+        if let chosen = AIResumeParser.bestSessionMatch(candidates: matches, referenceDate: referenceDate) {
+            if matches.count > 1 {
+                Log.trace(
+                    "findClaudeSessionId: selected sessionId=\(chosen) from \(matches.count) candidates for dir=\(canonicalDirectory)"
+                )
+            }
+            return chosen
+        }
+
+        Log.warn("findClaudeSessionId: multiple session candidates for dir=\(canonicalDirectory); skipping to avoid cross-tab contamination")
+        return nil
     }
 
     private static func detectAIAppName(fromOutput output: String?) -> String? {
@@ -1034,8 +1060,12 @@ final class OverlayTabsModel: ObservableObject {
               let id = payload["id"] as? String else {
             return nil
         }
-        return (cwd.trimmingCharacters(in: .whitespacesAndNewlines),
-                id.trimmingCharacters(in: .whitespacesAndNewlines))
+        let normalizedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedId = id.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedCwd.isEmpty, AIResumeParser.isValidSessionId(normalizedId) else {
+            return nil
+        }
+        return (normalizedCwd, normalizedId)
     }
 
     private static func captureScrollback(from session: TerminalSessionModel?, maxLines: Int) -> String? {

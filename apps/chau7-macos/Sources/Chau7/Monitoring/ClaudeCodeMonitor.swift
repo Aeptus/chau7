@@ -363,19 +363,39 @@ final class ClaudeCodeMonitor: ObservableObject {
     /// Returns the session ID suitable for `claude --resume <ID>`.
     func sessionId(forDirectory dir: String) -> String? {
         dispatchPrecondition(condition: .onQueue(.main))
-        guard !dir.isEmpty else { return nil }
-        let matching = activeSessions.values.filter { session in
-            session.cwd == dir || dir.hasPrefix(session.cwd + "/")
-        }
-        // Prefer non-closed sessions, then most recent activity
-        return matching
+        return sessionCandidates(forDirectory: dir).first?.sessionId
+    }
+
+    /// Returns Claude session candidates for a directory ordered by priority:
+    /// non-closed first, then newest activity.
+    func sessionCandidates(forDirectory dir: String) -> [(sessionId: String, lastActivity: Date)] {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let normalizedDir = Self.normalizedPath(dir) else { return [] }
+
+        return activeSessions.values
+            .compactMap { session -> (sessionId: String, lastActivity: Date, isClosed: Bool)? in
+                guard let normalizedSessionDir = Self.normalizedPath(session.cwd),
+                      Self.isDirectoryMatch(normalizedDir, sessionDir: normalizedSessionDir) else {
+                    return nil
+                }
+                return (sessionId: session.id, lastActivity: session.lastActivity, isClosed: session.state == .closed)
+            }
             .sorted { lhs, rhs in
-                let lAlive = lhs.state != .closed
-                let rAlive = rhs.state != .closed
-                if lAlive != rAlive { return lAlive }
+                if lhs.isClosed != rhs.isClosed { return !lhs.isClosed }
                 return lhs.lastActivity > rhs.lastActivity
             }
-            .first?.id
+            .map { (sessionId: $0.sessionId, lastActivity: $0.lastActivity) }
+    }
+
+    private static func normalizedPath(_ value: String) -> String? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let expanded = NSString(string: trimmed).expandingTildeInPath
+        return URL(fileURLWithPath: expanded).standardized.path
+    }
+
+    private static func isDirectoryMatch(_ targetDir: String, sessionDir: String) -> Bool {
+        targetDir == sessionDir || targetDir.hasPrefix(sessionDir + "/")
     }
 
 }
