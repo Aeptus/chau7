@@ -49,7 +49,7 @@ final class MCPServerManager {
         addr.sun_family = sa_family_t(AF_UNIX)
         // Copy path bytes into sun_path tuple
         var pathBytes = [CChar](repeating: 0, count: 104) // sun_path is 104 bytes on macOS
-        socketPath.withCString { src in
+        _ = socketPath.withCString { src in
             strncpy(&pathBytes, src, 103)
         }
         withUnsafeMutableBytes(of: &addr.sun_path) { rawBuf in
@@ -78,8 +78,8 @@ final class MCPServerManager {
             return
         }
 
-        // Set socket permissions so other processes can connect
-        chmod(socketPath, 0o666)
+        // Set socket permissions: owner-only (bridge runs as same user)
+        chmod(socketPath, 0o600)
 
         isRunning = true
         Log.info("MCPServer: listening on \(socketPath)")
@@ -135,11 +135,11 @@ final class MCPServerManager {
         let session = MCPSession(fd: clientFD)
 
         clientQueue.async { [weak self] in
+            // MCPSession.run() takes ownership of the fd and closes it on return
             session.run()
 
             self?.queue.async { [weak self] in
                 self?.clientSockets.removeAll(where: { $0 == clientFD })
-                close(clientFD)
                 Log.info("MCPServer: client disconnected (fd=\(clientFD))")
             }
         }
