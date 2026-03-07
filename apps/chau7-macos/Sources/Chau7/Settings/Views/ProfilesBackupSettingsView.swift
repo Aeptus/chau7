@@ -9,10 +9,10 @@ struct ProfilesBackupSettingsView: View {
     @StateObject private var switcher = ProfileAutoSwitcher()
     @State private var showExportSheet = false
     @State private var showImportSheet = false
-    @State private var importError: String? = nil
+    @State private var importError: String?
     @State private var showCreateProfile = false
     @State private var showDeleteConfirmation = false
-    @State private var profileToDelete: SettingsProfile? = nil
+    @State private var profileToDelete: SettingsProfile?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -234,8 +234,8 @@ struct CreateProfileSheet: View {
     @ObservedObject var settings: FeatureSettings
     let onDismiss: () -> Void
 
-    @State private var profileName: String = ""
-    @State private var selectedIcon: String = "person.fill"
+    @State private var profileName = ""
+    @State private var selectedIcon = "person.fill"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

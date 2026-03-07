@@ -7,29 +7,118 @@ use std::time::{Duration, SystemTime};
 
 /// Commands that CTO already wraps (must match ctoRewriteMap + execOnlyCommands).
 const SUPPORTED_COMMANDS: &[&str] = &[
-    "cat", "head", "tail", "ls", "find", "tree", "grep", "rg", "git", "diff",
-    "cargo", "curl", "docker", "kubectl", "gh", "pnpm", "wget", "npm", "npx",
-    "vitest", "prisma", "tsc", "next", "eslint", "prettier", "ruff", "pytest",
-    "pip", "go", "golangci-lint", "wc", "playwright", "swift",
-    "python", "python3",
+    "cat",
+    "head",
+    "tail",
+    "ls",
+    "find",
+    "tree",
+    "grep",
+    "rg",
+    "git",
+    "diff",
+    "cargo",
+    "curl",
+    "docker",
+    "kubectl",
+    "gh",
+    "pnpm",
+    "wget",
+    "npm",
+    "npx",
+    "vitest",
+    "prisma",
+    "tsc",
+    "next",
+    "eslint",
+    "prettier",
+    "ruff",
+    "pytest",
+    "pip",
+    "go",
+    "golangci-lint",
+    "wc",
+    "playwright",
+    "swift",
+    "python",
+    "python3",
 ];
 
 /// Commands to ignore (not meaningful for optimization).
 const IGNORED_COMMANDS: &[&str] = &[
-    "cd", "echo", "printf", "true", "false", "exit", "return", "set", "unset",
-    "export", "source", ".", "alias", "which", "type", "test", "[", "[[",
-    "if", "then", "else", "fi", "for", "while", "do", "done", "case", "esac",
-    "read", "sleep", "wait", "kill", "trap", "shift", "eval", "exec",
-    "mkdir", "rmdir", "touch", "chmod", "chown", "chgrp", "ln", "mv", "cp", "rm",
-    "pushd", "popd", "dirs", "ulimit", "umask", "hash", "pwd",
-    "break", "continue", "command", "builtin", "declare", "local", "let",
+    "cd",
+    "echo",
+    "printf",
+    "true",
+    "false",
+    "exit",
+    "return",
+    "set",
+    "unset",
+    "export",
+    "source",
+    ".",
+    "alias",
+    "which",
+    "type",
+    "test",
+    "[",
+    "[[",
+    "if",
+    "then",
+    "else",
+    "fi",
+    "for",
+    "while",
+    "do",
+    "done",
+    "case",
+    "esac",
+    "read",
+    "sleep",
+    "wait",
+    "kill",
+    "trap",
+    "shift",
+    "eval",
+    "exec",
+    "mkdir",
+    "rmdir",
+    "touch",
+    "chmod",
+    "chown",
+    "chgrp",
+    "ln",
+    "mv",
+    "cp",
+    "rm",
+    "pushd",
+    "popd",
+    "dirs",
+    "ulimit",
+    "umask",
+    "hash",
+    "pwd",
+    "break",
+    "continue",
+    "command",
+    "builtin",
+    "declare",
+    "local",
+    "let",
     // Already CTO (when invoked as chau7-optim)
     "chau7-optim",
 ];
 
 /// Commands to ignore when they appear as a prefix (e.g., `env FOO=bar cmd`).
 const WRAPPER_PREFIXES: &[&str] = &[
-    "env", "sudo", "time", "nice", "nohup", "caffeinate", "timeout",
+    "env",
+    "sudo",
+    "time",
+    "nice",
+    "nohup",
+    "caffeinate",
+    "timeout",
 ];
 
 struct UnhandledBucket {
@@ -245,7 +334,7 @@ fn extract_bash_commands(path: &PathBuf) -> Vec<(String, Option<usize>)> {
     let mut tool_uses: Vec<(String, String)> = Vec::new(); // (id, command)
     let mut tool_results: HashMap<String, usize> = HashMap::new(); // id -> output_len
 
-    for line in reader.lines().flatten() {
+    for line in reader.lines().map_while(Result::ok) {
         // Fast pre-filter
         if !line.contains("\"Bash\"") && !line.contains("\"tool_result\"") {
             continue;
@@ -260,7 +349,8 @@ fn extract_bash_commands(path: &PathBuf) -> Vec<(String, Option<usize>)> {
 
         match entry_type {
             "assistant" => {
-                if let Some(content) = entry.pointer("/message/content").and_then(|c| c.as_array()) {
+                if let Some(content) = entry.pointer("/message/content").and_then(|c| c.as_array())
+                {
                     for block in content {
                         if block.get("type").and_then(|t| t.as_str()) == Some("tool_use")
                             && block.get("name").and_then(|n| n.as_str()) == Some("Bash")
@@ -276,7 +366,8 @@ fn extract_bash_commands(path: &PathBuf) -> Vec<(String, Option<usize>)> {
                 }
             }
             "user" => {
-                if let Some(content) = entry.pointer("/message/content").and_then(|c| c.as_array()) {
+                if let Some(content) = entry.pointer("/message/content").and_then(|c| c.as_array())
+                {
                     for block in content {
                         if block.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
                             if let Some(id) = block.get("tool_use_id").and_then(|i| i.as_str()) {
@@ -335,13 +426,14 @@ pub fn run(project: Option<&str>, since_days: u64, limit: usize, verbose: u8) ->
                 } else if is_ignored(base) {
                     ignored_count += 1;
                 } else {
-                    let bucket = unhandled.entry(base.to_string()).or_insert_with(|| {
-                        UnhandledBucket {
-                            count: 0,
-                            examples: Vec::new(),
-                            total_output_bytes: 0,
-                        }
-                    });
+                    let bucket =
+                        unhandled
+                            .entry(base.to_string())
+                            .or_insert_with(|| UnhandledBucket {
+                                count: 0,
+                                examples: Vec::new(),
+                                total_output_bytes: 0,
+                            });
                     bucket.count += 1;
                     if bucket.examples.len() < 3 {
                         let example = part.trim().chars().take(80).collect::<String>();
@@ -379,10 +471,7 @@ pub fn run(project: Option<&str>, since_days: u64, limit: usize, verbose: u8) ->
             0
         }
     );
-    println!(
-        "Shell builtins/ignored: {}",
-        ignored_count
-    );
+    println!("Shell builtins/ignored: {}", ignored_count);
 
     let unhandled_total: usize = sorted.iter().map(|(_, b)| b.count).sum();
     println!(
@@ -398,8 +487,8 @@ pub fn run(project: Option<&str>, since_days: u64, limit: usize, verbose: u8) ->
     }
 
     println!(
-        "{:<20} {:>6}  {:>10}  {}",
-        "Command", "Count", "Output", "Examples"
+        "{:<20} {:>6}  {:>10}  Examples",
+        "Command", "Count", "Output"
     );
     println!("{}", "-".repeat(75));
 
@@ -491,14 +580,23 @@ mod tests {
 
     #[test]
     fn test_extract_base_command_with_env() {
-        assert_eq!(extract_base_command("FOO=bar python3 test.py"), Some("python3"));
-        assert_eq!(extract_base_command("NODE_ENV=test npm run build"), Some("npm"));
+        assert_eq!(
+            extract_base_command("FOO=bar python3 test.py"),
+            Some("python3")
+        );
+        assert_eq!(
+            extract_base_command("NODE_ENV=test npm run build"),
+            Some("npm")
+        );
     }
 
     #[test]
     fn test_extract_base_command_with_sudo() {
         assert_eq!(extract_base_command("sudo apt install foo"), Some("apt"));
-        assert_eq!(extract_base_command("env FOO=1 python3 test.py"), Some("python3"));
+        assert_eq!(
+            extract_base_command("env FOO=1 python3 test.py"),
+            Some("python3")
+        );
     }
 
     #[test]
@@ -539,7 +637,10 @@ mod tests {
         assert_eq!(extract_base_command("---"), None);
         assert_eq!(extract_base_command("==="), None);
         // Subshell parens
-        assert_eq!(extract_base_command("(test -f .env && echo yes)"), Some("test"));
+        assert_eq!(
+            extract_base_command("(test -f .env && echo yes)"),
+            Some("test")
+        );
         // pwd is ignored
         assert!(is_ignored("pwd"));
     }

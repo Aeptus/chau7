@@ -150,14 +150,14 @@ private struct RuleEditorSheet: View {
     let profiles: [SettingsProfile]
     let onSave: (ProfileSwitchRule) -> Void
 
-    @State private var name: String = ""
-    @State private var isEnabled: Bool = true
+    @State private var name = ""
+    @State private var isEnabled = true
     @State private var triggerType: ProfileSwitchTrigger = .directory(path: "")
-    @State private var triggerValue: String = ""
-    @State private var envKey: String = ""
-    @State private var envValue: String = ""
-    @State private var profileName: String = ""
-    @State private var priority: Int = 0
+    @State private var triggerValue = ""
+    @State private var envKey = ""
+    @State private var envValue = ""
+    @State private var profileName = ""
+    @State private var priority = 0
 
     var body: some View {
         VStack(spacing: 16) {
@@ -180,7 +180,7 @@ private struct RuleEditorSheet: View {
             }
 
             // Priority
-            Stepper("Priority: \(priority)", value: $priority, in: 0...100)
+            Stepper("Priority: \(priority)", value: $priority, in: 0 ... 100)
 
             Toggle(L("Enabled", "Enabled"), isOn: $isEnabled)
 

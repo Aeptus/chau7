@@ -35,9 +35,9 @@ enum GitBinary {
     /// shim requires Xcode license agreement and silently fails without it.
     static let path: URL = {
         let candidates = [
-            "/opt/homebrew/bin/git",   // Homebrew (Apple Silicon)
-            "/usr/local/bin/git",      // Homebrew (Intel) / MacPorts
-            "/usr/bin/git",            // Xcode CLT shim (fallback)
+            "/opt/homebrew/bin/git", // Homebrew (Apple Silicon)
+            "/usr/local/bin/git", // Homebrew (Intel) / MacPorts
+            "/usr/bin/git" // Xcode CLT shim (fallback)
         ]
         for candidate in candidates {
             if FileManager.default.isExecutableFile(atPath: candidate) {
@@ -59,7 +59,7 @@ enum EnvVars {
     static let verbose = "CHAU7_VERBOSE"
     static let trace = "CHAU7_TRACE"
 
-    // Event monitoring
+    /// Event monitoring
     static let eventsLog = "CHAU7_EVENTS_LOG"
 
     // History monitoring

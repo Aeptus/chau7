@@ -1,4 +1,5 @@
 // MARK: - Rust Metal Display Coordinator
+
 // Orchestrates the Metal rendering pipeline for the Rust terminal backend.
 // The Rust terminal is the source of truth (PTY I/O, parsing, selection, scroll).
 // Metal provides GPU-accelerated display, replacing the CPU-based RustGridView.
@@ -13,9 +14,9 @@ import MetalKit
 /// Grid snapshot provider: reads the Rust grid and returns (snapshot pointer, free closure).
 /// The coordinator calls this each frame to get current grid state + cursor position.
 typealias RustGridProvider = () -> (
-    grid: UnsafeMutableRawPointer,  // Points to RustGridSnapshot
+    grid: UnsafeMutableRawPointer, // Points to RustGridSnapshot
     cursor: (col: UInt16, row: UInt16),
-    cursorVisible: Bool,            // DECTCEM: false when app hides cursor (ESC[?25l)
+    cursorVisible: Bool, // DECTCEM: false when app hides cursor (ESC[?25l)
     free: () -> Void
 )?
 
@@ -44,7 +45,7 @@ final class RustMetalDisplayCoordinator: NSObject {
 
     private var blinkTimer: Timer?
     /// Time of last keyboard/PTY activity (used to pause cursor blink during typing)
-    private var lastActivityTime: Date = Date()
+    private var lastActivityTime = Date()
 
     // MARK: - Init
 
@@ -128,7 +129,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         needsSync = true
         // Record activity — this pauses cursor blink for 1 second after typing
         lastActivityTime = Date()
-        renderer.cursorBlinkPhase = true  // Show cursor immediately on activity
+        renderer.cursorBlinkPhase = true // Show cursor immediately on activity
         if Thread.isMainThread {
             metalView.draw()
         } else {
@@ -175,7 +176,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         blinkTimer?.invalidate()
         blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            self.handleBlinkTick()
+            handleBlinkTick()
         }
     }
 
@@ -261,10 +262,14 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             var simdTints: [Int: SIMD4<Float>] = [:]
             for (absRow, color) in absTints {
                 let vr = absRow - yDisp
-                if vr >= 0 && vr < viewRows {
+                if vr >= 0, vr < viewRows {
                     let c = color.usingColorSpace(.sRGB) ?? color
-                    simdTints[vr] = SIMD4(Float(c.redComponent), Float(c.greenComponent),
-                                           Float(c.blueComponent), Float(c.alphaComponent))
+                    simdTints[vr] = SIMD4(
+                        Float(c.redComponent),
+                        Float(c.greenComponent),
+                        Float(c.blueComponent),
+                        Float(c.alphaComponent)
+                    )
                 }
             }
             bridge.rowTints = simdTints
@@ -280,7 +285,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
             let gs = gridPtr.pointee
             let newRows = Int(gs.rows)
             let newCols = Int(gs.cols)
-            if newRows > 0 && newCols > 0 {
+            if newRows > 0, newCols > 0 {
                 Log.info("RustMetalDisplayCoordinator: Grid dimensions changed to \(newCols)x\(newRows), rebuilding triple buffer")
                 rows = newRows
                 cols = newCols
@@ -309,7 +314,7 @@ extension RustMetalDisplayCoordinator: MTKViewDelegate {
         }
 
         // 5. Get drawable (skip silently when window has zero bounds — minimized/hidden)
-        guard view.bounds.width > 0 && view.bounds.height > 0 else {
+        guard view.bounds.width > 0, view.bounds.height > 0 else {
             FeatureProfiler.shared.end(token)
             return
         }

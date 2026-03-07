@@ -176,4 +176,3 @@ impl TokenFormatter for DependencyState {
         format!("📦{} ⬆️{}", self.total_packages, self.outdated_count)
     }
 }
-

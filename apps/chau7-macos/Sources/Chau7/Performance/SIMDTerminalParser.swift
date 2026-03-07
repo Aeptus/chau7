@@ -1,4 +1,5 @@
 // MARK: - SIMD-Accelerated Terminal Parser
+
 // Uses SIMD instructions for parallel byte scanning to find escape sequences
 // and special characters, achieving 3-10x faster parsing than scalar code.
 
@@ -7,15 +8,15 @@ import simd
 
 /// SIMD-accelerated parser for terminal escape sequences.
 /// Processes 16-32 bytes at a time using ARM NEON / Intel SSE/AVX instructions.
-public struct SIMDTerminalParser {
+public enum SIMDTerminalParser {
 
     // Special byte values we're scanning for
-    private static let ESC: UInt8 = 0x1B      // Escape
-    private static let BEL: UInt8 = 0x07      // Bell
-    private static let BS: UInt8 = 0x08       // Backspace
-    private static let TAB: UInt8 = 0x09      // Tab
-    private static let LF: UInt8 = 0x0A       // Line Feed
-    private static let CR: UInt8 = 0x0D       // Carriage Return
+    private static let ESC: UInt8 = 0x1B // Escape
+    private static let BEL: UInt8 = 0x07 // Bell
+    private static let BS: UInt8 = 0x08 // Backspace
+    private static let TAB: UInt8 = 0x09 // Tab
+    private static let LF: UInt8 = 0x0A // Line Feed
+    private static let CR: UInt8 = 0x0D // Carriage Return
     private static let CSI_START: UInt8 = 0x5B // '[' (CSI introducer after ESC)
     private static let OSC_START: UInt8 = 0x5D // ']' (OSC introducer after ESC)
 
@@ -32,15 +33,17 @@ public struct SIMDTerminalParser {
         /// Positions of bells
         public var bellPositions: [Int] = []
         /// Whether buffer contains only printable ASCII (fast path possible)
-        public var isPureASCII: Bool = true
+        public var isPureASCII = true
         /// Whether buffer contains any escape sequences
-        public var hasEscapeSequences: Bool { !escapePositions.isEmpty }
+        public var hasEscapeSequences: Bool {
+            !escapePositions.isEmpty
+        }
     }
 
-    /// Scans buffer for special terminal characters using SIMD.
-    /// - Parameter buffer: Raw bytes from PTY
-    /// - Returns: Positions of all special characters found
-    
+    // Scans buffer for special terminal characters using SIMD.
+    // - Parameter buffer: Raw bytes from PTY
+    // - Returns: Positions of all special characters found
+
     public static func scan(_ buffer: UnsafeBufferPointer<UInt8>) -> ScanResult {
         var result = ScanResult()
         let count = buffer.count
@@ -60,7 +63,7 @@ public struct SIMDTerminalParser {
         let printableLow = SIMD16<UInt8>(repeating: 0x20)
         let printableHigh = SIMD16<UInt8>(repeating: 0x7E)
 
-        for _ in 0..<chunks {
+        for _ in 0 ..< chunks {
             // Load 16 bytes
             let chunk = loadSIMD16(from: buffer, at: offset)
 
@@ -105,7 +108,7 @@ public struct SIMDTerminalParser {
         }
 
         // Handle remaining bytes with scalar code
-        for i in offset..<count {
+        for i in offset ..< count {
             let byte = buffer[i]
             switch byte {
             case ESC:
@@ -128,9 +131,9 @@ public struct SIMDTerminalParser {
         return result
     }
 
-    /// Fast path check: returns true if buffer contains no special characters.
-    /// Uses SIMD for rapid bulk checking.
-    
+    // Fast path check: returns true if buffer contains no special characters.
+    // Uses SIMD for rapid bulk checking.
+
     public static func isPrintableASCII(_ buffer: UnsafeBufferPointer<UInt8>) -> Bool {
         let count = buffer.count
         guard count > 0 else { return true }
@@ -141,7 +144,7 @@ public struct SIMDTerminalParser {
         let low = SIMD16<UInt8>(repeating: 0x20)
         let high = SIMD16<UInt8>(repeating: 0x7E)
 
-        for _ in 0..<chunks {
+        for _ in 0 ..< chunks {
             let chunk = loadSIMD16(from: buffer, at: offset)
 
             let belowRange = chunk .< low
@@ -154,7 +157,7 @@ public struct SIMDTerminalParser {
         }
 
         // Check remaining bytes
-        for i in offset..<count {
+        for i in offset ..< count {
             let byte = buffer[i]
             if byte < 0x20 || byte > 0x7E {
                 return false
@@ -164,47 +167,47 @@ public struct SIMDTerminalParser {
         return true
     }
 
-    /// Finds the end of a CSI sequence starting at the given position.
-    /// CSI format: ESC [ <params> <final byte>
-    /// Final byte is in range 0x40-0x7E
-    
+    // Finds the end of a CSI sequence starting at the given position.
+    // CSI format: ESC [ <params> <final byte>
+    // Final byte is in range 0x40-0x7E
+
     public static func findCSIEnd(_ buffer: UnsafeBufferPointer<UInt8>, startingAt start: Int) -> Int? {
         guard start + 2 < buffer.count else { return nil }
-        guard buffer[start] == ESC && buffer[start + 1] == CSI_START else { return nil }
+        guard buffer[start] == ESC, buffer[start + 1] == CSI_START else { return nil }
 
         // Scan for final byte (0x40-0x7E)
-        for i in (start + 2)..<buffer.count {
+        for i in (start + 2) ..< buffer.count {
             let byte = buffer[i]
-            if byte >= 0x40 && byte <= 0x7E {
-                return i + 1  // Include final byte
+            if byte >= 0x40, byte <= 0x7E {
+                return i + 1 // Include final byte
             }
             // Invalid sequence if we hit another control character
-            if byte < 0x20 && byte != ESC {
+            if byte < 0x20, byte != ESC {
                 return nil
             }
         }
-        return nil  // Incomplete sequence
+        return nil // Incomplete sequence
     }
 
-    /// Finds the end of an OSC sequence starting at the given position.
-    /// OSC format: ESC ] <params> (BEL | ESC \)
-    
+    // Finds the end of an OSC sequence starting at the given position.
+    // OSC format: ESC ] <params> (BEL | ESC \)
+
     public static func findOSCEnd(_ buffer: UnsafeBufferPointer<UInt8>, startingAt start: Int) -> Int? {
         guard start + 2 < buffer.count else { return nil }
-        guard buffer[start] == ESC && buffer[start + 1] == OSC_START else { return nil }
+        guard buffer[start] == ESC, buffer[start + 1] == OSC_START else { return nil }
 
-        for i in (start + 2)..<buffer.count {
+        for i in (start + 2) ..< buffer.count {
             let byte = buffer[i]
             // BEL terminates OSC
             if byte == BEL {
                 return i + 1
             }
             // ESC \ (ST) terminates OSC
-            if byte == ESC && i + 1 < buffer.count && buffer[i + 1] == 0x5C {
+            if byte == ESC, i + 1 < buffer.count, buffer[i + 1] == 0x5C {
                 return i + 2
             }
         }
-        return nil  // Incomplete sequence
+        return nil // Incomplete sequence
     }
 
     /// Parses all escape sequences in the buffer.
@@ -218,21 +221,21 @@ public struct SIMDTerminalParser {
 
             let introducer = buffer[escPos + 1]
             switch introducer {
-            case CSI_START:  // CSI sequence
+            case CSI_START: // CSI sequence
                 if let end = findCSIEnd(buffer, startingAt: escPos) {
-                    let seqData = Array(buffer[escPos..<end])
+                    let seqData = Array(buffer[escPos ..< end])
                     sequences.append(EscapeSequence(
                         type: .csi,
-                        range: escPos..<end,
+                        range: escPos ..< end,
                         rawBytes: seqData
                     ))
                 }
-            case OSC_START:  // OSC sequence
+            case OSC_START: // OSC sequence
                 if let end = findOSCEnd(buffer, startingAt: escPos) {
-                    let seqData = Array(buffer[escPos..<end])
+                    let seqData = Array(buffer[escPos ..< end])
                     sequences.append(EscapeSequence(
                         type: .osc,
-                        range: escPos..<end,
+                        range: escPos ..< end,
                         rawBytes: seqData
                     ))
                 }
@@ -241,7 +244,7 @@ public struct SIMDTerminalParser {
                 if escPos + 1 < buffer.count {
                     sequences.append(EscapeSequence(
                         type: .simple,
-                        range: escPos..<(escPos + 2),
+                        range: escPos ..< (escPos + 2),
                         rawBytes: [buffer[escPos], buffer[escPos + 1]]
                     ))
                 }
@@ -255,9 +258,9 @@ public struct SIMDTerminalParser {
 
     public struct EscapeSequence {
         public enum SequenceType {
-            case csi      // Control Sequence Introducer (ESC [)
-            case osc      // Operating System Command (ESC ])
-            case simple   // Simple escape (ESC + char)
+            case csi // Control Sequence Introducer (ESC [)
+            case osc // Operating System Command (ESC ])
+            case simple // Simple escape (ESC + char)
             case unknown
         }
 
@@ -270,7 +273,7 @@ public struct SIMDTerminalParser {
             guard type == .csi, rawBytes.count > 2 else { return nil }
 
             // Skip ESC [ and final byte
-            let paramBytes = rawBytes[2..<(rawBytes.count - 1)]
+            let paramBytes = rawBytes[2 ..< (rawBytes.count - 1)]
             let paramString = String(bytes: paramBytes, encoding: .ascii) ?? ""
 
             return paramString.split(separator: ";").compactMap { Int($0) }
@@ -285,7 +288,6 @@ public struct SIMDTerminalParser {
 
     // MARK: - SIMD Helpers
 
-    
     private static func loadSIMD16(from buffer: UnsafeBufferPointer<UInt8>, at offset: Int) -> SIMD16<UInt8> {
         let base = buffer.baseAddress!.advanced(by: offset)
         return SIMD16(
@@ -296,22 +298,20 @@ public struct SIMDTerminalParser {
         )
     }
 
-    
     private static func any(_ mask: SIMDMask<SIMD16<UInt8>.MaskStorage>) -> Bool {
         // Check if any lane is true
-        for i in 0..<16 {
+        for i in 0 ..< 16 {
             if mask[i] { return true }
         }
         return false
     }
 
-    
     private static func extractPositions(
         from mask: SIMDMask<SIMD16<UInt8>.MaskStorage>,
         baseOffset: Int,
         into positions: inout [Int]
     ) {
-        for i in 0..<16 {
+        for i in 0 ..< 16 {
             if mask[i] {
                 positions.append(baseOffset + i)
             }
@@ -321,14 +321,14 @@ public struct SIMDTerminalParser {
 
 // MARK: - Convenience Extensions
 
-extension SIMDTerminalParser {
+public extension SIMDTerminalParser {
     /// Scans an array of bytes.
-    public static func scan(_ bytes: [UInt8]) -> ScanResult {
+    static func scan(_ bytes: [UInt8]) -> ScanResult {
         bytes.withUnsafeBufferPointer { scan($0) }
     }
 
     /// Scans a Data object.
-    public static func scan(_ data: Data) -> ScanResult {
+    static func scan(_ data: Data) -> ScanResult {
         data.withUnsafeBytes { rawBuffer in
             let buffer = rawBuffer.bindMemory(to: UInt8.self)
             return scan(buffer)

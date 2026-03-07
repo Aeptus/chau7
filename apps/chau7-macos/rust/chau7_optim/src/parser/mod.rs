@@ -83,7 +83,6 @@ pub trait OutputParser: Sized {
     /// 2. Try regex/text extraction with partial data
     /// 3. Return truncated passthrough with `[RTK:PASSTHROUGH]` marker
     fn parse(input: &str) -> ParseResult<Self::Output>;
-
 }
 
 /// Truncate output to max length with ellipsis

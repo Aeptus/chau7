@@ -15,7 +15,9 @@ struct GraphicsSettingsView: View {
             SettingsSectionHeader(L("Sixel Graphics Protocol"), icon: "photo")
 
             SettingsDescription(
-                text: L("Sixel is a bitmap graphics format that allows programs to display images directly in the terminal using DCS escape sequences. Widely supported by tools like libsixel and ImageMagick.")
+                text: L(
+                    "Sixel is a bitmap graphics format that allows programs to display images directly in the terminal using DCS escape sequences. Widely supported by tools like libsixel and ImageMagick."
+                )
             )
 
             SettingsToggle(
@@ -34,7 +36,9 @@ struct GraphicsSettingsView: View {
             SettingsSectionHeader(L("Kitty Graphics Protocol"), icon: "photo.artframe")
 
             SettingsDescription(
-                text: L("The Kitty graphics protocol provides a modern, efficient way to display images in the terminal using APC escape sequences. Supports PNG, JPEG, and raw pixel data with features like image placement and animation.")
+                text: L(
+                    "The Kitty graphics protocol provides a modern, efficient way to display images in the terminal using APC escape sequences. Supports PNG, JPEG, and raw pixel data with features like image placement and animation."
+                )
             )
 
             SettingsToggle(
@@ -50,7 +54,7 @@ struct GraphicsSettingsView: View {
                 label: L("Image Cache Size"),
                 help: L("Maximum memory used to cache decoded Kitty images (64-1024 MB)"),
                 value: $cacheSliderValue,
-                range: 64...1024,
+                range: 64 ... 1024,
                 step: 64,
                 format: "%.0f",
                 suffix: " MB",
@@ -117,7 +121,6 @@ struct GraphicsSettingsView: View {
 
     // MARK: - Protocol Info Row
 
-    @ViewBuilder
     private func protocolInfoRow(name: String, statusText: String, detail: String, isEnabled: Bool) -> some View {
         HStack {
             Circle()

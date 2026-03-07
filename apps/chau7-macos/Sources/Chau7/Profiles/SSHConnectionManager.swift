@@ -11,9 +11,9 @@ struct SSHConnection: Identifiable, Codable, Equatable, Hashable {
     var port: Int
     var user: String
     var identityFile: String
-    var jumpHost: String  // ProxyJump / bastion host
-    var extraOptions: String  // Additional SSH options
-    var colorTag: String  // Tab color when connecting
+    var jumpHost: String // ProxyJump / bastion host
+    var extraOptions: String // Additional SSH options
+    var colorTag: String // Tab color when connecting
     var lastConnected: Date?
 
     init(
@@ -95,7 +95,7 @@ final class SSHConnectionManager: ObservableObject {
     static let shared = SSHConnectionManager()
 
     @Published var connections: [SSHConnection] = []
-    @Published var folders: [String] = []  // For organizing connections
+    @Published var folders: [String] = [] // For organizing connections
 
     private let storageKey = "ssh.connections"
     private let foldersKey = "ssh.folders"
@@ -149,14 +149,13 @@ final class SSHConnectionManager: ObservableObject {
     }
 
     var recentConnections: [SSHConnection] {
-        connections
+        Array(connections
             .filter { $0.lastConnected != nil }
             .sorted { ($0.lastConnected ?? .distantPast) > ($1.lastConnected ?? .distantPast) }
-            .prefix(5)
-            .map { $0 }
+            .prefix(5))
     }
 
-    // Import from ~/.ssh/config
+    /// Import from ~/.ssh/config
     func importFromSSHConfig() -> Int {
         let configPath = (("~/.ssh/config" as NSString).expandingTildeInPath)
         guard let content = FileOperations.readString(from: configPath) else {
@@ -234,8 +233,8 @@ struct SSHConnectionView: View {
         let query = searchText.lowercased()
         return manager.connections.filter {
             $0.displayName.lowercased().contains(query) ||
-            $0.host.lowercased().contains(query) ||
-            $0.user.lowercased().contains(query)
+                $0.host.lowercased().contains(query) ||
+                $0.user.lowercased().contains(query)
         }.sorted { $0.displayName < $1.displayName }
     }
 
@@ -256,7 +255,7 @@ struct SSHConnectionView: View {
                 Divider()
 
                 // Recent connections
-                if searchText.isEmpty && !manager.recentConnections.isEmpty {
+                if searchText.isEmpty, !manager.recentConnections.isEmpty {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(L("Recent", "Recent"))
                             .font(.system(size: 11, weight: .semibold))

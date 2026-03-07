@@ -49,8 +49,8 @@ final class SavedSplitNode: Codable, Equatable {
 
 /// Direction for splitting a pane
 enum SplitDirection: String, Codable {
-    case horizontal  // Side by side
-    case vertical    // Stacked
+    case horizontal // Side by side
+    case vertical // Stacked
 }
 
 /// Type of pane content
@@ -205,10 +205,10 @@ extension SplitNode {
             )
         }
     }
-    /// Closes all terminal sessions in this subtree
-    /// NOTE: Methods below are kept in an extension to keep SplitNode behavior
-    /// in one cohesive area and to avoid moving the core tree-representation
-    /// model around.
+    // Closes all terminal sessions in this subtree
+    // NOTE: Methods below are kept in an extension to keep SplitNode behavior
+    // in one cohesive area and to avoid moving the core tree-representation
+    // model around.
 }
 
 extension SplitNode {
@@ -292,12 +292,12 @@ extension SplitNode {
 final class TextEditorModel: ObservableObject, Identifiable {
     let id = UUID()
 
-    @Published var content: String = ""
+    @Published var content = ""
     @Published var filePath: String?
-    @Published var isDirty: Bool = false
-    @Published var isLoading: Bool = false
+    @Published var isDirty = false
+    @Published var isLoading = false
     @Published var lastError: String?
-    @Published var scrollToLine: Int?  // F03: Line to scroll to after loading (set after content loads)
+    @Published var scrollToLine: Int? // F03: Line to scroll to after loading (set after content loads)
 
     /// Pending line to scroll to after next load completes
     private var pendingScrollToLine: Int?
@@ -323,7 +323,7 @@ final class TextEditorModel: ObservableObject, Identifiable {
         loadingToken = token
         isLoading = true
         lastError = nil
-        pendingScrollToLine = line  // Store for after load completes
+        pendingScrollToLine = line // Store for after load completes
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
@@ -599,8 +599,10 @@ final class SplitPaneController: ObservableObject {
 
             // Both children still exist - rebuild the split
             if let newFirst = firstResult.node, let newSecond = secondResult.node {
-                return (.split(id: id, direction: dir, first: newFirst, second: newSecond, ratio: ratio),
-                        firstResult.siblingID ?? secondResult.siblingID)
+                return (
+                    .split(id: id, direction: dir, first: newFirst, second: newSecond, ratio: ratio),
+                    firstResult.siblingID ?? secondResult.siblingID
+                )
             }
             // First child was removed - promote second child, return first pane of second as sibling
             if firstResult.node == nil, let newSecond = secondResult.node {

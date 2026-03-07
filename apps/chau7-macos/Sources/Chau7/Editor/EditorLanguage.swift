@@ -40,7 +40,7 @@ struct EditorLanguage: Identifiable {
             HighlightRule(pattern: "\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"", color: .systemRed),
             HighlightRule(pattern: "//.*$", color: .systemGreen, options: [.anchorsMatchLines]),
             HighlightRule(pattern: "/\\*[\\s\\S]*?\\*/", color: .systemGreen),
-            HighlightRule(pattern: "\\b\\d+\\.?\\d*\\b", color: .systemBlue),
+            HighlightRule(pattern: "\\b\\d+\\.?\\d*\\b", color: .systemBlue)
         ]
     )
 
@@ -59,7 +59,7 @@ struct EditorLanguage: Identifiable {
             HighlightRule(pattern: "\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"", color: .systemRed),
             HighlightRule(pattern: "'[^'\\\\]*(?:\\\\.[^'\\\\]*)*'", color: .systemRed),
             HighlightRule(pattern: "#.*$", color: .systemGreen, options: [.anchorsMatchLines]),
-            HighlightRule(pattern: "\\b\\d+\\.?\\d*\\b", color: .systemBlue),
+            HighlightRule(pattern: "\\b\\d+\\.?\\d*\\b", color: .systemBlue)
         ]
     )
 
@@ -79,7 +79,7 @@ struct EditorLanguage: Identifiable {
             HighlightRule(pattern: "'[^'\\\\]*(?:\\\\.[^'\\\\]*)*'", color: .systemRed),
             HighlightRule(pattern: "//.*$", color: .systemGreen, options: [.anchorsMatchLines]),
             HighlightRule(pattern: "/\\*[\\s\\S]*?\\*/", color: .systemGreen),
-            HighlightRule(pattern: "\\b\\d+\\.?\\d*\\b", color: .systemBlue),
+            HighlightRule(pattern: "\\b\\d+\\.?\\d*\\b", color: .systemBlue)
         ]
     )
 
@@ -93,7 +93,7 @@ struct EditorLanguage: Identifiable {
             HighlightRule(pattern: "\\$\\{?[A-Za-z_][A-Za-z0-9_]*\\}?", color: .systemPurple),
             HighlightRule(pattern: "\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"", color: .systemRed),
             HighlightRule(pattern: "'[^']*'", color: .systemRed),
-            HighlightRule(pattern: "#.*$", color: .systemGreen, options: [.anchorsMatchLines]),
+            HighlightRule(pattern: "#.*$", color: .systemGreen, options: [.anchorsMatchLines])
         ]
     )
 
@@ -103,7 +103,7 @@ struct EditorLanguage: Identifiable {
             HighlightRule(pattern: "\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"\\s*:", color: .systemPurple),
             HighlightRule(pattern: "\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"", color: .systemRed),
             HighlightRule(pattern: "\\b(true|false|null)\\b", color: .systemPink),
-            HighlightRule(pattern: "-?\\b\\d+\\.?\\d*([eE][+-]?\\d+)?\\b", color: .systemBlue),
+            HighlightRule(pattern: "-?\\b\\d+\\.?\\d*([eE][+-]?\\d+)?\\b", color: .systemBlue)
         ]
     )
 
@@ -115,7 +115,7 @@ struct EditorLanguage: Identifiable {
             HighlightRule(pattern: "'[^']*'", color: .systemRed),
             HighlightRule(pattern: "\\b(true|false|null|yes|no)\\b", color: .systemPink),
             HighlightRule(pattern: "#.*$", color: .systemGreen, options: [.anchorsMatchLines]),
-            HighlightRule(pattern: "-?\\b\\d+\\.?\\d*\\b", color: .systemBlue),
+            HighlightRule(pattern: "-?\\b\\d+\\.?\\d*\\b", color: .systemBlue)
         ]
     )
 
@@ -128,7 +128,7 @@ struct EditorLanguage: Identifiable {
             HighlightRule(pattern: "'[^']*'", color: .systemRed),
             HighlightRule(pattern: "\\b(true|false)\\b", color: .systemPink),
             HighlightRule(pattern: "#.*$", color: .systemGreen, options: [.anchorsMatchLines]),
-            HighlightRule(pattern: "-?\\b\\d+\\.?\\d*\\b", color: .systemBlue),
+            HighlightRule(pattern: "-?\\b\\d+\\.?\\d*\\b", color: .systemBlue)
         ]
     )
 
@@ -142,7 +142,7 @@ struct EditorLanguage: Identifiable {
             HighlightRule(pattern: "```[\\s\\S]*?```", color: .systemRed),
             HighlightRule(pattern: "^\\s*[-*+]\\s", color: .systemOrange, options: [.anchorsMatchLines]),
             HighlightRule(pattern: "^\\s*\\d+\\.\\s", color: .systemOrange, options: [.anchorsMatchLines]),
-            HighlightRule(pattern: "\\[([^\\]]+)\\]\\(([^)]+)\\)", color: .systemBlue),
+            HighlightRule(pattern: "\\[([^\\]]+)\\]\\(([^)]+)\\)", color: .systemBlue)
         ]
     )
 
@@ -161,7 +161,7 @@ struct EditorLanguage: Identifiable {
             HighlightRule(pattern: "`[^`]*`", color: .systemRed),
             HighlightRule(pattern: "//.*$", color: .systemGreen, options: [.anchorsMatchLines]),
             HighlightRule(pattern: "/\\*[\\s\\S]*?\\*/", color: .systemGreen),
-            HighlightRule(pattern: "\\b\\d+\\.?\\d*\\b", color: .systemBlue),
+            HighlightRule(pattern: "\\b\\d+\\.?\\d*\\b", color: .systemBlue)
         ]
     )
 
@@ -179,7 +179,7 @@ struct EditorLanguage: Identifiable {
             HighlightRule(pattern: "\"[^\"\\\\]*(?:\\\\.[^\"\\\\]*)*\"", color: .systemRed),
             HighlightRule(pattern: "//.*$", color: .systemGreen, options: [.anchorsMatchLines]),
             HighlightRule(pattern: "/\\*[\\s\\S]*?\\*/", color: .systemGreen),
-            HighlightRule(pattern: "\\b\\d+\\.?\\d*\\b", color: .systemBlue),
+            HighlightRule(pattern: "\\b\\d+\\.?\\d*\\b", color: .systemBlue)
         ]
     )
 
@@ -198,7 +198,7 @@ struct EditorLanguage: Identifiable {
             HighlightRule(pattern: "'[^'\\\\]*(?:\\\\.[^'\\\\]*)*'", color: .systemRed),
             HighlightRule(pattern: "#.*$", color: .systemGreen, options: [.anchorsMatchLines]),
             HighlightRule(pattern: ":[A-Za-z_][A-Za-z0-9_]*", color: .systemTeal),
-            HighlightRule(pattern: "\\b\\d+\\.?\\d*\\b", color: .systemBlue),
+            HighlightRule(pattern: "\\b\\d+\\.?\\d*\\b", color: .systemBlue)
         ]
     )
 
@@ -209,7 +209,7 @@ struct EditorLanguage: Identifiable {
 
     static let allLanguages: [EditorLanguage] = [
         .swift, .python, .javascript, .shell, .json, .yaml, .toml,
-        .markdown, .go, .rust, .ruby, .plainText,
+        .markdown, .go, .rust, .ruby, .plainText
     ]
 
     /// Detect language from file extension.

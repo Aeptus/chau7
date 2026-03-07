@@ -8,7 +8,9 @@ import Chau7Core
 final class KittyKeyboardHandler {
     private var protocol_ = KittyKeyboardProtocol()
 
-    var isActive: Bool { protocol_.flags > 0 }
+    var isActive: Bool {
+        protocol_.flags > 0
+    }
 
     /// Handle a keyboard protocol request from the terminal (CSI sequence)
     func handleProtocolRequest(_ request: KeyboardProtocolRequest) -> [UInt8]? {

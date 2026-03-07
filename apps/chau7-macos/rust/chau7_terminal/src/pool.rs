@@ -1,7 +1,7 @@
 //! Memory pool for CellData buffers to reduce allocation overhead.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::Mutex;
 
@@ -89,6 +89,6 @@ impl CellBufferPool {
 
 impl Default for CellBufferPool {
     fn default() -> Self {
-        Self::new(16)  // Keep up to 16 buffers pooled (multi-tab friendly)
+        Self::new(16) // Keep up to 16 buffers pooled (multi-tab friendly)
     }
 }

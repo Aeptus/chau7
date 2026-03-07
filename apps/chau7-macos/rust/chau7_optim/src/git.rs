@@ -28,7 +28,13 @@ fn git_cmd(global_args: &[String]) -> Command {
     cmd
 }
 
-pub fn run(cmd: GitCommand, args: &[String], max_lines: Option<usize>, verbose: u8, global_args: &[String]) -> Result<()> {
+pub fn run(
+    cmd: GitCommand,
+    args: &[String],
+    max_lines: Option<usize>,
+    verbose: u8,
+    global_args: &[String],
+) -> Result<()> {
     match cmd {
         GitCommand::Diff => run_diff(args, max_lines, verbose, global_args),
         GitCommand::Log => run_log(args, max_lines, verbose, global_args),
@@ -40,12 +46,19 @@ pub fn run(cmd: GitCommand, args: &[String], max_lines: Option<usize>, verbose: 
         GitCommand::Pull => run_pull(args, verbose, global_args),
         GitCommand::Branch => run_branch(args, verbose, global_args),
         GitCommand::Fetch => run_fetch(args, verbose, global_args),
-        GitCommand::Stash { subcommand } => run_stash(subcommand.as_deref(), args, verbose, global_args),
+        GitCommand::Stash { subcommand } => {
+            run_stash(subcommand.as_deref(), args, verbose, global_args)
+        }
         GitCommand::Worktree => run_worktree(args, verbose, global_args),
     }
 }
 
-fn run_diff(args: &[String], max_lines: Option<usize>, verbose: u8, global_args: &[String]) -> Result<()> {
+fn run_diff(
+    args: &[String],
+    max_lines: Option<usize>,
+    verbose: u8,
+    global_args: &[String],
+) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     // Check if user wants stat output
@@ -142,7 +155,12 @@ fn is_blob_show_arg(arg: &str) -> bool {
     arg.contains(':') && !arg.starts_with(':')
 }
 
-fn run_show(args: &[String], max_lines: Option<usize>, verbose: u8, global_args: &[String]) -> Result<()> {
+fn run_show(
+    args: &[String],
+    max_lines: Option<usize>,
+    verbose: u8,
+    global_args: &[String],
+) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     // If user wants --stat or --format only, pass through
@@ -317,7 +335,12 @@ pub(crate) fn compact_diff(diff: &str, max_lines: usize) -> String {
     result.join("\n")
 }
 
-fn run_log(args: &[String], _max_lines: Option<usize>, verbose: u8, global_args: &[String]) -> Result<()> {
+fn run_log(
+    args: &[String],
+    _max_lines: Option<usize>,
+    verbose: u8,
+    global_args: &[String],
+) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     let mut cmd = git_cmd(global_args);
@@ -329,9 +352,9 @@ fn run_log(args: &[String], _max_lines: Option<usize>, verbose: u8, global_args:
     });
 
     // Check if user provided limit flag
-    let has_limit_flag = args.iter().any(|arg| {
-        arg.starts_with('-') && arg.chars().nth(1).map_or(false, |c| c.is_ascii_digit())
-    });
+    let has_limit_flag = args
+        .iter()
+        .any(|arg| arg.starts_with('-') && arg.chars().nth(1).is_some_and(|c| c.is_ascii_digit()));
 
     // Apply RTK defaults only if user didn't specify them
     if !has_format_flag {
@@ -345,7 +368,7 @@ fn run_log(args: &[String], _max_lines: Option<usize>, verbose: u8, global_args:
         // Extract limit from args if provided
         args.iter()
             .find(|arg| {
-                arg.starts_with('-') && arg.chars().nth(1).map_or(false, |c| c.is_ascii_digit())
+                arg.starts_with('-') && arg.chars().nth(1).is_some_and(|c| c.is_ascii_digit())
             })
             .and_then(|arg| arg[1..].parse::<usize>().ok())
             .unwrap_or(10)
@@ -714,7 +737,7 @@ fn run_commit(messages: &[String], verbose: u8, global_args: &[String]) -> Resul
         // Extract commit hash from output like "[main abc1234] message"
         let compact = if let Some(line) = stdout.lines().next() {
             if let Some(hash_start) = line.find(' ') {
-                let hash = line[1..hash_start].split(' ').last().unwrap_or("");
+                let hash = line[1..hash_start].split(' ').next_back().unwrap_or("");
                 if !hash.is_empty() && hash.len() >= 7 {
                     format!("ok ✓ {}", &hash[..7.min(hash.len())])
                 } else {
@@ -730,23 +753,21 @@ fn run_commit(messages: &[String], verbose: u8, global_args: &[String]) -> Resul
         println!("{}", compact);
 
         timer.track(&original_cmd, "rtk git commit", &raw_output, &compact);
+    } else if stderr.contains("nothing to commit") || stdout.contains("nothing to commit") {
+        println!("ok (nothing to commit)");
+        timer.track(
+            &original_cmd,
+            "rtk git commit",
+            &raw_output,
+            "ok (nothing to commit)",
+        );
     } else {
-        if stderr.contains("nothing to commit") || stdout.contains("nothing to commit") {
-            println!("ok (nothing to commit)");
-            timer.track(
-                &original_cmd,
-                "rtk git commit",
-                &raw_output,
-                "ok (nothing to commit)",
-            );
-        } else {
-            eprintln!("FAILED: git commit");
-            if !stderr.trim().is_empty() {
-                eprintln!("{}", stderr);
-            }
-            if !stdout.trim().is_empty() {
-                eprintln!("{}", stdout);
-            }
+        eprintln!("FAILED: git commit");
+        if !stderr.trim().is_empty() {
+            eprintln!("{}", stderr);
+        }
+        if !stdout.trim().is_empty() {
+            eprintln!("{}", stdout);
         }
     }
 
@@ -1095,7 +1116,12 @@ fn run_fetch(args: &[String], verbose: u8, global_args: &[String]) -> Result<()>
     Ok(())
 }
 
-fn run_stash(subcommand: Option<&str>, args: &[String], verbose: u8, global_args: &[String]) -> Result<()> {
+fn run_stash(
+    subcommand: Option<&str>,
+    args: &[String],
+    verbose: u8,
+    global_args: &[String],
+) -> Result<()> {
     let timer = tracking::TimedExecution::start();
 
     if verbose > 0 {

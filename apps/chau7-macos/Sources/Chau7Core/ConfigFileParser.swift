@@ -135,8 +135,8 @@ public enum ConfigFileParser {
 
     private static func escapeValue(_ v: String) -> String {
         v.replacingOccurrences(of: "\\", with: "\\\\")
-         .replacingOccurrences(of: "\"", with: "\\\"")
-         .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
     }
 
     /// Parse TOML-like config content into a dictionary structure
@@ -145,7 +145,7 @@ public enum ConfigFileParser {
         var currentSection = "__global__"
         sections[currentSection] = [:]
 
-        for (_, line) in content.components(separatedBy: .newlines).enumerated() {
+        for line in content.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
 
             // Skip empty lines and comments
@@ -166,13 +166,13 @@ public enum ConfigFileParser {
                 continue // Skip malformed lines silently
             }
 
-            let key = String(trimmed[trimmed.startIndex..<eqIdx]).trimmingCharacters(in: .whitespaces)
+            let key = String(trimmed[trimmed.startIndex ..< eqIdx]).trimmingCharacters(in: .whitespaces)
             let rawValue = String(trimmed[trimmed.index(after: eqIdx)...]).trimmingCharacters(in: .whitespaces)
 
             // Strip quotes from string values
             let value: String
             if (rawValue.hasPrefix("\"") && rawValue.hasSuffix("\"")) ||
-               (rawValue.hasPrefix("'") && rawValue.hasSuffix("'")) {
+                (rawValue.hasPrefix("'") && rawValue.hasSuffix("'")) {
                 value = String(rawValue.dropFirst().dropLast())
             } else {
                 value = rawValue

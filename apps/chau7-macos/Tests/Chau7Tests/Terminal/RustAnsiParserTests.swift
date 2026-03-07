@@ -27,8 +27,10 @@ final class RustEscapeSanitizerTests: XCTestCase {
         // Result is nil when Rust is unavailable, or a String when it is.
         // Either outcome is acceptable; we just verify no crash.
         if result != nil {
-            XCTAssertFalse(result!.isEmpty || result == "hello world",
-                           "If Rust is loaded, result should be the sanitized text")
+            XCTAssertFalse(
+                result!.isEmpty || result == "hello world",
+                "If Rust is loaded, result should be the sanitized text"
+            )
         }
     }
 
@@ -61,7 +63,7 @@ final class RustEscapeSanitizerTests: XCTestCase {
 
     func testSanitize_concurrentAccess_doesNotCrash() {
         let group = DispatchGroup()
-        for i in 0..<20 {
+        for i in 0 ..< 20 {
             group.enter()
             DispatchQueue.global().async {
                 _ = RustEscapeSanitizer.shared.sanitize("concurrent test \(i)")
@@ -128,7 +130,7 @@ final class RustCommandRiskTests: XCTestCase {
     }
 
     func testIsRisky_manyPatterns_doesNotCrash() {
-        let patterns = (0..<100).map { "pattern_\($0)" }
+        let patterns = (0 ..< 100).map { "pattern_\($0)" }
         _ = RustCommandRisk.shared.isRisky(command: "test command", patterns: patterns)
     }
 
@@ -144,7 +146,7 @@ final class RustCommandRiskTests: XCTestCase {
     func testIsRisky_concurrentAccess_doesNotCrash() {
         let group = DispatchGroup()
         let patterns = ["rm -rf", "git push --force"]
-        for i in 0..<20 {
+        for i in 0 ..< 20 {
             group.enter()
             DispatchQueue.global().async {
                 _ = RustCommandRisk.shared.isRisky(
@@ -290,7 +292,7 @@ final class RustPatternMatcherTests: XCTestCase {
     }
 
     func testFirstMatchIndex_manyPatterns_doesNotCrash() {
-        let patterns = (0..<100).map { "pattern_\($0)" }
+        let patterns = (0 ..< 100).map { "pattern_\($0)" }
         _ = RustPatternMatcher.outputPatterns.firstMatchIndex(
             haystack: "test input",
             patterns: patterns
@@ -298,7 +300,7 @@ final class RustPatternMatcherTests: XCTestCase {
     }
 
     func testContainsAny_manyPatterns_doesNotCrash() {
-        let patterns = (0..<100).map { "pattern_\($0)" }
+        let patterns = (0 ..< 100).map { "pattern_\($0)" }
         _ = RustPatternMatcher.outputPatterns.containsAny(
             haystack: "test input",
             patterns: patterns
@@ -339,7 +341,7 @@ final class RustPatternMatcherTests: XCTestCase {
     func testFirstMatchIndex_concurrentAccess_doesNotCrash() {
         let group = DispatchGroup()
         let patterns = ["alpha", "beta", "gamma"]
-        for i in 0..<20 {
+        for i in 0 ..< 20 {
             group.enter()
             DispatchQueue.global().async {
                 _ = RustPatternMatcher.outputPatterns.firstMatchIndex(
@@ -356,7 +358,7 @@ final class RustPatternMatcherTests: XCTestCase {
     func testContainsAny_concurrentAccess_doesNotCrash() {
         let group = DispatchGroup()
         let patterns = ["alpha", "beta", "gamma"]
-        for i in 0..<20 {
+        for i in 0 ..< 20 {
             group.enter()
             DispatchQueue.global().async {
                 _ = RustPatternMatcher.waitPatterns.containsAny(

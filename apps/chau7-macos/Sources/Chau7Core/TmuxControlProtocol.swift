@@ -17,15 +17,15 @@ import Foundation
 /// %layout-change @<window_id> <layout>
 /// %exit [reason]
 public enum TmuxNotification: Equatable, Sendable {
-    case begin(Int, Int)           // time, command number
+    case begin(Int, Int) // time, command number
     case end(Int, Int)
     case error(Int, Int, String)
-    case sessionChanged(String, String)  // id, name
-    case windowAdd(String)              // window id
+    case sessionChanged(String, String) // id, name
+    case windowAdd(String) // window id
     case windowClose(String)
-    case output(String, String)         // pane id, data
-    case layoutChange(String, String)   // window id, layout
-    case exit(String?)                  // reason
+    case output(String, String) // pane id, data
+    case layoutChange(String, String) // window id, layout
+    case exit(String?) // reason
     case unknown(String)
 }
 

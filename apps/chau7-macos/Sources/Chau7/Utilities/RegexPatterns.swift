@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - Shared Regex Patterns (Code Optimization)
+
 // Consolidates NSRegularExpression instances to avoid per-call compilation
 
 /// Helper to create regex with clear error messages (Fix #10: safe regex initialization)

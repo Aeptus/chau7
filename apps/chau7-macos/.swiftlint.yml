@@ -1,0 +1,205 @@
+# SwiftLint Configuration for Chau7
+# Philosophy: SwiftLint catches semantic/logic issues. SwiftFormat handles formatting.
+
+included:
+  - Sources
+  - Tests
+
+excluded:
+  - .build
+  - Packages
+  - rust
+  - Libraries
+
+# Disabled rules — either handled by SwiftFormat or not matching project style
+disabled_rules:
+  - trailing_whitespace           # SwiftFormat handles
+  - todo                          # We allow TODOs
+  - opening_brace                 # SwiftFormat handles
+  - comma                         # SwiftFormat handles
+  - statement_position            # SwiftFormat handles
+  - trailing_comma                # SwiftFormat handles
+  - operator_usage_whitespace     # SwiftFormat handles
+  - vertical_whitespace           # SwiftFormat handles
+  - colon                         # SwiftFormat handles
+  - implicit_return               # Style preference, not a bug
+  - pattern_matching_keywords     # Style preference (case let .x(v) vs case .x(let v))
+  - multiple_closures_with_trailing_closure  # Common SwiftUI pattern
+  - implicit_getter               # Too strict for computed properties
+  - for_where                     # Style preference — if-inside-for is often clearer
+  - inclusive_language             # False positives (masterToggleSection is a UI term)
+  - notification_center_detachment  # AppDelegate pattern doesn't need deinit removal
+  - force_try                       # Used deliberately in tests and known-safe init paths
+  - force_cast                      # Rare, used deliberately
+  - deployment_target               # Minimum deployment target checks are in Package.swift
+  - optional_data_string_conversion # Style preference, not a safety issue
+  - non_optional_string_data_conversion  # Style preference
+
+# Opt-in rules — semantic checks only
+opt_in_rules:
+  - array_init
+  - closure_spacing
+  - contains_over_filter_count
+  - contains_over_filter_is_empty
+  - contains_over_first_not_nil
+  - empty_collection_literal
+  - empty_count
+  - empty_string
+  - enum_case_associated_values_count
+  - explicit_init
+  - fatal_error_message
+  - first_where
+  - flatmap_over_map_reduce
+  - identical_operands
+  - joined_default_parameter
+  - last_where
+  - legacy_multiple
+  - lower_acl_than_parent
+  - modifier_order
+  - overridden_super_call
+  - prefer_self_type_over_type_of_self
+  - prefer_zero_over_explicit_init
+  - private_action
+  - private_outlet
+  - prohibited_super_call
+  - reduce_into
+  - redundant_nil_coalescing
+  - redundant_type_annotation
+  - sorted_first_last
+  - static_operator
+  - toggle_bool
+  - unavailable_function
+  - unneeded_parentheses_in_closure_argument
+  - unowned_variable_capture
+  - untyped_error_in_catch
+  - yoda_condition
+
+# Line length — SwiftFormat enforces 200; SwiftLint catches outliers
+line_length:
+  warning: 300
+  error: 400
+  ignores_comments: true
+  ignores_urls: true
+  ignores_function_declarations: true
+  ignores_interpolated_strings: true
+
+# File length — RustTerminalView is ~6000, FeatureSettings ~4300
+file_length:
+  warning: 5000
+  error: 8000
+  ignore_comment_only_lines: true
+
+# Type body length — TerminalSessionModel ~2800, RustTerminalView ~2700, AppModel ~2000
+type_body_length:
+  warning: 2800
+  error: 3500
+
+# Function body length — settings init is 269 lines, large dispatchers exist
+function_body_length:
+  warning: 270
+  error: 400
+
+# Function parameter count — some callbacks have many params
+function_parameter_count:
+  warning: 11
+  error: 15
+
+# Cyclomatic complexity — large switch statements are inherently complex
+cyclomatic_complexity:
+  warning: 46
+  error: 60
+  ignores_case_statements: true
+
+# Nesting
+nesting:
+  type_level:
+    warning: 3
+    error: 5
+  function_level:
+    warning: 3
+    error: 5
+
+# Identifier name — include common short names used in the codebase
+identifier_name:
+  min_length:
+    warning: 2
+    error: 1
+  max_length:
+    warning: 60
+    error: 80
+  excluded:
+    - id
+    - ok
+    - i
+    - j
+    - x
+    - y
+    - dx
+    - dy
+    - fd
+    - fg
+    - bg
+    - to
+    - L
+    - r
+    - g
+    - b
+    - a
+    - f
+    - v
+    - s
+    - t
+    - n
+    - m
+    - p
+    - c
+    - w
+    - e
+    - h
+    - d
+    - k
+  allowed_symbols:
+    - _
+
+# Type name
+type_name:
+  min_length:
+    warning: 3
+    error: 2
+  max_length:
+    warning: 60
+    error: 80
+  excluded:
+    - ID
+    - UI
+
+# Large tuple
+large_tuple:
+  warning: 5
+  error: 7
+
+# Enum case associated values
+enum_case_associated_values_count:
+  warning: 6
+  error: 8
+
+# Custom rules
+custom_rules:
+  # Avoid print statements in production code
+  no_print_statements:
+    name: "No Print Statements"
+    regex: '^\s*print\s*\('
+    message: "Use Log.debug() instead of print()"
+    severity: warning
+    match_kinds:
+      - identifier
+
+  # Require MARK comments spacing
+  mark_comment_spacing:
+    name: "MARK Comment Spacing"
+    regex: '// MARK:[^ -]'
+    message: "MARK comments should have a space after the colon"
+    severity: warning
+
+# Reporter type
+reporter: "xcode"

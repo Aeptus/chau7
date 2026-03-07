@@ -14,7 +14,9 @@ import CoreText
 /// after deallocation.
 private final class DisplayLinkWeakBox {
     weak var view: RustTerminalView?
-    init(_ view: RustTerminalView) { self.view = view }
+    init(_ view: RustTerminalView) {
+        self.view = view
+    }
 }
 
 // MARK: - Native Rust Grid Renderer
@@ -26,35 +28,39 @@ private final class RustGridView: NSView {
             case underline
             case bar
         }
+
         var shape: Shape
         var blink: Bool
     }
 
-    var font: NSFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular) {
+    var font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular) {
         didSet { updateFontCache() }
     }
 
-    var cellSize: CGSize = CGSize(width: 8, height: 16) {
+    var cellSize = CGSize(width: 8, height: 16) {
         didSet { if !metalRenderingActive { needsDisplay = true } }
     }
 
     var foregroundColor: NSColor = .textColor {
         didSet { if !metalRenderingActive { needsDisplay = true } }
     }
+
     var backgroundColor: NSColor = .textBackgroundColor {
         didSet { if !metalRenderingActive { needsDisplay = true } }
     }
+
     var cursorColor: NSColor = .white {
         didSet { if !metalRenderingActive { needsDisplay = true } }
     }
+
     var selectionColor: NSColor = .selectedTextBackgroundColor
 
-    var cursorStyle: CursorStyle = CursorStyle(shape: .block, blink: false) {
+    var cursorStyle = CursorStyle(shape: .block, blink: false) {
         didSet { if !metalRenderingActive { needsDisplay = true } }
     }
 
-    private var cols: Int = 0
-    private var rows: Int = 0
+    private var cols = 0
+    private var rows = 0
     private var cells: [RustCellData] = []
     private var overlayCells: [Int: RustCellData] = [:]
     /// Viewport-relative row tints (row index → tint color). Applied as a blend over cell backgrounds.
@@ -65,13 +71,14 @@ private final class RustGridView: NSView {
             }
         }
     }
+
     private var cursor: (col: Int, row: Int) = (0, 0)
     private var lastCursor: (col: Int, row: Int) = (0, 0)
-    private var lastBlinkPhase: Bool = true
+    private var lastBlinkPhase = true
 
     /// DECTCEM cursor visibility: when false, the terminal has hidden the cursor (ESC[?25l).
     /// Programs like Claude Code hide the terminal cursor and draw their own via ANSI styling.
-    var cursorVisible: Bool = true {
+    var cursorVisible = true {
         didSet {
             if !metalRenderingActive, oldValue != cursorVisible {
                 setNeedsDisplay(cursorRect(for: cursor))
@@ -82,12 +89,14 @@ private final class RustGridView: NSView {
     /// When true, Metal handles display — suppresses CPU draw() and setNeedsDisplay.
     var metalRenderingActive = false
 
-    private var regularFont: NSFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-    private var boldFont: NSFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
-    private var italicFont: NSFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-    private var boldItalicFont: NSFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
+    private var regularFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    private var boldFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
+    private var italicFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+    private var boldItalicFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
 
-    override var acceptsFirstResponder: Bool { false }
+    override var acceptsFirstResponder: Bool {
+        false
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
@@ -115,10 +124,10 @@ private final class RustGridView: NSView {
         dirtyRows: Set<Int>?
     ) {
         let totalCells = cols * rows
-        if self.cols != cols || self.rows != rows || self.cells.count != totalCells {
+        if self.cols != cols || self.rows != rows || cells.count != totalCells {
             self.cols = cols
             self.rows = rows
-            self.cells = Array(repeating: RustCellData(character: 0, fg_r: 255, fg_g: 255, fg_b: 255, bg_r: 0, bg_g: 0, bg_b: 0, flags: 0, _pad: 0, link_id: 0), count: totalCells)
+            cells = Array(repeating: RustCellData(character: 0, fg_r: 255, fg_g: 255, fg_b: 255, bg_r: 0, bg_g: 0, bg_b: 0, flags: 0, _pad: 0, link_id: 0), count: totalCells)
             // Full redraw when dimensions change.
             needsDisplay = true
         }
@@ -127,12 +136,12 @@ private final class RustGridView: NSView {
         if let dirtyRows, !dirtyRows.isEmpty {
             for row in dirtyRows {
                 let rowStart = row * cols
-                let rowRange = rowStart..<(rowStart + cols)
-                self.cells.replaceSubrange(rowRange, with: buffer[rowRange])
+                let rowRange = rowStart ..< (rowStart + cols)
+                cells.replaceSubrange(rowRange, with: buffer[rowRange])
                 setNeedsDisplay(rowRect(for: row))
             }
         } else {
-            self.cells.replaceSubrange(0..<totalCells, with: buffer)
+            cells.replaceSubrange(0 ..< totalCells, with: buffer)
             needsDisplay = true
         }
 
@@ -152,7 +161,7 @@ private final class RustGridView: NSView {
 
     /// Get the link_id for a cell at the given flat index. Returns 0 if out of bounds or no link.
     func linkIdAt(index: Int) -> UInt16 {
-        guard index >= 0 && index < cells.count else { return 0 }
+        guard index >= 0, index < cells.count else { return 0 }
         return cells[index].link_id
     }
 
@@ -224,9 +233,9 @@ private final class RustGridView: NSView {
         // Phase 1: Fill all cell backgrounds with AA off (sharp cell edges)
         ctx.setShouldAntialias(false)
         ctx.setAllowsAntialiasing(false)
-        for row in rowStart...rowEnd {
+        for row in rowStart ... rowEnd {
             let y = bounds.height - CGFloat(row + 1) * cellHeight
-            for col in 0..<cols {
+            for col in 0 ..< cols {
                 let idx = row * cols + col
                 let cell = overlayCells[idx] ?? cells[idx]
                 let x = CGFloat(col) * cellWidth
@@ -250,9 +259,9 @@ private final class RustGridView: NSView {
         ctx.setShouldSmoothFonts(true)
         ctx.setShouldSubpixelPositionFonts(true)
         ctx.setShouldSubpixelQuantizeFonts(true)
-        for row in rowStart...rowEnd {
+        for row in rowStart ... rowEnd {
             let y = bounds.height - CGFloat(row + 1) * cellHeight
-            for col in 0..<cols {
+            for col in 0 ..< cols {
                 let idx = row * cols + col
                 let cell = overlayCells[idx] ?? cells[idx]
 
@@ -300,7 +309,7 @@ private final class RustGridView: NSView {
                         let wavelength: CGFloat = cellWidth / 2.0
                         ctx.move(to: CGPoint(x: x, y: underlineY))
                         let steps = 12
-                        for step in 1...steps {
+                        for step in 1 ... steps {
                             let t = CGFloat(step) / CGFloat(steps)
                             let px = x + t * cellWidth
                             let py = underlineY + amplitude * sin(t * .pi * 2 * (cellWidth / wavelength))
@@ -334,7 +343,7 @@ private final class RustGridView: NSView {
                     ctx.strokePath()
                 }
                 // OSC 8 hyperlink: underline in link color
-                if cell.link_id > 0 && cell.flags & RustCellFlags.underline == 0 {
+                if cell.link_id > 0, cell.flags & RustCellFlags.underline == 0 {
                     let linkColor = NSColor.linkColor.cgColor
                     ctx.setStrokeColor(linkColor)
                     ctx.setLineWidth(max(1, drawFont.underlineThickness))
@@ -355,7 +364,7 @@ private final class RustGridView: NSView {
         // DECTCEM: don't draw cursor if the terminal has hidden it (ESC[?25l)
         guard cursorVisible else { return }
 
-        if cursorStyle.blink && !lastBlinkPhase {
+        if cursorStyle.blink, !lastBlinkPhase {
             return
         }
 
@@ -453,7 +462,9 @@ private final class RustGridView: NSView {
 }
 
 private final class PassthroughView: NSView {
-    override var acceptsFirstResponder: Bool { false }
+    override var acceptsFirstResponder: Bool {
+        false
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         let hit = super.hitTest(point)
@@ -493,18 +504,18 @@ private final class RustTerminalFFI {
     private typealias GetLastOutputFn = @convention(c) (OpaquePointer?, UnsafeMutablePointer<Int>?) -> UnsafeMutablePointer<UInt8>?
     private typealias FreeOutputFn = @convention(c) (UnsafeMutablePointer<UInt8>?, Int) -> Void
     private typealias InjectOutputFn = @convention(c) (OpaquePointer?, UnsafePointer<UInt8>?, Int) -> Void
-    // Scrollback size configuration
+    /// Scrollback size configuration
     private typealias SetScrollbackSizeFn = @convention(c) (OpaquePointer?, UInt32) -> Void
-    // Smart scroll support: get display offset (0 = at bottom)
+    /// Smart scroll support: get display offset (0 = at bottom)
     private typealias DisplayOffsetFn = @convention(c) (OpaquePointer?) -> UInt32
-    // Bracketed paste mode query (for proper paste handling in vim, zsh, etc.)
+    /// Bracketed paste mode query (for proper paste handling in vim, zsh, etc.)
     private typealias IsBracketedPasteModeFn = @convention(c) (OpaquePointer?) -> Bool
-    // Bell event checking (for audio/visual bell feedback)
+    /// Bell event checking (for audio/visual bell feedback)
     private typealias CheckBellFn = @convention(c) (OpaquePointer?) -> Bool
     // Mouse mode query (for context menu gating and mouse reporting)
     private typealias GetMouseModeFn = @convention(c) (OpaquePointer?) -> UInt32
     private typealias IsMouseReportingActiveFn = @convention(c) (OpaquePointer?) -> Bool
-    // Application cursor mode (DECCKM) query - for arrow key sequences
+    /// Application cursor mode (DECCKM) query - for arrow key sequences
     private typealias IsApplicationCursorModeFn = @convention(c) (OpaquePointer?) -> Bool
     // Debug and performance functions
     private typealias GetShellPidFn = @convention(c) (OpaquePointer?) -> UInt64
@@ -516,13 +527,13 @@ private final class RustTerminalFFI {
     private typealias GetPendingTitleFn = @convention(c) (OpaquePointer?) -> UnsafeMutablePointer<CChar>?
     private typealias GetPendingExitCodeFn = @convention(c) (OpaquePointer?) -> Int32
     private typealias IsPtyClosedFn = @convention(c) (OpaquePointer?) -> Bool
-    // Echo detection via termios (Phase 2: reliable password prompt detection)
+    /// Echo detection via termios (Phase 2: reliable password prompt detection)
     private typealias IsEchoDisabledFn = @convention(c) (OpaquePointer?) -> Bool
 
-    // Direct line text retrieval (avoids full grid snapshot per row)
+    /// Direct line text retrieval (avoids full grid snapshot per row)
     private typealias GetLineTextFn = @convention(c) (OpaquePointer?, Int32) -> UnsafeMutablePointer<CChar>?
 
-    // Hyperlink (OSC 8) FFI types (Phase 5)
+    /// Hyperlink (OSC 8) FFI types (Phase 5)
     private typealias GetLinkUrlFn = @convention(c) (OpaquePointer?, UInt16) -> UnsafeMutablePointer<CChar>?
 
     // Clipboard (OSC 52) FFI types (Phase 5)
@@ -538,7 +549,7 @@ private final class RustTerminalFFI {
 
     private struct Functions {
         let create: CreateFn
-        let createWithEnv: CreateWithEnvFn?  // Optional - older libraries may not have this
+        let createWithEnv: CreateWithEnvFn? // Optional - older libraries may not have this
         let destroy: DestroyFn
         let sendBytes: SendBytesFn
         let sendText: SendTextFn
@@ -550,56 +561,56 @@ private final class RustTerminalFFI {
         let scrollLines: ScrollLinesFn
         let selectionText: SelectionTextFn
         let selectionClear: SelectionClearFn
-        let selectionStart: SelectionStartFn?  // Optional - older libraries may not have this
-        let selectionUpdate: SelectionUpdateFn?  // Optional - older libraries may not have this
-        let selectionAll: SelectionAllFn?  // Optional - older libraries may not have this
+        let selectionStart: SelectionStartFn? // Optional - older libraries may not have this
+        let selectionUpdate: SelectionUpdateFn? // Optional - older libraries may not have this
+        let selectionAll: SelectionAllFn? // Optional - older libraries may not have this
         let freeString: FreeStringFn
         let cursorPosition: CursorPositionFn
         let poll: PollFn
-        let setColors: SetColorsFn?  // Optional - older libraries may not have this
-        let clearScrollback: ClearScrollbackFn?  // Optional - older libraries may not have this
+        let setColors: SetColorsFn? // Optional - older libraries may not have this
+        let clearScrollback: ClearScrollbackFn? // Optional - older libraries may not have this
         // Issue #3 fix: raw output retrieval functions
-        let getLastOutput: GetLastOutputFn?  // Optional - older libraries may not have this
-        let freeOutput: FreeOutputFn?  // Optional - older libraries may not have this
-        let injectOutput: InjectOutputFn?  // Optional - inject UI-only output
-        // Scrollback size configuration
-        let setScrollbackSize: SetScrollbackSizeFn?  // Optional - older libraries may not have this
-        // Smart scroll support
-        let displayOffset: DisplayOffsetFn?  // Optional - older libraries may not have this
-        // Bracketed paste mode query
-        let isBracketedPasteMode: IsBracketedPasteModeFn?  // Optional - older libraries may not have this
-        // Bell event checking
-        let checkBell: CheckBellFn?  // Optional - older libraries may not have this
+        let getLastOutput: GetLastOutputFn? // Optional - older libraries may not have this
+        let freeOutput: FreeOutputFn? // Optional - older libraries may not have this
+        let injectOutput: InjectOutputFn? // Optional - inject UI-only output
+        /// Scrollback size configuration
+        let setScrollbackSize: SetScrollbackSizeFn? // Optional - older libraries may not have this
+        /// Smart scroll support
+        let displayOffset: DisplayOffsetFn? // Optional - older libraries may not have this
+        /// Bracketed paste mode query
+        let isBracketedPasteMode: IsBracketedPasteModeFn? // Optional - older libraries may not have this
+        /// Bell event checking
+        let checkBell: CheckBellFn? // Optional - older libraries may not have this
         // Mouse mode query (for context menu gating)
-        let getMouseMode: GetMouseModeFn?  // Optional - older libraries may not have this
-        let isMouseReportingActive: IsMouseReportingActiveFn?  // Optional - older libraries may not have this
-        // Application cursor mode (DECCKM) query - for arrow key sequences
-        let isApplicationCursorMode: IsApplicationCursorModeFn?  // Optional - older libraries may not have this
+        let getMouseMode: GetMouseModeFn? // Optional - older libraries may not have this
+        let isMouseReportingActive: IsMouseReportingActiveFn? // Optional - older libraries may not have this
+        /// Application cursor mode (DECCKM) query - for arrow key sequences
+        let isApplicationCursorMode: IsApplicationCursorModeFn? // Optional - older libraries may not have this
         // Debug and performance functions
-        let getShellPid: GetShellPidFn?  // Optional - for dev server monitoring
-        let getDebugState: GetDebugStateFn?  // Optional - for debugging
-        let freeDebugState: FreeDebugStateFn?  // Optional - for debugging
-        let getFullBufferText: GetFullBufferTextFn?  // Optional - for debugging
-        let resetMetrics: ResetMetricsFn?  // Optional - for performance analysis
+        let getShellPid: GetShellPidFn? // Optional - for dev server monitoring
+        let getDebugState: GetDebugStateFn? // Optional - for debugging
+        let freeDebugState: FreeDebugStateFn? // Optional - for debugging
+        let getFullBufferText: GetFullBufferTextFn? // Optional - for debugging
+        let resetMetrics: ResetMetricsFn? // Optional - for performance analysis
         // Terminal event functions (title, exit, PTY closed)
-        let getPendingTitle: GetPendingTitleFn?  // Optional - for terminal title updates
-        let getPendingExitCode: GetPendingExitCodeFn?  // Optional - for process exit detection
-        let isPtyClosed: IsPtyClosedFn?  // Optional - for PTY close detection
-        // Echo detection via termios (Phase 2)
-        let isEchoDisabled: IsEchoDisabledFn?  // Optional - for reliable password detection
-        // Direct line text retrieval (avoids full grid snapshot per row)
-        let getLineTextDirect: GetLineTextFn?  // Optional - direct line text without grid snapshot
-        // Hyperlink support (OSC 8 — Phase 5)
-        let getLinkUrl: GetLinkUrlFn?  // Optional - for OSC 8 hyperlink URL retrieval
+        let getPendingTitle: GetPendingTitleFn? // Optional - for terminal title updates
+        let getPendingExitCode: GetPendingExitCodeFn? // Optional - for process exit detection
+        let isPtyClosed: IsPtyClosedFn? // Optional - for PTY close detection
+        /// Echo detection via termios (Phase 2)
+        let isEchoDisabled: IsEchoDisabledFn? // Optional - for reliable password detection
+        /// Direct line text retrieval (avoids full grid snapshot per row)
+        let getLineTextDirect: GetLineTextFn? // Optional - direct line text without grid snapshot
+        /// Hyperlink support (OSC 8 — Phase 5)
+        let getLinkUrl: GetLinkUrlFn? // Optional - for OSC 8 hyperlink URL retrieval
         // Clipboard support (OSC 52 — Phase 5)
-        let getPendingClipboard: GetPendingClipboardFn?  // Optional - for OSC 52 clipboard store
-        let hasClipboardRequest: HasClipboardRequestFn?  // Optional - for OSC 52 clipboard load
-        let respondClipboard: RespondClipboardFn?  // Optional - for OSC 52 clipboard load response
+        let getPendingClipboard: GetPendingClipboardFn? // Optional - for OSC 52 clipboard store
+        let hasClipboardRequest: HasClipboardRequestFn? // Optional - for OSC 52 clipboard load
+        let respondClipboard: RespondClipboardFn? // Optional - for OSC 52 clipboard load response
         // Graphics protocol support (Phase 4)
-        let getPendingImages: GetPendingImagesFn?  // Optional - for image protocol support
-        let freeImages: FreeImagesFn?  // Optional - for image protocol support
-        let setImageProtocols: SetImageProtocolsFn?  // Optional - for image protocol support
-        let hasPendingImages: HasPendingImagesFn?  // Optional - for image protocol support
+        let getPendingImages: GetPendingImagesFn? // Optional - for image protocol support
+        let freeImages: FreeImagesFn? // Optional - for image protocol support
+        let setImageProtocols: SetImageProtocolsFn? // Optional - for image protocol support
+        let hasPendingImages: HasPendingImagesFn? // Optional - for image protocol support
     }
 
     private static let lock = NSLock()
@@ -692,7 +703,7 @@ private final class RustTerminalFFI {
     private static func loadFunctions(from handle: UnsafeMutableRawPointer) -> Functions? {
         Log.trace("RustTerminalFFI: Loading symbols from library handle")
 
-        // Helper to load a symbol with logging
+        /// Helper to load a symbol with logging
         func loadSymbol(_ name: String) -> UnsafeMutableRawPointer? {
             let sym = dlsym(handle, name)
             if sym != nil {
@@ -1020,7 +1031,7 @@ private final class RustTerminalFFI {
             }
 
             // Get pointers to the data
-            for i in 0..<keyData.count {
+            for i in 0 ..< keyData.count {
                 keys.append(keyData[i].withUnsafeBufferPointer { $0.baseAddress })
                 values.append(valueData[i].withUnsafeBufferPointer { $0.baseAddress })
             }
@@ -1086,8 +1097,8 @@ private final class RustTerminalFFI {
             return
         }
         Log.trace("RustTerminalFFI[\(instanceId)]: sendBytes(Data) - Sending \(data.count) bytes")
-        let terminal = self.terminal
-        let id = self.instanceId
+        let terminal = terminal
+        let id = instanceId
         // Copy data before dispatching — the original buffer may be freed
         let copy = Data(data)
         writeQueue.async {
@@ -1107,8 +1118,8 @@ private final class RustTerminalFFI {
             return
         }
         Log.trace("RustTerminalFFI[\(instanceId)]: sendBytes([UInt8]) - Sending \(bytes.count) bytes")
-        let terminal = self.terminal
-        let id = self.instanceId
+        let terminal = terminal
+        let id = instanceId
         let copy = bytes
         writeQueue.async {
             copy.withUnsafeBufferPointer { buffer in
@@ -1129,7 +1140,7 @@ private final class RustTerminalFFI {
         let truncated = text.count > 50 ? String(text.prefix(50)) + "..." : text
         let escaped = truncated.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
         Log.trace("RustTerminalFFI[\(instanceId)]: sendText - Sending \(text.count) chars: '\(escaped)'")
-        let terminal = self.terminal
+        let terminal = terminal
         writeQueue.async {
             text.withCString { fns.sendText(terminal, $0) }
         }
@@ -1232,13 +1243,15 @@ private final class RustTerminalFFI {
         var lineText = ""
         lineText.reserveCapacity(gridCols)
         let rowOffset = row * gridCols
-        for col in 0..<gridCols {
+        for col in 0 ..< gridCols {
             let cell = cellsPtr[rowOffset + col]
             if let scalar = UnicodeScalar(cell.character), cell.character != 0 {
                 lineText.append(Character(scalar))
             } else { lineText.append(" ") }
         }
-        while lineText.last == " " { lineText.removeLast() }
+        while lineText.last == " " {
+            lineText.removeLast()
+        }
         return lineText
     }
 
@@ -1299,7 +1312,7 @@ private final class RustTerminalFFI {
         // Rate-limit logging for poll (it's called 60x/second)
         Self.pollCounter += 1
         let now = CFAbsoluteTimeGetCurrent()
-        let shouldLog = changed || (now - Self.lastPollLogTime > 5.0)  // Log every 5s or on change
+        let shouldLog = changed || (now - Self.lastPollLogTime > 5.0) // Log every 5s or on change
 
         if shouldLog {
             if changed {
@@ -1384,7 +1397,7 @@ private final class RustTerminalFFI {
             return nil
         }
 
-        var len: Int = 0
+        var len = 0
         guard let ptr = getLastOutputFn(terminal, &len), len > 0 else {
             return nil
         }
@@ -1450,8 +1463,7 @@ private final class RustTerminalFFI {
         guard let isMouseReportingActiveFn = Self.functions?.isMouseReportingActive else {
             // If function not available, fall back to checking mouseMode directly
             let mode = mouseMode()
-            let active = (mode & 0x07) != 0  // Bits 0-2 are mouse tracking modes
-            return active
+            return (mode & 0x07) != 0 // Bits 0-2 are mouse tracking modes
         }
         let active = isMouseReportingActiveFn(terminal)
         Log.trace("RustTerminalFFI[\(instanceId)]: isMouseReportingActive = \(active)")
@@ -1497,12 +1509,12 @@ private final class RustTerminalFFI {
         let bytesSent: UInt64
         let bytesReceived: UInt64
         let uptimeMs: UInt64
-        let gridDirty: UInt8      // 0 = false, 1 = true
-        let running: UInt8        // 0 = false, 1 = true
-        let hasSelection: UInt8   // 0 = false, 1 = true
+        let gridDirty: UInt8 // 0 = false, 1 = true
+        let running: UInt8 // 0 = false, 1 = true
+        let hasSelection: UInt8 // 0 = false, 1 = true
         let mouseMode: UInt32
         let bracketedPaste: UInt8 // 0 = false, 1 = true
-        let appCursor: UInt8      // 0 = false, 1 = true
+        let appCursor: UInt8 // 0 = false, 1 = true
         let pollCount: UInt64
         let avgPollTimeUs: UInt64
         let maxPollTimeUs: UInt64
@@ -1635,7 +1647,7 @@ private final class RustTerminalFFI {
         }
         let code = getPendingExitCodeFn(terminal)
         if code == -1 {
-            return nil  // -1 means no exit code pending
+            return nil // -1 means no exit code pending
         }
         Log.info("RustTerminalFFI[\(instanceId)]: getPendingExitCode = \(code)")
         return code
@@ -1654,7 +1666,7 @@ private final class RustTerminalFFI {
     /// Falls back to nil if the FFI function is not available (caller uses heuristic).
     func isEchoDisabledViaTermios() -> Bool? {
         guard let isEchoDisabledFn = Self.functions?.isEchoDisabled else {
-            return nil  // Signal to caller: FFI not available, use heuristic
+            return nil // Signal to caller: FFI not available, use heuristic
         }
         return isEchoDisabledFn(terminal)
     }
@@ -1724,7 +1736,7 @@ private final class RustTerminalFFI {
         let data_capacity: Int
         let anchor_row: Int32
         let anchor_col: UInt16
-        let protocolType: UInt8  // 0=iTerm2, 1=Sixel, 2=Kitty
+        let protocolType: UInt8 // 0=iTerm2, 1=Sixel, 2=Kitty
     }
 
     /// C-compatible image array layout matching Rust's FFIImageArray.
@@ -1750,18 +1762,18 @@ private final class RustTerminalFFI {
         }
 
         guard let arrayPtr = getPendingFn(terminal) else {
-            return nil  // No pending images
+            return nil // No pending images
         }
         // Ensure Rust memory is always freed, even if Data() allocation fails
         defer { freeFn(arrayPtr) }
 
         let array = arrayPtr.assumingMemoryBound(to: FFIImageArray.self).pointee
-        guard let imagesPtr = array.images, array.count > 0 else {
+        guard let imagesPtr = array.images, array.count > 0 else { // swiftlint:disable:this empty_count
             return nil
         }
 
         var results: [(protocol: UInt8, data: Data, anchorRow: Int32, anchorCol: UInt16)] = []
-        for i in 0..<array.count {
+        for i in 0 ..< array.count {
             let img = imagesPtr[i]
             if let dataPtr = img.data, img.data_len > 0 {
                 let data = Data(bytes: dataPtr, count: img.data_len)
@@ -1867,7 +1879,7 @@ final class RustTerminalView: NSView {
     var currentDirectory: String = FileManager.default.homeDirectoryForCurrentUser.path
 
     /// Command history navigation
-    var tabIdentifier: String = ""
+    var tabIdentifier = ""
     var isAtPrompt: (() -> Bool)?
 
     /// Shell process ID (for dev server monitoring)
@@ -1887,10 +1899,10 @@ final class RustTerminalView: NSView {
     var dangerousRowTintsProvider: ((Int, Int) -> [Int: NSColor])?
 
     /// Whether to enable mouse reporting to the PTY
-    var allowMouseReporting: Bool = false
+    var allowMouseReporting = false
 
     /// Whether to notify of update changes (for suspended state)
-    var notifyUpdateChanges: Bool = true {
+    var notifyUpdateChanges = true {
         didSet {
             guard notifyUpdateChanges != oldValue else { return }
             if notifyUpdateChanges {
@@ -1934,7 +1946,7 @@ final class RustTerminalView: NSView {
     }
 
     private var inlineImages: [InlineImagePlacement] = []
-    private var lastDisplayOffset: Int = 0
+    private var lastDisplayOffset = 0
 
     /// Display link for polling and rendering at vsync rate
     private var displayLink: CVDisplayLink?
@@ -1953,18 +1965,18 @@ final class RustTerminalView: NSView {
            maxFPS > 0 {
             return 1.0 / Double(maxFPS)
         }
-        return 1.0 / 60.0  // Safe default for older macOS
+        return 1.0 / 60.0 // Safe default for older macOS
     }
 
     /// Track startup bytes for debugging
-    private var startupBytesLogged: Int = 0
+    private var startupBytesLogged = 0
 
     /// One-shot timer that fires onShellStartupSlow if no PTY output arrives
     private var shellStartupTimeoutWork: DispatchWorkItem?
 
     /// Terminal dimensions
-    private var cols: Int = 80
-    private var rows: Int = 24
+    private var cols = 80
+    private var rows = 24
 
     /// Cell dimensions for coordinate calculations
     private var cellWidth: CGFloat = 8.0
@@ -1974,20 +1986,20 @@ final class RustTerminalView: NSView {
     private var needsGridSync = false
 
     /// Last grid snapshot for diffing
-    private var lastGridHash: Int = 0
+    private var lastGridHash = 0
 
     // MARK: - Grid Sync Optimization State
 
     /// Previous grid state for dirty row detection
     private var previousGrid: [RustCellData] = []
-    private var previousGridCols: Int = 0
-    private var previousGridRows: Int = 0
+    private var previousGridCols = 0
+    private var previousGridRows = 0
     private var previousCursorCol: UInt16 = 0
     private var previousCursorRow: UInt16 = 0
 
     /// Rate limiting for grid sync (target ~60fps max)
     private var lastSyncTime: CFAbsoluteTime = 0
-    private static let minSyncInterval: CFAbsoluteTime = 1.0 / 120.0  // Allow up to 120fps for responsiveness
+    private static let minSyncInterval: CFAbsoluteTime = 1.0 / 120.0 // Allow up to 120fps for responsiveness
 
     /// Statistics for debugging
     private var fullSyncCount: UInt64 = 0
@@ -2018,7 +2030,7 @@ final class RustTerminalView: NSView {
 
     /// Auto-scroll during selection drag
     private var autoScrollTimer: Timer?
-    private var autoScrollDirection: Int = 0  // -1 = up, 0 = none, 1 = down
+    private var autoScrollDirection = 0 // -1 = up, 0 = none, 1 = down
 
     /// Event monitors
     private var mouseDownMonitor: Any?
@@ -2027,7 +2039,7 @@ final class RustTerminalView: NSView {
     private var mouseMoveMonitor: Any?
     private var scrollWheelMonitor: Any?
     private var keyDownMonitor: Any?
-    private var generalKeyMonitor: Any?  // Intercepts ALL key events for Rust terminal routing
+    private var generalKeyMonitor: Any? // Intercepts ALL key events for Rust terminal routing
     /// Signature of the last key event handled by the general key monitor.
     /// Used to prevent duplicate handling in keyDown after monitor interception.
     private var lastMonitorHandledKeyEventSignature: String?
@@ -2053,7 +2065,7 @@ final class RustTerminalView: NSView {
     /// Last command recalled from history (to prevent key repeat spam)
     private var lastHistoryCommand: String?
     /// Direction of last history navigation (true = up, false = down)
-    private var lastHistoryWasUp: Bool = false
+    private var lastHistoryWasUp = false
 
     // MARK: - Snippet Placeholder Navigation State (F21)
 
@@ -2061,8 +2073,9 @@ final class RustTerminalView: NSView {
     private var snippetState: RustSnippetNavigationState?
 
     // MARK: - Lifecycle State
+
     /// Flag to prevent CVDisplayLink callbacks from accessing deallocated view
-    private var isBeingDeallocated: Bool = false
+    private var isBeingDeallocated = false
     /// Weak reference box for CVDisplayLink callback safety.
     /// CVDisplayLink callbacks run on a separate thread with an unretained pointer,
     /// which can access freed memory if the view deallocates between the callback
@@ -2071,6 +2084,7 @@ final class RustTerminalView: NSView {
     private var displayLinkBox: DisplayLinkWeakBox?
 
     // MARK: - Local Echo State (Latency Optimization)
+
     // Track pending local echo to suppress PTY duplicates
     // This shows typed characters immediately without waiting for PTY round-trip
 
@@ -2079,13 +2093,13 @@ final class RustTerminalView: NSView {
     /// Offset into `pendingLocalEcho` for robust partial matching.
     /// Matches can only consume from this offset to avoid O(n) queue churn and
     /// corruption when output contains control/escape bytes before echoed text.
-    private var pendingLocalEchoOffset: Int = 0
+    private var pendingLocalEchoOffset = 0
 
     /// Bound used to periodically compact/clear pending local-echo state.
     private static let maxPendingLocalEcho = 100
 
     /// Track pending backspaces to suppress PTY's backspace response
-    private var pendingLocalBackspaces: Int = 0
+    private var pendingLocalBackspaces = 0
 
     /// Local echo overlay cells keyed by grid index
     private var localEchoOverlay: [Int: RustCellData] = [:]
@@ -2093,7 +2107,7 @@ final class RustTerminalView: NSView {
 
     /// Local echo requires a renderer that can apply predicted output.
     /// The native Rust grid renderer provides a lightweight overlay for this.
-    private let supportsLocalEcho: Bool = true
+    private let supportsLocalEcho = true
 
     /// Heuristic-based echo detection: disabled when password prompts or raw mode detected.
     /// The Rust terminal owns the PTY, so we rely on heuristics:
@@ -2101,7 +2115,7 @@ final class RustTerminalView: NSView {
     /// - Shell prompt patterns ($ # %) re-enable echo
     /// - Timeout recovery re-enables echo after 5 seconds
     /// This approach handles 95%+ of real-world cases without direct termios access.
-    private var isPtyEchoLikelyEnabled: Bool = true
+    private var isPtyEchoLikelyEnabled = true
 
     /// Returns true when the PTY echo is likely disabled (password prompt detected).
     /// Exposes the heuristic echo state for history filtering.
@@ -2118,19 +2132,20 @@ final class RustTerminalView: NSView {
     private var echoDisabledTime: CFAbsoluteTime = 0
 
     // MARK: - Smart Scroll State
+
     // When smart scroll is enabled and user has scrolled up, new output won't auto-scroll
 
     /// Whether user is at or near the bottom of the terminal
-    private var isUserAtBottom: Bool = true
+    private var isUserAtBottom = true
 
     /// Threshold for considering user "at bottom" (0.99 = within 1% of end)
-    private static let scrollBottomThreshold: Double = 0.99
+    private static let scrollBottomThreshold = 0.99
 
     /// Timeout after which we re-enable echo detection (5 seconds)
     private static let echoDisabledTimeout: CFAbsoluteTime = 5.0
 
     /// Font
-    var font: NSFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular) {
+    var font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular) {
         didSet {
             if !isMetalRenderingActive {
                 gridView?.font = font
@@ -2165,10 +2180,22 @@ final class RustTerminalView: NSView {
     }
 
     /// Renderer grid dimensions (visible viewport)
-    var renderCols: Int { cols }
-    var renderRows: Int { rows }
-    var renderCellSize: CGSize { CGSize(width: cellWidth, height: cellHeight) }
-    var renderCursorRow: Int { Int(rustTerminal?.cursorPosition.row ?? 0) }
+    var renderCols: Int {
+        cols
+    }
+
+    var renderRows: Int {
+        rows
+    }
+
+    var renderCellSize: CGSize {
+        CGSize(width: cellWidth, height: cellHeight)
+    }
+
+    var renderCursorRow: Int {
+        Int(rustTerminal?.cursorPosition.row ?? 0)
+    }
+
     /// Top visible row in absolute buffer coordinates.
     /// Top visible row using native Rust data.
     /// When at bottom (displayOffset=0), this equals the history size.
@@ -2182,7 +2209,7 @@ final class RustTerminalView: NSView {
     /// Cached scrollback row count from the last grid snapshot.
     /// Updated every sync cycle in syncGridToRenderer() — lightweight access
     /// without fetching a full grid snapshot just for history size.
-    private var cachedScrollbackRows: Int = 0
+    private var cachedScrollbackRows = 0
 
     // MARK: - Static Check
 
@@ -2212,7 +2239,7 @@ final class RustTerminalView: NSView {
     private var didEmitProcessTermination = false
 
     /// Last logged title (for rate-limiting OSC title change logs)
-    private var lastLoggedTitle: String = ""
+    private var lastLoggedTitle = ""
 
     override init(frame frameRect: NSRect) {
         Self.viewCounter += 1
@@ -2333,9 +2360,9 @@ final class RustTerminalView: NSView {
         // Schedule a one-shot timeout: if no PTY output arrives within 5 seconds,
         // notify the UI so it can show a "shell initializing" indicator.
         let work = DispatchWorkItem { [weak self] in
-            guard let self, self.startupBytesLogged == 0 else { return }
-            Log.warn("RustTerminalView[\(self.viewId)]: No PTY output after 5s — shell may be hung")
-            self.onShellStartupSlow?()  // Already on main queue
+            guard let self, startupBytesLogged == 0 else { return }
+            Log.warn("RustTerminalView[\(viewId)]: No PTY output after 5s — shell may be hung")
+            onShellStartupSlow?() // Already on main queue
         }
         shellStartupTimeoutWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0, execute: work)
@@ -2407,9 +2434,13 @@ final class RustTerminalView: NSView {
         updateInlineImagePositions()
     }
 
-    override var acceptsFirstResponder: Bool { true }
+    override var acceptsFirstResponder: Bool {
+        true
+    }
 
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
 
     override func becomeFirstResponder() -> Bool {
         Log.trace("RustTerminalView[\(viewId)]: becomeFirstResponder")
@@ -2463,6 +2494,7 @@ final class RustTerminalView: NSView {
     }
 
     // MARK: - NSTextInputClient (Password AutoFill + IME support)
+
     //
     // macOS Password AutoFill injects credentials via the text input system,
     // calling insertText(_:replacementRange:) on the first responder.
@@ -2475,6 +2507,7 @@ final class RustTerminalView: NSView {
         }
         return _inputContext
     }
+
     private var _inputContext: NSTextInputContext?
 
     // MARK: - Cell Dimensions
@@ -2537,7 +2570,7 @@ final class RustTerminalView: NSView {
             // it in stopPollingLoop, even if the view itself is deallocated.
             let box = DisplayLinkWeakBox(self)
             displayLinkBox = box
-            CVDisplayLinkSetOutputCallback(link, { (_, _, _, _, _, userInfo) -> CVReturn in
+            CVDisplayLinkSetOutputCallback(link, { _, _, _, _, _, userInfo -> CVReturn in
                 guard let userInfo = userInfo else { return kCVReturnSuccess }
                 let box = Unmanaged<DisplayLinkWeakBox>.fromOpaque(userInfo).takeUnretainedValue()
                 guard let view = box.view else { return kCVReturnSuccess }
@@ -2610,7 +2643,7 @@ final class RustTerminalView: NSView {
         if let link = displayLink, !CVDisplayLinkIsRunning(link) {
             CVDisplayLinkStart(link)
             Log.info("RustTerminalView[\(viewId)]: resumeDisplayLink - CVDisplayLink resumed (tab active)")
-        } else if displayLink == nil && pollTimer == nil {
+        } else if displayLink == nil, pollTimer == nil {
             // If display link was nil (never created or destroyed), don't recreate — just use timer
             pollTimer = Timer.scheduledTimer(withTimeInterval: displayRefreshInterval, repeats: true) { [weak self] _ in
                 self?.pollAndSync()
@@ -2760,7 +2793,7 @@ final class RustTerminalView: NSView {
                 let bytesToLog = min(outputData.count, 2048 - startupBytesLogged)
                 let preview = outputData.prefix(bytesToLog)
                 let printable = preview.map { b -> Character in
-                    if b >= 32 && b < 127 { return Character(UnicodeScalar(b)) }
+                    if b >= 32, b < 127 { return Character(UnicodeScalar(b)) }
                     else if b == 10 { return "↵" }
                     else if b == 13 { return "←" }
                     else if b == 27 { return "⎋" }
@@ -2842,7 +2875,7 @@ final class RustTerminalView: NSView {
         // Rate-limited status logging
         Self.pollAndSyncCounter += 1
         let now = CFAbsoluteTimeGetCurrent()
-        if now - Self.lastPollAndSyncLogTime > 10.0 {  // Log every 10 seconds
+        if now - Self.lastPollAndSyncLogTime > 10.0 { // Log every 10 seconds
             Log.trace("RustTerminalView[\(viewId)]: pollAndSync - Status: \(Self.pollAndSyncCounter) polls, \(Self.syncCount) syncs")
             Self.lastPollAndSyncLogTime = now
         }
@@ -2929,17 +2962,17 @@ final class RustTerminalView: NSView {
 
         if canCompare {
             // Compare cell-by-cell to find dirty rows (with early exit per row)
-            for row in 0..<gridRows {
+            for row in 0 ..< gridRows {
                 let rowStart = row * gridCols
                 var rowDirty = false
-                for col in 0..<gridCols {
+                for col in 0 ..< gridCols {
                     let idx = rowStart + col
                     let newCell = cells[idx]
                     let oldCell = previousGrid[idx]
 
                     if !cellsEqual(newCell, oldCell) {
                         rowDirty = true
-                        break  // Row is dirty, no need to check more cells in this row
+                        break // Row is dirty, no need to check more cells in this row
                     }
                 }
                 if rowDirty {
@@ -2951,7 +2984,7 @@ final class RustTerminalView: NSView {
             cursorMoved = cursor.col != previousCursorCol || cursor.row != previousCursorRow
 
             // If nothing changed at all, skip the sync entirely
-            if dirtyRows.isEmpty && !cursorMoved {
+            if dirtyRows.isEmpty, !cursorMoved {
                 skippedSyncCount += 1
                 return
             }
@@ -2966,7 +2999,7 @@ final class RustTerminalView: NSView {
         previousCursorCol = cursor.col
         previousCursorRow = cursor.row
 
-        if canCompare && dirtyRows.isEmpty && cursorMoved {
+        if canCompare, dirtyRows.isEmpty, cursorMoved {
             gridView?.updateCursor(cursor)
         } else {
             // Copy current grid for future comparison using efficient buffer copy
@@ -2990,11 +3023,11 @@ final class RustTerminalView: NSView {
         }
 
         // Periodic stats logging (every 1000 syncs)
-        if (fullSyncCount + partialSyncCount) % 1000 == 0 {
+        if (fullSyncCount + partialSyncCount).isMultiple(of: 1000) {
             Log.trace("RustTerminalView[\(viewId)]: syncStats - full:\(fullSyncCount) partial:\(partialSyncCount) skipped:\(skippedSyncCount)")
         }
 
-        if pendingLocalEcho.isEmpty && pendingLocalBackspaces == 0 {
+        if pendingLocalEcho.isEmpty, pendingLocalBackspaces == 0 {
             clearLocalEchoOverlay()
         }
 
@@ -3017,7 +3050,7 @@ final class RustTerminalView: NSView {
         var viewportTints: [Int: NSColor] = [:]
         for (absRow, color) in tints {
             let vr = absRow - yDisp
-            if vr >= 0 && vr < gridRows {
+            if vr >= 0, vr < gridRows {
                 viewportTints[vr] = color
             }
         }
@@ -3028,9 +3061,9 @@ final class RustTerminalView: NSView {
     @inline(__always)
     private func cellsEqual(_ a: RustCellData, _ b: RustCellData) -> Bool {
         return a.character == b.character &&
-               a.fg_r == b.fg_r && a.fg_g == b.fg_g && a.fg_b == b.fg_b &&
-               a.bg_r == b.bg_r && a.bg_g == b.bg_g && a.bg_b == b.bg_b &&
-               a.flags == b.flags && a.link_id == b.link_id
+            a.fg_r == b.fg_r && a.fg_g == b.fg_g && a.fg_b == b.fg_b &&
+            a.bg_r == b.bg_r && a.bg_g == b.bg_g && a.bg_b == b.bg_b &&
+            a.flags == b.flags && a.link_id == b.link_id
     }
 
     /// Reset grid sync state (call on resize or other major changes)
@@ -3080,7 +3113,7 @@ final class RustTerminalView: NSView {
 
     private func baseCellForLocalEcho(row: Int, col: Int) -> RustCellData {
         let idx = row * cols + col
-        if idx >= 0 && idx < previousGrid.count {
+        if idx >= 0, idx < previousGrid.count {
             return previousGrid[idx]
         }
         return RustCellData(character: 0, fg_r: 255, fg_g: 255, fg_b: 255, bg_r: 0, bg_g: 0, bg_b: 0, flags: 0, _pad: 0, link_id: 0)
@@ -3201,7 +3234,7 @@ final class RustTerminalView: NSView {
                 }
 
                 if foundTerminator {
-                    let seq = String(text[idx..<end])
+                    let seq = String(text[idx ..< end])
                     if let image = InlineImageHandler.shared.parseImageSequence(seq) {
                         images.append(image)
                     }
@@ -3257,7 +3290,7 @@ final class RustTerminalView: NSView {
     private func updateInlineImagePositions() {
         guard let rust = rustTerminal else { return }
         let displayOffset = Int(rust.displayOffset)
-        if displayOffset == lastDisplayOffset && !inlineImages.isEmpty {
+        if displayOffset == lastDisplayOffset, !inlineImages.isEmpty {
             // Still update positions on resize/layout.
         }
         lastDisplayOffset = displayOffset
@@ -3271,7 +3304,7 @@ final class RustTerminalView: NSView {
 
     private func positionInlineImage(_ placement: inout InlineImagePlacement, displayOffset: Int) {
         let visibleRow = placement.anchorRow + displayOffset
-        guard visibleRow >= 0 && visibleRow < rows else {
+        guard visibleRow >= 0, visibleRow < rows else {
             placement.view.isHidden = true
             return
         }
@@ -3293,29 +3326,29 @@ final class RustTerminalView: NSView {
         let bytes = Array(data)
         var i = 0
 
-        while i < bytes.count - 5 {  // Need at least ESC ] 7 ; x BEL
+        while i < bytes.count - 5 { // Need at least ESC ] 7 ; x BEL
             // Look for ESC ]
-            if bytes[i] == 0x1b && i + 1 < bytes.count && bytes[i + 1] == 0x5d {
+            if bytes[i] == 0x1B, i + 1 < bytes.count, bytes[i + 1] == 0x5D {
                 // Found ESC ], check for '7;'
-                if i + 3 < bytes.count && bytes[i + 2] == 0x37 && bytes[i + 3] == 0x3b {
+                if i + 3 < bytes.count, bytes[i + 2] == 0x37, bytes[i + 3] == 0x3B {
                     // Found OSC 7 ; - extract the URL
-                    let start = i + 4  // After "ESC ] 7 ;"
+                    let start = i + 4 // After "ESC ] 7 ;"
 
                     // Find terminator: BEL (0x07) or ESC \ (0x1b 0x5c)
                     var end = start
                     while end < bytes.count {
                         if bytes[end] == 0x07 {
-                            break  // BEL terminator
+                            break // BEL terminator
                         }
-                        if bytes[end] == 0x1b && end + 1 < bytes.count && bytes[end + 1] == 0x5c {
-                            break  // ST (ESC \) terminator
+                        if bytes[end] == 0x1B, end + 1 < bytes.count, bytes[end + 1] == 0x5C {
+                            break // ST (ESC \) terminator
                         }
                         end += 1
                     }
 
-                    if end < bytes.count && end > start {
+                    if end < bytes.count, end > start {
                         // Extract the URL string
-                        let urlBytes = Array(bytes[start..<end])
+                        let urlBytes = Array(bytes[start ..< end])
                         if let urlString = String(bytes: urlBytes, encoding: .utf8) {
                             processOSC7URL(urlString)
                         }
@@ -3332,7 +3365,7 @@ final class RustTerminalView: NSView {
         // Parse the file:// URL
         if let url = URL(string: urlString) {
             let path = url.path
-            if !path.isEmpty && path != currentDirectory {
+            if !path.isEmpty, path != currentDirectory {
                 Log.info("RustTerminalView[\(viewId)]: OSC 7 directory update: \(path)")
                 currentDirectory = path
                 DispatchQueue.main.async { [weak self] in
@@ -3349,7 +3382,7 @@ final class RustTerminalView: NSView {
             }
             // URL decode
             path = path.removingPercentEncoding ?? path
-            if !path.isEmpty && path != currentDirectory {
+            if !path.isEmpty, path != currentDirectory {
                 Log.info("RustTerminalView[\(viewId)]: OSC 7 directory update (fallback): \(path)")
                 currentDirectory = path
                 DispatchQueue.main.async { [weak self] in
@@ -3400,7 +3433,7 @@ final class RustTerminalView: NSView {
             }
 
             // Check for local echo character match
-            if pendingLocalEchoOffset < pendingLocalEcho.count && byte == pendingLocalEcho[pendingLocalEchoOffset] {
+            if pendingLocalEchoOffset < pendingLocalEcho.count, byte == pendingLocalEcho[pendingLocalEchoOffset] {
                 // This byte matches our local echo queue - suppress it
                 pendingLocalEchoOffset += 1
                 i += 1
@@ -3425,7 +3458,7 @@ final class RustTerminalView: NSView {
         // Check for echo-disabling patterns in the filtered output
         detectEchoMode(in: Data(filtered))
 
-        if pendingLocalEcho.isEmpty && pendingLocalBackspaces == 0 {
+        if pendingLocalEcho.isEmpty, pendingLocalBackspaces == 0 {
             clearLocalEchoOverlay()
         }
 
@@ -3441,7 +3474,7 @@ final class RustTerminalView: NSView {
     private func detectEchoMode(in data: Data) {
         // Check for timeout recovery: re-enable echo after timeout
         let now = CFAbsoluteTimeGetCurrent()
-        if !isPtyEchoLikelyEnabled && now - echoDisabledTime > Self.echoDisabledTimeout {
+        if !isPtyEchoLikelyEnabled, now - echoDisabledTime > Self.echoDisabledTimeout {
             isPtyEchoLikelyEnabled = true
             Log.trace("RustTerminalView[\(viewId)]: Echo re-enabled after timeout")
         }
@@ -3542,7 +3575,7 @@ final class RustTerminalView: NSView {
                 let idx = cursor.row * cols + cursor.col
                 localEchoOverlay.removeValue(forKey: idx)
                 removeLastPendingLocalEchoChar()
-                if !pendingLocalEcho.isEmpty && pendingLocalEchoOffset > pendingLocalEcho.count {
+                if !pendingLocalEcho.isEmpty, pendingLocalEchoOffset > pendingLocalEcho.count {
                     pendingLocalEchoOffset = pendingLocalEcho.count
                 }
             } else if byte == 0x03 || byte == 0x15 {
@@ -3587,7 +3620,7 @@ final class RustTerminalView: NSView {
     /// NSTextInputContext enters an inconsistent state when setMarkedText is
     /// a no-op and hasMarkedText returns false.
     private var markedTextStorage: String?
-    private var markedSelectedRange: NSRange = NSRange(location: NSNotFound, length: 0)
+    private var markedSelectedRange = NSRange(location: NSNotFound, length: 0)
 
     private func makeInputEventSignature(_ event: NSEvent) -> String {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -3601,8 +3634,8 @@ final class RustTerminalView: NSView {
         lastMonitorHandledKeyEventSignature = signature
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self else { return }
-            if self.lastMonitorHandledKeyEventSignature == signature {
-                self.lastMonitorHandledKeyEventSignature = nil
+            if lastMonitorHandledKeyEventSignature == signature {
+                lastMonitorHandledKeyEventSignature = nil
             }
         }
     }
@@ -3634,7 +3667,7 @@ final class RustTerminalView: NSView {
         if let sequence = generateTerminalSequence(keyCode: keyCode, modifiers: modifiers, event: event) {
             let hexPreview = sequence.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
             Log.trace("RustTerminalView[\(viewId)]: keyDown - Sending escape sequence: [\(hexPreview)] (keyCode=\(keyCode))")
-            if sequence == [0x7f] || sequence == [0x08], let text = String(bytes: sequence, encoding: .utf8) {
+            if sequence == [0x7F] || sequence == [0x08], let text = String(bytes: sequence, encoding: .utf8) {
                 applyLocalEchoForText(text)
             }
             if let text = String(bytes: sequence, encoding: .utf8) {
@@ -3672,7 +3705,7 @@ final class RustTerminalView: NSView {
     /// Returns true if the event was handled, false otherwise
     private func handleTerminalKeyEvent(_ event: NSEvent) -> Bool {
         guard let rust = rustTerminal else {
-            return false  // No Rust terminal, let event propagate
+            return false // No Rust terminal, let event propagate
         }
         hideTipOverlay()
 
@@ -3688,7 +3721,7 @@ final class RustTerminalView: NSView {
         if let sequence = generateTerminalSequence(keyCode: keyCode, modifiers: modifiers, event: event) {
             let hexPreview = sequence.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
             Log.trace("RustTerminalView[\(viewId)]: handleTerminalKeyEvent - Sending escape sequence: [\(hexPreview)] (keyCode=\(keyCode))")
-            if sequence == [0x7f] || sequence == [0x08], let text = String(bytes: sequence, encoding: .utf8) {
+            if sequence == [0x7F] || sequence == [0x08], let text = String(bytes: sequence, encoding: .utf8) {
                 applyLocalEchoForText(text)
             }
             if let text = String(bytes: sequence, encoding: .utf8) {
@@ -3742,17 +3775,17 @@ final class RustTerminalView: NSView {
             if let controlCode = controlCharacter(for: char) {
                 // Option+Ctrl sends ESC prefix + control code
                 if hasOption {
-                    return [0x1b, controlCode]
+                    return [0x1B, controlCode]
                 }
                 return [controlCode]
             }
         }
 
         // Handle Option/Alt+letter (sends ESC prefix for meta key)
-        if hasOption && !hasControl {
+        if hasOption, !hasControl {
             if let char = event.charactersIgnoringModifiers?.first {
                 // Send ESC + character for Alt+key (meta key behavior)
-                var bytes: [UInt8] = [0x1b]
+                var bytes: [UInt8] = [0x1B]
                 if hasShift {
                     // Shift+Alt sends uppercase
                     bytes.append(contentsOf: String(char).uppercased().utf8)
@@ -3790,7 +3823,6 @@ final class RustTerminalView: NSView {
             return arrowKeySequence("C", modParam: modParam, hasModifiers: hasModifiers)
         case kVK_LeftArrow:
             return arrowKeySequence("D", modParam: modParam, hasModifiers: hasModifiers)
-
         // Navigation keys
         case kVK_Home:
             return hasModifiers ? csiSequenceWithMod("1", modParam: modParam, terminator: "H") : csiSequence("H")
@@ -3800,13 +3832,11 @@ final class RustTerminalView: NSView {
             return hasModifiers ? csiSequenceWithMod("5", modParam: modParam, terminator: "~") : csiSequence("5~")
         case kVK_PageDown:
             return hasModifiers ? csiSequenceWithMod("6", modParam: modParam, terminator: "~") : csiSequence("6~")
-
         // Editing keys
         case kVK_ForwardDelete:
             return hasModifiers ? csiSequenceWithMod("3", modParam: modParam, terminator: "~") : csiSequence("3~")
-        case kVK_Help:  // Insert key on some keyboards
+        case kVK_Help: // Insert key on some keyboards
             return hasModifiers ? csiSequenceWithMod("2", modParam: modParam, terminator: "~") : csiSequence("2~")
-
         // Function keys F1-F12
         case kVK_F1:
             return functionKeySequence(1, modParam: modParam, hasModifiers: hasModifiers)
@@ -3832,23 +3862,21 @@ final class RustTerminalView: NSView {
             return functionKeySequence(11, modParam: modParam, hasModifiers: hasModifiers)
         case kVK_F12:
             return functionKeySequence(12, modParam: modParam, hasModifiers: hasModifiers)
-
         // Special character keys
         case kVK_Escape:
-            return [0x1b]
+            return [0x1B]
         case kVK_Tab:
             if hasShift {
-                return csiSequence("Z")  // Shift+Tab sends CSI Z (backtab)
+                return csiSequence("Z") // Shift+Tab sends CSI Z (backtab)
             }
-            return [0x09]  // Regular tab
+            return [0x09] // Regular tab
         case kVK_Return:
-            return [0x0d]  // Carriage return
-        case kVK_Delete:  // Backspace key
+            return [0x0D] // Carriage return
+        case kVK_Delete: // Backspace key
             if hasControl {
-                return [0x08]  // Ctrl+Backspace sends BS
+                return [0x08] // Ctrl+Backspace sends BS
             }
-            return [0x7f]  // Regular backspace sends DEL
-
+            return [0x7F] // Regular backspace sends DEL
         default:
             return nil
         }
@@ -3891,7 +3919,7 @@ final class RustTerminalView: NSView {
         // With modifiers:
         //   F1: ESC [11;Pm~, etc.
 
-        if !hasModifiers && fKey <= 4 {
+        if !hasModifiers, fKey <= 4 {
             // F1-F4 without modifiers use SS3 sequences
             let codes: [Character] = ["P", "Q", "R", "S"]
             return Array("\u{1b}O\(codes[fKey - 1])".utf8)
@@ -3906,12 +3934,12 @@ final class RustTerminalView: NSView {
         case 3: xtermKeyCode = 13
         case 4: xtermKeyCode = 14
         case 5: xtermKeyCode = 15
-        case 6: xtermKeyCode = 17  // Note: 16 is skipped
+        case 6: xtermKeyCode = 17 // Note: 16 is skipped
         case 7: xtermKeyCode = 18
         case 8: xtermKeyCode = 19
         case 9: xtermKeyCode = 20
         case 10: xtermKeyCode = 21
-        case 11: xtermKeyCode = 23  // Note: 22 is skipped
+        case 11: xtermKeyCode = 23 // Note: 22 is skipped
         case 12: xtermKeyCode = 24
         default: xtermKeyCode = 15 + fKey
         }
@@ -3931,41 +3959,41 @@ final class RustTerminalView: NSView {
         // Or uppercase letter's ASCII value minus 0x40
         // a-z: 0x61-0x7A -> Ctrl codes 0x01-0x1A
         // A-Z: 0x41-0x5A -> Ctrl codes 0x01-0x1A (same result)
-        if ascii >= 0x61 && ascii <= 0x7A {
+        if ascii >= 0x61, ascii <= 0x7A {
             return ascii - 0x60
         }
-        if ascii >= 0x41 && ascii <= 0x5A {
+        if ascii >= 0x41, ascii <= 0x5A {
             return ascii - 0x40
         }
 
         // Special control characters
         switch char {
         case "[", "{":
-            return 0x1b  // Ctrl+[ is ESC
+            return 0x1B // Ctrl+[ is ESC
         case "\\":
-            return 0x1c  // Ctrl+\ is FS
+            return 0x1C // Ctrl+\ is FS
         case "]", "}":
-            return 0x1d  // Ctrl+] is GS
+            return 0x1D // Ctrl+] is GS
         case "^", "~":
-            return 0x1e  // Ctrl+^ is RS
+            return 0x1E // Ctrl+^ is RS
         case "_", "?":
-            return 0x1f  // Ctrl+_ is US
+            return 0x1F // Ctrl+_ is US
         case "@", " ":
-            return 0x00  // Ctrl+@ or Ctrl+Space is NUL
+            return 0x00 // Ctrl+@ or Ctrl+Space is NUL
         case "2":
-            return 0x00  // Ctrl+2 is NUL
+            return 0x00 // Ctrl+2 is NUL
         case "3":
-            return 0x1b  // Ctrl+3 is ESC
+            return 0x1B // Ctrl+3 is ESC
         case "4":
-            return 0x1c  // Ctrl+4 is FS
+            return 0x1C // Ctrl+4 is FS
         case "5":
-            return 0x1d  // Ctrl+5 is GS
+            return 0x1D // Ctrl+5 is GS
         case "6":
-            return 0x1e  // Ctrl+6 is RS
+            return 0x1E // Ctrl+6 is RS
         case "7":
-            return 0x1f  // Ctrl+7 is US
+            return 0x1F // Ctrl+7 is US
         case "8":
-            return 0x7f  // Ctrl+8 is DEL
+            return 0x7F // Ctrl+8 is DEL
         default:
             return nil
         }
@@ -4041,8 +4069,13 @@ final class RustTerminalView: NSView {
         return text.data(using: .utf8)
     }
 
-    var terminalRows: Int { rows }
-    var terminalCols: Int { cols }
+    var terminalRows: Int {
+        rows
+    }
+
+    var terminalCols: Int {
+        cols
+    }
 
     /// Current cursor row in absolute buffer coordinates.
     /// Uses native Rust data: topVisibleRow (history - displayOffset) + cursor.row
@@ -4064,13 +4097,13 @@ final class RustTerminalView: NSView {
         // For scrollback rows (negative), we need the FFI approach.
         // The FFI getLineText reads from grid snapshot (visible only, 0-indexed).
         // For rows outside the visible viewport, fall back to cached buffer lines.
-        if gridRow >= 0 && gridRow < rows {
+        if gridRow >= 0, gridRow < rows {
             return rust.getLineText(row: gridRow) ?? ""
         }
         // For scrollback rows, use the cached line index to avoid O(n) re-parsing
         // of the entire buffer for every single row access.
         let lines = getCachedBufferLines()
-        guard absoluteRow >= 0 && absoluteRow < lines.count else { return "" }
+        guard absoluteRow >= 0, absoluteRow < lines.count else { return "" }
         return lines[absoluteRow]
     }
 
@@ -4276,7 +4309,7 @@ final class RustTerminalView: NSView {
 
         let timer = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-            self.performAutoScroll()
+            performAutoScroll()
         }
         // Add to .common modes so the timer fires during mouse event tracking
         RunLoop.main.add(timer, forMode: .common)
@@ -4393,7 +4426,7 @@ final class RustTerminalView: NSView {
     /// Scroll so that `absoluteRow` is at the top of the viewport.
     func scrollToRow(absoluteRow: Int) {
         let currentTop = renderTopVisibleRow
-        let delta = currentTop - absoluteRow  // positive = scroll up into history
+        let delta = currentTop - absoluteRow // positive = scroll up into history
         if delta > 0 {
             scrollUp(lines: delta)
         } else if delta < 0 {
@@ -4449,7 +4482,7 @@ final class RustTerminalView: NSView {
         // When terminal has no scrollback, scrollPosition is forced to 0 regardless of
         // actual view state. If savedPosition was 0 and now > 0, scrollback just appeared
         // and user wasn't actually scrolled up - they were at the only position available.
-        if savedPosition == 0 && currentPosition > 0 {
+        if savedPosition == 0, currentPosition > 0 {
             // Scrollback just appeared - let the auto-scroll to bottom happen
             isUserAtBottom = currentPosition >= Self.scrollBottomThreshold
             return
@@ -4516,13 +4549,13 @@ final class RustTerminalView: NSView {
     // MARK: - Mouse Reporting
 
     /// Mouse mode bit flags (matching Rust implementation)
-    private struct MouseMode {
-        static let click: UInt32 = 0x01      // Mode 1000: report button press/release
-        static let drag: UInt32 = 0x02       // Mode 1002: also report motion while button down
-        static let motion: UInt32 = 0x04     // Mode 1003: report all motion
+    private enum MouseMode {
+        static let click: UInt32 = 0x01 // Mode 1000: report button press/release
+        static let drag: UInt32 = 0x02 // Mode 1002: also report motion while button down
+        static let motion: UInt32 = 0x04 // Mode 1003: report all motion
         static let focusInOut: UInt32 = 0x08 // Mode 1004: focus in/out reporting
-        static let sgrMode: UInt32 = 0x10    // Mode 1006: use SGR encoding (was incorrectly 0x08)
-        static let anyTracking: UInt32 = 0x07  // Mask for click/drag/motion modes
+        static let sgrMode: UInt32 = 0x10 // Mode 1006: use SGR encoding (was incorrectly 0x08)
+        static let anyTracking: UInt32 = 0x07 // Mask for click/drag/motion modes
     }
 
     /// Mouse button encoding for X10/Normal protocols
@@ -4577,7 +4610,7 @@ final class RustTerminalView: NSView {
             let buttonByte = releaseButton + 32
             let colByte = UInt8(effectiveCol + 33)
             let rowByte = UInt8(effectiveRow + 33)
-            send(data: [0x1b, 0x5b, 0x4d, buttonByte, colByte, rowByte])
+            send(data: [0x1B, 0x5B, 0x4D, buttonByte, colByte, rowByte])
         }
     }
 
@@ -4610,7 +4643,7 @@ final class RustTerminalView: NSView {
         } else {
             let colByte = UInt8(min(cellCol, 222) + 33)
             let rowByte = UInt8(min(cellRow, 222) + 33)
-            send(data: [0x1b, 0x5b, 0x4d, buttonCode + 32, colByte, rowByte])
+            send(data: [0x1B, 0x5B, 0x4D, buttonCode + 32, colByte, rowByte])
         }
     }
 
@@ -4637,7 +4670,7 @@ final class RustTerminalView: NSView {
         } else {
             let colByte = UInt8(min(cellCol, 222) + 33)
             let rowByte = UInt8(min(cellRow, 222) + 33)
-            send(data: [0x1b, 0x5b, 0x4d, buttonCode + 32, colByte, rowByte])
+            send(data: [0x1B, 0x5B, 0x4D, buttonCode + 32, colByte, rowByte])
         }
     }
 
@@ -4678,9 +4711,9 @@ final class RustTerminalView: NSView {
         // Mouse down for selection start, Cmd+click paths, Option+click cursor, mouse reporting
         mouseDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self = self else { return event }
-            guard event.window === self.window else { return event }
-            let location = self.convert(event.locationInWindow, from: nil)
-            guard self.bounds.contains(location) else { return event }
+            guard event.window === window else { return event }
+            let location = convert(event.locationInWindow, from: nil)
+            guard bounds.contains(location) else { return event }
 
             // If a SwiftUI overlay is above us, don't intercept the click
             if let hitView = event.window?.contentView?.hitTest(event.locationInWindow),
@@ -4688,64 +4721,64 @@ final class RustTerminalView: NSView {
                 return event
             }
 
-            let cell = self.pointToCell(location)
-            Log.trace("RustTerminalView[\(self.viewId)]: mouseDown at (\(location.x), \(location.y)) -> cell (\(cell.col), \(cell.row))")
+            let cell = pointToCell(location)
+            Log.trace("RustTerminalView[\(viewId)]: mouseDown at (\(location.x), \(location.y)) -> cell (\(cell.col), \(cell.row))")
 
             // Mouse reporting: Forward mouse events to TUI apps (tmux, vim, htop, etc.)
             // Control+click bypasses mouse reporting to allow context menu/selection
-            if self.isMouseReportingEnabled() && !event.modifierFlags.contains(.control) {
-                Log.trace("RustTerminalView[\(self.viewId)]: Mouse reporting - sending left press")
-                self.mouseReportingButtonDown = .left
-                self.sendMousePress(button: .left, at: location, modifiers: event.modifierFlags)
-                self.mouseDownLocation = location  // Track for drag reporting
-                self.didDragSinceMouseDown = false
+            if isMouseReportingEnabled(), !event.modifierFlags.contains(.control) {
+                Log.trace("RustTerminalView[\(viewId)]: Mouse reporting - sending left press")
+                mouseReportingButtonDown = .left
+                sendMousePress(button: .left, at: location, modifiers: event.modifierFlags)
+                mouseDownLocation = location // Track for drag reporting
+                didDragSinceMouseDown = false
                 return event
             }
 
             // Track mouse down for click-to-position
-            self.mouseDownLocation = location
-            self.didDragSinceMouseDown = false
-            self.isSelecting = false
+            mouseDownLocation = location
+            didDragSinceMouseDown = false
+            isSelecting = false
 
             // F03: Check for Cmd+click on paths/URLs
-            if event.modifierFlags.contains(.command) && FeatureSettings.shared.isCmdClickPathsEnabled {
-                if self.handleCmdClick(at: location) {
-                    self.mouseDownLocation = nil  // Don't position cursor for Cmd+click
-                    return nil  // Consume the event
+            if event.modifierFlags.contains(.command), FeatureSettings.shared.isCmdClickPathsEnabled {
+                if handleCmdClick(at: location) {
+                    mouseDownLocation = nil // Don't position cursor for Cmd+click
+                    return nil // Consume the event
                 }
             }
 
             // Option+click to position cursor (like iTerm2)
-            if event.modifierFlags.contains(.option) && FeatureSettings.shared.isOptionClickCursorEnabled {
-                if self.handleOptionClick(at: location) {
-                    self.mouseDownLocation = nil  // Already handled
-                    return nil  // Consume the event
+            if event.modifierFlags.contains(.option), FeatureSettings.shared.isOptionClickCursorEnabled {
+                if handleOptionClick(at: location) {
+                    mouseDownLocation = nil // Already handled
+                    return nil // Consume the event
                 }
             }
 
             // Handle double-click (word selection) and triple-click (line selection)
-            let absoluteCell = self.pointToCellAbsolute(location)
+            let absoluteCell = pointToCellAbsolute(location)
             if event.clickCount == 2 {
                 // Double-click: Select word at click location (Semantic selection)
-                Log.trace("RustTerminalView[\(self.viewId)]: Double-click at cell (\(absoluteCell.col), \(absoluteCell.row)) - selecting word")
-                self.rustTerminal?.startSelection(col: absoluteCell.col, row: absoluteCell.row, selectionType: 2)  // Semantic
-                self.needsGridSync = true
-                self.mouseDownLocation = nil  // Prevent cursor positioning and drag start
-                self.scheduleCopyOnSelect()
+                Log.trace("RustTerminalView[\(viewId)]: Double-click at cell (\(absoluteCell.col), \(absoluteCell.row)) - selecting word")
+                rustTerminal?.startSelection(col: absoluteCell.col, row: absoluteCell.row, selectionType: 2) // Semantic
+                needsGridSync = true
+                mouseDownLocation = nil // Prevent cursor positioning and drag start
+                scheduleCopyOnSelect()
                 return event
             } else if event.clickCount >= 3 {
                 // Triple-click: Select entire line (Lines selection)
-                Log.trace("RustTerminalView[\(self.viewId)]: Triple-click at row \(absoluteCell.row) - selecting line")
-                self.rustTerminal?.startSelection(col: 0, row: absoluteCell.row, selectionType: 3)  // Lines
-                self.needsGridSync = true
-                self.mouseDownLocation = nil  // Prevent cursor positioning and drag start
-                self.scheduleCopyOnSelect()
+                Log.trace("RustTerminalView[\(viewId)]: Triple-click at row \(absoluteCell.row) - selecting line")
+                rustTerminal?.startSelection(col: 0, row: absoluteCell.row, selectionType: 3) // Lines
+                needsGridSync = true
+                mouseDownLocation = nil // Prevent cursor positioning and drag start
+                scheduleCopyOnSelect()
                 return event
             }
 
             // Clear any existing selection on mouse down (single click)
-            self.rustTerminal?.clearSelection()
-            self.needsGridSync = true
+            rustTerminal?.clearSelection()
+            needsGridSync = true
 
             return event
         }
@@ -4753,7 +4786,7 @@ final class RustTerminalView: NSView {
         // Mouse dragged for selection OR mouse reporting
         mouseDragMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDragged) { [weak self] event in
             guard let self = self else { return event }
-            guard event.window === self.window else { return event }
+            guard event.window === window else { return event }
 
             // If a SwiftUI overlay is above us, don't intercept the drag
             if let hitView = event.window?.contentView?.hitTest(event.locationInWindow),
@@ -4761,61 +4794,61 @@ final class RustTerminalView: NSView {
                 return event
             }
 
-            let location = self.convert(event.locationInWindow, from: nil)
+            let location = convert(event.locationInWindow, from: nil)
 
             // Mouse reporting: Forward drag events to TUI apps (mode 1002/1003)
-            if self.mouseReportingButtonDown != nil {
-                let mouseModeValue = self.rustTerminal?.mouseMode() ?? 0
+            if mouseReportingButtonDown != nil {
+                let mouseModeValue = rustTerminal?.mouseMode() ?? 0
                 let isDragMode = (mouseModeValue & MouseMode.drag) != 0
                 let isMotionMode = (mouseModeValue & MouseMode.motion) != 0
 
                 if isDragMode || isMotionMode {
-                    self.sendMouseMotion(at: location, buttonDown: self.mouseReportingButtonDown, modifiers: event.modifierFlags)
+                    sendMouseMotion(at: location, buttonDown: mouseReportingButtonDown, modifiers: event.modifierFlags)
                 }
-                self.didDragSinceMouseDown = true
-                return event  // Don't do selection when mouse reporting is active
+                didDragSinceMouseDown = true
+                return event // Don't do selection when mouse reporting is active
             }
 
             // Selection logic (only when not mouse reporting)
-            if let downLocation = self.mouseDownLocation {
+            if let downLocation = mouseDownLocation {
                 let dx = abs(location.x - downLocation.x)
                 let dy = abs(location.y - downLocation.y)
                 if dx > Self.dragThreshold || dy > Self.dragThreshold {
                     // Use absolute coordinates for selection (accounts for scrollback offset)
-                    let currentCell = self.pointToCellAbsolute(location)
+                    let currentCell = pointToCellAbsolute(location)
 
-                    if !self.didDragSinceMouseDown {
+                    if !didDragSinceMouseDown {
                         // First drag past threshold - start selection at mouse down location
-                        let startCell = self.pointToCellAbsolute(downLocation)
-                        Log.trace("RustTerminalView[\(self.viewId)]: mouseDrag - Starting selection at absolute cell (\(startCell.col), \(startCell.row))")
-                        self.rustTerminal?.startSelection(col: startCell.col, row: startCell.row, selectionType: 0)
-                        self.isSelecting = true
+                        let startCell = pointToCellAbsolute(downLocation)
+                        Log.trace("RustTerminalView[\(viewId)]: mouseDrag - Starting selection at absolute cell (\(startCell.col), \(startCell.row))")
+                        rustTerminal?.startSelection(col: startCell.col, row: startCell.row, selectionType: 0)
+                        isSelecting = true
                     }
 
-                    self.didDragSinceMouseDown = true
+                    didDragSinceMouseDown = true
 
                     // Update selection end point
-                    if self.isSelecting {
-                        Log.trace("RustTerminalView[\(self.viewId)]: mouseDrag - Updating selection to absolute cell (\(currentCell.col), \(currentCell.row))")
-                        self.rustTerminal?.updateSelection(col: currentCell.col, row: currentCell.row)
-                        self.needsGridSync = true
+                    if isSelecting {
+                        Log.trace("RustTerminalView[\(viewId)]: mouseDrag - Updating selection to absolute cell (\(currentCell.col), \(currentCell.row))")
+                        rustTerminal?.updateSelection(col: currentCell.col, row: currentCell.row)
+                        needsGridSync = true
                     }
                 }
             }
 
             // Auto-scroll when dragging outside bounds during selection
-            if self.didDragSinceMouseDown && self.isSelecting {
+            if didDragSinceMouseDown, isSelecting {
                 if location.y < 0 {
                     // Dragging below view - scroll down (content moves up)
-                    self.autoScrollDirection = 1
-                    self.startAutoScrollTimer()
-                } else if location.y > self.bounds.height {
+                    autoScrollDirection = 1
+                    startAutoScrollTimer()
+                } else if location.y > bounds.height {
                     // Dragging above view - scroll up (content moves down)
-                    self.autoScrollDirection = -1
-                    self.startAutoScrollTimer()
+                    autoScrollDirection = -1
+                    startAutoScrollTimer()
                 } else {
                     // Inside bounds - stop auto-scroll
-                    self.stopAutoScrollTimer()
+                    stopAutoScrollTimer()
                 }
             }
 
@@ -4827,42 +4860,42 @@ final class RustTerminalView: NSView {
             guard let self = self else { return event }
 
             // Capture and clear mouse tracking state
-            let downLocation = self.mouseDownLocation
-            let wasDrag = self.didDragSinceMouseDown
-            let wasSelecting = self.isSelecting
-            let wasMouseReporting = self.mouseReportingButtonDown
+            let downLocation = mouseDownLocation
+            let wasDrag = didDragSinceMouseDown
+            let wasSelecting = isSelecting
+            let wasMouseReporting = mouseReportingButtonDown
 
-            self.mouseDownLocation = nil
-            self.didDragSinceMouseDown = false
-            self.isSelecting = false
-            self.mouseReportingButtonDown = nil
+            mouseDownLocation = nil
+            didDragSinceMouseDown = false
+            isSelecting = false
+            mouseReportingButtonDown = nil
 
             // Stop auto-scroll timer on mouse up
-            self.stopAutoScrollTimer()
+            stopAutoScrollTimer()
 
-            guard event.window === self.window else { return event }
-            let location = self.convert(event.locationInWindow, from: nil)
+            guard event.window === window else { return event }
+            let location = convert(event.locationInWindow, from: nil)
 
             // Mouse reporting: Send release event to TUI apps
             if let reportingButton = wasMouseReporting {
-                Log.trace("RustTerminalView[\(self.viewId)]: Mouse reporting - sending \(reportingButton) release")
-                self.sendMouseRelease(button: reportingButton, at: location, modifiers: event.modifierFlags)
-                return event  // Don't do click-to-position or selection when mouse reporting
+                Log.trace("RustTerminalView[\(viewId)]: Mouse reporting - sending \(reportingButton) release")
+                sendMouseRelease(button: reportingButton, at: location, modifiers: event.modifierFlags)
+                return event // Don't do click-to-position or selection when mouse reporting
             }
 
-            guard self.bounds.contains(location) else { return event }
+            guard bounds.contains(location) else { return event }
 
-            Log.trace("RustTerminalView[\(self.viewId)]: mouseUp at (\(location.x), \(location.y)), wasSelecting=\(wasSelecting), wasDrag=\(wasDrag)")
+            Log.trace("RustTerminalView[\(viewId)]: mouseUp at (\(location.x), \(location.y)), wasSelecting=\(wasSelecting), wasDrag=\(wasDrag)")
 
             // Click-to-position: If no drag occurred and single click, position cursor
             if let clickLocation = downLocation, !wasDrag {
                 let isSingleClick = event.clickCount == 1
                 let noModifiers = !event.modifierFlags.contains(.shift) && !event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.option)
-                let noActiveSelection = !self.hasSelection
+                let noActiveSelection = !hasSelection
 
-                if isSingleClick && noModifiers && noActiveSelection && FeatureSettings.shared.isClickToPositionEnabled {
-                    if self.handleClickToPosition(at: clickLocation) {
-                        Log.trace("RustTerminalView[\(self.viewId)]: Click-to-position handled")
+                if isSingleClick, noModifiers, noActiveSelection, FeatureSettings.shared.isClickToPositionEnabled {
+                    if handleClickToPosition(at: clickLocation) {
+                        Log.trace("RustTerminalView[\(viewId)]: Click-to-position handled")
                         return event
                     }
                 }
@@ -4870,8 +4903,8 @@ final class RustTerminalView: NSView {
 
             // Copy-on-select: Option key temporarily disables
             let optionHeld = event.modifierFlags.contains(.option)
-            if wasSelecting && !optionHeld {
-                self.scheduleCopyOnSelect()
+            if wasSelecting, !optionHeld {
+                scheduleCopyOnSelect()
             }
 
             return event
@@ -4880,11 +4913,11 @@ final class RustTerminalView: NSView {
         if needsMouseMove {
             mouseMoveMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
                 guard let self = self else { return event }
-                guard event.window === self.window else { return event }
-                let location = self.convert(event.locationInWindow, from: nil)
-                guard self.bounds.contains(location) else { return event }
+                guard event.window === window else { return event }
+                let location = convert(event.locationInWindow, from: nil)
+                guard bounds.contains(location) else { return event }
 
-                self.handleMouseMove(at: location, modifiers: event.modifierFlags)
+                handleMouseMove(at: location, modifiers: event.modifierFlags)
                 return event
             }
         }
@@ -4894,17 +4927,17 @@ final class RustTerminalView: NSView {
         // Normal mode: navigate scrollback history (scroll up = see earlier output)
         scrollWheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self = self else { return event }
-            guard event.window === self.window else { return event }
-            let location = self.convert(event.locationInWindow, from: nil)
-            guard self.bounds.contains(location) else { return event }
+            guard event.window === window else { return event }
+            let location = convert(event.locationInWindow, from: nil)
+            guard bounds.contains(location) else { return event }
 
             // Mouse reporting mode: forward scroll to the terminal program
-            if self.isMouseReportingEnabled() {
+            if isMouseReportingEnabled() {
                 let deltaY = event.scrollingDeltaY
                 // Ignore tiny scrolls to avoid flooding the terminal
                 if abs(deltaY) > 0.5 {
-                    self.sendScrollEvent(deltaY: deltaY, at: location, modifiers: event.modifierFlags)
-                    return nil  // Consume event when mouse reporting
+                    sendScrollEvent(deltaY: deltaY, at: location, modifiers: event.modifierFlags)
+                    return nil // Consume event when mouse reporting
                 }
                 return event
             }
@@ -4918,11 +4951,11 @@ final class RustTerminalView: NSView {
                 // Positive deltaY = scroll up (show earlier content).
                 let lines = max(1, Int(abs(deltaY) / 3.0))
                 if deltaY > 0 {
-                    self.scrollUp(lines: lines)
+                    scrollUp(lines: lines)
                 } else {
-                    self.scrollDown(lines: lines)
+                    scrollDown(lines: lines)
                 }
-                return nil  // Consume the event
+                return nil // Consume the event
             }
             return event
         }
@@ -4931,18 +4964,18 @@ final class RustTerminalView: NSView {
         // This ensures key input goes to Rust terminal even if a subview is first responder
         generalKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
-            guard event.window === self.window else { return event }
-            guard self.isFirstResponderInTerminal() else { return event }
+            guard event.window === window else { return event }
+            guard isFirstResponderInTerminal() else { return event }
 
             // Let snippet and history monitors handle their specific keys first
             // (they run before this and return nil to consume)
 
             // Route to Rust terminal
-            if self.handleTerminalKeyEvent(event) {
-                self.markGeneralKeyEventHandled(event)
-                return nil  // Consume event - we handled it
+            if handleTerminalKeyEvent(event) {
+                markGeneralKeyEventHandled(event)
+                return nil // Consume event - we handled it
             }
-            return event  // Let it propagate if not handled
+            return event // Let it propagate if not handled
         }
 
         Log.trace("RustTerminalView[\(viewId)]: setupEventMonitors - Event monitors installed (mouseMove=\(needsMouseMove), generalKey=true)")
@@ -5140,7 +5173,7 @@ final class RustTerminalView: NSView {
         pathDetectionWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
-            let hasClickable = !self.findURLs(in: lineText).isEmpty || !PathClickHandler.findPaths(in: lineText).isEmpty
+            let hasClickable = !findURLs(in: lineText).isEmpty || !PathClickHandler.findPaths(in: lineText).isEmpty
             DispatchQueue.main.async {
                 if hasClickable { NSCursor.pointingHand.set() }
                 else { NSCursor.iBeam.set() }
@@ -5160,12 +5193,12 @@ final class RustTerminalView: NSView {
         copyOnSelectWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self,
-                  let text = self.getSelection(),
+                  let text = getSelection(),
                   !text.isEmpty,
-                  text != self.lastSelectionText else { return }
-            Log.trace("RustTerminalView[\(self.viewId)]: Copy-on-select - Copying \(text.count) chars")
-            self.copyToClipboard(text)
-            self.lastSelectionText = text
+                  text != lastSelectionText else { return }
+            Log.trace("RustTerminalView[\(viewId)]: Copy-on-select - Copying \(text.count) chars")
+            copyToClipboard(text)
+            lastSelectionText = text
         }
         copyOnSelectWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.050, execute: work)
@@ -5262,12 +5295,12 @@ final class RustTerminalView: NSView {
         // If mouse reporting is active (and not forced by Shift), send the right-click
         // to the PTY instead of showing the context menu. This enables proper mouse
         // interaction in TUI apps like vim, tmux, htop.
-        if !forceMenu && isMouseReportingEnabled() {
+        if !forceMenu, isMouseReportingEnabled() {
             Log.trace("RustTerminalView[\(viewId)]: menu(for:) - Mouse reporting active, sending right-click to PTY")
             sendMousePress(button: .right, at: location, modifiers: event.modifierFlags)
             // Send release too since context menu won't consume the mouse-up event
             sendMouseRelease(button: .right, at: location, modifiers: event.modifierFlags)
-            return nil  // Don't show context menu
+            return nil // Don't show context menu
         }
 
         Log.trace("RustTerminalView[\(viewId)]: menu(for:) - Building context menu at (\(location.x), \(location.y))")
@@ -5377,7 +5410,7 @@ final class RustTerminalView: NSView {
         Log.trace("RustTerminalView[\(viewId)]: contextClearScreen")
         // Send form feed (Ctrl+L) to the PTY - the shell will respond with clear screen sequences
         // which get processed by the Rust terminal via poll()
-        send(data: [0x0c])
+        send(data: [0x0C])
         clearSelection()
         // Ensure grid sync happens after PTY processes the clear
         needsGridSync = true
@@ -5453,11 +5486,11 @@ final class RustTerminalView: NSView {
         Log.trace("RustTerminalView[\(viewId)]: installSnippetKeyMonitor - Installing snippet key monitor")
         keyDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
-            guard event.window === self.window else { return event }
-            guard self.isFirstResponderInTerminal() else { return event }
+            guard event.window === window else { return event }
+            guard isFirstResponderInTerminal() else { return event }
 
-            if self.handleSnippetKeyDown(event) {
-                return nil  // Consume event
+            if handleSnippetKeyDown(event) {
+                return nil // Consume event
             }
             return event
         }
@@ -5471,7 +5504,7 @@ final class RustTerminalView: NSView {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let hasCommandModifiers = modifiers.contains(.command) || modifiers.contains(.control) || modifiers.contains(.option)
 
-        if isTab && !hasCommandModifiers {
+        if isTab, !hasCommandModifiers {
             let isBackward = modifiers.contains(.shift)
             return advanceSnippetPlaceholder(state: state, backward: isBackward)
         }
@@ -5563,7 +5596,7 @@ final class RustTerminalView: NSView {
         let cursorRow = Int32(cursor.row)
 
         // Use line selection type (3) which selects entire logical lines including wrapped portions
-        rust.startSelection(col: 0, row: cursorRow, selectionType: 3)  // 3 = Lines selection
+        rust.startSelection(col: 0, row: cursorRow, selectionType: 3) // 3 = Lines selection
         needsGridSync = true
 
         Log.trace("RustTerminalView[\(viewId)]: selectCurrentCommand - Selected line at row \(cursorRow)")
@@ -5586,10 +5619,10 @@ final class RustTerminalView: NSView {
         Log.info("RustTerminalView[\(viewId)]: installHistoryKeyMonitor - Installing history key monitor")
         historyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
-            guard event.window === self.window else { return event }
-            guard self.isFirstResponderInTerminal() else { return event }
-            if self.handleHistoryKeyDown(event) {
-                return nil  // Consume event
+            guard event.window === window else { return event }
+            guard isFirstResponderInTerminal() else { return event }
+            if handleHistoryKeyDown(event) {
+                return nil // Consume event
             }
             return event
         }
@@ -5635,7 +5668,7 @@ final class RustTerminalView: NSView {
 
         guard let cmd = command else {
             Log.trace("RustTerminalView[\(viewId)]: handleHistoryKeyDown - No more history")
-            return true  // No more history, consume anyway
+            return true // No more history, consume anyway
         }
 
         // Avoid re-injecting the same command on key repeat (can spam the line)
@@ -5759,7 +5792,7 @@ final class RustTerminalView: NSView {
             var totalBytes = 0
             let startTime = Date()
 
-            for i in 0..<lineCount {
+            for i in 0 ..< lineCount {
                 let lineNum = String(format: "%06d: ", i)
                 let padding = String(repeating: "X", count: max(0, lineLength - lineNum.count - 1))
                 let line = lineNum + padding + "\n"
@@ -5771,13 +5804,13 @@ final class RustTerminalView: NSView {
                 totalBytes += bytes.count
 
                 // Yield periodically to avoid blocking
-                if i % 1000 == 0 {
+                if i.isMultiple(of: 1000) {
                     Thread.sleep(forTimeInterval: 0.001)
                 }
             }
 
             let elapsed = Date().timeIntervalSince(startTime)
-            Log.info("RustTerminalView[\(self.viewId)]: Stress test complete: \(totalBytes) bytes in \(elapsed)s (\(Int(Double(totalBytes) / elapsed / 1024)) KB/s)")
+            Log.info("RustTerminalView[\(viewId)]: Stress test complete: \(totalBytes) bytes in \(elapsed)s (\(Int(Double(totalBytes) / elapsed / 1024)) KB/s)")
 
             DispatchQueue.main.async {
                 completion(totalBytes)

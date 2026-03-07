@@ -1,4 +1,5 @@
 // MARK: - Triple Buffering with Dirty Region Tracking
+
 // Eliminates synchronization between producer and consumer threads
 // while tracking dirty regions to minimize GPU uploads.
 
@@ -25,7 +26,7 @@ public final class TripleBufferedTerminal {
         var dirtyRows: IndexSet = []
 
         /// Whether entire buffer needs refresh
-        var fullRefreshNeeded: Bool = true
+        var fullRefreshNeeded = true
 
         init(rows: Int, cols: Int) {
             self.rows = rows
@@ -44,7 +45,7 @@ public final class TripleBufferedTerminal {
 
         /// Marks a row as dirty
         func markDirty(row: Int) {
-            guard row >= 0 && row < rows else { return }
+            guard row >= 0, row < rows else { return }
             dirtyRows.insert(row)
         }
 
@@ -72,7 +73,7 @@ public final class TripleBufferedTerminal {
 
         /// Copies content from another buffer
         func copyFrom(_ other: TerminalBuffer) {
-            guard other.rows == rows && other.cols == cols else { return }
+            guard other.rows == rows, other.cols == cols else { return }
             memcpy(cells.baseAddress!, other.cells.baseAddress!, cells.count * MemoryLayout<TerminalCell>.stride)
             dirtyRows = other.dirtyRows
             fullRefreshNeeded = other.fullRefreshNeeded
@@ -80,7 +81,7 @@ public final class TripleBufferedTerminal {
 
         /// Copies only dirty rows from another buffer
         func copyDirtyFrom(_ other: TerminalBuffer) {
-            guard other.rows == rows && other.cols == cols else { return }
+            guard other.rows == rows, other.cols == cols else { return }
 
             if other.fullRefreshNeeded {
                 copyFrom(other)
@@ -104,9 +105,9 @@ public final class TripleBufferedTerminal {
     private var buffers: [TerminalBuffer]
 
     /// Atomic indices for lock-free buffer management
-    private let updateIndex: ManagedAtomic<Int>   // Buffer being updated
-    private let renderIndex: ManagedAtomic<Int>   // Buffer ready to render
-    private let displayIndex: ManagedAtomic<Int>  // Buffer being displayed
+    private let updateIndex: ManagedAtomic<Int> // Buffer being updated
+    private let renderIndex: ManagedAtomic<Int> // Buffer ready to render
+    private let displayIndex: ManagedAtomic<Int> // Buffer being displayed
 
     /// Statistics
     private let swapCount: ManagedAtomic<UInt64>
@@ -217,7 +218,7 @@ public final class TripleBufferedTerminal {
     public func clear() {
         for buffer in buffers {
             let defaultCell = TerminalCell()
-            for i in 0..<buffer.cells.count {
+            for i in 0 ..< buffer.cells.count {
                 buffer.cells[i] = defaultCell
             }
             buffer.fullRefreshNeeded = true
@@ -268,49 +269,49 @@ public struct DirtyRegionTracker {
 
     /// Marks a cell as dirty
     public mutating func markDirty(row: Int, col: Int) {
-        guard row >= 0 && row < rows && col >= 0 && col < cols else { return }
+        guard row >= 0, row < rows, col >= 0, col < cols else { return }
         let chunk = col / cellsPerChunk
         dirtyChunks[row][chunk] = true
     }
 
     /// Marks a range of cells as dirty
     public mutating func markDirty(row: Int, cols range: Range<Int>) {
-        guard row >= 0 && row < rows else { return }
+        guard row >= 0, row < rows else { return }
         let startChunk = max(0, range.lowerBound / cellsPerChunk)
         let endChunk = min(chunksPerRow - 1, (range.upperBound - 1) / cellsPerChunk)
-        for chunk in startChunk...endChunk {
+        for chunk in startChunk ... endChunk {
             dirtyChunks[row][chunk] = true
         }
     }
 
     /// Marks an entire row as dirty
     public mutating func markDirtyRow(_ row: Int) {
-        guard row >= 0 && row < rows else { return }
-        for chunk in 0..<chunksPerRow {
+        guard row >= 0, row < rows else { return }
+        for chunk in 0 ..< chunksPerRow {
             dirtyChunks[row][chunk] = true
         }
     }
 
     /// Gets dirty ranges for a row
     public func dirtyRanges(forRow row: Int) -> [Range<Int>] {
-        guard row >= 0 && row < rows else { return [] }
+        guard row >= 0, row < rows else { return [] }
 
         var ranges: [Range<Int>] = []
-        var rangeStart: Int? = nil
+        var rangeStart: Int?
 
-        for chunk in 0..<chunksPerRow {
+        for chunk in 0 ..< chunksPerRow {
             if dirtyChunks[row][chunk] {
                 if rangeStart == nil {
                     rangeStart = chunk * cellsPerChunk
                 }
             } else if let start = rangeStart {
-                ranges.append(start..<(chunk * cellsPerChunk))
+                ranges.append(start ..< (chunk * cellsPerChunk))
                 rangeStart = nil
             }
         }
 
         if let start = rangeStart {
-            ranges.append(start..<cols)
+            ranges.append(start ..< cols)
         }
 
         return ranges
@@ -318,15 +319,15 @@ public struct DirtyRegionTracker {
 
     /// Returns all dirty row indices
     public var dirtyRowIndices: [Int] {
-        (0..<rows).filter { row in
+        (0 ..< rows).filter { row in
             dirtyChunks[row].contains(true)
         }
     }
 
     /// Clears all dirty flags
     public mutating func clear() {
-        for row in 0..<rows {
-            for chunk in 0..<chunksPerRow {
+        for row in 0 ..< rows {
+            for chunk in 0 ..< chunksPerRow {
                 dirtyChunks[row][chunk] = false
             }
         }

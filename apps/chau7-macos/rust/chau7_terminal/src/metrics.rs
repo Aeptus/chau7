@@ -15,7 +15,7 @@ pub struct AdaptivePoller {
     /// Last time data was received
     last_data_time: Mutex<Instant>,
     /// Current activity level (0.0 = idle, 1.0 = very active)
-    activity_level: AtomicU64,  // Stored as fixed-point * 1000
+    activity_level: AtomicU64, // Stored as fixed-point * 1000
     /// Consecutive idle polls
     idle_streak: AtomicU64,
     /// Consecutive active polls
@@ -26,7 +26,7 @@ impl AdaptivePoller {
     pub fn new() -> Self {
         Self {
             last_data_time: Mutex::new(Instant::now()),
-            activity_level: AtomicU64::new(500),  // Start at 0.5
+            activity_level: AtomicU64::new(500), // Start at 0.5
             idle_streak: AtomicU64::new(0),
             active_streak: AtomicU64::new(0),
         }
@@ -40,7 +40,7 @@ impl AdaptivePoller {
 
         // Increase activity level based on data volume
         let current = self.activity_level.load(Ordering::Relaxed);
-        let boost = (bytes as u64).min(100) * 5;  // More data = bigger boost
+        let boost = (bytes as u64).min(100) * 5; // More data = bigger boost
         let new_level = (current + boost).min(1000);
         self.activity_level.store(new_level, Ordering::Relaxed);
     }
@@ -52,7 +52,7 @@ impl AdaptivePoller {
 
         // Decay activity level
         let current = self.activity_level.load(Ordering::Relaxed);
-        let new_level = current.saturating_sub(10);  // Slow decay
+        let new_level = current.saturating_sub(10); // Slow decay
         self.activity_level.store(new_level, Ordering::Relaxed);
     }
 
@@ -70,7 +70,7 @@ impl AdaptivePoller {
             1
         } else if idle_streak > 100 {
             // Very idle: can wait longer
-            16  // ~60fps
+            16 // ~60fps
         } else if idle_streak > 10 {
             // Somewhat idle
             8
@@ -84,7 +84,7 @@ impl AdaptivePoller {
     pub fn should_skip_poll(&self) -> bool {
         let idle_streak = self.idle_streak.load(Ordering::Relaxed);
         // After 1000 idle polls (~16 seconds at 60fps), skip every other poll
-        idle_streak > 1000 && idle_streak % 2 == 0
+        idle_streak > 1000 && idle_streak.is_multiple_of(2)
     }
 
     /// Get activity level as percentage (0-100)
@@ -118,7 +118,7 @@ pub struct DirtyRowTracker {
 
 impl DirtyRowTracker {
     pub fn new(rows: usize) -> Self {
-        let words = (rows + 63) / 64;
+        let words = rows.div_ceil(64);
         let mut dirty_bits = Vec::with_capacity(words);
         for _ in 0..words {
             dirty_bits.push(AtomicU64::new(0));
@@ -126,7 +126,7 @@ impl DirtyRowTracker {
         Self {
             dirty_bits: RwLock::new(dirty_bits),
             rows: AtomicU64::new(rows as u64),
-            full_dirty: AtomicBool::new(true),  // Start fully dirty
+            full_dirty: AtomicBool::new(true), // Start fully dirty
         }
     }
 
@@ -144,7 +144,9 @@ impl DirtyRowTracker {
 
     /// Mark a range of rows as dirty using word-level bitmask batching.
     pub fn mark_range_dirty(&self, start: usize, end: usize) {
-        if start > end { return; }
+        if start > end {
+            return;
+        }
         let bits = self.dirty_bits.read();
         let max_row = bits.len() * 64 - 1;
         let end = end.min(max_row);
@@ -173,7 +175,11 @@ impl DirtyRowTracker {
             }
 
             let end_bit = end % 64;
-            let mask = if end_bit == 63 { !0u64 } else { (1u64 << (end_bit + 1)) - 1 };
+            let mask = if end_bit == 63 {
+                !0u64
+            } else {
+                (1u64 << (end_bit + 1)) - 1
+            };
             bits[end_word].fetch_or(mask, Ordering::Relaxed);
         }
     }
@@ -208,10 +214,14 @@ impl DirtyRowTracker {
         let mut dirty = Vec::new();
         for word_idx in 0..bits.len() {
             let word = bits[word_idx].load(Ordering::Relaxed);
-            if word == 0 { continue; }
+            if word == 0 {
+                continue;
+            }
             for bit in 0..64 {
                 let row = word_idx * 64 + bit;
-                if row >= rows { return dirty; }
+                if row >= rows {
+                    return dirty;
+                }
                 if word & (1 << bit) != 0 {
                     dirty.push(row);
                 }
@@ -242,19 +252,19 @@ impl DirtyRowTracker {
 
     /// Update row count (e.g., on resize)
     pub fn set_rows(&self, rows: usize) {
-        let words_needed = (rows + 63) / 64;
+        let words_needed = rows.div_ceil(64);
         let mut bits = self.dirty_bits.write();
         while bits.len() < words_needed {
             bits.push(AtomicU64::new(0));
         }
         self.rows.store(rows as u64, Ordering::Relaxed);
-        self.full_dirty.store(true, Ordering::Relaxed);  // Resize requires full redraw
+        self.full_dirty.store(true, Ordering::Relaxed); // Resize requires full redraw
     }
 }
 
 impl Default for DirtyRowTracker {
     fn default() -> Self {
-        Self::new(24)  // Default terminal height
+        Self::new(24) // Default terminal height
     }
 }
 
@@ -262,7 +272,7 @@ impl Default for DirtyRowTracker {
 // Output batching
 // ============================================================================
 
-/// Output buffer with batching support.
+// Output buffer with batching support.
 
 // ============================================================================
 // Tests

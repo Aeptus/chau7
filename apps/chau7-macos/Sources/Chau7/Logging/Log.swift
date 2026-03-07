@@ -99,7 +99,7 @@ enum Log {
         let line = "[Chau7][\(level)] \(ts) \(message)"
         sink?(line)
         if isVerbose {
-            print(line)
+            print(line) // swiftlint:disable:this no_print_statements
         }
         writeToFile(line)
     }
@@ -112,7 +112,7 @@ enum Log {
         let data = (line + "\n").data(using: .utf8) ?? Data()
         fileQueue.async {
             // Lazy recovery: if fileHandle is nil (configure failed or trim broke it), retry once
-            if fileHandle == nil && !filePathValue.isEmpty {
+            if fileHandle == nil, !filePathValue.isEmpty {
                 let url = URL(fileURLWithPath: filePathValue)
                 if let h = try? FileHandle(forWritingTo: url) {
                     _ = try? h.seekToEnd()
@@ -122,7 +122,7 @@ enum Log {
             guard let handle = fileHandle else { return }
             try? handle.write(contentsOf: data)
             writeCount += 1
-            if writeCount % 200 == 0 {
+            if writeCount.isMultiple(of: 200) {
                 trimLogFileIfNeeded()
             }
         }

@@ -5,7 +5,9 @@ import Chau7Core
 /// Handles: exit codes, output pattern matching, long-running commands, directory/git changes.
 final class ShellEventDetector {
     private weak var appModel: AppModel?
-    private var config: ShellEventConfig { FeatureSettings.shared.shellEventConfig }
+    private var config: ShellEventConfig {
+        FeatureSettings.shared.shellEventConfig
+    }
 
     // Track state for change detection
     private var lastDirectory: String?
@@ -13,17 +15,17 @@ final class ShellEventDetector {
     private var commandStartTime: Date?
     private var longRunningTimer: DispatchSourceTimer?
     // Tiered long-running notification thresholds (in seconds)
-    private static let longRunningTiers: [Int] = [30, 60, 300]  // 30s, 1m, 5m
-    private var emittedTiers: Set<Int> = []  // Track which tiers have been emitted
+    private static let longRunningTiers: [Int] = [30, 60, 300] // 30s, 1m, 5m
+    private var emittedTiers: Set<Int> = [] // Track which tiers have been emitted
 
     // Pattern matching cache (synchronized access via patternQueue)
     private var compiledPatterns: [(ShellOutputPattern, NSRegularExpression)] = []
-    private var lastPatternConfigHash: Int = 0
+    private var lastPatternConfigHash = 0
     private let patternQueue = DispatchQueue(label: "com.chau7.shellEventDetector.patterns")
 
     // Rate limiting for pattern matches (prevents notification flooding)
     private var lastPatternMatchTime: [UUID: Date] = [:]
-    private let patternCooldownSeconds: TimeInterval = 5.0  // Min seconds between same pattern matches
+    private let patternCooldownSeconds: TimeInterval = 5.0 // Min seconds between same pattern matches
 
     init(appModel: AppModel?) {
         self.appModel = appModel
@@ -124,7 +126,7 @@ final class ShellEventDetector {
                 if let lastMatch = lastPatternMatchTime[pattern.id] {
                     let elapsed = now.timeIntervalSince(lastMatch)
                     if elapsed < patternCooldownSeconds {
-                        continue  // Skip, pattern is in cooldown
+                        continue // Skip, pattern is in cooldown
                     }
                 }
 
@@ -210,7 +212,7 @@ final class ShellEventDetector {
 
         // Check each tier and emit if not already emitted
         for tier in Self.longRunningTiers {
-            if elapsed >= tier && !emittedTiers.contains(tier) {
+            if elapsed >= tier, !emittedTiers.contains(tier) {
                 emittedTiers.insert(tier)
                 let minutes = tier / 60
                 let seconds = tier % 60

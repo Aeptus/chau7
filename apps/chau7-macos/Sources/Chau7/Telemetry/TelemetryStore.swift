@@ -174,7 +174,7 @@ final class TelemetryStore {
     /// Uses UPDATE (not INSERT OR REPLACE) to avoid cascading deletes on child rows.
     func finalizeRun(_ run: TelemetryRun, turns: [TelemetryTurn], toolCalls: [TelemetryToolCall]) {
         queue.async { [weak self] in
-            guard let self, let db = self.db else { return }
+            guard let self, let db = db else { return }
 
             // Begin transaction — run update + children must be atomic
             sqlite3_exec(db, "BEGIN", nil, nil, nil)
@@ -189,27 +189,31 @@ final class TelemetryStore {
             """
             var stmt: OpaquePointer?
             if sqlite3_prepare_v2(db, updateSQL, -1, &stmt, nil) == SQLITE_OK {
-                self.bindText(stmt, 1, run.sessionID)
-                self.bindText(stmt, 2, run.model)
-                self.bindText(stmt, 3, run.endedAt.map { Self.isoString(from: $0) })
-                self.bindInt(stmt, 4, run.durationMs)
-                self.bindInt(stmt, 5, run.exitStatus)
-                self.bindInt(stmt, 6, run.totalInputTokens)
-                self.bindInt(stmt, 7, run.totalOutputTokens)
-                self.bindDouble(stmt, 8, run.costUSD)
-                self.bindInt(stmt, 9, run.turnCount)
-                self.bindText(stmt, 10, run.rawTranscriptRef)
-                self.bindText(stmt, 11, run.errorMessage)
-                self.bindText(stmt, 12, run.id)
+                bindText(stmt, 1, run.sessionID)
+                bindText(stmt, 2, run.model)
+                bindText(stmt, 3, run.endedAt.map { Self.isoString(from: $0) })
+                bindInt(stmt, 4, run.durationMs)
+                bindInt(stmt, 5, run.exitStatus)
+                bindInt(stmt, 6, run.totalInputTokens)
+                bindInt(stmt, 7, run.totalOutputTokens)
+                bindDouble(stmt, 8, run.costUSD)
+                bindInt(stmt, 9, run.turnCount)
+                bindText(stmt, 10, run.rawTranscriptRef)
+                bindText(stmt, 11, run.errorMessage)
+                bindText(stmt, 12, run.id)
                 sqlite3_step(stmt)
                 sqlite3_finalize(stmt)
             }
 
             // Insert turns
-            for turn in turns { self._insertTurn(turn) }
+            for turn in turns {
+                _insertTurn(turn)
+            }
 
             // Insert tool calls
-            for call in toolCalls { self._insertToolCall(call) }
+            for call in toolCalls {
+                _insertToolCall(call)
+            }
 
             sqlite3_exec(db, "COMMIT", nil, nil, nil)
         }
@@ -218,7 +222,9 @@ final class TelemetryStore {
     func insertTurns(_ turns: [TelemetryTurn]) {
         queue.async { [weak self] in
             guard let self else { return }
-            for turn in turns { self._insertTurn(turn) }
+            for turn in turns {
+                _insertTurn(turn)
+            }
         }
     }
 
@@ -254,7 +260,9 @@ final class TelemetryStore {
     func insertToolCalls(_ calls: [TelemetryToolCall]) {
         queue.async { [weak self] in
             guard let self else { return }
-            for call in calls { self._insertToolCall(call) }
+            for call in calls {
+                _insertToolCall(call)
+            }
         }
     }
 
@@ -287,26 +295,26 @@ final class TelemetryStore {
 
     func updateRunSessionID(_ runID: String, sessionID: String) {
         queue.async { [weak self] in
-            guard let self, let db = self.db else { return }
+            guard let self, let db = db else { return }
             let sql = "UPDATE runs SET session_id = ? WHERE run_id = ?"
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
             defer { sqlite3_finalize(stmt) }
-            self.bindText(stmt, 1, sessionID)
-            self.bindText(stmt, 2, runID)
+            bindText(stmt, 1, sessionID)
+            bindText(stmt, 2, runID)
             sqlite3_step(stmt)
         }
     }
 
     func updateRunTags(_ runID: String, tags: [String]) {
         queue.async { [weak self] in
-            guard let self, let db = self.db else { return }
+            guard let self, let db = db else { return }
             let sql = "UPDATE runs SET tags = ? WHERE run_id = ?"
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
             defer { sqlite3_finalize(stmt) }
-            self.bindText(stmt, 1, Self.encodeJSON(tags))
-            self.bindText(stmt, 2, runID)
+            bindText(stmt, 1, Self.encodeJSON(tags))
+            bindText(stmt, 2, runID)
             sqlite3_step(stmt)
         }
     }
@@ -437,7 +445,9 @@ final class TelemetryStore {
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
             defer { sqlite3_finalize(stmt) }
-            for (i, v) in vals.enumerated() { bindText(stmt, Int32(i + 1), v) }
+            for (i, v) in vals.enumerated() {
+                bindText(stmt, Int32(i + 1), v)
+            }
             guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
             return parseRun(stmt)
         }
@@ -461,7 +471,9 @@ final class TelemetryStore {
             var stmt: OpaquePointer?
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
             defer { sqlite3_finalize(stmt) }
-            for (i, v) in vals.enumerated() { bindText(stmt, Int32(i + 1), v) }
+            for (i, v) in vals.enumerated() {
+                bindText(stmt, Int32(i + 1), v)
+            }
 
             var results: [[String: Any]] = []
             while sqlite3_step(stmt) == SQLITE_ROW {
@@ -587,7 +599,7 @@ final class TelemetryStore {
     private func colByName(_ stmt: OpaquePointer?, _ name: String) -> String? {
         guard let stmt else { return nil }
         let count = sqlite3_column_count(stmt)
-        for i in 0..<count {
+        for i in 0 ..< count {
             if let cn = sqlite3_column_name(stmt, i), String(cString: cn) == name {
                 guard let ptr = sqlite3_column_text(stmt, i) else { return nil }
                 return String(cString: ptr)
@@ -599,7 +611,7 @@ final class TelemetryStore {
     private func intByName(_ stmt: OpaquePointer?, _ name: String) -> Int? {
         guard let stmt else { return nil }
         let count = sqlite3_column_count(stmt)
-        for i in 0..<count {
+        for i in 0 ..< count {
             if let cn = sqlite3_column_name(stmt, i), String(cString: cn) == name {
                 if sqlite3_column_type(stmt, i) == SQLITE_NULL { return nil }
                 return Int(sqlite3_column_int64(stmt, i))
@@ -611,7 +623,7 @@ final class TelemetryStore {
     private func doubleByName(_ stmt: OpaquePointer?, _ name: String) -> Double? {
         guard let stmt else { return nil }
         let count = sqlite3_column_count(stmt)
-        for i in 0..<count {
+        for i in 0 ..< count {
             if let cn = sqlite3_column_name(stmt, i), String(cString: cn) == name {
                 if sqlite3_column_type(stmt, i) == SQLITE_NULL { return nil }
                 return sqlite3_column_double(stmt, i)
@@ -634,7 +646,7 @@ final class TelemetryStore {
         isoFormatter.date(from: string)
     }
 
-    private static func encodeJSON<T: Encodable>(_ value: T) -> String? {
+    private static func encodeJSON(_ value: some Encodable) -> String? {
         guard let data = try? JSONEncoder().encode(value) else { return nil }
         return String(data: data, encoding: .utf8)
     }

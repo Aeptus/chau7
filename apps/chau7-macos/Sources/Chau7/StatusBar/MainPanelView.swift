@@ -24,7 +24,9 @@ enum StreamSelection: String, CaseIterable, Identifiable {
     case claudeTerminal
     case verbose
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var title: String {
         switch self {
@@ -262,7 +264,7 @@ struct StreamView: View {
                                     String(entry.sessionId.prefix(8))
                                 )
                             )
-                                .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                             Text(entry.summary)
                                 .font(.system(size: 12))
                                 .foregroundStyle(.secondary)
@@ -346,13 +348,15 @@ struct SettingsRootView: View {
     @ObservedObject var model: AppModel
     let overlayModel: OverlayTabsModel?
     @State private var selection: SettingsSection = .general
-    @State private var searchQuery: String = ""
+    @State private var searchQuery = ""
 
     private var matchingSections: Set<SettingsSection> {
         FeatureSettings.sectionsMatching(query: searchQuery)
     }
 
-    private var isSearching: Bool { !searchQuery.isEmpty }
+    private var isSearching: Bool {
+        !searchQuery.isEmpty
+    }
 
     private var filteredSections: [SettingsSection] {
         if searchQuery.isEmpty {
@@ -478,7 +482,7 @@ struct SettingsDetailView: View {
     let selection: SettingsSection
     @ObservedObject var model: AppModel
     let overlayModel: OverlayTabsModel?
-    var searchQuery: String = ""
+    var searchQuery = ""
 
     private var matchingSettings: [SearchableSetting] {
         guard !searchQuery.isEmpty else { return [] }
@@ -494,7 +498,7 @@ struct SettingsDetailView: View {
                 sectionHeader
 
                 // Search results hint
-                if !searchQuery.isEmpty && !matchingSettings.isEmpty {
+                if !searchQuery.isEmpty, !matchingSettings.isEmpty {
                     SearchResultsHint(matchingSettings: matchingSettings, query: searchQuery)
                 }
 
@@ -590,8 +594,8 @@ struct SearchResultsHint: View {
                         query
                     )
                 )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             ForEach(matchingSettings) { setting in

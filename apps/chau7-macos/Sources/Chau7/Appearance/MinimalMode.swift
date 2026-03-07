@@ -23,23 +23,26 @@ final class MinimalMode: ObservableObject {
     @Published var hideTabBar: Bool {
         didSet { UserDefaults.standard.set(hideTabBar, forKey: "minimal.hideTabBar") }
     }
+
     @Published var hideTitleBar: Bool {
         didSet { UserDefaults.standard.set(hideTitleBar, forKey: "minimal.hideTitleBar") }
     }
+
     @Published var hideStatusBar: Bool {
         didSet { UserDefaults.standard.set(hideStatusBar, forKey: "minimal.hideStatusBar") }
     }
+
     @Published var hideSidebar: Bool {
         didSet { UserDefaults.standard.set(hideSidebar, forKey: "minimal.hideSidebar") }
     }
 
     private init() {
         let defaults = UserDefaults.standard
-        isEnabled = defaults.bool(forKey: "feature.minimalMode")
-        hideTabBar = defaults.object(forKey: "minimal.hideTabBar") as? Bool ?? true
-        hideTitleBar = defaults.object(forKey: "minimal.hideTitleBar") as? Bool ?? true
-        hideStatusBar = defaults.object(forKey: "minimal.hideStatusBar") as? Bool ?? true
-        hideSidebar = defaults.object(forKey: "minimal.hideSidebar") as? Bool ?? true
+        self.isEnabled = defaults.bool(forKey: "feature.minimalMode")
+        self.hideTabBar = defaults.object(forKey: "minimal.hideTabBar") as? Bool ?? true
+        self.hideTitleBar = defaults.object(forKey: "minimal.hideTitleBar") as? Bool ?? true
+        self.hideStatusBar = defaults.object(forKey: "minimal.hideStatusBar") as? Bool ?? true
+        self.hideSidebar = defaults.object(forKey: "minimal.hideSidebar") as? Bool ?? true
     }
 
     func toggle() {

@@ -5,7 +5,7 @@ import Chau7Core
 // MARK: - F03: Path Click Handler
 
 /// Handles Cmd+Click on file paths and URLs in terminal output
-struct PathClickHandler {
+enum PathClickHandler {
     struct PathMatch {
         let path: String
         let line: Int?
@@ -26,13 +26,13 @@ struct PathClickHandler {
             let path = nsText.substring(with: match.range(at: 1))
 
             // Group 2: line number (optional)
-            var line: Int? = nil
+            var line: Int?
             if match.range(at: 2).location != NSNotFound {
                 line = Int(nsText.substring(with: match.range(at: 2)))
             }
 
             // Group 3: column number (optional)
-            var column: Int? = nil
+            var column: Int?
             if match.range(at: 3).location != NSNotFound {
                 column = Int(nsText.substring(with: match.range(at: 3)))
             }

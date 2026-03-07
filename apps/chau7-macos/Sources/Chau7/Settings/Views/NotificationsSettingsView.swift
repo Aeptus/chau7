@@ -150,13 +150,15 @@ private struct StatusPermissionsSection: View {
 
 // MARK: - Shared Types
 
-fileprivate enum TriggerCategory: String, CaseIterable, Identifiable {
-    case core = "core"
-    case shell = "shell"
-    case aiApps = "aiApps"
-    case app = "app"
+private enum TriggerCategory: String, CaseIterable, Identifiable {
+    case core
+    case shell
+    case aiApps
+    case app
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var label: String {
         switch self {
@@ -194,7 +196,7 @@ fileprivate enum TriggerCategory: String, CaseIterable, Identifiable {
     }
 }
 
-fileprivate struct TriggerGroup: Identifiable {
+private struct TriggerGroup: Identifiable {
     let id: String
     let source: NotificationTriggerSourceInfo
     let triggers: [NotificationTrigger]
@@ -208,10 +210,10 @@ private struct UnifiedTriggerSection: View {
     @ObservedObject private var settings = FeatureSettings.shared
     @State private var expandedCategories: Set<TriggerCategory> = [.aiApps]
     @State private var expandedSources: Set<String> = []
-    @State private var expandedTriggerId: String? = nil
+    @State private var expandedTriggerId: String?
     @State private var showingActionPicker = false
-    @State private var selectedTriggerId: String? = nil
-    @State private var editingAction: (triggerId: String, config: NotificationActionConfig)? = nil
+    @State private var selectedTriggerId: String?
+    @State private var editingAction: (triggerId: String, config: NotificationActionConfig)?
 
     private func isGroupTriggerId(_ id: String) -> Bool {
         NotificationTriggerCatalog.allGroupTriggerIds.contains(id)
@@ -418,8 +420,8 @@ private struct UnifiedCategorySection: View {
                                 totalCount
                             )
                         )
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                     }
                 }
                 .buttonStyle(.plain)
@@ -455,8 +457,10 @@ private struct UnifiedCategorySection: View {
                     if enabledCount == 0 {
                         SettingsHint(
                             icon: "bell.slash",
-                            text: L("settings.notifications.categoryDisabled",
-                                    "No triggers enabled in this category.")
+                            text: L(
+                                "settings.notifications.categoryDisabled",
+                                "No triggers enabled in this category."
+                            )
                         )
                         .padding(.leading, 16)
                         .padding(.top, 4)
@@ -552,8 +556,8 @@ private struct UnifiedSourceSection: View {
                             group.triggers.count
                         )
                     )
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
 
                     Spacer()
                 }
@@ -1002,8 +1006,8 @@ private struct OverrideSourceSection: View {
                             group.triggers.count
                         )
                     )
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
 
                     Spacer()
                 }
@@ -1428,7 +1432,7 @@ private struct RateLimitingSection: View {
 
 private struct DefaultConditionsSection: View {
     @ObservedObject private var settings = FeatureSettings.shared
-    @State private var selectedTriggerId: String? = nil
+    @State private var selectedTriggerId: String?
 
     private var configuredTriggers: [(trigger: NotificationTrigger, condition: TriggerCondition)] {
         NotificationTriggerCatalog.all
@@ -1517,7 +1521,10 @@ private struct ConditionRow: View {
                         L("settings.notifications.condition.respectDND", "Respect Focus/DND mode"),
                         isOn: Binding(
                             get: { condition.respectDND },
-                            set: { var c = condition; c.respectDND = $0; onChange(c) }
+                            set: { var c = condition
+                                c.respectDND = $0
+                                onChange(c)
+                            }
                         )
                     )
                     .font(.caption)
@@ -1526,7 +1533,10 @@ private struct ConditionRow: View {
                         L("settings.notifications.condition.onlyWhenUnfocused", "Only when app is in background"),
                         isOn: Binding(
                             get: { condition.onlyWhenUnfocused },
-                            set: { var c = condition; c.onlyWhenUnfocused = $0; onChange(c) }
+                            set: { var c = condition
+                                c.onlyWhenUnfocused = $0
+                                onChange(c)
+                            }
                         )
                     )
                     .font(.caption)
@@ -1535,7 +1545,10 @@ private struct ConditionRow: View {
                         L("settings.notifications.condition.onlyWhenTabInactive", "Only when triggering tab is not selected"),
                         isOn: Binding(
                             get: { condition.onlyWhenTabInactive },
-                            set: { var c = condition; c.onlyWhenTabInactive = $0; onChange(c) }
+                            set: { var c = condition
+                                c.onlyWhenTabInactive = $0
+                                onChange(c)
+                            }
                         )
                     )
                     .font(.caption)

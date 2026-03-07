@@ -477,7 +477,7 @@ public final class ProxyIPCServer: ObservableObject {
 struct ProxyIPCServerMessage {
     let type: String
     let data: ProxyIPCServerData
-    let rawData: Data?  // Raw JSON for task events
+    let rawData: Data? // Raw JSON for task events
 }
 
 extension ProxyIPCServerMessage {
@@ -544,10 +544,21 @@ struct ProxyIPCServerData: Decodable {
         case projectPath = "project_path"
     }
 
-    init(sessionId: String, provider: String, model: String, endpoint: String,
-         inputTokens: Int, outputTokens: Int, latencyMs: Int64, statusCode: Int,
-         costUSD: Double, timestamp: String, errorMessage: String,
-         tabId: String?, projectPath: String?) {
+    init(
+        sessionId: String,
+        provider: String,
+        model: String,
+        endpoint: String,
+        inputTokens: Int,
+        outputTokens: Int,
+        latencyMs: Int64,
+        statusCode: Int,
+        costUSD: Double,
+        timestamp: String,
+        errorMessage: String,
+        tabId: String?,
+        projectPath: String?
+    ) {
         self.sessionId = sessionId
         self.provider = provider
         self.model = model
@@ -565,19 +576,19 @@ struct ProxyIPCServerData: Decodable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        sessionId = try container.decode(String.self, forKey: .sessionId)
-        provider = try container.decode(String.self, forKey: .provider)
-        model = try container.decode(String.self, forKey: .model)
-        endpoint = try container.decode(String.self, forKey: .endpoint)
-        inputTokens = try container.decode(Int.self, forKey: .inputTokens)
-        outputTokens = try container.decode(Int.self, forKey: .outputTokens)
-        latencyMs = try container.decode(Int64.self, forKey: .latencyMs)
-        statusCode = try container.decode(Int.self, forKey: .statusCode)
-        costUSD = try container.decode(Double.self, forKey: .costUSD)
-        timestamp = try container.decode(String.self, forKey: .timestamp)
-        errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage) ?? ""
-        tabId = try container.decodeIfPresent(String.self, forKey: .tabId)
-        projectPath = try container.decodeIfPresent(String.self, forKey: .projectPath)
+        self.sessionId = try container.decode(String.self, forKey: .sessionId)
+        self.provider = try container.decode(String.self, forKey: .provider)
+        self.model = try container.decode(String.self, forKey: .model)
+        self.endpoint = try container.decode(String.self, forKey: .endpoint)
+        self.inputTokens = try container.decode(Int.self, forKey: .inputTokens)
+        self.outputTokens = try container.decode(Int.self, forKey: .outputTokens)
+        self.latencyMs = try container.decode(Int64.self, forKey: .latencyMs)
+        self.statusCode = try container.decode(Int.self, forKey: .statusCode)
+        self.costUSD = try container.decode(Double.self, forKey: .costUSD)
+        self.timestamp = try container.decode(String.self, forKey: .timestamp)
+        self.errorMessage = try container.decodeIfPresent(String.self, forKey: .errorMessage) ?? ""
+        self.tabId = try container.decodeIfPresent(String.self, forKey: .tabId)
+        self.projectPath = try container.decodeIfPresent(String.self, forKey: .projectPath)
     }
 }
 

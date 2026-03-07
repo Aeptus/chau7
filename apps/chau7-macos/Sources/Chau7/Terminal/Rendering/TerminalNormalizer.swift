@@ -11,7 +11,9 @@ import Foundation
 ///
 /// Used to convert raw terminal output to clean, displayable text.
 enum TerminalNormalizer {
+
     // MARK: - Pre-compiled Regex (Memory Optimization)
+
     // Compiled once at startup instead of on every call (Fix #10: safe regex initialization)
 
     private static let ansiPattern: NSRegularExpression = {

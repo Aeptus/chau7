@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - Tool-Agnostic Event System
+
 //
 // AIEvent is the canonical event type for ALL monitored tools and sources.
 // It is produced by every monitor (file tailer, terminal sessions, Claude Code hooks,
@@ -24,6 +25,7 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sen
     }
 
     // MARK: - Core Sources
+
     public static let eventsLog = AIEventSource(rawValue: "events_log")
     public static let terminalSession = AIEventSource(rawValue: "terminal_session")
     public static let historyMonitor = AIEventSource(rawValue: "history_monitor")
@@ -32,9 +34,11 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sen
     public static let unknown = AIEventSource(rawValue: "unknown")
 
     // MARK: - Shell Sources
+
     public static let shell = AIEventSource(rawValue: "shell")
 
     // MARK: - AI Coding Apps
+
     public static let claudeCode = AIEventSource(rawValue: "claude_code")
     public static let codex = AIEventSource(rawValue: "codex")
     public static let cursor = AIEventSource(rawValue: "cursor")

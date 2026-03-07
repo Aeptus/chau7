@@ -20,6 +20,7 @@ final class RustTerminalContainerView: NSView {
         addSubview(terminalView)
     }
 
+    @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) not implemented")
     }
@@ -34,15 +35,15 @@ final class RustTerminalContainerView: NSView {
             coordinator.resize(rows: terminalView.renderRows, cols: terminalView.renderCols)
         }
 
-        if !didRunFirstLayout && bounds.width > 0 && bounds.height > 0 {
+        if !didRunFirstLayout, bounds.width > 0, bounds.height > 0 {
             didRunFirstLayout = true
             // Defer the first-layout callback to the next runloop pass so that
             // this layout cycle finishes first — avoids the AppKit warning about
             // calling layoutSubtreeIfNeeded inside an active layout pass.
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                self.terminalView.layoutSubtreeIfNeeded()
-                self.onFirstLayout?(self.terminalView)
+                terminalView.layoutSubtreeIfNeeded()
+                onFirstLayout?(terminalView)
             }
         }
     }
@@ -155,6 +156,7 @@ final class UnifiedTerminalContainerView: NSView {
         addSubview(rustContainer!)
     }
 
+    @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) not implemented")
     }
@@ -347,7 +349,7 @@ struct TerminalViewRepresentable: NSViewRepresentable {
         let metalActive = container.rustMetalCoordinator != nil
         if nsView.isHidden != isSuspended {
             nsView.isHidden = isSuspended
-            if !isSuspended && !metalActive {
+            if !isSuspended, !metalActive {
                 nsView.needsDisplay = true
             }
         }

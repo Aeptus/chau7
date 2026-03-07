@@ -25,7 +25,7 @@ final class AppDelegateTests: XCTestCase {
             0x16, // 6
             0x1A, // 7
             0x1C, // 8
-            0x19, // 9
+            0x19 // 9
         ]
         // Ensure count matches; if Apple ever adds new keycodes this should still pass
         XCTAssertEqual(expectedKeyCodes.count, 9, "Should have key codes for 1 through 9")
@@ -34,20 +34,32 @@ final class AppDelegateTests: XCTestCase {
     // MARK: - Keyboard Shortcut Constants
 
     func testEscapeKeyCode() {
-        XCTAssertEqual(KeyboardShortcuts.escapeKeyCode, 53,
-            "Escape key code should match macOS virtual key code")
+        XCTAssertEqual(
+            KeyboardShortcuts.escapeKeyCode,
+            53,
+            "Escape key code should match macOS virtual key code"
+        )
     }
 
     func testTabKeyCode() {
-        XCTAssertEqual(KeyboardShortcuts.tabKeyCode, 48,
-            "Tab key code should match macOS virtual key code")
+        XCTAssertEqual(
+            KeyboardShortcuts.tabKeyCode,
+            48,
+            "Tab key code should match macOS virtual key code"
+        )
     }
 
     func testArrowKeyCodes() {
-        XCTAssertEqual(KeyboardShortcuts.leftArrowKeyCode, 123,
-            "Left arrow key code should be 123")
-        XCTAssertEqual(KeyboardShortcuts.rightArrowKeyCode, 124,
-            "Right arrow key code should be 124")
+        XCTAssertEqual(
+            KeyboardShortcuts.leftArrowKeyCode,
+            123,
+            "Left arrow key code should be 123"
+        )
+        XCTAssertEqual(
+            KeyboardShortcuts.rightArrowKeyCode,
+            124,
+            "Right arrow key code should be 124"
+        )
     }
 
     func testShortcutCharacterConstants() {
@@ -80,23 +92,29 @@ final class AppDelegateTests: XCTestCase {
     func testApplicationShouldNotTerminateAfterLastWindowClosed() {
         let delegate = AppDelegate()
         let result = delegate.applicationShouldTerminateAfterLastWindowClosed(NSApplication.shared)
-        XCTAssertFalse(result,
-            "Terminal apps should not terminate when last window closes (overlay can be re-shown)")
+        XCTAssertFalse(
+            result,
+            "Terminal apps should not terminate when last window closes (overlay can be re-shown)"
+        )
     }
 
     func testApplicationShouldHandleReopenReturnsTrue() {
         let delegate = AppDelegate()
         // With no visible windows (flag=false), the method should still return true
         let result = delegate.applicationShouldHandleReopen(NSApplication.shared, hasVisibleWindows: false)
-        XCTAssertTrue(result,
-            "applicationShouldHandleReopen should return true to allow standard reopen behavior")
+        XCTAssertTrue(
+            result,
+            "applicationShouldHandleReopen should return true to allow standard reopen behavior"
+        )
     }
 
     func testApplicationShouldHandleReopenWithVisibleWindows() {
         let delegate = AppDelegate()
         let result = delegate.applicationShouldHandleReopen(NSApplication.shared, hasVisibleWindows: true)
-        XCTAssertTrue(result,
-            "applicationShouldHandleReopen should return true even with visible windows")
+        XCTAssertTrue(
+            result,
+            "applicationShouldHandleReopen should return true even with visible windows"
+        )
     }
 
     // MARK: - Menu Dispatch Methods
@@ -138,7 +156,7 @@ final class AppDelegateTests: XCTestCase {
     func testSelectTabNoOpWithoutModel() {
         let delegate = AppDelegate()
         // Should not crash for any valid tab number
-        for number in 1...9 {
+        for number in 1 ... 9 {
             delegate.selectTab(number: number)
         }
     }

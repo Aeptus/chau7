@@ -12,9 +12,9 @@ import AppKit
 final class SixelKittyBridge: ObservableObject {
     static let shared = SixelKittyBridge()
 
-    @Published var isSixelEnabled: Bool = false
-    @Published var isKittyGraphicsEnabled: Bool = false
-    @Published var kittyCacheLimitMB: Int = 256  // Default 256MB cache
+    @Published var isSixelEnabled = false
+    @Published var isKittyGraphicsEnabled = false
+    @Published var kittyCacheLimitMB = 256 // Default 256MB cache
 
     private init() {
         loadSettings()

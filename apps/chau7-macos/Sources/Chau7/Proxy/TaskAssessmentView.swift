@@ -7,7 +7,7 @@ public struct TaskAssessmentView: View {
     let onFail: (String?) -> Void
     let onCancel: () -> Void
 
-    @State private var note: String = ""
+    @State private var note = ""
     @State private var showNoteField = false
 
     public init(

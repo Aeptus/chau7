@@ -12,10 +12,10 @@ final class LineTimestampTracker: ObservableObject {
     @Published private(set) var timestamps: [Int: Date] = [:]
 
     /// Current line count (tracks where we are in the buffer)
-    private var currentRow: Int = 0
+    private var currentRow = 0
 
     /// Minimum row currently tracked (for O(1) pruning instead of O(n log n) sorting)
-    private var minTrackedRow: Int = 0
+    private var minTrackedRow = 0
 
     /// Last update timestamp for batching
     private var lastUpdateTime: Date = .distantPast
@@ -46,7 +46,7 @@ final class LineTimestampTracker: ObservableObject {
 
         if newlineCount > 0 {
             // Record timestamp for each new line
-            for _ in 0..<newlineCount {
+            for _ in 0 ..< newlineCount {
                 currentRow += 1
                 timestamps[currentRow] = now
             }
@@ -155,7 +155,6 @@ struct TimestampOverlayView: View {
 extension TerminalSessionModel {
     /// Creates a timestamp tracker for this session
     func createTimestampTracker() -> LineTimestampTracker {
-        let tracker = LineTimestampTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
-        return tracker
+        return LineTimestampTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
     }
 }

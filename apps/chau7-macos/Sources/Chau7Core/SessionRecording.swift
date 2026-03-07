@@ -7,7 +7,7 @@ import Foundation
 public struct RecordedFrame: Codable, Identifiable, Sendable {
     public let id: UUID
     public let timestamp: Date
-    public let data: Data          // Terminal output bytes
+    public let data: Data // Terminal output bytes
     public let eventType: FrameEventType
 
     public init(id: UUID = UUID(), timestamp: Date = Date(), data: Data, eventType: FrameEventType = .output) {
@@ -20,12 +20,12 @@ public struct RecordedFrame: Codable, Identifiable, Sendable {
 
 /// The type of event captured in a recorded frame.
 public enum FrameEventType: String, Codable, Sendable {
-    case output        // Terminal output data
-    case input         // User input
-    case resize        // Terminal resize
-    case commandStart  // Command started
-    case commandEnd    // Command ended
-    case marker        // User-placed marker
+    case output // Terminal output data
+    case input // User input
+    case resize // Terminal resize
+    case commandStart // Command started
+    case commandEnd // Command ended
+    case marker // User-placed marker
 }
 
 /// Metadata for a session recording.

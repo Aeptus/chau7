@@ -36,8 +36,8 @@ struct SnippetsSettingsView: View {
             let query = searchText.lowercased()
             entries = entries.filter { entry in
                 entry.snippet.title.lowercased().contains(query) ||
-                entry.snippet.body.lowercased().contains(query) ||
-                entry.snippet.tags.contains { $0.lowercased().contains(query) }
+                    entry.snippet.body.lowercased().contains(query) ||
+                    entry.snippet.tags.contains { $0.lowercased().contains(query) }
             }
         }
 
@@ -238,13 +238,13 @@ struct SnippetsSettingsView: View {
                 .font(.system(size: 40))
                 .foregroundColor(.secondary)
             Text(searchText.isEmpty
-                 ? L("snippets.empty.none", "No snippets yet")
-                 : L("snippets.empty.noMatches", "No matching snippets"))
+                ? L("snippets.empty.none", "No snippets yet")
+                : L("snippets.empty.noMatches", "No matching snippets"))
                 .font(.headline)
                 .foregroundColor(.secondary)
             Text(searchText.isEmpty
-                 ? L("snippets.empty.cta", "Click \"New Snippet\" to create one")
-                 : L("snippets.empty.tryDifferent", "Try a different search term"))
+                ? L("snippets.empty.cta", "Click \"New Snippet\" to create one")
+                : L("snippets.empty.tryDifferent", "Try a different search term"))
                 .font(.caption)
                 .foregroundColor(.secondary)
             Spacer()
@@ -860,7 +860,7 @@ private struct SnippetEditorPanel: View {
         for path in recentRepoRoots where path != currentRepoRoot {
             options.append(path)
         }
-        if !draft.repoPath.isEmpty && !options.contains(draft.repoPath) {
+        if !draft.repoPath.isEmpty, !options.contains(draft.repoPath) {
             options.insert(draft.repoPath, at: 0)
         }
         return options
@@ -986,7 +986,7 @@ private struct SnippetEditorPanel: View {
                         .foregroundColor(.secondary)
                 }
 
-                if draft.source == .repo && repoSnippetsEnabled {
+                if draft.source == .repo, repoSnippetsEnabled {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(L("Repository", "Repository"))
                             .font(.caption)
@@ -1028,7 +1028,7 @@ private struct SnippetEditorPanel: View {
                         }
                     }
                     .onChange(of: draft.source) { newValue in
-                        if newValue == .repo && draft.repoPath.isEmpty, let first = repoOptions.first {
+                        if newValue == .repo, draft.repoPath.isEmpty, let first = repoOptions.first {
                             draft.repoPath = first
                         }
                     }
@@ -1079,7 +1079,7 @@ private struct SnippetEditorPanel: View {
             .padding()
         }
         .onChange(of: repoSnippetsEnabled) { enabled in
-            if !enabled && draft.source == .repo {
+            if !enabled, draft.source == .repo {
                 draft.source = .global
                 draft.repoPath = ""
             }
@@ -1102,8 +1102,8 @@ private struct ImportExportSheet: View {
     var body: some View {
         VStack(spacing: 16) {
             Text(mode == .import
-                 ? L("snippets.import.title", "Import Snippets")
-                 : L("snippets.export.title", "Export Snippets"))
+                ? L("snippets.import.title", "Import Snippets")
+                : L("snippets.export.title", "Export Snippets"))
                 .font(.headline)
 
             if mode == .export {
@@ -1312,7 +1312,7 @@ final class SnippetsSettingsWindowController: NSObject {
     private var window: NSWindow?
     private var hostingView: NSHostingView<SnippetsSettingsView>?
 
-    private override init() {
+    override private init() {
         super.init()
     }
 
@@ -1327,7 +1327,7 @@ final class SnippetsSettingsWindowController: NSObject {
         // Create the view and hosting view
         let view = SnippetsSettingsView()
         let hosting = NSHostingView(rootView: view)
-        self.hostingView = hosting
+        hostingView = hosting
 
         // Create window
         let newWindow = NSWindow(
@@ -1343,7 +1343,7 @@ final class SnippetsSettingsWindowController: NSObject {
         newWindow.center()
         newWindow.makeKeyAndOrderFront(nil)
 
-        self.window = newWindow
+        window = newWindow
         NSApp.activate(ignoringOtherApps: true)
     }
 }

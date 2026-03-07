@@ -9,13 +9,18 @@ import Chau7Core
 final class TerminalAnalytics: ObservableObject {
     static let shared = TerminalAnalytics()
 
-    @Published var totalCommands: Int = 0
+    @Published var totalCommands = 0
     @Published var successRate: Double = 0
     @Published var avgDuration: TimeInterval = 0
     @Published var topCommands: [FrequentCommand] = []
 
-    var successRateString: String { String(format: "%.0f%%", successRate * 100) }
-    var avgDurationString: String { String(format: "%.1fs", avgDuration) }
+    var successRateString: String {
+        String(format: "%.0f%%", successRate * 100)
+    }
+
+    var avgDurationString: String {
+        String(format: "%.1fs", avgDuration)
+    }
 
     private init() {
         refresh()
@@ -47,4 +52,3 @@ final class TerminalAnalytics: ObservableObject {
         Log.info("TerminalAnalytics: refreshed (total=\(totalCommands), successRate=\(successRateString))")
     }
 }
-

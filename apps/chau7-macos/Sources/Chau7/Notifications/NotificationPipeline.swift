@@ -55,20 +55,20 @@ enum NotificationPipeline {
             } else {
                 condition = .default
             }
-            if condition.respectDND && input.isFocusModeActive {
+            if condition.respectDND, input.isFocusModeActive {
                 return .drop(reason: "DND/Focus active")
             }
-            if condition.onlyWhenUnfocused && input.isAppActive {
+            if condition.onlyWhenUnfocused, input.isAppActive {
                 return .drop(reason: "App is active (onlyWhenUnfocused)")
             }
-            if condition.onlyWhenTabInactive && input.isToolTabActive {
+            if condition.onlyWhenTabInactive, input.isToolTabActive {
                 return .drop(reason: "Tool tab is active (onlyWhenTabInactive)")
             }
         }
 
         // 4. No matching trigger → apply default conditions, then use default notification
         guard let trigger else {
-            if TriggerCondition.default.onlyWhenTabInactive && input.isToolTabActive {
+            if TriggerCondition.default.onlyWhenTabInactive, input.isToolTabActive {
                 return .drop(reason: "Tool tab is active (unmatched trigger, default condition)")
             }
             return .fireDefault(triggerId: nil)

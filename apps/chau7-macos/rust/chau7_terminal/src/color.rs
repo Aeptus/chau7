@@ -159,7 +159,11 @@ fn named_color_rgb(named: NamedColor, is_fg: bool, theme: &ThemeColors) -> (u8, 
         NamedColor::BrightCyan => theme.palette[14],
         NamedColor::BrightWhite => theme.palette[15],
         NamedColor::Foreground => {
-            if is_fg { theme.fg } else { theme.bg }
+            if is_fg {
+                theme.fg
+            } else {
+                theme.bg
+            }
         }
         NamedColor::Background => theme.bg,
         NamedColor::Cursor => theme.cursor,

@@ -75,11 +75,11 @@ final class SSHConfigParserTests: XCTestCase {
     func testParseCommentsAndEmptyLinesSkipped() {
         let config = """
         # This is a comment
-        
+
         Host myhost
             # Another comment
             HostName example.com
-        
+
         """
         let entries = SSHConfigParser.parse(config)
         XCTAssertEqual(entries.count, 1)

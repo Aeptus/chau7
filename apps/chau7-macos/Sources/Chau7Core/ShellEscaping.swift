@@ -83,11 +83,11 @@ public enum ShellEscaping {
     }
 
     /// Dangerous SSH options that could be used for command injection or exfiltration.
-    public static let dangerousSSHOptions: Set<String> = [
-        "-o ProxyCommand",      // Can execute arbitrary commands
-        "-o LocalCommand",      // Can execute local commands
+    public static let dangerousSSHOptions: Set = [
+        "-o ProxyCommand", // Can execute arbitrary commands
+        "-o LocalCommand", // Can execute local commands
         "-o PermitLocalCommand",
-        "-W",                   // Stdio forwarding
+        "-W", // Stdio forwarding
         "ProxyCommand",
         "LocalCommand",
         "PermitLocalCommand"
@@ -157,7 +157,7 @@ public enum ShellEscaping {
         guard !trimmed.contains("\0") else { return false }
 
         // Must not contain command substitution
-        guard !trimmed.contains("$(") && !trimmed.contains("`") else { return false }
+        guard !trimmed.contains("$("), !trimmed.contains("`") else { return false }
 
         // Must not contain path traversal components
         let components = trimmed.components(separatedBy: "/")

@@ -56,14 +56,12 @@ enum Chau7Error: LocalizedError {
             return "Failed to write file at \(path): \(error.localizedDescription)"
         case .fileNotFound(let path):
             return "File not found: \(path)"
-
         case .configurationDecodeFailed(let type, let error):
             return "Failed to decode \(type): \(error.localizedDescription)"
         case .configurationEncodeFailed(let type, let error):
             return "Failed to encode \(type): \(error.localizedDescription)"
         case .invalidConfiguration(let reason):
             return "Invalid configuration: \(reason)"
-
         case .terminalNotAttached:
             return "Terminal view not attached to session"
         case .shellStartFailed(let reason):
@@ -73,21 +71,18 @@ enum Chau7Error: LocalizedError {
                 return "Failed to spawn process \(executable): \(error.localizedDescription)"
             }
             return "Failed to spawn process: \(executable)"
-
         case .snippetNotFound(let id):
             return "Snippet not found: \(id)"
         case .snippetSaveFailed(let error):
             return "Failed to save snippet: \(error.localizedDescription)"
         case .snippetLoadFailed(let path, let error):
             return "Failed to load snippets from \(path): \(error.localizedDescription)"
-
         case .settingsImportFailed(let reason):
             return "Failed to import settings: \(reason)"
         case .settingsExportFailed(let reason):
             return "Failed to export settings: \(reason)"
         case .profileNotFound(let name):
             return "Settings profile not found: \(name)"
-
         // SSH
         case .sshConnectionFailed(let host, let reason):
             return "Failed to connect to \(host): \(reason)"
@@ -99,7 +94,6 @@ enum Chau7Error: LocalizedError {
             return "SSH identity file not found: \(path)"
         case .sshUnsafeOptions(let options, let reason):
             return "Unsafe SSH options blocked: \(options). \(reason)"
-
         // Clipboard
         case .clipboardAccessDenied:
             return "Clipboard access denied by system"
@@ -107,7 +101,6 @@ enum Chau7Error: LocalizedError {
             return "Clipboard rate limited. Please wait \(Int(retryAfter)) seconds."
         case .clipboardDataCorrupted:
             return "Clipboard data is corrupted or unreadable"
-
         // Security
         case .securityViolation(let reason):
             return "Security violation: \(reason)"
@@ -127,35 +120,30 @@ enum Chau7Error: LocalizedError {
             return "Check that the destination is writable and has sufficient disk space."
         case .fileNotFound:
             return "Verify the file path is correct and the file exists."
-
         case .configurationDecodeFailed:
             return "The configuration file may be corrupted. Try resetting to defaults."
         case .configurationEncodeFailed:
             return "There may be an internal error. Please report this issue."
         case .invalidConfiguration:
             return "Check the configuration values and try again."
-
         case .terminalNotAttached:
             return "Wait for the terminal to fully initialize before performing this action."
         case .shellStartFailed:
             return "Check that the shell path is valid and the shell is installed."
         case .processSpawnFailed:
             return "Verify the executable exists and you have permission to run it."
-
         case .snippetNotFound:
             return "The snippet may have been deleted. Refresh the snippet list."
         case .snippetSaveFailed:
             return "Check that you have write permissions to the snippets directory."
         case .snippetLoadFailed:
             return "The snippets file may be corrupted. Try restoring from backup."
-
         case .settingsImportFailed:
             return "Ensure the settings file is a valid Chau7 settings export."
         case .settingsExportFailed:
             return "Check that the destination is writable."
         case .profileNotFound:
             return "The profile may have been deleted. Choose a different profile."
-
         case .sshConnectionFailed:
             return "Verify the host is reachable and SSH is enabled. Check your credentials."
         case .sshInvalidHost:
@@ -166,14 +154,12 @@ enum Chau7Error: LocalizedError {
             return "Check that the identity file path is correct. Common locations: ~/.ssh/id_rsa, ~/.ssh/id_ed25519"
         case .sshUnsafeOptions:
             return "Some SSH options are blocked for security. Use safe options only."
-
         case .clipboardAccessDenied:
             return "Grant Chau7 clipboard access in System Settings > Privacy & Security."
         case .clipboardRateLimited:
             return "The clipboard is being accessed too frequently. Wait and try again."
         case .clipboardDataCorrupted:
             return "Clear the clipboard and try copying again."
-
         case .securityViolation:
             return "This action was blocked for security reasons."
         case .inputValidationFailed:
@@ -417,7 +403,7 @@ enum InputValidation {
         let isHostname = trimmed.range(of: hostnameRegex, options: .regularExpression) != nil
         let isIP = trimmed.range(of: ipRegex, options: .regularExpression) != nil
 
-        if !isHostname && !isIP {
+        if !isHostname, !isIP {
             return .failure(.sshInvalidHost(host: trimmed))
         }
 

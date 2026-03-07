@@ -105,12 +105,12 @@ final class TelemetryQueryService {
 
     // MARK: - Encoding
 
-    private func encode<T: Encodable>(_ value: T) -> String {
+    private func encode(_ value: some Encodable) -> String {
         guard let data = try? encoder.encode(value) else { return "{}" }
         return String(data: data, encoding: .utf8) ?? "{}"
     }
 
-    private func encodeArray<T: Encodable>(_ values: [T]) -> String {
+    private func encodeArray(_ values: [some Encodable]) -> String {
         guard let data = try? encoder.encode(values) else { return "[]" }
         return String(data: data, encoding: .utf8) ?? "[]"
     }

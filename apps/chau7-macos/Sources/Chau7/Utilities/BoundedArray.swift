@@ -10,7 +10,7 @@ struct BoundedSet<T: Hashable> {
         self.maxCount = maxCount
         self.storage = Set(minimumCapacity: maxCount)
         self.insertionOrder = []
-        self.insertionOrder.reserveCapacity(maxCount)
+        insertionOrder.reserveCapacity(maxCount)
     }
 
     mutating func insert(_ item: T) {
@@ -45,9 +45,17 @@ struct BoundedSet<T: Hashable> {
         insertionOrder.removeAll(keepingCapacity: keepingCapacity)
     }
 
-    var count: Int { storage.count }
-    var isEmpty: Bool { storage.isEmpty }
-    var items: Set<T> { storage }
+    var count: Int {
+        storage.count
+    }
+
+    var isEmpty: Bool {
+        storage.isEmpty
+    }
+
+    var items: Set<T> {
+        storage
+    }
 }
 
 extension BoundedSet: Sequence {

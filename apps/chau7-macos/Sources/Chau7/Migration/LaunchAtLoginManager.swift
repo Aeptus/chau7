@@ -41,7 +41,7 @@ enum LaunchAtLoginManager {
             "Label": label,
             "ProgramArguments": [executablePath],
             "RunAtLoad": true,
-            "KeepAlive": false,
+            "KeepAlive": false
         ]
 
         do {

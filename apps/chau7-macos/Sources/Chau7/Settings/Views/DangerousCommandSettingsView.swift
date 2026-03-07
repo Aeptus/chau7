@@ -14,8 +14,8 @@ import AppKit
 struct DangerousCommandSettingsView: View {
     @ObservedObject private var guard_ = DangerousCommandGuard.shared
     @ObservedObject private var settings = FeatureSettings.shared
-    @State private var newPattern: String = ""
-    @State private var newBlockCommand: String = ""
+    @State private var newPattern = ""
+    @State private var newBlockCommand = ""
     @State private var showResetConfirmation = false
 
     var body: some View {
@@ -61,9 +61,12 @@ struct DangerousCommandSettingsView: View {
                 isOn: $guard_.isEnabled
             )
 
-            Text(L("settings.dangerousGuard.description", "When enabled, pressing Enter on a command that matches a risky pattern will show a confirmation dialog before the command is sent to the shell."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(L(
+                "settings.dangerousGuard.description",
+                "When enabled, pressing Enter on a command that matches a risky pattern will show a confirmation dialog before the command is sent to the shell."
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
 
             SettingsPicker(
                 label: L("settings.dangerousGuard.highlightScope", "Highlight Scope"),

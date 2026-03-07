@@ -5,7 +5,9 @@ import Chau7Core
 /// Handles: scheduled events, inactivity detection, memory threshold monitoring.
 final class AppEventEmitter {
     private weak var appModel: AppModel?
-    private var config: AppEventConfig { FeatureSettings.shared.appEventConfig }
+    private var config: AppEventConfig {
+        FeatureSettings.shared.appEventConfig
+    }
 
     // Timers for different event types
     private var scheduledTimers: [String: DispatchSourceTimer] = [:]
@@ -13,10 +15,10 @@ final class AppEventEmitter {
     private var memoryTimer: DispatchSourceTimer?
 
     // State tracking
-    private var lastActivityTime: Date = Date()
-    private var hasEmittedInactivity: Bool = false
+    private var lastActivityTime = Date()
+    private var hasEmittedInactivity = false
     private var lastMemoryWarningTime: Date?
-    private var memoryHasDroppedBelowHysteresis: Bool = true  // Start true so first alert fires
+    private var memoryHasDroppedBelowHysteresis = true // Start true so first alert fires
 
     private var configObserver: Any?
 

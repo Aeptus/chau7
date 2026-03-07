@@ -13,7 +13,7 @@ extension FrameParsingError: LocalizedError {
     }
 }
 
-public struct FrameParser {
+public enum FrameParser {
     public static let defaultMaxFrameSize = 5 * 1024 * 1024
     public static let lengthPrefixSize = 4
 
@@ -31,21 +31,21 @@ public struct FrameParser {
 
         while buffer.count >= lengthPrefixSize {
             guard let frameLen = try? Int(buffer.readUInt32LE(at: 0)) else {
-                buffer.removeSubrange(0..<lengthPrefixSize)
+                buffer.removeSubrange(0 ..< lengthPrefixSize)
                 continue
             }
 
             if frameLen <= 0 || frameLen > maxFrameSize {
                 errors.append(FrameParsingError.invalidFrameLength(frameLen))
-                buffer.removeSubrange(0..<lengthPrefixSize)
+                buffer.removeSubrange(0 ..< lengthPrefixSize)
                 continue
             }
 
             let totalNeeded = lengthPrefixSize + frameLen
             guard buffer.count >= totalNeeded else { break }
 
-            let frameData = buffer.subdata(in: lengthPrefixSize..<totalNeeded)
-            buffer.removeSubrange(0..<totalNeeded)
+            let frameData = buffer.subdata(in: lengthPrefixSize ..< totalNeeded)
+            buffer.removeSubrange(0 ..< totalNeeded)
 
             do {
                 let frame = try RemoteFrame.decode(from: frameData)

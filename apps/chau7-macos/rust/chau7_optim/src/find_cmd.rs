@@ -25,17 +25,55 @@ fn glob_match_inner(pat: &[u8], name: &[u8]) -> bool {
 
 /// Native find flags that we can't optimize — fallthrough to real `find`.
 const UNSUPPORTED_FIND_FLAGS: &[&str] = &[
-    "-exec", "-execdir", "-ok", "-okdir", "-delete", "-print0", "-printf", "-fprintf",
-    "-fprint", "-ls", "-fls", "-prune", "-quit", "-perm", "-user", "-group", "-uid",
-    "-gid", "-newer", "-newerXY", "-anewer", "-cnewer", "-amin", "-cmin", "-mmin",
-    "-atime", "-ctime", "-mtime", "-size", "-empty", "-links", "-inum", "-samefile",
-    "-regex", "-iregex", "-path", "-ipath", "-wholename", "-iwholename",
+    "-exec",
+    "-execdir",
+    "-ok",
+    "-okdir",
+    "-delete",
+    "-print0",
+    "-printf",
+    "-fprintf",
+    "-fprint",
+    "-ls",
+    "-fls",
+    "-prune",
+    "-quit",
+    "-perm",
+    "-user",
+    "-group",
+    "-uid",
+    "-gid",
+    "-newer",
+    "-newerXY",
+    "-anewer",
+    "-cnewer",
+    "-amin",
+    "-cmin",
+    "-mmin",
+    "-atime",
+    "-ctime",
+    "-mtime",
+    "-size",
+    "-empty",
+    "-links",
+    "-inum",
+    "-samefile",
+    "-regex",
+    "-iregex",
+    "-path",
+    "-ipath",
+    "-wholename",
+    "-iwholename",
 ];
 
 /// Detect whether args use native find syntax (e.g., `-name`, `-type`).
 fn has_native_find_flags(args: &[String]) -> bool {
     args.iter().any(|a| {
-        a == "-name" || a == "-iname" || a == "-type" || a == "-maxdepth" || a == "-mindepth"
+        a == "-name"
+            || a == "-iname"
+            || a == "-type"
+            || a == "-maxdepth"
+            || a == "-mindepth"
             || UNSUPPORTED_FIND_FLAGS.iter().any(|f| a == *f)
     })
 }
@@ -149,9 +187,7 @@ pub fn run_from_args(args: &[String], verbose: u8) -> Result<()> {
 
     if has_native_find_flags(args) {
         match parse_native_find_args(args) {
-            Some((pattern, path, max, file_type)) => {
-                run(&pattern, &path, max, &file_type, verbose)
-            }
+            Some((pattern, path, max, file_type)) => run(&pattern, &path, max, &file_type, verbose),
             None => {
                 // Unsupported native find flags — intentional skip
                 std::process::exit(3);
@@ -197,7 +233,7 @@ pub fn run(
         };
 
         let ft = entry.file_type();
-        let is_dir = ft.as_ref().map_or(false, |t| t.is_dir());
+        let is_dir = ft.as_ref().is_some_and(|t| t.is_dir());
 
         // Filter by type
         if want_dirs && !is_dir {
@@ -424,8 +460,16 @@ mod tests {
 
     #[test]
     fn detect_native_flags() {
-        assert!(has_native_find_flags(&[".".into(), "-name".into(), "*.rs".into()]));
-        assert!(has_native_find_flags(&[".".into(), "-type".into(), "f".into()]));
+        assert!(has_native_find_flags(&[
+            ".".into(),
+            "-name".into(),
+            "*.rs".into()
+        ]));
+        assert!(has_native_find_flags(&[
+            ".".into(),
+            "-type".into(),
+            "f".into()
+        ]));
         assert!(has_native_find_flags(&["-exec".into(), "rm".into()]));
         assert!(!has_native_find_flags(&["*.rs".into(), ".".into()]));
         assert!(!has_native_find_flags(&["*.rs".into()]));
@@ -433,7 +477,13 @@ mod tests {
 
     #[test]
     fn parse_native_name_type() {
-        let args: Vec<String> = vec![".".into(), "-name".into(), "*.rs".into(), "-type".into(), "f".into()];
+        let args: Vec<String> = vec![
+            ".".into(),
+            "-name".into(),
+            "*.rs".into(),
+            "-type".into(),
+            "f".into(),
+        ];
         let result = parse_native_find_args(&args);
         assert!(result.is_some());
         let (pattern, path, _, file_type) = result.unwrap();
@@ -444,7 +494,13 @@ mod tests {
 
     #[test]
     fn parse_native_unsupported_returns_none() {
-        let args: Vec<String> = vec![".".into(), "-name".into(), "*.rs".into(), "-exec".into(), "rm".into()];
+        let args: Vec<String> = vec![
+            ".".into(),
+            "-name".into(),
+            "*.rs".into(),
+            "-exec".into(),
+            "rm".into(),
+        ];
         assert!(parse_native_find_args(&args).is_none());
     }
 

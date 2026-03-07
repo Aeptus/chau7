@@ -22,14 +22,14 @@ final class RemoteViewerMode: ObservableObject {
         }
     }
 
-    @Published var isSharing: Bool = false
+    @Published var isSharing = false
     @Published var connectedViewers: [RemoteViewer] = []
     @Published var pendingApprovals: [RemoteViewer] = []
     @Published var shareLink: String?
 
     /// Maximum simultaneous viewers
     var maxViewers: Int {
-        get { UserDefaults.standard.integer(forKey: "remoteViewer.maxViewers").clamped(to: 1...10) }
+        get { UserDefaults.standard.integer(forKey: "remoteViewer.maxViewers").clamped(to: 1 ... 10) }
         set { UserDefaults.standard.set(newValue, forKey: "remoteViewer.maxViewers") }
     }
 
@@ -43,7 +43,7 @@ final class RemoteViewerMode: ObservableObject {
     @Published var knownViewerIDs: Set<String> = []
 
     private init() {
-        isEnabled = UserDefaults.standard.bool(forKey: "feature.remoteViewer")
+        self.isEnabled = UserDefaults.standard.bool(forKey: "feature.remoteViewer")
         loadKnownViewers()
         Log.info("RemoteViewerMode initialized: enabled=\(isEnabled)")
     }
@@ -119,7 +119,7 @@ final class RemoteViewerMode: ObservableObject {
         let viewer = RemoteViewer(id: viewerID, name: viewerName)
 
         // Auto-approve known viewers if under capacity
-        if autoApproveKnown && knownViewerIDs.contains(viewerID) {
+        if autoApproveKnown, knownViewerIDs.contains(viewerID) {
             guard connectedViewers.count < maxViewers else {
                 Log.warn("RemoteViewerMode: rejected auto-approve for \(viewerID), max viewers reached")
                 return

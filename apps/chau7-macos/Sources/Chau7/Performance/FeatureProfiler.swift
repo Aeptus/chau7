@@ -16,9 +16,13 @@ enum FeatureMetric: String, CaseIterable, Identifiable {
     case promptUpdate = "Prompt Update"
     case devServerDetect = "Dev Server"
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
-    var displayName: String { rawValue }
+    var displayName: String {
+        rawValue
+    }
 
     var signpostName: StaticString {
         switch self {
@@ -41,9 +45,9 @@ enum FeatureMetric: String, CaseIterable, Identifiable {
 
 struct FeatureTotals: Equatable {
     var totalMs: Double = 0
-    var count: Int = 0
+    var count = 0
     var maxMs: Double = 0
-    var totalBytes: Int = 0
+    var totalBytes = 0
 
     mutating func add(durationMs: Double, bytes: Int) {
         totalMs += durationMs
@@ -57,7 +61,7 @@ struct FeatureTotals: Equatable {
     }
 
     var averageMs: Double {
-        guard count > 0 else { return 0 }
+        guard count > 0 else { return 0 } // swiftlint:disable:this empty_count
         return totalMs / Double(count)
     }
 }
@@ -147,24 +151,24 @@ final class FeatureProfiler {
         queue.async { [weak self] in
             guard let self else { return }
 
-            if var last = self.buckets.last, last.second == currentSecond {
+            if var last = buckets.last, last.second == currentSecond {
                 var totals = last.totals[feature] ?? FeatureTotals()
                 totals.add(durationMs: durationMs, bytes: bytes)
                 last.totals[feature] = totals
-                self.buckets[self.buckets.count - 1] = last
+                buckets[buckets.count - 1] = last
             } else {
                 var totals = FeatureTotals()
                 totals.add(durationMs: durationMs, bytes: bytes)
                 let bucket = Bucket(second: currentSecond, totals: [feature: totals])
-                self.buckets.append(bucket)
-                if self.buckets.count > self.bucketCapacitySeconds {
-                    self.buckets.removeFirst(self.buckets.count - self.bucketCapacitySeconds)
+                buckets.append(bucket)
+                if buckets.count > bucketCapacitySeconds {
+                    buckets.removeFirst(buckets.count - bucketCapacitySeconds)
                 }
             }
 
-            self.events.append(event)
-            if self.events.count > self.eventCapacity {
-                self.events.removeFirst(self.events.count - self.eventCapacity)
+            events.append(event)
+            if events.count > eventCapacity {
+                events.removeFirst(events.count - eventCapacity)
             }
         }
     }

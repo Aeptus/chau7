@@ -13,7 +13,7 @@ final class ScriptingClientHandler {
     private let onDisconnect: DisconnectHandler
     private var readSource: DispatchSourceRead?
     private var buffer = Data()
-    private let maxLineLength = 1_048_576  // 1 MB max per JSON line
+    private let maxLineLength = 1_048_576 // 1 MB max per JSON line
 
     init(
         fd: Int32,
@@ -36,7 +36,7 @@ final class ScriptingClientHandler {
         }
         readSource?.setCancelHandler { [weak self] in
             guard let self = self else { return }
-            close(self.fd)
+            close(fd)
         }
         readSource?.resume()
     }
@@ -67,19 +67,19 @@ final class ScriptingClientHandler {
     private func processLines() {
         // Process all complete newline-delimited JSON messages in the buffer
         while let newlineIndex = buffer.firstIndex(of: UInt8(ascii: "\n")) {
-            let lineData = buffer[buffer.startIndex..<newlineIndex]
+            let lineData = buffer[buffer.startIndex ..< newlineIndex]
 
             // Guard against excessively large lines
             guard lineData.count <= maxLineLength else {
                 Log.warn("ScriptingClientHandler: line too long (\(lineData.count) bytes), dropping")
-                buffer.removeSubrange(buffer.startIndex...newlineIndex)
+                buffer.removeSubrange(buffer.startIndex ... newlineIndex)
                 let errorResponse: [String: Any] = ["error": "request too large"]
                 writeResponse(errorResponse)
                 continue
             }
 
             // Remove the processed line (including newline) from the buffer
-            buffer.removeSubrange(buffer.startIndex...newlineIndex)
+            buffer.removeSubrange(buffer.startIndex ... newlineIndex)
 
             guard !lineData.isEmpty else { continue }
 
@@ -107,7 +107,7 @@ final class ScriptingClientHandler {
                 }
 
                 self?.writeResponse(finalResponse)
-                _ = clientFD  // prevent unused variable warning
+                _ = clientFD // prevent unused variable warning
             }
         }
 

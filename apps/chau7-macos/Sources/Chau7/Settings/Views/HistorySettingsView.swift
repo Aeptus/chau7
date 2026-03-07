@@ -6,15 +6,15 @@ import UniformTypeIdentifiers
 
 struct HistorySettingsView: View {
     @ObservedObject private var settings = FeatureSettings.shared
-    @State private var totalRecords: Int = 0
-    @State private var databaseSize: String = ""
+    @State private var totalRecords = 0
+    @State private var databaseSize = ""
     @State private var showClearConfirmation = false
     @State private var showClearOlderConfirmation = false
-    @State private var clearOlderDays: Int = 30
+    @State private var clearOlderDays = 30
     @State private var showExportSheet = false
     @State private var showImportSheet = false
     @State private var importError: String?
-    @State private var maxRecordsValue: Double = 50_000
+    @State private var maxRecordsValue: Double = 50000
     @State private var statusMessage: String?
     @State private var persistentHistoryEnabled: Bool = UserDefaults.standard.bool(forKey: "feature.persistentHistory")
 
@@ -52,7 +52,7 @@ struct HistorySettingsView: View {
                 help: L("settings.history.maxRecords.help", "Maximum number of commands to store (10,000 - 100,000)")
             ) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Slider(value: $maxRecordsValue, in: 10_000...100_000, step: 5_000) {
+                    Slider(value: $maxRecordsValue, in: 10000 ... 100_000, step: 5000) {
                         EmptyView()
                     }
                     .frame(maxWidth: 280)
@@ -67,8 +67,8 @@ struct HistorySettingsView: View {
                             Int(maxRecordsValue).formatted()
                         )
                     )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             }
 
@@ -184,7 +184,7 @@ struct HistorySettingsView: View {
         .onAppear {
             refreshStats()
             let stored = UserDefaults.standard.integer(forKey: "history.maxRecords")
-            maxRecordsValue = Double(max(10_000, min(stored > 0 ? stored : 50_000, 100_000)))
+            maxRecordsValue = Double(max(10000, min(stored > 0 ? stored : 50000, 100_000)))
         }
     }
 

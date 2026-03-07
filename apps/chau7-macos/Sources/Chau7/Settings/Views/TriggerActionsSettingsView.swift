@@ -7,7 +7,9 @@ import Chau7Core
 struct EditingActionItem: Identifiable {
     let triggerId: String
     let config: NotificationActionConfig
-    var id: UUID { config.id }
+    var id: UUID {
+        config.id
+    }
 }
 
 // MARK: - Action Row
@@ -140,10 +142,10 @@ struct ActionPickerSheet: View {
         return NotificationActionCatalog.byCategory.compactMap { category, actions in
             let filtered = actions.filter {
                 $0.labelFallback.lowercased().contains(query) ||
-                $0.descriptionFallback.lowercased().contains(query) ||
-                L($0.labelKey, $0.labelFallback).lowercased().contains(query) ||
-                L($0.descriptionKey, $0.descriptionFallback).lowercased().contains(query) ||
-                categoryLabel(for: category).lowercased().contains(query)
+                    $0.descriptionFallback.lowercased().contains(query) ||
+                    L($0.labelKey, $0.labelFallback).lowercased().contains(query) ||
+                    L($0.descriptionKey, $0.descriptionFallback).lowercased().contains(query) ||
+                    categoryLabel(for: category).lowercased().contains(query)
             }
             return filtered.isEmpty ? nil : (category, filtered)
         }
@@ -256,7 +258,7 @@ struct ActionConfigSheet: View {
     let onSave: (NotificationActionConfig) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var configValues: [String: String] = [:]
-    @State private var isEnabled: Bool = true
+    @State private var isEnabled = true
 
     private var actionInfo: NotificationActionInfo? {
         NotificationActionCatalog.action(for: actionConfig.actionType)

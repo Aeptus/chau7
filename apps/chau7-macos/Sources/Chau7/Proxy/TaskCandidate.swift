@@ -91,7 +91,7 @@ public struct TaskAssessment: Codable, Equatable, Sendable {
     public let totalAPICalls: Int
     public let totalTokens: Int
     public let totalCostUSD: Double
-    public let tokensSaved: Int?  // nil until baseline estimation is implemented
+    public let tokensSaved: Int? // nil until baseline estimation is implemented
     public let durationSeconds: Int64
     public let assessedAt: Date
 }
@@ -109,7 +109,7 @@ public enum TaskState: String, Codable, Sendable {
 
 /// What triggered the task creation
 public enum TaskTrigger: String, Codable, Sendable {
-    case manual = "manual"
+    case manual
     case newSession = "new_session"
     case idleGap = "idle_gap"
     case repoSwitch = "repo_switch"
@@ -126,7 +126,7 @@ public enum TaskTrigger: String, Codable, Sendable {
 
 /// How the task was started
 public enum TaskStartMethod: String, Codable, Sendable {
-    case manual = "manual"
+    case manual
     case autoConfirmed = "auto_confirmed"
     case userConfirmed = "user_confirmed"
 

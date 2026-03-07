@@ -23,7 +23,7 @@ final class SendableTests: XCTestCase {
     }
 
     func testHistoryEntrySendable() async {
-        let entry = HistoryEntry(sessionId: "test", timestamp: 1234567890, summary: "ls -la", isExit: false)
+        let entry = HistoryEntry(sessionId: "test", timestamp: 1_234_567_890, summary: "ls -la", isExit: false)
         let result = await Task { entry }.value
         XCTAssertEqual(result, entry)
     }

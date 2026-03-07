@@ -85,7 +85,7 @@ final class CommandRiskDetectionTests: XCTestCase {
 
     func testVeryLongCommand() {
         let patterns = ["dangerous"]
-        let longPrefix = String(repeating: "a", count: 10_000)
+        let longPrefix = String(repeating: "a", count: 10000)
         XCTAssertTrue(CommandRiskDetection.isRisky(commandLine: "\(longPrefix) dangerous", patterns: patterns))
     }
 

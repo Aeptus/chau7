@@ -4,13 +4,15 @@ import SwiftUI
 // MARK: - Supported Languages
 
 enum AppLanguage: String, CaseIterable, Identifiable, Codable {
-    case system = "system"
+    case system
     case english = "en"
     case french = "fr"
-    case arabic = "ar"      // RTL language
-    case hebrew = "he"      // RTL language
+    case arabic = "ar" // RTL language
+    case hebrew = "he" // RTL language
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var displayName: String {
         switch self {
@@ -82,7 +84,7 @@ final class LocalizationManager: ObservableObject {
     static let shared = LocalizationManager()
 
     /// Incremented on every language change to force SwiftUI view updates
-    @Published private(set) var refreshToken: Int = 0
+    @Published private(set) var refreshToken = 0
 
     @Published var currentLanguage: AppLanguage {
         didSet {
@@ -97,9 +99,7 @@ final class LocalizationManager: ObservableObject {
     private(set) var bundle: Bundle
 
     /// The resource bundle for localized strings (SPM bundle or main bundle)
-    private static let resourceBundle: Bundle = {
-        Chau7Resources.bundle
-    }()
+    private static let resourceBundle: Bundle = Chau7Resources.bundle
 
     private init() {
         let savedLanguage = UserDefaults.standard.string(forKey: "appLanguage") ?? "system"
@@ -128,7 +128,7 @@ final class LocalizationManager: ObservableObject {
         // Access refreshToken to create dependency for SwiftUI
         _ = refreshToken
         let value = bundle.localizedString(forKey: key, value: nil, table: nil)
-        if value == key && !defaultValue.isEmpty {
+        if value == key, !defaultValue.isEmpty {
             return defaultValue
         }
         return value

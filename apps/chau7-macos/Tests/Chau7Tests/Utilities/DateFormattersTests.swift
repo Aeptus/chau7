@@ -13,7 +13,7 @@ final class DateFormattersTests: XCTestCase {
 
     func testISO8601FormatterFormatsDateWithFractionalSeconds() {
         // Create a known date (2025-01-14 12:00:00 UTC)
-        let date = Date(timeIntervalSince1970: 1736856000)
+        let date = Date(timeIntervalSince1970: 1_736_856_000)
         let formatted = DateFormatters.iso8601.string(from: date)
 
         XCTAssertTrue(formatted.contains("2025-01-14"))
@@ -24,7 +24,7 @@ final class DateFormattersTests: XCTestCase {
     }
 
     func testISO8601FormatterRoundTrip() {
-        let original = Date(timeIntervalSince1970: 1736856000.456)
+        let original = Date(timeIntervalSince1970: 1_736_856_000.456)
         let formatted = DateFormatters.iso8601.string(from: original)
         let parsed = DateFormatters.iso8601.date(from: formatted)
 

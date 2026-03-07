@@ -16,9 +16,9 @@ enum AppIcon {
         // .build/debug/Chau7 -> ../../Resources/AppDockIcon.{png,icns}
         let executableURL = Bundle.main.executableURL ?? URL(fileURLWithPath: CommandLine.arguments[0])
         let debugResourcesDir = executableURL
-            .deletingLastPathComponent()  // .build/debug
-            .deletingLastPathComponent()  // .build
-            .deletingLastPathComponent()  // project root
+            .deletingLastPathComponent() // .build/debug
+            .deletingLastPathComponent() // .build
+            .deletingLastPathComponent() // project root
             .appendingPathComponent("Resources")
 
         for ext in ["png", "icns"] {

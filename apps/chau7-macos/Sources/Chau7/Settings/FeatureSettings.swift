@@ -10,10 +10,13 @@ import Chau7Core
 // MARK: - Keyboard Shortcut
 
 struct KeyboardShortcut: Codable, Identifiable, Equatable {
-    var id: String { action }
+    var id: String {
+        action
+    }
+
     let action: String
     var key: String
-    var modifiers: [String]  // ["cmd", "shift", "ctrl", "opt"]
+    var modifiers: [String] // ["cmd", "shift", "ctrl", "opt"]
 
     var displayString: String {
         var parts: [String] = []
@@ -52,7 +55,7 @@ struct KeyboardShortcut: Codable, Identifiable, Equatable {
         KeyboardShortcut(action: "previousInputLine", key: "up", modifiers: ["cmd"]),
         KeyboardShortcut(action: "nextInputLine", key: "down", modifiers: ["cmd"]),
         // Recovery shortcut
-        KeyboardShortcut(action: "refreshTabBar", key: "r", modifiers: ["cmd", "shift"]),
+        KeyboardShortcut(action: "refreshTabBar", key: "r", modifiers: ["cmd", "shift"])
     ]
 
     static func shortcuts(for preset: String) -> [KeyboardShortcut] {
@@ -62,7 +65,7 @@ struct KeyboardShortcut: Codable, Identifiable, Equatable {
                 to: defaultShortcuts,
                 overrides: [
                     "nextTab": KeyboardShortcut(action: "nextTab", key: "l", modifiers: ["ctrl"]),
-                    "previousTab": KeyboardShortcut(action: "previousTab", key: "h", modifiers: ["ctrl"]),
+                    "previousTab": KeyboardShortcut(action: "previousTab", key: "h", modifiers: ["ctrl"])
                 ]
             )
         case "emacs":
@@ -70,7 +73,7 @@ struct KeyboardShortcut: Codable, Identifiable, Equatable {
                 to: defaultShortcuts,
                 overrides: [
                     "nextTab": KeyboardShortcut(action: "nextTab", key: "n", modifiers: ["ctrl"]),
-                    "previousTab": KeyboardShortcut(action: "previousTab", key: "p", modifiers: ["ctrl"]),
+                    "previousTab": KeyboardShortcut(action: "previousTab", key: "p", modifiers: ["ctrl"])
                 ]
             )
         default:
@@ -115,14 +118,16 @@ struct KeyboardShortcut: Codable, Identifiable, Equatable {
 // MARK: - Shell Type
 
 enum ShellType: String, CaseIterable, Identifiable {
-    case system = "system"
+    case system
     case zsh = "/bin/zsh"
     case bash = "/bin/bash"
     case fish = "/opt/homebrew/bin/fish"
     case fishIntel = "/usr/local/bin/fish"
-    case custom = "custom"
+    case custom
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var displayName: String {
         switch self {
@@ -197,13 +202,13 @@ struct NotificationSettings: Equatable {
 // MARK: - Notification Event Types
 
 struct NotificationFilters: Codable, Equatable {
-    var taskFinished: Bool = true
-    var taskFailed: Bool = true
-    var needsValidation: Bool = true
-    var permissionRequest: Bool = true
-    var toolComplete: Bool = false
-    var sessionEnd: Bool = false
-    var commandIdle: Bool = false
+    var taskFinished = true
+    var taskFailed = true
+    var needsValidation = true
+    var permissionRequest = true
+    var toolComplete = false
+    var sessionEnd = false
+    var commandIdle = false
 
     static let defaults = NotificationFilters()
 }
@@ -306,7 +311,9 @@ enum LastTabCloseBehavior: String, CaseIterable, Identifiable, Codable {
     case keepWindow
     case closeWindow
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var displayName: String {
         switch self {
@@ -329,7 +336,9 @@ enum URLHandler: String, CaseIterable, Identifiable, Codable {
     case brave
     case arc
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var displayName: String {
         switch self {
@@ -372,31 +381,31 @@ struct ShellEventConfig: Codable, Equatable {
     /// Exit codes to specifically watch for
     var watchedExitCodes: [Int] = [1, 2, 126, 127, 128, 130, 137, 139, 143]
     /// Threshold in seconds for "long-running" command detection
-    var longRunningThresholdSeconds: Int = 60
+    var longRunningThresholdSeconds = 60
     /// Enable directory change notifications
-    var notifyOnDirectoryChange: Bool = false
+    var notifyOnDirectoryChange = false
     /// Enable git branch change notifications
-    var notifyOnGitBranchChange: Bool = false
+    var notifyOnGitBranchChange = false
     /// Enable all command completion notifications (not just failures)
-    var notifyOnAllCommandCompletion: Bool = false
+    var notifyOnAllCommandCompletion = false
 
     static let `default` = ShellEventConfig()
 }
 
 /// A pattern to match in shell output
 struct ShellOutputPattern: Codable, Identifiable, Equatable, Hashable {
-    var id: UUID = UUID()
+    var id = UUID()
     var name: String
-    var pattern: String  // regex pattern
-    var isEnabled: Bool = true
-    var notificationType: String = "pattern_match"  // maps to trigger type
+    var pattern: String // regex pattern
+    var isEnabled = true
+    var notificationType = "pattern_match" // maps to trigger type
 
     static let defaults: [ShellOutputPattern] = [
         ShellOutputPattern(name: L("shell.pattern.error", "Error"), pattern: "(?i)\\b(error|failed|failure)\\b", isEnabled: false),
         ShellOutputPattern(name: L("shell.pattern.warning", "Warning"), pattern: "(?i)\\bwarning\\b", isEnabled: false),
         ShellOutputPattern(name: L("shell.pattern.buildSuccess", "Build Success"), pattern: "(?i)\\b(build succeeded|compilation successful)\\b", isEnabled: false),
         ShellOutputPattern(name: L("shell.pattern.testPassed", "Test Passed"), pattern: "(?i)\\b(tests? passed|all tests pass)\\b", isEnabled: false),
-        ShellOutputPattern(name: L("shell.pattern.testFailed", "Test Failed"), pattern: "(?i)\\b(tests? failed|test failure)\\b", isEnabled: false),
+        ShellOutputPattern(name: L("shell.pattern.testFailed", "Test Failed"), pattern: "(?i)\\b(tests? failed|test failure)\\b", isEnabled: false)
     ]
 }
 
@@ -405,36 +414,36 @@ struct ShellOutputPattern: Codable, Identifiable, Equatable, Hashable {
 /// Configuration for app-level event detection
 struct AppEventConfig: Codable, Equatable {
     var scheduledEvents: [ScheduledEvent] = []
-    var inactivityThresholdMinutes: Int = 0  // 0 = disabled
-    var memoryThresholdMB: Int = 0  // 0 = disabled
-    var memoryHysteresisMB: Int = 50  // Must drop this much below threshold before re-alerting
-    var notifyOnTabOpen: Bool = false  // Tab open notifications (can be noisy)
-    var notifyOnTabClose: Bool = false  // Tab close notifications (can be noisy)
+    var inactivityThresholdMinutes = 0 // 0 = disabled
+    var memoryThresholdMB = 0 // 0 = disabled
+    var memoryHysteresisMB = 50 // Must drop this much below threshold before re-alerting
+    var notifyOnTabOpen = false // Tab open notifications (can be noisy)
+    var notifyOnTabClose = false // Tab close notifications (can be noisy)
 
     static let `default` = AppEventConfig()
 }
 
 /// A scheduled event that fires at configured times
 struct ScheduledEvent: Codable, Identifiable, Equatable {
-    var id: UUID = UUID()
+    var id = UUID()
     var name: String
     var scheduleType: ScheduleType = .interval
-    var intervalMinutes: Int = 60  // For interval type
-    var dailyTime: Date = Date()   // For daily type
-    var hourlyMinute: Int = 0      // For hourly type (0-59)
-    var isEnabled: Bool = true
+    var intervalMinutes = 60 // For interval type
+    var dailyTime = Date() // For daily type
+    var hourlyMinute = 0 // For hourly type (0-59)
+    var isEnabled = true
 
     enum ScheduleType: String, Codable, CaseIterable {
-        case interval = "interval"
-        case daily = "daily"
-        case hourly = "hourly"
+        case interval
+        case daily
+        case hourly
     }
 }
 
 // MARK: - Custom AI Detection Rules
 
 struct CustomAIDetectionRule: Codable, Identifiable, Equatable {
-    var id: UUID = UUID()
+    var id = UUID()
     var pattern: String
     var displayName: String
     var colorName: String
@@ -445,7 +454,7 @@ struct CustomAIDetectionRule: Codable, Identifiable, Equatable {
 }
 
 enum DangerousCommandHighlightScope: String, CaseIterable, Codable {
-    case none = "none"
+    case none
     case aiOutputs = "ai_outputs"
     case allOutputs = "all_outputs"
 }
@@ -520,37 +529,37 @@ final class FeatureSettings: ObservableObject {
             "Courier New",
 
             // Microsoft Fonts
-            "Cascadia Code",      // Modern Windows Terminal font with ligatures
-            "Cascadia Mono",      // Cascadia without ligatures
+            "Cascadia Code", // Modern Windows Terminal font with ligatures
+            "Cascadia Mono", // Cascadia without ligatures
             "Consolas",
 
             // JetBrains
-            "JetBrains Mono",     // Popular IDE font with ligatures
+            "JetBrains Mono", // Popular IDE font with ligatures
 
             // Adobe/Google Fonts
             "Source Code Pro",
             "Roboto Mono",
 
             // Mozilla
-            "Fira Code",          // Popular font with ligatures
-            "Fira Mono",          // Fira without ligatures
+            "Fira Code", // Popular font with ligatures
+            "Fira Mono", // Fira without ligatures
 
             // IBM
             "IBM Plex Mono",
 
             // GitHub
-            "Monaspace Neon",     // GitHub's new font family
+            "Monaspace Neon", // GitHub's new font family
             "Monaspace Argon",
             "Monaspace Xenon",
             "Monaspace Radon",
             "Monaspace Krypton",
 
             // Vercel
-            "Geist Mono",         // Modern, clean terminal font
+            "Geist Mono", // Modern, clean terminal font
 
             // Other Popular Open Source
-            "Hack",               // Designed for source code
-            "Inconsolata",        // Humanist monospace
+            "Hack", // Designed for source code
+            "Inconsolata", // Humanist monospace
             "Anonymous Pro",
             "Ubuntu Mono",
             "Droid Sans Mono",
@@ -558,7 +567,7 @@ final class FeatureSettings: ObservableObject {
             "Liberation Mono",
             "PT Mono",
             "Oxygen Mono",
-            "Space Mono",         // Google Fonts - quirky
+            "Space Mono", // Google Fonts - quirky
             "Overpass Mono",
             "Share Tech Mono",
             "Cousine",
@@ -585,17 +594,17 @@ final class FeatureSettings: ObservableObject {
             "Rec Mono Linear",
 
             // Comic/Fun
-            "Comic Mono",         // Comic Sans but monospace
+            "Comic Mono", // Comic Sans but monospace
 
             // Maple Mono
             "Maple Mono",
-            "Maple Mono NF",      // Nerd Font version
+            "Maple Mono NF", // Nerd Font version
 
             // Commit Mono
             "Commit Mono",
 
             // Nerd Font variants (include powerline symbols)
-            "MesloLGS NF",        // Popular for Oh My Zsh
+            "MesloLGS NF", // Popular for Oh My Zsh
             "MesloLGM NF",
             "MesloLGL NF",
             "Hack Nerd Font",
@@ -609,28 +618,28 @@ final class FeatureSettings: ObservableObject {
             "Symbols Nerd Font",
 
             // Premium/Commercial fonts (user must install)
-            "Operator Mono",      // Hoefler&Co - cursive italics
-            "Dank Mono",          // Stylish with ligatures
-            "MonoLisa",           // Designed for long coding sessions
-            "Berkeley Mono",      // Retro feel
-            "Gintronic",          // Modern geometric
-            "Pragmata Pro",       // Compact and dense
-            "Cartograph CF",      // Warm, readable
-            "Codelia",            // Playful
-            "Comic Code",         // Professional Comic Sans
-            "Ellograph CF",       // Elegant
-            "Lilex",              // Modern and clean
+            "Operator Mono", // Hoefler&Co - cursive italics
+            "Dank Mono", // Stylish with ligatures
+            "MonoLisa", // Designed for long coding sessions
+            "Berkeley Mono", // Retro feel
+            "Gintronic", // Modern geometric
+            "Pragmata Pro", // Compact and dense
+            "Cartograph CF", // Warm, readable
+            "Codelia", // Playful
+            "Comic Code", // Professional Comic Sans
+            "Ellograph CF", // Elegant
+            "Lilex", // Modern and clean
 
             // Coding-specific fonts
             "Sudo",
             "Agave",
-            "Cozette",            // Bitmap-style
-            "Terminus",           // Classic bitmap
+            "Cozette", // Bitmap-style
+            "Terminus", // Classic bitmap
             "Tamzen",
             "Tamsyn",
-            "GoMono",             // Go language official font
-            "Noto Sans Mono",     // Google's universal font
-            "Intel One Mono",     // Intel's open source font
+            "GoMono", // Go language official font
+            "Noto Sans Mono", // Google's universal font
+            "Intel One Mono" // Intel's open source font
         ]
         let fontManager = NSFontManager.shared
         // SF Mono is system-restricted: NSFontManager returns nil for it, but
@@ -893,6 +902,7 @@ final class FeatureSettings: ObservableObject {
             }
         }
     }
+
     @Published var isShortcutHelperHintEnabled: Bool {
         didSet { UserDefaults.standard.set(isShortcutHelperHintEnabled, forKey: Keys.shortcutHelperHint) }
     }
@@ -910,8 +920,8 @@ final class FeatureSettings: ObservableObject {
     func shortcutConflicts(for shortcut: KeyboardShortcut) -> [KeyboardShortcut] {
         customShortcuts.filter {
             $0.action != shortcut.action &&
-            $0.key == shortcut.key &&
-            Set($0.modifiers) == Set(shortcut.modifiers)
+                $0.key == shortcut.key &&
+                Set($0.modifiers) == Set(shortcut.modifiers)
         }
     }
 
@@ -975,23 +985,27 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    // Backward-compatible computed forwarders — existing code continues to work unchanged
+    /// Backward-compatible computed forwarders — existing code continues to work unchanged
     var notificationTriggerState: NotificationTriggerState {
         get { notificationSettings.triggerState }
         set { notificationSettings.triggerState = newValue }
     }
+
     var notificationFilters: NotificationFilters {
         get { notificationSettings.filters }
         set { notificationSettings.filters = newValue }
     }
+
     var triggerActionBindings: [String: [NotificationActionConfig]] {
         get { notificationSettings.triggerActionBindings }
         set { notificationSettings.triggerActionBindings = newValue }
     }
+
     var notificationRateLimitConfig: NotificationRateLimiter.Config {
         get { notificationSettings.rateLimitConfig }
         set { notificationSettings.rateLimitConfig = newValue }
     }
+
     var triggerConditions: [String: TriggerCondition] {
         get { notificationSettings.triggerConditions }
         set { notificationSettings.triggerConditions = newValue }
@@ -1079,6 +1093,7 @@ final class FeatureSettings: ObservableObject {
         get { notificationSettings.groupActionBindings }
         set { notificationSettings.groupActionBindings = newValue }
     }
+
     var groupConditions: [String: TriggerCondition] {
         get { notificationSettings.groupConditions }
         set { notificationSettings.groupConditions = newValue }
@@ -1512,7 +1527,7 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - Overlay Positions
 
-    @Published var overlayPositionsVersion: Int = 0
+    @Published var overlayPositionsVersion = 0
 
     // MARK: - General Terminal Settings
 
@@ -1539,7 +1554,7 @@ final class FeatureSettings: ObservableObject {
     /// Set to 0 to disable scrollback restoration.
     @Published var restoredScrollbackLines: Int {
         didSet {
-            let clamped = max(0, min(restoredScrollbackLines, 10_000))
+            let clamped = max(0, min(restoredScrollbackLines, 10000))
             if restoredScrollbackLines != clamped {
                 restoredScrollbackLines = clamped
                 return
@@ -1811,19 +1826,19 @@ final class FeatureSettings: ObservableObject {
         static let alwaysShowToolbarInFullscreen = "tabs.alwaysShowToolbarInFullscreen"
         static let warnOnCloseWithProcess = "tabs.warnOnCloseWithProcess"
         static let alwaysWarnOnTabClose = "tabs.alwaysWarnOnTabClose"
-        // Window Opacity
+        /// Window Opacity
         static let windowOpacity = "window.opacity"
-        // App Theme
+        /// App Theme
         static let appTheme = "app.theme"
-        // Language
+        /// Language
         static let appLanguage = "app.language"
-        // Launch at login
+        /// Launch at login
         static let launchAtLogin = "app.launchAtLogin"
-        // iCloud Sync (NEW)
+        /// iCloud Sync (NEW)
         static let iCloudSyncEnabled = "sync.iCloudEnabled"
-        // F05
+        /// F05
         static let autoTabTheme = "feature.autoTabTheme"
-        // F18
+        /// F18
         static let copyOnSelect = "feature.copyOnSelect"
         // F19
         static let lineTimestamps = "feature.lineTimestamps"
@@ -1836,7 +1851,7 @@ final class FeatureSettings: ObservableObject {
         static let allowTabCTOToggle = "tabs.display.allowCTOToggle"
         static let showTabBroadcastIndicator = "tabs.display.showBroadcastIndicator"
         static let customTitleOnly = "tabs.display.customTitleOnly"
-        // F20
+        /// F20
         static let lastCommandBadge = "feature.lastCommandBadge"
         // F03
         static let cmdClickPaths = "feature.cmdClickPaths"
@@ -1848,7 +1863,7 @@ final class FeatureSettings: ObservableObject {
         static let defaultEditor = "feature.defaultEditor"
         static let urlHandler = "feature.urlHandler"
         static let customAIDetectionRules = "ai.customDetectionRules"
-        // F13
+        /// F13
         static let broadcastEnabled = "feature.broadcastEnabled"
         // F16
         static let clipboardHistory = "feature.clipboardHistory"
@@ -1869,15 +1884,15 @@ final class FeatureSettings: ObservableObject {
         static let clickableURLs = "feature.clickableURLs"
         static let inlineImages = "feature.inlineImages"
         static let jsonPrettyPrint = "feature.jsonPrettyPrint"
-        // F07
+        /// F07
         static let semanticSearch = "feature.semanticSearch"
-        // F02
+        /// F02
         static let splitPanes = "feature.splitPanes"
-        // Local Echo (Latency Optimization)
+        /// Local Echo (Latency Optimization)
         static let localEchoEnabled = "feature.localEchoEnabled"
-        // Smart Scroll
+        /// Smart Scroll
         static let smartScrollEnabled = "feature.smartScrollEnabled"
-        // F11
+        /// F11
         static let keybindingPreset = "feature.keybindingPreset"
         // General
         static let cursorStyle = "terminal.cursorStyle"
@@ -1898,7 +1913,7 @@ final class FeatureSettings: ObservableObject {
         static let apiAnalyticsEnabled = "analytics.api.enabled"
         static let apiAnalyticsPort = "analytics.api.port"
         static let apiAnalyticsLogPrompts = "analytics.api.logPrompts"
-        // Token Optimization (CTO)
+        /// Token Optimization (CTO)
         static let tokenOptimizationMode = "cto.mode"
         // MCP
         static let mcpEnabled = "mcp.enabled"
@@ -1908,16 +1923,16 @@ final class FeatureSettings: ObservableObject {
         // Remote Control
         static let remoteEnabled = "remote.enabled"
         static let remoteRelayURL = "remote.relayURL"
-        // Shell Event Detection
+        /// Shell Event Detection
         static let shellEventConfig = "shell.eventConfig"
-        // App Event Detection
+        /// App Event Detection
         static let appEventConfig = "app.eventConfig"
-        // Notification Permission (persistent tracking)
+        /// Notification Permission (persistent tracking)
         static let hasRequestedNotificationPermission = "notifications.hasRequestedPermission"
         // Tmux Integration
         static let tmuxIntegrationEnabled = "feature.tmuxIntegrationEnabled"
         static let tmuxAutoAttachEnabled = "feature.tmuxAutoAttachEnabled"
-        // LLM / Error Explanation
+        /// LLM / Error Explanation
         static let errorExplainEnabled = "feature.errorExplainEnabled"
         // CTO Integration
         static let ctoEnabled = "feature.ctoEnabled"
@@ -1938,7 +1953,7 @@ final class FeatureSettings: ObservableObject {
                 ("rtk.mode", Keys.tokenOptimizationMode),
                 ("feature.rtkEnabled", Keys.ctoEnabled),
                 ("feature.rtkPrefix", Keys.ctoPrefix),
-                ("feature.rtkTabOverrides", Keys.ctoTabOverrides),
+                ("feature.rtkTabOverrides", Keys.ctoTabOverrides)
             ]
             for (old, new) in migrations {
                 if let value = defaults.object(forKey: old), defaults.object(forKey: new) == nil {
@@ -2152,7 +2167,7 @@ final class FeatureSettings: ObservableObject {
         self.useMetalRenderer = defaults.object(forKey: Keys.useMetalRenderer) as? Bool ?? true
         // Click-to-position: enabled by default (like modern text editors)
         self.isClickToPositionEnabled = defaults.object(forKey: Keys.clickToPosition) as? Bool ?? true
-        self.defaultEditor = defaults.string(forKey: Keys.defaultEditor) ?? ""  // Empty = use $EDITOR or system default
+        self.defaultEditor = defaults.string(forKey: Keys.defaultEditor) ?? "" // Empty = use $EDITOR or system default
         if let handlerRaw = defaults.string(forKey: Keys.urlHandler),
            let handler = URLHandler(rawValue: handlerRaw) {
             self.urlHandler = handler
@@ -2408,7 +2423,7 @@ final class FeatureSettings: ObservableObject {
     }
 
     private func saveOverlayPositionsStore(_ store: [String: [String: [String: Double]]]) {
-        cachedOverlayPositions = store  // Update cache
+        cachedOverlayPositions = store // Update cache
         UserDefaults.standard.set(store, forKey: Keys.overlayPositionsMap)
         overlayPositionsVersion += 1
     }
@@ -2482,7 +2497,7 @@ final class FeatureSettings: ObservableObject {
         var timestampFormat: String
         var isLastCommandBadgeEnabled: Bool
         var isCmdClickPathsEnabled: Bool
-        var cmdClickOpensInternalEditor: Bool?  // Optional for backward compatibility
+        var cmdClickOpensInternalEditor: Bool? // Optional for backward compatibility
         var isOptionClickCursorEnabled: Bool
         var defaultEditor: String
         var urlHandler: String?
@@ -2506,16 +2521,16 @@ final class FeatureSettings: ObservableObject {
         var isSemanticSearchEnabled: Bool
         var isSplitPanesEnabled: Bool
         var keybindingPreset: String
-        var mcpEnabled: Bool? = nil
-        var mcpMaxTabs: Int? = nil
-        var mcpRequiresApproval: Bool? = nil
-        var mcpShowTabIndicator: Bool? = nil
-        var isRemoteEnabled: Bool? = nil
-        var remoteRelayURL: String? = nil
-        var isCTOEnabled: Bool = false
-        var ctoPrefix: String = ""
+        var mcpEnabled: Bool?
+        var mcpMaxTabs: Int?
+        var mcpRequiresApproval: Bool?
+        var mcpShowTabIndicator: Bool?
+        var isRemoteEnabled: Bool?
+        var remoteRelayURL: String?
+        var isCTOEnabled = false
+        var ctoPrefix = ""
         var ctoTabOverrides: [String: Bool] = [:]
-        var exportVersion: Int = 1
+        var exportVersion = 1
     }
 
     func exportSettings() -> Data? {
@@ -2714,7 +2729,7 @@ final class FeatureSettings: ObservableObject {
         timestampFormat = imported.timestampFormat
         isLastCommandBadgeEnabled = imported.isLastCommandBadgeEnabled
         isCmdClickPathsEnabled = imported.isCmdClickPathsEnabled
-        cmdClickOpensInternalEditor = imported.cmdClickOpensInternalEditor ?? true  // Default for old settings
+        cmdClickOpensInternalEditor = imported.cmdClickOpensInternalEditor ?? true // Default for old settings
         isOptionClickCursorEnabled = imported.isOptionClickCursorEnabled
         defaultEditor = imported.defaultEditor
         if let handlerRaw = imported.urlHandler,
@@ -2940,7 +2955,7 @@ final class FeatureSettings: ObservableObject {
 
     private let iCloudKey = "com.chau7.settings"
     private var iCloudSyncWorkItem: DispatchWorkItem?
-    private let iCloudSyncDebounceInterval: TimeInterval = 2.0  // 2 seconds debounce
+    private let iCloudSyncDebounceInterval: TimeInterval = 2.0 // 2 seconds debounce
 
     func syncToiCloud() {
         guard iCloudSyncEnabled else { return }
@@ -2950,9 +2965,9 @@ final class FeatureSettings: ObservableObject {
 
         // Create new debounced sync
         let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self, self.iCloudSyncEnabled else { return }
-            guard let data = self.exportSettings() else { return }
-            NSUbiquitousKeyValueStore.default.set(data, forKey: self.iCloudKey)
+            guard let self = self, iCloudSyncEnabled else { return }
+            guard let data = exportSettings() else { return }
+            NSUbiquitousKeyValueStore.default.set(data, forKey: iCloudKey)
             NSUbiquitousKeyValueStore.default.synchronize()
             Log.info("Settings synced to iCloud (debounced)")
         }
@@ -3007,7 +3022,7 @@ final class FeatureSettings: ObservableObject {
 struct SettingsProfile: Codable, Identifiable, Equatable {
     var id: UUID
     var name: String
-    var icon: String  // SF Symbol name
+    var icon: String // SF Symbol name
     var createdAt: Date
     var settings: FeatureSettings.ExportableSettings
 
@@ -3019,13 +3034,13 @@ struct SettingsProfile: Codable, Identifiable, Equatable {
         self.settings = settings
     }
 
-    // Custom Equatable - compare by ID since ExportableSettings does not conform to Equatable
+    /// Custom Equatable - compare by ID since ExportableSettings does not conform to Equatable
     static func == (lhs: SettingsProfile, rhs: SettingsProfile) -> Bool {
         lhs.id == rhs.id
     }
 
     static let defaultProfiles: [SettingsProfile] = [
-        SettingsProfile(name: "Default", icon: "house.fill", settings: FeatureSettings.defaultExportableSettings),
+        SettingsProfile(name: "Default", icon: "house.fill", settings: FeatureSettings.defaultExportableSettings)
     ]
 
     static let availableIcons: [String] = [

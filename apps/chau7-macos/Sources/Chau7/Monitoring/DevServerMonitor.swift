@@ -14,10 +14,10 @@ final class DevServerMonitor {
 
     /// Information about a detected dev server
     struct DevServerInfo: Equatable {
-        let name: String        // e.g., "Vite", "Next.js", "Dev Server"
-        let port: Int?          // The port it's listening on, if detected
-        let url: String?        // The local URL, if detected
-        let pid: Int?           // Process ID, if known
+        let name: String // e.g., "Vite", "Next.js", "Dev Server"
+        let port: Int? // The port it's listening on, if detected
+        let url: String? // The local URL, if detected
+        let pid: Int? // Process ID, if known
 
         static func == (lhs: DevServerInfo, rhs: DevServerInfo) -> Bool {
             lhs.name == rhs.name && lhs.port == rhs.port
@@ -55,7 +55,7 @@ final class DevServerMonitor {
         cachedChildPIDs.removeAll(keepingCapacity: true)
         cachedChildParentPID = shellPID
         childProcessCacheAt = Date.distantPast
-        self.isStopped = false
+        isStopped = false
     }
 
     /// Stop monitoring and clear state.
@@ -137,13 +137,13 @@ final class DevServerMonitor {
         timer.schedule(deadline: .now() + 2.0, repeating: 3.0)
         timer.setEventHandler { [weak self] in
             guard let self else { return }
-            self.burstChecksRemaining -= 1
-            self.checkForListeningPorts()
+            burstChecksRemaining -= 1
+            checkForListeningPorts()
 
             // Stop once we found a server or ran out of checks
-            if self.currentServer != nil || self.burstChecksRemaining <= 0 {
-                self.burstTimer?.cancel()
-                self.burstTimer = nil
+            if currentServer != nil || burstChecksRemaining <= 0 {
+                burstTimer?.cancel()
+                burstTimer = nil
             }
         }
         timer.resume()

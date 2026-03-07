@@ -8,11 +8,11 @@ import Foundation
 @MainActor
 final class NotificationRateLimiter {
 
-    struct Config: Codable, Equatable, Sendable {
+    struct Config: Codable, Equatable {
         /// Maximum notifications per minute per trigger (token refill rate)
-        var maxPerMinute: Int = 5
+        var maxPerMinute = 5
         /// Extra burst allowance above the per-minute rate
-        var burstAllowance: Int = 3
+        var burstAllowance = 3
         /// Minimum seconds between consecutive firings of the same trigger
         var cooldownSeconds: TimeInterval = 10
 
@@ -44,7 +44,7 @@ final class NotificationRateLimiter {
 
         // Refill tokens based on elapsed time
         let elapsed = now.timeIntervalSince(bucket.lastRefill)
-        let refillRate = Double(config.maxPerMinute) / 60.0  // tokens per second
+        let refillRate = Double(config.maxPerMinute) / 60.0 // tokens per second
         let maxTokens = Double(config.maxPerMinute + config.burstAllowance)
         bucket.tokens = min(bucket.tokens + elapsed * refillRate, maxTokens)
         bucket.lastRefill = now

@@ -30,11 +30,11 @@ final class FileMonitor {
         )
         source.setEventHandler { [weak self, weak source] in
             guard let self else { return }
-            self.onChange()
+            onChange()
             guard let source else { return }
             let flags = source.data
             if flags.contains(.rename) || flags.contains(.delete) {
-                self.queue.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                queue.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                     self?.start()
                 }
             }

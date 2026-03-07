@@ -80,11 +80,14 @@ struct TerminalMigrationWizardView: View {
                 sourceCard(name: "Terminal.app", icon: "terminal", color: .blue)
                 sourceCard(name: "iTerm2", icon: "rectangle.split.3x1", color: .purple)
             }
-            Text(L("Chau7 can import font, color, cursor, and shell settings from your existing terminal apps.", "Chau7 can import font, color, cursor, and shell settings from your existing terminal apps."))
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
+            Text(L(
+                "Chau7 can import font, color, cursor, and shell settings from your existing terminal apps.",
+                "Chau7 can import font, color, cursor, and shell settings from your existing terminal apps."
+            ))
+            .font(.body)
+            .foregroundStyle(.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 360)
             Spacer()
         }
     }

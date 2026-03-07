@@ -56,7 +56,7 @@ final class KittyKeyboardProtocolTests: XCTestCase {
 
     func testMaxStackDepth() {
         var proto = KittyKeyboardProtocol()
-        for i in 0..<KittyKeyboardProtocol.maxStackDepth + 10 {
+        for i in 0 ..< KittyKeyboardProtocol.maxStackDepth + 10 {
             proto.pushFlags(UInt32(i))
         }
         // Stack should not exceed maxStackDepth
@@ -197,7 +197,7 @@ final class KittyKeyboardProtocolTests: XCTestCase {
     }
 
     func testParseRequestTooShort() {
-        let seq: [UInt8] = [0x1b, 0x5b]
+        let seq: [UInt8] = [0x1B, 0x5B]
         let result = KittyKeyboardProtocol.parseRequest(seq)
         XCTAssertNil(result)
     }

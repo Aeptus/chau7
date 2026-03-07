@@ -40,6 +40,9 @@ use std::time::Instant;
 /// Number of days to retain tracking history before automatic cleanup.
 const HISTORY_DAYS: i64 = 90;
 
+/// Per-command stats: (command_name, count, saved_tokens, avg_savings_pct, avg_exec_time_ms).
+type CommandStats = Vec<(String, usize, usize, f64, u64)>;
+
 /// Main tracking interface for recording and querying command history.
 ///
 /// Manages SQLite database connection and provides methods for:
@@ -396,7 +399,7 @@ impl Tracker {
         })
     }
 
-    fn get_by_command(&self) -> Result<Vec<(String, usize, usize, f64, u64)>> {
+    fn get_by_command(&self) -> Result<CommandStats> {
         let mut stmt = self.conn.prepare(
             "SELECT rtk_cmd, COUNT(*), SUM(saved_tokens), AVG(savings_pct), AVG(exec_time_ms)
              FROM commands

@@ -12,13 +12,14 @@ final class FileTailer<T> {
 
     private var timer: DispatchSourceTimer?
     private var offset: UInt64 = 0
-    private var buffer: String = ""
+    private var buffer = ""
     private let queue: DispatchQueue
     private var readHandle: FileHandle?
-    private var parseErrorCount: Int = 0
+    private var parseErrorCount = 0
     private let maxParseErrorLogs = 10
 
     // MARK: - Memory Protection
+
     /// Maximum buffer size to prevent OOM with malformed files.
     /// Default 4MB; PTY log tailers should use 8MB for AI streaming headroom.
     private let maxBufferSize: Int
@@ -44,7 +45,7 @@ final class FileTailer<T> {
     /// Starts monitoring the file for new content.
     /// - Parameter prefillLines: Number of existing lines to read initially (0 = start fresh)
     func start(prefillLines: Int = 0) {
-        if createIfMissing && !FileManager.default.fileExists(atPath: fileURL.path) {
+        if createIfMissing, !FileManager.default.fileExists(atPath: fileURL.path) {
             Log.warn("File not found. Creating empty file at \(fileURL.path)")
             FileManager.default.createFile(atPath: fileURL.path, contents: Data(), attributes: nil)
         }
@@ -128,7 +129,7 @@ final class FileTailer<T> {
             }
             let normalized = buffer.replacingOccurrences(of: "\r", with: "\n")
             let parts = normalized.components(separatedBy: "\n")
-            guard parts.count > 0 else { return }
+            guard !parts.isEmpty else { return }
 
             for line in parts.dropLast() {
                 let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -154,7 +155,7 @@ final class FileTailer<T> {
     }
 
     private func currentFileSize() -> UInt64? {
-        (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? UInt64) ?? nil
+        try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? UInt64
     }
 
     private func prefillLastLines(count: Int) {
@@ -243,7 +244,7 @@ extension FileTailer where T == String {
             createIfMissing: true,
             maxBufferSize: 8 * 1024 * 1024,
             queueLabel: "com.chau7.textTailer",
-            parser: { $0 },  // Identity parser - just return the line
+            parser: { $0 }, // Identity parser - just return the line
             onItem: onLine
         )
     }

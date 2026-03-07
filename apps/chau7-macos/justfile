@@ -1,0 +1,59 @@
+# Chau7 macOS — local CI
+# Usage: just check (runs everything), just build, just test, just lint, etc.
+
+set shell := ["zsh", "-cu"]
+
+swift := "/usr/bin/swift"
+rust_dir := "rust"
+
+# Run all checks (build → test → lint → format check)
+check: build test lint fmt-check
+    @echo "\n✅ All checks passed."
+
+# Swift build
+build:
+    {{swift}} build
+
+# Swift tests
+test:
+    {{swift}} test
+
+# Lint: SwiftLint + Rust clippy
+lint: swift-lint rust-lint
+
+swift-lint:
+    swiftlint lint --strict --quiet
+
+rust-lint:
+    cd {{rust_dir}} && cargo clippy --all-targets -- -D warnings
+
+# Format check (no modifications)
+fmt-check: swift-fmt-check rust-fmt-check
+
+swift-fmt-check:
+    swiftformat --lint Sources/ Tests/
+
+rust-fmt-check:
+    cd {{rust_dir}} && cargo fmt --check
+
+# Auto-fix formatting
+fmt: swift-fmt rust-fmt
+
+swift-fmt:
+    swiftformat Sources/ Tests/
+
+rust-fmt:
+    cd {{rust_dir}} && cargo fmt
+
+# Rust build (rebuild dylibs)
+rust-build:
+    cd {{rust_dir}} && cargo build --release
+
+# Rust tests
+rust-test:
+    cd {{rust_dir}} && cargo test
+
+# Clean everything
+clean:
+    {{swift}} package clean
+    cd {{rust_dir}} && cargo clean

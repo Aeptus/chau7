@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 
 // MARK: - Color Scheme Preview
+
 // Used by FontColorsSettingsView
 
 struct ColorSchemePreview: View {
@@ -42,12 +43,15 @@ struct ColorSchemePreview: View {
 }
 
 // MARK: - Live Terminal Preview
+
 // Used by FontColorsSettingsView
 
 struct LiveTerminalPreview: View {
     @ObservedObject var settings: FeatureSettings
 
-    private var scheme: TerminalColorScheme { settings.currentColorScheme }
+    private var scheme: TerminalColorScheme {
+        settings.currentColorScheme
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

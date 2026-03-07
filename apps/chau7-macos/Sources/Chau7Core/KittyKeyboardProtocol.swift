@@ -39,7 +39,7 @@ public struct KittyKeyboardProtocol: Sendable {
     /// Pop to previous flags
     /// CSI < number u  (pop `number` entries, default 1)
     public mutating func popFlags(count: Int = 1) {
-        for _ in 0..<count {
+        for _ in 0 ..< count {
             guard let previous = flagStack.popLast() else { break }
             flags = previous
         }
@@ -53,11 +53,25 @@ public struct KittyKeyboardProtocol: Sendable {
 
     // MARK: - Flag Checks
 
-    public var disambiguateEscapeCodes: Bool { flags & 1 != 0 }
-    public var reportEventTypes: Bool { flags & 2 != 0 }
-    public var reportAlternateKeys: Bool { flags & 4 != 0 }
-    public var reportAllKeysAsEscapeCodes: Bool { flags & 8 != 0 }
-    public var reportAssociatedText: Bool { flags & 16 != 0 }
+    public var disambiguateEscapeCodes: Bool {
+        flags & 1 != 0
+    }
+
+    public var reportEventTypes: Bool {
+        flags & 2 != 0
+    }
+
+    public var reportAlternateKeys: Bool {
+        flags & 4 != 0
+    }
+
+    public var reportAllKeysAsEscapeCodes: Bool {
+        flags & 8 != 0
+    }
+
+    public var reportAssociatedText: Bool {
+        flags & 16 != 0
+    }
 
     // MARK: - Key Encoding
 
@@ -84,7 +98,7 @@ public struct KittyKeyboardProtocol: Sendable {
         if modValue > 1 || (reportEventTypes && event.eventType != .press) {
             modPart = "\(modValue)"
         }
-        if reportEventTypes && event.eventType != .press {
+        if reportEventTypes, event.eventType != .press {
             modPart += ":\(event.eventType.rawValue)"
         }
         if !modPart.isEmpty {
@@ -101,7 +115,7 @@ public struct KittyKeyboardProtocol: Sendable {
     /// Returns nil if not a keyboard protocol sequence.
     public static func parseRequest(_ sequence: [UInt8]) -> KeyboardProtocolRequest? {
         guard sequence.count >= 3 else { return nil }
-        guard sequence.first == 0x1b, sequence[1] == 0x5b else { return nil } // ESC [
+        guard sequence.first == 0x1B, sequence[1] == 0x5B else { return nil } // ESC [
 
         let content = sequence.dropFirst(2)
         guard let last = content.last, last == 0x75 else { return nil } // u
@@ -111,15 +125,15 @@ public struct KittyKeyboardProtocol: Sendable {
             return .query
         }
 
-        if firstChar == 0x3e { // >
+        if firstChar == 0x3E { // >
             let numStr = String(bytes: inner.dropFirst(), encoding: .ascii) ?? "0"
             let flags = UInt32(numStr) ?? 0
             return .push(flags)
-        } else if firstChar == 0x3c { // <
+        } else if firstChar == 0x3C { // <
             let numStr = String(bytes: inner.dropFirst(), encoding: .ascii) ?? "1"
             let count = Int(numStr) ?? 1
             return .pop(count)
-        } else if firstChar == 0x3f { // ?
+        } else if firstChar == 0x3F { // ?
             return .query
         }
 
@@ -130,17 +144,23 @@ public struct KittyKeyboardProtocol: Sendable {
 // MARK: - Supporting Types
 
 public struct KittyKeyEvent: Sendable {
-    public let keyCode: Int        // Unicode codepoint or functional key number
-    public let shiftedKey: Int?    // Shifted version of the key
-    public let baseKey: Int?       // Base layout key
+    public let keyCode: Int // Unicode codepoint or functional key number
+    public let shiftedKey: Int? // Shifted version of the key
+    public let baseKey: Int? // Base layout key
     public let modifiers: KittyModifiers
     public let eventType: KittyEventType
-    public let text: String?       // Associated text (if flag 16)
-    public let legacyEncoding: [UInt8]  // Fallback legacy sequence
+    public let text: String? // Associated text (if flag 16)
+    public let legacyEncoding: [UInt8] // Fallback legacy sequence
 
-    public init(keyCode: Int, shiftedKey: Int? = nil, baseKey: Int? = nil,
-                modifiers: KittyModifiers = .none, eventType: KittyEventType = .press,
-                text: String? = nil, legacyEncoding: [UInt8] = []) {
+    public init(
+        keyCode: Int,
+        shiftedKey: Int? = nil,
+        baseKey: Int? = nil,
+        modifiers: KittyModifiers = .none,
+        eventType: KittyEventType = .press,
+        text: String? = nil,
+        legacyEncoding: [UInt8] = []
+    ) {
         self.keyCode = keyCode
         self.shiftedKey = shiftedKey
         self.baseKey = baseKey
@@ -153,7 +173,9 @@ public struct KittyKeyEvent: Sendable {
 
 public struct KittyModifiers: OptionSet, Sendable {
     public let rawValue: UInt32
-    public init(rawValue: UInt32) { self.rawValue = rawValue }
+    public init(rawValue: UInt32) {
+        self.rawValue = rawValue
+    }
 
     public static let none = KittyModifiers([])
     public static let shift = KittyModifiers(rawValue: 1)

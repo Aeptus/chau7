@@ -15,9 +15,9 @@ final class CommandHistoryManager {
     private let maxPerTab = 500
     private let maxGlobal = 2000
 
-    // Per-tab history: tabID → [oldest … newest]
+    /// Per-tab history: tabID → [oldest … newest]
     private var tabHistory: [String: [String]] = [:]
-    // Global history: [oldest … newest]
+    /// Global history: [oldest … newest]
     private var globalHistory: [String] = []
 
     // Navigation cursors (-1 = not navigating, 0 = most recent)
@@ -46,7 +46,7 @@ final class CommandHistoryManager {
         // Environment variable assignment with secrets
         "PASSWORD=", "TOKEN=", "SECRET=", "API_KEY=",
         "AWS_SECRET_ACCESS_KEY=",
-        "GITHUB_TOKEN=", "GH_TOKEN=",
+        "GITHUB_TOKEN=", "GH_TOKEN="
     ]
 
     /// Returns true if the command appears to contain inline secrets.
@@ -123,10 +123,10 @@ final class CommandHistoryManager {
 
     func nextInTab(_ tabID: String) -> String? {
         let cursor = tabCursors[tabID] ?? -1
-        guard cursor >= 0 else { return nil }  // Not navigating — do nothing
+        guard cursor >= 0 else { return nil } // Not navigating — do nothing
         if cursor == 0 {
             tabCursors[tabID] = -1
-            return ""  // Back to fresh prompt
+            return "" // Back to fresh prompt
         }
         let newCursor = cursor - 1
         tabCursors[tabID] = newCursor
@@ -145,10 +145,10 @@ final class CommandHistoryManager {
     }
 
     func nextGlobal() -> String? {
-        guard globalCursor >= 0 else { return nil }  // Not navigating — do nothing
+        guard globalCursor >= 0 else { return nil } // Not navigating — do nothing
         if globalCursor == 0 {
             globalCursor = -1
-            return ""  // Back to fresh prompt
+            return "" // Back to fresh prompt
         }
         let newCursor = globalCursor - 1
         globalCursor = newCursor

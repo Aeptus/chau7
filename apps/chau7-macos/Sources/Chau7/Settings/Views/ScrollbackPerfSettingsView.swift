@@ -28,7 +28,7 @@ struct ScrollbackPerfSettingsView: View {
                 label: L("settings.terminal.restoredScrollback", "Restored Scrollback"),
                 help: L("settings.terminal.restoredScrollback.help", "Lines of scrollback restored when recovering tabs (0 = disabled)"),
                 value: $settings.restoredScrollbackLines,
-                range: 0...10000
+                range: 0 ... 10000
             )
 
             Divider()
@@ -68,8 +68,8 @@ struct ScrollbackPerfSettingsView: View {
             SettingsToggle(
                 label: "Metal Renderer",
                 help: "Use GPU-accelerated Metal rendering for the terminal. " +
-                      "Falls back to standard rendering if Metal is unavailable. " +
-                      "Changes take effect for new tabs only.",
+                    "Falls back to standard rendering if Metal is unavailable. " +
+                    "Changes take effect for new tabs only.",
                 isOn: $settings.useMetalRenderer
             )
 

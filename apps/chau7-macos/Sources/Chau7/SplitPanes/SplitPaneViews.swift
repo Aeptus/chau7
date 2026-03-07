@@ -37,7 +37,7 @@ struct SplitNodeView: View {
     let onFocus: (UUID) -> Void
     let onUpdateRatio: (UUID, CGFloat) -> Void
     let onClosePane: (UUID) -> Void
-    var onFilePathClicked: ((String, Int?, Int?) -> Void)?  // F03: Internal editor callback
+    var onFilePathClicked: ((String, Int?, Int?) -> Void)? // F03: Internal editor callback
 
     var body: some View {
         switch node {
@@ -91,7 +91,7 @@ struct SplitContainerView: View {
     let onFocus: (UUID) -> Void
     let onUpdateRatio: (UUID, CGFloat) -> Void
     let onClosePane: (UUID) -> Void
-    var onFilePathClicked: ((String, Int?, Int?) -> Void)?  // F03: Internal editor callback
+    var onFilePathClicked: ((String, Int?, Int?) -> Void)? // F03: Internal editor callback
 
     @State private var liveRatio: CGFloat = 0.5
 
@@ -103,8 +103,17 @@ struct SplitContainerView: View {
 
             if direction == .horizontal {
                 HStack(spacing: 0) {
-                    SplitNodeView(node: first, focusedID: focusedID, isSuspended: isSuspended, isActive: isActive, onFocus: onFocus, onUpdateRatio: onUpdateRatio, onClosePane: onClosePane, onFilePathClicked: onFilePathClicked)
-                        .frame(width: (totalSize - dividerSize) * effectiveRatio)
+                    SplitNodeView(
+                        node: first,
+                        focusedID: focusedID,
+                        isSuspended: isSuspended,
+                        isActive: isActive,
+                        onFocus: onFocus,
+                        onUpdateRatio: onUpdateRatio,
+                        onClosePane: onClosePane,
+                        onFilePathClicked: onFilePathClicked
+                    )
+                    .frame(width: (totalSize - dividerSize) * effectiveRatio)
                     SplitDivider(
                         isVertical: true,
                         liveRatio: $liveRatio,
@@ -114,12 +123,30 @@ struct SplitContainerView: View {
                             onUpdateRatio(splitID, newRatio)
                         }
                     )
-                    SplitNodeView(node: second, focusedID: focusedID, isSuspended: isSuspended, isActive: isActive, onFocus: onFocus, onUpdateRatio: onUpdateRatio, onClosePane: onClosePane, onFilePathClicked: onFilePathClicked)
+                    SplitNodeView(
+                        node: second,
+                        focusedID: focusedID,
+                        isSuspended: isSuspended,
+                        isActive: isActive,
+                        onFocus: onFocus,
+                        onUpdateRatio: onUpdateRatio,
+                        onClosePane: onClosePane,
+                        onFilePathClicked: onFilePathClicked
+                    )
                 }
             } else {
                 VStack(spacing: 0) {
-                    SplitNodeView(node: first, focusedID: focusedID, isSuspended: isSuspended, isActive: isActive, onFocus: onFocus, onUpdateRatio: onUpdateRatio, onClosePane: onClosePane, onFilePathClicked: onFilePathClicked)
-                        .frame(height: (totalSize - dividerSize) * effectiveRatio)
+                    SplitNodeView(
+                        node: first,
+                        focusedID: focusedID,
+                        isSuspended: isSuspended,
+                        isActive: isActive,
+                        onFocus: onFocus,
+                        onUpdateRatio: onUpdateRatio,
+                        onClosePane: onClosePane,
+                        onFilePathClicked: onFilePathClicked
+                    )
+                    .frame(height: (totalSize - dividerSize) * effectiveRatio)
                     SplitDivider(
                         isVertical: false,
                         liveRatio: $liveRatio,
@@ -129,7 +156,16 @@ struct SplitContainerView: View {
                             onUpdateRatio(splitID, newRatio)
                         }
                     )
-                    SplitNodeView(node: second, focusedID: focusedID, isSuspended: isSuspended, isActive: isActive, onFocus: onFocus, onUpdateRatio: onUpdateRatio, onClosePane: onClosePane, onFilePathClicked: onFilePathClicked)
+                    SplitNodeView(
+                        node: second,
+                        focusedID: focusedID,
+                        isSuspended: isSuspended,
+                        isActive: isActive,
+                        onFocus: onFocus,
+                        onUpdateRatio: onUpdateRatio,
+                        onClosePane: onClosePane,
+                        onFilePathClicked: onFilePathClicked
+                    )
                 }
             }
         }
@@ -150,7 +186,7 @@ struct TerminalPaneView: View {
     let isSuspended: Bool
     let isActive: Bool
     let onFocus: () -> Void
-    var onFilePathClicked: ((String, Int?, Int?) -> Void)?  // F03: Internal editor callback
+    var onFilePathClicked: ((String, Int?, Int?) -> Void)? // F03: Internal editor callback
 
     var body: some View {
         TerminalViewRepresentable(model: session, isSuspended: isSuspended, isActive: isActive, onFilePathClicked: onFilePathClicked)
@@ -286,7 +322,7 @@ struct TextEditorPaneView: View {
 
     private func attemptClose() {
         // If content is dirty and not empty, prompt to save
-        if editor.isDirty && !editor.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if editor.isDirty, !editor.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let alert = NSAlert()
             alert.messageText = L("alert.closeEditor.title", "Save changes?")
             alert.informativeText = L("alert.closeEditor.message", "Your changes will be lost if you don't save them.")
@@ -385,12 +421,12 @@ struct TextEditorContent: NSViewRepresentable {
         var lineStart = 0
 
         // Find the character index at the start of the target line
-        for i in 0..<text.length {
+        for i in 0 ..< text.length {
             if currentLine == lineNumber {
                 lineStart = i
                 break
             }
-            if text.character(at: i) == 0x0A {  // newline
+            if text.character(at: i) == 0x0A { // newline
                 currentLine += 1
             }
         }

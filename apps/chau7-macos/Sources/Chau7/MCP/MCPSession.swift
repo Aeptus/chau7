@@ -22,18 +22,18 @@ final class MCPSession {
         guard let readStream, let writeStream else {
             if let readStream { fclose(readStream) }
             else { close(fd) }
-            if writeFD >= 0 && writeStream == nil { close(writeFD) }
+            if writeFD >= 0, writeStream == nil { close(writeFD) }
             return
         }
 
         defer {
-            fclose(readStream)   // closes original fd
-            fclose(writeStream)  // closes dup'd fd
+            fclose(readStream) // closes original fd
+            fclose(writeStream) // closes dup'd fd
         }
 
         while true {
             var line: UnsafeMutablePointer<CChar>?
-            var lineCap: Int = 0
+            var lineCap = 0
             let bytesRead = getline(&line, &lineCap, readStream)
             guard bytesRead > 0, let line else { break }
             defer { free(line) }

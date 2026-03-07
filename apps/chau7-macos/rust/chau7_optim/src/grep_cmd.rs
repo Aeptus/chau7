@@ -9,17 +9,17 @@ struct GrepArgs {
     pattern: String,
     path: String,
     // Flags that produce non-optimizable output → trigger fallthrough (exit 2)
-    quiet: bool,       // -q / --quiet / --silent
-    count: bool,       // -c / --count
-    files_only: bool,  // -l / --files-with-matches
+    quiet: bool,         // -q / --quiet / --silent
+    count: bool,         // -c / --count
+    files_only: bool,    // -l / --files-with-matches
     files_without: bool, // -L / --files-without-match
     // Flags that affect matching — passed through to rg
-    ignore_case: bool,    // -i
-    fixed_strings: bool,  // -F
-    word_regexp: bool,    // -w
-    perl_regexp: bool,    // -P
-    invert_match: bool,   // -v
-    only_matching: bool,  // -o
+    ignore_case: bool,   // -i
+    fixed_strings: bool, // -F
+    word_regexp: bool,   // -w
+    perl_regexp: bool,   // -P
+    invert_match: bool,  // -v
+    only_matching: bool, // -o
     // Context flags
     after_context: Option<usize>,  // -A N
     before_context: Option<usize>, // -B N
@@ -104,8 +104,8 @@ fn parse_grep_args(args: &[String]) -> GrepArgs {
                 "--perl-regexp" => result.perl_regexp = true,
                 "--invert-match" => result.invert_match = true,
                 "--only-matching" => result.only_matching = true,
-                "--recursive" => {} // default for rg
-                "--line-number" => {} // always on
+                "--recursive" => {}     // default for rg
+                "--line-number" => {}   // always on
                 "--with-filename" => {} // default for rg
                 "--no-filename" => result.extra_rg_args.push("--no-filename".into()),
                 "--no-messages" => result.extra_rg_args.push("--no-messages".into()),
@@ -197,8 +197,8 @@ fn parse_grep_args(args: &[String]) -> GrepArgs {
                     'v' => result.invert_match = true,
                     'o' => result.only_matching = true,
                     'r' | 'R' => {} // default for rg
-                    'n' => {} // always on
-                    'H' => {} // default for rg
+                    'n' => {}       // always on
+                    'H' => {}       // default for rg
                     'h' => result.extra_rg_args.push("--no-filename".into()),
                     's' => result.extra_rg_args.push("--no-messages".into()),
                     'x' => result.extra_rg_args.push("--line-regexp".into()),
@@ -281,19 +281,10 @@ fn parse_grep_args(args: &[String]) -> GrepArgs {
     // Pattern: from -e flags if present, otherwise first positional
     if !explicit_patterns.is_empty() {
         result.pattern = explicit_patterns.join("|");
-        result.path = positionals
-            .first()
-            .cloned()
-            .unwrap_or_else(|| ".".into());
+        result.path = positionals.first().cloned().unwrap_or_else(|| ".".into());
     } else {
-        result.pattern = positionals
-            .first()
-            .cloned()
-            .unwrap_or_default();
-        result.path = positionals
-            .get(1)
-            .cloned()
-            .unwrap_or_else(|| ".".into());
+        result.pattern = positionals.first().cloned().unwrap_or_default();
+        result.path = positionals.get(1).cloned().unwrap_or_else(|| ".".into());
         // Additional positional paths → pass to rg
         for p in positionals.iter().skip(2) {
             result.extra_rg_args.push(p.clone());

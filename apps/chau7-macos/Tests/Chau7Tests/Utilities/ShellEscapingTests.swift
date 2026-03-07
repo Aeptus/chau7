@@ -186,10 +186,10 @@ final class ShellEscapingTests: XCTestCase {
 
     func testIsValidEnvVarNameInvalid() {
         XCTAssertFalse(ShellEscaping.isValidEnvVarName(""))
-        XCTAssertFalse(ShellEscaping.isValidEnvVarName("123VAR"))  // Can't start with number
-        XCTAssertFalse(ShellEscaping.isValidEnvVarName("MY-VAR"))  // Hyphen not allowed
-        XCTAssertFalse(ShellEscaping.isValidEnvVarName("MY VAR"))  // Space not allowed
-        XCTAssertFalse(ShellEscaping.isValidEnvVarName("$VAR"))    // $ not allowed
+        XCTAssertFalse(ShellEscaping.isValidEnvVarName("123VAR")) // Can't start with number
+        XCTAssertFalse(ShellEscaping.isValidEnvVarName("MY-VAR")) // Hyphen not allowed
+        XCTAssertFalse(ShellEscaping.isValidEnvVarName("MY VAR")) // Space not allowed
+        XCTAssertFalse(ShellEscaping.isValidEnvVarName("$VAR")) // $ not allowed
     }
 
     // MARK: - Real-World Attack Pattern Tests

@@ -9,16 +9,16 @@ import Chau7Core
 /// Format: Binary file with JSON metadata sidecar
 @MainActor
 final class SessionRecorder: ObservableObject {
-    @Published var isRecording: Bool = false
+    @Published var isRecording = false
     @Published var currentRecording: SessionRecordingMeta?
     @Published var recordings: [SessionRecordingMeta] = []
 
     /// Maximum recording size in bytes (default 50MB)
-    var maxRecordingBytes: Int = 50 * 1024 * 1024
+    var maxRecordingBytes = 50 * 1024 * 1024
 
     /// Frame buffer for current recording
     private var frames: [RecordedFrame] = []
-    private var totalBytes: Int = 0
+    private var totalBytes = 0
 
     private var recordingsDir: URL {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -96,7 +96,7 @@ final class SessionRecorder: ObservableObject {
 
     /// Binary format: "CH7R" magic (4 bytes) + version UInt8 (1 byte)
     /// then per frame: Float64 timestamp (8) + UInt8 eventType (1) + UInt32 dataLen (4) + data bytes
-    private static let magic: [UInt8] = [0x43, 0x48, 0x37, 0x52]  // "CH7R"
+    private static let magic: [UInt8] = [0x43, 0x48, 0x37, 0x52] // "CH7R"
     private static let formatVersion: UInt8 = 1
 
     private func saveRecording(meta: SessionRecordingMeta, frames: [RecordedFrame]) {
@@ -141,15 +141,15 @@ final class SessionRecorder: ObservableObject {
         // version byte at offset 4 (reserved for future use)
         var offset = 5
         var frames: [RecordedFrame] = []
-        while offset + 13 <= raw.count {  // 8 (ts) + 1 (type) + 4 (len) = 13 min per frame
-            let ts: Float64 = raw[offset..<offset+8].withUnsafeBytes { $0.load(as: Float64.self) }
+        while offset + 13 <= raw.count { // 8 (ts) + 1 (type) + 4 (len) = 13 min per frame
+            let ts: Float64 = raw[offset ..< offset + 8].withUnsafeBytes { $0.load(as: Float64.self) }
             offset += 8
             let typeByte = raw[offset]
             offset += 1
-            let len = raw[offset..<offset+4].withUnsafeBytes { UInt32(bigEndian: $0.load(as: UInt32.self)) }
+            let len = raw[offset ..< offset + 4].withUnsafeBytes { UInt32(bigEndian: $0.load(as: UInt32.self)) }
             offset += 4
             guard offset + Int(len) <= raw.count else { break }
-            let data = raw[offset..<offset+Int(len)]
+            let data = raw[offset ..< offset + Int(len)]
             offset += Int(len)
             frames.append(RecordedFrame(
                 timestamp: Date(timeIntervalSince1970: ts),

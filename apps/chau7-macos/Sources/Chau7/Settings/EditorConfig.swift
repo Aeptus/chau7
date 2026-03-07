@@ -5,16 +5,16 @@ import Foundation
 /// Configuration for the enhanced editor.
 /// Persisted in UserDefaults as JSON under the "editor.config" key.
 struct EditorConfig: Codable, Equatable {
-    var fontSize: Int = 13
-    var tabSize: Int = 4
-    var useSpacesForTabs: Bool = true
-    var wordWrap: Bool = true
-    var showLineNumbers: Bool = true
-    var autoIndent: Bool = true
-    var bracketMatching: Bool = true
-    var showMinimap: Bool = false
-    var highlightCurrentLine: Bool = true
-    var theme: String = "default"
+    var fontSize = 13
+    var tabSize = 4
+    var useSpacesForTabs = true
+    var wordWrap = true
+    var showLineNumbers = true
+    var autoIndent = true
+    var bracketMatching = true
+    var showMinimap = false
+    var highlightCurrentLine = true
+    var theme = "default"
 
     static let `default` = EditorConfig()
 

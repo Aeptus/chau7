@@ -28,7 +28,7 @@ enum Chau7Resources {
                     $0.pathExtension == "bundle"
                         && fileManager.fileExists(atPath: $0.appendingPathComponent("en.lproj/Localizable.strings").path)
                 }),
-               let bundle = Bundle(url: bundleURL) {
+                let bundle = Bundle(url: bundleURL) {
                 return bundle
             }
         }
@@ -80,7 +80,7 @@ enum Chau7Resources {
                     $0.pathExtension == "bundle"
                         && fileManager.fileExists(atPath: $0.appendingPathComponent("en.lproj/Localizable.strings").path)
                 }),
-               let bundle = Bundle(url: bundleURL) {
+                let bundle = Bundle(url: bundleURL) {
                 return bundle
             }
         }

@@ -14,6 +14,7 @@ final class ConfigFileWatcher: ObservableObject {
     @Published var isEnabled: Bool {
         didSet { UserDefaults.standard.set(isEnabled, forKey: "feature.configFile") }
     }
+
     @Published var globalConfig: Chau7ConfigFile?
     @Published var repoConfig: Chau7ConfigFile?
     @Published var lastLoadTime: Date?
@@ -27,7 +28,7 @@ final class ConfigFileWatcher: ObservableObject {
     }
 
     private init() {
-        isEnabled = UserDefaults.standard.object(forKey: "feature.configFile") as? Bool ?? true
+        self.isEnabled = UserDefaults.standard.object(forKey: "feature.configFile") as? Bool ?? true
         if isEnabled {
             loadGlobalConfig()
             startWatching()

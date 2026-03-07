@@ -21,11 +21,17 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
 
     // MARK: - Computed Properties
 
-    public var totalTokens: Int { inputTokens + outputTokens }
+    public var totalTokens: Int {
+        inputTokens + outputTokens
+    }
 
-    public var isSuccess: Bool { (200..<300).contains(statusCode) }
+    public var isSuccess: Bool {
+        (200 ..< 300).contains(statusCode)
+    }
 
-    public var hasError: Bool { errorMessage != nil && !errorMessage!.isEmpty }
+    public var hasError: Bool {
+        errorMessage != nil && !errorMessage!.isEmpty
+    }
 
     public var formattedCost: String {
         if costUSD < 0.01 {
@@ -95,9 +101,9 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
 
 // MARK: - Provider Enum
 
-extension APICallEvent {
+public extension APICallEvent {
     /// Supported LLM API providers
-    public enum Provider: String, Codable, CaseIterable, Sendable {
+    enum Provider: String, Codable, CaseIterable {
         case anthropic
         case openai
         case gemini
@@ -154,7 +160,9 @@ public struct APICallStats: Equatable, Sendable {
     public let totalCost: Double
     public let averageLatencyMs: Double
 
-    public var totalTokens: Int { totalInputTokens + totalOutputTokens }
+    public var totalTokens: Int {
+        totalInputTokens + totalOutputTokens
+    }
 
     public init(
         callCount: Int = 0,

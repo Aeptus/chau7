@@ -14,7 +14,7 @@ import Foundation
 final class InputLineTracker {
     private let maxEntries: Int
     private var rows: Set<Int> = []
-    private var minTrackedRow: Int = 0
+    private var minTrackedRow = 0
 
     init(maxEntries: Int) {
         self.maxEntries = maxEntries

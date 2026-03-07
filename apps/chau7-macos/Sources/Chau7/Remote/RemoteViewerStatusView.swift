@@ -41,7 +41,6 @@ struct RemoteViewerStatusView: View {
 
     // MARK: - Popover Content
 
-    @ViewBuilder
     private var viewerPopoverContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Header with sharing toggle
@@ -91,7 +90,6 @@ struct RemoteViewerStatusView: View {
 
     // MARK: - Share Link
 
-    @ViewBuilder
     private func shareLinkSection(link: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(L("viewer.shareLink", "Share Link"))
@@ -123,7 +121,6 @@ struct RemoteViewerStatusView: View {
 
     // MARK: - Pending Approvals
 
-    @ViewBuilder
     private var pendingSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -166,7 +163,6 @@ struct RemoteViewerStatusView: View {
 
     // MARK: - Connected Viewers
 
-    @ViewBuilder
     private var connectedSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -182,8 +178,8 @@ struct RemoteViewerStatusView: View {
                         viewerMode.maxViewers
                     )
                 )
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
             }
 
             if viewerMode.connectedViewers.isEmpty {

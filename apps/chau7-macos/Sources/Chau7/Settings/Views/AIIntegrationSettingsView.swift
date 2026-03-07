@@ -6,8 +6,8 @@ import Chau7Core
 
 struct AIIntegrationSettingsView: View {
     @ObservedObject private var settings = FeatureSettings.shared
-    @State private var newCustomPattern: String = ""
-    @State private var newCustomName: String = ""
+    @State private var newCustomPattern = ""
+    @State private var newCustomName = ""
     @State private var newCustomColor: TabColor = .gray
 
     var body: some View {

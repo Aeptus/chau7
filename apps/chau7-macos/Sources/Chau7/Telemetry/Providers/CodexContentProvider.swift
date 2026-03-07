@@ -1,17 +1,17 @@
 import Foundation
 import Chau7Core
 
-/// Extracts run content from OpenAI Codex CLI's storage.
-///
-/// Codex stores data in two places:
-///   1. SQLite: ~/.codex/state_5.sqlite — `threads` table with session metadata
-///   2. JSONL:  ~/.codex/sessions/<year>/<month>/<day>/rollout-<ts>-<id>.jsonl
-///
-/// JSONL line types:
-///   - session_meta: id, cwd, model_provider, cli_version, agent info
-///   - turn_context: model, cwd, sandbox info
-///   - response_item: role (developer/user/assistant), content blocks
-///   - event_msg: type=token_count with total/last token usage
+// Extracts run content from OpenAI Codex CLI's storage.
+//
+// Codex stores data in two places:
+//   1. SQLite: ~/.codex/state_5.sqlite — `threads` table with session metadata
+//   2. JSONL:  ~/.codex/sessions/<year>/<month>/<day>/rollout-<ts>-<id>.jsonl
+//
+// JSONL line types:
+//   - session_meta: id, cwd, model_provider, cli_version, agent info
+//   - turn_context: model, cwd, sandbox info
+//   - response_item: role (developer/user/assistant), content blocks
+//   - event_msg: type=token_count with total/last token usage
 import SQLite3
 
 final class CodexContentProvider: RunContentProvider {
@@ -260,7 +260,7 @@ final class CodexContentProvider: RunContentProvider {
     private func colIndex(_ stmt: OpaquePointer?, _ name: String) -> Int32 {
         guard let stmt else { return -1 }
         let count = sqlite3_column_count(stmt)
-        for i in 0..<count {
+        for i in 0 ..< count {
             if let cn = sqlite3_column_name(stmt, i), String(cString: cn) == name {
                 return i
             }

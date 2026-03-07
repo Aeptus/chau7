@@ -10,7 +10,9 @@ struct ProcessResourceInfo: Identifiable {
     let cpuPercent: Double
     let rssBytes: Int64
 
-    var id: pid_t { pid }
+    var id: pid_t {
+        pid
+    }
 
     var formattedCPU: String {
         String(format: "%.1f%%", cpuPercent)
@@ -28,7 +30,7 @@ struct ProcessResourceInfo: Identifiable {
 /// Aggregate snapshot of all child processes under a shell PID.
 struct ProcessGroupSnapshot {
     let shellPid: pid_t
-    let children: [ProcessResourceInfo]  // sorted by CPU desc
+    let children: [ProcessResourceInfo] // sorted by CPU desc
     let timestamp: Date
 
     var totalCPU: Double {

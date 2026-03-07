@@ -1,4 +1,5 @@
 // MARK: - Rust Terminal to Metal Bridge
+
 // Converts Rust's CellData (pre-resolved u8 RGB) into TerminalCell structs
 // for GPU rendering via the TripleBufferedTerminal.
 //
@@ -63,8 +64,8 @@ final class RustTermBridge {
         let syncRows = min(gridRows, buffer.rows)
         let syncCols = min(gridCols, buffer.cols)
 
-        for row in 0..<syncRows {
-            for col in 0..<syncCols {
+        for row in 0 ..< syncRows {
+            for col in 0 ..< syncCols {
                 let idx = row * gridCols + col
                 let rustCell = cells[idx]
                 let metalCell = convertCell(rustCell, row: row)

@@ -16,13 +16,19 @@ public struct CommandBlock: Identifiable, Codable, Equatable, Sendable {
     public var directory: String?
 
     /// Whether the command is still executing (neither end line nor end time recorded)
-    public var isRunning: Bool { endLine == nil && endTime == nil }
+    public var isRunning: Bool {
+        endLine == nil && endTime == nil
+    }
 
     /// Whether the command completed successfully (exit code 0)
-    public var isSuccess: Bool { exitCode == 0 }
+    public var isSuccess: Bool {
+        exitCode == 0
+    }
 
     /// Whether the command completed with a non-zero exit code
-    public var isFailed: Bool { exitCode != nil && exitCode != 0 }
+    public var isFailed: Bool {
+        exitCode != nil && exitCode != 0
+    }
 
     /// The wall-clock duration of the command, if it has finished
     public var duration: TimeInterval? {

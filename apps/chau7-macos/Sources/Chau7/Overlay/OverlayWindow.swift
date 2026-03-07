@@ -1,11 +1,16 @@
 import AppKit
 
 final class OverlayWindow: NSWindow {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
+    override var canBecomeKey: Bool {
+        true
+    }
+
+    override var canBecomeMain: Bool {
+        true
+    }
 
     /// Whether we're currently in fullscreen
-    private(set) var isInFullscreen: Bool = false
+    private(set) var isInFullscreen = false
 
     override func awakeFromNib() {
         super.awakeFromNib()
@@ -18,7 +23,10 @@ final class OverlayWindow: NSWindow {
     }
 
     override func orderOut(_ sender: Any?) {
-        Log.info("OverlayWindow orderOut: windowNumber=\(windowNumber) frame=\(frame) content=\(contentLayoutRect) visible=\(isVisible) key=\(isKeyWindow) main=\(isMainWindow) mini=\(isMiniaturized) title='\(title)'")
+        Log
+            .info(
+                "OverlayWindow orderOut: windowNumber=\(windowNumber) frame=\(frame) content=\(contentLayoutRect) visible=\(isVisible) key=\(isKeyWindow) main=\(isMainWindow) mini=\(isMiniaturized) title='\(title)'"
+            )
         super.orderOut(sender)
     }
 
@@ -81,7 +89,7 @@ final class OverlayWindow: NSWindow {
             if let appDelegate = NSApp.delegate as? AppDelegate {
                 appDelegate.toggleSnippets()
             }
-            return true  // consumed — don't let menu system see it
+            return true // consumed — don't let menu system see it
         }
         return super.performKeyEquivalent(with: event)
     }

@@ -20,10 +20,12 @@ final class TerminalHighlightView: NSView {
     private var cachedRows: Int = -1
     private var cachedMatchCount: Int = -1
 
-    // Display batching to coalesce multiple needsDisplay calls (Latency optimization)
+    /// Display batching to coalesce multiple needsDisplay calls (Latency optimization)
     private var displayScheduled = false
 
-    override var isFlipped: Bool { true }
+    override var isFlipped: Bool {
+        true
+    }
 
     /// Schedules a display update, coalescing multiple calls within the same frame.
     /// This prevents excessive scheduling during rapid buffer updates.
@@ -32,8 +34,8 @@ final class TerminalHighlightView: NSView {
         displayScheduled = true
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.displayScheduled = false
-            self.needsDisplay = true
+            displayScheduled = false
+            needsDisplay = true
         }
     }
 
@@ -91,7 +93,7 @@ final class TerminalHighlightView: NSView {
         // Draw active match with different color
         if let active = session.currentMatch() {
             let visibleRow = active.row - yDisp
-            if visibleRow >= 0 && visibleRow < rows {
+            if visibleRow >= 0, visibleRow < rows {
                 let col = max(0, min(active.col, cols - 1))
                 let length = max(1, min(active.length, cols - col))
                 let x = CGFloat(col) * cellWidth
@@ -121,7 +123,7 @@ final class TerminalHighlightView: NSView {
 
         for match in allMatches {
             let visibleRow = match.row - yDisp
-            if visibleRow >= 0 && visibleRow < rows {
+            if visibleRow >= 0, visibleRow < rows {
                 visible.append(match)
                 if visible.count >= 300 {
                     break

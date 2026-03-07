@@ -17,8 +17,9 @@ final class TerminalControlService {
         let windowID: Int
         weak var model: OverlayTabsModel?
     }
+
     private var registeredModels: [WeakModel] = []
-    private var nextWindowID: Int = 0
+    private var nextWindowID = 0
 
     /// Hard ceiling — even if the user sets a higher value in settings.
     private static let absoluteMaxTabs = 50

@@ -96,7 +96,8 @@ fn filter_test(output: &str) -> String {
 
         // Skip build progress lines
         if !build_lines_done {
-            if trimmed.starts_with('[') || trimmed.starts_with("Building for")
+            if trimmed.starts_with('[')
+                || trimmed.starts_with("Building for")
                 || trimmed.starts_with("Build complete!")
                 || trimmed.starts_with("[0/1] Planning build")
             {
@@ -114,8 +115,10 @@ fn filter_test(output: &str) -> String {
         }
 
         // Swift Testing framework lines (new format)
-        if trimmed.starts_with("◇ ") || trimmed.starts_with("↳ ")
-            || trimmed.starts_with("✔ ") || trimmed.starts_with("✘ ")
+        if trimmed.starts_with("◇ ")
+            || trimmed.starts_with("↳ ")
+            || trimmed.starts_with("✔ ")
+            || trimmed.starts_with("✘ ")
         {
             continue;
         }
@@ -202,13 +205,19 @@ fn filter_test(output: &str) -> String {
 /// Parse "Executed N tests, with N failures (N unexpected) in X.XXX (Y.YYY) seconds"
 fn parse_executed_line(line: &str) -> Option<(usize, usize, f64)> {
     let parts: Vec<&str> = line.split_whitespace().collect();
-    let tests = parts.iter().position(|&w| w == "Executed")
+    let tests = parts
+        .iter()
+        .position(|&w| w == "Executed")
         .and_then(|i| parts.get(i + 1))
         .and_then(|s| s.parse::<usize>().ok())?;
-    let failures = parts.iter().position(|&w| w == "with")
+    let failures = parts
+        .iter()
+        .position(|&w| w == "with")
         .and_then(|i| parts.get(i + 1))
         .and_then(|s| s.parse::<usize>().ok())?;
-    let time = parts.iter().position(|&w| w == "in")
+    let time = parts
+        .iter()
+        .position(|&w| w == "in")
         .and_then(|i| parts.get(i + 1))
         .and_then(|s| s.parse::<f64>().ok())?;
     Some((tests, failures, time))
@@ -258,7 +267,12 @@ fn dedup_diagnostics(diagnostics: &[String]) -> Vec<String> {
 }
 
 /// Format errors and warnings for display
-fn format_diagnostics(errors: &[String], warnings: &[String], _build_time: &str, _targets: u32) -> String {
+fn format_diagnostics(
+    errors: &[String],
+    warnings: &[String],
+    _build_time: &str,
+    _targets: u32,
+) -> String {
     let unique_errors = dedup_diagnostics(errors);
     let unique_warnings = dedup_diagnostics(warnings);
 
@@ -292,7 +306,7 @@ fn format_grouped_diagnostics(diagnostics: &[String], limit: usize) -> String {
     let mut result = String::new();
     for file in &files {
         let messages = &by_file[file];
-        let short_file = shorten_path(&file);
+        let short_file = shorten_path(file);
         result.push_str(&format!("  {} ({})\n", short_file, messages.len()));
         for msg in messages.iter().take(3) {
             result.push_str(&format!("    {}\n", truncate(msg, 90)));
@@ -303,7 +317,10 @@ fn format_grouped_diagnostics(diagnostics: &[String], limit: usize) -> String {
     }
 
     if diagnostics.len() > limit {
-        result.push_str(&format!("  +{} more diagnostics\n", diagnostics.len() - limit));
+        result.push_str(&format!(
+            "  +{} more diagnostics\n",
+            diagnostics.len() - limit
+        ));
     }
 
     result
@@ -367,7 +384,10 @@ pub fn run_build(args: &[String], verbose: u8) -> Result<()> {
     // Swift emits progress to stdout, errors/warnings to stderr
     let combined = format!("{}\n{}", stdout, stderr);
 
-    let exit_code = output.status.code().unwrap_or(if output.status.success() { 0 } else { 1 });
+    let exit_code = output
+        .status
+        .code()
+        .unwrap_or(if output.status.success() { 0 } else { 1 });
     let filtered = filter_build(&combined);
 
     if let Some(hint) = crate::tee::tee_and_hint(&combined, "swift_build", exit_code) {
@@ -409,7 +429,10 @@ pub fn run_test(args: &[String], verbose: u8) -> Result<()> {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let combined = format!("{}\n{}", stdout, stderr);
 
-    let exit_code = output.status.code().unwrap_or(if output.status.success() { 0 } else { 1 });
+    let exit_code = output
+        .status
+        .code()
+        .unwrap_or(if output.status.success() { 0 } else { 1 });
     let filtered = filter_test(&combined);
 
     if let Some(hint) = crate::tee::tee_and_hint(&combined, "swift_test", exit_code) {
@@ -449,7 +472,8 @@ pub fn run_other(args: &[OsString], verbose: u8) -> Result<()> {
         eprintln!("Running: swift {} ...", subcommand);
     }
 
-    let output = cmd.output()
+    let output = cmd
+        .output()
         .with_context(|| format!("Failed to run swift {}", subcommand))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -616,9 +640,8 @@ Test Suite 'Selected tests' passed.
 
     #[test]
     fn test_split_diagnostic() {
-        let (file, msg) = split_diagnostic(
-            "/path/Sources/Foo/Bar.swift:42:10: warning: unused variable 'x'"
-        );
+        let (file, msg) =
+            split_diagnostic("/path/Sources/Foo/Bar.swift:42:10: warning: unused variable 'x'");
         assert_eq!(file, "/path/Sources/Foo/Bar.swift");
         assert_eq!(msg, "unused variable 'x'");
     }

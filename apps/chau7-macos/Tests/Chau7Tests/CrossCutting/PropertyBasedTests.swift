@@ -7,14 +7,15 @@ final class PropertyBasedTests: XCTestCase {
     // MARK: - ColorParsing Round-Trip
 
     func testColorParsingRoundTrip() {
-        for _ in 0..<100 {
-            let r = Double.random(in: 0...1)
-            let g = Double.random(in: 0...1)
-            let b = Double.random(in: 0...1)
+        for _ in 0 ..< 100 {
+            let r = Double.random(in: 0 ... 1)
+            let g = Double.random(in: 0 ... 1)
+            let b = Double.random(in: 0 ... 1)
             let rgb = ColorParsing.RGB(red: r, green: g, blue: b)
             let hex = ColorParsing.toHex(rgb)
             guard let parsed = ColorParsing.parseHex(hex) else {
-                XCTFail("Failed to parse hex \(hex)"); continue
+                XCTFail("Failed to parse hex \(hex)")
+                continue
             }
             // Allow ±1/255 rounding error
             XCTAssertEqual(parsed.red, rgb.red, accuracy: 1.0 / 255 + 0.001)
@@ -28,7 +29,8 @@ final class PropertyBasedTests: XCTestCase {
         let rgb = ColorParsing.RGB(red: -0.5, green: 1.5, blue: 2.0)
         let hex = ColorParsing.toHex(rgb)
         guard let parsed = ColorParsing.parseHex(hex) else {
-            XCTFail("Failed to parse hex \(hex)"); return
+            XCTFail("Failed to parse hex \(hex)")
+            return
         }
         XCTAssertEqual(parsed.red, 0.0, accuracy: 0.01)
         XCTAssertEqual(parsed.green, 1.0, accuracy: 0.01)
@@ -39,9 +41,9 @@ final class PropertyBasedTests: XCTestCase {
 
     func testEscapeArgumentNeverProducesUnescapedSingleQuotes() {
         let chars: [Character] = Array("abcABC123 !@#$%^&*()_+-=[]{}|;':\",./<>?~`\n\t\\")
-        for _ in 0..<200 {
-            let length = Int.random(in: 0...20)
-            let input = String((0..<length).map { _ in chars.randomElement()! })
+        for _ in 0 ..< 200 {
+            let length = Int.random(in: 0 ... 20)
+            let input = String((0 ..< length).map { _ in chars.randomElement()! })
             let escaped = ShellEscaping.escapeArgument(input)
             // The escaped string should be parseable by a POSIX shell
             // It must start and end with single quote (the overall quoting)
@@ -53,16 +55,16 @@ final class PropertyBasedTests: XCTestCase {
     // MARK: - FrameParser: Encode-Pack-Parse Round-Trip
 
     func testFrameParserRoundTrip() {
-        for _ in 0..<50 {
-            let payloadSize = Int.random(in: 0...200)
-            let payload = Data((0..<payloadSize).map { _ in UInt8.random(in: 0...255) })
+        for _ in 0 ..< 50 {
+            let payloadSize = Int.random(in: 0 ... 200)
+            let payload = Data((0 ..< payloadSize).map { _ in UInt8.random(in: 0 ... 255) })
             let frame = RemoteFrame(
                 version: 1,
-                type: UInt8.random(in: 0...5),
-                flags: UInt8.random(in: 0...255),
+                type: UInt8.random(in: 0 ... 5),
+                flags: UInt8.random(in: 0 ... 255),
                 reserved: 0,
-                tabID: UInt32.random(in: 0...UInt32.max),
-                seq: UInt64.random(in: 0...UInt64.max),
+                tabID: UInt32.random(in: 0 ... UInt32.max),
+                seq: UInt64.random(in: 0 ... UInt64.max),
                 payload: payload
             )
 
@@ -86,13 +88,13 @@ final class PropertyBasedTests: XCTestCase {
             "${5:e} ${3:c} ${1:a} ${4:d} ${2:b}",
             "no placeholders here",
             "${1:only one}",
-            "${0:final} ${2:second} ${1:first}",
+            "${0:final} ${2:second} ${1:first}"
         ]
 
         for snippet in snippets {
             let result = SnippetParsing.expandPlaceholders(in: snippet)
             guard result.placeholders.count > 1 else { continue }
-            for i in 1..<result.placeholders.count {
+            for i in 1 ..< result.placeholders.count {
                 let prev = result.placeholders[i - 1]
                 let curr = result.placeholders[i]
                 XCTAssertTrue(
@@ -115,7 +117,7 @@ final class PropertyBasedTests: XCTestCase {
                 terminal: .init(scrollbackLines: 5000, bellEnabled: false),
                 keybindings: ["cmd+t": "newTab"],
                 profiles: ["work": .init(fontFamily: "SF Mono", fontSize: 12)]
-            ),
+            )
         ]
 
         for original in configs {
@@ -147,7 +149,7 @@ final class PropertyBasedTests: XCTestCase {
             "  spaced  out  ",
             "\u{1b}[32mGreen\u{1b}[0m",
             "\u{1b}]7;file:///tmp\u{07}path",
-            "mixed\u{1b}[1m bold \u{00} control",
+            "mixed\u{1b}[1m bold \u{00} control"
         ]
 
         for input in inputs {

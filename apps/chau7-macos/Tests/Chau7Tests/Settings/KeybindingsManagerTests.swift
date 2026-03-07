@@ -17,8 +17,10 @@ final class KeybindingsManagerTests: XCTestCase {
 
     func testActiveBindingsNotEmpty() {
         let manager = KeybindingsManager.shared
-        XCTAssertFalse(manager.activeBindings.isEmpty,
-            "activeBindings should be populated from default shortcuts")
+        XCTAssertFalse(
+            manager.activeBindings.isEmpty,
+            "activeBindings should be populated from default shortcuts"
+        )
     }
 
     func testActiveBindingsContainNewTab() {
@@ -144,15 +146,21 @@ final class KeybindingsManagerTests: XCTestCase {
     func testParseAltIsOption() {
         let binding = KeyBinding.parse("alt+v", action: .paste)
         XCTAssertNotNil(binding)
-        XCTAssertEqual(binding?.modifiers, .option,
-            "alt should be parsed as option modifier")
+        XCTAssertEqual(
+            binding?.modifiers,
+            .option,
+            "alt should be parsed as option modifier"
+        )
     }
 
     func testParseCommandAlias() {
         let binding = KeyBinding.parse("command+c", action: .copy)
         XCTAssertNotNil(binding)
-        XCTAssertEqual(binding?.modifiers, .command,
-            "command should be parsed as command modifier")
+        XCTAssertEqual(
+            binding?.modifiers,
+            .command,
+            "command should be parsed as command modifier"
+        )
     }
 
     func testParseControlAlias() {
@@ -175,8 +183,10 @@ final class KeybindingsManagerTests: XCTestCase {
     func testParseModifiersOnlyReturnsNil() {
         let binding = KeyBinding.parse("cmd+shift+", action: .copy)
         // Last component after split is empty, so keyString remains nil
-        XCTAssertNil(binding,
-            "Modifiers-only string (trailing +) should return nil since there is no key")
+        XCTAssertNil(
+            binding,
+            "Modifiers-only string (trailing +) should return nil since there is no key"
+        )
     }
 
     func testParseCaseInsensitive() {
@@ -222,8 +232,11 @@ final class KeybindingsManagerTests: XCTestCase {
     }
 
     func testKeyActionFromShortcutActionFind() {
-        XCTAssertEqual(KeyAction.fromShortcutAction("find"), .toggleSearch,
-            "find should map to toggleSearch")
+        XCTAssertEqual(
+            KeyAction.fromShortcutAction("find"),
+            .toggleSearch,
+            "find should map to toggleSearch"
+        )
     }
 
     func testKeyActionFromShortcutActionFindNext() {
@@ -235,8 +248,10 @@ final class KeybindingsManagerTests: XCTestCase {
     }
 
     func testKeyActionFromShortcutActionUnknown() {
-        XCTAssertNil(KeyAction.fromShortcutAction("nonExistentAction"),
-            "Unknown action strings should return nil")
+        XCTAssertNil(
+            KeyAction.fromShortcutAction("nonExistentAction"),
+            "Unknown action strings should return nil"
+        )
     }
 
     func testKeyActionFromShortcutActionSplitHorizontal() {
@@ -256,8 +271,10 @@ final class KeybindingsManagerTests: XCTestCase {
     func testKeyActionDisplayNames() {
         // Verify all cases have non-empty display names
         for action in KeyAction.allCases {
-            XCTAssertFalse(action.displayName.isEmpty,
-                "KeyAction.\(action.rawValue) should have a non-empty displayName")
+            XCTAssertFalse(
+                action.displayName.isEmpty,
+                "KeyAction.\(action.rawValue) should have a non-empty displayName"
+            )
         }
     }
 
@@ -265,8 +282,11 @@ final class KeybindingsManagerTests: XCTestCase {
 
     func testKeyboardShortcutDisplayString() {
         let shortcut = KeyboardShortcut(action: "test", key: "t", modifiers: ["cmd"])
-        XCTAssertEqual(shortcut.displayString, "\u{2318}T",
-            "displayString should show cmd symbol and uppercase key")
+        XCTAssertEqual(
+            shortcut.displayString,
+            "\u{2318}T",
+            "displayString should show cmd symbol and uppercase key"
+        )
     }
 
     func testKeyboardShortcutDisplayStringMultipleModifiers() {
@@ -310,8 +330,11 @@ final class KeybindingsManagerTests: XCTestCase {
 
     func testKeyboardShortcutPresetsDefaultFallback() {
         let defaultShortcuts = KeyboardShortcut.shortcuts(for: "unknown_preset")
-        XCTAssertEqual(defaultShortcuts, KeyboardShortcut.defaultShortcuts,
-            "Unknown preset should fall back to default shortcuts")
+        XCTAssertEqual(
+            defaultShortcuts,
+            KeyboardShortcut.defaultShortcuts,
+            "Unknown preset should fall back to default shortcuts"
+        )
     }
 
     func testKeyboardShortcutActionDisplayName() {
@@ -323,8 +346,11 @@ final class KeybindingsManagerTests: XCTestCase {
 
     func testKeyboardShortcutActionDisplayNameUnknownReturnsRaw() {
         let unknown = "someUnknownAction"
-        XCTAssertEqual(KeyboardShortcut.actionDisplayName(unknown), unknown,
-            "Unknown action names should return the raw string")
+        XCTAssertEqual(
+            KeyboardShortcut.actionDisplayName(unknown),
+            unknown,
+            "Unknown action names should return the raw string"
+        )
     }
 }
 

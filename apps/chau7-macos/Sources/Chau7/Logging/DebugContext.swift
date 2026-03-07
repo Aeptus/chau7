@@ -117,7 +117,7 @@ final class DebugContext: @unchecked Sendable {
 
     private static func generateId() -> String {
         let chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-        return String((0..<6).map { _ in chars.randomElement()! })
+        return String((0 ..< 6).map { _ in chars.randomElement()! })
     }
 
     private static func formatMetadata(_ meta: [String: Any]) -> String {
@@ -149,13 +149,13 @@ struct StateSnapshot: Codable {
     let claudeSessions: [ClaudeSessionState]
     let recentEvents: [EventState]
 
-    // Feature flags
+    /// Feature flags
     let featureFlags: [String: Bool]
 
-    // Recent log entries
+    /// Recent log entries
     let recentLogs: [String]
 
-    // Active debug contexts
+    /// Active debug contexts
     let activeContexts: [ContextState]
 
     struct TabState: Codable {
@@ -205,7 +205,7 @@ struct StateSnapshot: Codable {
             tabCount = overlay.tabs.count
             activeTabIndex = overlay.tabs.firstIndex { $0.id == overlay.selectedTabID } ?? 0
 
-            for (_, tab) in overlay.tabs.enumerated() {
+            for tab in overlay.tabs {
                 tabStates.append(TabState(
                     id: tab.id.uuidString,
                     title: tab.session?.title ?? "(no terminal)",

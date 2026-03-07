@@ -10,34 +10,34 @@ import SwiftUI
 /// Use this to indicate states like "waiting for input", "error occurred", "task complete", etc.
 struct TabNotificationStyle: Equatable {
     /// Override color for the tab title (nil = use default)
-    var titleColor: Color? = nil
+    var titleColor: Color?
 
     /// Make the title italic (e.g., for "waiting" states)
-    var isItalic: Bool = false
+    var isItalic = false
 
     /// Make the title bold (e.g., for "attention needed")
-    var isBold: Bool = false
+    var isBold = false
 
     /// Subtle pulse animation to draw attention
-    var shouldPulse: Bool = false
+    var shouldPulse = false
 
     /// Optional icon to show (SF Symbol name)
-    var icon: String? = nil
+    var icon: String?
 
     /// Icon color (nil = inherit from titleColor or default)
-    var iconColor: Color? = nil
+    var iconColor: Color?
 
     /// Border color for the tab (nil = no border)
-    var borderColor: Color? = nil
+    var borderColor: Color?
 
     /// Border width (default 0 = no border)
     var borderWidth: CGFloat = 0
 
     /// Border dash pattern (nil = solid, e.g. [4, 3] = dotted)
-    var borderDash: [CGFloat]? = nil
+    var borderDash: [CGFloat]?
 
     /// Badge text overlay (e.g., "!", "3") — nil = no badge
-    var badgeText: String? = nil
+    var badgeText: String?
 
     /// Badge color (defaults to red)
     var badgeColor: Color = .red
@@ -76,33 +76,37 @@ struct OverlayTab: Identifiable, Equatable {
     let id: UUID
     let splitController: SplitPaneController
     let createdAt: Date
-    var customTitle: String? = nil
+    var customTitle: String?
     var color: TabColor = .blue
-    var autoColor: TabColor? = nil  // F05: Auto-assigned color based on AI model
-    var isManualColorOverride: Bool = false
-    var lastCommand: LastCommandInfo? = nil  // F20: Last command tracking
-    var bookmarks: [BookmarkManager.Bookmark] = []  // F17: Bookmarks
+    var autoColor: TabColor? // F05: Auto-assigned color based on AI model
+    var isManualColorOverride = false
+    var lastCommand: LastCommandInfo? // F20: Last command tracking
+    var bookmarks: [BookmarkManager.Bookmark] = [] // F17: Bookmarks
 
     // MARK: - MCP Control
+
     /// Whether this tab was created by an MCP client.
-    var isMCPControlled: Bool = false
+    var isMCPControlled = false
 
     // MARK: - Token Optimization (CTO) Per-Tab Override
+
     /// Per-tab override for token optimization. Defaults to `.default` which
     /// follows the global mode. Users can force-on or force-off per tab.
     var tokenOptOverride: TabTokenOptOverride = .default
 
     // MARK: - Notification Styling
+
     /// Active notification style for this tab (nil = default appearance)
-    var notificationStyle: TabNotificationStyle? = nil
+    var notificationStyle: TabNotificationStyle?
 
     // MARK: - Tab Switch Optimization: Cached Snapshot
+
     /// Cached screenshot of terminal content for instant visual feedback during tab switch
-    var cachedSnapshot: NSImage? = nil
+    var cachedSnapshot: NSImage?
     /// Last known cursor position for cursor-first rendering
     var lastCursorPosition: CGPoint = .zero
     /// Last known prompt text for cursor placeholder
-    var lastPromptText: String = ""
+    var lastPromptText = ""
 
     /// The primary terminal session (first terminal in split tree)
     var session: TerminalSessionModel? {
@@ -169,13 +173,13 @@ struct OverlayTab: Identifiable, Equatable {
         let mode = FeatureSettings.shared.tokenOptimizationMode
         switch mode {
         case .off: return nil
-        case .allTabs:  return tokenOptOverride == .forceOff ? false : nil
-        case .manual:   return tokenOptOverride == .forceOn ? true : nil
+        case .allTabs: return tokenOptOverride == .forceOff ? false : nil
+        case .manual: return tokenOptOverride == .forceOn ? true : nil
         case .aiOnly:
             switch tokenOptOverride {
-            case .forceOn:  return true
+            case .forceOn: return true
             case .forceOff: return false
-            case .default:  return nil
+            case .default: return nil
             }
         }
     }
@@ -229,8 +233,8 @@ struct OverlayTab: Identifiable, Equatable {
 struct SavedTerminalPaneState: Codable {
     let paneID: String
     let directory: String
-    let scrollbackContent: String?  // last N lines of terminal output
-    let aiResumeCommand: String?  // e.g. "claude --resume abc123"
+    let scrollbackContent: String? // last N lines of terminal output
+    let aiResumeCommand: String? // e.g. "claude --resume abc123"
     let aiProvider: String?
     let aiSessionId: String?
     let lastOutputAt: Date?
@@ -261,12 +265,12 @@ struct SavedTabState: Codable {
     let tabID: String? // Persisted overlay tab ID
     let selectedTabID: String? // Explicit selected marker for stable restore
     let customTitle: String?
-    let color: String  // TabColor.rawValue
+    let color: String // TabColor.rawValue
     let directory: String
-    let selectedIndex: Int?  // non-nil only for the selected tab
-    let tokenOptOverride: String?  // TabTokenOptOverride.rawValue (nil = .default for backwards compat)
-    let scrollbackContent: String?  // backward compatibility (legacy single-pane restore)
-    let aiResumeCommand: String?  // backward compatibility (legacy single-pane restore)
+    let selectedIndex: Int? // non-nil only for the selected tab
+    let tokenOptOverride: String? // TabTokenOptOverride.rawValue (nil = .default for backwards compat)
+    let scrollbackContent: String? // backward compatibility (legacy single-pane restore)
+    let aiResumeCommand: String? // backward compatibility (legacy single-pane restore)
     let aiProvider: String?
     let aiSessionId: String?
     let splitLayout: SavedSplitNode? // split tree including editor panes
@@ -291,24 +295,25 @@ struct ClosedTabEntry {
 final class OverlayTabsModel: ObservableObject {
     @Published var tabs: [OverlayTab]
     @Published var selectedTabID: UUID
-    @Published var isSearchVisible: Bool = false
-    @Published var searchQuery: String = ""
+    @Published var isSearchVisible = false
+    @Published var searchQuery = ""
     @Published var searchResults: [String] = []
-    @Published var searchMatchCount: Int = 0
-    @Published var isCaseSensitive: Bool = false  // Issue #23 fix
-    @Published var isRegexSearch: Bool = false
-    @Published var isSemanticSearch: Bool = false
-    @Published var searchError: String? = nil
-    @Published var isRenameVisible: Bool = false
-    @Published var renameText: String = ""
+    @Published var searchMatchCount = 0
+    @Published var isCaseSensitive = false // Issue #23 fix
+    @Published var isRegexSearch = false
+    @Published var isSemanticSearch = false
+    @Published var searchError: String?
+    @Published var isRenameVisible = false
+    @Published var renameText = ""
     @Published var renameColor: TabColor = .blue
     @Published var suspendedTabIDs: Set<UUID> = []
 
     // MARK: - Tab Switch Optimization State
+
     /// Previous tab index for directional animation
-    @Published var previousTabIndex: Int = 0
+    @Published var previousTabIndex = 0
     /// Whether the terminal content is ready to display (for snapshot swap)
-    @Published var isTerminalReady: Bool = true
+    @Published var isTerminalReady = true
     /// Generation counter for isTerminalReady — prevents stale asyncAfter
     /// callbacks from clobbering the state after rapid tab switches.
     private var terminalReadyGeneration: UInt64 = 0
@@ -316,56 +321,57 @@ final class OverlayTabsModel: ObservableObject {
     private var prewarmingTabIDs: Set<UUID> = []
 
     // MARK: - Tab Bar Recovery
+
     /// Token to force SwiftUI to re-render the tab bar when incremented
-    @Published var tabBarRefreshToken: Int = 0
+    @Published var tabBarRefreshToken = 0
     /// Last reported rendered tab count from the view (for watchdog)
     /// -1 means the view hasn't reported yet (avoids false positive on startup)
     var lastReportedRenderedCount: Int = -1
     /// Last reported tab bar size (for visibility-based recovery)
     var lastReportedTabBarSize: CGSize = .zero
     /// Timestamp of last preference update from the view (for staleness detection)
-    private var lastPreferenceUpdateTime: Date = Date()
+    private var lastPreferenceUpdateTime = Date()
     /// How long without a preference update before considering the view stale
     private let stalenessThreshold: TimeInterval = 20.0
     private let refreshCooldown: TimeInterval = 10.0
     private var lastForcedRefreshAt: Date = .distantPast
-    private var watchdogRecoveryCount: Int = 0
-    private var watchdogSkipCount: Int = 0
-    private var lastWatchdogSummaryAt: Date = Date()
-    private var lastWatchdogReason: String = ""
+    private var watchdogRecoveryCount = 0
+    private var watchdogSkipCount = 0
+    private var lastWatchdogSummaryAt = Date()
+    private var lastWatchdogReason = ""
     /// Timer for watchdog that checks tab bar health
     private var tabBarWatchdogTimer: DispatchSourceTimer?
     /// Counter to limit consecutive watchdog refresh attempts
-    private var watchdogRefreshAttempts: Int = 0
+    private var watchdogRefreshAttempts = 0
     /// Minimum acceptable tab bar width per tab (for visibility detection)
     private let minWidthPerTab: CGFloat = 30
     /// Tracks whether the tab bar is expected to be visible
-    private var isTabBarVisible: Bool = true
+    private var isTabBarVisible = true
     private var lastTabBarVisibilityLogAt: Date = .distantPast
 
     // F13: Broadcast Input
-    @Published var isBroadcastMode: Bool = false
+    @Published var isBroadcastMode = false
     @Published var broadcastExcludedTabIDs: Set<UUID> = []
 
     // F16: Clipboard History
-    @Published var isClipboardHistoryVisible: Bool = false
+    @Published var isClipboardHistoryVisible = false
 
     // F17: Bookmarks
-    @Published var isBookmarkListVisible: Bool = false
+    @Published var isBookmarkListVisible = false
 
     // F21: Snippets
-    @Published var isSnippetManagerVisible: Bool = false
+    @Published var isSnippetManagerVisible = false
 
     // Hover Card
-    @Published var hoverCardTabID: UUID? = nil
+    @Published var hoverCardTabID: UUID?
     @Published var hoverCardAnchorX: CGFloat = 0
     private var hoverCardTimer: DispatchWorkItem?
     private var hoverCardDismissTimer: DispatchWorkItem?
 
     // Task Lifecycle (v1.1)
-    @Published var currentCandidate: TaskCandidate? = nil
-    @Published var currentTask: TrackedTask? = nil
-    @Published var isTaskAssessmentVisible: Bool = false
+    @Published var currentCandidate: TaskCandidate?
+    @Published var currentTask: TrackedTask?
+    @Published var isTaskAssessmentVisible = false
 
     // Reopen Closed Tab (Cmd+Shift+T)
     /// LIFO stack of recently closed tabs (max 10, in-memory only)
@@ -373,11 +379,13 @@ final class OverlayTabsModel: ObservableObject {
     private let maxClosedTabs = 10
 
     /// Whether there are any closed tabs available to reopen
-    var canReopenClosedTab: Bool { !closedTabStack.isEmpty }
+    var canReopenClosedTab: Bool {
+        !closedTabStack.isEmpty
+    }
 
     private var taskCancellables: Set<AnyCancellable> = []
-    private var renameTabID: UUID? = nil
-    private var renameOriginalTitle: String = ""
+    private var renameTabID: UUID?
+    private var renameOriginalTitle = ""
     private var renameOriginalColor: TabColor = .blue
     private var suspendWorkItems: [UUID: DispatchWorkItem] = [:]
     /// Per-pane token for restore-time resume prefills.
@@ -387,8 +395,8 @@ final class OverlayTabsModel: ObservableObject {
     // Reduced from 5.0s to 2.0s — combined with CVDisplayLink pausing, this
     // means background tabs stop rendering 3 seconds sooner, saving significant CPU.
     private var renderSuspensionDelay: TimeInterval = 2.0
-    private var needsFreshTabOnShow: Bool = false
-    private var isDiagnosticsLoggingEnabled: Bool = false
+    private var needsFreshTabOnShow = false
+    private var isDiagnosticsLoggingEnabled = false
     /// Periodic auto-save timer so tab state survives crashes (SIGABRT etc.)
     private var autoSaveTimer: DispatchSourceTimer?
     /// CTO notification observer tokens (stored for cleanup in deinit)
@@ -453,20 +461,20 @@ final class OverlayTabsModel: ObservableObject {
             self?.saveTabState()
         }
         timer.resume()
-        autoSaveTimer = timer
+        self.autoSaveTimer = timer
 
         // CTO: listen for global mode changes and recalculate all tab flags
-        ctoModeObserver = NotificationCenter.default.addObserver(
+        self.ctoModeObserver = NotificationCenter.default.addObserver(
             forName: .tokenOptimizationModeChanged,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             guard let self else { return }
-            let previousMode = self.lastObservedTokenOptimizationMode
+            let previousMode = lastObservedTokenOptimizationMode
             let mode = FeatureSettings.shared.tokenOptimizationMode
             self.lastObservedTokenOptimizationMode = mode
             CTORuntimeMonitor.shared.recordModeChanged(from: previousMode, to: mode)
-            self.recalculateAllCTOFlags()
+            recalculateAllCTOFlags()
             // Also setup/teardown wrappers when mode changes at runtime
             if mode == .off {
                 CTOManager.shared.teardown()
@@ -476,7 +484,7 @@ final class OverlayTabsModel: ObservableObject {
         }
 
         // CTO: refresh tab bar when a session's flag state changes (e.g. AI detected)
-        ctoFlagObserver = NotificationCenter.default.addObserver(
+        self.ctoFlagObserver = NotificationCenter.default.addObserver(
             forName: .ctoFlagRecalculated,
             object: nil,
             queue: .main
@@ -601,12 +609,12 @@ final class OverlayTabsModel: ObservableObject {
                 paneID: paneID.uuidString,
                 directory: dir,
                 scrollbackContent: scrollback,
-                    aiResumeCommand: resumeCommand,
-                    aiProvider: resumeMetadata?.provider,
-                    aiSessionId: resumeMetadata?.sessionId,
-                    lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate)
-                ))
-            }
+                aiResumeCommand: resumeCommand,
+                aiProvider: resumeMetadata?.provider,
+                aiSessionId: resumeMetadata?.sessionId,
+                lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate)
+            ))
+        }
 
         let primaryDirectory = terminalSessions.first?.1.currentDirectory
             ?? tab.session?.currentDirectory
@@ -1113,7 +1121,7 @@ final class OverlayTabsModel: ObservableObject {
     private static let resumeCommandDelaySeconds: TimeInterval = 0.6
     private static let resumeCommandRetryDelaySeconds: TimeInterval = 0.5
     private static let resumeCommandMaxRetryDelay: TimeInterval = 4.0
-    private static let resumeCommandMaxAttempts: Int = 16
+    private static let resumeCommandMaxAttempts = 16
 
     private static func paneStateMap(from states: [SavedTerminalPaneState]?) -> [UUID: SavedTerminalPaneState] {
         guard let states else { return [:] }
@@ -1202,7 +1210,7 @@ final class OverlayTabsModel: ObservableObject {
             finalSelectedID = fallbackSelectedID ?? restoredTabs[0].id
         }
 
-        if selectedID == nil && finalSelectedID != fallbackSelectedID && fallbackSelectedIndex == nil {
+        if selectedID == nil, finalSelectedID != fallbackSelectedID, fallbackSelectedIndex == nil {
             Log.warn("restoreSavedTabs: falling back to first tab because no explicit or legacy selected marker was found")
         }
 
@@ -1272,7 +1280,7 @@ final class OverlayTabsModel: ObservableObject {
         if paneStatesToRestore.count == 1,
            let firstEntry = paneStatesToRestore.first {
             let firstPane = firstEntry.value
-            if firstPane.aiProvider == nil && firstPane.aiSessionId == nil {
+            if firstPane.aiProvider == nil, firstPane.aiSessionId == nil {
                 let legacyCommand = firstPane.aiResumeCommand ?? state.aiResumeCommand
                 paneStatesToRestore[firstEntry.key] = SavedTerminalPaneState(
                     paneID: firstPane.paneID,
@@ -1286,9 +1294,9 @@ final class OverlayTabsModel: ObservableObject {
             }
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.restoreDelaySeconds, execute: { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.restoreDelaySeconds) { [weak self] in
             guard let self else { return }
-            guard let restoredTab = self.tabs.first(where: { $0.id == targetTabID }) else {
+            guard let restoredTab = tabs.first(where: { $0.id == targetTabID }) else {
                 Log.warn("restoreTabState: tab no longer exists for id=\(targetTabID)")
                 return
             }
@@ -1301,7 +1309,7 @@ final class OverlayTabsModel: ObservableObject {
 
             let restoredFocus = state.focusedPaneID.flatMap(UUID.init)
             let activePaneID: UUID = if let restoredFocus,
-                                      restoredTab.splitController.root.paneType(for: restoredFocus) == .terminal {
+                                        restoredTab.splitController.root.paneType(for: restoredFocus) == .terminal {
                 restoredFocus
             } else {
                 restoredTab.splitController.focusedTerminalSessionID() ?? currentSessions[0].0
@@ -1354,7 +1362,7 @@ final class OverlayTabsModel: ObservableObject {
                 paneStatesToRestore[paneID] = effectivePaneState
             }
 
-            let normalizedResumeCommands = resolvedPaneStates.compactMap { (paneID, paneState) -> (UUID, String)? in
+            let normalizedResumeCommands = resolvedPaneStates.compactMap { paneID, paneState -> (UUID, String)? in
                 guard let candidate = Self.normalizedResumeCommand(paneState.aiResumeCommand) else {
                     return nil
                 }
@@ -1403,8 +1411,8 @@ final class OverlayTabsModel: ObservableObject {
                 if let (resumePaneID, resumeCommand) = resumeTarget,
                    resumePaneID == paneID {
                     Log.info("restoreTabState: scheduling resume command for tab=\(targetTabID) pane=\(paneID)")
-                    self.latestRestoreResumeTokenByPaneID[paneID] = restoreToken
-                    self.scheduleResumeCommand(
+                    latestRestoreResumeTokenByPaneID[paneID] = restoreToken
+                    scheduleResumeCommand(
                         command: resumeCommand,
                         targetTabID: targetTabID,
                         paneID: paneID,
@@ -1414,7 +1422,7 @@ final class OverlayTabsModel: ObservableObject {
                     )
                 }
             }
-        })
+        }
     }
 
     private func scheduleResumeCommand(
@@ -1432,20 +1440,20 @@ final class OverlayTabsModel: ObservableObject {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
-            guard self.latestRestoreResumeTokenByPaneID[paneID] == restoreToken else {
+            guard latestRestoreResumeTokenByPaneID[paneID] == restoreToken else {
                 Log.trace("restoreTabState: skipping stale resume prefill for tab=\(targetTabID) pane=\(paneID)")
                 return
             }
 
-            guard let restoredTab = self.tabs.first(where: { $0.id == targetTabID }) else {
+            guard let restoredTab = tabs.first(where: { $0.id == targetTabID }) else {
                 Log.warn("restoreTabState: cannot send resume command for missing tab=\(targetTabID)")
-                self.latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
+                latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
                 return
             }
 
             guard let reResolvedSession = restoredTab.splitController.root.findSession(id: paneID) else {
                 Log.warn("restoreTabState: cannot find pane=\(paneID) for tab=\(targetTabID)")
-                self.latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
+                latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
                 return
             }
 
@@ -1453,7 +1461,7 @@ final class OverlayTabsModel: ObservableObject {
                 if reResolvedSession.existingRustTerminalView == nil {
                     Log.warn("restoreTabState: pane missing terminal view, queueing resume prefill for tab=\(targetTabID) pane=\(paneID)")
                     reResolvedSession.prefillInput(command)
-                    self.latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
+                    latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
                     return
                 }
                 let nextDelay = min(delay + Self.resumeCommandRetryDelaySeconds, Self.resumeCommandMaxRetryDelay)
@@ -1465,7 +1473,7 @@ final class OverlayTabsModel: ObservableObject {
                     retry in \(String(format: "%.2f", nextDelay))s
                     """
                 )
-                self.scheduleResumeCommand(
+                scheduleResumeCommand(
                     command: command,
                     targetTabID: targetTabID,
                     paneID: paneID,
@@ -1478,7 +1486,7 @@ final class OverlayTabsModel: ObservableObject {
 
             // Prefill the command in the active terminal so user can confirm with Enter.
             reResolvedSession.prefillInput(command)
-            self.latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
+            latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
             Log.info("restoreTabState: resume command prefilling for tab=\(targetTabID) pane=\(paneID)")
         }
     }
@@ -1550,6 +1558,7 @@ final class OverlayTabsModel: ObservableObject {
         LogEnhanced.tab("Switching tab", tabId: id, tabCount: tabs.count)
 
         // MARK: - Tab Switch Optimization: Capture state before switching
+
         // 1. Record previous tab index for directional animation
         let oldIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) ?? 0
 
@@ -1598,9 +1607,9 @@ final class OverlayTabsModel: ObservableObject {
         terminalReadyGeneration &+= 1
         let expectedGeneration = terminalReadyGeneration
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
-            guard let self, self.terminalReadyGeneration == expectedGeneration else { return }
-            self.isTerminalReady = true
-            self.logVisualState(reason: "selectTab: terminalReady=true")
+            guard let self, terminalReadyGeneration == expectedGeneration else { return }
+            isTerminalReady = true
+            logVisualState(reason: "selectTab: terminalReady=true")
         }
     }
 
@@ -1649,7 +1658,7 @@ final class OverlayTabsModel: ObservableObject {
 
     /// Clears cached snapshots for tabs far from the current position to limit memory usage
     private func cleanupDistantSnapshots(currentIndex: Int) {
-        for i in 0..<tabs.count {
+        for i in 0 ..< tabs.count {
             if abs(i - currentIndex) > 2 {
                 tabs[i].cachedSnapshot = nil
             }
@@ -1683,8 +1692,8 @@ final class OverlayTabsModel: ObservableObject {
 
         // Re-schedule suspension after a short delay if still not selected
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self, id != self.selectedTabID else { return }
-            self.scheduleSuspension(for: id)
+            guard let self, id != selectedTabID else { return }
+            scheduleSuspension(for: id)
         }
     }
 
@@ -1828,46 +1837,64 @@ final class OverlayTabsModel: ObservableObject {
             }
 
             // Message based on what will happen
-            if isLastTab && !willCloseWindow {
+            if isLastTab, !willCloseWindow {
                 // Last tab with keepWindow behavior - tab is replaced
                 if runningProcessCount == 1 {
-                    alert.informativeText = L("alert.closeTab.runningProcess.replace.message",
-                        "This tab has a running process. The process will be terminated and a new tab will open.")
+                    alert.informativeText = L(
+                        "alert.closeTab.runningProcess.replace.message",
+                        "This tab has a running process. The process will be terminated and a new tab will open."
+                    )
                 } else {
-                    alert.informativeText = L("alert.closeTab.runningProcesses.replace.message",
-                        "This tab has \(runningProcessCount) running processes. All processes will be terminated and a new tab will open.")
+                    alert.informativeText = L(
+                        "alert.closeTab.runningProcesses.replace.message",
+                        "This tab has \(runningProcessCount) running processes. All processes will be terminated and a new tab will open."
+                    )
                 }
             } else if willCloseWindow {
                 // Last tab with closeWindow behavior
                 if runningProcessCount == 1 {
-                    alert.informativeText = L("alert.closeTab.runningProcess.closeWindow.message",
-                        "This tab has a running process. The process will be terminated and the window will close.")
+                    alert.informativeText = L(
+                        "alert.closeTab.runningProcess.closeWindow.message",
+                        "This tab has a running process. The process will be terminated and the window will close."
+                    )
                 } else {
-                    alert.informativeText = L("alert.closeTab.runningProcesses.closeWindow.message",
-                        "This tab has \(runningProcessCount) running processes. All processes will be terminated and the window will close.")
+                    alert.informativeText = L(
+                        "alert.closeTab.runningProcesses.closeWindow.message",
+                        "This tab has \(runningProcessCount) running processes. All processes will be terminated and the window will close."
+                    )
                 }
             } else {
                 // Normal close (multiple tabs exist)
                 if runningProcessCount == 1 {
-                    alert.informativeText = L("alert.closeTab.runningProcess.message",
-                        "This tab has a running process. Closing it will terminate the process.")
+                    alert.informativeText = L(
+                        "alert.closeTab.runningProcess.message",
+                        "This tab has a running process. Closing it will terminate the process."
+                    )
                 } else {
-                    alert.informativeText = L("alert.closeTab.runningProcesses.message",
-                        "This tab has \(runningProcessCount) running processes. Closing it will terminate all processes.")
+                    alert.informativeText = L(
+                        "alert.closeTab.runningProcesses.message",
+                        "This tab has \(runningProcessCount) running processes. Closing it will terminate all processes."
+                    )
                 }
             }
         } else {
             // No running process - only shown when "always warn" is enabled
             alert.messageText = L("alert.closeTab.confirm.title", "Close this tab?")
-            if isLastTab && !willCloseWindow {
-                alert.informativeText = L("alert.closeTab.confirm.replace.message",
-                    "This is the last tab. A new tab will be created.")
+            if isLastTab, !willCloseWindow {
+                alert.informativeText = L(
+                    "alert.closeTab.confirm.replace.message",
+                    "This is the last tab. A new tab will be created."
+                )
             } else if willCloseWindow {
-                alert.informativeText = L("alert.closeTab.confirm.closeWindow.message",
-                    "This is the last tab. The window will be closed.")
+                alert.informativeText = L(
+                    "alert.closeTab.confirm.closeWindow.message",
+                    "This is the last tab. The window will be closed."
+                )
             } else {
-                alert.informativeText = L("alert.closeTab.confirm.message",
-                    "Are you sure you want to close this tab?")
+                alert.informativeText = L(
+                    "alert.closeTab.confirm.message",
+                    "Are you sure you want to close this tab?"
+                )
             }
         }
 
@@ -1876,7 +1903,7 @@ final class OverlayTabsModel: ObservableObject {
         alert.addButton(withTitle: L("button.cancel", "Cancel"))
 
         // Show "Don't ask again" only for the "always warn" mode (not for running process warnings)
-        if isAlwaysWarnMode && !hasRunningProcess {
+        if isAlwaysWarnMode, !hasRunningProcess {
             alert.showsSuppressionButton = true
             alert.suppressionButton?.title = L("alert.closeTab.dontAskAgain", "Don't ask again")
         }
@@ -2080,14 +2107,20 @@ final class OverlayTabsModel: ObservableObject {
                 // Build informative message with process details
                 let processInfo: String
                 if totalProcessCount == 1 {
-                    processInfo = L("alert.closeOtherTabs.process.singular",
-                        "1 running process will be terminated.")
+                    processInfo = L(
+                        "alert.closeOtherTabs.process.singular",
+                        "1 running process will be terminated."
+                    )
                 } else if tabsWithProcesses == 1 {
-                    processInfo = L("alert.closeOtherTabs.processes.oneTab",
-                        "\(totalProcessCount) running processes in 1 tab will be terminated.")
+                    processInfo = L(
+                        "alert.closeOtherTabs.processes.oneTab",
+                        "\(totalProcessCount) running processes in 1 tab will be terminated."
+                    )
                 } else {
-                    processInfo = L("alert.closeOtherTabs.processes.multipleTabs",
-                        "\(totalProcessCount) running processes across \(tabsWithProcesses) tabs will be terminated.")
+                    processInfo = L(
+                        "alert.closeOtherTabs.processes.multipleTabs",
+                        "\(totalProcessCount) running processes across \(tabsWithProcesses) tabs will be terminated."
+                    )
                 }
                 alert.informativeText = processInfo
             } else {
@@ -2099,7 +2132,7 @@ final class OverlayTabsModel: ObservableObject {
             alert.addButton(withTitle: L("button.cancel", "Cancel"))
 
             // Show "Don't ask again" only for "always warn" mode without running processes
-            if warnAlways && totalProcessCount == 0 {
+            if warnAlways, totalProcessCount == 0 {
                 alert.showsSuppressionButton = true
                 alert.suppressionButton?.title = L("alert.closeTab.dontAskAgain", "Don't ask again")
             }
@@ -2304,16 +2337,16 @@ final class OverlayTabsModel: ObservableObject {
         let next: TabTokenOptOverride
         switch mode {
         case .off:
-            return  // Guarded above, but required for exhaustive switch
+            return // Guarded above, but required for exhaustive switch
         case .allTabs:
             // Toggle: default (on) <-> forceOff
             next = (current == .default) ? .forceOff : .default
         case .aiOnly:
             // 3-state cycle: default -> forceOff -> forceOn -> default
             switch current {
-            case .default:  next = .forceOff
+            case .default: next = .forceOff
             case .forceOff: next = .forceOn
-            case .forceOn:  next = .default
+            case .forceOn: next = .default
             }
         case .manual:
             // Toggle: default (off) <-> forceOn
@@ -2415,7 +2448,7 @@ final class OverlayTabsModel: ObservableObject {
 
         // Don't apply notification styling to the tab the user is already looking at —
         // the style is meant to draw attention to background tabs. Clearing (nil) always applies.
-        if style != nil && targetID == selectedTabID {
+        if style != nil, targetID == selectedTabID {
             Log.trace("Skipping notification style for active tab \(targetID)")
             return
         }
@@ -2501,7 +2534,7 @@ final class OverlayTabsModel: ObservableObject {
             } else if let titleColor = style.titleColor {
                 style.borderColor = titleColor
             } else {
-                style.borderColor = .red  // Default border color
+                style.borderColor = .red // Default border color
             }
             // Border dash pattern
             switch config["borderStyle"]?.lowercased() {
@@ -2510,7 +2543,7 @@ final class OverlayTabsModel: ObservableObject {
             case "dashed":
                 style.borderDash = [6, 4]
             default:
-                break  // solid — nil dash
+                break // solid — nil dash
             }
         }
 
@@ -2645,8 +2678,7 @@ final class OverlayTabsModel: ObservableObject {
                 guard let bestActivity else { return nil }
                 return (tab: tab, lastActivity: bestActivity)
             }
-            .sorted { $0.lastActivity > $1.lastActivity }
-            .first?.tab
+            .max(by: { $0.lastActivity < $1.lastActivity })?.tab
 
             if let bestByCwd {
                 Log.info("tabMatchingTool: resolved '\(tool)' via Claude cwd fallback to tab=\(bestByCwd.id)")
@@ -2785,8 +2817,8 @@ final class OverlayTabsModel: ObservableObject {
         lastPreferenceUpdateTime = Date()
         let now = Date()
         let expectedWidth = CGFloat(max(1, tabs.count)) * minWidthPerTab
-        if now.timeIntervalSince(lastTabBarVisibilityLogAt) > 1.0 &&
-            (size.width <= 0 || size.height <= 0 || size.height < 10 || size.width < expectedWidth) {
+        if now.timeIntervalSince(lastTabBarVisibilityLogAt) > 1.0,
+           size.width <= 0 || size.height <= 0 || size.height < 10 || size.width < expectedWidth {
             lastTabBarVisibilityLogAt = now
             let window = overlayWindow
             let frameText = window.map { "windowFrame=\($0.frame.width)x\($0.frame.height) content=\($0.contentLayoutRect.width)x\($0.contentLayoutRect.height)" } ?? "window=none"
@@ -2856,14 +2888,14 @@ final class OverlayTabsModel: ObservableObject {
         var reason = ""
 
         // Check 1: Zero rendered count
-        if expected > 0 && rendered == 0 {
+        if expected > 0, rendered == 0 {
             needsRecovery = true
             reason = "rendered=0, expected=\(expected)"
         }
 
         // Check 2: Tabs rendered but size is suspiciously small (visibility issue)
         // Only check if rendered count seems OK but size suggests invisibility
-        if !needsRecovery && expected > 0 && rendered > 0 {
+        if !needsRecovery, expected > 0, rendered > 0 {
             let minExpectedWidth = CGFloat(expected) * minWidthPerTab
             if size.width < minExpectedWidth || size.height < 10 {
                 needsRecovery = true
@@ -2872,7 +2904,7 @@ final class OverlayTabsModel: ObservableObject {
         }
 
         // Check 3: Rendered count mismatch after a quiet period (stale view without updates).
-        if !needsRecovery && expected > 0 && rendered > 0 && rendered != expected {
+        if !needsRecovery, expected > 0, rendered > 0, rendered != expected {
             let timeSinceLastUpdate = now.timeIntervalSince(lastPreferenceUpdateTime)
             if timeSinceLastUpdate > stalenessThreshold {
                 needsRecovery = true
@@ -3034,7 +3066,7 @@ final class OverlayTabsModel: ObservableObject {
         }
         guard let session = selectedTab?.session else { return }
         let result: TerminalSessionModel.SearchSummary
-        if isSemanticSearch && FeatureSettings.shared.isSemanticSearchEnabled {
+        if isSemanticSearch, FeatureSettings.shared.isSemanticSearchEnabled {
             result = session.updateSemanticSearch(
                 query: searchQuery,
                 maxMatches: 400,
@@ -3282,7 +3314,7 @@ final class OverlayTabsModel: ObservableObject {
     func pasteFromClipboardHistory(_ item: ClipboardHistoryManager.ClipboardItem) {
         ClipboardHistoryManager.shared.paste(item)
         isClipboardHistoryVisible = false
-        paste()  // Paste into terminal
+        paste() // Paste into terminal
     }
 
     // MARK: - F17: Bookmarks
@@ -3423,7 +3455,10 @@ final class OverlayTabsModel: ObservableObject {
         let displayPath = selectedSession?.displayPath() ?? ""
         let selectedSuspended = suspendedTabIDs.contains(selectedTabID)
         let overlayFlags = "search=\(isSearchVisible) rename=\(isRenameVisible) clipboard=\(isClipboardHistoryVisible) bookmarks=\(isBookmarkListVisible) snippets=\(isSnippetManagerVisible) candidate=\(currentCandidate != nil) task=\(currentTask != nil) assessment=\(isTaskAssessmentVisible)"
-        Log.info("Overlay visual state (\(reason)): tabs=\(tabs.count) selectedIndex=\(selectedIndex) selectedID=\(selectedTabID) activeApp=\(activeApp) path=\(displayPath) terminalReady=\(isTerminalReady) suspended=\(suspendedTabIDs.count) selectedSuspended=\(selectedSuspended) renderSuspension=\(isRenderSuspensionEnabled) delay=\(renderSuspensionDelay) overlays[\(overlayFlags)]")
+        Log
+            .info(
+                "Overlay visual state (\(reason)): tabs=\(tabs.count) selectedIndex=\(selectedIndex) selectedID=\(selectedTabID) activeApp=\(activeApp) path=\(displayPath) terminalReady=\(isTerminalReady) suspended=\(suspendedTabIDs.count) selectedSuspended=\(selectedSuspended) renderSuspension=\(isRenderSuspensionEnabled) delay=\(renderSuspensionDelay) overlays[\(overlayFlags)]"
+            )
     }
 
     func insertSnippet(_ entry: SnippetEntry) {
@@ -3460,7 +3495,7 @@ final class OverlayTabsModel: ObservableObject {
 
         // Get current scroll position and line preview
         // This is a simplified version - would need terminal view access
-        let scrollOffset = 0  // Would get from terminal
+        let scrollOffset = 0 // Would get from terminal
         let linePreview = "Bookmark at current position"
 
         BookmarkManager.shared.addBookmark(
@@ -3563,7 +3598,7 @@ final class OverlayTabsModel: ObservableObject {
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] candidates in
                     guard let self else { return }
-                    self.updateCurrentCandidate(from: candidates)
+                    updateCurrentCandidate(from: candidates)
                 }
                 .store(in: &taskCancellables)
 
@@ -3572,7 +3607,7 @@ final class OverlayTabsModel: ObservableObject {
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] tasks in
                     guard let self else { return }
-                    self.updateCurrentTask(from: tasks)
+                    updateCurrentTask(from: tasks)
                 }
                 .store(in: &taskCancellables)
         }

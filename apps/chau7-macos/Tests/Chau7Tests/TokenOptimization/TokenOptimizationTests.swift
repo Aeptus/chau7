@@ -123,7 +123,7 @@ final class TokenOptimizationCoreTests: XCTestCase {
             TestCase(mode: .manual, override: .forceOn, isAIActive: false, expected: true),
             TestCase(mode: .manual, override: .forceOn, isAIActive: true, expected: true),
             TestCase(mode: .manual, override: .forceOff, isAIActive: false, expected: false),
-            TestCase(mode: .manual, override: .forceOff, isAIActive: true, expected: false),
+            TestCase(mode: .manual, override: .forceOff, isAIActive: true, expected: false)
         ]
 
         for tc in cases {
@@ -135,7 +135,7 @@ final class TokenOptimizationCoreTests: XCTestCase {
             XCTAssertEqual(
                 result, tc.expected,
                 "shouldBeActive(mode: \(tc.mode), override: \(tc.override), isAIActive: \(tc.isAIActive)) " +
-                "expected \(tc.expected), got \(result)"
+                    "expected \(tc.expected), got \(result)"
             )
         }
     }
@@ -144,8 +144,11 @@ final class TokenOptimizationCoreTests: XCTestCase {
 
     func testTokenOptimizationModeAllCases() {
         let allCases = TokenOptimizationMode.allCases
-        XCTAssertEqual(allCases.count, 4,
-                       "There should be exactly 4 optimization modes")
+        XCTAssertEqual(
+            allCases.count,
+            4,
+            "There should be exactly 4 optimization modes"
+        )
         XCTAssertTrue(allCases.contains(.off))
         XCTAssertTrue(allCases.contains(.allTabs))
         XCTAssertTrue(allCases.contains(.aiOnly))
@@ -156,8 +159,11 @@ final class TokenOptimizationCoreTests: XCTestCase {
         for mode in TokenOptimizationMode.allCases {
             let data = try JSONEncoder().encode(mode)
             let decoded = try JSONDecoder().decode(TokenOptimizationMode.self, from: data)
-            XCTAssertEqual(decoded, mode,
-                           "Round-trip encoding should preserve mode \(mode)")
+            XCTAssertEqual(
+                decoded,
+                mode,
+                "Round-trip encoding should preserve mode \(mode)"
+            )
         }
     }
 
@@ -165,8 +171,11 @@ final class TokenOptimizationCoreTests: XCTestCase {
 
     func testTabTokenOptOverrideAllCases() {
         let allCases = TabTokenOptOverride.allCases
-        XCTAssertEqual(allCases.count, 3,
-                       "There should be exactly 3 override values")
+        XCTAssertEqual(
+            allCases.count,
+            3,
+            "There should be exactly 3 override values"
+        )
         XCTAssertTrue(allCases.contains(.default))
         XCTAssertTrue(allCases.contains(.forceOn))
         XCTAssertTrue(allCases.contains(.forceOff))
@@ -176,8 +185,11 @@ final class TokenOptimizationCoreTests: XCTestCase {
         for override in TabTokenOptOverride.allCases {
             let data = try JSONEncoder().encode(override)
             let decoded = try JSONDecoder().decode(TabTokenOptOverride.self, from: data)
-            XCTAssertEqual(decoded, override,
-                           "Round-trip encoding should preserve override \(override)")
+            XCTAssertEqual(
+                decoded,
+                override,
+                "Round-trip encoding should preserve override \(override)"
+            )
         }
     }
 
@@ -224,51 +236,69 @@ final class TokenOptimizationCoreTests: XCTestCase {
             "golangci-lint": "golangci-lint",
             "swift": "swift",
             "python": "python",
-            "python3": "python",
+            "python3": "python"
         ]
 
-        XCTAssertEqual(map.count, expectedMappings.count,
-                       "Rewrite map should have exactly \(expectedMappings.count) entries")
+        XCTAssertEqual(
+            map.count,
+            expectedMappings.count,
+            "Rewrite map should have exactly \(expectedMappings.count) entries"
+        )
         for (cmd, sub) in expectedMappings {
-            XCTAssertEqual(map[cmd], sub,
-                           "\(cmd) should map to cto \(sub)")
+            XCTAssertEqual(
+                map[cmd],
+                sub,
+                "\(cmd) should map to cto \(sub)"
+            )
         }
     }
 
     func testRewriteMapAndExecOnlyAreMutuallyExclusive() {
         let rewriteKeys = Set(ctoRewriteMap.keys)
         let overlap = rewriteKeys.intersection(execOnlyCommands)
-        XCTAssertTrue(overlap.isEmpty,
-                      "Rewrite map and exec-only commands should not overlap: \(overlap)")
+        XCTAssertTrue(
+            overlap.isEmpty,
+            "Rewrite map and exec-only commands should not overlap: \(overlap)"
+        )
     }
 
     func testRewriteMapPlusExecOnlyCoversSupportedCommands() {
         let rewriteKeys = Set(ctoRewriteMap.keys)
         let allCovered = rewriteKeys.union(execOnlyCommands)
         let supported = Set(supportedCommands)
-        XCTAssertEqual(allCovered, supported,
-                       "Rewrite map + exec-only should exactly cover supportedCommands")
+        XCTAssertEqual(
+            allCovered,
+            supported,
+            "Rewrite map + exec-only should exactly cover supportedCommands"
+        )
     }
 
     func testSupportedCommandsIsDerivedFromMapAndExecOnly() {
         let commands = Set(supportedCommands)
         let expected = Set(ctoRewriteMap.keys).union(execOnlyCommands)
-        XCTAssertEqual(commands, expected,
-                       "supportedCommands should equal ctoRewriteMap keys ∪ execOnlyCommands")
+        XCTAssertEqual(
+            commands,
+            expected,
+            "supportedCommands should equal ctoRewriteMap keys ∪ execOnlyCommands"
+        )
     }
 
     func testExecOnlyCommandsAreSubset() {
         for cmd in execOnlyCommands {
-            XCTAssertTrue(supportedCommands.contains(cmd),
-                          "exec-only command '\(cmd)' should also be in supportedCommands")
+            XCTAssertTrue(
+                supportedCommands.contains(cmd),
+                "exec-only command '\(cmd)' should also be in supportedCommands"
+            )
         }
     }
 
     func testPipeFilterCommandsAreSubsetOfRewriteMap() {
         let rewriteKeys = Set(ctoRewriteMap.keys)
         for cmd in pipeFilterCommands {
-            XCTAssertTrue(rewriteKeys.contains(cmd),
-                          "pipe-filter command '\(cmd)' should be in ctoRewriteMap")
+            XCTAssertTrue(
+                rewriteKeys.contains(cmd),
+                "pipe-filter command '\(cmd)' should be in ctoRewriteMap"
+            )
         }
     }
 
@@ -287,8 +317,11 @@ final class TokenOptimizationCoreTests: XCTestCase {
 
         let data = try JSONEncoder().encode(stats)
         let decoded = try JSONDecoder().decode(CTOGainStats.self, from: data)
-        XCTAssertEqual(decoded, stats,
-                       "CTOGainStats should round-trip through JSON encoding")
+        XCTAssertEqual(
+            decoded,
+            stats,
+            "CTOGainStats should round-trip through JSON encoding"
+        )
 
         let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
         XCTAssertNotNil(json["total_commands"], "Encoded key should be 'total_commands'")
@@ -336,16 +369,22 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
         let originalPATH = "/usr/bin:/usr/local/bin"
         let result = manager.prependedPATH(original: originalPATH)
         let expected = manager.wrapperBinDir.path + ":" + originalPATH
-        XCTAssertEqual(result, expected,
-                       "prependedPATH should prepend the wrapper bin directory")
+        XCTAssertEqual(
+            result,
+            expected,
+            "prependedPATH should prepend the wrapper bin directory"
+        )
     }
 
     func testPrependedPATHDoesNotDuplicate() {
         let manager = CTOManager.shared
         let pathWithWrapper = manager.wrapperBinDir.path + ":/usr/bin"
         let result = manager.prependedPATH(original: pathWithWrapper)
-        XCTAssertEqual(result, pathWithWrapper,
-                       "prependedPATH should not add a duplicate entry")
+        XCTAssertEqual(
+            result,
+            pathWithWrapper,
+            "prependedPATH should not add a duplicate entry"
+        )
     }
 
     func testPrependedPATHAvoidsFalsePositive() {
@@ -354,8 +393,11 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
         let pathWithSimilar = similar + ":/usr/bin"
         let result = manager.prependedPATH(original: pathWithSimilar)
         let expected = manager.wrapperBinDir.path + ":" + pathWithSimilar
-        XCTAssertEqual(result, expected,
-                       "prependedPATH should not be fooled by a similarly-named directory")
+        XCTAssertEqual(
+            result,
+            expected,
+            "prependedPATH should not be fooled by a similarly-named directory"
+        )
     }
 
     // MARK: - Optimizer Path
@@ -392,8 +434,11 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
         let modeChanged = Notification.Name.tokenOptimizationModeChanged
         let flagRecalculated = Notification.Name.ctoFlagRecalculated
 
-        XCTAssertNotEqual(modeChanged, flagRecalculated,
-                          "The two CTO notification names should be distinct")
+        XCTAssertNotEqual(
+            modeChanged,
+            flagRecalculated,
+            "The two CTO notification names should be distinct"
+        )
         XCTAssertEqual(modeChanged.rawValue, "com.chau7.tokenOptimizationModeChanged")
         XCTAssertEqual(flagRecalculated.rawValue, "com.chau7.ctoFlagRecalculated")
     }
@@ -478,7 +523,7 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
     func testCTORuntimeAssessmentSignals() {
         CTORuntimeMonitor.shared.reset()
 
-        for index in 0..<4 {
+        for index in 0 ..< 4 {
             CTORuntimeMonitor.shared.recordDecision(
                 sessionID: "session-assess-\(index)",
                 mode: .manual,
@@ -503,7 +548,7 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
     func testCTORuntimeDecisionIntervalStats() {
         CTORuntimeMonitor.shared.reset()
 
-        for index in 0..<4 {
+        for index in 0 ..< 4 {
             CTORuntimeMonitor.shared.recordDecision(
                 sessionID: "session-interval-\(index)",
                 mode: .manual,
@@ -514,7 +559,7 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
                 changed: false,
                 reason: .unchanged
             )
-            usleep(15_000)
+            usleep(15000)
         }
 
         let snapshot = CTORuntimeMonitor.shared.snapshot()

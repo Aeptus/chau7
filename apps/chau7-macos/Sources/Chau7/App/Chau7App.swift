@@ -44,7 +44,9 @@ struct Chau7App: App {
             EmptyView()
         }
         .commands {
+
             // MARK: - App Menu
+
             CommandGroup(replacing: .appSettings) {
                 Button(L("Settings...", "Settings...")) {
                     appDelegate.showSettings()
@@ -53,6 +55,7 @@ struct Chau7App: App {
             }
 
             // MARK: - File Menu
+
             CommandGroup(replacing: .newItem) {
                 Button(L("New Window", "New Window")) {
                     appDelegate.newOverlayWindow()
@@ -99,8 +102,8 @@ struct Chau7App: App {
                 .keyboardShortcut("s", modifiers: [.command, .shift])
             }
 
-            CommandGroup(replacing: .saveItem) { }
-            CommandGroup(replacing: .importExport) { }
+            CommandGroup(replacing: .saveItem) {}
+            CommandGroup(replacing: .importExport) {}
 
             CommandGroup(replacing: .printItem) {
                 Button(L("Print...", "Print...")) {
@@ -110,6 +113,7 @@ struct Chau7App: App {
             }
 
             // MARK: - Edit Menu
+
             CommandGroup(replacing: .pasteboard) {
                 Button(L("Cut", "Cut")) {
                     appDelegate.cut()
@@ -184,6 +188,7 @@ struct Chau7App: App {
             }
 
             // MARK: - View Menu
+
             CommandGroup(after: .toolbar) {
                 Button(L("Enter Full Screen", "Enter Full Screen")) {
                     appDelegate.toggleFullScreen()
@@ -234,6 +239,7 @@ struct Chau7App: App {
                 Divider()
 
                 // MARK: - Panes
+
                 Menu("Panes") {
                     Button(L("Split Horizontally", "Split Horizontally")) {
                         appDelegate.splitHorizontally()
@@ -279,6 +285,7 @@ struct Chau7App: App {
             }
 
             // MARK: - Window Menu
+
             CommandGroup(after: .windowSize) {
                 Divider()
 
