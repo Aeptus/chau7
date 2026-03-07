@@ -16,11 +16,14 @@ public protocol RunContentProvider: Sendable {
     /// conversation transcript and extract turns, token usage, model info, and tool calls.
     ///
     /// - Parameters:
+    ///   - runID: The telemetry run's unique ID — use this as the parent ID on all
+    ///     turns and tool calls so they match the runs table foreign key.
     ///   - sessionID: The AI tool's session ID (e.g., Claude's resume ID)
     ///   - cwd: Working directory of the run
     ///   - startedAt: Run start time (for disambiguation when multiple sessions exist)
     /// - Returns: Extracted content, or nil if unavailable
     func extractContent(
+        runID: String,
         sessionID: String?,
         cwd: String,
         startedAt: Date

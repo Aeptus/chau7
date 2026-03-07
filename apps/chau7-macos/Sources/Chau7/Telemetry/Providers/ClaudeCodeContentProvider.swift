@@ -18,7 +18,7 @@ final class ClaudeCodeContentProvider: RunContentProvider {
         return lower.contains("claude") || lower == "anthropic"
     }
 
-    func extractContent(sessionID: String?, cwd: String, startedAt: Date) -> ExtractedRunContent? {
+    func extractContent(runID: String, sessionID: String?, cwd: String, startedAt: Date) -> ExtractedRunContent? {
         guard let sessionID, !sessionID.isEmpty else { return nil }
 
         // Resolve the project directory hash from cwd
@@ -39,7 +39,6 @@ final class ClaudeCodeContentProvider: RunContentProvider {
         var totalInput = 0
         var totalOutput = 0
         var model: String?
-        let runID = sessionID
         var turnIndex = 0
         var callIndex = 0
 

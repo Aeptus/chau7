@@ -121,20 +121,18 @@ final class TelemetryStore {
 
     // MARK: - Write
 
+    /// Insert a new run record. Use finalizeRun() to update it on completion.
+    /// Uses INSERT OR IGNORE — safe to call multiple times for the same run ID.
     func insertRun(_ run: TelemetryRun) {
         queue.async { [weak self] in
             self?._insertRun(run)
         }
     }
 
-    func insertRunSync(_ run: TelemetryRun) {
-        queue.sync { _insertRun(run) }
-    }
-
     private func _insertRun(_ run: TelemetryRun) {
         guard let db else { return }
         let sql = """
-        INSERT OR REPLACE INTO runs
+        INSERT OR IGNORE INTO runs
         (run_id, session_id, tab_id, provider, model, cwd, repo_path,
          started_at, ended_at, duration_ms, exit_status,
          total_input_tokens, total_output_tokens, cost_usd,
@@ -172,6 +170,51 @@ final class TelemetryStore {
         }
     }
 
+    /// Atomically finalize a run and persist its turns + tool calls.
+    /// Uses UPDATE (not INSERT OR REPLACE) to avoid cascading deletes on child rows.
+    func finalizeRun(_ run: TelemetryRun, turns: [TelemetryTurn], toolCalls: [TelemetryToolCall]) {
+        queue.async { [weak self] in
+            guard let self, let db = self.db else { return }
+
+            // Begin transaction — run update + children must be atomic
+            sqlite3_exec(db, "BEGIN", nil, nil, nil)
+
+            // UPDATE the existing run row (never delete/re-insert)
+            let updateSQL = """
+            UPDATE runs SET
+                session_id = ?, model = ?, ended_at = ?, duration_ms = ?, exit_status = ?,
+                total_input_tokens = ?, total_output_tokens = ?, cost_usd = ?,
+                turn_count = ?, raw_transcript_ref = ?, error_message = ?
+            WHERE run_id = ?
+            """
+            var stmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, updateSQL, -1, &stmt, nil) == SQLITE_OK {
+                self.bindText(stmt, 1, run.sessionID)
+                self.bindText(stmt, 2, run.model)
+                self.bindText(stmt, 3, run.endedAt.map { Self.isoString(from: $0) })
+                self.bindInt(stmt, 4, run.durationMs)
+                self.bindInt(stmt, 5, run.exitStatus)
+                self.bindInt(stmt, 6, run.totalInputTokens)
+                self.bindInt(stmt, 7, run.totalOutputTokens)
+                self.bindDouble(stmt, 8, run.costUSD)
+                self.bindInt(stmt, 9, run.turnCount)
+                self.bindText(stmt, 10, run.rawTranscriptRef)
+                self.bindText(stmt, 11, run.errorMessage)
+                self.bindText(stmt, 12, run.id)
+                sqlite3_step(stmt)
+                sqlite3_finalize(stmt)
+            }
+
+            // Insert turns
+            for turn in turns { self._insertTurn(turn) }
+
+            // Insert tool calls
+            for call in toolCalls { self._insertToolCall(call) }
+
+            sqlite3_exec(db, "COMMIT", nil, nil, nil)
+        }
+    }
+
     func insertTurns(_ turns: [TelemetryTurn]) {
         queue.async { [weak self] in
             guard let self else { return }
@@ -182,7 +225,7 @@ final class TelemetryStore {
     private func _insertTurn(_ turn: TelemetryTurn) {
         guard let db else { return }
         let sql = """
-        INSERT OR REPLACE INTO turns
+        INSERT OR IGNORE INTO turns
         (turn_id, run_id, turn_index, role, content, input_tokens, output_tokens,
          tool_calls, timestamp, duration_ms)
         VALUES (?,?,?,?,?,?,?,?,?,?)
@@ -218,7 +261,7 @@ final class TelemetryStore {
     private func _insertToolCall(_ call: TelemetryToolCall) {
         guard let db else { return }
         let sql = """
-        INSERT OR REPLACE INTO tool_calls
+        INSERT OR IGNORE INTO tool_calls
         (call_id, run_id, turn_id, tool_name, arguments, result, status, duration_ms, call_index)
         VALUES (?,?,?,?,?,?,?,?,?)
         """
@@ -239,6 +282,19 @@ final class TelemetryStore {
 
         if sqlite3_step(stmt) != SQLITE_DONE {
             Log.warn("TelemetryStore: insert tool_call failed for \(call.id)")
+        }
+    }
+
+    func updateRunSessionID(_ runID: String, sessionID: String) {
+        queue.async { [weak self] in
+            guard let self, let db = self.db else { return }
+            let sql = "UPDATE runs SET session_id = ? WHERE run_id = ?"
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            defer { sqlite3_finalize(stmt) }
+            self.bindText(stmt, 1, sessionID)
+            self.bindText(stmt, 2, runID)
+            sqlite3_step(stmt)
         }
     }
 
@@ -307,8 +363,10 @@ final class TelemetryStore {
             sql += " WHERE " + clauses.joined(separator: " AND ")
         }
         sql += " ORDER BY started_at DESC"
-        if let limit = filter.limit { sql += " LIMIT \(limit)" }
-        if let offset = filter.offset { sql += " OFFSET \(offset)" }
+        if let limit = filter.limit {
+            sql += " LIMIT \(limit)"
+            if let offset = filter.offset { sql += " OFFSET \(offset)" }
+        }
 
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
@@ -562,13 +620,13 @@ final class TelemetryStore {
         return nil
     }
 
-    private static let isoFormatter: ISO8601DateFormatter = {
+    static let isoFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
 
-    private static func isoString(from date: Date) -> String {
+    static func isoString(from date: Date) -> String {
         isoFormatter.string(from: date)
     }
 
