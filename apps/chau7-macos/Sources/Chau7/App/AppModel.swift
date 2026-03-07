@@ -733,7 +733,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         NotificationManager.shared.notify(for: event)
     }
 
-    func recordEvent(source: AIEventSource, type: String, tool: String, message: String, notify: Bool) {
+    func recordEvent(source: AIEventSource, type: String, tool: String, message: String, notify: Bool, directory: String? = nil) {
         // Sanitize message to remove escape sequences before logging/storing
         let sanitizedMessage = EscapeSequenceSanitizer.sanitizeForLogging(message)
         let event = AIEvent(
@@ -741,7 +741,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             type: type,
             tool: tool,
             message: sanitizedMessage,
-            ts: DateFormatters.nowISO8601()
+            ts: DateFormatters.nowISO8601(),
+            directory: directory
         )
         // Use trace level for high-frequency events, info for important ones
         let isHighFrequency = ["process_started", "process_ended"].contains(type)
@@ -940,7 +941,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 type: event.type.rawValue,
                 tool: event.toolName.isEmpty ? "Claude Code" : event.toolName,
                 message: event.message,
-                ts: DateFormatters.iso8601.string(from: event.timestamp)
+                ts: DateFormatters.iso8601.string(from: event.timestamp),
+                directory: event.cwd.isEmpty ? nil : event.cwd
             )
             self.recentEvents.append(aiEvent)
             self.recentEvents.trimToLast(25)

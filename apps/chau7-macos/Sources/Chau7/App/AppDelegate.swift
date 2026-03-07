@@ -120,6 +120,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         model.bootstrap()
 
+        // Activate persisted security-scoped bookmarks before tabs are restored,
+        // so git detection in ~/Downloads etc. works on the first check.
+        if FeatureSettings.shared.allowProtectedFolderAccess {
+            ProtectedPathPolicy.activatePersistedBookmarks()
+        }
+
         // Initialize status bar controller (replaces MenuBarExtra for multi-monitor support)
         StatusBarController.shared.setup(model: model)
 

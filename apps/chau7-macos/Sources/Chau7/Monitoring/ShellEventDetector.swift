@@ -231,13 +231,15 @@ final class ShellEventDetector {
     // MARK: - Event Emission
 
     private func emitEvent(type: String, message: String) {
+        let dir = lastDirectory
         DispatchQueue.main.async { [weak self] in
             self?.appModel?.recordEvent(
                 source: .shell,
                 type: type,
                 tool: "Shell",
                 message: message,
-                notify: true
+                notify: true,
+                directory: dir
             )
         }
     }

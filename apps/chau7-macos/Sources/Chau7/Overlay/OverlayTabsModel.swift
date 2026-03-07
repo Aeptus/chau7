@@ -375,6 +375,9 @@ final class OverlayTabsModel: ObservableObject {
     private var renameOriginalTitle: String = ""
     private var renameOriginalColor: TabColor = .blue
     private var suspendWorkItems: [UUID: DispatchWorkItem] = [:]
+    /// Per-pane token for restore-time resume prefills.
+    /// Prevents stale delayed retries from writing outdated commands.
+    private var latestRestoreResumeTokenByPaneID: [UUID: String] = [:]
     private var isRenderSuspensionEnabled = false
     // Reduced from 5.0s to 2.0s — combined with CVDisplayLink pausing, this
     // means background tabs stop rendering 3 seconds sooner, saving significant CPU.
@@ -691,29 +694,22 @@ final class OverlayTabsModel: ObservableObject {
     private static func resolveAIResumeMetadataFromSavedState(
         paneState: SavedTerminalPaneState,
         fallbackAIProvider: String?,
-        fallbackAISessionId: String?,
-        directory: String,
-        outputHint: String?,
-        referenceDate: Date? = nil
+        fallbackAISessionId: String?
     ) -> (provider: String, sessionId: String)? {
         let commandMetadata = AIResumeParser.extractMetadata(
             from: paneState.aiResumeCommand ?? ""
         )
-        let explicitProvider = normalizedAIProvider(from: paneState.aiProvider)
+        let resolvedProvider = normalizedAIProvider(from: paneState.aiProvider)
             ?? commandMetadata?.provider
             ?? normalizedAIProvider(from: fallbackAIProvider)
-        let explicitSessionId = normalizeAISessionId(paneState.aiSessionId)
+        let resolvedSessionId = normalizeAISessionId(paneState.aiSessionId)
             ?? commandMetadata?.sessionId
             ?? normalizeAISessionId(fallbackAISessionId)
 
-        return resolveAIResumeMetadata(
-            appName: nil,
-            directory: directory,
-            outputHint: outputHint,
-            explicitAIProvider: explicitProvider,
-            explicitAISessionId: explicitSessionId,
-            referenceDate: referenceDate
-        )
+        guard let resolvedProvider, let resolvedSessionId else {
+            return nil
+        }
+        return (provider: resolvedProvider, sessionId: resolvedSessionId)
     }
 
     private static func normalizedResumeReferenceDate(_ value: Date) -> Date? {
@@ -1321,17 +1317,14 @@ final class OverlayTabsModel: ObservableObject {
                     aiSessionId: nil,
                     lastOutputAt: nil
                 )
-                let shouldFallbackFromTabState = paneStatesToRestore[paneID] == nil
-                let fallbackProvider = shouldFallbackFromTabState ? state.aiProvider : nil
-                let fallbackSessionId = shouldFallbackFromTabState ? state.aiSessionId : nil
+                let shouldUseLegacyTabFallback = paneStatesByID.isEmpty && currentSessions.count == 1
+                let fallbackProvider = shouldUseLegacyTabFallback ? state.aiProvider : nil
+                let fallbackSessionId = shouldUseLegacyTabFallback ? state.aiSessionId : nil
 
                 let resolvedMetadata = Self.resolveAIResumeMetadataFromSavedState(
                     paneState: paneState,
                     fallbackAIProvider: fallbackProvider,
-                    fallbackAISessionId: fallbackSessionId,
-                    directory: paneState.directory,
-                    outputHint: paneState.scrollbackContent,
-                    referenceDate: Self.normalizedResumeReferenceDate(paneState.lastOutputAt)
+                    fallbackAISessionId: fallbackSessionId
                 )
                 let resolvedCommand = Self.buildAIResumeCommand(
                     provider: resolvedMetadata?.provider,
@@ -1362,7 +1355,7 @@ final class OverlayTabsModel: ObservableObject {
                 }
                 return (paneID, candidate)
             }
-            let resumeTarget = normalizedResumeCommands.first(where: { $0.0 == activePaneID }) ?? normalizedResumeCommands.first
+            let resumeTarget = normalizedResumeCommands.first(where: { $0.0 == activePaneID })
             if resumeTarget == nil {
                 Log.info("restoreTabState: no resume command candidate found for tab=\(targetTabID)")
             }
@@ -1399,16 +1392,18 @@ final class OverlayTabsModel: ObservableObject {
                 }
 
                 if !commands.isEmpty {
-                    session.sendInput(commands.joined(separator: " && ") + "\n")
+                    session.sendOrQueueInput(commands.joined(separator: " && ") + "\n")
                 }
 
                 if let (resumePaneID, resumeCommand) = resumeTarget,
                    resumePaneID == paneID {
                     Log.info("restoreTabState: scheduling resume command for tab=\(targetTabID) pane=\(paneID)")
+                    self.latestRestoreResumeTokenByPaneID[paneID] = restoreToken
                     self.scheduleResumeCommand(
                         command: resumeCommand,
                         targetTabID: targetTabID,
                         paneID: paneID,
+                        restoreToken: restoreToken,
                         remainingAttempts: Self.resumeCommandMaxAttempts,
                         delay: Self.resumeCommandDelaySeconds
                     )
@@ -1421,6 +1416,7 @@ final class OverlayTabsModel: ObservableObject {
         command: String,
         targetTabID: UUID,
         paneID: UUID,
+        restoreToken: String,
         remainingAttempts: Int,
         delay: TimeInterval = 0
     ) {
@@ -1431,14 +1427,20 @@ final class OverlayTabsModel: ObservableObject {
 
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
+            guard self.latestRestoreResumeTokenByPaneID[paneID] == restoreToken else {
+                Log.trace("restoreTabState: skipping stale resume prefill for tab=\(targetTabID) pane=\(paneID)")
+                return
+            }
 
             guard let restoredTab = self.tabs.first(where: { $0.id == targetTabID }) else {
                 Log.warn("restoreTabState: cannot send resume command for missing tab=\(targetTabID)")
+                self.latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
                 return
             }
 
             guard let reResolvedSession = restoredTab.splitController.root.findSession(id: paneID) else {
                 Log.warn("restoreTabState: cannot find pane=\(paneID) for tab=\(targetTabID)")
+                self.latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
                 return
             }
 
@@ -1446,6 +1448,7 @@ final class OverlayTabsModel: ObservableObject {
                 if reResolvedSession.existingRustTerminalView == nil {
                     Log.warn("restoreTabState: pane missing terminal view, queueing resume prefill for tab=\(targetTabID) pane=\(paneID)")
                     reResolvedSession.prefillInput(command)
+                    self.latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
                     return
                 }
                 let nextDelay = min(delay + Self.resumeCommandRetryDelaySeconds, Self.resumeCommandMaxRetryDelay)
@@ -1461,6 +1464,7 @@ final class OverlayTabsModel: ObservableObject {
                     command: command,
                     targetTabID: targetTabID,
                     paneID: paneID,
+                    restoreToken: restoreToken,
                     remainingAttempts: remainingAttempts - 1,
                     delay: nextDelay
                 )
@@ -1469,6 +1473,7 @@ final class OverlayTabsModel: ObservableObject {
 
             // Prefill the command in the active terminal so user can confirm with Enter.
             reResolvedSession.prefillInput(command)
+            self.latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
             Log.info("restoreTabState: resume command prefilling for tab=\(targetTabID) pane=\(paneID)")
         }
     }
@@ -2237,9 +2242,13 @@ final class OverlayTabsModel: ObservableObject {
         // Always focus a terminal pane when switching tabs.
         if let terminalID = tab.splitController.focusedTerminalSessionID() {
             tab.splitController.focusedPaneID = terminalID
+            if let focusedSession = tab.splitController.root.findSession(id: terminalID) {
+                focusedSession.focusTerminal(in: window)
+                return
+            }
         }
 
-        tab.session?.focusTerminal(in: window)
+        tab.displaySession?.focusTerminal(in: window)
     }
 
     private func ensureFreshTabIfNeeded() {
@@ -2267,23 +2276,9 @@ final class OverlayTabsModel: ObservableObject {
             focusSelected()
             return
         }
-        selectedTabID = targetID
-
-        // Ensure terminal is visible (recover from stuck isTerminalReady=false)
-        isTerminalReady = true
-
-        // Unsuspend target tab so its terminal view is available for focus
-        cancelSuspension(for: targetID)
-        if suspendedTabIDs.remove(targetID) != nil {
-            Log.info("selectTab(number:): unsuspended tab \(targetID)")
-        }
-
-        focusSelected()
-        updateSuspensionState()
-        updateSnippetContextForSelection()
-        if isSearchVisible {
-            refreshSearch()
-        }
+        // Reuse canonical tab selection path so side effects stay consistent
+        // (notification clear, hover-card dismissal, snapshot/focus behavior).
+        selectTab(id: targetID)
     }
 
     // MARK: - Token Optimization (CTO) Per-Tab Control
@@ -2436,10 +2431,10 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     /// Applies a notification style to a tab based on tool name (used by notification action system)
-    func applyNotificationStyle(forTool tool: String, stylePreset: String, config: [String: String]) {
+    func applyNotificationStyle(forTool tool: String, directory: String? = nil, stylePreset: String, config: [String: String]) {
         dispatchPrecondition(condition: .onQueue(.main))
 
-        guard let tab = tabMatchingTool(tool) else {
+        guard let tab = tabMatchingTool(tool, directory: directory) else {
             Log.info("applyNotificationStyle: No tab found matching tool '\(tool)'")
             return
         }
@@ -2534,8 +2529,8 @@ final class OverlayTabsModel: ObservableObject {
     // MARK: - Notification Action Handlers
 
     /// Finds the tab matching the tool name and selects it.
-    func focusTabByTool(_ tool: String) {
-        guard let tab = tabMatchingTool(tool) else {
+    func focusTabByTool(_ tool: String, directory: String? = nil) {
+        guard let tab = tabMatchingTool(tool, directory: directory) else {
             Log.info("focusTabByTool: No tab found for '\(tool)'")
             return
         }
@@ -2543,8 +2538,8 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     /// Sets a badge on the tab matching the tool name via the unified TabNotificationStyle.
-    func setBadgeByTool(_ tool: String, text: String, color: String) {
-        guard let tab = tabMatchingTool(tool) else {
+    func setBadgeByTool(_ tool: String, directory: String? = nil, text: String, color: String) {
+        guard let tab = tabMatchingTool(tool, directory: directory) else {
             Log.info("setBadgeByTool: No tab found for '\(tool)'")
             return
         }
@@ -2556,12 +2551,12 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     /// Inserts a snippet by ID into the tab matching the tool name.
-    func insertSnippetById(_ snippetId: String, forTool tool: String, autoExecute: Bool) {
+    func insertSnippetById(_ snippetId: String, forTool tool: String, directory: String? = nil, autoExecute: Bool) {
         guard let entry = SnippetManager.shared.entries.first(where: { $0.snippet.id == snippetId }) else {
             Log.warn("insertSnippetById: Snippet '\(snippetId)' not found")
             return
         }
-        if let tab = tabMatchingTool(tool) {
+        if let tab = tabMatchingTool(tool, directory: directory) {
             selectTab(id: tab.id)
         }
         insertSnippet(entry)
@@ -2574,8 +2569,10 @@ final class OverlayTabsModel: ObservableObject {
         return matched.id == selectedTabID
     }
 
-    /// Shared tool→tab matching logic (same 3-priority algorithm as applyNotificationStyle)
-    private func tabMatchingTool(_ tool: String) -> OverlayTab? {
+    /// Shared tool→tab matching logic with optional directory disambiguation.
+    /// When `directory` is provided and multiple tabs match, prefer the tab
+    /// whose terminal session is in (or under) that directory.
+    private func tabMatchingTool(_ tool: String, directory: String? = nil) -> OverlayTab? {
         let candidates = Self.toolMatchCandidates(for: tool)
         guard !candidates.isEmpty else { return nil }
 
@@ -2587,32 +2584,43 @@ final class OverlayTabsModel: ObservableObject {
             }
         }
 
-        // 1) Fast exact match on focused session branding
-        if let tab = tabs.first(where: { matchesCandidate($0.displaySession?.aiDisplayAppName) }) {
-            return tab
+        /// When a directory hint is available, narrow a set of matching tabs
+        /// to the one whose session cwd best matches the event directory.
+        func disambiguate(_ matches: [OverlayTab]) -> OverlayTab? {
+            guard matches.count > 1, let dir = directory?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !dir.isEmpty else {
+                return matches.first
+            }
+            let normalized = URL(fileURLWithPath: dir).standardized.path
+            return matches.first(where: { tab in
+                tab.splitController.terminalSessions.contains { _, session in
+                    let cwd = URL(fileURLWithPath: session.currentDirectory).standardized.path
+                    return cwd == normalized || cwd.hasPrefix(normalized + "/")
+                }
+            }) ?? matches.first
         }
+
+        // 1) Fast exact match on focused session branding
+        let brandMatches = tabs.filter { matchesCandidate($0.displaySession?.aiDisplayAppName) }
+        if !brandMatches.isEmpty { return disambiguate(brandMatches) }
 
         // 2) Match on tab chrome title
-        if let tab = tabs.first(where: { matchesCandidate($0.displayTitle) }) {
-            return tab
-        }
+        let titleMatches = tabs.filter { matchesCandidate($0.displayTitle) }
+        if !titleMatches.isEmpty { return disambiguate(titleMatches) }
 
-        // 3) Deep scan every terminal session in each tab to avoid missing
-        // background panes/focus mismatches.
-        if let tab = tabs.first(where: { tab in
+        // 3) Deep scan every terminal session in each tab
+        let deepMatches = tabs.filter { tab in
             tab.splitController.terminalSessions.contains { _, session in
                 if matchesCandidate(session.aiDisplayAppName) { return true }
                 if matchesCandidate(session.activeAppName) { return true }
-
                 if let provider = AIResumeParser.normalizeProviderName(session.lastAIProvider ?? ""),
                    candidates.contains(provider) {
                     return true
                 }
                 return false
             }
-        }) {
-            return tab
         }
+        if !deepMatches.isEmpty { return disambiguate(deepMatches) }
 
         // 4) Claude-specific fallback: correlate tabs by cwd against live
         // Claude monitor sessions and pick the most recently active one.

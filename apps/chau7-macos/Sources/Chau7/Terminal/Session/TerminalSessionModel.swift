@@ -153,6 +153,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private var retainedRustTerminalView: RustTerminalView?
     /// Prefill command queued when restore/restoration occurs before terminal is ready.
     private var pendingPrefillInput: String?
+    /// Restore commands (cd, scrollback cat) queued when the terminal view hasn't been
+    /// created yet. Flushed on view attachment before the prefill command.
+    private var pendingRestoreInput: String?
     /// Cached snapshot of the last rendered terminal frame, used for instant tab-switch visuals
     /// when the actual NSView has been removed from the hierarchy (distant-tab optimization).
     var lastRenderedSnapshot: NSImage?
@@ -421,24 +424,32 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             }
         }
 
+        flushPendingRestoreInput()
         flushPendingPrefillInputIfReady()
     }
 
     func focusTerminal(in window: NSWindow?, retryCount: Int = 0) {
         guard let window else { return }
-        if let view = rustTerminalView {
-            window.makeFirstResponder(view)
-        } else if retryCount < 3 {
-            // The terminal view may not be attached yet (SwiftUI makeNSView is async).
-            // Retry after a short delay to allow the view lifecycle to complete.
+        let candidateView = rustTerminalView ?? retainedRustTerminalView
+
+        if let view = candidateView,
+           view.window === window,
+           window.makeFirstResponder(view) {
+            return
+        }
+
+        if retryCount < 8 {
+            // The terminal view may exist but not be attached yet after tab switch.
+            // Retry until the selected tab's view is in-window and focusable.
             let attempt = retryCount + 1
-            Log.trace("focusTerminal: view nil for '\(self.title)', retry \(attempt)/3 in 100ms")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            Log.trace("focusTerminal: view not ready for '\(self.title)', retry \(attempt)/8 in 75ms")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.075) { [weak self] in
                 self?.focusTerminal(in: window, retryCount: attempt)
             }
-        } else {
-            Log.warn("focusTerminal: no terminal view available for tab '\(self.title)' after 3 retries")
+            return
         }
+
+        Log.warn("focusTerminal: unable to focus terminal for '\(self.title)' after 8 retries")
     }
 
     // MARK: - Shell Integration (Issue #8 fix)
@@ -1340,7 +1351,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                 type: "finished",
                 tool: self.notificationTabName,
                 message: message,
-                notify: true
+                notify: true,
+                directory: self.currentDirectory
             )
         }
     }
@@ -1998,7 +2010,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             type: type,
             tool: notificationTabName,
             message: message,
-            notify: shouldNotify
+            notify: shouldNotify,
+            directory: currentDirectory
         )
     }
 
@@ -2031,6 +2044,29 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     /// Sends text input to the terminal (used for broadcast mode)
     func sendInput(_ text: String) {
         activeTerminalView?.send(txt: text)
+    }
+
+    /// Queues executable input (e.g. `cd /path\n`) for when the terminal view
+    /// becomes available. Used during tab restore when the view hasn't been
+    /// created yet. If the view already exists, sends immediately.
+    func sendOrQueueInput(_ text: String) {
+        guard !text.isEmpty else { return }
+        if existingRustTerminalView != nil {
+            sendInput(text)
+        } else {
+            if let existing = pendingRestoreInput {
+                pendingRestoreInput = existing + text
+            } else {
+                pendingRestoreInput = text
+            }
+        }
+    }
+
+    private func flushPendingRestoreInput() {
+        guard let text = pendingRestoreInput else { return }
+        guard existingRustTerminalView != nil else { return }
+        pendingRestoreInput = nil
+        sendInput(text)
     }
 
     /// Prefills the terminal input line without executing it.

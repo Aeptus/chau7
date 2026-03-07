@@ -177,6 +177,9 @@ struct NotificationSettings: Equatable {
                 "borderWidth": "2",
                 "borderStyle": "dotted"
             ])
+        ],
+        "ai_coding.idle": [
+            NotificationActionConfig(actionType: .showNotification, enabled: true)
         ]
     ]
 
@@ -281,13 +284,20 @@ private extension FeatureSettings {
             ])
         ]
 
+        // Actions for "idle" triggers (session may be waiting, but no permission-specific styling)
+        let idleActions: [NotificationActionConfig] = [
+            NotificationActionConfig(actionType: .showNotification, enabled: true, config: [:])
+        ]
+
         return [
             // Claude Code triggers
             "claude_code.finished": finishedActions,
             "claude_code.permission": permissionActions,
+            "claude_code.idle": idleActions,
             // Codex triggers
             "codex.finished": finishedActions,
-            "codex.permission": permissionActions
+            "codex.permission": permissionActions,
+            "codex.idle": idleActions
         ]
     }
 }
@@ -1280,6 +1290,12 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(showTabCTOIndicator, forKey: Keys.showTabCTOIndicator) }
     }
 
+    /// Allow toggling per-tab CTO override directly from tab indicator clicks.
+    /// Disable this to prevent accidental misclicks while still showing override state.
+    @Published var allowTabCTOToggle: Bool {
+        didSet { UserDefaults.standard.set(allowTabCTOToggle, forKey: Keys.allowTabCTOToggle) }
+    }
+
     /// Show the broadcast indicator in tabs
     @Published var showTabBroadcastIndicator: Bool {
         didSet { UserDefaults.standard.set(showTabBroadcastIndicator, forKey: Keys.showTabBroadcastIndicator) }
@@ -1799,6 +1815,7 @@ final class FeatureSettings: ObservableObject {
         static let showTabPath = "tabs.display.showPath"
         static let showTabGitIndicator = "tabs.display.showGitIndicator"
         static let showTabCTOIndicator = "tabs.display.showCTOIndicator"
+        static let allowTabCTOToggle = "tabs.display.allowCTOToggle"
         static let showTabBroadcastIndicator = "tabs.display.showBroadcastIndicator"
         static let customTitleOnly = "tabs.display.customTitleOnly"
         // F20
@@ -1977,6 +1994,13 @@ final class FeatureSettings: ObservableObject {
         } else {
             loadedBindings = Self.defaultTriggerActionBindings()
         }
+        var normalizedBindings = loadedBindings
+        if normalizedBindings["claude_code.idle"] == nil {
+            normalizedBindings["claude_code.idle"] = [NotificationActionConfig(actionType: .showNotification, enabled: true)]
+        }
+        if normalizedBindings["codex.idle"] == nil {
+            normalizedBindings["codex.idle"] = [NotificationActionConfig(actionType: .showNotification, enabled: true)]
+        }
 
         let loadedRateLimitConfig: NotificationRateLimiter.Config
         if let data = defaults.data(forKey: Keys.notificationRateLimitConfig),
@@ -2002,6 +2026,10 @@ final class FeatureSettings: ObservableObject {
         } else {
             loadedGroupActionBindings = NotificationSettings.defaultGroupActionBindings
         }
+        var normalizedGroupActionBindings = loadedGroupActionBindings
+        if normalizedGroupActionBindings["ai_coding.idle"] == nil {
+            normalizedGroupActionBindings["ai_coding.idle"] = [NotificationActionConfig(actionType: .showNotification, enabled: true)]
+        }
 
         let loadedGroupConditions: [String: TriggerCondition]
         if let data = defaults.data(forKey: Keys.groupConditions),
@@ -2014,10 +2042,10 @@ final class FeatureSettings: ObservableObject {
         self.notificationSettings = NotificationSettings(
             triggerState: resolvedTriggerState,
             filters: Self.legacyNotificationFilters(from: resolvedTriggerState),
-            triggerActionBindings: loadedBindings,
+            triggerActionBindings: normalizedBindings,
             rateLimitConfig: loadedRateLimitConfig,
             triggerConditions: loadedConditions,
-            groupActionBindings: loadedGroupActionBindings,
+            groupActionBindings: normalizedGroupActionBindings,
             groupConditions: loadedGroupConditions
         )
 
@@ -2083,6 +2111,7 @@ final class FeatureSettings: ObservableObject {
         self.showTabPath = defaults.object(forKey: Keys.showTabPath) as? Bool ?? true
         self.showTabGitIndicator = defaults.object(forKey: Keys.showTabGitIndicator) as? Bool ?? true
         self.showTabCTOIndicator = defaults.object(forKey: Keys.showTabCTOIndicator) as? Bool ?? true
+        self.allowTabCTOToggle = defaults.object(forKey: Keys.allowTabCTOToggle) as? Bool ?? true
         self.showTabBroadcastIndicator = defaults.object(forKey: Keys.showTabBroadcastIndicator) as? Bool ?? true
         self.customTitleOnly = defaults.object(forKey: Keys.customTitleOnly) as? Bool ?? false
 
@@ -2416,6 +2445,7 @@ final class FeatureSettings: ObservableObject {
         var showTabPath: Bool?
         var showTabGitIndicator: Bool?
         var showTabCTOIndicator: Bool?
+        var allowTabCTOToggle: Bool?
         var showTabBroadcastIndicator: Bool?
         var customTitleOnly: Bool?
         var isCopyOnSelectEnabled: Bool
@@ -2504,6 +2534,7 @@ final class FeatureSettings: ObservableObject {
             showTabPath: showTabPath,
             showTabGitIndicator: showTabGitIndicator,
             showTabCTOIndicator: showTabCTOIndicator,
+            allowTabCTOToggle: allowTabCTOToggle,
             showTabBroadcastIndicator: showTabBroadcastIndicator,
             customTitleOnly: customTitleOnly,
             isCopyOnSelectEnabled: isCopyOnSelectEnabled,
@@ -2638,6 +2669,7 @@ final class FeatureSettings: ObservableObject {
         showTabPath = imported.showTabPath ?? true
         showTabGitIndicator = imported.showTabGitIndicator ?? true
         showTabCTOIndicator = imported.showTabCTOIndicator ?? true
+        allowTabCTOToggle = imported.allowTabCTOToggle ?? true
         showTabBroadcastIndicator = imported.showTabBroadcastIndicator ?? true
         customTitleOnly = imported.customTitleOnly ?? false
         isCopyOnSelectEnabled = imported.isCopyOnSelectEnabled
@@ -2754,6 +2786,7 @@ final class FeatureSettings: ObservableObject {
         showTabPath = true
         showTabGitIndicator = true
         showTabCTOIndicator = true
+        allowTabCTOToggle = true
         showTabBroadcastIndicator = true
         customTitleOnly = false
 
@@ -3006,6 +3039,7 @@ extension FeatureSettings {
             showTabPath: true,
             showTabGitIndicator: true,
             showTabCTOIndicator: true,
+            allowTabCTOToggle: true,
             showTabBroadcastIndicator: true,
             customTitleOnly: false,
             isCopyOnSelectEnabled: false,
