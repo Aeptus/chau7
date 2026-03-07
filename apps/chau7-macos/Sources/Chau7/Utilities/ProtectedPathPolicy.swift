@@ -15,18 +15,6 @@ enum ProtectedPathPolicy {
         ]
     }()
 
-    /// TCC-protected roots that should use explicit security-scoped bookmarks.
-    /// We intentionally avoid "probing" these roots in background code because
-    /// repeated probes can trigger prompt loops.
-    private static let bookmarkRequiredRoots: Set<String> = {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return [
-            "\(home)/Downloads",
-            "\(home)/Desktop",
-            "\(home)/Documents"
-        ]
-    }()
-
     static func shouldSkipAutoAccess(path: String) -> Bool {
         guard let root = protectedRoot(for: path) else {
             return false
@@ -88,6 +76,20 @@ enum ProtectedPathPolicy {
         }
     }
 
+    /// Eagerly activate all persisted security-scoped bookmarks.
+    /// Called at launch so git detection in protected folders works on the first check.
+    /// Uses async dispatch to avoid blocking the main thread with bookmark I/O.
+    static func activatePersistedBookmarks() {
+        stateQueue.async {
+            for root in bookmarksByRoot.keys {
+                guard activeSecurityURLs[root] == nil else { continue }
+                if startAccessingBookmark(for: root, source: "launch") {
+                    Log.info("ProtectedPathPolicy: pre-activated bookmark for \(root)")
+                }
+            }
+        }
+    }
+
     static func resetAccessChecks() {
         stateQueue.sync {
             for (_, url) in activeSecurityURLs {
@@ -139,11 +141,6 @@ enum ProtectedPathPolicy {
             if startAccessingBookmark(for: root, source: source) {
                 emitDecisionLogIfNeeded(root: root, allowed: true, source: source, reason: "bookmark")
                 return true
-            }
-
-            if bookmarkRequiredRoots.contains(root) {
-                markDenied(root: root, source: source, reason: "bookmarkRequired")
-                return false
             }
 
             if deniedRoots.contains(root) {

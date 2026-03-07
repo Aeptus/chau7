@@ -92,6 +92,16 @@ struct TabsSettingsView: View {
             .disabled(settings.customTitleOnly)
 
             SettingsToggle(
+                label: L("settings.tabs.allowCTOToggle", "Allow CTO Toggle from Tab Icon"),
+                help: L(
+                    "settings.tabs.allowCTOToggle.help",
+                    "Allow clicking the CTO tab icon to toggle per-tab override. Disable to prevent accidental toggles while keeping override icons visible."
+                ),
+                isOn: $settings.allowTabCTOToggle
+            )
+            .disabled(settings.customTitleOnly || !settings.showTabCTOIndicator)
+
+            SettingsToggle(
                 label: L("settings.tabs.showBroadcastIndicator", "Broadcast Indicator"),
                 help: L("settings.tabs.showBroadcastIndicator.help", "Show the broadcast icon when a tab is included in broadcast mode"),
                 isOn: $settings.showTabBroadcastIndicator

@@ -1,4 +1,5 @@
 import SwiftUI
+import Chau7Core
 
 // MARK: - Tab Hover Card
 
@@ -82,6 +83,13 @@ private struct TabHoverCardContent: View {
     private var aiLogo: Image? {
         guard let appName = session.aiDisplayAppName else { return nil }
         return AIAgentLogo.image(forAppName: appName)
+    }
+
+    private var footerSessionId: String? {
+        guard let raw = session.lastAISessionId else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard AIResumeParser.isValidSessionId(trimmed) else { return nil }
+        return trimmed
     }
 
     var body: some View {
@@ -465,6 +473,16 @@ private struct TabHoverCardContent: View {
             Text(Self.relativeFormatter.localizedString(for: tab.createdAt, relativeTo: Date()))
                 .font(.custom("Avenir Next", size: 11).weight(.medium))
                 .foregroundStyle(.secondary)
+            if let footerSessionId {
+                Text("•")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text(footerSessionId)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
 
             Spacer()
 

@@ -549,11 +549,20 @@ private struct ToolbarTabBarView: View {
         guard draggingTabID == tab.id else { return }
 
         // Tab was closed during drag — abort cleanly
-        guard snapshot.contains(where: { $0.id == tab.id }) else {
+        guard let liveIndex = snapshot.firstIndex(where: { $0.id == tab.id }) else {
             Log.warn("Tab drag aborted: tab \(tab.id) no longer in tabs array")
             draggingTabID = nil
             dragOffset = 0
             return
+        }
+
+        // A background tab may have been closed/added during drag, shifting
+        // indices.  Re-sync dragHomeIndex so slot calculation and moveTab
+        // use a valid starting point.
+        if liveIndex != dragHomeIndex {
+            let delta = liveIndex - dragHomeIndex
+            dragHomeIndex = liveIndex
+            dragCurrentSlot = max(0, min(dragCurrentSlot + delta, snapshot.count - 1))
         }
 
         // Dragged tab follows the cursor directly (no model mutation)
@@ -599,16 +608,15 @@ private struct ToolbarTabBarView: View {
         let from = dragHomeIndex
         let to = dragCurrentSlot
 
-        // Animate the dragged tab to its final slot position
+        // Clear drag visuals and commit reorder in the same animation transaction
+        // so SwiftUI diffs old (offsets + old order) → new (no offsets + new order)
+        // as one smooth move per tab identity.
         withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
             draggingTabID = nil
             dragOffset = 0
-        }
-
-        // Commit the reorder to the model (after clearing drag state so
-        // the ForEach reorder doesn't fight with drag offsets)
-        if from != to {
-            overlayModel.moveTab(fromIndex: from, toIndex: to)
+            if from != to {
+                overlayModel.moveTab(fromIndex: from, toIndex: to)
+            }
         }
 
         Log.info("Tab drag ended: tabID=\(tab.id), from=\(from), to=\(to)")
@@ -1176,6 +1184,60 @@ struct UnifiedTabButton: View {
             && !tab.customTitle!.isEmpty
     }
 
+    // Extracted to reduce type-checker complexity in body.
+    @ViewBuilder
+    private var ctoIndicator: some View {
+        if FeatureSettings.shared.showTabCTOIndicator
+            && FeatureSettings.shared.tokenOptimizationMode != .off {
+            let ctoToggleEnabled = FeatureSettings.shared.allowTabCTOToggle
+            if let overrideState = tab.optimizerOverrideState {
+                if ctoToggleEnabled {
+                    Button(action: { onToggleTokenOpt?() }) {
+                        ctoIcon(active: overrideState)
+                    }
+                    .buttonStyle(.plain)
+                    .help(overrideState
+                        ? L("cto.tab.active", "Token optimization active (click to toggle)")
+                        : L("cto.tab.inactive", "Token optimization inactive (click to toggle)"))
+                    .accessibilityLabel(overrideState
+                        ? L("cto.tab.a11y.active", "Token optimization on")
+                        : L("cto.tab.a11y.inactive", "Token optimization off"))
+                } else {
+                    ctoIcon(active: overrideState)
+                        .help(overrideState
+                            ? L("cto.tab.active.readonly", "Token optimization override active")
+                            : L("cto.tab.inactive.readonly", "Token optimization override inactive"))
+                }
+            } else if ctoToggleEnabled {
+                Button(action: { onToggleTokenOpt?() }) {
+                    Color.clear.frame(width: 14, height: 14)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(L("cto.tab.toggle", "Click to override token optimization for this tab"))
+                .accessibilityLabel(L("cto.tab.a11y.default", "Token optimization default"))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func ctoIcon(active: Bool) -> some View {
+        if active {
+            Image(systemName: "wand.and.stars")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.yellow)
+        } else {
+            ZStack {
+                Image(systemName: "wand.and.stars")
+                Rectangle()
+                    .frame(width: 1.5, height: 14)
+                    .rotationEffect(.degrees(-45))
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.red)
+        }
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             // Session-dependent content (icon, title, path, git) in an observing subview
@@ -1222,43 +1284,7 @@ struct UnifiedTabButton: View {
                 }
 
                 // CTO: Token optimization indicator (exception-only badge)
-                if FeatureSettings.shared.showTabCTOIndicator
-                    && FeatureSettings.shared.tokenOptimizationMode != .off {
-                    if let overrideState = tab.optimizerOverrideState {
-                        Button(action: { onToggleTokenOpt?() }) {
-                            if overrideState {
-                                Image(systemName: "wand.and.stars")
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(.yellow)
-                            } else {
-                                ZStack {
-                                    Image(systemName: "wand.and.stars")
-                                    Rectangle()
-                                        .frame(width: 1.5, height: 14)
-                                        .rotationEffect(.degrees(-45))
-                                }
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(.red)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .help(overrideState
-                            ? L("cto.tab.active", "Token optimization active (click to toggle)")
-                            : L("cto.tab.inactive", "Token optimization inactive (click to toggle)"))
-                        .accessibilityLabel(overrideState
-                            ? L("cto.tab.a11y.active", "Token optimization on")
-                            : L("cto.tab.a11y.inactive", "Token optimization off"))
-                    } else {
-                        // Invisible tap target so toggle still works on default-state tabs
-                        Button(action: { onToggleTokenOpt?() }) {
-                            Color.clear.frame(width: 14, height: 14)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help(L("cto.tab.toggle", "Click to override token optimization for this tab"))
-                        .accessibilityLabel(L("cto.tab.a11y.default", "Token optimization default"))
-                    }
-                }
+                ctoIndicator
 
                 // Git indicator — observed via TabSessionContent, keep fallback here
                 if FeatureSettings.shared.showTabGitIndicator && (tab.displaySession?.isGitRepo ?? false) {

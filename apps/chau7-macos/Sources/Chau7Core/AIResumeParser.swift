@@ -59,10 +59,14 @@ public enum AIResumeParser {
         return nil
     }
 
-    /// Validates that a string looks like a plausible session ID
-    /// (non-empty, alphanumeric with hyphens/underscores).
+    /// Validates that a string looks like a plausible session ID.
+    /// Claude and Codex use standard UUIDs (36 chars). The length cap
+    /// prevents corrupted IDs (e.g. prompt text concatenated after the UUID)
+    /// from passing validation and poisoning saved state.
     public static func isValidSessionId(_ sessionId: String) -> Bool {
-        !sessionId.isEmpty && sessionId.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+        let count = sessionId.count
+        guard count >= 1, count <= 36 else { return false }
+        return sessionId.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
     }
 
     /// Picks the best session match from multiple candidates using temporal proximity.

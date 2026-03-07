@@ -57,6 +57,7 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sen
 ///   like `"Write"`, `"Bash"`; other sources may use different conventions)
 /// - `message`: Human-readable detail from the source
 /// - `ts`: ISO8601 timestamp string
+/// - `directory`: Optional working directory for tab disambiguation
 public struct AIEvent: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let source: AIEventSource
@@ -64,23 +65,26 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
     public let tool: String
     public let message: String
     public let ts: String
+    public let directory: String?
 
-    public init(source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String) {
+    public init(source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String, directory: String? = nil) {
         self.id = UUID()
         self.source = source
         self.type = type
         self.tool = tool
         self.message = message
         self.ts = ts
+        self.directory = directory
     }
 
-    public init(id: UUID, source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String) {
+    public init(id: UUID, source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String, directory: String? = nil) {
         self.id = id
         self.source = source
         self.type = type
         self.tool = tool
         self.message = message
         self.ts = ts
+        self.directory = directory
     }
 
     /// Returns the notification title for this event.
@@ -195,6 +199,8 @@ public enum AIEventParser {
         let message = try getString("message", default: "")
         let ts = try getString("ts", default: DateFormatters.nowISO8601())
 
-        return AIEvent(source: source, type: type, tool: tool, message: message, ts: ts)
+        let directory = dict["directory"] as? String ?? dict["cwd"] as? String
+
+        return AIEvent(source: source, type: type, tool: tool, message: message, ts: ts, directory: directory)
     }
 }
