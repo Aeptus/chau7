@@ -38,8 +38,10 @@ final class FeatureSettingsTests: XCTestCase {
 
     func testDefaultColorSchemeName() {
         let settings = FeatureSettings.shared
-        XCTAssertFalse(settings.colorSchemeName.isEmpty,
-            "colorSchemeName should not be empty")
+        XCTAssertFalse(
+            settings.colorSchemeName.isEmpty,
+            "colorSchemeName should not be empty"
+        )
     }
 
     func testCurrentColorSchemeIsNotNil() {
@@ -54,8 +56,10 @@ final class FeatureSettingsTests: XCTestCase {
     func testDefaultShellType() {
         let settings = FeatureSettings.shared
         // Should be one of the valid ShellType cases
-        XCTAssertNotNil(ShellType(rawValue: settings.shellType.rawValue),
-            "shellType should be a valid ShellType case")
+        XCTAssertNotNil(
+            ShellType(rawValue: settings.shellType.rawValue),
+            "shellType should be a valid ShellType case"
+        )
     }
 
     func testDefaultCustomShellPath() {
@@ -72,16 +76,20 @@ final class FeatureSettingsTests: XCTestCase {
     func testDefaultLsColorsEnabled() {
         let settings = FeatureSettings.shared
         // Default is true
-        XCTAssertTrue(settings.isLsColorsEnabled || !settings.isLsColorsEnabled,
-            "isLsColorsEnabled should be a valid Bool")
+        XCTAssertTrue(
+            settings.isLsColorsEnabled || !settings.isLsColorsEnabled,
+            "isLsColorsEnabled should be a valid Bool"
+        )
     }
 
     // MARK: - Keyboard Shortcuts Defaults
 
     func testDefaultCustomShortcutsNotEmpty() {
         let settings = FeatureSettings.shared
-        XCTAssertFalse(settings.customShortcuts.isEmpty,
-            "customShortcuts should not be empty on a fresh instance")
+        XCTAssertFalse(
+            settings.customShortcuts.isEmpty,
+            "customShortcuts should not be empty on a fresh instance"
+        )
     }
 
     func testDefaultShortcutsContainNewTab() {
@@ -116,8 +124,10 @@ final class FeatureSettingsTests: XCTestCase {
     func testShortcutHelperHintDefault() {
         let settings = FeatureSettings.shared
         // Default is true
-        XCTAssertTrue(settings.isShortcutHelperHintEnabled || !settings.isShortcutHelperHintEnabled,
-            "isShortcutHelperHintEnabled should be a valid Bool")
+        XCTAssertTrue(
+            settings.isShortcutHelperHintEnabled || !settings.isShortcutHelperHintEnabled,
+            "isShortcutHelperHintEnabled should be a valid Bool"
+        )
     }
 
     // MARK: - Tab Behavior Defaults
@@ -129,8 +139,10 @@ final class FeatureSettingsTests: XCTestCase {
 
     func testDefaultNewTabPosition() {
         let settings = FeatureSettings.shared
-        XCTAssertFalse(settings.newTabPosition.isEmpty,
-            "newTabPosition should not be empty")
+        XCTAssertFalse(
+            settings.newTabPosition.isEmpty,
+            "newTabPosition should not be empty"
+        )
     }
 
     func testDefaultAlwaysShowTabBar() {
@@ -157,45 +169,45 @@ final class FeatureSettingsTests: XCTestCase {
 
         // These are all Bool @Published properties. Verify they are accessible
         // and don't crash. Each default is documented in init().
-        _ = settings.isAutoTabThemeEnabled       // default: true
-        _ = settings.isCopyOnSelectEnabled       // default: true
-        _ = settings.isLineTimestampsEnabled     // default: false
-        _ = settings.showTabIcons                // default: true
-        _ = settings.showTabPath                 // default: true
-        _ = settings.showTabGitIndicator         // default: true
-        _ = settings.showTabCTOIndicator         // default: true
-        _ = settings.showTabBroadcastIndicator   // default: true
-        _ = settings.customTitleOnly             // default: false
-        _ = settings.isLastCommandBadgeEnabled   // default: true
-        _ = settings.isCmdClickPathsEnabled      // default: true
+        _ = settings.isAutoTabThemeEnabled // default: true
+        _ = settings.isCopyOnSelectEnabled // default: true
+        _ = settings.isLineTimestampsEnabled // default: false
+        _ = settings.showTabIcons // default: true
+        _ = settings.showTabPath // default: true
+        _ = settings.showTabGitIndicator // default: true
+        _ = settings.showTabCTOIndicator // default: true
+        _ = settings.showTabBroadcastIndicator // default: true
+        _ = settings.customTitleOnly // default: false
+        _ = settings.isLastCommandBadgeEnabled // default: true
+        _ = settings.isCmdClickPathsEnabled // default: true
         _ = settings.cmdClickOpensInternalEditor // default: true
-        _ = settings.isOptionClickCursorEnabled  // default: true
-        _ = settings.isMouseReportingEnabled     // default: false
-        _ = settings.isRustTerminalEnabled       // default: true
-        _ = settings.useMetalRenderer            // default: true
-        _ = settings.isClickToPositionEnabled    // default: true
-        _ = settings.isBroadcastEnabled          // default: false
-        _ = settings.isClipboardHistoryEnabled   // default: true
-        _ = settings.isBookmarksEnabled          // default: true
-        _ = settings.isSnippetsEnabled           // default: true
-        _ = settings.isRepoSnippetsEnabled       // default: true
-        _ = settings.isSyntaxHighlightEnabled    // default: true
-        _ = settings.isClickableURLsEnabled      // default: true
-        _ = settings.isInlineImagesEnabled       // default: true
-        _ = settings.isJSONPrettyPrintEnabled    // default: false
-        _ = settings.isSemanticSearchEnabled     // default: false
-        _ = settings.isSplitPanesEnabled         // default: true
-        _ = settings.isLocalEchoEnabled          // default: false
-        _ = settings.isSmartScrollEnabled        // default: true
-        _ = settings.bellEnabled                 // default: true
-        _ = settings.cursorBlink                 // default: true
-        _ = settings.isAPIAnalyticsEnabled       // default: false
-        _ = settings.apiAnalyticsLogPrompts      // default: false
-        _ = settings.isRemoteEnabled             // default: false
-        _ = settings.isTmuxIntegrationEnabled    // default: false
-        _ = settings.isTmuxAutoAttachEnabled     // default: false
-        _ = settings.errorExplainEnabled         // default: false
-        _ = settings.isCTOEnabled                // default: false
+        _ = settings.isOptionClickCursorEnabled // default: true
+        _ = settings.isMouseReportingEnabled // default: false
+        _ = settings.isRustTerminalEnabled // default: true
+        _ = settings.useMetalRenderer // default: true
+        _ = settings.isClickToPositionEnabled // default: true
+        _ = settings.isBroadcastEnabled // default: false
+        _ = settings.isClipboardHistoryEnabled // default: true
+        _ = settings.isBookmarksEnabled // default: true
+        _ = settings.isSnippetsEnabled // default: true
+        _ = settings.isRepoSnippetsEnabled // default: true
+        _ = settings.isSyntaxHighlightEnabled // default: true
+        _ = settings.isClickableURLsEnabled // default: true
+        _ = settings.isInlineImagesEnabled // default: true
+        _ = settings.isJSONPrettyPrintEnabled // default: false
+        _ = settings.isSemanticSearchEnabled // default: false
+        _ = settings.isSplitPanesEnabled // default: true
+        _ = settings.isLocalEchoEnabled // default: false
+        _ = settings.isSmartScrollEnabled // default: true
+        _ = settings.bellEnabled // default: true
+        _ = settings.cursorBlink // default: true
+        _ = settings.isAPIAnalyticsEnabled // default: false
+        _ = settings.apiAnalyticsLogPrompts // default: false
+        _ = settings.isRemoteEnabled // default: false
+        _ = settings.isTmuxIntegrationEnabled // default: false
+        _ = settings.isTmuxAutoAttachEnabled // default: false
+        _ = settings.errorExplainEnabled // default: false
+        _ = settings.isCTOEnabled // default: false
     }
 
     // MARK: - Numeric Defaults
@@ -209,7 +221,7 @@ final class FeatureSettingsTests: XCTestCase {
     func testDefaultRestoredScrollbackLines() {
         let settings = FeatureSettings.shared
         XCTAssertGreaterThanOrEqual(settings.restoredScrollbackLines, 0)
-        XCTAssertLessThanOrEqual(settings.restoredScrollbackLines, 10_000)
+        XCTAssertLessThanOrEqual(settings.restoredScrollbackLines, 10000)
     }
 
     func testDefaultClipboardHistoryMaxItems() {
@@ -239,8 +251,10 @@ final class FeatureSettingsTests: XCTestCase {
 
     func testDefaultTimestampFormat() {
         let settings = FeatureSettings.shared
-        XCTAssertFalse(settings.timestampFormat.isEmpty,
-            "timestampFormat should default to a non-empty format string")
+        XCTAssertFalse(
+            settings.timestampFormat.isEmpty,
+            "timestampFormat should default to a non-empty format string"
+        )
     }
 
     func testDefaultKeybindingPreset() {
@@ -292,8 +306,10 @@ final class FeatureSettingsTests: XCTestCase {
             modifiers: existingShortcut.modifiers
         )
         let conflicts = settings.shortcutConflicts(for: conflicting)
-        XCTAssertTrue(conflicts.contains(where: { $0.action == existingShortcut.action }),
-            "Should detect conflict with existing shortcut")
+        XCTAssertTrue(
+            conflicts.contains(where: { $0.action == existingShortcut.action }),
+            "Should detect conflict with existing shortcut"
+        )
     }
 
     func testApplyKeybindingPresetVim() {
@@ -350,8 +366,10 @@ final class FeatureSettingsTests: XCTestCase {
 
     func testDefaultDangerousCommandPatternsNotEmpty() {
         let settings = FeatureSettings.shared
-        XCTAssertFalse(settings.dangerousCommandPatterns.isEmpty,
-            "dangerousCommandPatterns should have default patterns")
+        XCTAssertFalse(
+            settings.dangerousCommandPatterns.isEmpty,
+            "dangerousCommandPatterns should have default patterns"
+        )
     }
 
     func testDangerousCommandPatternsContainCommonThreats() {

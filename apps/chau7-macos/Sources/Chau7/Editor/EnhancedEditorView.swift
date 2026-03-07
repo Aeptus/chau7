@@ -175,7 +175,7 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
         // Reset to default style
         let defaultAttrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedSystemFont(ofSize: CGFloat(parent.config.fontSize), weight: .regular),
-            .foregroundColor: NSColor.textColor,
+            .foregroundColor: NSColor.textColor
         ]
         storage.setAttributes(defaultAttrs, range: NSRange(location: 0, length: text.count))
 
@@ -216,7 +216,7 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
 
         // Count leading whitespace from the previous line
         let indent = line.prefix(while: { $0 == " " || $0 == "\t" })
-        if !indent.isEmpty && nsText.substring(with: NSRange(location: cursorPos - 1, length: 1)) == "\n" {
+        if !indent.isEmpty, nsText.substring(with: NSRange(location: cursorPos - 1, length: 1)) == "\n" {
             textView.insertText(String(indent), replacementRange: textView.selectedRange())
         }
     }
@@ -268,10 +268,10 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
     private func findMatchingBracketForward(in text: String, from pos: Int, open: Character, close: Character) -> Int? {
         let chars = Array(text)
         var depth = 0
-        for i in pos..<chars.count {
+        for i in pos ..< chars.count {
             if chars[i] == open { depth += 1 }
             if chars[i] == close { depth -= 1 }
-            if depth == 0 && i != pos { return i }
+            if depth == 0, i != pos { return i }
         }
         return nil
     }
@@ -283,7 +283,7 @@ class EditorCoordinator: NSObject, NSTextViewDelegate {
         for i in stride(from: pos, through: 0, by: -1) {
             if chars[i] == close { depth += 1 }
             if chars[i] == open { depth -= 1 }
-            if depth == 0 && i != pos { return i }
+            if depth == 0, i != pos { return i }
         }
         return nil
     }

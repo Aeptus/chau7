@@ -12,8 +12,8 @@ struct SearchableSetting: Identifiable {
     func matches(_ query: String) -> Bool {
         let lowercased = query.lowercased()
         return title.lowercased().contains(lowercased) ||
-               description.lowercased().contains(lowercased) ||
-               keywords.contains { $0.lowercased().contains(lowercased) }
+            description.lowercased().contains(lowercased) ||
+            keywords.contains { $0.lowercased().contains(lowercased) }
     }
 }
 
@@ -34,27 +34,29 @@ enum SettingsSectionGroup: String, CaseIterable, Identifiable {
     case integrations
     case monitoring
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var title: String {
         switch self {
-        case .essentials:        return L("settings.group.essentials", "ESSENTIALS")
-        case .lookAndFeel:       return L("settings.group.lookAndFeel", "LOOK & FEEL")
-        case .terminal:          return L("settings.group.terminal", "TERMINAL")
+        case .essentials: return L("settings.group.essentials", "ESSENTIALS")
+        case .lookAndFeel: return L("settings.group.lookAndFeel", "LOOK & FEEL")
+        case .terminal: return L("settings.group.terminal", "TERMINAL")
         case .inputProductivity: return L("settings.group.inputProductivity", "INPUT & PRODUCTIVITY")
-        case .integrations:      return L("settings.group.integrations", "INTEGRATIONS")
-        case .monitoring:        return L("settings.group.monitoring", "MONITORING")
+        case .integrations: return L("settings.group.integrations", "INTEGRATIONS")
+        case .monitoring: return L("settings.group.monitoring", "MONITORING")
         }
     }
 
     var sections: [SettingsSection] {
         switch self {
-        case .essentials:        return [.general, .profilesBackup, .about]
-        case .lookAndFeel:       return [.fontColors, .display, .tabs]
-        case .terminal:          return [.shell, .scrollbackPerf, .dangerousCommands, .graphics, .tmux]
+        case .essentials: return [.general, .profilesBackup, .about]
+        case .lookAndFeel: return [.fontColors, .display, .tabs]
+        case .terminal: return [.shell, .scrollbackPerf, .dangerousCommands, .graphics, .tmux]
         case .inputProductivity: return [.keyboardMouse, .snippetsTools]
-        case .integrations:      return [.aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy]
-        case .monitoring:        return [.notifications, .logsHistory]
+        case .integrations: return [.aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy]
+        case .monitoring: return [.notifications, .logsHistory]
         }
     }
 }
@@ -89,80 +91,82 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case notifications
     case logsHistory
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var title: String {
         switch self {
-        case .general:           return L("settings.general", "General")
-        case .profilesBackup:    return L("settings.profilesBackup", "Profiles & Backup")
-        case .about:             return L("settings.about", "About")
-        case .fontColors:        return L("settings.fontColors", "Font & Colors")
-        case .display:           return L("settings.display", "Display")
-        case .tabs:              return L("settings.tabs", "Tabs")
-        case .shell:             return L("settings.shell", "Shell")
-        case .scrollbackPerf:    return L("settings.scrollbackPerf", "Scrollback & Performance")
+        case .general: return L("settings.general", "General")
+        case .profilesBackup: return L("settings.profilesBackup", "Profiles & Backup")
+        case .about: return L("settings.about", "About")
+        case .fontColors: return L("settings.fontColors", "Font & Colors")
+        case .display: return L("settings.display", "Display")
+        case .tabs: return L("settings.tabs", "Tabs")
+        case .shell: return L("settings.shell", "Shell")
+        case .scrollbackPerf: return L("settings.scrollbackPerf", "Scrollback & Performance")
         case .dangerousCommands: return L("settings.dangerousCommands", "Dangerous Commands")
-        case .graphics:          return L("settings.graphics", "Graphics")
-        case .tmux:              return L("settings.tmux", "Tmux")
-        case .keyboardMouse:     return L("settings.keyboardMouse", "Keyboard & Mouse")
-        case .snippetsTools:     return L("settings.snippetsTools", "Snippets & Tools")
-        case .aiDetection:       return L("settings.aiDetection", "AI Detection")
+        case .graphics: return L("settings.graphics", "Graphics")
+        case .tmux: return L("settings.tmux", "Tmux")
+        case .keyboardMouse: return L("settings.keyboardMouse", "Keyboard & Mouse")
+        case .snippetsTools: return L("settings.snippetsTools", "Snippets & Tools")
+        case .aiDetection: return L("settings.aiDetection", "AI Detection")
         case .tokenOptimization: return L("settings.tokenOptimization", "Token Optimization (CTO)")
-        case .mcpControl:        return L("settings.mcpControl", "MCP Control")
-        case .remoteControl:     return L("settings.remoteControl", "Remote Control")
-        case .apiProxy:          return L("settings.apiProxy", "API Proxy")
-        case .notifications:     return L("settings.notifications", "Notifications")
-        case .logsHistory:       return L("settings.logsHistory", "Logs & History")
+        case .mcpControl: return L("settings.mcpControl", "MCP Control")
+        case .remoteControl: return L("settings.remoteControl", "Remote Control")
+        case .apiProxy: return L("settings.apiProxy", "API Proxy")
+        case .notifications: return L("settings.notifications", "Notifications")
+        case .logsHistory: return L("settings.logsHistory", "Logs & History")
         }
     }
 
     var systemImage: String {
         switch self {
-        case .general:           return "gearshape"
-        case .profilesBackup:    return "person.2.fill"
-        case .about:             return "info.circle"
-        case .fontColors:        return "paintbrush"
-        case .display:           return "eye"
-        case .tabs:              return "rectangle.stack"
-        case .shell:             return "terminal"
-        case .scrollbackPerf:    return "gauge.with.dots.needle.33percent"
+        case .general: return "gearshape"
+        case .profilesBackup: return "person.2.fill"
+        case .about: return "info.circle"
+        case .fontColors: return "paintbrush"
+        case .display: return "eye"
+        case .tabs: return "rectangle.stack"
+        case .shell: return "terminal"
+        case .scrollbackPerf: return "gauge.with.dots.needle.33percent"
         case .dangerousCommands: return "exclamationmark.triangle"
-        case .graphics:          return "photo"
-        case .tmux:              return "rectangle.split.2x1"
-        case .keyboardMouse:     return "keyboard"
-        case .snippetsTools:     return "bolt.fill"
-        case .aiDetection:       return "sparkles"
+        case .graphics: return "photo"
+        case .tmux: return "rectangle.split.2x1"
+        case .keyboardMouse: return "keyboard"
+        case .snippetsTools: return "bolt.fill"
+        case .aiDetection: return "sparkles"
         case .tokenOptimization: return "bolt.horizontal.circle"
-        case .mcpControl:        return "face.dashed"
-        case .remoteControl:     return "antenna.radiowaves.left.and.right"
-        case .apiProxy:          return "network"
-        case .notifications:     return "bell.badge"
-        case .logsHistory:       return "doc.text.magnifyingglass"
+        case .mcpControl: return "face.dashed"
+        case .remoteControl: return "antenna.radiowaves.left.and.right"
+        case .apiProxy: return "network"
+        case .notifications: return "bell.badge"
+        case .logsHistory: return "doc.text.magnifyingglass"
         }
     }
 
     var description: String {
         switch self {
-        case .general:           return L("settings.general.description", "Startup, language, and config file")
-        case .profilesBackup:    return L("settings.profilesBackup.description", "Profiles, auto-switch, iCloud sync, and backup")
-        case .about:             return L("settings.about.description", "Version information and links")
-        case .fontColors:        return L("settings.fontColors.description", "Font, color scheme, opacity, and theme")
-        case .display:           return L("settings.display.description", "Syntax highlighting, URLs, images, and layout")
-        case .tabs:              return L("settings.tabs.description", "Tab behavior and appearance")
-        case .shell:             return L("settings.shell.description", "Shell, cursor, and bell")
-        case .scrollbackPerf:    return L("settings.scrollbackPerf.description", "Scrollback buffer, rendering, and backend")
+        case .general: return L("settings.general.description", "Startup, language, and config file")
+        case .profilesBackup: return L("settings.profilesBackup.description", "Profiles, auto-switch, iCloud sync, and backup")
+        case .about: return L("settings.about.description", "Version information and links")
+        case .fontColors: return L("settings.fontColors.description", "Font, color scheme, opacity, and theme")
+        case .display: return L("settings.display.description", "Syntax highlighting, URLs, images, and layout")
+        case .tabs: return L("settings.tabs.description", "Tab behavior and appearance")
+        case .shell: return L("settings.shell.description", "Shell, cursor, and bell")
+        case .scrollbackPerf: return L("settings.scrollbackPerf.description", "Scrollback buffer, rendering, and backend")
         case .dangerousCommands: return L("settings.dangerousCommands.description", "Highlight and guard risky commands")
-        case .graphics:          return L("settings.graphics.description", "Sixel and Kitty graphics protocols")
-        case .tmux:              return L("settings.tmux.description", "Tmux integration and sessions")
-        case .keyboardMouse:     return L("settings.keyboardMouse.description", "Keyboard shortcuts and mouse behavior")
-        case .snippetsTools:     return L("settings.snippetsTools.description", "Snippets, clipboard, bookmarks, and search")
-        case .aiDetection:       return L("settings.aiDetection.description", "AI CLI detection, theming, and LLM provider")
+        case .graphics: return L("settings.graphics.description", "Sixel and Kitty graphics protocols")
+        case .tmux: return L("settings.tmux.description", "Tmux integration and sessions")
+        case .keyboardMouse: return L("settings.keyboardMouse.description", "Keyboard shortcuts and mouse behavior")
+        case .snippetsTools: return L("settings.snippetsTools.description", "Snippets, clipboard, bookmarks, and search")
+        case .aiDetection: return L("settings.aiDetection.description", "AI CLI detection, theming, and LLM provider")
         case .tokenOptimization: return L("settings.tokenOptimization.description", "CTO wrapper scripts, per-tab control, and prefix")
-        case .mcpControl:        return L("settings.mcpControl.description", "MCP agent tab creation, limits, and approval")
-        case .remoteControl:     return L("settings.remoteControl.description", "Remote access, pairing, and SSH profiles")
-        case .apiProxy:          return L("settings.apiProxy.description", "API call tracking and analytics proxy")
-        case .notifications:     return L("settings.notifications.description", "Alert preferences and event filters")
-        case .logsHistory:       return L("settings.logsHistory.description", "Log files, session tracking, and command history")
+        case .mcpControl: return L("settings.mcpControl.description", "MCP agent tab creation, limits, and approval")
+        case .remoteControl: return L("settings.remoteControl.description", "Remote access, pairing, and SSH profiles")
+        case .apiProxy: return L("settings.apiProxy.description", "API call tracking and analytics proxy")
+        case .notifications: return L("settings.notifications.description", "Alert preferences and event filters")
+        case .logsHistory: return L("settings.logsHistory.description", "Log files, session tracking, and command history")
         }
     }
 
@@ -822,7 +826,7 @@ extension FeatureSettings {
                 "history,database,commands,persistent,storage"
             ),
             description: L("settings.search.persistentHistory.description", "Save command history across sessions")
-        ),
+        )
     ]
 
     static func searchSettings(query: String) -> [(section: SettingsSection, settings: [SearchableSetting])] {

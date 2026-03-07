@@ -14,7 +14,7 @@ final class FrameParserTests: XCTestCase {
 
     // MARK: - parseFrames
 
-    func testParsesSingleCompleteFrame() throws {
+    func testParsesSingleCompleteFrame() {
         let frame = makeFrame()
         var buffer = FrameParser.packForTransport(frame)
 
@@ -26,7 +26,7 @@ final class FrameParserTests: XCTestCase {
         XCTAssertTrue(buffer.isEmpty)
     }
 
-    func testParsesMultipleFrames() throws {
+    func testParsesMultipleFrames() {
         let frame1 = makeFrame(tabID: 1, seq: 10)
         let frame2 = makeFrame(tabID: 2, seq: 20)
         let frame3 = makeFrame(tabID: 3, seq: 30)
@@ -164,7 +164,7 @@ final class FrameParserTests: XCTestCase {
 
     // MARK: - packForTransport
 
-    func testPackForTransportRoundTrip() throws {
+    func testPackForTransportRoundTrip() {
         let frame = makeFrame(
             type: RemoteFrameType.ping.rawValue,
             tabID: 42,

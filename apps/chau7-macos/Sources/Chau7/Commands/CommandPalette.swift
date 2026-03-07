@@ -59,7 +59,7 @@ struct CommandPaletteView: View {
         let query = searchText.lowercased()
         return commands.filter { command in
             command.title.lowercased().contains(query) ||
-            command.category.localizedTitle.lowercased().contains(query)
+                command.category.localizedTitle.lowercased().contains(query)
         }
     }
 
@@ -588,7 +588,7 @@ final class CommandPaletteProvider {
             },
             PaletteCommand(title: L("commandPalette.command.reportIssue", "Report Issue"), shortcut: nil, category: .help, icon: "exclamationmark.bubble") {
                 delegate.reportIssue()
-            },
+            }
         ]
     }
 }
@@ -607,8 +607,13 @@ final class CommandPaletteController: ObservableObject {
     private init() {}
 
     private final class CommandPalettePanel: NSPanel {
-        override var canBecomeKey: Bool { true }
-        override var canBecomeMain: Bool { true }
+        override var canBecomeKey: Bool {
+            true
+        }
+
+        override var canBecomeMain: Bool {
+            true
+        }
     }
 
     func setup(appDelegate: AppDelegate) {

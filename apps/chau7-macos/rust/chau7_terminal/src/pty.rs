@@ -85,7 +85,10 @@ pub struct Chau7EventListener {
 
 impl EventListener for Chau7EventListener {
     fn send_event(&self, event: Event) {
-        trace!("[terminal-{}] Event received: {:?}", self.terminal_id, event);
+        trace!(
+            "[terminal-{}] Event received: {:?}",
+            self.terminal_id, event
+        );
 
         // Track bell events for Swift to poll
         if matches!(event, Event::Bell) {
@@ -94,7 +97,10 @@ impl EventListener for Chau7EventListener {
         }
 
         if self.sender.try_send(event).is_err() {
-            trace!("[terminal-{}] Event channel full, dropping event", self.terminal_id);
+            trace!(
+                "[terminal-{}] Event channel full, dropping event",
+                self.terminal_id
+            );
         }
     }
 }

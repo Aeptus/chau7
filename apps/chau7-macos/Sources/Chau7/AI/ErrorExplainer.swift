@@ -141,9 +141,15 @@ final class ErrorExplainer: ObservableObject {
 
         for idx in text.indices[openIndex...] {
             let ch = text[idx]
-            if escaped { escaped = false; continue }
-            if ch == "\\" { escaped = true; continue }
-            if ch == "\"" { inString.toggle(); continue }
+            if escaped { escaped = false
+                continue
+            }
+            if ch == "\\" { escaped = true
+                continue
+            }
+            if ch == "\"" { inString.toggle()
+                continue
+            }
             if inString { continue }
             if ch == "{" { depth += 1 }
             else if ch == "}" {
@@ -156,6 +162,6 @@ final class ErrorExplainer: ObservableObject {
         }
 
         guard let end = endIndex else { return nil }
-        return String(text[openIndex...end])
+        return String(text[openIndex ... end])
     }
 }

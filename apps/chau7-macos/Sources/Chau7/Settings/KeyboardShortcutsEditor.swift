@@ -18,7 +18,7 @@ struct KeyboardShortcutsEditorView: View {
         let query = searchText.lowercased()
         return settings.customShortcuts.filter {
             $0.action.lowercased().contains(query) ||
-            KeyboardShortcut.actionDisplayName($0.action).lowercased().contains(query)
+                KeyboardShortcut.actionDisplayName($0.action).lowercased().contains(query)
         }
     }
 
@@ -30,7 +30,7 @@ struct KeyboardShortcutsEditorView: View {
             ("Window", ["newWindow", "splitHorizontal", "splitVertical", "openTextEditor", "debugConsole"])
         ]
 
-        return groups.compactMap { (name, actions) in
+        return groups.compactMap { name, actions in
             let shortcuts = filteredShortcuts.filter { actions.contains($0.action) }
             return shortcuts.isEmpty ? nil : (name, shortcuts)
         }
@@ -295,7 +295,9 @@ final class ShortcutRecorderField: NSTextField {
         focusRingType = .exterior
     }
 
-    override var acceptsFirstResponder: Bool { true }
+    override var acceptsFirstResponder: Bool {
+        true
+    }
 
     override func becomeFirstResponder() -> Bool {
         stringValue = "Press shortcut..."

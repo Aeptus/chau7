@@ -19,7 +19,10 @@ struct ProxySettingsView: View {
             } header: {
                 Text(L("API Call Tracking", "API Call Tracking"))
             } footer: {
-                Text(L("Routes LLM API calls through a local proxy to capture token usage, costs, and latency metrics. Authentication is handled by CLI tools — no API keys are stored by Chau7.", "Routes LLM API calls through a local proxy to capture token usage, costs, and latency metrics. Authentication is handled by CLI tools — no API keys are stored by Chau7."))
+                Text(L(
+                    "Routes LLM API calls through a local proxy to capture token usage, costs, and latency metrics. Authentication is handled by CLI tools — no API keys are stored by Chau7.",
+                    "Routes LLM API calls through a local proxy to capture token usage, costs, and latency metrics. Authentication is handled by CLI tools — no API keys are stored by Chau7."
+                ))
             }
 
             // Privacy Section
@@ -28,7 +31,10 @@ struct ProxySettingsView: View {
             } header: {
                 Text(L("Privacy", "Privacy"))
             } footer: {
-                Text(L("When enabled, stores the first 500 characters of prompts and responses for debugging. Disable for maximum privacy.", "When enabled, stores the first 500 characters of prompts and responses for debugging. Disable for maximum privacy."))
+                Text(L(
+                    "When enabled, stores the first 500 characters of prompts and responses for debugging. Disable for maximum privacy.",
+                    "When enabled, stores the first 500 characters of prompts and responses for debugging. Disable for maximum privacy."
+                ))
             }
 
             // Advanced Section
@@ -95,9 +101,12 @@ struct ProxySettingsView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
 
-                    Text(L("The proxy logs metadata (model, tokens, latency) then forwards requests to the real APIs. Auth headers pass through unchanged.", "The proxy logs metadata (model, tokens, latency) then forwards requests to the real APIs. Auth headers pass through unchanged."))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    Text(L(
+                        "The proxy logs metadata (model, tokens, latency) then forwards requests to the real APIs. Auth headers pass through unchanged.",
+                        "The proxy logs metadata (model, tokens, latency) then forwards requests to the real APIs. Auth headers pass through unchanged."
+                    ))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                 }
             } header: {
                 Text(L("How It Works", "How It Works"))
@@ -169,7 +178,6 @@ struct ProxySettingsView: View {
         case partial
     }
 
-    @ViewBuilder
     private func supportedToolRow(name: String, supported: SupportLevel) -> some View {
         HStack(spacing: 6) {
             switch supported {
@@ -185,7 +193,6 @@ struct ProxySettingsView: View {
         }
     }
 
-    @ViewBuilder
     private func codeRow(_ code: String) -> some View {
         Text(code)
             .font(.system(.caption, design: .monospaced))

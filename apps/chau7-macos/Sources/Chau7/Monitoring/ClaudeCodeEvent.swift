@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - Claude Code Hook Events
+
 //
 // ⚠️  SCOPE: These types are specific to Claude Code's hook system.
 // They only capture events from Claude Code hook scripts (PreToolUse, PostToolUse, etc.).
@@ -23,14 +24,14 @@ import Foundation
 /// Event types from Claude Code hooks.
 /// See `AIEvent.type` (String) for the tool-agnostic equivalent used across all sources.
 enum ClaudeEventType: String, Codable {
-    case userPrompt = "user_prompt"           // User submitted a prompt
-    case toolStart = "tool_start"             // Tool about to execute
-    case toolComplete = "tool_complete"       // Tool execution completed
-    case permissionRequest = "permission_request"  // Claude waiting for permission
-    case responseComplete = "response_complete"    // Claude finished responding
-    case notification = "notification"        // Custom notification
-    case sessionEnd = "session_end"           // Session terminated
-    case unknown = "unknown"
+    case userPrompt = "user_prompt" // User submitted a prompt
+    case toolStart = "tool_start" // Tool about to execute
+    case toolComplete = "tool_complete" // Tool execution completed
+    case permissionRequest = "permission_request" // Claude waiting for permission
+    case responseComplete = "response_complete" // Claude finished responding
+    case notification // Custom notification
+    case sessionEnd = "session_end" // Session terminated
+    case unknown
 }
 
 /// Event received from Claude Code hook script.
@@ -125,11 +126,11 @@ enum ClaudeContentType: String {
 
 /// A message from a Claude Code transcript
 struct ClaudeTranscriptMessage: Identifiable, Equatable {
-    let id: String  // uuid from transcript
+    let id: String // uuid from transcript
     let role: ClaudeMessageRole
     let contentType: ClaudeContentType
-    let content: String  // Text content or tool name
-    let toolName: String?  // For tool_use messages
+    let content: String // Text content or tool name
+    let toolName: String? // For tool_use messages
     let timestamp: Date
     let sessionId: String
 
@@ -189,7 +190,7 @@ enum ClaudeTranscriptParser {
 
             // Only process user and assistant messages
             guard let type = json["type"] as? String,
-                  (type == "user" || type == "assistant") else {
+                  type == "user" || type == "assistant" else {
                 continue
             }
 
@@ -211,7 +212,7 @@ enum ClaudeTranscriptParser {
 
                 let contentType: ClaudeContentType
                 var content = ""
-                var toolName: String? = nil
+                var toolName: String?
 
                 switch blockType {
                 case "text":

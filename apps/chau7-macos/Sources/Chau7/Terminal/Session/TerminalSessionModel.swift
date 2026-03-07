@@ -6,8 +6,8 @@ import Chau7Core
 enum CommandStatus: String {
     case idle
     case running
-    case waitingForInput  // AI agent waiting for user input/permission
-    case stuck            // Running for too long without output
+    case waitingForInput // AI agent waiting for user input/permission
+    case stuck // Running for too long without output
     case exited
 }
 
@@ -17,11 +17,11 @@ enum CommandStatus: String {
 final class TerminalSessionModel: NSObject, ObservableObject {
     private struct LatencySampleBuffer {
         private var buffer: [Int]
-        private var index: Int = 0
-        private(set) var count: Int = 0
+        private var index = 0
+        private(set) var count = 0
 
         init(capacity: Int) {
-            buffer = Array(repeating: 0, count: max(1, capacity))
+            self.buffer = Array(repeating: 0, count: max(1, capacity))
         }
 
         mutating func append(_ value: Int) {
@@ -35,6 +35,10 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             count = 0
         }
 
+        var isEmpty: Bool {
+            count == 0 // swiftlint:disable:this empty_count
+        }
+
         func values() -> [Int] {
             if count >= buffer.count {
                 return buffer
@@ -44,7 +48,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
         /// Sliding-window average over the most recent samples in the buffer.
         func recentAverage() -> Int? {
-            guard count > 0 else { return nil }
+            guard !isEmpty else { return nil }
             let vals = values()
             return vals.reduce(0, +) / vals.count
         }
@@ -69,20 +73,22 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         let appName: String
         let cwd: String
     }
-    @Published var title: String = "Shell"
+
+    @Published var title = "Shell"
     @Published var currentDirectory: String = TerminalSessionModel.defaultStartDirectory()
 
     /// Unique identifier for this terminal tab, used for task lifecycle tracking
     let tabIdentifier: String = UUID().uuidString
     @Published var status: CommandStatus = .idle
-    @Published var isGitRepo: Bool = false
-    @Published var gitBranch: String? = nil
-    @Published var gitRootPath: String? = nil
-    @Published var activeAppName: String? = nil {
+    @Published var isGitRepo = false
+    @Published var gitBranch: String?
+    @Published var gitRootPath: String?
+    @Published var activeAppName: String? {
         didSet {
             recalculateCTOFlag()
         }
     }
+
     /// Effective app name for UI branding and diagnostics.
     /// Falls back to the last known persisted metadata provider if active
     /// detection from output/command history is not currently available.
@@ -93,21 +99,22 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         }
         return Self.displayName(fromProvider: lastAIProvider)
     }
-    @Published var devServer: DevServerMonitor.DevServerInfo? = nil
-    @Published var processGroup: ProcessGroupSnapshot? = nil
-    @Published var tabTitleOverride: String? = nil
+
+    @Published var devServer: DevServerMonitor.DevServerInfo?
+    @Published var processGroup: ProcessGroupSnapshot?
+    @Published var tabTitleOverride: String?
     @Published var fontSize: CGFloat = 13
     @Published var searchMatches: [SearchMatch] = []
-    @Published var activeSearchIndex: Int = 0
+    @Published var activeSearchIndex = 0
     /// Whether the shell is at a prompt (not running a command). Used by history key monitor.
-    @Published var isAtPrompt: Bool = true
+    @Published var isAtPrompt = true
 
     /// Whether the shell is still loading (no prompt yet). Cleared on first OSC 7.
-    @Published var isShellLoading: Bool = true
+    @Published var isShellLoading = true
 
     /// Set to true when no PTY output arrives within the startup timeout (shell may be hung).
     /// Cleared automatically on first output.
-    @Published var shellStartupSlow: Bool = false
+    @Published var shellStartupSlow = false
 
     /// Last time output was observed for this terminal session.
     /// Used by tab restore logic to choose the best-matching AI session when
@@ -135,15 +142,16 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     }
 
     // MARK: - Latency Telemetry (non-Published for performance)
+
     // These change on every keystroke. Keeping them as @Published would cause
     // SwiftUI to trigger updateNSView on every keystroke, adding unnecessary overhead.
     // The debug console has its own 1-second refresh timer to read these values.
-    var inputLatencyMs: Int? = nil
-    var inputLatencyAverageMs: Int? = nil
-    var outputLatencyMs: Int? = nil
-    var outputLatencyAverageMs: Int? = nil
-    var dangerousHighlightDelayMs: Int? = nil
-    var dangerousHighlightAverageMs: Int? = nil
+    var inputLatencyMs: Int?
+    var inputLatencyAverageMs: Int?
+    var outputLatencyMs: Int?
+    var outputLatencyAverageMs: Int?
+    var dangerousHighlightDelayMs: Int?
+    var dangerousHighlightAverageMs: Int?
     @Published private(set) var lagTimeline: [LagEvent] = []
 
     private weak var appModel: AppModel?
@@ -163,17 +171,17 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private var idleTimer: DispatchSourceTimer?
     private var lastInputAt = Date.distantPast
     private var lastOutputAt = Date.distantPast
-    private var commandStartedAt = Date.distantPast  // Track when command started for "stuck" detection
+    private var commandStartedAt = Date.distantPast // Track when command started for "stuck" detection
     private var hasPendingCommand = false
     private var inputBuffer = ""
     private var gitCheckWorkItem: DispatchWorkItem?
     private let gitQueue = DispatchQueue(label: "com.chau7.git", qos: .utility)
     private var searchUpdateWorkItem: DispatchWorkItem?
     private let searchQueue = DispatchQueue(label: "com.chau7.search", qos: .utility)
-    private var searchQuery: String = ""
-    private var cachedBufferData: Data?  // Cached buffer data for search
-    private var bufferNeedsRefresh: Bool = true  // Flag to invalidate cache on output
-    private var bufferLineCount: Int = 0
+    private var searchQuery = ""
+    private var cachedBufferData: Data? // Cached buffer data for search
+    private var bufferNeedsRefresh = true // Flag to invalidate cache on output
+    private var bufferLineCount = 0
     private var pendingInputLatencyAt: CFAbsoluteTime?
     private var inputLatencySampleCount = 0
     private var inputLatencyTotalMs: Double = 0
@@ -202,7 +210,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private let outputBurstChunksThreshold = 24
     private var dangerousHighlightSampleCount = 0
     private var dangerousHighlightTotalMs: Double = 0
-    private var outputRiskCacheVersion: Int = 0
+    private var outputRiskCacheVersion = 0
     private var outputRiskCache: [Int: (version: Int, isRisk: Bool)] = [:]
     private let outputRiskCacheMaxEntries = 800
     private var dirtyOutputRange: ClosedRange<Int>?
@@ -222,15 +230,16 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         }
         return true
     }()
+
     private var didClearOnLaunch = false
     private var didApplyShellIntegration = false
     private var shellIntegrationOutputCount = 0
-    private var shouldAutoFocusOnAttach = true  // Auto-focus when terminal view is attached
-    private var didStartDevServerMonitor = false  // Track if dev server monitor has started
+    private var shouldAutoFocusOnAttach = true // Auto-focus when terminal view is attached
+    private var didStartDevServerMonitor = false // Track if dev server monitor has started
     // AI detection sliding buffer — holds the tail of the previous output chunk so patterns
     // split across chunk boundaries are still detected (e.g. "╭─ Clau" + "de Code").
     private var aiDetectionBuffer = Data()
-    private let aiDetectionBufferCapacity = 256  // keep last N bytes across chunks
+    private let aiDetectionBufferCapacity = 256 // keep last N bytes across chunks
     // Cooldown: after detection is set, don't clear it for this many seconds (prevents
     // premature clearing when AI tools trigger OSC 7 / shell prompts mid-session).
     private var aiDetectionSetAt: Date?
@@ -238,8 +247,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     // Allow re-detection: track how many output chunks since last clearing so we can
     // re-run detection for a window after clearing (catches late banners).
     private var aiDetectionChunksSinceCleared = 0
-    private let aiDetectionRetryChunks = 30  // re-check for ~30 output chunks after clearing
-    private var pendingCommandLine: String? = nil
+    private let aiDetectionRetryChunks = 30 // re-check for ~30 output chunks after clearing
+    private var pendingCommandLine: String?
     private var promptSeenForPendingCommand = false
     private var commandFinishedNotified = false
     private let terminationStateQueue = DispatchQueue(label: "com.chau7.terminal.termination")
@@ -257,7 +266,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private let devServerMonitor = DevServerMonitor()
     private let processResourceMonitor = ProcessResourceMonitor()
     private lazy var shellEventDetector = ShellEventDetector(appModel: appModel)
-    private static let osc7Prefix = Data([0x1b, 0x5d, 0x37, 0x3b])
+    private static let osc7Prefix = Data([0x1B, 0x5D, 0x37, 0x3B])
     private static let aiExitMarkerPrefix = Data("\u{001b}]9;chau7;exit=".utf8)
     private static let aiExitMarkerSuffix = Data([0x07])
     private static let aiExitMarkerKeepBytes = max(0, aiExitMarkerPrefix.count - 1)
@@ -355,7 +364,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             processGroup = nil
             return
         }
-        processGroup = nil  // Clear stale data from a previous hover
+        processGroup = nil // Clear stale data from a previous hover
         processResourceMonitor.onUpdate = { [weak self] snapshot in
             DispatchQueue.main.async { self?.processGroup = snapshot }
         }
@@ -379,7 +388,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
     func attachRustTerminal(_ view: RustTerminalView) {
         rustTerminalView = view
-        retainedRustTerminalView = view  // Keep strong reference to survive view recreation
+        retainedRustTerminalView = view // Keep strong reference to survive view recreation
         view.currentDirectory = currentDirectory
 
         // Configure scrollback buffer size from settings
@@ -407,7 +416,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             DispatchQueue.main.async {
                 self.updateCurrentDirectory(directory)
             }
-            self.handlePromptDetected()
+            handlePromptDetected()
             // Use the same cooldown-aware clearing as OSC 7 prompt detection
             DispatchQueue.main.async { [weak self] in
                 self?.clearActiveAppAfterPrompt()
@@ -442,14 +451,14 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             // The terminal view may exist but not be attached yet after tab switch.
             // Retry until the selected tab's view is in-window and focusable.
             let attempt = retryCount + 1
-            Log.trace("focusTerminal: view not ready for '\(self.title)', retry \(attempt)/8 in 75ms")
+            Log.trace("focusTerminal: view not ready for '\(title)', retry \(attempt)/8 in 75ms")
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.075) { [weak self] in
                 self?.focusTerminal(in: window, retryCount: attempt)
             }
             return
         }
 
-        Log.warn("focusTerminal: unable to focus terminal for '\(self.title)' after 8 retries")
+        Log.warn("focusTerminal: unable to focus terminal for '\(title)' after 8 retries")
     }
 
     // MARK: - Shell Integration (Issue #8 fix)
@@ -529,7 +538,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
             // Shell event detection
             if let outputText {
-                self.shellEventDetector.processOutput(outputText)
+                shellEventDetector.processOutput(outputText)
             }
 
             // Semantic detection (expensive)
@@ -537,9 +546,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                data.contains(where: { $0 == 0x0A || $0 == 0x0D }) {
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
-                    if let row = self.currentBufferRow() {
+                    if let row = currentBufferRow() {
                         let token = FeatureProfiler.shared.begin(.semantic)
-                        self.semanticDetector.updateCurrentRow(row)
+                        semanticDetector.updateCurrentRow(row)
                         FeatureProfiler.shared.end(token)
                     }
                 }
@@ -547,7 +556,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
             // AI log processing (synchronized to prevent race with finishAILogging)
             var aiExitCode: Int?
-            self.aiLogQueue.sync {
+            aiLogQueue.sync {
                 let aiLogResult = self.processAILogOutput(data)
                 if let logData = aiLogResult.loggable, !logData.isEmpty {
                     self.aiLogSession?.recordOutput(logData)
@@ -562,33 +571,33 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                 FeatureProfiler.shared.end(outputToken)
 
                 if let exitCode = aiExitCode {
-                    self.finishAILogging(exitCode: exitCode)
+                    finishAILogging(exitCode: exitCode)
                 }
 
                 // Shell integration check
-                self.maybeApplyShellIntegration()
+                maybeApplyShellIntegration()
 
                 // Prompt update handling
                 let promptToken = FeatureProfiler.shared.begin(.promptUpdate, bytes: data.count)
-                let sawPromptUpdate = self.maybeHandlePromptUpdate(data)
+                let sawPromptUpdate = maybeHandlePromptUpdate(data)
                 FeatureProfiler.shared.end(promptToken)
 
                 // AI app detection
                 if !sawPromptUpdate {
-                    self.maybeDetectAppFromOutput(data)
+                    maybeDetectAppFromOutput(data)
                 }
 
                 // Dangerous output recording
                 if outputText != nil {
-                    self.recordDangerousOutputIfNeeded()
+                    recordDangerousOutputIfNeeded()
                 }
 
                 // AI waiting detection
-                self.maybeDetectAIWaitingForInput(data)
+                maybeDetectAIWaitingForInput(data)
 
                 // Dev server detection
                 let devToken = FeatureProfiler.shared.begin(.devServerDetect, bytes: data.count)
-                self.maybeDetectDevServer(data)
+                maybeDetectDevServer(data)
                 FeatureProfiler.shared.end(devToken)
 
                 FeatureProfiler.shared.end(mainToken)
@@ -614,7 +623,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         }
 
         // Check output for dev server patterns
-        guard devServer == nil else { return }  // Already detected
+        guard devServer == nil else { return } // Already detected
         let checkData = data.prefix(2048)
         guard let output = String(data: checkData, encoding: .utf8) else { return }
         devServerMonitor.checkOutput(output)
@@ -639,11 +648,11 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             "Continue?",
             "Proceed?",
             "Permission",
-            "> ",  // Common prompt indicator
-            "? ",  // Question prompt
+            "> ", // Common prompt indicator
+            "? ", // Question prompt
             "Enter your",
             "Type your",
-            "waiting for",
+            "waiting for"
         ]
 
         let lowercased = text.lowercased()
@@ -659,8 +668,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
         if isWaiting {
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.status == .running else { return }
-                self.status = .waitingForInput
+                guard let self, status == .running else { return }
+                status = .waitingForInput
                 Log.trace("AI agent waiting for input detected")
             }
         }
@@ -675,8 +684,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         if let prefixRange = combined.range(of: Self.aiExitMarkerPrefix) {
             let loggable = Data(combined[..<prefixRange.lowerBound])
             let afterPrefix = prefixRange.upperBound
-            if let suffixRange = combined.range(of: Self.aiExitMarkerSuffix, in: afterPrefix..<combined.endIndex) {
-                let payload = combined[afterPrefix..<suffixRange.lowerBound]
+            if let suffixRange = combined.range(of: Self.aiExitMarkerSuffix, in: afterPrefix ..< combined.endIndex) {
+                let payload = combined[afterPrefix ..< suffixRange.lowerBound]
                 let exitCode = parseAIExitCode(payload)
                 aiLogPrefixBuffer.removeAll(keepingCapacity: true)
                 return (loggable, exitCode)
@@ -882,7 +891,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         Log.trace("Clearing active app after OSC 7 prompt update.")
         activeAppName = nil
         aiDetectionSetAt = nil
-        aiDetectionChunksSinceCleared = 0  // reset re-detection window
+        aiDetectionChunksSinceCleared = 0 // reset re-detection window
         aiDetectionBuffer.removeAll(keepingCapacity: true)
         // finishAILogging is idempotent and has internal synchronization
         finishAILogging(exitCode: nil)
@@ -954,9 +963,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         } else {
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                if self.pendingOutputLatencyAt == nil {
-                    self.pendingOutputLatencyAt = timestamp
-                    self.scheduleOutputLatencyFallback()
+                if pendingOutputLatencyAt == nil {
+                    pendingOutputLatencyAt = timestamp
+                    scheduleOutputLatencyFallback()
                 }
             }
         }
@@ -1011,9 +1020,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             newlineCount += 1
         }
         let startRow = max(0, endRow - max(1, newlineCount + 1))
-        let newRange = startRow...endRow
+        let newRange = startRow ... endRow
         if let existing = dirtyOutputRange {
-            dirtyOutputRange = min(existing.lowerBound, newRange.lowerBound)...max(existing.upperBound, newRange.upperBound)
+            dirtyOutputRange = min(existing.lowerBound, newRange.lowerBound) ... max(existing.upperBound, newRange.upperBound)
         } else {
             dirtyOutputRange = newRange
         }
@@ -1176,7 +1185,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     }
 
     private func markRunning() {
-        if status != .running && status != .stuck {
+        if status != .running, status != .stuck {
             status = .running
             commandStartedAt = Date()
         }
@@ -1206,7 +1215,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                 index += 1
                 while index < data.count {
                     let current = data[index]
-                    if current >= 0x40 && current <= 0x7E {
+                    if current >= 0x40, current <= 0x7E {
                         index += 1
                         break
                     }
@@ -1318,31 +1327,31 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             // Don't transition from waitingForInput - user needs to respond
-            guard self.status == .running || self.status == .stuck else { return }
-            guard self.hasPendingCommand else { return }
+            guard status == .running || status == .stuck else { return }
+            guard hasPendingCommand else { return }
 
-            let latestActivity = max(self.lastInputAt, self.lastOutputAt)
+            let latestActivity = max(lastInputAt, lastOutputAt)
             let latestIdleFor = Date().timeIntervalSince(latestActivity)
-            let runningFor = Date().timeIntervalSince(self.commandStartedAt)
+            let runningFor = Date().timeIntervalSince(commandStartedAt)
 
             // Check for "stuck" - running for too long without recent output
             // Only applies to .running status, not waitingForInput
-            if self.status == .running && runningFor >= self.stuckSeconds {
-                let outputIdleFor = Date().timeIntervalSince(self.lastOutputAt)
-                if outputIdleFor >= self.stuckSeconds {
-                    self.status = .stuck
+            if status == .running, runningFor >= stuckSeconds {
+                let outputIdleFor = Date().timeIntervalSince(lastOutputAt)
+                if outputIdleFor >= stuckSeconds {
+                    status = .stuck
                     Log.info("Command marked as stuck after \(Int(runningFor))s")
                     return
                 }
             }
 
             // Prefer prompt-based completion, but fall back after a long idle if prompt updates are missing.
-            if !self.promptSeenForPendingCommand {
-                if latestIdleFor >= self.fallbackCompletionSeconds {
-                    self.promptSeenForPendingCommand = true
-                    if !self.commandFinishedNotified {
-                        self.commandFinishedNotified = true
-                        self.shellEventDetector.commandFinished(exitCode: nil, command: self.pendingCommandLine)
+            if !promptSeenForPendingCommand {
+                if latestIdleFor >= fallbackCompletionSeconds {
+                    promptSeenForPendingCommand = true
+                    if !commandFinishedNotified {
+                        commandFinishedNotified = true
+                        shellEventDetector.commandFinished(exitCode: nil, command: pendingCommandLine)
                     }
                     Log.info("Fallback completion after \(Int(latestIdleFor))s without prompt")
                 } else {
@@ -1351,21 +1360,21 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             }
 
             // Check for idle - no activity for idleSeconds
-            guard latestIdleFor >= self.idleSeconds else { return }
+            guard latestIdleFor >= idleSeconds else { return }
 
-            self.status = .idle
-            self.hasPendingCommand = false
-            self.promptSeenForPendingCommand = false
-            self.pendingCommandLine = nil
+            status = .idle
+            hasPendingCommand = false
+            promptSeenForPendingCommand = false
+            pendingCommandLine = nil
 
             let message = "Command idle for \(Int(latestIdleFor))s"
-            self.appModel?.recordEvent(
+            appModel?.recordEvent(
                 source: .terminalSession,
                 type: "finished",
-                tool: self.notificationTabName,
+                tool: notificationTabName,
                 message: message,
                 notify: true,
-                directory: self.currentDirectory
+                directory: currentDirectory
             )
         }
     }
@@ -1538,22 +1547,22 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
             let congestionMs = max(0, (CFAbsoluteTimeGetCurrent() - expectedFireAt) * 1000.0)
-            self.dangerousHighlightSamples.append(Int(congestionMs.rounded()))
-            self.dangerousHighlightSampleCount += 1
-            self.dangerousHighlightTotalMs += congestionMs
-            self.dangerousHighlightDelayMs = Int(congestionMs.rounded())
-            self.dangerousHighlightAverageMs = self.dangerousHighlightSamples.recentAverage()
-            self.dangerousOutputHighlightLastRun = Date()
-            self.maybeLogLatencySpike(
+            dangerousHighlightSamples.append(Int(congestionMs.rounded()))
+            dangerousHighlightSampleCount += 1
+            dangerousHighlightTotalMs += congestionMs
+            dangerousHighlightDelayMs = Int(congestionMs.rounded())
+            dangerousHighlightAverageMs = dangerousHighlightSamples.recentAverage()
+            dangerousOutputHighlightLastRun = Date()
+            maybeLogLatencySpike(
                 kind: "highlight",
                 elapsedMs: congestionMs,
-                averageMs: self.dangerousHighlightAverageMs,
-                samples: self.dangerousHighlightSamples,
-                thresholdMs: self.highlightLagLogThresholdMs,
-                lastLoggedAt: &self.lastHighlightLagLogAt
+                averageMs: dangerousHighlightAverageMs,
+                samples: dangerousHighlightSamples,
+                thresholdMs: highlightLagLogThresholdMs,
+                lastLoggedAt: &lastHighlightLagLogAt
             )
-            self.refreshCachedDangerousOutputRows()
-            self.highlightView?.scheduleDisplay()
+            refreshCachedDangerousOutputRows()
+            highlightView?.scheduleDisplay()
         }
         dangerousOutputHighlightWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
@@ -1647,7 +1656,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             return view.getLineText(absoluteRow: row)
         }
 
-        for row in start...end {
+        for row in start ... end {
             let isDirty = dirtyRange?.contains(row) ?? false
             if !isDirty, let cached = outputRiskCache[row], cached.version == version {
                 if cached.isRisk {
@@ -1656,7 +1665,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                 continue
             }
 
-            if lowPowerActive && computedCount >= maxComputations {
+            if lowPowerActive, computedCount >= maxComputations {
                 continue
             }
 
@@ -1692,14 +1701,14 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         }
 
         if let dirtyRange {
-            if start <= dirtyRange.lowerBound && end >= dirtyRange.upperBound {
+            if start <= dirtyRange.lowerBound, end >= dirtyRange.upperBound {
                 dirtyOutputRange = nil
-            } else if dirtyRange.lowerBound < start && dirtyRange.upperBound <= end {
+            } else if dirtyRange.lowerBound < start, dirtyRange.upperBound <= end {
                 let newUpper = start - 1
-                dirtyOutputRange = newUpper >= dirtyRange.lowerBound ? dirtyRange.lowerBound...newUpper : nil
-            } else if dirtyRange.lowerBound >= start && dirtyRange.upperBound > end {
+                dirtyOutputRange = newUpper >= dirtyRange.lowerBound ? dirtyRange.lowerBound ... newUpper : nil
+            } else if dirtyRange.lowerBound >= start, dirtyRange.upperBound > end {
                 let newLower = end + 1
-                dirtyOutputRange = newLower <= dirtyRange.upperBound ? newLower...dirtyRange.upperBound : nil
+                dirtyOutputRange = newLower <= dirtyRange.upperBound ? newLower ... dirtyRange.upperBound : nil
             }
         }
 
@@ -2198,7 +2207,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         searchQuery = ""
         searchMatches = []
         activeSearchIndex = 0
-        highlightView?.scheduleDisplay()  // Use batched display for better latency
+        highlightView?.scheduleDisplay() // Use batched display for better latency
     }
 
     // MARK: - Shell helpers
@@ -2262,7 +2271,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             return "/bin/zsh"
         case .custom:
             let customPath = settings.customShellPath.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !customPath.isEmpty && FileManager.default.fileExists(atPath: customPath) {
+            if !customPath.isEmpty, FileManager.default.fileExists(atPath: customPath) {
                 return customPath
             }
             return systemDefaultShell()
@@ -2361,6 +2370,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         }
 
         // MARK: - API Analytics Proxy Injection
+
         let settings = FeatureSettings.shared
         if settings.isAPIAnalyticsEnabled {
             let proxyBase = "http://127.0.0.1:\(settings.apiAnalyticsPort)"
@@ -2553,7 +2563,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
     func attachHighlightView(_ view: TerminalHighlightView) {
         highlightView = view
-        highlightView?.scheduleDisplay()  // Use batched display for better latency
+        highlightView?.scheduleDisplay() // Use batched display for better latency
     }
 
     func resetDangerousHighlights() {
@@ -2574,8 +2584,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
     // MARK: - Search (Issue #6, #13, #23 fixes - thread-safe buffer access, case sensitivity)
 
-    private var searchCaseSensitive: Bool = false
-    private var searchRegexEnabled: Bool = false
+    private var searchCaseSensitive = false
+    private var searchRegexEnabled = false
 
     /// Returns cached buffer data or fetches fresh data if needed (memory optimization).
     private func getBufferData() -> Data? {
@@ -2654,7 +2664,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         } else if activeSearchIndex >= computed.matches.count {
             activeSearchIndex = max(0, computed.matches.count - 1)
         }
-        highlightView?.scheduleDisplay()  // Use batched display for better latency
+        highlightView?.scheduleDisplay() // Use batched display for better latency
         return SearchSummary(count: computed.matches.count, previewLines: computed.previewLines, error: computed.error)
     }
 
@@ -2671,7 +2681,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             SearchMatch(row: block.startRow, col: 0, length: max(1, block.command.count))
         }
         activeSearchIndex = 0
-        highlightView?.scheduleDisplay()  // Use batched display for better latency
+        highlightView?.scheduleDisplay() // Use batched display for better latency
 
         let previews = limited.prefix(maxPreviewLines).map { block -> String in
             if let exitCode = block.exitCode {
@@ -2700,14 +2710,14 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                 guard let regex = try? NSRegularExpression(pattern: query, options: options) else {
                     return
                 }
-                computed = self.computeRegexMatches(
+                computed = computeRegexMatches(
                     regex: regex,
                     maxMatches: 400,
                     maxPreviewLines: 12,
                     bufferData: bufferData
                 )
             } else {
-                computed = self.computeSearchMatches(
+                computed = computeSearchMatches(
                     query: query,
                     maxMatches: 400,
                     maxPreviewLines: 12,
@@ -2722,7 +2732,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                 if self.activeSearchIndex >= computed.matches.count {
                     self.activeSearchIndex = max(0, computed.matches.count - 1)
                 }
-                self.highlightView?.scheduleDisplay()  // Use batched display for better latency
+                self.highlightView?.scheduleDisplay() // Use batched display for better latency
             }
         }
         searchUpdateWorkItem = work
@@ -2730,11 +2740,11 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         // Smaller buffers get faster updates, larger buffers need more debounce
         let debounceInterval: TimeInterval
         if bufferLineCount < 1000 {
-            debounceInterval = 0.05  // 50ms for small buffers
+            debounceInterval = 0.05 // 50ms for small buffers
         } else if bufferLineCount < 5000 {
-            debounceInterval = 0.1   // 100ms for medium buffers
+            debounceInterval = 0.1 // 100ms for medium buffers
         } else {
-            debounceInterval = 0.15  // 150ms for large buffers (was 200ms)
+            debounceInterval = 0.15 // 150ms for large buffers (was 200ms)
         }
         searchQueue.asyncAfter(deadline: .now() + debounceInterval, execute: work)
     }
@@ -2742,14 +2752,14 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     func nextMatch() {
         guard !searchMatches.isEmpty else { return }
         activeSearchIndex = (activeSearchIndex + 1) % searchMatches.count
-        highlightView?.scheduleDisplay()  // Use batched display for better latency
+        highlightView?.scheduleDisplay() // Use batched display for better latency
         scrollToActiveMatch()
     }
 
     func previousMatch() {
         guard !searchMatches.isEmpty else { return }
         activeSearchIndex = (activeSearchIndex - 1 + searchMatches.count) % searchMatches.count
-        highlightView?.scheduleDisplay()  // Use batched display for better latency
+        highlightView?.scheduleDisplay() // Use batched display for better latency
         scrollToActiveMatch()
     }
 
@@ -2798,12 +2808,12 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         var lineStart = text.startIndex
         var row = 0
 
-        while lineStart < text.endIndex && matches.count < maxMatches {
+        while lineStart < text.endIndex, matches.count < maxMatches {
             // Find end of current line
             let lineEnd = text[lineStart...].firstIndex(of: "\n") ?? text.endIndex
 
             // Use Substring directly - no memory copy
-            let lineSlice = text[lineStart..<lineEnd]
+            let lineSlice = text[lineStart ..< lineEnd]
 
             if !lineSlice.isEmpty {
                 var searchStart = lineSlice.startIndex
@@ -2813,7 +2823,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                     guard let range = lineSlice.range(
                         of: query,
                         options: searchOptions,
-                        range: searchStart..<lineSlice.endIndex
+                        range: searchStart ..< lineSlice.endIndex
                     ) else { break }
 
                     let col = lineSlice.distance(from: lineSlice.startIndex, to: range.lowerBound)
@@ -2824,7 +2834,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                 }
 
                 // Only create String copy for preview lines
-                if !matches.isEmpty && matches.last?.row == row && previews.count < maxPreviewLines {
+                if !matches.isEmpty, matches.last?.row == row, previews.count < maxPreviewLines {
                     previews.append(String(lineSlice))
                 }
             }
@@ -2854,9 +2864,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         var lineStart = text.startIndex
         var row = 0
 
-        while lineStart < text.endIndex && matches.count < maxMatches {
+        while lineStart < text.endIndex, matches.count < maxMatches {
             let lineEnd = text[lineStart...].firstIndex(of: "\n") ?? text.endIndex
-            let lineSlice = text[lineStart..<lineEnd]
+            let lineSlice = text[lineStart ..< lineEnd]
 
             if !lineSlice.isEmpty {
                 let lineString = String(lineSlice)
@@ -2872,7 +2882,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                     }
                 }
 
-                if !matches.isEmpty && matches.last?.row == row && previews.count < maxPreviewLines {
+                if !matches.isEmpty, matches.last?.row == row, previews.count < maxPreviewLines {
                     previews.append(lineString)
                 }
             }
@@ -3079,7 +3089,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                 }
                 return
             }
-            let result = self.queryGitStatus(path: path)
+            let result = queryGitStatus(path: path)
             DispatchQueue.main.async {
                 self.isGitRepo = result.isRepo
                 let oldBranch = self.gitBranch

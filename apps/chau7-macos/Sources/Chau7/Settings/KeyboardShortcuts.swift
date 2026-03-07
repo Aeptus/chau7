@@ -44,6 +44,7 @@ import AppKit
 /// - Cmd+,: Settings
 ///
 enum KeyboardShortcuts {
+
     // MARK: - Key Codes (for NSEvent handling)
 
     /// Escape key code
@@ -57,7 +58,7 @@ enum KeyboardShortcuts {
 
     // MARK: - Character Constants
 
-    struct Characters {
+    enum Characters {
         static let newWindow = "n"
         static let newTab = "t"
         static let closeTab = "w"

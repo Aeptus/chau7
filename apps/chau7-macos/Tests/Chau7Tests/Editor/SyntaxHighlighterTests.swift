@@ -151,14 +151,14 @@ final class EditorLanguageTests: XCTestCase {
 
     // MARK: - Highlight Rule Matching
 
-    func testSwiftKeywordRuleMatchesFunc() {
+    func testSwiftKeywordRuleMatchesFunc() throws {
         let lang = EditorLanguage.swift
         guard let keywordRule = lang.highlightingRules.first else {
             XCTFail("Swift should have keyword rule")
             return
         }
 
-        let regex = try! NSRegularExpression(pattern: keywordRule.pattern, options: keywordRule.options)
+        let regex = try NSRegularExpression(pattern: keywordRule.pattern, options: keywordRule.options)
         let input = "func hello() { return }"
         let range = NSRange(location: 0, length: input.utf16.count)
         let matches = regex.matches(in: input, options: [], range: range)
@@ -167,7 +167,7 @@ final class EditorLanguageTests: XCTestCase {
         XCTAssertEqual(matches.count, 2, "Should match 'func' and 'return'")
     }
 
-    func testPythonCommentRuleMatches() {
+    func testPythonCommentRuleMatches() throws {
         let lang = EditorLanguage.python
         // The comment rule is the last single-line one before numbers: "#.*$"
         guard let commentRule = lang.highlightingRules.first(where: { $0.pattern == "#.*$" }) else {
@@ -175,7 +175,7 @@ final class EditorLanguageTests: XCTestCase {
             return
         }
 
-        let regex = try! NSRegularExpression(pattern: commentRule.pattern, options: commentRule.options)
+        let regex = try NSRegularExpression(pattern: commentRule.pattern, options: commentRule.options)
         let input = "x = 1  # this is a comment"
         let range = NSRange(location: 0, length: input.utf16.count)
         let matches = regex.matches(in: input, options: [], range: range)
@@ -183,7 +183,7 @@ final class EditorLanguageTests: XCTestCase {
         XCTAssertEqual(matches.count, 1)
     }
 
-    func testJSONStringRuleMatchesQuotedValues() {
+    func testJSONStringRuleMatchesQuotedValues() throws {
         let lang = EditorLanguage.json
         guard let stringRule = lang.highlightingRules.first(where: {
             $0.pattern.contains("\"") && !$0.pattern.contains(":")
@@ -192,7 +192,7 @@ final class EditorLanguageTests: XCTestCase {
             return
         }
 
-        let regex = try! NSRegularExpression(pattern: stringRule.pattern, options: stringRule.options)
+        let regex = try NSRegularExpression(pattern: stringRule.pattern, options: stringRule.options)
         let input = #""hello""#
         let range = NSRange(location: 0, length: input.utf16.count)
         let matches = regex.matches(in: input, options: [], range: range)
@@ -200,14 +200,14 @@ final class EditorLanguageTests: XCTestCase {
         XCTAssertEqual(matches.count, 1)
     }
 
-    func testRustKeywordRuleMatchesMut() {
+    func testRustKeywordRuleMatchesMut() throws {
         let lang = EditorLanguage.rust
         guard let keywordRule = lang.highlightingRules.first else {
             XCTFail("Rust should have keyword rule")
             return
         }
 
-        let regex = try! NSRegularExpression(pattern: keywordRule.pattern, options: keywordRule.options)
+        let regex = try NSRegularExpression(pattern: keywordRule.pattern, options: keywordRule.options)
         let input = "let mut x = 5;"
         let range = NSRange(location: 0, length: input.utf16.count)
         let matches = regex.matches(in: input, options: [], range: range)
@@ -220,7 +220,7 @@ final class EditorLanguageTests: XCTestCase {
 
     func testAllLanguagesListContainsExpectedLanguages() {
         let ids = Set(EditorLanguage.allLanguages.map(\.id))
-        let expected: Set<String> = [
+        let expected: Set = [
             "swift", "python", "javascript", "shell", "json", "yaml",
             "toml", "markdown", "go", "rust", "ruby", "text"
         ]
@@ -512,7 +512,7 @@ final class SyntaxHighlighterTests: XCTestCase {
 
     func testCacheEvictionDoesNotCrash() {
         // Fill cache beyond maxCacheSize (500) to trigger eviction
-        for i in 0..<550 {
+        for i in 0 ..< 550 {
             _ = highlighter.highlight("line \(i) with error marker")
         }
         // Allow all async cache writes to complete
@@ -532,7 +532,7 @@ final class SyntaxHighlighterTests: XCTestCase {
             "https://example.com/path?q=1&r=2",
             #"{"key": "value", "count": 42}"#,
             "user@server:~/project$ git status",
-            "",
+            ""
         ]
 
         for input in inputs {

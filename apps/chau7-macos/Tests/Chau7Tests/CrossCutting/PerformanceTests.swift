@@ -15,7 +15,7 @@ final class PerformanceTests: XCTestCase {
         ]
 
         measure {
-            for _ in 0..<1000 {
+            for _ in 0 ..< 1000 {
                 for cmd in commands {
                     _ = CommandDetection.detectApp(from: cmd)
                 }
@@ -32,7 +32,7 @@ final class PerformanceTests: XCTestCase {
         ]
 
         measure {
-            for _ in 0..<1000 {
+            for _ in 0 ..< 1000 {
                 for cmd in commands {
                     _ = CommandDetection.detectApp(from: cmd)
                 }
@@ -46,7 +46,7 @@ final class PerformanceTests: XCTestCase {
         let args = ["hello", "world", "file.txt", "/path/to/file", "simple"]
 
         measure {
-            for _ in 0..<10000 {
+            for _ in 0 ..< 10000 {
                 for arg in args {
                     _ = ShellEscaping.escapeArgument(arg)
                 }
@@ -66,7 +66,7 @@ final class PerformanceTests: XCTestCase {
         ]
 
         measure {
-            for _ in 0..<10000 {
+            for _ in 0 ..< 10000 {
                 for arg in args {
                     _ = ShellEscaping.escapeArgument(arg)
                 }
@@ -84,7 +84,7 @@ final class PerformanceTests: XCTestCase {
         ]
 
         measure {
-            for _ in 0..<10000 {
+            for _ in 0 ..< 10000 {
                 for path in paths {
                     _ = ShellEscaping.isValidPath(path)
                 }
@@ -102,7 +102,7 @@ final class PerformanceTests: XCTestCase {
         ]
 
         measure {
-            for _ in 0..<5000 {
+            for _ in 0 ..< 5000 {
                 for opt in options {
                     _ = ShellEscaping.validateSSHOptions(opt)
                 }
@@ -122,7 +122,7 @@ final class PerformanceTests: XCTestCase {
         ]
 
         measure {
-            for _ in 0..<5000 {
+            for _ in 0 ..< 5000 {
                 for template in templates {
                     _ = SnippetParsing.expandPlaceholders(in: template)
                 }
@@ -151,7 +151,7 @@ final class PerformanceTests: XCTestCase {
         """
 
         measure {
-            for _ in 0..<2000 {
+            for _ in 0 ..< 2000 {
                 _ = SnippetParsing.expandPlaceholders(in: template)
             }
         }
@@ -161,7 +161,7 @@ final class PerformanceTests: XCTestCase {
         let template = "export PATH=${env:HOME}/bin:${env:PATH}; cd ${env:PWD}; echo ${env:USER}@${env:HOSTNAME}"
 
         measure {
-            for _ in 0..<5000 {
+            for _ in 0 ..< 5000 {
                 _ = SnippetParsing.replaceEnvTokens(in: template)
             }
         }
@@ -176,7 +176,7 @@ final class PerformanceTests: XCTestCase {
         ]
 
         measure {
-            for _ in 0..<10000 {
+            for _ in 0 ..< 10000 {
                 for hex in hexColors {
                     _ = ColorParsing.parseHex(hex)
                 }
@@ -198,7 +198,7 @@ final class PerformanceTests: XCTestCase {
         ]
 
         measure {
-            for _ in 0..<10000 {
+            for _ in 0 ..< 10000 {
                 for color in colors {
                     _ = ColorParsing.adjustBrightness(color, factor: 1.2)
                 }
@@ -218,7 +218,7 @@ final class PerformanceTests: XCTestCase {
         ]
 
         measure {
-            for _ in 0..<5000 {
+            for _ in 0 ..< 5000 {
                 for cmd in commands {
                     _ = CommandDetection.tokenize(cmd)
                 }
@@ -236,7 +236,7 @@ final class PerformanceTests: XCTestCase {
         ]
 
         measure {
-            for _ in 0..<5000 {
+            for _ in 0 ..< 5000 {
                 for cmd in commands {
                     _ = CommandDetection.tokenize(cmd)
                 }
@@ -256,7 +256,7 @@ final class PerformanceTests: XCTestCase {
         ]
 
         measure {
-            for _ in 0..<10000 {
+            for _ in 0 ..< 10000 {
                 for csv in csvStrings {
                     _ = SnippetParsing.parseCSV(csv)
                 }

@@ -7,10 +7,10 @@ import Chau7Core
 struct LLMSettingsView: View {
     @ObservedObject var settings: FeatureSettings
     @State private var selectedProvider: LLMProviderType = .openai
-    @State private var apiKeyInput: String = ""
-    @State private var endpointInput: String = ""
-    @State private var modelInput: String = ""
-    @State private var maxTokensInput: String = "1024"
+    @State private var apiKeyInput = ""
+    @State private var endpointInput = ""
+    @State private var modelInput = ""
+    @State private var maxTokensInput = "1024"
     @State private var testResult: String?
     @State private var isTesting = false
 

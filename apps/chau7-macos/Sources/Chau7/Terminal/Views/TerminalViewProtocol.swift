@@ -8,6 +8,7 @@ import AppKit
 ///
 /// This protocol is the single source of truth for terminal view capabilities.
 protocol TerminalViewLike: NSView {
+
     // MARK: - Callbacks
 
     /// Called when PTY output is received

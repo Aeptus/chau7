@@ -84,7 +84,7 @@ final class MonitorLifecycleIntegrationTests: XCTestCase {
             updateCount += 1
             if updateCount == 1 {
                 firstPoll.fulfill()
-            } else if shouldExpectSecondPoll && updateCount >= 2 {
+            } else if shouldExpectSecondPoll, updateCount >= 2 {
                 secondPoll.fulfill()
             }
             lock.unlock()
@@ -130,7 +130,7 @@ final class MonitorLifecycleIntegrationTests: XCTestCase {
             fileURL: historyPath,
             idleSecondsProvider: { 0.2 },
             staleSecondsProvider: { 5.0 },
-            onEntry: { entry in
+            onEntry: { _ in
                 lock.lock()
                 onEntryCount += 1
                 if onEntryCount == 1 {

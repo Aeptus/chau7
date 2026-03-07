@@ -9,7 +9,6 @@
 //!   passthrough → processor.advance()  (normal terminal data)
 //!   events      → image decode queue   (graphics data)
 
-
 use log::{debug, trace, warn};
 
 // ============================================================================
@@ -21,22 +20,13 @@ use log::{debug, trace, warn};
 pub enum GraphicsEvent {
     /// iTerm2 inline image (OSC 1337;File=...).
     /// Contains the raw args string and base64-encoded image data.
-    ITerm2 {
-        args: String,
-        base64_data: Vec<u8>,
-    },
+    ITerm2 { args: String, base64_data: Vec<u8> },
     /// Sixel image (DCS Pn;Pn;Pn q ... ST).
     /// Contains the raw sixel data bytes (everything after 'q' up to ST).
-    Sixel {
-        params: Vec<u8>,
-        data: Vec<u8>,
-    },
+    Sixel { params: Vec<u8>, data: Vec<u8> },
     /// Kitty graphics protocol (ESC_G...ST).
     /// Contains the control key=value string and optional base64 payload.
-    Kitty {
-        control: String,
-        payload: Vec<u8>,
-    },
+    Kitty { control: String, payload: Vec<u8> },
 }
 
 /// A decoded image ready for display, with RGBA pixel data.
@@ -149,6 +139,12 @@ pub struct GraphicsInterceptor {
     pub iterm2_enabled: bool,
 }
 
+impl Default for GraphicsInterceptor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GraphicsInterceptor {
     pub fn new() -> Self {
         Self {
@@ -185,7 +181,8 @@ impl GraphicsInterceptor {
                     if let Some(esc_offset) = memchr::memchr(0x1B, &input[i..]) {
                         // Copy everything before the ESC as passthrough
                         if esc_offset > 0 {
-                            self.passthrough.extend_from_slice(&input[i..i + esc_offset]);
+                            self.passthrough
+                                .extend_from_slice(&input[i..i + esc_offset]);
                         }
                         i += esc_offset + 1; // skip past the ESC byte
                         self.state = State::Esc;
@@ -221,7 +218,6 @@ impl GraphicsInterceptor {
                 },
 
                 // ── DCS / Sixel ──────────────────────────────────────
-
                 State::DcsParams => {
                     if byte == b'q' {
                         // Final char 'q' → entering Sixel data mode
@@ -249,16 +245,16 @@ impl GraphicsInterceptor {
                         // 8-bit ST — end of Sixel
                         self.emit_sixel(&mut events);
                         self.state = State::Ground;
+                    } else if self.sixel_buf.len() < SIXEL_MAX_BYTES {
+                        self.sixel_buf.push(byte);
                     } else {
-                        if self.sixel_buf.len() < SIXEL_MAX_BYTES {
-                            self.sixel_buf.push(byte);
-                        } else {
-                            warn!("GraphicsInterceptor: Sixel data exceeded {}MB, discarding",
-                                  SIXEL_MAX_BYTES / (1024 * 1024));
-                            self.sixel_buf.clear();
-                            self.dcs_params.clear();
-                            self.state = State::Ground;
-                        }
+                        warn!(
+                            "GraphicsInterceptor: Sixel data exceeded {}MB, discarding",
+                            SIXEL_MAX_BYTES / (1024 * 1024)
+                        );
+                        self.sixel_buf.clear();
+                        self.dcs_params.clear();
+                        self.state = State::Ground;
                     }
                 }
 
@@ -276,7 +272,6 @@ impl GraphicsInterceptor {
                 }
 
                 // ── APC / Kitty ──────────────────────────────────────
-
                 State::Apc => {
                     if byte == b'G' {
                         // ESC _ G → Kitty graphics!
@@ -314,15 +309,13 @@ impl GraphicsInterceptor {
                     } else if byte == 0x9C {
                         self.emit_kitty(&mut events);
                         self.state = State::Ground;
+                    } else if self.kitty_payload.len() < KITTY_MAX_BYTES {
+                        self.kitty_payload.push(byte);
                     } else {
-                        if self.kitty_payload.len() < KITTY_MAX_BYTES {
-                            self.kitty_payload.push(byte);
-                        } else {
-                            warn!("GraphicsInterceptor: Kitty payload exceeded limit, discarding");
-                            self.kitty_control.clear();
-                            self.kitty_payload.clear();
-                            self.state = State::Ground;
-                        }
+                        warn!("GraphicsInterceptor: Kitty payload exceeded limit, discarding");
+                        self.kitty_control.clear();
+                        self.kitty_payload.clear();
+                        self.state = State::Ground;
                     }
                 }
 
@@ -334,7 +327,10 @@ impl GraphicsInterceptor {
                     } else {
                         // ESC followed by something else
                         // In Kitty control/payload, this shouldn't happen. Discard.
-                        warn!("GraphicsInterceptor: Unexpected ESC {:02x} in Kitty sequence", byte);
+                        warn!(
+                            "GraphicsInterceptor: Unexpected ESC {:02x} in Kitty sequence",
+                            byte
+                        );
                         self.kitty_control.clear();
                         self.kitty_payload.clear();
                         self.state = State::Ground;
@@ -342,7 +338,6 @@ impl GraphicsInterceptor {
                 }
 
                 // ── OSC / iTerm2 ─────────────────────────────────────
-
                 State::Osc => {
                     if byte == b';' {
                         // Check if we accumulated "1337"
@@ -412,15 +407,13 @@ impl GraphicsInterceptor {
                         self.state = State::Ground;
                     } else if byte == 0x1B {
                         self.state = State::ITermEsc;
+                    } else if self.iterm_data.len() < ITERM2_MAX_BYTES {
+                        self.iterm_data.push(byte);
                     } else {
-                        if self.iterm_data.len() < ITERM2_MAX_BYTES {
-                            self.iterm_data.push(byte);
-                        } else {
-                            warn!("GraphicsInterceptor: iTerm2 data exceeded limit, discarding");
-                            self.iterm_args.clear();
-                            self.iterm_data.clear();
-                            self.state = State::Ground;
-                        }
+                        warn!("GraphicsInterceptor: iTerm2 data exceeded limit, discarding");
+                        self.iterm_args.clear();
+                        self.iterm_data.clear();
+                        self.state = State::Ground;
                     }
                 }
 
@@ -436,7 +429,10 @@ impl GraphicsInterceptor {
                         self.state = State::Ground;
                     } else {
                         // Unexpected ESC in iTerm2 sequence
-                        warn!("GraphicsInterceptor: Unexpected ESC {:02x} in iTerm2 sequence", byte);
+                        warn!(
+                            "GraphicsInterceptor: Unexpected ESC {:02x} in iTerm2 sequence",
+                            byte
+                        );
                         self.iterm_args.clear();
                         self.iterm_data.clear();
                         self.state = State::Ground;
@@ -482,8 +478,11 @@ impl GraphicsInterceptor {
         let data = std::mem::take(&mut self.sixel_buf);
         let params = std::mem::take(&mut self.dcs_params);
         if !data.is_empty() {
-            debug!("GraphicsInterceptor: Sixel complete ({} bytes, params={} bytes)",
-                   data.len(), params.len());
+            debug!(
+                "GraphicsInterceptor: Sixel complete ({} bytes, params={} bytes)",
+                data.len(),
+                params.len()
+            );
             events.push(GraphicsEvent::Sixel { params, data });
         }
     }
@@ -492,8 +491,11 @@ impl GraphicsInterceptor {
         let control_bytes = std::mem::take(&mut self.kitty_control);
         let payload = std::mem::take(&mut self.kitty_payload);
         let control = String::from_utf8_lossy(&control_bytes).into_owned();
-        debug!("GraphicsInterceptor: Kitty complete (control='{}', payload={} bytes)",
-               control, payload.len());
+        debug!(
+            "GraphicsInterceptor: Kitty complete (control='{}', payload={} bytes)",
+            control,
+            payload.len()
+        );
         events.push(GraphicsEvent::Kitty { control, payload });
     }
 
@@ -501,8 +503,11 @@ impl GraphicsInterceptor {
         let args_bytes = std::mem::take(&mut self.iterm_args);
         let base64_data = std::mem::take(&mut self.iterm_data);
         let args = String::from_utf8_lossy(&args_bytes).into_owned();
-        debug!("GraphicsInterceptor: iTerm2 complete (args='{}', data={} bytes)",
-               args, base64_data.len());
+        debug!(
+            "GraphicsInterceptor: iTerm2 complete (args='{}', data={} bytes)",
+            args,
+            base64_data.len()
+        );
         events.push(GraphicsEvent::ITerm2 { args, base64_data });
     }
 
@@ -558,12 +563,16 @@ pub fn decode_sixel(data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
         match b {
             b'$' => {
                 // Graphics carriage return
-                if x > max_x { max_x = x; }
+                if x > max_x {
+                    max_x = x;
+                }
                 x = 0;
             }
             b'-' => {
                 // Graphics new line
-                if x > max_x { max_x = x; }
+                if x > max_x {
+                    max_x = x;
+                }
                 x = 0;
                 y += 6;
                 if y >= SIXEL_MAX_HEIGHT {
@@ -576,7 +585,9 @@ pub fn decode_sixel(data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
                 i += 1;
                 let mut count: u32 = 0;
                 while i < data.len() && data[i].is_ascii_digit() {
-                    count = count.saturating_mul(10).saturating_add((data[i] - b'0') as u32);
+                    count = count
+                        .saturating_mul(10)
+                        .saturating_add((data[i] - b'0') as u32);
                     i += 1;
                 }
                 if i < data.len() && data[i] >= 0x3F && data[i] <= 0x7E {
@@ -595,10 +606,14 @@ pub fn decode_sixel(data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
                 i += 1;
                 let mut reg: usize = 0;
                 while i < data.len() && data[i].is_ascii_digit() {
-                    reg = reg.saturating_mul(10).saturating_add((data[i] - b'0') as usize);
+                    reg = reg
+                        .saturating_mul(10)
+                        .saturating_add((data[i] - b'0') as usize);
                     i += 1;
                 }
-                if reg >= 256 { reg = 0; }
+                if reg >= 256 {
+                    reg = 0;
+                }
 
                 if i < data.len() && data[i] == b';' {
                     // Color definition: ;type;v1;v2;v3
@@ -659,7 +674,9 @@ pub fn decode_sixel(data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
         }
         i += 1;
     }
-    if x > max_x { max_x = x; }
+    if x > max_x {
+        max_x = x;
+    }
 
     let width = max_x;
     // Last band always extends 6 pixel rows per the sixel spec
@@ -670,11 +687,19 @@ pub fn decode_sixel(data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
         return None;
     }
     if width > SIXEL_MAX_WIDTH || height > SIXEL_MAX_HEIGHT {
-        warn!("Sixel decode: image too large ({}x{}, max {}x{})", width, height, SIXEL_MAX_WIDTH, SIXEL_MAX_HEIGHT);
+        warn!(
+            "Sixel decode: image too large ({}x{}, max {}x{})",
+            width, height, SIXEL_MAX_WIDTH, SIXEL_MAX_HEIGHT
+        );
         return None;
     }
 
-    debug!("Sixel decode: {}x{} image, {} bytes of data", width, height, data.len());
+    debug!(
+        "Sixel decode: {}x{} image, {} bytes of data",
+        width,
+        height,
+        data.len()
+    );
 
     // Flatten rows into contiguous RGBA buffer
     let mut rgba = vec![0u8; (width as usize) * (height as usize) * 4];
@@ -692,14 +717,13 @@ pub fn decode_sixel(data: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
 
 /// Paint a single sixel column (6 vertical pixels) into row-based RGBA buffers.
 #[inline]
-fn paint_sixel_rows(
-    rows: &mut Vec<Vec<u8>>,
-    x: u32, band_y: u32, bits: u8, r: u8, g: u8, b: u8,
-) {
+fn paint_sixel_rows(rows: &mut Vec<Vec<u8>>, x: u32, band_y: u32, bits: u8, r: u8, g: u8, b: u8) {
     for bit in 0..6u32 {
         if bits & (1 << bit) != 0 {
             let py = band_y + bit;
-            if py >= SIXEL_MAX_HEIGHT { break; }
+            if py >= SIXEL_MAX_HEIGHT {
+                break;
+            }
             let py_idx = py as usize;
             // Grow row list if needed
             if rows.len() <= py_idx {
@@ -730,7 +754,11 @@ fn hls_to_rgb(h: u32, l: u32, s: u32) -> (u8, u8, u8) {
     let s_f = s as f64 / 100.0;
     let h_f = h as f64 / 360.0;
 
-    let q = if l_f < 0.5 { l_f * (1.0 + s_f) } else { l_f + s_f - l_f * s_f };
+    let q = if l_f < 0.5 {
+        l_f * (1.0 + s_f)
+    } else {
+        l_f + s_f - l_f * s_f
+    };
     let p = 2.0 * l_f - q;
 
     let r = hue_to_rgb(p, q, h_f + 1.0 / 3.0);
@@ -741,11 +769,21 @@ fn hls_to_rgb(h: u32, l: u32, s: u32) -> (u8, u8, u8) {
 }
 
 fn hue_to_rgb(p: f64, q: f64, mut t: f64) -> f64 {
-    if t < 0.0 { t += 1.0; }
-    if t > 1.0 { t -= 1.0; }
-    if t < 1.0 / 6.0 { return p + (q - p) * 6.0 * t; }
-    if t < 1.0 / 2.0 { return q; }
-    if t < 2.0 / 3.0 { return p + (q - p) * (2.0 / 3.0 - t) * 6.0; }
+    if t < 0.0 {
+        t += 1.0;
+    }
+    if t > 1.0 {
+        t -= 1.0;
+    }
+    if t < 1.0 / 6.0 {
+        return p + (q - p) * 6.0 * t;
+    }
+    if t < 1.0 / 2.0 {
+        return q;
+    }
+    if t < 2.0 / 3.0 {
+        return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+    }
     p
 }
 
@@ -777,6 +815,12 @@ pub struct KittyAccumulator {
     payload: Vec<u8>,
     /// Control string from the first chunk (defines format, dimensions, etc.).
     control: String,
+}
+
+impl Default for KittyAccumulator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl KittyAccumulator {
@@ -844,7 +888,10 @@ impl KittyAccumulator {
         // Parse the stored control string (always from the first chunk)
         let params = parse_kitty_control(&self.control);
 
-        let format = params.get("f").and_then(|s| s.parse().ok()).unwrap_or(32u32);
+        let format = params
+            .get("f")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(32u32);
         let transmission = params.get("t").unwrap_or("d");
 
         if transmission != "d" {
@@ -886,7 +933,11 @@ impl KittyAccumulator {
                     rgba.push(raw[i * 3 + 2]);
                     rgba.push(255);
                 }
-                KittyAction::Display { rgba, width, height }
+                KittyAction::Display {
+                    rgba,
+                    width,
+                    height,
+                }
             }
             32 => {
                 // Raw RGBA (4 bytes per pixel)
@@ -902,7 +953,11 @@ impl KittyAccumulator {
                     return KittyAction::Noop;
                 }
                 let rgba = raw[..expected].to_vec();
-                KittyAction::Display { rgba, width, height }
+                KittyAction::Display {
+                    rgba,
+                    width,
+                    height,
+                }
             }
             100 => {
                 // PNG — decode to get dimensions and RGBA
@@ -948,11 +1003,11 @@ fn parse_kitty_control(control: &str) -> KittyParams<'_> {
         len: 0,
     };
     for pair in control.split(',') {
-        if let Some((key, val)) = pair.split_once('=') {
-            if params.len < 16 {
-                params.pairs[params.len] = (key, val);
-                params.len += 1;
-            }
+        if let Some((key, val)) = pair.split_once('=')
+            && params.len < 16
+        {
+            params.pairs[params.len] = (key, val);
+            params.len += 1;
         }
     }
     params
@@ -1005,6 +1060,12 @@ pub struct ImageStore {
     pending: Vec<DecodedImage>,
     /// Monotonically increasing image ID counter.
     next_id: u64,
+}
+
+impl Default for ImageStore {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ImageStore {
@@ -1204,7 +1265,7 @@ mod tests {
         let (pass, events) = interceptor.feed(input);
         assert!(events.is_empty());
         // The pass-through should contain the original sequence
-        assert!(pass.len() > 0);
+        assert!(!pass.is_empty());
     }
 
     // ── Sixel decoder tests ──────────────────────────────────────────
@@ -1219,11 +1280,11 @@ mod tests {
         let (rgba, width, height) = result.unwrap();
         assert_eq!(width, 1);
         assert_eq!(height, 6); // Always 6 pixels per band
-        assert_eq!(rgba.len(), (1 * 6 * 4) as usize);
+        assert_eq!(rgba.len(), 6 * 4);
         // First pixel should be red (R=255, G=0, B=0, A=255)
         assert_eq!(rgba[0], 255); // R
-        assert_eq!(rgba[1], 0);   // G
-        assert_eq!(rgba[2], 0);   // B
+        assert_eq!(rgba[1], 0); // G
+        assert_eq!(rgba[2], 0); // B
         assert_eq!(rgba[3], 255); // A
     }
 
@@ -1257,7 +1318,7 @@ mod tests {
         assert_eq!(rgba[0], 255);
         assert_eq!(rgba[3], 255);
         // Pixel at (0, 6) should be red (second band, first pixel)
-        let offset = (6 * 1 * 4) as usize; // row 6, col 0
+        let offset = 6 * 4; // row 6, col 0
         assert_eq!(rgba[offset], 255);
         assert_eq!(rgba[offset + 3], 255);
     }
@@ -1291,11 +1352,11 @@ mod tests {
         assert_eq!(width, 2);
         // Pixel (0,0) = red
         assert_eq!(rgba[0], 255); // R
-        assert_eq!(rgba[1], 0);   // G
-        assert_eq!(rgba[2], 0);   // B
+        assert_eq!(rgba[1], 0); // G
+        assert_eq!(rgba[2], 0); // B
         // Pixel (1,0) = blue
-        assert_eq!(rgba[4], 0);   // R
-        assert_eq!(rgba[5], 0);   // G
+        assert_eq!(rgba[4], 0); // R
+        assert_eq!(rgba[5], 0); // G
         assert_eq!(rgba[6], 255); // B
     }
 
@@ -1309,8 +1370,8 @@ mod tests {
         let (rgba, width, _) = result.unwrap();
         assert_eq!(width, 1);
         // Pixel (0,0) should be blue (overwritten)
-        assert_eq!(rgba[0], 0);   // R
-        assert_eq!(rgba[1], 0);   // G
+        assert_eq!(rgba[0], 0); // R
+        assert_eq!(rgba[1], 0); // G
         assert_eq!(rgba[2], 255); // B
     }
 
@@ -1322,13 +1383,16 @@ mod tests {
         let mut accum = KittyAccumulator::new();
         // 2x2 red RGBA pixels
         let pixels: Vec<u8> = vec![
-            255, 0, 0, 255,   255, 0, 0, 255,
-            255, 0, 0, 255,   255, 0, 0, 255,
+            255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
         ];
         let b64 = base64::engine::general_purpose::STANDARD.encode(&pixels);
         let control = "a=T,f=32,s=2,v=2";
         match accum.feed(control, b64.as_bytes()) {
-            KittyAction::Display { rgba, width, height } => {
+            KittyAction::Display {
+                rgba,
+                width,
+                height,
+            } => {
                 assert_eq!(width, 2);
                 assert_eq!(height, 2);
                 assert_eq!(rgba.len(), 16);
@@ -1344,11 +1408,15 @@ mod tests {
         use base64::Engine;
         let mut accum = KittyAccumulator::new();
         // 2x1 green RGB pixels
-        let pixels: Vec<u8> = vec![0, 255, 0,  0, 255, 0];
+        let pixels: Vec<u8> = vec![0, 255, 0, 0, 255, 0];
         let b64 = base64::engine::general_purpose::STANDARD.encode(&pixels);
         let control = "a=T,f=24,s=2,v=1";
         match accum.feed(control, b64.as_bytes()) {
-            KittyAction::Display { rgba, width, height } => {
+            KittyAction::Display {
+                rgba,
+                width,
+                height,
+            } => {
                 assert_eq!(width, 2);
                 assert_eq!(height, 1);
                 assert_eq!(rgba.len(), 8); // 2 pixels * 4 bytes RGBA
@@ -1383,11 +1451,15 @@ mod tests {
         // Second chunk: m=0 (final)
         let control2 = "m=0";
         match accum.feed(control2, chunk2.as_bytes()) {
-            KittyAction::Display { rgba, width, height } => {
+            KittyAction::Display {
+                rgba,
+                width,
+                height,
+            } => {
                 assert_eq!(width, 1);
                 assert_eq!(height, 1);
-                assert_eq!(rgba[0], 0);   // R
-                assert_eq!(rgba[1], 0);   // G
+                assert_eq!(rgba[0], 0); // R
+                assert_eq!(rgba[1], 0); // G
                 assert_eq!(rgba[2], 255); // B
                 assert_eq!(rgba[3], 255); // A
             }

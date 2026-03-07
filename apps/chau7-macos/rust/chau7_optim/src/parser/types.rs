@@ -37,4 +37,3 @@ pub struct Dependency {
     pub wanted_version: Option<String>,
     pub dev_dependency: bool,
 }
-

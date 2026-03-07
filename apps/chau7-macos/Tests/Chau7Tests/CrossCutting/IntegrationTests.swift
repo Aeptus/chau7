@@ -100,11 +100,11 @@ final class IntegrationTests: XCTestCase {
     func testIntegration_ColorSchemeColors() {
         // Test a set of theme colors
         let themeColors = [
-            "#282A36",  // Background
-            "#F8F8F2",  // Foreground
-            "#FF79C6",  // Pink
-            "#50FA7B",  // Green
-            "#8BE9FD"   // Cyan
+            "#282A36", // Background
+            "#F8F8F2", // Foreground
+            "#FF79C6", // Pink
+            "#50FA7B", // Green
+            "#8BE9FD" // Cyan
         ]
 
         for hex in themeColors {

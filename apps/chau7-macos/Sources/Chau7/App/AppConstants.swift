@@ -1,9 +1,11 @@
 import Foundation
 
 // MARK: - Centralized Application Constants (Code Optimization)
+
 // All magic numbers and configuration values in one place
 
 enum AppConstants {
+
     // MARK: - Buffer & Collection Limits
 
     enum Limits {

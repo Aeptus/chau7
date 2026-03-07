@@ -156,8 +156,7 @@ extension View {
         hint: String? = nil,
         traits: AccessibilityTraits = []
     ) -> some View {
-        self
-            .accessibilityLabel(label)
+        accessibilityLabel(label)
             .accessibilityHint(hint ?? "")
             .accessibilityAddTraits(traits)
     }
@@ -168,8 +167,7 @@ extension View {
     ///   - hint: Hint for the group action
     /// - Returns: View with combined accessibility
     func accessibleGroup(label: String, hint: String? = nil) -> some View {
-        self
-            .accessibilityElement(children: .combine)
+        accessibilityElement(children: .combine)
             .accessibilityLabel(label)
             .accessibilityHint(hint ?? "")
     }
@@ -286,8 +284,8 @@ enum AccessibilityAnnouncement {
     /// Announce search results count.
     static func announceSearchResults(_ count: Int) {
         let message = count == 0 ? "No results found" :
-                     count == 1 ? "1 result found" :
-                     "\(count) results found"
+            count == 1 ? "1 result found" :
+            "\(count) results found"
         post(message)
     }
 
@@ -313,8 +311,7 @@ extension View {
     ///   - label: Item label for VoiceOver
     /// - Returns: View with list navigation accessibility
     func accessibleListItem(index: Int, total: Int, label: String) -> some View {
-        self
-            .accessibilityLabel(label)
+        accessibilityLabel(label)
             .accessibilityHint(
                 String(
                     format: L("accessibility.listItem", "Item %d of %d. Use arrow keys to navigate."),

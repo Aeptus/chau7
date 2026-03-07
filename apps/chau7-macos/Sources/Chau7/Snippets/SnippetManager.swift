@@ -2,16 +2,18 @@ import Foundation
 import AppKit
 
 enum SnippetSource: String, Codable, CaseIterable, Identifiable {
-    case global  // Stored as "global" for backwards compatibility
+    case global // Stored as "global" for backwards compatibility
     case profile
     case repo
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var displayName: String {
         switch self {
         case .global:
-            return L("snippets.source.user", "User")  // User-friendly name (stored as "global")
+            return L("snippets.source.user", "User") // User-friendly name (stored as "global")
         case .profile:
             return L("snippets.source.profile", "Profile")
         case .repo:
@@ -111,16 +113,16 @@ struct Snippet: Identifiable, Codable, Equatable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
-        title = try container.decode(String.self, forKey: .title)
-        body = try container.decode(String.self, forKey: .body)
-        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
-        folder = try container.decodeIfPresent(String.self, forKey: .folder)
-        shells = try container.decodeIfPresent([String].self, forKey: .shells)
-        key = try container.decodeIfPresent(String.self, forKey: .key)
-        isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
-        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
-        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.body = try container.decode(String.self, forKey: .body)
+        self.tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        self.folder = try container.decodeIfPresent(String.self, forKey: .folder)
+        self.shells = try container.decodeIfPresent([String].self, forKey: .shells)
+        self.key = try container.decodeIfPresent(String.self, forKey: .key)
+        self.isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+        self.createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+        self.updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
     }
 
     /// Validated key - returns the key only if it's a single lowercase letter a-z
@@ -128,7 +130,7 @@ struct Snippet: Identifiable, Codable, Equatable {
     var validatedKey: Character? {
         guard let key = key, !key.isEmpty else { return nil }
         let normalized = key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard normalized.count == 1, let char = normalized.first, char >= "a" && char <= "z" else {
+        guard normalized.count == 1, let char = normalized.first, char >= "a", char <= "z" else {
             return nil
         }
         return char
@@ -141,7 +143,10 @@ struct SnippetFile: Codable {
 }
 
 struct SnippetEntry: Identifiable, Equatable {
-    var id: String { "\(source.rawValue)::\(snippet.id)" }
+    var id: String {
+        "\(source.rawValue)::\(snippet.id)"
+    }
+
     var snippet: Snippet
     var source: SnippetSource
     var sourcePath: String
@@ -193,9 +198,9 @@ struct SnippetPlaceholder: Equatable {
 
 /// The type of input control for a snippet variable
 enum SnippetInputType: Equatable {
-    case text           // Free-form text input
-    case singleSelect   // Single selection from options (dropdown)
-    case multiSelect    // Multiple selection from options (checkboxes)
+    case text // Free-form text input
+    case singleSelect // Single selection from options (dropdown)
+    case multiSelect // Multiple selection from options (checkboxes)
 }
 
 /// Represents a prompted input variable in a snippet
@@ -205,15 +210,15 @@ enum SnippetInputType: Equatable {
 /// - ${input:name:opt1|opt2|opt3} - single select picker (pipe-delimited options)
 /// - ${multiselect:name:opt1|opt2|opt3} - multi select picker
 struct SnippetInputVariable: Identifiable, Equatable {
-    let id: String  // The variable name (unique within snippet)
-    let name: String  // Display name
+    let id: String // The variable name (unique within snippet)
+    let name: String // Display name
     let defaultValue: String
-    var value: String  // User-provided value (for text and single select)
+    var value: String // User-provided value (for text and single select)
 
     // Picker support
     let inputType: SnippetInputType
-    let options: [String]  // Available options for picker types
-    var selectedOptions: Set<String>  // Selected options for multi-select
+    let options: [String] // Available options for picker types
+    var selectedOptions: Set<String> // Selected options for multi-select
 
     /// Creates a text input variable
     init(name: String, defaultValue: String = "") {
@@ -268,7 +273,7 @@ final class SnippetManager: ObservableObject {
     private var profileMonitor: FileMonitor?
     /// File monitor for the active repo's snippet directory only
     private var activeRepoMonitor: FileMonitor?
-    private var lastContextPath: String = ""
+    private var lastContextPath = ""
     private var resolveWorkItem: DispatchWorkItem?
 
     /// In-memory caches — avoid disk I/O when switching repos
@@ -284,14 +289,14 @@ final class SnippetManager: ObservableObject {
         let profileDir = profileURL()
         FileOperations.createDirectory(at: globalDir)
         FileOperations.createDirectory(at: profileDir)
-        globalSnippetsCache = loadSnippetsFromDirectory(globalDir)
-        profileSnippetsCache = loadSnippetsFromDirectory(profileDir)
+        self.globalSnippetsCache = loadSnippetsFromDirectory(globalDir)
+        self.profileSnippetsCache = loadSnippetsFromDirectory(profileDir)
         setupMonitors()
         rebuildEntries()
         // Async pre-load all known repos
         queue.async { [weak self] in
             guard let self else { return }
-            let repos = self.loadAllRepoSnippetsFromDisk()
+            let repos = loadAllRepoSnippetsFromDisk()
             DispatchQueue.main.async {
                 self.allRepoSnippets = repos
                 self.rebuildEntries()
@@ -317,13 +322,13 @@ final class SnippetManager: ObservableObject {
         resolveWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            let root = self.resolveRepoRoot(path: normalized)
+            let root = resolveRepoRoot(path: normalized)
             Log.info("Snippet context: path=\(normalized) resolved repoRoot=\(root ?? "nil")")
             // Migrate legacy repo snippets if needed
             if let root {
-                let legacyFile = self.legacyRepoURL(for: root)
-                let targetDir = self.repoURL(for: root)
-                self.migrateSourceIfNeeded(legacyFile: legacyFile, targetDir: targetDir)
+                let legacyFile = legacyRepoURL(for: root)
+                let targetDir = repoURL(for: root)
+                migrateSourceIfNeeded(legacyFile: legacyFile, targetDir: targetDir)
             }
             DispatchQueue.main.async {
                 guard self.activeRepoRoot != root else { return }
@@ -376,7 +381,7 @@ final class SnippetManager: ObservableObject {
                 }
                 return
             }
-            let (global, profile, repos) = self.loadAllSourcesFromDisk()
+            let (global, profile, repos) = loadAllSourcesFromDisk()
             DispatchQueue.main.async {
                 self.globalSnippetsCache = global
                 self.profileSnippetsCache = profile
@@ -391,7 +396,7 @@ final class SnippetManager: ObservableObject {
     func forceReloadAll() {
         queue.async { [weak self] in
             guard let self else { return }
-            let (global, profile, repos) = self.loadAllSourcesFromDisk()
+            let (global, profile, repos) = loadAllSourcesFromDisk()
             DispatchQueue.main.async {
                 self.globalSnippetsCache = global
                 self.profileSnippetsCache = profile
@@ -462,30 +467,30 @@ final class SnippetManager: ObservableObject {
         queue.async { [weak self] in
             guard let self else { return }
             // First, migrate any remaining legacy single-file formats
-            self.migrateIfNeeded()
+            migrateIfNeeded()
 
             var migrated: [String] = []
             let dirs: [(String, URL)] = [
-                ("global", self.globalURL()),
-                ("default", self.profileURL()),
+                ("global", globalURL()),
+                ("default", profileURL())
             ]
             for (label, dirURL) in dirs {
-                let snippets = self.loadSnippetsFromDirectory(dirURL)
+                let snippets = loadSnippetsFromDirectory(dirURL)
                 guard !snippets.isEmpty else { continue }
                 for snippet in snippets {
-                    self.saveSnippet(snippet, to: dirURL)
+                    saveSnippet(snippet, to: dirURL)
                 }
                 migrated.append("\(label) (\(snippets.count) snippets)")
             }
             // Migrate all known repos (iterate recentRepoRoots, not the cache)
             let fm = FileManager.default
             for root in FeatureSettings.shared.recentRepoRoots {
-                let repoDir = self.repoURL(for: root)
+                let repoDir = repoURL(for: root)
                 guard fm.fileExists(atPath: repoDir.path) else { continue }
-                let snippets = self.loadSnippetsFromDirectory(repoDir)
+                let snippets = loadSnippetsFromDirectory(repoDir)
                 if !snippets.isEmpty {
                     for snippet in snippets {
-                        self.saveSnippet(snippet, to: repoDir)
+                        saveSnippet(snippet, to: repoDir)
                     }
                     let name = URL(fileURLWithPath: root).lastPathComponent
                     migrated.append("repo:\(name) (\(snippets.count))")
@@ -525,30 +530,30 @@ final class SnippetManager: ObservableObject {
     func createSnippet(from draft: SnippetDraft) {
         queue.async { [weak self] in
             guard let self else { return }
-            guard let dirURL = self.url(for: draft.source, repoRootOverride: draft.repoPath) else { return }
+            guard let dirURL = url(for: draft.source, repoRootOverride: draft.repoPath) else { return }
 
-            let id = draft.id.isEmpty ? self.makeSnippetID(from: draft.title) : draft.id
+            let id = draft.id.isEmpty ? makeSnippetID(from: draft.title) : draft.id
             let now = Date()
             let snippet = Snippet(
                 id: id,
                 title: draft.title,
                 body: draft.body,
-                tags: self.parseCSV(draft.tagsText),
+                tags: parseCSV(draft.tagsText),
                 folder: draft.folder.isEmpty ? nil : draft.folder,
-                shells: self.parseCSV(draft.shellsText),
+                shells: parseCSV(draft.shellsText),
                 key: Self.normalizeKey(draft.key),
                 createdAt: now,
                 updatedAt: now
             )
-            self.saveSnippet(snippet, to: dirURL)
-            self.reloadAll()
+            saveSnippet(snippet, to: dirURL)
+            reloadAll()
         }
     }
 
     func updateSnippet(entry: SnippetEntry, with draft: SnippetDraft) {
         queue.async { [weak self] in
             guard let self else { return }
-            guard let newDirURL = self.url(for: draft.source, repoRootOverride: draft.repoPath) else { return }
+            guard let newDirURL = url(for: draft.source, repoRootOverride: draft.repoPath) else { return }
 
             let now = Date()
             let resolvedID = draft.id.isEmpty ? entry.snippet.id : draft.id
@@ -556,9 +561,9 @@ final class SnippetManager: ObservableObject {
                 id: resolvedID,
                 title: draft.title,
                 body: draft.body,
-                tags: self.parseCSV(draft.tagsText),
+                tags: parseCSV(draft.tagsText),
                 folder: draft.folder.isEmpty ? nil : draft.folder,
-                shells: self.parseCSV(draft.shellsText),
+                shells: parseCSV(draft.shellsText),
                 key: Self.normalizeKey(draft.key),
                 isPinned: entry.snippet.isPinned,
                 createdAt: entry.snippet.createdAt ?? now,
@@ -569,37 +574,37 @@ final class SnippetManager: ObservableObject {
             let newRepo = draft.repoPath.trimmingCharacters(in: .whitespacesAndNewlines)
             let sameRepo = entry.source != .repo || draft.source != .repo || oldRepo == newRepo
 
-            if entry.source == draft.source && sameRepo {
+            if entry.source == draft.source, sameRepo {
                 // Same source: write updated file, delete old file if ID changed
                 if resolvedID != entry.snippet.id {
-                    self.deleteSnippetFile(id: entry.snippet.id, from: newDirURL)
+                    deleteSnippetFile(id: entry.snippet.id, from: newDirURL)
                 }
-                self.saveSnippet(updated, to: newDirURL)
+                saveSnippet(updated, to: newDirURL)
             } else {
                 // Moving between sources: delete from old, write to new
-                if let oldDirURL = self.url(for: entry.source, repoRootOverride: entry.repoRoot) {
-                    self.deleteSnippetFile(id: entry.snippet.id, from: oldDirURL)
+                if let oldDirURL = url(for: entry.source, repoRootOverride: entry.repoRoot) {
+                    deleteSnippetFile(id: entry.snippet.id, from: oldDirURL)
                 }
-                self.saveSnippet(updated, to: newDirURL)
+                saveSnippet(updated, to: newDirURL)
             }
 
-            self.reloadAll()
+            reloadAll()
         }
     }
 
     func deleteSnippet(_ entry: SnippetEntry) {
         queue.async { [weak self] in
             guard let self else { return }
-            guard let dirURL = self.url(for: entry.source, repoRootOverride: entry.repoRoot) else { return }
-            self.deleteSnippetFile(id: entry.snippet.id, from: dirURL)
-            self.reloadAll()
+            guard let dirURL = url(for: entry.source, repoRootOverride: entry.repoRoot) else { return }
+            deleteSnippetFile(id: entry.snippet.id, from: dirURL)
+            reloadAll()
         }
     }
 
     func duplicateSnippet(_ entry: SnippetEntry, to target: SnippetSource, repoRootOverride: String? = nil) {
         queue.async { [weak self] in
             guard let self else { return }
-            guard let dirURL = self.url(for: target, repoRootOverride: repoRootOverride) else { return }
+            guard let dirURL = url(for: target, repoRootOverride: repoRootOverride) else { return }
 
             let now = Date()
             var copied = entry.snippet
@@ -608,22 +613,22 @@ final class SnippetManager: ObservableObject {
             // Check if a file with this ID already exists
             let existingFile = dirURL.appendingPathComponent("\(copied.id).json")
             if FileManager.default.fileExists(atPath: existingFile.path) {
-                copied.id = self.makeSnippetID(from: copied.title)
+                copied.id = makeSnippetID(from: copied.title)
             }
-            self.saveSnippet(copied, to: dirURL)
-            self.reloadAll()
+            saveSnippet(copied, to: dirURL)
+            reloadAll()
         }
     }
 
     func togglePin(_ entry: SnippetEntry) {
         queue.async { [weak self] in
             guard let self else { return }
-            guard let dirURL = self.url(for: entry.source, repoRootOverride: entry.repoRoot) else { return }
+            guard let dirURL = url(for: entry.source, repoRootOverride: entry.repoRoot) else { return }
             var snippet = entry.snippet
             snippet.isPinned.toggle()
             snippet.updatedAt = Date()
-            self.saveSnippet(snippet, to: dirURL)
-            self.reloadAll()
+            saveSnippet(snippet, to: dirURL)
+            reloadAll()
         }
     }
 
@@ -643,7 +648,7 @@ final class SnippetManager: ObservableObject {
         guard let regex = try? NSRegularExpression(pattern: #"\$\{env:([A-Za-z0-9_]+)\}"#) else {
             return input
         }
-        let range = NSRange(input.startIndex..<input.endIndex, in: input)
+        let range = NSRange(input.startIndex ..< input.endIndex, in: input)
         var output = input
         let matches = regex.matches(in: input, range: range).reversed()
         for match in matches {
@@ -682,7 +687,7 @@ final class SnippetManager: ObservableObject {
         guard let regex = try? NSRegularExpression(pattern: #"\$\{(\d+)(?::([^}]*))?\}"#) else {
             return (input, [], nil)
         }
-        let range = NSRange(input.startIndex..<input.endIndex, in: input)
+        let range = NSRange(input.startIndex ..< input.endIndex, in: input)
         let matches = regex.matches(in: input, range: range)
         guard !matches.isEmpty else {
             return (input, [], nil)
@@ -696,7 +701,7 @@ final class SnippetManager: ObservableObject {
 
         for match in matches {
             guard let fullRange = Range(match.range(at: 0), in: input) else { continue }
-            let before = input[cursor..<fullRange.lowerBound]
+            let before = input[cursor ..< fullRange.lowerBound]
             output.append(contentsOf: before)
             currentLength += before.count
 
@@ -714,7 +719,7 @@ final class SnippetManager: ObservableObject {
             cursor = fullRange.upperBound
         }
 
-        output.append(contentsOf: input[cursor..<input.endIndex])
+        output.append(contentsOf: input[cursor ..< input.endIndex])
 
         let sorted = placeholders.sorted {
             if $0.index != $1.index {
@@ -734,7 +739,7 @@ final class SnippetManager: ObservableObject {
     /// Returns nil if invalid or empty
     private static func normalizeKey(_ input: String) -> String? {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard let first = trimmed.first, first >= "a" && first <= "z" else {
+        guard let first = trimmed.first, first >= "a", first <= "z" else {
             return nil
         }
         return String(first)
@@ -758,7 +763,7 @@ final class SnippetManager: ObservableObject {
 
         // First, parse multiselect variables
         if let multiselectRegex = try? NSRegularExpression(pattern: multiselectPattern) {
-            let range = NSRange(text.startIndex..<text.endIndex, in: text)
+            let range = NSRange(text.startIndex ..< text.endIndex, in: text)
             let matches = multiselectRegex.matches(in: text, range: range)
 
             for match in matches {
@@ -776,7 +781,7 @@ final class SnippetManager: ObservableObject {
                     .map { String($0).trimmingCharacters(in: .whitespaces) }
                     .filter { !$0.isEmpty && seenOptions.insert($0).inserted }
 
-                guard !options.isEmpty else { continue }  // Skip if no valid options
+                guard !options.isEmpty else { continue } // Skip if no valid options
                 variables.append(SnippetInputVariable(name: name, options: options, inputType: .multiSelect))
             }
         }
@@ -786,7 +791,7 @@ final class SnippetManager: ObservableObject {
             return variables
         }
 
-        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        let range = NSRange(text.startIndex ..< text.endIndex, in: text)
         let matches = inputRegex.matches(in: text, range: range)
 
         for match in matches {
@@ -830,7 +835,7 @@ final class SnippetManager: ObservableObject {
 
     /// Checks if a snippet contains input variables that require user input
     static func hasInputVariables(_ snippet: Snippet) -> Bool {
-        let range = NSRange(snippet.body.startIndex..<snippet.body.endIndex, in: snippet.body)
+        let range = NSRange(snippet.body.startIndex ..< snippet.body.endIndex, in: snippet.body)
 
         // Check for ${input:...}
         if let inputRegex = try? NSRegularExpression(pattern: inputVariablePattern),
@@ -871,14 +876,14 @@ final class SnippetManager: ObservableObject {
             ]
             for pattern in inputPatterns {
                 guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
-                let range = NSRange(result.startIndex..<result.endIndex, in: result)
+                let range = NSRange(result.startIndex ..< result.endIndex, in: result)
                 result = regex.stringByReplacingMatches(in: result, range: range, withTemplate: escapedValue)
             }
 
             // Replace ${multiselect:Name:...}
             let multiselectPattern = "\\$\\{multiselect:\(NSRegularExpression.escapedPattern(for: variable.name)):[^}]*\\}"
             if let regex = try? NSRegularExpression(pattern: multiselectPattern) {
-                let range = NSRange(result.startIndex..<result.endIndex, in: result)
+                let range = NSRange(result.startIndex ..< result.endIndex, in: result)
                 result = regex.stringByReplacingMatches(in: result, range: range, withTemplate: escapedValue)
             }
         }
@@ -1028,8 +1033,8 @@ final class SnippetManager: ObservableObject {
         repoReloadDebounceItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            let repoDir = self.repoURL(for: root)
-            let snippets = self.loadSnippetsFromDirectory(repoDir)
+            let repoDir = repoURL(for: root)
+            let snippets = loadSnippetsFromDirectory(repoDir)
             DispatchQueue.main.async {
                 self.allRepoSnippets[root] = snippets
                 if self.activeRepoRoot == root {

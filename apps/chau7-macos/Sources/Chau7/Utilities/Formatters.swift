@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - Shared Formatters (Code Optimization)
+
 // Consolidates DateFormatter instances to avoid repeated initialization
 
 enum Formatters {
@@ -36,10 +37,7 @@ enum Formatters {
     }()
 
     /// ISO8601 formatter for machine-readable timestamps
-    static let iso8601: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        return f
-    }()
+    static let iso8601 = ISO8601DateFormatter()
 
     /// Time with milliseconds for debug logs (e.g., "14:30:00.123")
     static let debugTime: DateFormatter = {

@@ -19,13 +19,16 @@ final class NotificationActionExecutor {
     static let shared = NotificationActionExecutor()
 
     // MARK: - Dependencies (injected from app)
+
     /// Strong reference is safe — the adapter holds only weak refs to the actual UI objects.
     var delegate: NotificationActionDelegate?
 
     // MARK: - Time Tracking State
+
     private var activeTimers: [String: Date] = [:]
 
     // MARK: - Tab Style Auto-Clear Tracking
+
     /// Tracks pending auto-clear work items per tool to allow cancellation.
     /// All access must be on the main queue.
     private var pendingStyleClears: [String: DispatchWorkItem] = [:]
@@ -62,7 +65,6 @@ final class NotificationActionExecutor {
             executeBadgeTab(context)
         case .styleTab:
             executeStyleTab(context)
-
         // Automation
         case .runScript:
             executeRunScript(context)
@@ -70,7 +72,6 @@ final class NotificationActionExecutor {
             executeRunShortcut(context)
         case .executeSnippet:
             executeExecuteSnippet(context)
-
         // Integration
         case .webhook:
             executeWebhook(context)
@@ -78,7 +79,6 @@ final class NotificationActionExecutor {
             executeSendSlack(context)
         case .sendDiscord:
             executeSendDiscord(context)
-
         // DevOps
         case .dockerBump:
             executeDockerBump(context)
@@ -86,7 +86,6 @@ final class NotificationActionExecutor {
             executeDockerCompose(context)
         case .kubernetesRollout:
             executeKubernetesRollout(context)
-
         // Productivity
         case .copyToClipboard:
             executeCopyToClipboard(context)
@@ -96,7 +95,6 @@ final class NotificationActionExecutor {
             executeOpenURL(context)
         case .gitCommit:
             executeGitCommit(context)
-
         // Accessibility
         case .voiceAnnounce:
             executeVoiceAnnounce(context)
@@ -104,7 +102,6 @@ final class NotificationActionExecutor {
             executeFlashScreen(context)
         case .menuBarAlert:
             executeMenuBarAlert(context)
-
         // Time Tracking
         case .startTimer:
             executeStartTimer(context)
@@ -256,7 +253,7 @@ final class NotificationActionExecutor {
 
     private func executeStyleTab(_ ctx: ActionContext) {
         let stylePreset = ctx.configValue("style") ?? "waiting"
-        let config = ctx.config.config  // Pass all config to handler
+        let config = ctx.config.config // Pass all config to handler
         let tool = ctx.event.tool
         let autoClearSeconds = ctx.configInt("autoClearSeconds", default: 0)
 
@@ -265,17 +262,17 @@ final class NotificationActionExecutor {
             guard let self else { return }
 
             // Cancel any pending auto-clear for this tool
-            self.pendingStyleClears[tool]?.cancel()
-            self.pendingStyleClears.removeValue(forKey: tool)
+            pendingStyleClears[tool]?.cancel()
+            pendingStyleClears.removeValue(forKey: tool)
 
-            self.delegate?.styleTab(forTool: tool, directory: ctx.event.directory, preset: stylePreset, config: config)
+            delegate?.styleTab(forTool: tool, directory: ctx.event.directory, preset: stylePreset, config: config)
 
             if autoClearSeconds > 0 {
                 let workItem = DispatchWorkItem { [weak self] in
                     self?.pendingStyleClears.removeValue(forKey: tool)
                     self?.delegate?.styleTab(forTool: tool, directory: ctx.event.directory, preset: "clear", config: [:])
                 }
-                self.pendingStyleClears[tool] = workItem
+                pendingStyleClears[tool] = workItem
                 DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(autoClearSeconds), execute: workItem)
             }
         }
@@ -431,7 +428,7 @@ final class NotificationActionExecutor {
             if let error = error {
                 Log.error("Action webhook: Failed: \(error.localizedDescription)")
             } else if let httpResponse = response as? HTTPURLResponse {
-                if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
+                if httpResponse.statusCode >= 200, httpResponse.statusCode < 300 {
                     Log.info("Action webhook: Success (\(httpResponse.statusCode))")
                 } else {
                     Log.warn("Action webhook: HTTP \(httpResponse.statusCode)")
@@ -465,7 +462,7 @@ final class NotificationActionExecutor {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
 
-        URLSession.shared.dataTask(with: request) { _, response, error in
+        URLSession.shared.dataTask(with: request) { _, _, error in
             if let error = error {
                 Log.error("Action sendSlack: Failed: \(error.localizedDescription)")
             } else {
@@ -497,7 +494,7 @@ final class NotificationActionExecutor {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
 
-        URLSession.shared.dataTask(with: request) { _, response, error in
+        URLSession.shared.dataTask(with: request) { _, _, error in
             if let error = error {
                 Log.error("Action sendDiscord: Failed: \(error.localizedDescription)")
             } else {
@@ -531,7 +528,7 @@ final class NotificationActionExecutor {
                     (["stop", container], "stop"),
                     (["rm", container], "remove"),
                     (["build", "-t", container, "."], "build"),
-                    (["run", "-d", "--name", container, container], "run"),
+                    (["run", "-d", "--name", container, container], "run")
                 ]
                 for step in steps {
                     guard Self.runProcessSync(
@@ -815,7 +812,7 @@ final class NotificationActionExecutor {
             self?.flashWindow = window
             Log.info("Action flashScreen: Flashing \(count) times")
 
-            for _ in 0..<count {
+            for _ in 0 ..< count {
                 window.alphaValue = 0.5
                 window.orderFront(nil)
                 try? await Task.sleep(for: .milliseconds(duration))

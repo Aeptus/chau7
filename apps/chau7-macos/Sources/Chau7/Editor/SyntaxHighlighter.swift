@@ -95,7 +95,7 @@ final class SyntaxHighlighter {
 
     // MARK: - Highlight Colors
 
-    private struct Colors {
+    private enum Colors {
         static let url = NSColor.systemBlue
         static let path = NSColor.systemCyan
         static let error = NSColor.systemRed
@@ -134,12 +134,12 @@ final class SyntaxHighlighter {
         // Cache the result (thread-safe, with size limit)
         cacheQueue.async { [weak self] in
             guard let self else { return }
-            if self.highlightCache.count >= self.maxCacheSize {
+            if highlightCache.count >= maxCacheSize {
                 // Simple eviction: remove ~25% of entries
-                let keysToRemove = Array(self.highlightCache.keys.prefix(self.maxCacheSize / 4))
+                let keysToRemove = Array(highlightCache.keys.prefix(maxCacheSize / 4))
                 keysToRemove.forEach { self.highlightCache.removeValue(forKey: $0) }
             }
-            self.highlightCache[text] = result
+            highlightCache[text] = result
         }
 
         return result
@@ -248,7 +248,9 @@ final class SemanticOutputDetector: ObservableObject {
         let endRow: Int
         let timestamp: Date
         var exitCode: Int32?
-        var isError: Bool { exitCode != nil && exitCode != 0 }
+        var isError: Bool {
+            exitCode != nil && exitCode != 0
+        }
     }
 
     /// Detected command blocks

@@ -18,21 +18,21 @@ final class ClaudeCodeMonitor: ObservableObject {
     // MARK: - Session Info
 
     struct ClaudeSessionInfo: Identifiable, Equatable {
-        let id: String  // sessionId
+        let id: String // sessionId
         let projectName: String
-        let cwd: String  // Full working directory path for matching to tabs
+        let cwd: String // Full working directory path for matching to tabs
         let transcriptPath: String
         var lastActivity: Date
         var state: SessionState
-        var lastToolName: String?  // Most recent tool being used
+        var lastToolName: String? // Most recent tool being used
 
         enum SessionState: String {
-            case active           // User just submitted prompt, Claude starting
-            case responding       // Claude is executing tools
+            case active // User just submitted prompt, Claude starting
+            case responding // Claude is executing tools
             case waitingPermission // Claude waiting for user permission
-            case waitingInput     // Claude finished, waiting for user input
-            case idle             // No activity for a while
-            case closed           // Session ended
+            case waitingInput // Claude finished, waiting for user input
+            case idle // No activity for a while
+            case closed // Session ended
         }
     }
 
@@ -191,15 +191,15 @@ final class ClaudeCodeMonitor: ObservableObject {
     private func stateForEvent(_ type: ClaudeEventType) -> ClaudeSessionInfo.SessionState {
         switch type {
         case .userPrompt:
-            return .active           // User just sent input, Claude starting
+            return .active // User just sent input, Claude starting
         case .toolStart:
-            return .responding       // Claude is working
+            return .responding // Claude is working
         case .toolComplete:
-            return .responding       // Still working (might do more tools)
+            return .responding // Still working (might do more tools)
         case .permissionRequest:
             return .waitingPermission // Needs user permission
         case .responseComplete:
-            return .waitingInput     // Claude done, waiting for next user input
+            return .waitingInput // Claude done, waiting for next user input
         case .sessionEnd:
             return .closed
         case .notification, .unknown:
@@ -285,7 +285,7 @@ final class ClaudeCodeMonitor: ObservableObject {
         if let lastPerm = lastPermissionRequestBySession[event.sessionId],
            event.timestamp.timeIntervalSince(lastPerm.timestamp) < postPermissionSuppression {
             Log.trace("Suppressing finished notification: session=\(event.shortSessionId) " +
-                       "completed \(Int(event.timestamp.timeIntervalSince(lastPerm.timestamp)))s after permission request")
+                "completed \(Int(event.timestamp.timeIntervalSince(lastPerm.timestamp)))s after permission request")
             return
         }
 

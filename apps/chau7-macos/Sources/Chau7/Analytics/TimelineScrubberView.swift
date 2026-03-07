@@ -25,7 +25,7 @@ struct TimelineScrubberView: View {
     var onScrub: ((Date) -> Void)?
 
     @State private var hoveredBlock: CommandBlock?
-    @State private var isDragging: Bool = false
+    @State private var isDragging = false
 
     private var totalDuration: TimeInterval {
         max(sessionEnd.timeIntervalSince(sessionStart), 1.0)

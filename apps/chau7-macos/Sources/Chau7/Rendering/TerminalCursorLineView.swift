@@ -5,12 +5,14 @@ import AppKit
 final class TerminalCursorLineView: NSView {
     /// Terminal view reference - uses unified TerminalViewLike protocol
     private weak var _terminalView: (any TerminalViewLike)?
-    var showsContextLines: Bool = false
-    var showsInputHistory: Bool = false
-    var isFocused: Bool = false
+    var showsContextLines = false
+    var showsInputHistory = false
+    var isFocused = false
     weak var inputLineTracker: InputLineTracker?
 
-    override var isOpaque: Bool { false }
+    override var isOpaque: Bool {
+        false
+    }
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
@@ -41,7 +43,7 @@ final class TerminalCursorLineView: NSView {
         showsInputHistory: Bool,
         inputLineTracker: InputLineTracker?
     ) {
-        self._terminalView = terminalView
+        _terminalView = terminalView
         self.isFocused = isFocused
         self.showsContextLines = showsContextLines
         self.showsInputHistory = showsInputHistory

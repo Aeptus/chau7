@@ -102,8 +102,13 @@ public struct NotificationTriggerGroup: Identifiable, Equatable, Sendable {
         self.triggerTypes = triggerTypes
     }
 
-    public func groupTriggerId(for type: String) -> String { "\(id).\(type)" }
-    public func contains(source: AIEventSource) -> Bool { sources.contains(source) }
+    public func groupTriggerId(for type: String) -> String {
+        "\(id).\(type)"
+    }
+
+    public func contains(source: AIEventSource) -> Bool {
+        sources.contains(source)
+    }
 }
 
 public struct GroupTriggerInfo: Identifiable, Equatable, Sendable {
@@ -286,7 +291,7 @@ public enum NotificationTriggerCatalog {
             labelKey: "notifications.source.unknown",
             labelFallback: "Unknown",
             sortOrder: 201
-        ),
+        )
     ]
 
     // MARK: - AI Trigger Matrix
@@ -294,29 +299,29 @@ public enum NotificationTriggerCatalog {
     /// Trigger types shared across all AI coding tools.
     /// (type, camelKey for localization, label suffix, description suffix, defaultEnabled)
     private static let aiTriggerTypes: [(type: String, camelKey: String, labelSuffix: String, descSuffix: String, defaultEnabled: Bool)] = [
-        ("finished",        "finished",        "Response complete",   "finished responding.",                  true),
-        ("permission",      "permission",      "Permission request",  "needs permission to continue.",         true),
-        ("idle",            "idle",            "Session idle",        "session appears idle.",                 false),
-        ("token_threshold", "tokenThreshold",  "Token threshold",     "Token usage exceeded threshold.",       false),
-        ("cost_threshold",  "costThreshold",   "Cost threshold",      "Session cost exceeded threshold.",      false),
-        ("tool_called",     "toolCalled",      "Tool called",         "called a tool.",                       false),
-        ("file_edited",     "fileEdited",      "File edited",         "edited a file.",                       false),
-        ("error",           "error",           "Error occurred",      "encountered an error.",                false),
-        ("context_limit",   "contextLimit",    "Context limit",       "approaching context window limit.",    false),
-        (wildcardType,      "other",           "Other events",        "event types.",                         false),
+        ("finished", "finished", "Response complete", "finished responding.", true),
+        ("permission", "permission", "Permission request", "needs permission to continue.", true),
+        ("idle", "idle", "Session idle", "session appears idle.", false),
+        ("token_threshold", "tokenThreshold", "Token threshold", "Token usage exceeded threshold.", false),
+        ("cost_threshold", "costThreshold", "Cost threshold", "Session cost exceeded threshold.", false),
+        ("tool_called", "toolCalled", "Tool called", "called a tool.", false),
+        ("file_edited", "fileEdited", "File edited", "edited a file.", false),
+        ("error", "error", "Error occurred", "encountered an error.", false),
+        ("context_limit", "contextLimit", "Context limit", "approaching context window limit.", false),
+        (wildcardType, "other", "Other events", "event types.", false)
     ]
 
     /// AI sources that share the same trigger structure.
     /// (source, display name, camelCase key for localization)
     private static let aiSources: [(source: AIEventSource, name: String, camelCase: String)] = [
-        (.claudeCode,  "Claude Code",     "claudeCode"),
-        (.codex,       "Codex",           "codex"),
-        (.cursor,      "Cursor",          "cursor"),
-        (.windsurf,    "Windsurf",        "windsurf"),
-        (.copilot,     "GitHub Copilot",  "copilot"),
-        (.aider,       "Aider",           "aider"),
-        (.cline,       "Cline",           "cline"),
-        (.continueAI,  "Continue",        "continueAI"),
+        (.claudeCode, "Claude Code", "claudeCode"),
+        (.codex, "Codex", "codex"),
+        (.cursor, "Cursor", "cursor"),
+        (.windsurf, "Windsurf", "windsurf"),
+        (.copilot, "GitHub Copilot", "copilot"),
+        (.aider, "Aider", "aider"),
+        (.cline, "Cline", "cline"),
+        (.continueAI, "Continue", "continueAI")
     ]
 
     /// All AI triggers generated from the source × type matrix.
@@ -431,7 +436,7 @@ public enum NotificationTriggerCatalog {
             descriptionFallback: "Any other AI event types not listed above.",
             defaultEnabled: true,
             displayContexts: [.settings, .activity]
-        ),
+        )
     ]
 
     private static let terminalSessionTriggers: [NotificationTrigger] = [
@@ -454,7 +459,7 @@ public enum NotificationTriggerCatalog {
             descriptionFallback: "Terminal shell process exited.",
             defaultEnabled: true,
             displayContexts: [.settings, .activity]
-        ),
+        )
     ]
 
     private static let historyMonitorTriggers: [NotificationTrigger] = [
@@ -467,7 +472,7 @@ public enum NotificationTriggerCatalog {
             descriptionFallback: "No new history entries for the idle timeout.",
             defaultEnabled: false,
             displayContexts: [.settings, .activity]
-        ),
+        )
     ]
 
     private static let shellTriggers: [NotificationTrigger] = [
@@ -570,7 +575,7 @@ public enum NotificationTriggerCatalog {
             descriptionFallback: "Any other shell event types.",
             defaultEnabled: false,
             displayContexts: [.settings, .activity]
-        ),
+        )
     ]
 
     private static let appTriggers: [NotificationTrigger] = [
@@ -674,7 +679,7 @@ public enum NotificationTriggerCatalog {
             descriptionFallback: "Any other app event types.",
             defaultEnabled: false,
             displayContexts: [.settings, .activity]
-        ),
+        )
     ]
 
     // MARK: - Catch-All Triggers (sources without dedicated trigger sets)
@@ -689,7 +694,7 @@ public enum NotificationTriggerCatalog {
             descriptionFallback: "Any event from the API proxy.",
             defaultEnabled: false,
             displayContexts: [.settings, .activity]
-        ),
+        )
     ]
 
     private static let unknownSourceTriggers: [NotificationTrigger] = [
@@ -702,30 +707,26 @@ public enum NotificationTriggerCatalog {
             descriptionFallback: "Events from unrecognized sources.",
             defaultEnabled: false,
             displayContexts: [.settings, .activity]
-        ),
+        )
     ]
 
     // MARK: - Combined Catalog
 
     public static let all: [NotificationTrigger] =
         eventsLogTriggers + terminalSessionTriggers + historyMonitorTriggers
-        + shellTriggers + aiTriggers + appTriggers
-        + apiProxyTriggers + unknownSourceTriggers
+            + shellTriggers + aiTriggers + appTriggers
+            + apiProxyTriggers + unknownSourceTriggers
 
     // MARK: - O(1) Lookup Indexes (built once at startup)
 
     /// Maps trigger id → trigger for O(1) exact-match lookup.
-    private static let index: [String: NotificationTrigger] = {
-        Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
-    }()
+    private static let index: [String: NotificationTrigger] = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
 
     /// Maps source → wildcard trigger for O(1) fallback lookup.
-    private static let wildcardIndex: [AIEventSource: NotificationTrigger] = {
-        Dictionary(
-            all.filter(\.isWildcard).map { ($0.source, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-    }()
+    private static let wildcardIndex: [AIEventSource: NotificationTrigger] = Dictionary(
+        all.filter(\.isWildcard).map { ($0.source, $0) },
+        uniquingKeysWith: { first, _ in first }
+    )
 
     public static func triggerId(source: AIEventSource, type: String) -> String {
         "\(source.rawValue).\(normalizeType(type))"

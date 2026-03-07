@@ -111,9 +111,8 @@ enum ProtectedPathPolicy {
     private static var deniedRoots: Set<String> = []
     private static var deniedUntilByRoot: [String: Date] = [:]
     private static var activeSecurityURLs: [String: URL] = [:]
-    private static var bookmarksByRoot: [String: Data] = {
-        (defaults.dictionary(forKey: bookmarksDefaultsKey) as? [String: Data]) ?? [:]
-    }()
+    private static var bookmarksByRoot: [String: Data] = (defaults.dictionary(forKey: bookmarksDefaultsKey) as? [String: Data]) ?? [:]
+
     private static var lastDecisionByRoot: [String: Bool] = [:]
 
     private static func protectedRoot(for path: String) -> String? {
@@ -238,10 +237,10 @@ enum ProtectedPathPolicy {
         } catch let error as NSError {
             // Only treat permission errors as denied; not-found means the path
             // doesn't exist yet, which shouldn't permanently deny access.
-            if error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoPermissionError {
+            if error.domain == NSCocoaErrorDomain, error.code == NSFileReadNoPermissionError {
                 return false
             }
-            if error.domain == NSPOSIXErrorDomain && error.code == Int(EACCES) {
+            if error.domain == NSPOSIXErrorDomain, error.code == Int(EACCES) {
                 return false
             }
             // Path doesn't exist or other non-permission error — treat as accessible

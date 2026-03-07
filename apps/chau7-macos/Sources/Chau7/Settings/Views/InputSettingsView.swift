@@ -4,7 +4,7 @@ import SwiftUI
 
 struct InputSettingsView: View {
     @ObservedObject private var settings = FeatureSettings.shared
-    @State private var editingShortcut: KeyboardShortcut? = nil
+    @State private var editingShortcut: KeyboardShortcut?
     @State private var showShortcutEditor = false
 
     private var presetBinding: Binding<String> {
@@ -117,7 +117,10 @@ struct InputSettingsView: View {
 
             SettingsToggle(
                 label: L("settings.input.mouseReporting", "Mouse Reporting"),
-                help: L("settings.input.mouseReporting.help", "Allow terminal apps (vim, tmux, etc.) to capture mouse events. When enabled, hold Shift to force text selection. When disabled, text selection always works."),
+                help: L(
+                    "settings.input.mouseReporting.help",
+                    "Allow terminal apps (vim, tmux, etc.) to capture mouse events. When enabled, hold Shift to force text selection. When disabled, text selection always works."
+                ),
                 isOn: $settings.isMouseReportingEnabled
             )
 

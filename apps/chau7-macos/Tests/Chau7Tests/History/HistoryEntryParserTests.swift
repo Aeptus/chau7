@@ -12,7 +12,7 @@ final class HistoryEntryParserTests: XCTestCase {
         let entry = try HistoryEntryParser.parse(line: json)
 
         XCTAssertEqual(entry.sessionId, "abc123")
-        XCTAssertEqual(entry.timestamp, 1700000000)
+        XCTAssertEqual(entry.timestamp, 1_700_000_000)
         XCTAssertEqual(entry.summary, "hello world")
         XCTAssertFalse(entry.isExit)
     }
@@ -64,7 +64,7 @@ final class HistoryEntryParserTests: XCTestCase {
         {"session_id":"s1","timestamp":1700000000}
         """
         let entry = try HistoryEntryParser.parse(line: json)
-        XCTAssertEqual(entry.timestamp, 1700000000)
+        XCTAssertEqual(entry.timestamp, 1_700_000_000)
     }
 
     // MARK: - Timestamp Normalization
@@ -75,7 +75,7 @@ final class HistoryEntryParserTests: XCTestCase {
         {"session_id":"s1","ts":1700000000000}
         """
         let entry = try HistoryEntryParser.parse(line: json)
-        XCTAssertEqual(entry.timestamp, 1700000000, accuracy: 0.001)
+        XCTAssertEqual(entry.timestamp, 1_700_000_000, accuracy: 0.001)
     }
 
     func testParseKeepsSecondTimestampAsIs() throws {
@@ -83,7 +83,7 @@ final class HistoryEntryParserTests: XCTestCase {
         {"session_id":"s1","ts":1700000000}
         """
         let entry = try HistoryEntryParser.parse(line: json)
-        XCTAssertEqual(entry.timestamp, 1700000000)
+        XCTAssertEqual(entry.timestamp, 1_700_000_000)
     }
 
     func testParseBoundaryTimestampNotNormalized() throws {
@@ -92,7 +92,7 @@ final class HistoryEntryParserTests: XCTestCase {
         {"session_id":"s1","ts":1000000000000}
         """
         let entry = try HistoryEntryParser.parse(line: json)
-        XCTAssertEqual(entry.timestamp, 1000000000000, accuracy: 0.001)
+        XCTAssertEqual(entry.timestamp, 1_000_000_000_000, accuracy: 0.001)
     }
 
     func testParseBelowBoundaryNotNormalized() throws {
@@ -101,7 +101,7 @@ final class HistoryEntryParserTests: XCTestCase {
         {"session_id":"s1","ts":999999999999}
         """
         let entry = try HistoryEntryParser.parse(line: json)
-        XCTAssertEqual(entry.timestamp, 999999999999)
+        XCTAssertEqual(entry.timestamp, 999_999_999_999)
     }
 
     // MARK: - Exit Marker Detection

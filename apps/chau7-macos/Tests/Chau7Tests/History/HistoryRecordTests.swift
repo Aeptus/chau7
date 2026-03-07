@@ -19,7 +19,7 @@ final class HistoryRecordTests: XCTestCase {
     }
 
     func testInitWithAllFields() {
-        let date = Date(timeIntervalSince1970: 1700000000)
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
         let record = HistoryRecord(
             id: 42,
             command: "git push",
@@ -44,21 +44,21 @@ final class HistoryRecordTests: XCTestCase {
     }
 
     func testEquality() {
-        let date = Date(timeIntervalSince1970: 1700000000)
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
         let a = HistoryRecord(id: 1, command: "ls", timestamp: date)
         let b = HistoryRecord(id: 1, command: "ls", timestamp: date)
         XCTAssertEqual(a, b)
     }
 
     func testInequality() {
-        let date = Date(timeIntervalSince1970: 1700000000)
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
         let a = HistoryRecord(id: 1, command: "ls", timestamp: date)
         let b = HistoryRecord(id: 2, command: "ls", timestamp: date)
         XCTAssertNotEqual(a, b)
     }
 
     func testCodableRoundTrip() throws {
-        let date = Date(timeIntervalSince1970: 1700000000)
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
         let original = HistoryRecord(
             id: 7,
             command: "make build",
@@ -100,7 +100,7 @@ final class FrequentCommandTests: XCTestCase {
     }
 
     func testEquality() {
-        let date = Date(timeIntervalSince1970: 1700000000)
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
         let a = FrequentCommand(command: "ls", count: 3, lastUsed: date)
         let b = FrequentCommand(command: "ls", count: 3, lastUsed: date)
         XCTAssertEqual(a, b)
@@ -130,7 +130,7 @@ final class FrequentCommandTests: XCTestCase {
     }
 
     func testCodableRoundTrip() throws {
-        let date = Date(timeIntervalSince1970: 1700000000)
+        let date = Date(timeIntervalSince1970: 1_700_000_000)
         let original = FrequentCommand(command: "npm test", count: 42, lastUsed: date)
 
         let data = try JSONEncoder().encode(original)

@@ -22,7 +22,7 @@ final class StatusBarController: NSObject {
     /// Panel view model — lives as long as the controller so popover doesn't recreate state.
     private var panelViewModel: CommandCenterViewModel?
 
-    private override init() {
+    override private init() {
         super.init()
     }
 
@@ -62,19 +62,19 @@ final class StatusBarController: NSObject {
         // Local monitor for clicks within the app but outside the popover
         localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             guard let self = self,
-                  let popover = self.popover,
+                  let popover = popover,
                   popover.isShown,
                   let popoverWindow = popover.contentViewController?.view.window else {
                 return event
             }
 
             if event.window != popoverWindow {
-                if let button = self.statusItem?.button,
+                if let button = statusItem?.button,
                    let buttonWindow = button.window,
                    event.window == buttonWindow {
                     return event
                 }
-                self.closePopover()
+                closePopover()
             }
             return event
         }
@@ -129,10 +129,10 @@ final class StatusBarController: NSObject {
         if animate {
             // Pulse animation: alternate icon rapidly before restoring
             let pulseCount = min(duration * 2, 10)
-            for i in 0..<pulseCount {
+            for i in 0 ..< pulseCount {
                 let delay = Double(i) * 0.5
                 DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                    button.image = (i % 2 == 0) ? alertImage : originalImage
+                    button.image = i.isMultiple(of: 2) ? alertImage : originalImage
                 }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(duration)) {
@@ -223,15 +223,16 @@ final class CommandCenterViewModel: ObservableObject {
         model.claudeCodeSessions.filter { $0.state == .waitingPermission || $0.state == .waitingInput }
     }
 
-    var attentionCount: Int { attentionSessions.count }
+    var attentionCount: Int {
+        attentionSessions.count
+    }
 
     /// Active sessions excluding idle/closed, sorted by most recent activity, max 5.
     var liveSessions: [ClaudeCodeMonitor.ClaudeSessionInfo] {
-        model.claudeCodeSessions
+        Array(model.claudeCodeSessions
             .filter { $0.state != .idle && $0.state != .closed }
             .sorted { $0.lastActivity > $1.lastActivity }
-            .prefix(5)
-            .map { $0 }
+            .prefix(5))
     }
 
     /// Merged feed of notification history + recent tool-agnostic events, deduplicated, max 8.
@@ -285,10 +286,9 @@ final class CommandCenterViewModel: ObservableObject {
             }
         }
 
-        return entries
+        return Array(entries
             .sorted { $0.timestamp > $1.timestamp }
-            .prefix(8)
-            .map { $0 }
+            .prefix(8))
     }
 
     func focusSession(_ session: ClaudeCodeMonitor.ClaudeSessionInfo) {
@@ -313,6 +313,7 @@ final class CommandCenterViewModel: ObservableObject {
     }
 
     // MARK: - Human-Readable Event Mapping (AIEvent — tool-agnostic)
+
     //
     // These helpers map AIEvent fields to user-friendly strings for the unified timeline.
     // AIEvent is the tool-agnostic event model (from Chau7Core) used by ALL monitors —
@@ -583,7 +584,9 @@ struct UnifiedTimelineEntry: Identifiable {
 struct StatusBarPanelView: View {
     @ObservedObject var viewModel: CommandCenterViewModel
 
-    private var model: AppModel { viewModel.model }
+    private var model: AppModel {
+        viewModel.model
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -702,10 +705,10 @@ struct StatusBarPanelView: View {
                 icon: "antenna.radiowaves.left.and.right",
                 label: L("statusBar.monitoring", "Monitoring"),
                 isOn: Binding(
-                    get: { self.model.isMonitoring },
+                    get: { model.isMonitoring },
                     set: { newValue in
-                        self.model.isMonitoring = newValue
-                        self.model.applyMonitoringState()
+                        model.isMonitoring = newValue
+                        model.applyMonitoringState()
                         NotificationCenter.default.post(name: NSNotification.Name("MonitoringStateChanged"), object: nil)
                     }
                 )
@@ -986,14 +989,14 @@ private struct LiveSessionCard: View {
             }
             return String(format: L("time.minutes.ago", "%d minutes ago"), minutes)
         }
-        if seconds < 86_400 {
+        if seconds < 86400 {
             let hours = seconds / 3600
             if hours == 1 {
                 return L("time.hour.ago", "1 hour ago")
             }
             return String(format: L("time.hours.ago", "%d hours ago"), hours)
         }
-        let days = seconds / 86_400
+        let days = seconds / 86400
         if days == 1 {
             return L("time.day.ago", "1 day ago")
         }

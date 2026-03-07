@@ -11,14 +11,14 @@ final class ClipboardHistoryManager: ObservableObject {
 
     /// Synchronization lock for thread-safe access to lastChangeCount
     private let lock = NSLock()
-    private var lastChangeCount: Int = 0
+    private var lastChangeCount = 0
     private var pollTimer: DispatchSourceTimer?
 
     struct ClipboardItem: Identifiable, Equatable {
         let id = UUID()
         let text: String
         let timestamp: Date
-        var isPinned: Bool = false
+        var isPinned = false
 
         var preview: String {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -30,7 +30,7 @@ final class ClipboardHistoryManager: ObservableObject {
     }
 
     private init() {
-        lastChangeCount = NSPasteboard.general.changeCount
+        self.lastChangeCount = NSPasteboard.general.changeCount
         startPolling()
     }
 

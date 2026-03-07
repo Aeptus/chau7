@@ -208,7 +208,7 @@ enum HelpContent {
             Chau7 provides extensive keyboard shortcuts for efficient navigation.
 
             ## Customizing Shortcuts
-            
+
             Open the Keyboard Shortcuts editor from:
             - **⌘/**: Keyboard Shortcuts
             - Command Palette: **⇧⌘P** → "Keyboard Shortcuts"
@@ -387,7 +387,10 @@ enum HelpContent {
 
             ## How It Works
 
-            When the optimizer is active, Chau7 inserts lightweight wrapper scripts into your PATH. These wrappers intercept supported commands, route them through the `chau7-optim` binary, and produce compact output. If the optimizer can't handle a particular invocation, it falls through to the real binary — your commands always work.
+            When the optimizer is active, Chau7 inserts lightweight wrapper scripts into your PATH. \
+            These wrappers intercept supported commands, route them through the `chau7-optim` binary, \
+            and produce compact output. If the optimizer can't handle a particular invocation, \
+            it falls through to the real binary — your commands always work.
 
             ```
             you type: grep "TODO" src/
@@ -724,7 +727,7 @@ enum HelpContent {
             Export your settings to a file or enable iCloud sync to share settings across devices.
             """),
             relatedTopicIDs: ["getting-started", "token-optimizer"]
-        ),
+        )
     ]
 
     static func topic(id: String) -> HelpTopic? {
@@ -745,7 +748,7 @@ struct HelpWindowView: View {
         let query = searchText.lowercased()
         return HelpContent.topics.filter {
             $0.title.lowercased().contains(query) ||
-            $0.content.lowercased().contains(query)
+                $0.content.lowercased().contains(query)
         }
     }
 
@@ -971,7 +974,7 @@ private struct TableView: View {
             VStack(alignment: .leading, spacing: 0) {
                 // Header
                 HStack(spacing: 0) {
-                    ForEach(Array(rows[0].enumerated()), id: \.offset) { idx, header in
+                    ForEach(Array(rows[0].enumerated()), id: \.offset) { _, header in
                         Text(header)
                             .font(.system(size: 12, weight: .semibold))
                             .frame(maxWidth: .infinity, alignment: .leading)

@@ -62,7 +62,7 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
     /// This is critical for stability - macOS may request toolbar items multiple times.
     private var cachedHostingViews: [NSToolbar.Identifier: TabBarHostingView] = [:]
 
-    private override init() {
+    override private init() {
         super.init()
     }
 
@@ -196,7 +196,10 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
             height = OverlayLayout.tabBarHeight
         }
         if !maxWidth.isFinite || !height.isFinite || maxWidth <= 0 || height <= 0 {
-            Log.warn("TabBarToolbarDelegate.applySizing: invalid toolbar metrics. model=\(model != nil ? "present" : "nil"), minWidth=\(Int(minWidth)), maxWidth=\(Int(maxWidth)), height=\(Int(height))")
+            Log
+                .warn(
+                    "TabBarToolbarDelegate.applySizing: invalid toolbar metrics. model=\(model != nil ? "present" : "nil"), minWidth=\(Int(minWidth)), maxWidth=\(Int(maxWidth)), height=\(Int(height))"
+                )
         }
 
         // item.minSize/maxSize are the only reliable toolbar sizing API.
@@ -238,7 +241,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
     /// The size the toolbar delegate wants this view to be.
     /// Used by intrinsicContentSize so NSToolbar's layout engine allocates
     /// the correct width instead of falling back to SwiftUI's minimum (180px).
-    var desiredSize: NSSize = NSSize(width: 800, height: OverlayLayout.tabBarHeight) {
+    var desiredSize = NSSize(width: 800, height: OverlayLayout.tabBarHeight) {
         didSet {
             if desiredSize != oldValue {
                 invalidateIntrinsicContentSize()
@@ -254,7 +257,9 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         desiredSize
     }
 
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
 }
 
 private struct TabDropIndicator: Equatable {
@@ -281,7 +286,7 @@ private struct TabMidXPreferenceKey: PreferenceKey {
 
 /// Preference key for tracking rendered tab count (for auto-recovery)
 private struct RenderedTabCountKey: PreferenceKey {
-    static var defaultValue: Int = 0
+    static var defaultValue = 0
     static func reduce(value: inout Int, nextValue: () -> Int) {
         value += nextValue()
     }
@@ -303,13 +308,13 @@ private struct TabBarSizeKey: PreferenceKey {
 private struct ToolbarTabBarView: View {
     @ObservedObject var overlayModel: OverlayTabsModel
     @ObservedObject private var settings = FeatureSettings.shared
-    @State private var draggingTabID: UUID? = nil
+    @State private var draggingTabID: UUID?
     @State private var tabWidths: [UUID: CGFloat] = [:]
-    @State private var recoveryDebounce: DispatchWorkItem? = nil
+    @State private var recoveryDebounce: DispatchWorkItem?
     // Gesture-based drag state for tab reordering (Chrome/Safari style deferred reorder)
     @State private var dragOffset: CGFloat = 0
-    @State private var dragHomeIndex: Int = 0       // Original index when drag started
-    @State private var dragCurrentSlot: Int = 0     // Visual slot the dragged tab occupies
+    @State private var dragHomeIndex = 0 // Original index when drag started
+    @State private var dragCurrentSlot = 0 // Visual slot the dragged tab occupies
     /// Must match HStack spacing in the tab bar ForEach.
     private let tabSpacing: CGFloat = 8
     @State private var lastTinySizeLogAt: Date = .distantPast
@@ -321,63 +326,63 @@ private struct ToolbarTabBarView: View {
 
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-            ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    // Use refresh token in ForEach id to force complete re-render on recovery
-                    ForEach(overlayModel.tabs) { tab in
-                        tabView(for: tab)
-                            // Each rendered tab reports itself for auto-recovery detection
-                            .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
-                            // Hardening: prevent individual tabs from being sized to zero
-                            .fixedSize(horizontal: false, vertical: true)
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            // Use refresh token in ForEach id to force complete re-render on recovery
+                            ForEach(overlayModel.tabs) { tab in
+                                tabView(for: tab)
+                                    // Each rendered tab reports itself for auto-recovery detection
+                                    .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
+                                    // Hardening: prevent individual tabs from being sized to zero
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            Button {
+                                overlayModel.newTab()
+                            } label: {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 3)
+                            .frame(height: OverlayLayout.tabChipHeight, alignment: .center)
+                            .background(Color.black.opacity(0.18))
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .contentShape(Rectangle())
+                            .accessibilityLabel(L("New tab", "New tab"))
+                            .accessibilityHint(L("Opens a new terminal tab", "Opens a new terminal tab"))
+                        }
+                        .onPreferenceChange(TabWidthPreferenceKey.self) { widths in
+                            tabWidths = widths
+                        }
+                        .onPreferenceChange(TabMidXPreferenceKey.self) { positions in
+                            tabMidXPositions = positions
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
                     }
-
-                    Button {
-                        overlayModel.newTab()
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 12, weight: .semibold))
+                    // Force complete re-render of ScrollView content when refresh token changes
+                    // This is more aggressive than just the ForEach id - it recreates the entire scroll view
+                    .id("tabbar-scroll-\(overlayModel.tabBarRefreshToken)")
+                    // Hardening: ensure ScrollView content maintains minimum size
+                    .fixedSize(horizontal: false, vertical: true)
+                    .onChange(of: overlayModel.selectedTabID) { newID in
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            proxy.scrollTo(newID, anchor: .center)
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
-                    .frame(height: OverlayLayout.tabChipHeight, alignment: .center)
-                    .background(Color.black.opacity(0.18))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .contentShape(Rectangle())
-                    .accessibilityLabel(L("New tab", "New tab"))
-                    .accessibilityHint(L("Opens a new terminal tab", "Opens a new terminal tab"))
                 }
-                .onPreferenceChange(TabWidthPreferenceKey.self) { widths in
-                    tabWidths = widths
-                }
-                .onPreferenceChange(TabMidXPreferenceKey.self) { positions in
-                    tabMidXPositions = positions
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-            }
-            // Force complete re-render of ScrollView content when refresh token changes
-            // This is more aggressive than just the ForEach id - it recreates the entire scroll view
-            .id("tabbar-scroll-\(overlayModel.tabBarRefreshToken)")
-            // Hardening: ensure ScrollView content maintains minimum size
-            .fixedSize(horizontal: false, vertical: true)
-            .onChange(of: overlayModel.selectedTabID) { newID in
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    proxy.scrollTo(newID, anchor: .center)
-                }
-            }
-            }
 
-            Spacer()
+                Spacer()
 
-            if let session = selected?.session {
-                HStack(spacing: 8) {
-                    DevServerBadge(session: session)
-                    GitBranchBadge(session: session)
+                if let session = selected?.session {
+                    HStack(spacing: 8) {
+                        DevServerBadge(session: session)
+                        GitBranchBadge(session: session)
+                    }
                 }
-            }
             }
             .frame(height: OverlayLayout.tabBarHeight, alignment: .center)
             // Keep a minimal background on the actual tab row only.
@@ -398,9 +403,12 @@ private struct ToolbarTabBarView: View {
             // Log tiny/zero rendered sizes immediately so disappearance can be diagnosed from logs.
             let now = Date()
             let expectedMinWidth = CGFloat(overlayModel.tabs.count) * 30
-            if (size.width <= 0 || size.height <= 0 || size.width < 1 || size.height < 10 || size.width < expectedMinWidth) && now.timeIntervalSince(lastTinySizeLogAt) > 1.0 {
+            if size.width <= 0 || size.height <= 0 || size.width < 1 || size.height < 10 || size.width < expectedMinWidth, now.timeIntervalSince(lastTinySizeLogAt) > 1.0 {
                 lastTinySizeLogAt = now
-                Log.warn("ToolbarTabBarView: suspicious tab bar size reported width=\(Int(size.width)) height=\(Int(size.height)), tabs=\(overlayModel.tabs.count), expectedMinWidth=\(Int(expectedMinWidth)), refreshToken=\(overlayModel.tabBarRefreshToken)")
+                Log
+                    .warn(
+                        "ToolbarTabBarView: suspicious tab bar size reported width=\(Int(size.width)) height=\(Int(size.height)), tabs=\(overlayModel.tabs.count), expectedMinWidth=\(Int(expectedMinWidth)), refreshToken=\(overlayModel.tabBarRefreshToken)"
+                    )
             }
         }
         .onChange(of: overlayModel.tabs.count) { newCount in
@@ -432,7 +440,7 @@ private struct ToolbarTabBarView: View {
             let expectedCount = overlayModel.tabs.count
             // Only act if we rendered ZERO tabs but expected some (the critical bug case)
             // During normal add/remove, renderedCount trails briefly but is never zero when tabs exist
-            if renderedCount == 0 && expectedCount > 0 {
+            if renderedCount == 0, expectedCount > 0 {
                 // Debounce to avoid triggering during animations/transitions
                 recoveryDebounce?.cancel()
                 let task = DispatchWorkItem { [weak overlayModel] in
@@ -479,27 +487,27 @@ private struct ToolbarTabBarView: View {
         )
         // Explicit stable identity based on tab UUID
         .id(tab.id)
-            .background(
-                GeometryReader { proxy in
-                    Color.clear
-                        .preference(key: TabWidthPreferenceKey.self, value: [tab.id: proxy.size.width])
-                        .preference(key: TabMidXPreferenceKey.self, value: [tab.id: proxy.frame(in: .global).midX])
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .preference(key: TabWidthPreferenceKey.self, value: [tab.id: proxy.size.width])
+                    .preference(key: TabMidXPreferenceKey.self, value: [tab.id: proxy.frame(in: .global).midX])
+            }
+        )
+        // Visual offset: dragged tab follows cursor, displaced neighbors slide
+        .offset(x: tabDragOffset(for: tab))
+        .animation(draggingTabID == tab.id ? nil : .spring(response: 0.25, dampingFraction: 0.85), value: dragCurrentSlot)
+        .zIndex(draggingTabID == tab.id ? 1 : 0)
+        // Gesture-based tab reordering (more reliable than .onDrag in ScrollViews)
+        .gesture(
+            DragGesture(minimumDistance: 5)
+                .onChanged { value in
+                    handleTabDrag(tab: tab, translation: value.translation.width)
                 }
-            )
-            // Visual offset: dragged tab follows cursor, displaced neighbors slide
-            .offset(x: tabDragOffset(for: tab))
-            .animation(draggingTabID == tab.id ? nil : .spring(response: 0.25, dampingFraction: 0.85), value: dragCurrentSlot)
-            .zIndex(draggingTabID == tab.id ? 1 : 0)
-            // Gesture-based tab reordering (more reliable than .onDrag in ScrollViews)
-            .gesture(
-                DragGesture(minimumDistance: 5)
-                    .onChanged { value in
-                        handleTabDrag(tab: tab, translation: value.translation.width)
-                    }
-                    .onEnded { value in
-                        handleTabDragEnd(tab: tab, translation: value.translation.width)
-                    }
-            )
+                .onEnded { value in
+                    handleTabDragEnd(tab: tab, translation: value.translation.width)
+                }
+        )
     }
 
     /// Returns the visual X offset for a tab during a drag gesture.
@@ -520,12 +528,12 @@ private struct ToolbarTabBarView: View {
 
         if dragCurrentSlot > dragHomeIndex {
             // Dragging right: tabs between (home, currentSlot] shift left
-            if i > dragHomeIndex && i <= dragCurrentSlot {
+            if i > dragHomeIndex, i <= dragCurrentSlot {
                 return -shift
             }
         } else if dragCurrentSlot < dragHomeIndex {
             // Dragging left: tabs in [currentSlot, home) shift right
-            if i >= dragCurrentSlot && i < dragHomeIndex {
+            if i >= dragCurrentSlot, i < dragHomeIndex {
                 return shift
             }
         }
@@ -575,7 +583,7 @@ private struct ToolbarTabBarView: View {
         if translation > 0 {
             // Dragging right: check each neighbor past home
             var cumulative: CGFloat = 0
-            for i in (dragHomeIndex + 1)..<snapshot.count {
+            for i in (dragHomeIndex + 1) ..< snapshot.count {
                 let neighborWidth = tabWidths[snapshot[i].id] ?? 100
                 cumulative += neighborWidth + tabSpacing
                 if translation > cumulative * 0.5 {
@@ -692,12 +700,12 @@ struct CursorPlaceholderView: View {
     let promptText: String
     let cursorPosition: CGPoint
 
-    // Use TimelineView for reliable cursor blinking
+    /// Use TimelineView for reliable cursor blinking
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.5)) { timeline in
-            let cursorVisible = Int(timeline.date.timeIntervalSinceReferenceDate * 2) % 2 == 0
+            let cursorVisible = Int(timeline.date.timeIntervalSinceReferenceDate * 2).isMultiple(of: 2)
 
-            GeometryReader { geometry in
+            GeometryReader { _ in
                 ZStack(alignment: .bottomLeading) {
                     // Minimal dark background
                     Color.black.opacity(0.95)
@@ -742,25 +750,25 @@ struct Chau7OverlayView: View {
     var body: some View {
         // Tab bar is now in the unified toolbar (Safari-style)
         terminalStack
-        .background(Color.clear)
-        .onAppear {
-            overlayModel.configureRenderSuspension(
-                enabled: appModel.isSuspendBackgroundRendering,
-                delay: appModel.suspendRenderDelaySeconds
-            )
-        }
-        .onChange(of: appModel.isSuspendBackgroundRendering) { _ in
-            overlayModel.configureRenderSuspension(
-                enabled: appModel.isSuspendBackgroundRendering,
-                delay: appModel.suspendRenderDelaySeconds
-            )
-        }
-        .onChange(of: appModel.suspendRenderDelayText) { _ in
-            overlayModel.configureRenderSuspension(
-                enabled: appModel.isSuspendBackgroundRendering,
-                delay: appModel.suspendRenderDelaySeconds
-            )
-        }
+            .background(Color.clear)
+            .onAppear {
+                overlayModel.configureRenderSuspension(
+                    enabled: appModel.isSuspendBackgroundRendering,
+                    delay: appModel.suspendRenderDelaySeconds
+                )
+            }
+            .onChange(of: appModel.isSuspendBackgroundRendering) { _ in
+                overlayModel.configureRenderSuspension(
+                    enabled: appModel.isSuspendBackgroundRendering,
+                    delay: appModel.suspendRenderDelaySeconds
+                )
+            }
+            .onChange(of: appModel.suspendRenderDelayText) { _ in
+                overlayModel.configureRenderSuspension(
+                    enabled: appModel.isSuspendBackgroundRendering,
+                    delay: appModel.suspendRenderDelaySeconds
+                )
+            }
     }
 
     /// Computes the slide direction based on tab indices
@@ -774,7 +782,9 @@ struct Chau7OverlayView: View {
 
     private var terminalStack: some View {
         ZStack(alignment: .top) {
+
             // MARK: - Tab Switch Optimization: Snapshot Layer (shows instantly)
+
             // This displays a cached screenshot while the real terminal renders
             ForEach(overlayModel.tabs) { tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
@@ -783,11 +793,12 @@ struct Chau7OverlayView: View {
                     Image(nsImage: snapshot)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
-                        .zIndex(2)  // Above terminal but below overlays
+                        .zIndex(2) // Above terminal but below overlays
                 }
             }
 
             // MARK: - Tab Switch Optimization: Cursor Placeholder (appears first)
+
             // Shows a blinking cursor immediately for perceived instant response
             // Only shows if the tab has been viewed before (has cached prompt text)
             ForEach(overlayModel.tabs) { tab in
@@ -798,11 +809,12 @@ struct Chau7OverlayView: View {
                         promptText: tab.lastPromptText.isEmpty ? "~" : tab.lastPromptText,
                         cursorPosition: tab.lastCursorPosition
                     )
-                    .zIndex(3)  // Above snapshot for immediate cursor feedback
+                    .zIndex(3) // Above snapshot for immediate cursor feedback
                 }
             }
 
             // MARK: - Shell Loading Bar
+
             ForEach(overlayModel.tabs) { tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
                 if isSelected, let session = tab.displaySession {
@@ -812,6 +824,7 @@ struct Chau7OverlayView: View {
             }
 
             // MARK: - Tab Switch Optimization: Lazy Tab Loading + Directional Motion
+
             // Only keep nearby tabs (selected ± 1, previous ± 1) in full view hierarchy.
             // This ensures smooth transitions even when jumping between distant tabs.
             // Distant tabs use lightweight placeholders - their shell processes
@@ -831,7 +844,7 @@ struct Chau7OverlayView: View {
                     // Full terminal view for selected and adjacent tabs
                     SplitPaneView(controller: tab.splitController, isSuspended: isSuspended, isActive: isSelected)
                         .opacity(isSelected && overlayModel.isTerminalReady ? 1 : 0)
-                        .offset(x: isSelected ? 0 : (30 * direction))  // Subtle slide effect
+                        .offset(x: isSelected ? 0 : (30 * direction)) // Subtle slide effect
                         .allowsHitTesting(isSelected)
                         .accessibilityHidden(!isSelected)
                         .zIndex(isSelected ? 1 : 0)
@@ -856,6 +869,7 @@ struct Chau7OverlayView: View {
             }
 
             // MARK: - Tab Hover Card
+
             if overlayModel.hoverCardTabID != nil {
                 TabHoverCard(
                     overlayModel: overlayModel,
@@ -1044,8 +1058,8 @@ private struct ShellLoadingBar: View {
     /// Total animation positions: bar sweeps right then left (bounce)
     private static let totalPositions = (barWidth - litWidth) * 2
 
-    @State private var offset: Int = 0
-    @State private var visible: Bool = false
+    @State private var offset = 0
+    @State private var visible = false
 
     private let timer = Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()
 
@@ -1054,7 +1068,7 @@ private struct ShellLoadingBar: View {
         let maxOffset = Self.barWidth - Self.litWidth
         let pos = offset <= maxOffset ? offset : Self.totalPositions - offset
         var chars = [Character](repeating: "░", count: Self.barWidth)
-        for i in pos..<(pos + Self.litWidth) {
+        for i in pos ..< (pos + Self.litWidth) {
             chars[i] = "▸"
         }
         return "  " + String(chars) + " "
@@ -1130,14 +1144,16 @@ struct UnifiedTabButton: View {
     let onSelect: () -> Void
     let onRename: () -> Void
     let onClose: () -> Void
-    var onHover: ((Bool) -> Void)? = nil
-    var onToggleTokenOpt: (() -> Void)? = nil
+    var onHover: ((Bool) -> Void)?
+    var onToggleTokenOpt: (() -> Void)?
 
-    // Pulse animation state
-    @State private var isPulsing: Bool = false
+    /// Pulse animation state
+    @State private var isPulsing = false
 
-    // Notification style helpers
-    private var notificationStyle: TabNotificationStyle? { tab.notificationStyle }
+    /// Notification style helpers
+    private var notificationStyle: TabNotificationStyle? {
+        tab.notificationStyle
+    }
 
     private var titleFont: Font {
         var font = Font.custom("Avenir Next", size: 12)
@@ -1175,8 +1191,6 @@ struct UnifiedTabButton: View {
         tab.displaySession?.tabPathDisplayName() ?? ""
     }
 
-
-
     /// Whether this tab should show only the custom title (hiding all extras).
     private var isMinimalDisplay: Bool {
         FeatureSettings.shared.customTitleOnly
@@ -1184,11 +1198,11 @@ struct UnifiedTabButton: View {
             && !tab.customTitle!.isEmpty
     }
 
-    // Extracted to reduce type-checker complexity in body.
+    /// Extracted to reduce type-checker complexity in body.
     @ViewBuilder
     private var ctoIndicator: some View {
-        if FeatureSettings.shared.showTabCTOIndicator
-            && FeatureSettings.shared.tokenOptimizationMode != .off {
+        if FeatureSettings.shared.showTabCTOIndicator,
+           FeatureSettings.shared.tokenOptimizationMode != .off {
             let ctoToggleEnabled = FeatureSettings.shared.allowTabCTOToggle
             if let overrideState = tab.optimizerOverrideState {
                 if ctoToggleEnabled {
@@ -1259,7 +1273,7 @@ struct UnifiedTabButton: View {
 
             if !isMinimalDisplay {
                 // MCP indicator
-                if tab.isMCPControlled && FeatureSettings.shared.mcpShowTabIndicator {
+                if tab.isMCPControlled, FeatureSettings.shared.mcpShowTabIndicator {
                     Image(systemName: "face.dashed")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.purple)
@@ -1285,7 +1299,7 @@ struct UnifiedTabButton: View {
                 }
 
                 // F13: Broadcast indicator
-                if FeatureSettings.shared.showTabBroadcastIndicator && isBroadcastIncluded {
+                if FeatureSettings.shared.showTabBroadcastIndicator, isBroadcastIncluded {
                     Image(systemName: "dot.radiowaves.left.and.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.orange)
@@ -1295,7 +1309,7 @@ struct UnifiedTabButton: View {
                 ctoIndicator
 
                 // Git indicator — observed via TabSessionContent, keep fallback here
-                if FeatureSettings.shared.showTabGitIndicator && (tab.displaySession?.isGitRepo ?? false) {
+                if FeatureSettings.shared.showTabGitIndicator, tab.displaySession?.isGitRepo ?? false {
                     Image(systemName: "arrow.triangle.branch")
                         .font(.system(size: 11, weight: .semibold))
                 }
@@ -1374,7 +1388,7 @@ struct UnifiedTabButton: View {
 
 // MARK: - Tab Session Content (observes session for live updates)
 
-    /// Subview that observes the `TerminalSessionModel` so icons, title, and path
+/// Subview that observes the `TerminalSessionModel` so icons, title, and path
 /// update reactively when `aiDisplayAppName`, `devServer`, or directory change.
 /// Without this, `UnifiedTabButton` (which takes `OverlayTab` as a struct value)
 /// would never re-render for session property changes.
@@ -1463,12 +1477,12 @@ struct TabButton: View {
     let isSelected: Bool
     let isSuspended: Bool
     let tabColor: TabColor
-    let commandBadge: String?  // F20: Last command badge
-    let isBroadcastIncluded: Bool  // F13: Broadcast indicator
+    let commandBadge: String? // F20: Last command badge
+    let isBroadcastIncluded: Bool // F13: Broadcast indicator
     let onSelect: () -> Void
     let onRename: () -> Void
     let onClose: () -> Void
-    var onHover: ((Bool) -> Void)? = nil  // Tab switch optimization: pre-warm on hover
+    var onHover: ((Bool) -> Void)? // Tab switch optimization: pre-warm on hover
 
     private var resolvedTitle: String {
         if let customTitle, !customTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -1483,8 +1497,6 @@ struct TabButton: View {
     private var resolvedPath: String {
         session.tabPathDisplayName()
     }
-
-
 
     /// Returns the bundled logo for the detected AI product, or nil for regular shell.
     private var aiProductLogo: Image? {
@@ -1591,7 +1603,7 @@ struct TabButtonFallback: View {
     let onSelect: () -> Void
     let onRename: () -> Void
     let onClose: () -> Void
-    var onHover: ((Bool) -> Void)? = nil  // Tab switch optimization: pre-warm on hover
+    var onHover: ((Bool) -> Void)? // Tab switch optimization: pre-warm on hover
 
     var body: some View {
         HStack(spacing: 8) {
@@ -1823,7 +1835,7 @@ struct SearchOverlayView: View {
                     Text(error)
                         .font(.custom("Avenir Next", size: 11))
                         .foregroundStyle(.orange)
-                } else if model.searchResults.isEmpty && !model.searchQuery.isEmpty {
+                } else if model.searchResults.isEmpty, !model.searchQuery.isEmpty {
                     Text(L("No results", "No results"))
                         .font(.custom("Avenir Next", size: 11))
                         .foregroundStyle(.secondary)
@@ -1846,12 +1858,12 @@ struct SearchOverlayView: View {
                         .controlSize(.small)
                         .accessibilityLabel(L("Previous match", "Previous match"))
                         .accessibilityHint(L("Go to previous search result", "Go to previous search result"))
-                        // Note: Cmd+Shift+G is in menu commands
+                    // Note: Cmd+Shift+G is in menu commands
                     Button(L("Next", "Next")) { model.nextMatch() }
                         .controlSize(.small)
                         .accessibilityLabel(L("Next match", "Next match"))
                         .accessibilityHint(L("Go to next search result", "Go to next search result"))
-                        // Note: Cmd+G is in menu commands
+                    // Note: Cmd+G is in menu commands
                 }
             }
             .padding(.horizontal, 10)
@@ -1864,8 +1876,8 @@ struct SearchOverlayView: View {
 struct SearchResultRow: View {
     let line: String
     let query: String
-    var caseSensitive: Bool = false
-    var useRegex: Bool = false
+    var caseSensitive = false
+    var useRegex = false
 
     var body: some View {
         if query.isEmpty || useRegex {
@@ -1885,13 +1897,13 @@ struct SearchResultRow: View {
         let searchLine = caseSensitive ? line : line.lowercased()
         let searchQuery = caseSensitive ? query : query.lowercased()
 
-        var searchRange = searchLine.startIndex..<searchLine.endIndex
+        var searchRange = searchLine.startIndex ..< searchLine.endIndex
         while let range = searchLine.range(of: searchQuery, range: searchRange) {
             if let attrRange = Range(range, in: result) {
                 result[attrRange].foregroundColor = .white
                 result[attrRange].backgroundColor = .orange.opacity(0.6)
             }
-            searchRange = range.upperBound..<searchLine.endIndex
+            searchRange = range.upperBound ..< searchLine.endIndex
         }
         return result
     }
@@ -1916,10 +1928,10 @@ struct RenameOverlayView: View {
 
                     Button(L("Cancel", "Cancel")) { model.cancelRename() }
                         .controlSize(.small)
-                        // Note: Escape is handled by AppDelegate.handleKeyEvent()
+                    // Note: Escape is handled by AppDelegate.handleKeyEvent()
                     Button(L("Save", "Save")) { model.commitRename() }
                         .controlSize(.small)
-                        // Note: Enter triggers onSubmit on the TextField
+                    // Note: Enter triggers onSubmit on the TextField
                 }
 
                 HStack(spacing: 8) {
@@ -2073,7 +2085,7 @@ struct ClipboardItemRow: View {
 struct BookmarkListOverlayView: View {
     @ObservedObject var model: OverlayTabsModel
     @ObservedObject private var bookmarkManager = BookmarkManager.shared
-    @State private var newBookmarkLabel: String = ""
+    @State private var newBookmarkLabel = ""
 
     var body: some View {
         DraggableOverlay(id: "bookmarks", workspace: model.overlayWorkspaceIdentifier, maxWidth: OverlayLayout.searchPanelMaxWidth) {
@@ -2198,7 +2210,7 @@ struct SnippetManagerOverlayView: View {
     @ObservedObject var model: OverlayTabsModel
     @ObservedObject private var manager = SnippetManager.shared
     @ObservedObject private var settings = FeatureSettings.shared
-    @State private var query: String = ""
+    @State private var query = ""
     @State private var draft = SnippetDraft()
     @State private var editingEntry: SnippetEntry?
     @State private var isEditorVisible = false
@@ -2325,7 +2337,7 @@ struct SnippetManagerOverlayView: View {
                             }
                         )
 
-                        if isEditorVisible && !isVariableDialogVisible {
+                        if isEditorVisible, !isVariableDialogVisible {
                             SnippetEditorView(
                                 draft: $draft,
                                 isNew: editingEntry == nil,
@@ -2919,7 +2931,7 @@ private struct FlowLayout: Layout {
         for subview in subviews {
             let size = subview.sizeThatFits(.unspecified)
 
-            if currentX + size.width > maxWidth && currentX > 0 {
+            if currentX + size.width > maxWidth, currentX > 0 {
                 currentX = 0
                 currentY += lineHeight + spacing
                 lineHeight = 0
@@ -3004,7 +3016,7 @@ private struct SnippetSearchField: NSViewRepresentable {
         var textBinding: Binding<String>?
 
         /// Generation counter to cancel stale focus retries
-        private var focusGeneration: Int = 0
+        private var focusGeneration = 0
 
         func focusIfNeeded() {
             guard let window else { return }
@@ -3069,8 +3081,8 @@ private struct SnippetSearchField: NSViewRepresentable {
             if let chars = event.charactersIgnoringModifiers,
                chars.count == 1,
                let char = chars.lowercased().first,
-               char >= "a" && char <= "z",
-               event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+               char >= "a", char <= "z",
+               event.modifierFlags.isDisjoint(with: [.command, .control, .option]) {
                 // Only trigger quick-select if the field is empty
                 if stringValue.isEmpty {
                     onLetterKey?(char)

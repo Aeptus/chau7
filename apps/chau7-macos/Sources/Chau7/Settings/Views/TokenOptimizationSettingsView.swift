@@ -243,12 +243,14 @@ struct TokenOptimizationSettingsView: View {
 
     // MARK: - Optimizer Status
 
-    @ViewBuilder
     private var optimizerStatusView: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(L("cto.optimizer.desc", "The optimizer filters and compresses command output before it reaches your LLM context, typically saving 60-90% of tokens. It ships built-in — no external dependencies required."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(L(
+                "cto.optimizer.desc",
+                "The optimizer filters and compresses command output before it reaches your LLM context, typically saving 60-90% of tokens. It ships built-in — no external dependencies required."
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
 
             HStack(spacing: 8) {
                 if optimizerInstalled {
@@ -318,7 +320,7 @@ struct TokenOptimizationSettingsView: View {
                             : item.isInstalled ? .orange : .red)
                     Text(item.command)
                         .font(.system(.body, design: .monospaced))
-                    if item.command == "cat" && mdRendererInstalled {
+                    if item.command == "cat", mdRendererInstalled {
                         Text("+ md")
                             .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(.purple)
@@ -849,7 +851,6 @@ struct TokenOptimizationSettingsView: View {
         }
     }
 
-    @ViewBuilder
     private func statRow(icon: String, iconColor: Color, label: String, value: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
@@ -917,7 +918,6 @@ struct TokenOptimizationSettingsView: View {
         }
     }
 
-    @ViewBuilder
     private func infoRow(icon: String, iconColor: Color, text: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
@@ -1016,7 +1016,7 @@ struct TokenOptimizationSettingsView: View {
 
     private func applyCTO(to tabIDs: [String], enabled: Bool) {
         let uniqueTabIDs = Set(tabIDs)
-        uniqueTabIDs.forEach { tabID in
+        for tabID in uniqueTabIDs {
             settings.setCTOOverride(enabled, forTabIdentifier: tabID)
         }
     }
@@ -1030,7 +1030,6 @@ struct TokenOptimizationSettingsView: View {
 
     // MARK: - Commands List
 
-    @ViewBuilder
     private var commandsList: some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(supportedCommands, id: \.self) { command in
@@ -1058,7 +1057,6 @@ struct TokenOptimizationSettingsView: View {
 
     // MARK: - How It Works
 
-    @ViewBuilder
     private var howItWorksView: some View {
         VStack(alignment: .leading, spacing: 10) {
             // What the optimizer does
@@ -1066,9 +1064,12 @@ struct TokenOptimizationSettingsView: View {
                 .font(.caption)
                 .fontWeight(.semibold)
 
-            Text(L("cto.howItWorks.optimizerDesc", "chau7-optim is a built-in binary that intercepts command output and compresses it for LLM consumption. For example, `cat large_file.rs` strips comments and blank lines, `git diff` condenses to changed lines only, and `cargo build` filters out Compiling... progress, keeping only errors."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(L(
+                "cto.howItWorks.optimizerDesc",
+                "chau7-optim is a built-in binary that intercepts command output and compresses it for LLM consumption. For example, `cat large_file.rs` strips comments and blank lines, `git diff` condenses to changed lines only, and `cargo build` filters out Compiling... progress, keeping only errors."
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
 
             codeRow("~/.chau7/bin/chau7-optim")
 
@@ -1078,9 +1079,12 @@ struct TokenOptimizationSettingsView: View {
                 .fontWeight(.semibold)
                 .padding(.top, 4)
 
-            Text(L("cto.howItWorks.desc", "When active, Chau7 prepends a directory of wrapper scripts to your PATH. Each wrapper shadows a real binary (cat, ls, git, etc.) and decides whether to optimize:"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(L(
+                "cto.howItWorks.desc",
+                "When active, Chau7 prepends a directory of wrapper scripts to your PATH. Each wrapper shadows a real binary (cat, ls, git, etc.) and decides whether to optimize:"
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
 
             codeRow("~/.chau7/cto_bin/")
 
@@ -1111,7 +1115,6 @@ struct TokenOptimizationSettingsView: View {
         }
     }
 
-    @ViewBuilder
     private func flowRow(_ number: String, _ text: String) -> some View {
         HStack(alignment: .top, spacing: 6) {
             Text(number)
@@ -1124,7 +1127,6 @@ struct TokenOptimizationSettingsView: View {
         }
     }
 
-    @ViewBuilder
     private func codeRow(_ text: String) -> some View {
         Text(text)
             .font(.system(.caption, design: .monospaced))

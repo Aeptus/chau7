@@ -54,7 +54,7 @@ pub fn run_manage_test(args: &[String], verbose: u8) -> Result<()> {
 
     timer.track(
         &format!("python3 {}", args.join(" ")),
-        &format!("cto python manage.py test"),
+        "cto python manage.py test",
         &raw,
         &filtered,
     );
@@ -116,7 +116,7 @@ fn run_pytest(args: &[String], verbose: u8) -> Result<()> {
 
     timer.track(
         &format!("python3 -m pytest {}", args.join(" ")),
-        &format!("cto python -m pytest"),
+        "cto python -m pytest",
         &raw,
         &filtered,
     );
@@ -191,13 +191,22 @@ fn filter_django_test_output(output: &str) -> String {
         }
         if trimmed.starts_with("FAILED") {
             // Parse "FAILED (failures=2, errors=1)"
-            if let Some(inner) = trimmed.strip_prefix("FAILED (").and_then(|s| s.strip_suffix(')')) {
+            if let Some(inner) = trimmed
+                .strip_prefix("FAILED (")
+                .and_then(|s| s.strip_suffix(')'))
+            {
                 for part in inner.split(',') {
                     let part = part.trim();
-                    if let Some(n) = part.strip_prefix("failures=").and_then(|s| s.parse::<usize>().ok()) {
+                    if let Some(n) = part
+                        .strip_prefix("failures=")
+                        .and_then(|s| s.parse::<usize>().ok())
+                    {
                         failed_count = n;
                     }
-                    if let Some(n) = part.strip_prefix("errors=").and_then(|s| s.parse::<usize>().ok()) {
+                    if let Some(n) = part
+                        .strip_prefix("errors=")
+                        .and_then(|s| s.parse::<usize>().ok())
+                    {
                         error_count = n;
                     }
                 }

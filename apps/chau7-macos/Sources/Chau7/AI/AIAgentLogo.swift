@@ -20,19 +20,19 @@ enum AIAgent: String, CaseIterable {
     var brandColor: NSColor {
         switch self {
         case .claude:
-            return NSColor(calibratedRed: 0.85, green: 0.55, blue: 0.35, alpha: 1.0)  // Claude orange/tan
+            return NSColor(calibratedRed: 0.85, green: 0.55, blue: 0.35, alpha: 1.0) // Claude orange/tan
         case .gemini:
-            return NSColor(calibratedRed: 0.27, green: 0.53, blue: 0.93, alpha: 1.0)  // Google blue
+            return NSColor(calibratedRed: 0.27, green: 0.53, blue: 0.93, alpha: 1.0) // Google blue
         case .codex:
-            return NSColor(calibratedRed: 0.0, green: 0.65, blue: 0.52, alpha: 1.0)   // OpenAI green
+            return NSColor(calibratedRed: 0.0, green: 0.65, blue: 0.52, alpha: 1.0) // OpenAI green
         case .chatGPT:
-            return NSColor(calibratedRed: 0.0, green: 0.65, blue: 0.52, alpha: 1.0)   // OpenAI green
+            return NSColor(calibratedRed: 0.0, green: 0.65, blue: 0.52, alpha: 1.0) // OpenAI green
         case .copilot:
-            return NSColor(calibratedRed: 0.15, green: 0.15, blue: 0.15, alpha: 1.0)  // GitHub dark
+            return NSColor(calibratedRed: 0.15, green: 0.15, blue: 0.15, alpha: 1.0) // GitHub dark
         case .aider:
-            return NSColor(calibratedRed: 0.93, green: 0.46, blue: 0.6, alpha: 1.0)   // Pink
+            return NSColor(calibratedRed: 0.93, green: 0.46, blue: 0.6, alpha: 1.0) // Pink
         case .cursor:
-            return NSColor(calibratedRed: 0.2, green: 0.68, blue: 0.66, alpha: 1.0)   // Teal
+            return NSColor(calibratedRed: 0.2, green: 0.68, blue: 0.66, alpha: 1.0) // Teal
         }
     }
 
@@ -164,8 +164,8 @@ enum AIAgentLogo {
         let innerRadius: CGFloat = 2.5
 
         let starPath = NSBezierPath()
-        for i in 0..<8 {
-            let radius = i % 2 == 0 ? outerRadius : innerRadius
+        for i in 0 ..< 8 {
+            let radius = i.isMultiple(of: 2) ? outerRadius : innerRadius
             let angle = CGFloat(i) * .pi / 4 - .pi / 2
             let point = NSPoint(
                 x: centerX + cos(angle) * radius,
@@ -219,7 +219,7 @@ enum AIAgentLogo {
         let distance: CGFloat = 4
 
         // Draw 6 petals in hexagonal arrangement
-        for i in 0..<6 {
+        for i in 0 ..< 6 {
             let angle = CGFloat(i) * .pi / 3
             let petalCenter = NSPoint(
                 x: centerX + cos(angle) * distance,
@@ -299,13 +299,13 @@ enum AIAgentLogo {
 
         // Arrow cursor shape
         let arrowPath = NSBezierPath()
-        arrowPath.move(to: NSPoint(x: inset.minX, y: inset.maxY))  // Top left (point)
-        arrowPath.line(to: NSPoint(x: inset.minX, y: inset.minY))  // Bottom left
-        arrowPath.line(to: NSPoint(x: inset.minX + 8, y: inset.minY + 5))  // Right middle
-        arrowPath.line(to: NSPoint(x: inset.minX + 4, y: inset.minY + 5))  // Notch
-        arrowPath.line(to: NSPoint(x: inset.minX + 7, y: inset.minY))  // Handle bottom
-        arrowPath.line(to: NSPoint(x: inset.minX + 5, y: inset.minY))  // Handle left
-        arrowPath.line(to: NSPoint(x: inset.minX + 3, y: inset.minY + 4))  // Back to notch
+        arrowPath.move(to: NSPoint(x: inset.minX, y: inset.maxY)) // Top left (point)
+        arrowPath.line(to: NSPoint(x: inset.minX, y: inset.minY)) // Bottom left
+        arrowPath.line(to: NSPoint(x: inset.minX + 8, y: inset.minY + 5)) // Right middle
+        arrowPath.line(to: NSPoint(x: inset.minX + 4, y: inset.minY + 5)) // Notch
+        arrowPath.line(to: NSPoint(x: inset.minX + 7, y: inset.minY)) // Handle bottom
+        arrowPath.line(to: NSPoint(x: inset.minX + 5, y: inset.minY)) // Handle left
+        arrowPath.line(to: NSPoint(x: inset.minX + 3, y: inset.minY + 4)) // Back to notch
         arrowPath.close()
 
         color.setFill()

@@ -18,7 +18,7 @@ public enum NotificationActionType: String, Codable, CaseIterable, Identifiable,
     case executeSnippet = "execute_snippet"
 
     // Network & integration
-    case webhook = "webhook"
+    case webhook
     case sendSlack = "send_slack"
     case sendDiscord = "send_discord"
 
@@ -43,7 +43,9 @@ public enum NotificationActionType: String, Codable, CaseIterable, Identifiable,
     case stopTimer = "stop_timer"
     case logTime = "log_time"
 
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
 }
 
 // MARK: - Action Metadata
@@ -59,7 +61,9 @@ public struct NotificationActionInfo: Identifiable, Equatable, Sendable {
     public let requiresConfig: Bool
     public let configFields: [ActionConfigField]
 
-    public var id: String { type.rawValue }
+    public var id: String {
+        type.rawValue
+    }
 
     public init(
         type: NotificationActionType,
@@ -85,12 +89,12 @@ public struct NotificationActionInfo: Identifiable, Equatable, Sendable {
 }
 
 public enum ActionCategory: String, Codable, CaseIterable, Sendable {
-    case basic = "basic"
-    case automation = "automation"
-    case integration = "integration"
-    case devops = "devops"
-    case productivity = "productivity"
-    case accessibility = "accessibility"
+    case basic
+    case automation
+    case integration
+    case devops
+    case productivity
+    case accessibility
     case timeTracking = "time_tracking"
 
     public var displayName: String {
@@ -230,7 +234,9 @@ public struct TriggerActionBinding: Codable, Equatable, Identifiable, Sendable {
 public enum NotificationActionCatalog {
 
     public static let all: [NotificationActionInfo] = [
+
         // MARK: Basic Actions
+
         NotificationActionInfo(
             type: .showNotification,
             labelKey: "action.showNotification.label",
@@ -343,6 +349,7 @@ public enum NotificationActionCatalog {
         ),
 
         // MARK: Automation Actions
+
         NotificationActionInfo(
             type: .runScript,
             labelKey: "action.runScript.label",
@@ -393,6 +400,7 @@ public enum NotificationActionCatalog {
         ),
 
         // MARK: Integration Actions
+
         NotificationActionInfo(
             type: .webhook,
             labelKey: "action.webhook.label",
@@ -410,7 +418,13 @@ public enum NotificationActionCatalog {
                     ConfigOption(id: "GET", label: "GET")
                 ]),
                 ActionConfigField(id: "headers", labelKey: "action.field.headers", labelFallback: "Headers (JSON)", type: .textArea, placeholder: "{\"Authorization\": \"Bearer token\"}"),
-                ActionConfigField(id: "customPayload", labelKey: "action.field.customPayload", labelFallback: "Custom Payload (JSON)", type: .textArea, placeholder: "Leave empty for default event JSON")
+                ActionConfigField(
+                    id: "customPayload",
+                    labelKey: "action.field.customPayload",
+                    labelFallback: "Custom Payload (JSON)",
+                    type: .textArea,
+                    placeholder: "Leave empty for default event JSON"
+                )
             ]
         ),
         NotificationActionInfo(
@@ -423,7 +437,14 @@ public enum NotificationActionCatalog {
             category: .integration,
             requiresConfig: true,
             configFields: [
-                ActionConfigField(id: "webhookUrl", labelKey: "action.field.webhookUrl", labelFallback: "Slack Webhook URL", type: .secretText, required: true, placeholder: "https://hooks.slack.com/services/..."),
+                ActionConfigField(
+                    id: "webhookUrl",
+                    labelKey: "action.field.webhookUrl",
+                    labelFallback: "Slack Webhook URL",
+                    type: .secretText,
+                    required: true,
+                    placeholder: "https://hooks.slack.com/services/..."
+                ),
                 ActionConfigField(id: "channel", labelKey: "action.field.channel", labelFallback: "Channel Override", type: .text, placeholder: "#general"),
                 ActionConfigField(id: "username", labelKey: "action.field.username", labelFallback: "Bot Username", type: .text, defaultValue: "Chau7"),
                 ActionConfigField(id: "emoji", labelKey: "action.field.emoji", labelFallback: "Bot Emoji", type: .text, defaultValue: ":computer:")
@@ -439,13 +460,21 @@ public enum NotificationActionCatalog {
             category: .integration,
             requiresConfig: true,
             configFields: [
-                ActionConfigField(id: "webhookUrl", labelKey: "action.field.webhookUrl", labelFallback: "Discord Webhook URL", type: .secretText, required: true, placeholder: "https://discord.com/api/webhooks/..."),
+                ActionConfigField(
+                    id: "webhookUrl",
+                    labelKey: "action.field.webhookUrl",
+                    labelFallback: "Discord Webhook URL",
+                    type: .secretText,
+                    required: true,
+                    placeholder: "https://discord.com/api/webhooks/..."
+                ),
                 ActionConfigField(id: "username", labelKey: "action.field.username", labelFallback: "Bot Username", type: .text, defaultValue: "Chau7"),
                 ActionConfigField(id: "avatarUrl", labelKey: "action.field.avatarUrl", labelFallback: "Avatar URL", type: .text, placeholder: "https://example.com/avatar.png")
             ]
         ),
 
         // MARK: DevOps Actions
+
         NotificationActionInfo(
             type: .dockerBump,
             labelKey: "action.dockerBump.label",
@@ -476,7 +505,14 @@ public enum NotificationActionCatalog {
             category: .devops,
             requiresConfig: true,
             configFields: [
-                ActionConfigField(id: "composePath", labelKey: "action.field.composePath", labelFallback: "docker-compose.yml Path", type: .filePath, required: true, placeholder: "/path/to/docker-compose.yml"),
+                ActionConfigField(
+                    id: "composePath",
+                    labelKey: "action.field.composePath",
+                    labelFallback: "docker-compose.yml Path",
+                    type: .filePath,
+                    required: true,
+                    placeholder: "/path/to/docker-compose.yml"
+                ),
                 ActionConfigField(id: "operation", labelKey: "action.field.operation", labelFallback: "Operation", type: .picker, defaultValue: "restart", options: [
                     ConfigOption(id: "up", label: "Up (detached)"),
                     ConfigOption(id: "down", label: "Down"),
@@ -510,6 +546,7 @@ public enum NotificationActionCatalog {
         ),
 
         // MARK: Productivity Actions
+
         NotificationActionInfo(
             type: .copyToClipboard,
             labelKey: "action.copyToClipboard.label",
@@ -519,7 +556,13 @@ public enum NotificationActionCatalog {
             icon: "doc.on.clipboard",
             category: .productivity,
             configFields: [
-                ActionConfigField(id: "content", labelKey: "action.field.content", labelFallback: "Content to Copy", type: .textArea, placeholder: "Use ${message}, ${type}, ${tool} or leave empty for message")
+                ActionConfigField(
+                    id: "content",
+                    labelKey: "action.field.content",
+                    labelFallback: "Content to Copy",
+                    type: .textArea,
+                    placeholder: "Use ${message}, ${type}, ${tool} or leave empty for message"
+                )
             ]
         ),
         NotificationActionInfo(
@@ -579,6 +622,7 @@ public enum NotificationActionCatalog {
         ),
 
         // MARK: Accessibility Actions
+
         NotificationActionInfo(
             type: .voiceAnnounce,
             labelKey: "action.voiceAnnounce.label",
@@ -635,6 +679,7 @@ public enum NotificationActionCatalog {
         ),
 
         // MARK: Time Tracking Actions
+
         NotificationActionInfo(
             type: .startTimer,
             labelKey: "action.startTimer.label",
@@ -680,9 +725,7 @@ public enum NotificationActionCatalog {
     ]
 
     /// O(1) lookup index (built once at first access)
-    private static let index: [NotificationActionType: NotificationActionInfo] = {
-        Dictionary(uniqueKeysWithValues: all.map { ($0.type, $0) })
-    }()
+    private static let index: [NotificationActionType: NotificationActionInfo] = Dictionary(uniqueKeysWithValues: all.map { ($0.type, $0) })
 
     public static func action(for type: NotificationActionType) -> NotificationActionInfo? {
         index[type]

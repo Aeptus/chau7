@@ -38,22 +38,22 @@ final class DangerousCommandGuard: ObservableObject {
 
     /// Result of checking a command
     enum CheckResult: Equatable {
-        case safe                                                        // Not risky, proceed
-        case allowed                                                     // Risky but in allow list
-        case needsConfirmation(command: String, matchedPattern: String)  // Needs user confirmation
-        case blocked                                                     // In block list
+        case safe // Not risky, proceed
+        case allowed // Risky but in allow list
+        case needsConfirmation(command: String, matchedPattern: String) // Needs user confirmation
+        case blocked // In block list
     }
 
     private init() {
         let defaults = UserDefaults.standard
-        isEnabled = defaults.object(forKey: "feature.dangerousCommandGuard") as? Bool ?? true
-        allowList = Set(defaults.stringArray(forKey: "dangerousGuard.allowList") ?? [])
-        blockList = Set(defaults.stringArray(forKey: "dangerousGuard.blockList") ?? [])
+        self.isEnabled = defaults.object(forKey: "feature.dangerousCommandGuard") as? Bool ?? true
+        self.allowList = Set(defaults.stringArray(forKey: "dangerousGuard.allowList") ?? [])
+        self.blockList = Set(defaults.stringArray(forKey: "dangerousGuard.blockList") ?? [])
         Log.info("DangerousCommandGuard initialized: enabled=\(isEnabled) allow=\(allowList.count) block=\(blockList.count)")
     }
 
-    /// Initializer for testing only — bypasses UserDefaults.
-    /// Use `@testable import` from test targets to access this.
+    // Initializer for testing only — bypasses UserDefaults.
+    // Use `@testable import` from test targets to access this.
     #if DEBUG
     init(enabled: Bool, allowList: Set<String>, blockList: Set<String>, testPatterns: [String]) {
         self.isEnabled = enabled

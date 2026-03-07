@@ -14,7 +14,7 @@ struct EditorSettingsView: View {
                 label: L("settings.editor.fontSize", "Font Size"),
                 help: L("settings.editor.fontSize.help", "Editor font size in points (8-36)"),
                 value: $config.fontSize,
-                range: 8...36,
+                range: 8 ... 36,
                 suffix: " pt"
             )
             .onChange(of: config.fontSize) { _ in config.save() }
@@ -29,7 +29,7 @@ struct EditorSettingsView: View {
                 label: L("settings.editor.tabSize", "Tab Size"),
                 help: L("settings.editor.tabSize.help", "Number of spaces per indentation level (2, 4, or 8)"),
                 value: $config.tabSize,
-                range: 2...8,
+                range: 2 ... 8,
                 suffix: " spaces"
             )
             .onChange(of: config.tabSize) { _ in config.save() }
@@ -110,7 +110,7 @@ struct EditorSettingsView: View {
                     (value: "dark", label: L("settings.editor.themeDark", "Dark")),
                     (value: "light", label: L("settings.editor.themeLight", "Light")),
                     (value: "solarized", label: L("settings.editor.themeSolarized", "Solarized")),
-                    (value: "monokai", label: L("settings.editor.themeMonokai", "Monokai")),
+                    (value: "monokai", label: L("settings.editor.themeMonokai", "Monokai"))
                 ]
             )
             .onChange(of: config.theme) { _ in config.save() }
@@ -123,7 +123,7 @@ struct EditorSettingsView: View {
                 .init(title: L("settings.editor.resetToDefaults", "Reset Editor to Defaults"), style: .plain) {
                     config = .default
                     config.save()
-                },
+                }
             ], alignment: .trailing)
         }
     }

@@ -53,8 +53,8 @@ struct LogEntry: Codable {
     let file: String?
     let function: String?
     let line: Int?
-    let duration: Double?  // For performance tracking
-    let memoryMB: Double?  // Memory at log time
+    let duration: Double? // For performance tracking
+    let memoryMB: Double? // Memory at log time
 
     var formattedText: String {
         var parts: [String] = []
@@ -229,6 +229,7 @@ final class PerfTracker {
 
 /// Enhanced logging with categories, correlation, and structured output
 enum LogEnhanced {
+
     // MARK: - Configuration
 
     private static var enabledCategories: Set<LogCategory> = Set(LogCategory.allCases)
@@ -247,38 +248,99 @@ enum LogEnhanced {
 
     // MARK: - Logging Methods
 
-    static func info(_ category: LogCategory, _ message: String, metadata: [String: String]? = nil,
-                     file: String = #file, function: String = #function, line: Int = #line) {
-        log(level: "INFO", category: category, message: message, metadata: metadata,
-            file: file, function: function, line: line)
+    static func info(
+        _ category: LogCategory,
+        _ message: String,
+        metadata: [String: String]? = nil,
+        file: String = #file,
+        function: String = #function,
+        line: Int = #line
+    ) {
+        log(
+            level: "INFO",
+            category: category,
+            message: message,
+            metadata: metadata,
+            file: file,
+            function: function,
+            line: line
+        )
     }
 
-    static func warn(_ category: LogCategory, _ message: String, metadata: [String: String]? = nil,
-                     file: String = #file, function: String = #function, line: Int = #line) {
-        log(level: "WARN", category: category, message: message, metadata: metadata,
-            file: file, function: function, line: line)
+    static func warn(
+        _ category: LogCategory,
+        _ message: String,
+        metadata: [String: String]? = nil,
+        file: String = #file,
+        function: String = #function,
+        line: Int = #line
+    ) {
+        log(
+            level: "WARN",
+            category: category,
+            message: message,
+            metadata: metadata,
+            file: file,
+            function: function,
+            line: line
+        )
     }
 
-    static func error(_ category: LogCategory, _ message: String, metadata: [String: String]? = nil,
-                      file: String = #file, function: String = #function, line: Int = #line) {
-        log(level: "ERROR", category: category, message: message, metadata: metadata,
-            file: file, function: function, line: line)
+    static func error(
+        _ category: LogCategory,
+        _ message: String,
+        metadata: [String: String]? = nil,
+        file: String = #file,
+        function: String = #function,
+        line: Int = #line
+    ) {
+        log(
+            level: "ERROR",
+            category: category,
+            message: message,
+            metadata: metadata,
+            file: file,
+            function: function,
+            line: line
+        )
     }
 
-    static func trace(_ category: LogCategory, _ message: String, correlationId: String? = nil,
-                      metadata: [String: String]? = nil,
-                      file: String = #file, function: String = #function, line: Int = #line) {
+    static func trace(
+        _ category: LogCategory,
+        _ message: String,
+        correlationId: String? = nil,
+        metadata: [String: String]? = nil,
+        file: String = #file,
+        function: String = #function,
+        line: Int = #line
+    ) {
         guard Log.isTraceEnabled else { return }
-        log(level: "TRACE", category: category, message: message, correlationId: correlationId,
-            metadata: metadata, file: file, function: function, line: line)
+        log(
+            level: "TRACE",
+            category: category,
+            message: message,
+            correlationId: correlationId,
+            metadata: metadata,
+            file: file,
+            function: function,
+            line: line
+        )
     }
 
     // MARK: - Core Logging
 
-    static func log(level: String, category: LogCategory, message: String,
-                    correlationId: String? = nil, metadata: [String: String]? = nil,
-                    file: String? = nil, function: String? = nil, line: Int? = nil,
-                    duration: Double? = nil, memoryMB: Double? = nil) {
+    static func log(
+        level: String,
+        category: LogCategory,
+        message: String,
+        correlationId: String? = nil,
+        metadata: [String: String]? = nil,
+        file: String? = nil,
+        function: String? = nil,
+        line: Int? = nil,
+        duration: Double? = nil,
+        memoryMB: Double? = nil
+    ) {
 
         guard enabledCategories.contains(category) else { return }
 
@@ -300,14 +362,14 @@ enum LogEnhanced {
         if isStructuredOutput, let json = entry.jsonString {
             Log.sink?(json)
             if Log.isVerbose {
-                print(json)
+                print(json) // swiftlint:disable:this no_print_statements
             }
             Log.writeRaw(json)
         } else {
             let text = entry.formattedText
             Log.sink?(text)
             if Log.isVerbose {
-                print(text)
+                print(text) // swiftlint:disable:this no_print_statements
             }
 
             // Also write to file as plain text
@@ -365,8 +427,14 @@ enum LogEnhanced {
 
 extension LogEnhanced {
     /// Log tab-related operations with consistent format
-    static func tab(_ message: String, tabId: UUID? = nil, tabCount: Int? = nil,
-                    file: String = #file, function: String = #function, line: Int = #line) {
+    static func tab(
+        _ message: String,
+        tabId: UUID? = nil,
+        tabCount: Int? = nil,
+        file: String = #file,
+        function: String = #function,
+        line: Int = #line
+    ) {
         var meta: [String: String] = [:]
         if let id = tabId { meta["tabId"] = id.uuidString.prefix(8).lowercased() }
         if let count = tabCount { meta["count"] = String(count) }
@@ -374,16 +442,26 @@ extension LogEnhanced {
     }
 
     /// Log render-related operations
-    static func render(_ message: String, viewName: String? = nil,
-                       file: String = #file, function: String = #function, line: Int = #line) {
+    static func render(
+        _ message: String,
+        viewName: String? = nil,
+        file: String = #file,
+        function: String = #function,
+        line: Int = #line
+    ) {
         var meta: [String: String] = [:]
         if let name = viewName { meta["view"] = name }
         trace(.render, message, metadata: meta.isEmpty ? nil : meta, file: file, function: function, line: line)
     }
 
     /// Log recovery operations
-    static func recovery(_ message: String, metadata: [String: String]? = nil,
-                         file: String = #file, function: String = #function, line: Int = #line) {
+    static func recovery(
+        _ message: String,
+        metadata: [String: String]? = nil,
+        file: String = #file,
+        function: String = #function,
+        line: Int = #line
+    ) {
         warn(.recovery, message, metadata: metadata, file: file, function: function, line: line)
     }
 }

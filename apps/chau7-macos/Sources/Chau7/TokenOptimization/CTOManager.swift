@@ -538,7 +538,9 @@ final class CTOManager {
         let outcome: String
 
         /// Whether this entry represents a deliberate bypass (not a failure).
-        var isIntentionalSkip: Bool { outcome == "skipped" }
+        var isIntentionalSkip: Bool {
+            outcome == "skipped"
+        }
     }
 
     /// Reads the most recent entries from the command log.

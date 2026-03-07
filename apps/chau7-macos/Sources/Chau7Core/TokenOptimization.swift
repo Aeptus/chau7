@@ -62,12 +62,12 @@ public func shouldBeActive(
     isAIActive: Bool
 ) -> Bool {
     switch (mode, override) {
-    case (.off, _):               return false
-    case (_, .forceOff):           return false
-    case (_, .forceOn):            return true
-    case (.allTabs, .default):     return true
-    case (.aiOnly, .default):      return isAIActive
-    case (.manual, .default):      return false
+    case (.off, _): return false
+    case (_, .forceOff): return false
+    case (_, .forceOn): return true
+    case (.allTabs, .default): return true
+    case (.aiOnly, .default): return isAIActive
+    case (.manual, .default): return false
     }
 }
 
@@ -368,7 +368,7 @@ public extension CTORuntimeSnapshot {
             ? .warning
             : .critical
 
-        let summary: String = switch state {
+        let summary = switch state {
         case .healthy:
             "healthy"
         case .warning:
@@ -464,21 +464,19 @@ public let ctoRewriteMap: [String: String] = [
     "golangci-lint": "golangci-lint",
     "swift": "swift",
     "python": "python",
-    "python3": "python",
+    "python3": "python"
 ]
 
 /// Commands that are exec-only (no optimizer subcommand mapping).
-public let execOnlyCommands: Set<String> = ["head", "tail", "wc"]
+public let execOnlyCommands: Set = ["head", "tail", "wc"]
 
 /// Commands that are commonly used as pipe filters (`cmd | grep pattern`).
 /// When stdin is piped (not a terminal), these wrappers skip the optimizer
 /// and exec the real binary directly — the output IS the data stream.
-public let pipeFilterCommands: Set<String> = ["grep", "rg", "diff"]
+public let pipeFilterCommands: Set = ["grep", "rg", "diff"]
 
 /// All commands that have wrapper scripts (optimizer-routed + exec-only).
-public let supportedCommands: [String] = {
-    (Array(ctoRewriteMap.keys) + Array(execOnlyCommands)).sorted()
-}()
+public let supportedCommands: [String] = (Array(ctoRewriteMap.keys) + Array(execOnlyCommands)).sorted()
 
 // MARK: - Wrapper Health
 
@@ -489,7 +487,9 @@ public struct WrapperHealth: Identifiable, Sendable {
     public let isExecutable: Bool
     /// Whether this command routes through the optimizer (vs exec-only).
     public let hasCTORoute: Bool
-    public var id: String { command }
+    public var id: String {
+        command
+    }
 
     public init(command: String, isInstalled: Bool, isExecutable: Bool, hasCTORoute: Bool) {
         self.command = command

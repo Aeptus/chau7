@@ -26,7 +26,7 @@ struct DebugConsoleView: View {
     @State private var ctoTimePeriod: CTOTimePeriod = .session
     // Category & level filtering
     @State private var enabledCategories: Set<LogCategory> = Set(LogCategory.allCases)
-    @State private var enabledLevels: Set<String> = ["INFO", "WARN", "ERROR", "TRACE", "DEBUG"]
+    @State private var enabledLevels: Set = ["INFO", "WARN", "ERROR", "TRACE", "DEBUG"]
     @State private var bugReportDescription = ""
     @State private var lastReportPath: String?
 
@@ -225,13 +225,13 @@ struct DebugConsoleView: View {
                 performanceSettingRow(
                     L("debug.highlightIdleDelay", "Highlight Idle Delay (ms)"),
                     value: $settings.dangerousOutputHighlightIdleDelayMs,
-                    range: 0...5000,
+                    range: 0 ... 5000,
                     step: 50
                 )
                 performanceSettingRow(
                     L("debug.highlightMaxInterval", "Highlight Max Interval (ms)"),
                     value: $settings.dangerousOutputHighlightMaxIntervalMs,
-                    range: 250...10000,
+                    range: 250 ... 10000,
                     step: 250
                 )
             }
@@ -402,7 +402,7 @@ struct DebugConsoleView: View {
 
     private func formatTokenCount(_ count: Int) -> String {
         if count >= 1_000_000 { return String(format: "%.1fM", Double(count) / 1_000_000) }
-        if count >= 1_000 { return String(format: "%.1fK", Double(count) / 1_000) }
+        if count >= 1000 { return String(format: "%.1fK", Double(count) / 1000) }
         return "\(count)"
     }
 
@@ -533,7 +533,7 @@ struct DebugConsoleView: View {
                             Text(entry.outcome)
                                 .foregroundStyle(ctoOutcomeColor(entry.outcome))
                                 .frame(width: 80, alignment: .leading)
-                            if entry.exitCode != 0 && entry.outcome == "error" {
+                            if entry.exitCode != 0, entry.outcome == "error" {
                                 Text("exit \(entry.exitCode)")
                                     .foregroundStyle(.red)
                             }
@@ -586,8 +586,18 @@ struct DebugConsoleView: View {
                 if ctoRuntimeSnapshot.deferredSetCount > 0 {
                     Divider()
                     VStack(alignment: .leading, spacing: 6) {
-                        statRow(icon: "clock.arrow.2.circlepath", iconColor: .orange, label: "Deferred set / flush / skip", value: "\(ctoRuntimeSnapshot.deferredSetCount) / \(ctoRuntimeSnapshot.deferredFlushCount) / \(ctoRuntimeSnapshot.deferredSkipCount)")
-                        statRow(icon: "clock", iconColor: .orange, label: "Deferred delay (min/avg/max)", value: "\(ctoFormatDelay(ctoRuntimeSnapshot.deferredFlushDelayMinMs)) / \(ctoFormatDelay(ctoRuntimeSnapshot.deferredFlushDelayAverageMs.map { Int($0.rounded()) })) / \(ctoFormatDelay(ctoRuntimeSnapshot.deferredFlushDelayMaxMs))")
+                        statRow(
+                            icon: "clock.arrow.2.circlepath",
+                            iconColor: .orange,
+                            label: "Deferred set / flush / skip",
+                            value: "\(ctoRuntimeSnapshot.deferredSetCount) / \(ctoRuntimeSnapshot.deferredFlushCount) / \(ctoRuntimeSnapshot.deferredSkipCount)"
+                        )
+                        statRow(
+                            icon: "clock",
+                            iconColor: .orange,
+                            label: "Deferred delay (min/avg/max)",
+                            value: "\(ctoFormatDelay(ctoRuntimeSnapshot.deferredFlushDelayMinMs)) / \(ctoFormatDelay(ctoRuntimeSnapshot.deferredFlushDelayAverageMs.map { Int($0.rounded()) })) / \(ctoFormatDelay(ctoRuntimeSnapshot.deferredFlushDelayMaxMs))"
+                        )
                     }
                 }
 
@@ -919,7 +929,7 @@ struct DebugConsoleView: View {
 
     private func performanceSummarySection(title: String, totals: [FeatureMetric: FeatureTotals]) -> some View {
         let ordered = totals
-            .filter { $0.value.count > 0 }
+            .filter { $0.value.count > 0 } // swiftlint:disable:this empty_count
             .sorted { $0.value.totalMs > $1.value.totalMs }
         return GroupBox(title) {
             if ordered.isEmpty {
@@ -1111,8 +1121,8 @@ struct DebugConsoleView: View {
                         logs.count
                     )
                 )
-                    .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
                 Spacer()
                 if let mem = PerfTracker.currentMemoryMB() {
                     Text(String(format: L("debug.memoryUsage", "Memory: %.1f MB"), mem))
@@ -1459,6 +1469,7 @@ final class DebugConsoleController {
             window?.appearance = windowAppearance
         }
     }
+
     private weak var appModel: AppModel?
     private weak var overlayModel: OverlayTabsModel?
 

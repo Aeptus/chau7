@@ -13,7 +13,7 @@ final class AITerminalLogSession {
            let value = Int(raw), value > 0 {
             return value
         }
-        return 50 * 1024 * 1024  // 50 MB
+        return 50 * 1024 * 1024 // 50 MB
     }()
 
     init(toolName: String, logPath: String) {
@@ -26,13 +26,13 @@ final class AITerminalLogSession {
         guard !data.isEmpty else { return }
         queue.async { [weak self] in
             guard let self else { return }
-            if self.handle == nil {
-                self.openHandle()
+            if handle == nil {
+                openHandle()
             }
-            self.handle?.write(data)
-            self.writeCount += 1
-            if self.writeCount % 200 == 0 {
-                self.trimLogIfNeeded()
+            handle?.write(data)
+            writeCount += 1
+            if writeCount.isMultiple(of: 200) {
+                trimLogIfNeeded()
             }
         }
     }
@@ -41,9 +41,9 @@ final class AITerminalLogSession {
         guard let data = text.data(using: .utf8), !data.isEmpty else { return }
         queue.async { [weak self] in
             guard let self else { return }
-            self.inputBuffer.append(data)
+            inputBuffer.append(data)
             if data.contains(where: { $0 == 0x0A || $0 == 0x0D }) {
-                self.flushInputLocked()
+                flushInputLocked()
             }
         }
     }
@@ -51,9 +51,9 @@ final class AITerminalLogSession {
     func close() {
         queue.sync { [weak self] in
             guard let self else { return }
-            self.flushInputLocked()
-            try? self.handle?.close()
-            self.handle = nil
+            flushInputLocked()
+            try? handle?.close()
+            handle = nil
         }
     }
 

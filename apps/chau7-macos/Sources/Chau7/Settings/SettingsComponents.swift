@@ -72,7 +72,7 @@ struct SettingsToggle: View {
     let label: String
     let help: String
     @Binding var isOn: Bool
-    var disabled: Bool = false
+    var disabled = false
 
     var body: some View {
         HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
@@ -108,10 +108,10 @@ struct SettingsSlider: View {
     @Binding var value: Double
     let range: ClosedRange<Double>
     var step: Double = 1
-    var format: String = "%.0f"
-    var suffix: String = ""
+    var format = "%.0f"
+    var suffix = ""
     var width: CGFloat = 150
-    var disabled: Bool = false
+    var disabled = false
 
     var body: some View {
         HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
@@ -162,8 +162,8 @@ struct SettingsStepper: View {
     let help: String?
     @Binding var value: Int
     let range: ClosedRange<Int>
-    var suffix: String = ""
-    var disabled: Bool = false
+    var suffix = ""
+    var disabled = false
 
     var body: some View {
         HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
@@ -202,8 +202,8 @@ struct SettingsTextField: View {
     let placeholder: String
     @Binding var text: String
     var width: CGFloat = 200
-    var monospaced: Bool = false
-    var disabled: Bool = false
+    var monospaced = false
+    var disabled = false
     var onSubmit: (() -> Void)?
 
     var body: some View {
@@ -241,9 +241,9 @@ struct SettingsDirectoryField: View {
     let placeholder: String
     @Binding var text: String
     var width: CGFloat = 200
-    var monospaced: Bool = false
-    var disabled: Bool = false
-    var buttonTitle: String = "Choose..."
+    var monospaced = false
+    var disabled = false
+    var buttonTitle = "Choose..."
     var buttonIcon: String? = "folder"
     var onSubmit: (() -> Void)?
 
@@ -334,7 +334,7 @@ struct SettingsNumberField: View {
     let help: String?
     @Binding var value: Int
     var width: CGFloat = 100
-    var disabled: Bool = false
+    var disabled = false
     var onSubmit: (() -> Void)?
 
     var body: some View {
@@ -371,7 +371,7 @@ struct SettingsPicker<T: Hashable>: View {
     @Binding var selection: T
     let options: [(value: T, label: String)]
     var width: CGFloat = 150
-    var disabled: Bool = false
+    var disabled = false
 
     var body: some View {
         HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
@@ -410,7 +410,7 @@ struct SettingsInfoRow: View {
     let label: String
     let value: String
     var valueColor: Color = .primary
-    var monospaced: Bool = false
+    var monospaced = false
 
     var body: some View {
         HStack(alignment: .top, spacing: SettingsLayout.controlSpacing) {
@@ -439,7 +439,7 @@ struct SettingsButtonRow: View {
     struct SettingsButton: Identifiable {
         let id = UUID()
         let title: String
-        var icon: String? = nil
+        var icon: String?
         var style: ButtonType = .bordered
         var action: () -> Void
 
@@ -494,9 +494,9 @@ struct SettingsButtonRow: View {
 
 struct SettingsCard<Content: View>: View {
     let content: () -> Content
-    var action: (() -> Void)? = nil
-    var actionLabel: String? = nil
-    var actionIcon: String? = nil
+    var action: (() -> Void)?
+    var actionLabel: String?
+    var actionIcon: String?
 
     init(@ViewBuilder content: @escaping () -> Content, action: (() -> Void)? = nil, actionLabel: String? = nil, actionIcon: String? = nil) {
         self.content = content
@@ -554,8 +554,13 @@ struct SettingsHint: View {
 struct SettingsDescription: View {
     let text: String
 
-    init(text: String) { self.text = text }
-    init(_ text: String) { self.text = text }
+    init(text: String) {
+        self.text = text
+    }
+
+    init(_ text: String) {
+        self.text = text
+    }
 
     var body: some View {
         Text(text)

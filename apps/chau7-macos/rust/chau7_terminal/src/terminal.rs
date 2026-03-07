@@ -11,23 +11,28 @@ use alacritty_terminal::event::Event;
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line, Point, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
-use alacritty_terminal::term::{Config as TermConfig, Term, TermMode};
 use alacritty_terminal::term::cell::Flags as CellFlags;
+use alacritty_terminal::term::{Config as TermConfig, Term, TermMode};
 use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor, Processor};
-use crossbeam_channel::{bounded, Receiver, TryRecvError};
+use crossbeam_channel::{Receiver, TryRecvError, bounded};
 use log::{debug, error, info, trace, warn};
 use parking_lot::{Mutex, RwLock};
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 use crate::color::{ThemeColors, color_to_rgb_with_theme};
 use crate::graphics;
 use crate::metrics::{AdaptivePoller, DirtyRowTracker};
 use crate::pool::get_cell_buffer_pool;
 use crate::pty::{Chau7EventListener, PtyHandle, PtyMessage, SizeInfo};
-use crate::types::{CellData, DebugState, GridSnapshot, PerformanceMetrics, cell_flags_to_u8, underline_style};
+use crate::types::{
+    CellData, DebugState, GridSnapshot, PerformanceMetrics, cell_flags_to_u8, underline_style,
+};
 
 /// Static counter for terminal IDs (for logging)
 static TERMINAL_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Type alias for the clipboard load formatter function.
+type ClipboardLoadFormatter = Arc<dyn Fn(&str) -> String + Sync + Send>;
 
 // ============================================================================
 // Error types
@@ -138,7 +143,7 @@ pub struct Chau7Terminal {
     pub(crate) has_pending_clipboard_store: AtomicBool,
     /// Pending clipboard load formatter — terminal wants us to read clipboard and
     /// send the response back via PTY. The Arc<dyn Fn> wraps the text in OSC 52 response.
-    pub(crate) pending_clipboard_load: Mutex<Option<Arc<dyn Fn(&str) -> String + Sync + Send>>>,
+    pub(crate) pending_clipboard_load: Mutex<Option<ClipboardLoadFormatter>>,
     /// Fast check flag — avoids locking pending_clipboard_load Mutex on every poll.
     pub(crate) has_pending_clipboard_load: AtomicBool,
 
@@ -168,11 +173,19 @@ impl Chau7Terminal {
     }
 
     /// Create a new terminal with the specified dimensions, shell, and environment variables
-    pub fn new_with_env(cols: u16, rows: u16, shell: &str, env_vars: &[(&str, &str)]) -> Result<Self, TerminalError> {
+    pub fn new_with_env(
+        cols: u16,
+        rows: u16,
+        shell: &str,
+        env_vars: &[(&str, &str)],
+    ) -> Result<Self, TerminalError> {
         let id = TERMINAL_COUNTER.fetch_add(1, Ordering::Relaxed);
         let created_at = Instant::now();
 
-        info!("[terminal-{}] Creating new terminal: {}x{}, shell={:?}", id, cols, rows, shell);
+        info!(
+            "[terminal-{}] Creating new terminal: {}x{}, shell={:?}",
+            id, cols, rows, shell
+        );
 
         // Validate dimensions
         if cols == 0 || rows == 0 {
@@ -180,7 +193,10 @@ impl Chau7Terminal {
             return Err(TerminalError::InvalidDimensions { cols, rows });
         }
         if cols > 1000 || rows > 1000 {
-            warn!("[terminal-{}] Large dimensions requested: {}x{}", id, cols, rows);
+            warn!(
+                "[terminal-{}] Large dimensions requested: {}x{}",
+                id, cols, rows
+            );
         }
 
         // Determine shell path
@@ -200,12 +216,10 @@ impl Chau7Terminal {
             pixel_height: 0,
         };
 
-        let pair = pty_system
-            .openpty(pty_size)
-            .map_err(|e| {
-                error!("[terminal-{}] Failed to open PTY: {}", id, e);
-                TerminalError::PtyOpen(e.into())
-            })?;
+        let pair = pty_system.openpty(pty_size).map_err(|e| {
+            error!("[terminal-{}] Failed to open PTY: {}", id, e);
+            TerminalError::PtyOpen(e.into())
+        })?;
         debug!("[terminal-{}] PTY opened successfully", id);
 
         // Create event channel for terminal events
@@ -221,7 +235,10 @@ impl Chau7Terminal {
         let size = SizeInfo::new(cols as usize, rows as usize);
         let config = TermConfig::default();
         let term = Term::new(config, &size, listener);
-        debug!("[terminal-{}] Terminal state initialized (history: 10000 lines)", id);
+        debug!(
+            "[terminal-{}] Terminal state initialized (history: 10000 lines)",
+            id
+        );
 
         // Prepare shell command
         let mut cmd = CommandBuilder::new(&shell_path);
@@ -233,19 +250,30 @@ impl Chau7Terminal {
             debug!("[terminal-{}] Setting env: {}={}", id, key, value);
             cmd.env(key, value);
         }
-        info!("[terminal-{}] Spawning shell process: {} (with {} extra env vars)", id, shell_path, env_vars.len());
+        info!(
+            "[terminal-{}] Spawning shell process: {} (with {} extra env vars)",
+            id,
+            shell_path,
+            env_vars.len()
+        );
 
-        let child = pair
-            .slave
-            .spawn_command(cmd)
-            .map_err(|e| {
-                error!("[terminal-{}] Failed to spawn shell '{}': {}", id, shell_path, e);
-                TerminalError::SpawnShell { shell: shell_path.clone(), source: e.into() }
-            })?;
+        let child = pair.slave.spawn_command(cmd).map_err(|e| {
+            error!(
+                "[terminal-{}] Failed to spawn shell '{}': {}",
+                id, shell_path, e
+            );
+            TerminalError::SpawnShell {
+                shell: shell_path.clone(),
+                source: e.into(),
+            }
+        })?;
 
         // Capture shell PID for dev server monitoring
         let shell_pid = child.process_id().unwrap_or(0);
-        info!("[terminal-{}] Shell process spawned successfully (PID: {})", id, shell_pid);
+        info!(
+            "[terminal-{}] Shell process spawned successfully (PID: {})",
+            id, shell_pid
+        );
 
         // Capture the master PTY fd for tcgetattr echo detection.
         // Use the MasterPty trait's as_raw_fd() method directly — no unsafe casts needed.
@@ -253,10 +281,16 @@ impl Chau7Terminal {
             Some(raw_fd) => {
                 let duped = unsafe { libc::dup(raw_fd) };
                 if duped < 0 {
-                    warn!("[terminal-{}] Failed to dup master fd for echo detection", id);
+                    warn!(
+                        "[terminal-{}] Failed to dup master fd for echo detection",
+                        id
+                    );
                     -1
                 } else {
-                    debug!("[terminal-{}] Captured master PTY fd (duped to {}) for echo detection", id, duped);
+                    debug!(
+                        "[terminal-{}] Captured master PTY fd (duped to {}) for echo detection",
+                        id, duped
+                    );
                     duped
                 }
             }
@@ -267,23 +301,17 @@ impl Chau7Terminal {
         };
 
         // Get reader for PTY output
-        let mut reader = pair
-            .master
-            .try_clone_reader()
-            .map_err(|e| {
-                error!("[terminal-{}] Failed to clone PTY reader: {}", id, e);
-                TerminalError::PtyCloneReader(e.into())
-            })?;
+        let mut reader = pair.master.try_clone_reader().map_err(|e| {
+            error!("[terminal-{}] Failed to clone PTY reader: {}", id, e);
+            TerminalError::PtyCloneReader(e.into())
+        })?;
         debug!("[terminal-{}] PTY reader cloned", id);
 
         // Get writer for PTY input
-        let writer = pair
-            .master
-            .take_writer()
-            .map_err(|e| {
-                error!("[terminal-{}] Failed to get PTY writer: {}", id, e);
-                TerminalError::PtyWriter(e.into())
-            })?;
+        let writer = pair.master.take_writer().map_err(|e| {
+            error!("[terminal-{}] Failed to get PTY writer: {}", id, e);
+            TerminalError::PtyWriter(e.into())
+        })?;
         debug!("[terminal-{}] PTY writer obtained", id);
 
         // Create running flag for the reader thread
@@ -299,15 +327,20 @@ impl Chau7Terminal {
         let reader_thread = thread::Builder::new()
             .name(format!("pty-reader-{}", id))
             .spawn(move || {
-                debug!("[terminal-{}] PTY reader thread started", thread_terminal_id);
+                debug!(
+                    "[terminal-{}] PTY reader thread started",
+                    thread_terminal_id
+                );
                 let mut buf = [0u8; 8192];
                 let mut total_bytes = 0u64;
 
                 while running_clone.load(Ordering::Acquire) {
                     match reader.read(&mut buf) {
                         Ok(0) => {
-                            info!("[terminal-{}] PTY EOF received (total bytes read: {})",
-                                  thread_terminal_id, total_bytes);
+                            info!(
+                                "[terminal-{}] PTY EOF received (total bytes read: {})",
+                                thread_terminal_id, total_bytes
+                            );
                             let _ = pty_tx.send(PtyMessage::Closed);
                             break;
                         }
@@ -315,36 +348,58 @@ impl Chau7Terminal {
                             total_bytes += n as u64;
                             // Log first few reads at info level to debug startup output
                             if total_bytes <= 4096 {
-                                let preview: String = buf[..n].iter()
+                                let preview: String = buf[..n]
+                                    .iter()
                                     .take(200)
-                                    .map(|&b| if b >= 32 && b < 127 { b as char } else { '.' })
+                                    .map(|&b| {
+                                        if (32..127).contains(&b) {
+                                            b as char
+                                        } else {
+                                            '.'
+                                        }
+                                    })
                                     .collect();
-                                info!("[terminal-{}] PTY startup read {} bytes: {:?}",
-                                      thread_terminal_id, n, preview);
+                                info!(
+                                    "[terminal-{}] PTY startup read {} bytes: {:?}",
+                                    thread_terminal_id, n, preview
+                                );
                             } else {
-                                trace!("[terminal-{}] PTY read {} bytes (total: {})",
-                                       thread_terminal_id, n, total_bytes);
+                                trace!(
+                                    "[terminal-{}] PTY read {} bytes (total: {})",
+                                    thread_terminal_id, n, total_bytes
+                                );
                             }
                             let data = buf[..n].to_vec();
                             if pty_tx.send(PtyMessage::Data(data)).is_err() {
-                                warn!("[terminal-{}] PTY channel closed, exiting reader", thread_terminal_id);
+                                warn!(
+                                    "[terminal-{}] PTY channel closed, exiting reader",
+                                    thread_terminal_id
+                                );
                                 break;
                             }
                         }
                         Err(e) => {
                             // Check if this is just because the PTY was closed
                             if running_clone.load(Ordering::Acquire) {
-                                error!("[terminal-{}] PTY read error: {} (total bytes read: {})",
-                                       thread_terminal_id, e, total_bytes);
+                                error!(
+                                    "[terminal-{}] PTY read error: {} (total bytes read: {})",
+                                    thread_terminal_id, e, total_bytes
+                                );
                             } else {
-                                debug!("[terminal-{}] PTY read interrupted during shutdown", thread_terminal_id);
+                                debug!(
+                                    "[terminal-{}] PTY read interrupted during shutdown",
+                                    thread_terminal_id
+                                );
                             }
                             let _ = pty_tx.send(PtyMessage::Closed);
                             break;
                         }
                     }
                 }
-                info!("[terminal-{}] PTY reader thread exiting", thread_terminal_id);
+                info!(
+                    "[terminal-{}] PTY reader thread exiting",
+                    thread_terminal_id
+                );
             })
             .map_err(|e| {
                 error!("[terminal-{}] Failed to spawn reader thread: {}", id, e);
@@ -358,7 +413,11 @@ impl Chau7Terminal {
             master_fd,
         };
 
-        info!("[terminal-{}] Terminal created successfully in {:?}", id, created_at.elapsed());
+        info!(
+            "[terminal-{}] Terminal created successfully in {:?}",
+            id,
+            created_at.elapsed()
+        );
 
         Ok(Chau7Terminal {
             id,
@@ -411,8 +470,10 @@ impl Chau7Terminal {
         cursor: (u8, u8, u8),
         palette: [(u8, u8, u8); 16],
     ) {
-        debug!("[terminal-{}] Setting theme colors: fg={:?}, bg={:?}, cursor={:?}",
-               self.id, fg, bg, cursor);
+        debug!(
+            "[terminal-{}] Setting theme colors: fg={:?}, bg={:?}, cursor={:?}",
+            self.id, fg, bg, cursor
+        );
         let mut theme = self.theme_colors.write();
         theme.fg = fg;
         theme.bg = bg;
@@ -436,14 +497,19 @@ impl Chau7Terminal {
             let mut termios: libc::termios = std::mem::zeroed();
             if libc::tcgetattr(handle.master_fd, &mut termios) == 0 {
                 let echo_off = (termios.c_lflag & (libc::ECHO as libc::tcflag_t)) == 0;
-                trace!("[terminal-{}] tcgetattr: ECHO={}, echo_disabled={}",
-                       self.id,
-                       if echo_off { "off" } else { "on" },
-                       echo_off);
+                trace!(
+                    "[terminal-{}] tcgetattr: ECHO={}, echo_disabled={}",
+                    self.id,
+                    if echo_off { "off" } else { "on" },
+                    echo_off
+                );
                 echo_off
             } else {
                 // tcgetattr failed (PTY might be closed)
-                trace!("[terminal-{}] tcgetattr failed, assuming echo enabled", self.id);
+                trace!(
+                    "[terminal-{}] tcgetattr failed, assuming echo enabled",
+                    self.id
+                );
                 false
             }
         }
@@ -470,7 +536,8 @@ impl Chau7Terminal {
         // Clear flag *after* lock to avoid TOCTOU: a producer setting a new
         // value between flag-clear and lock-acquire would be invisible to polls.
         if value.is_some() {
-            self.has_pending_clipboard_store.store(false, Ordering::Release);
+            self.has_pending_clipboard_store
+                .store(false, Ordering::Release);
         }
         value
     }
@@ -492,15 +559,26 @@ impl Chau7Terminal {
     pub fn respond_clipboard_load(&self, clipboard_text: &str) {
         let formatter = self.pending_clipboard_load.lock().take();
         // Clear flag *after* lock to avoid TOCTOU race with producer
-        self.has_pending_clipboard_load.store(false, Ordering::Release);
+        self.has_pending_clipboard_load
+            .store(false, Ordering::Release);
         if let Some(fmt) = formatter {
             let response = fmt(clipboard_text);
-            trace!("[terminal-{}] OSC 52 clipboard load response: {} bytes", self.id, response.len());
+            trace!(
+                "[terminal-{}] OSC 52 clipboard load response: {} bytes",
+                self.id,
+                response.len()
+            );
             let mut handle = self.pty_handle.lock();
             if let Err(e) = handle.writer.write_all(response.as_bytes()) {
-                warn!("[terminal-{}] Failed to write OSC 52 response: {}", self.id, e);
+                warn!(
+                    "[terminal-{}] Failed to write OSC 52 response: {}",
+                    self.id, e
+                );
             } else if let Err(e) = handle.writer.flush() {
-                warn!("[terminal-{}] Failed to flush OSC 52 response: {}", self.id, e);
+                warn!(
+                    "[terminal-{}] Failed to flush OSC 52 response: {}",
+                    self.id, e
+                );
             }
         }
     }
@@ -511,23 +589,38 @@ impl Chau7Terminal {
         let mut handle = self.pty_handle.lock();
         match handle.write_all(data) {
             Ok(()) => {
-                self.bytes_sent.fetch_add(data.len() as u64, Ordering::Relaxed);
-                trace!("[terminal-{}] Successfully wrote {} bytes to PTY", self.id, data.len());
+                self.bytes_sent
+                    .fetch_add(data.len() as u64, Ordering::Relaxed);
+                trace!(
+                    "[terminal-{}] Successfully wrote {} bytes to PTY",
+                    self.id,
+                    data.len()
+                );
             }
             Err(e) => {
                 self.write_errors.fetch_add(1, Ordering::Relaxed);
-                error!("[terminal-{}] Failed to write {} bytes to PTY: {}", self.id, data.len(), e);
+                error!(
+                    "[terminal-{}] Failed to write {} bytes to PTY: {}",
+                    self.id,
+                    data.len(),
+                    e
+                );
             }
         }
     }
 
     /// Resize the terminal
     pub fn resize(&mut self, cols: u16, rows: u16) {
-        info!("[terminal-{}] Resizing terminal: {}x{} -> {}x{}",
-              self.id, self.cols, self.rows, cols, rows);
+        info!(
+            "[terminal-{}] Resizing terminal: {}x{} -> {}x{}",
+            self.id, self.cols, self.rows, cols, rows
+        );
 
         if cols == 0 || rows == 0 {
-            warn!("[terminal-{}] Ignoring invalid resize dimensions: {}x{}", self.id, cols, rows);
+            warn!(
+                "[terminal-{}] Ignoring invalid resize dimensions: {}x{}",
+                self.id, cols, rows
+            );
             return;
         }
 
@@ -567,7 +660,10 @@ impl Chau7Terminal {
         // Adaptive polling: use suggested timeout or caller's timeout (whichever is shorter)
         let adaptive_timeout = self.adaptive_poller.suggested_timeout_ms();
         let effective_timeout = timeout_ms.min(adaptive_timeout);
-        trace!("[terminal-{}] poll(timeout_ms={}, adaptive={})", self.id, timeout_ms, effective_timeout);
+        trace!(
+            "[terminal-{}] poll(timeout_ms={}, adaptive={})",
+            self.id, timeout_ms, effective_timeout
+        );
 
         let timeout = Duration::from_millis(effective_timeout as u64);
         let mut had_data = false;
@@ -608,13 +704,19 @@ impl Chau7Terminal {
                     had_data = true;
                 }
                 Ok(PtyMessage::Closed) => {
-                    info!("[terminal-{}] PTY closed message received while draining", self.id);
+                    info!(
+                        "[terminal-{}] PTY closed message received while draining",
+                        self.id
+                    );
                     self.pty_closed.store(true, Ordering::Release);
                     break;
                 }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => {
-                    warn!("[terminal-{}] PTY channel disconnected while draining", self.id);
+                    warn!(
+                        "[terminal-{}] PTY channel disconnected while draining",
+                        self.id
+                    );
                     self.pty_closed.store(true, Ordering::Release);
                     break;
                 }
@@ -637,12 +739,22 @@ impl Chau7Terminal {
                 Event::PtyWrite(text) => {
                     pty_write_count += 1;
                     let bytes = text.as_bytes();
-                    trace!("[terminal-{}] PtyWrite event: {} bytes", self.id, bytes.len());
+                    trace!(
+                        "[terminal-{}] PtyWrite event: {} bytes",
+                        self.id,
+                        bytes.len()
+                    );
                     let mut handle = self.pty_handle.lock();
                     if let Err(e) = handle.writer.write_all(bytes) {
-                        warn!("[terminal-{}] Failed to write PtyWrite response: {}", self.id, e);
+                        warn!(
+                            "[terminal-{}] Failed to write PtyWrite response: {}",
+                            self.id, e
+                        );
                     } else if let Err(e) = handle.writer.flush() {
-                        warn!("[terminal-{}] Failed to flush PtyWrite response: {}", self.id, e);
+                        warn!(
+                            "[terminal-{}] Failed to flush PtyWrite response: {}",
+                            self.id, e
+                        );
                     }
                 }
                 Event::Title(title) => {
@@ -655,30 +767,45 @@ impl Chau7Terminal {
                     *self.pending_exit_code.lock() = Some(code);
                 }
                 Event::ClipboardStore(_clipboard_type, text) => {
-                    debug!("[terminal-{}] OSC 52 clipboard store: {} chars", self.id, text.len());
+                    debug!(
+                        "[terminal-{}] OSC 52 clipboard store: {} chars",
+                        self.id,
+                        text.len()
+                    );
                     *self.pending_clipboard_store.lock() = Some(text);
-                    self.has_pending_clipboard_store.store(true, Ordering::Release);
+                    self.has_pending_clipboard_store
+                        .store(true, Ordering::Release);
                 }
                 Event::ClipboardLoad(_clipboard_type, formatter) => {
                     debug!("[terminal-{}] OSC 52 clipboard load request", self.id);
                     *self.pending_clipboard_load.lock() = Some(formatter);
-                    self.has_pending_clipboard_load.store(true, Ordering::Release);
+                    self.has_pending_clipboard_load
+                        .store(true, Ordering::Release);
                 }
                 _ => {}
             }
         }
         if event_count > 0 {
-            trace!("[terminal-{}] Processed {} terminal events ({} PtyWrite)", self.id, event_count, pty_write_count);
+            trace!(
+                "[terminal-{}] Processed {} terminal events ({} PtyWrite)",
+                self.id, event_count, pty_write_count
+            );
         }
 
         // Update adaptive poller based on activity
         if had_data {
-            self.bytes_received.fetch_add(bytes_this_poll as u64, Ordering::Relaxed);
-            debug!("[terminal-{}] poll: processed {} bytes", self.id, bytes_this_poll);
+            self.bytes_received
+                .fetch_add(bytes_this_poll as u64, Ordering::Relaxed);
+            debug!(
+                "[terminal-{}] poll: processed {} bytes",
+                self.id, bytes_this_poll
+            );
             self.grid_dirty.store(true, Ordering::Release);
             self.adaptive_poller.record_activity(bytes_this_poll);
             self.dirty_rows.mark_all_dirty();
-            self.metrics.bytes_batched.fetch_add(bytes_this_poll as u64, Ordering::Relaxed);
+            self.metrics
+                .bytes_batched
+                .fetch_add(bytes_this_poll as u64, Ordering::Relaxed);
             self.metrics.batch_count.fetch_add(1, Ordering::Relaxed);
         } else {
             self.adaptive_poller.record_idle();
@@ -690,14 +817,23 @@ impl Chau7Terminal {
         // Track performance metrics
         let poll_time_us = poll_start.elapsed().as_micros() as u64;
         self.metrics.poll_count.fetch_add(1, Ordering::Relaxed);
-        self.metrics.poll_time_us.fetch_add(poll_time_us, Ordering::Relaxed);
+        self.metrics
+            .poll_time_us
+            .fetch_add(poll_time_us, Ordering::Relaxed);
         let current_max = self.metrics.max_poll_time_us.load(Ordering::Relaxed);
         if poll_time_us > current_max {
-            self.metrics.max_poll_time_us.store(poll_time_us, Ordering::Relaxed);
+            self.metrics
+                .max_poll_time_us
+                .store(poll_time_us, Ordering::Relaxed);
         }
 
-        trace!("[terminal-{}] poll returning: {} (took {}µs, activity={}%)",
-               self.id, was_dirty, poll_time_us, self.adaptive_poller.activity_percent());
+        trace!(
+            "[terminal-{}] poll returning: {} (took {}µs, activity={}%)",
+            self.id,
+            was_dirty,
+            poll_time_us,
+            self.adaptive_poller.activity_percent()
+        );
         was_dirty
     }
 
@@ -710,7 +846,11 @@ impl Chau7Terminal {
     /// Process PTY output data through the VTE processor.
     /// The graphics interceptor pre-filters image escape sequences before VTE.
     pub fn process_pty_data(&self, data: &[u8]) {
-        trace!("[terminal-{}] Processing {} bytes of PTY data", self.id, data.len());
+        trace!(
+            "[terminal-{}] Processing {} bytes of PTY data",
+            self.id,
+            data.len()
+        );
 
         let (passthrough_owned, events) = {
             let mut interceptor = self.graphics_interceptor.lock();
@@ -725,33 +865,43 @@ impl Chau7Terminal {
         }
 
         if !events.is_empty() {
-            debug!("[terminal-{}] Graphics interceptor produced {} events", self.id, events.len());
+            debug!(
+                "[terminal-{}] Graphics interceptor produced {} events",
+                self.id,
+                events.len()
+            );
 
             let (cursor_row, cursor_col) = {
                 let term = self.term.lock();
                 let cursor = term.grid().cursor.point;
-                (cursor.line.0 as i32, cursor.column.0 as u16)
+                (cursor.line.0, cursor.column.0 as u16)
             };
 
             let mut store = self.image_store.lock();
             for event in events {
                 let image = match event {
-                    graphics::GraphicsEvent::ITerm2 { args: _, base64_data } => {
-                        graphics::DecodedImage {
-                            id: 0,
-                            width: 0,
-                            height: 0,
-                            rgba: base64_data,
-                            anchor_row: cursor_row,
-                            anchor_col: cursor_col,
-                            protocol: graphics::ImageProtocol::ITerm2,
-                        }
-                    }
+                    graphics::GraphicsEvent::ITerm2 {
+                        args: _,
+                        base64_data,
+                    } => graphics::DecodedImage {
+                        id: 0,
+                        width: 0,
+                        height: 0,
+                        rgba: base64_data,
+                        anchor_row: cursor_row,
+                        anchor_col: cursor_col,
+                        protocol: graphics::ImageProtocol::ITerm2,
+                    },
                     graphics::GraphicsEvent::Sixel { params: _, data } => {
                         match graphics::decode_sixel(&data) {
                             Some((rgba, width, height)) => {
-                                debug!("[terminal-{}] Sixel decoded: {}x{} ({} bytes RGBA)",
-                                       self.id, width, height, rgba.len());
+                                debug!(
+                                    "[terminal-{}] Sixel decoded: {}x{} ({} bytes RGBA)",
+                                    self.id,
+                                    width,
+                                    height,
+                                    rgba.len()
+                                );
                                 graphics::DecodedImage {
                                     id: 0,
                                     width,
@@ -771,9 +921,18 @@ impl Chau7Terminal {
                     graphics::GraphicsEvent::Kitty { control, payload } => {
                         let mut accum = self.kitty_accumulator.lock();
                         match accum.feed(&control, &payload) {
-                            graphics::KittyAction::Display { rgba, width, height } => {
-                                debug!("[terminal-{}] Kitty decoded: {}x{} ({} bytes)",
-                                       self.id, width, height, rgba.len());
+                            graphics::KittyAction::Display {
+                                rgba,
+                                width,
+                                height,
+                            } => {
+                                debug!(
+                                    "[terminal-{}] Kitty decoded: {}x{} ({} bytes)",
+                                    self.id,
+                                    width,
+                                    height,
+                                    rgba.len()
+                                );
                                 graphics::DecodedImage {
                                     id: 0,
                                     width,
@@ -809,7 +968,11 @@ impl Chau7Terminal {
         if data.is_empty() {
             return;
         }
-        trace!("[terminal-{}] Injecting {} bytes of output", self.id, data.len());
+        trace!(
+            "[terminal-{}] Injecting {} bytes of output",
+            self.id,
+            data.len()
+        );
         self.process_pty_data(data);
         self.grid_dirty.store(true, Ordering::Release);
         self.dirty_rows.mark_all_dirty();
@@ -843,12 +1006,12 @@ impl Chau7Terminal {
             let history_size = grid.history_size();
             let total_cells = cols * rows;
 
-            trace!("[terminal-{}] Grid snapshot: {}x{}, {} total cells, history={}, offset={}",
-                   self.id, cols, rows, total_cells, history_size, display_offset);
+            trace!(
+                "[terminal-{}] Grid snapshot: {}x{}, {} total cells, history={}, offset={}",
+                self.id, cols, rows, total_cells, history_size, display_offset
+            );
 
-            let selection_range = term.selection.as_ref().and_then(|sel| {
-                sel.to_range(&*term)
-            });
+            let selection_range = term.selection.as_ref().and_then(|sel| sel.to_range(&*term));
 
             let mut cells: Vec<CellData> = get_cell_buffer_pool().acquire(total_cells);
 
@@ -886,14 +1049,14 @@ impl Chau7Terminal {
                         match cell.fg {
                             AnsiColor::Indexed(idx) if idx < 8 => AnsiColor::Indexed(idx + 8),
                             AnsiColor::Named(named) => match named {
-                                NamedColor::Black   => AnsiColor::Named(NamedColor::BrightBlack),
-                                NamedColor::Red     => AnsiColor::Named(NamedColor::BrightRed),
-                                NamedColor::Green   => AnsiColor::Named(NamedColor::BrightGreen),
-                                NamedColor::Yellow  => AnsiColor::Named(NamedColor::BrightYellow),
-                                NamedColor::Blue    => AnsiColor::Named(NamedColor::BrightBlue),
+                                NamedColor::Black => AnsiColor::Named(NamedColor::BrightBlack),
+                                NamedColor::Red => AnsiColor::Named(NamedColor::BrightRed),
+                                NamedColor::Green => AnsiColor::Named(NamedColor::BrightGreen),
+                                NamedColor::Yellow => AnsiColor::Named(NamedColor::BrightYellow),
+                                NamedColor::Blue => AnsiColor::Named(NamedColor::BrightBlue),
                                 NamedColor::Magenta => AnsiColor::Named(NamedColor::BrightMagenta),
-                                NamedColor::Cyan    => AnsiColor::Named(NamedColor::BrightCyan),
-                                NamedColor::White   => AnsiColor::Named(NamedColor::BrightWhite),
+                                NamedColor::Cyan => AnsiColor::Named(NamedColor::BrightCyan),
+                                NamedColor::White => AnsiColor::Named(NamedColor::BrightWhite),
                                 _ => cell.fg,
                             },
                             _ => cell.fg,
@@ -902,8 +1065,10 @@ impl Chau7Terminal {
                         cell.fg
                     };
 
-                    let (mut fg_r, mut fg_g, mut fg_b) = color_to_rgb_with_theme(fg_color, true, &theme);
-                    let (mut bg_r, mut bg_g, mut bg_b) = color_to_rgb_with_theme(cell.bg, false, &theme);
+                    let (mut fg_r, mut fg_g, mut fg_b) =
+                        color_to_rgb_with_theme(fg_color, true, &theme);
+                    let (mut bg_r, mut bg_g, mut bg_b) =
+                        color_to_rgb_with_theme(cell.bg, false, &theme);
                     let flags = cell_flags_to_u8(cell.flags);
 
                     // Extract hyperlink URL (OSC 8)
@@ -920,12 +1085,12 @@ impl Chau7Terminal {
 
                     // Selection uses grid-absolute coordinates (Line value already
                     // accounts for display_offset via the subtraction above).
-                    if let Some(ref range) = selection_range {
-                        if range.contains(point) {
-                            std::mem::swap(&mut fg_r, &mut bg_r);
-                            std::mem::swap(&mut fg_g, &mut bg_g);
-                            std::mem::swap(&mut fg_b, &mut bg_b);
-                        }
+                    if let Some(ref range) = selection_range
+                        && range.contains(point)
+                    {
+                        std::mem::swap(&mut fg_r, &mut bg_r);
+                        std::mem::swap(&mut fg_g, &mut bg_g);
+                        std::mem::swap(&mut fg_b, &mut bg_b);
                     }
 
                     cells.push(CellData {
@@ -944,13 +1109,25 @@ impl Chau7Terminal {
             }
 
             // term lock is dropped at the end of this block
-            (cells, cols, rows, display_offset, history_size, link_url_vec, cursor_visible)
+            (
+                cells,
+                cols,
+                rows,
+                display_offset,
+                history_size,
+                link_url_vec,
+                cursor_visible,
+            )
         };
         // ── Phase 2: Post-processing without any lock ───────────────
 
         // Store link URLs for FFI retrieval
         if link_url_vec.len() > 1 {
-            debug!("[terminal-{}] Grid snapshot has {} unique hyperlinks", self.id, link_url_vec.len() - 1);
+            debug!(
+                "[terminal-{}] Grid snapshot has {} unique hyperlinks",
+                self.id,
+                link_url_vec.len() - 1
+            );
         }
         *self.link_urls.lock() = link_url_vec;
 
@@ -964,15 +1141,26 @@ impl Chau7Terminal {
 
         // Track performance metrics
         let snapshot_time_us = start.elapsed().as_micros() as u64;
-        self.metrics.grid_snapshot_count.fetch_add(1, Ordering::Relaxed);
-        self.metrics.grid_snapshot_time_us.fetch_add(snapshot_time_us, Ordering::Relaxed);
-        let current_max = self.metrics.max_grid_snapshot_time_us.load(Ordering::Relaxed);
+        self.metrics
+            .grid_snapshot_count
+            .fetch_add(1, Ordering::Relaxed);
+        self.metrics
+            .grid_snapshot_time_us
+            .fetch_add(snapshot_time_us, Ordering::Relaxed);
+        let current_max = self
+            .metrics
+            .max_grid_snapshot_time_us
+            .load(Ordering::Relaxed);
         if snapshot_time_us > current_max {
-            self.metrics.max_grid_snapshot_time_us.store(snapshot_time_us, Ordering::Relaxed);
+            self.metrics
+                .max_grid_snapshot_time_us
+                .store(snapshot_time_us, Ordering::Relaxed);
         }
 
-        debug!("[terminal-{}] Grid snapshot created in {}µs (len={}, cap={})",
-               self.id, snapshot_time_us, len, capacity);
+        debug!(
+            "[terminal-{}] Grid snapshot created in {}µs (len={}, cap={})",
+            self.id, snapshot_time_us, len, capacity
+        );
 
         GridSnapshot {
             cells: cells_ptr,
@@ -996,8 +1184,10 @@ impl Chau7Terminal {
         }
         let display_offset = grid.display_offset();
         let pos = display_offset as f64 / history_size as f64;
-        trace!("[terminal-{}] scroll_position: {} (offset={}, history={})",
-               self.id, pos, display_offset, history_size);
+        trace!(
+            "[terminal-{}] scroll_position: {} (offset={}, history={})",
+            self.id, pos, display_offset, history_size
+        );
         pos
     }
 
@@ -1022,8 +1212,10 @@ impl Chau7Terminal {
                 -((current_offset - target_offset) as i32),
             ));
         }
-        trace!("[terminal-{}] scroll_to: {} -> {} (target offset: {})",
-               self.id, current_offset, target_offset, target_offset);
+        trace!(
+            "[terminal-{}] scroll_to: {} -> {} (target offset: {})",
+            self.id, current_offset, target_offset, target_offset
+        );
         self.grid_dirty.store(true, Ordering::Release);
     }
 
@@ -1057,7 +1249,10 @@ impl Chau7Terminal {
 
     /// Start a new selection at the given position
     pub fn selection_start(&self, col: i32, row: i32, selection_type: u8) {
-        debug!("[terminal-{}] selection_start(col={}, row={}, type={})", self.id, col, row, selection_type);
+        debug!(
+            "[terminal-{}] selection_start(col={}, row={}, type={})",
+            self.id, col, row, selection_type
+        );
         let mut term = self.term.lock();
 
         let ty = match selection_type {
@@ -1076,7 +1271,10 @@ impl Chau7Terminal {
 
     /// Update the current selection to extend to the given position
     pub fn selection_update(&self, col: i32, row: i32) {
-        debug!("[terminal-{}] selection_update(col={}, row={})", self.id, col, row);
+        debug!(
+            "[terminal-{}] selection_update(col={}, row={})",
+            self.id, col, row
+        );
         let mut term = self.term.lock();
 
         if let Some(ref mut selection) = term.selection {
@@ -1108,8 +1306,10 @@ impl Chau7Terminal {
 
         term.selection = Some(selection);
         self.grid_dirty.store(true, Ordering::Release);
-        debug!("[terminal-{}] selection_all: selected from line {} to line {}",
-               self.id, start_line, end_line);
+        debug!(
+            "[terminal-{}] selection_all: selected from line {} to line {}",
+            self.id, start_line, end_line
+        );
     }
 
     /// Get cursor position
@@ -1124,15 +1324,21 @@ impl Chau7Terminal {
         // Viewport: row 0 = top of what the user sees.
         // viewport_row = cursor.line + display_offset
         // When display_offset == 0, this is a no-op.
-        let viewport_row = cursor.line.0 as i32 + display_offset as i32;
+        let viewport_row = cursor.line.0 + display_offset as i32;
         let pos = (cursor.column.0 as u16, viewport_row as u16);
-        trace!("[terminal-{}] cursor_position: ({}, {}) [display_offset={}]", self.id, pos.0, pos.1, display_offset);
+        trace!(
+            "[terminal-{}] cursor_position: ({}, {}) [display_offset={}]",
+            self.id, pos.0, pos.1, display_offset
+        );
         pos
     }
 
     /// Clear the scrollback history buffer
     pub fn clear_scrollback(&self) {
-        info!("[terminal-{}] clear_scrollback: Clearing scrollback history", self.id);
+        info!(
+            "[terminal-{}] clear_scrollback: Clearing scrollback history",
+            self.id
+        );
         let mut term = self.term.lock();
         term.grid_mut().clear_history();
         self.grid_dirty.store(true, Ordering::Release);
@@ -1141,11 +1347,17 @@ impl Chau7Terminal {
 
     /// Set the scrollback buffer size (number of lines)
     pub fn set_scrollback_size(&self, lines: usize) {
-        info!("[terminal-{}] set_scrollback_size: Setting scrollback to {} lines", self.id, lines);
+        info!(
+            "[terminal-{}] set_scrollback_size: Setting scrollback to {} lines",
+            self.id, lines
+        );
         let mut term = self.term.lock();
         term.grid_mut().update_history(lines);
         self.grid_dirty.store(true, Ordering::Release);
-        debug!("[terminal-{}] set_scrollback_size: Scrollback set to {} lines", self.id, lines);
+        debug!(
+            "[terminal-{}] set_scrollback_size: Scrollback set to {} lines",
+            self.id, lines
+        );
     }
 
     /// Get the current display offset
@@ -1202,7 +1414,10 @@ impl Chau7Terminal {
         let term = self.term.lock();
         let mode = term.mode();
         let enabled = mode.contains(TermMode::BRACKETED_PASTE);
-        trace!("[terminal-{}] is_bracketed_paste_mode: {}", self.id, enabled);
+        trace!(
+            "[terminal-{}] is_bracketed_paste_mode: {}",
+            self.id, enabled
+        );
         enabled
     }
 
@@ -1211,7 +1426,10 @@ impl Chau7Terminal {
     pub fn check_bell(&self) -> bool {
         let was_pending = self.bell_pending.swap(false, Ordering::AcqRel);
         if was_pending {
-            debug!("[terminal-{}] check_bell: Bell was pending, now cleared", self.id);
+            debug!(
+                "[terminal-{}] check_bell: Bell was pending, now cleared",
+                self.id
+            );
         }
         was_pending
     }
@@ -1238,7 +1456,10 @@ impl Chau7Terminal {
             result |= 16;
         }
 
-        trace!("[terminal-{}] mouse_mode: {:05b} ({})", self.id, result, result);
+        trace!(
+            "[terminal-{}] mouse_mode: {:05b} ({})",
+            self.id, result, result
+        );
         result
     }
 
@@ -1254,7 +1475,10 @@ impl Chau7Terminal {
         let term = self.term.lock();
         let mode = term.mode();
         let enabled = mode.contains(TermMode::APP_CURSOR);
-        trace!("[terminal-{}] is_application_cursor_mode: {}", self.id, enabled);
+        trace!(
+            "[terminal-{}] is_application_cursor_mode: {}",
+            self.id, enabled
+        );
         enabled
     }
 
@@ -1304,13 +1528,28 @@ impl Chau7Terminal {
             bracketed_paste: bracketed_paste as u8,
             app_cursor: app_cursor as u8,
             poll_count,
-            avg_poll_time_us: if poll_count > 0 { poll_time / poll_count } else { 0 },
+            avg_poll_time_us: if poll_count > 0 {
+                poll_time / poll_count
+            } else {
+                0
+            },
             max_poll_time_us: self.metrics.max_poll_time_us.load(Ordering::Relaxed),
-            avg_grid_snapshot_time_us: if grid_count > 0 { grid_time / grid_count } else { 0 },
-            max_grid_snapshot_time_us: self.metrics.max_grid_snapshot_time_us.load(Ordering::Relaxed),
+            avg_grid_snapshot_time_us: if grid_count > 0 {
+                grid_time / grid_count
+            } else {
+                0
+            },
+            max_grid_snapshot_time_us: self
+                .metrics
+                .max_grid_snapshot_time_us
+                .load(Ordering::Relaxed),
             activity_percent: self.adaptive_poller.activity_percent(),
             idle_polls,
-            avg_batch_size: if batch_count > 0 { bytes_batched / batch_count } else { 0 },
+            avg_batch_size: if batch_count > 0 {
+                bytes_batched / batch_count
+            } else {
+                0
+            },
             dirty_row_count: self.dirty_rows.dirty_count() as u32,
         }
     }
@@ -1351,10 +1590,14 @@ impl Chau7Terminal {
         self.metrics.poll_count.store(0, Ordering::Relaxed);
         self.metrics.poll_time_us.store(0, Ordering::Relaxed);
         self.metrics.grid_snapshot_count.store(0, Ordering::Relaxed);
-        self.metrics.grid_snapshot_time_us.store(0, Ordering::Relaxed);
+        self.metrics
+            .grid_snapshot_time_us
+            .store(0, Ordering::Relaxed);
         self.metrics.vte_process_time_us.store(0, Ordering::Relaxed);
         self.metrics.max_poll_time_us.store(0, Ordering::Relaxed);
-        self.metrics.max_grid_snapshot_time_us.store(0, Ordering::Relaxed);
+        self.metrics
+            .max_grid_snapshot_time_us
+            .store(0, Ordering::Relaxed);
         self.metrics.bytes_batched.store(0, Ordering::Relaxed);
         self.metrics.batch_count.store(0, Ordering::Relaxed);
         self.metrics.idle_polls.store(0, Ordering::Relaxed);
@@ -1390,14 +1633,21 @@ impl Chau7Terminal {
 impl Drop for Chau7Terminal {
     fn drop(&mut self) {
         let (sent, received, uptime) = self.stats();
-        info!("[terminal-{}] Destroying terminal (uptime: {:?}, sent: {} bytes, received: {} bytes)",
-              self.id, uptime, sent, received);
+        info!(
+            "[terminal-{}] Destroying terminal (uptime: {:?}, sent: {} bytes, received: {} bytes)",
+            self.id, uptime, sent, received
+        );
 
         // Close the duplicated master fd used for echo detection
         let handle = self.pty_handle.lock();
         if handle.master_fd >= 0 {
-            unsafe { libc::close(handle.master_fd); }
-            debug!("[terminal-{}] Closed echo detection fd {}", self.id, handle.master_fd);
+            unsafe {
+                libc::close(handle.master_fd);
+            }
+            debug!(
+                "[terminal-{}] Closed echo detection fd {}",
+                self.id, handle.master_fd
+            );
         }
         drop(handle);
 
@@ -1418,7 +1668,10 @@ impl Drop for Chau7Terminal {
             // Try a non-blocking check first (try_wait returns immediately)
             match child.try_wait() {
                 Ok(Some(status)) => {
-                    info!("[terminal-{}] Child process already exited: {:?}", self.id, status);
+                    info!(
+                        "[terminal-{}] Child process already exited: {:?}",
+                        self.id, status
+                    );
                 }
                 Ok(None) => {
                     // Child hasn't exited yet after kill — wait on a background thread
@@ -1465,14 +1718,21 @@ impl Drop for Chau7Terminal {
         // but we won't risk blocking the main thread if it doesn't.
         if let Some(handle) = self.reader_thread.take() {
             let id = self.id;
-            debug!("[terminal-{}] Spawning background thread to join reader", id);
+            debug!(
+                "[terminal-{}] Spawning background thread to join reader",
+                id
+            );
             std::thread::Builder::new()
                 .name(format!("term-{}-join", id))
                 .spawn(move || {
                     let start = Instant::now();
                     match handle.join() {
                         Ok(()) => {
-                            debug!("[terminal-{}] Reader thread joined in {:?}", id, start.elapsed());
+                            debug!(
+                                "[terminal-{}] Reader thread joined in {:?}",
+                                id,
+                                start.elapsed()
+                            );
                         }
                         Err(e) => {
                             error!("[terminal-{}] Reader thread panicked: {:?}", id, e);
@@ -1495,8 +1755,7 @@ mod tests {
         let _ = env_logger::try_init();
 
         // Create terminal with small dimensions
-        let term = Chau7Terminal::new_with_env(40, 10, "", &[])
-            .expect("Should create terminal");
+        let term = Chau7Terminal::new_with_env(40, 10, "", &[]).expect("Should create terminal");
 
         // Wait briefly for shell to start and produce output
         std::thread::sleep(std::time::Duration::from_millis(500));
@@ -1511,7 +1770,10 @@ mod tests {
         let snapshot = term.get_grid_snapshot();
         assert!(snapshot.cols > 0, "Snapshot should have cols");
         assert!(snapshot.rows > 0, "Snapshot should have rows");
-        assert!(!snapshot.cells.is_null(), "Cells pointer should not be null");
+        assert!(
+            !snapshot.cells.is_null(),
+            "Cells pointer should not be null"
+        );
 
         let total = snapshot.cols as usize * snapshot.rows as usize;
         let cells = unsafe { std::slice::from_raw_parts(snapshot.cells, total) };
@@ -1530,19 +1792,22 @@ mod tests {
         eprintln!("First row chars: {:?}", first_row);
 
         // Print first few cells with color info
-        for i in 0..std::cmp::min(12, total) {
-            let c = &cells[i];
+        for (i, c) in cells.iter().enumerate().take(std::cmp::min(12, total)) {
             eprintln!(
                 "  cell[{}]: char=U+{:04X} ({}) fg=({},{},{}) bg=({},{},{}) flags=0x{:02X}",
                 i,
                 c.character,
-                if c.character >= 32 && c.character < 127 {
+                if (32..127).contains(&c.character) {
                     char::from_u32(c.character).unwrap_or('?')
                 } else {
                     '.'
                 },
-                c.fg_r, c.fg_g, c.fg_b,
-                c.bg_r, c.bg_g, c.bg_b,
+                c.fg_r,
+                c.fg_g,
+                c.fg_b,
+                c.bg_r,
+                c.bg_g,
+                c.bg_b,
                 c.flags
             );
         }
@@ -1555,7 +1820,10 @@ mod tests {
         eprintln!("Has visible fg: {}", has_visible_fg);
 
         assert!(has_h, "Grid should contain 'H' from injected 'Hello World'");
-        assert!(has_visible_fg, "At least some cells should have non-black foreground");
+        assert!(
+            has_visible_fg,
+            "At least some cells should have non-black foreground"
+        );
 
         // Clean up - reconstruct Vec to free memory
         unsafe {

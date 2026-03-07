@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class MinimalModeTests: XCTestCase {
 
-    // Use a unique suite key prefix to avoid polluting real UserDefaults
+    /// Use a unique suite key prefix to avoid polluting real UserDefaults
     private let testKeys = [
         "feature.minimalMode",
         "minimal.hideTabBar",
@@ -58,7 +58,7 @@ final class MinimalModeTests: XCTestCase {
         let mode = MinimalMode.shared
         let expectation = expectation(forNotification: .minimalModeChanged, object: nil)
 
-        mode.isEnabled = !mode.isEnabled
+        mode.isEnabled.toggle()
 
         wait(for: [expectation], timeout: 1.0)
     }
@@ -120,18 +120,26 @@ final class MinimalModeTests: XCTestCase {
         }
 
         // Verify the default values are true (all elements hidden when minimal mode is on)
-        XCTAssertTrue(defaults.object(forKey: "minimal.hideTabBar") == nil
-                      || defaults.bool(forKey: "minimal.hideTabBar"),
-                      "hideTabBar should default to true")
-        XCTAssertTrue(defaults.object(forKey: "minimal.hideTitleBar") == nil
-                      || defaults.bool(forKey: "minimal.hideTitleBar"),
-                      "hideTitleBar should default to true")
-        XCTAssertTrue(defaults.object(forKey: "minimal.hideStatusBar") == nil
-                      || defaults.bool(forKey: "minimal.hideStatusBar"),
-                      "hideStatusBar should default to true")
-        XCTAssertTrue(defaults.object(forKey: "minimal.hideSidebar") == nil
-                      || defaults.bool(forKey: "minimal.hideSidebar"),
-                      "hideSidebar should default to true")
+        XCTAssertTrue(
+            defaults.object(forKey: "minimal.hideTabBar") == nil
+                || defaults.bool(forKey: "minimal.hideTabBar"),
+            "hideTabBar should default to true"
+        )
+        XCTAssertTrue(
+            defaults.object(forKey: "minimal.hideTitleBar") == nil
+                || defaults.bool(forKey: "minimal.hideTitleBar"),
+            "hideTitleBar should default to true"
+        )
+        XCTAssertTrue(
+            defaults.object(forKey: "minimal.hideStatusBar") == nil
+                || defaults.bool(forKey: "minimal.hideStatusBar"),
+            "hideStatusBar should default to true"
+        )
+        XCTAssertTrue(
+            defaults.object(forKey: "minimal.hideSidebar") == nil
+                || defaults.bool(forKey: "minimal.hideSidebar"),
+            "hideSidebar should default to true"
+        )
     }
 
     // MARK: - Notification Name

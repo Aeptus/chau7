@@ -125,8 +125,11 @@ final class NotificationActionCatalogTests: XCTestCase {
     func testByCategoryActionsMatchCategory() {
         for (category, actions) in NotificationActionCatalog.byCategory {
             for action in actions {
-                XCTAssertEqual(action.category, category,
-                    "\(action.type) is in \(category) group but has category \(action.category)")
+                XCTAssertEqual(
+                    action.category,
+                    category,
+                    "\(action.type) is in \(category) group but has category \(action.category)"
+                )
             }
         }
     }
@@ -160,8 +163,10 @@ final class NotificationActionCatalogTests: XCTestCase {
 
     func testRequiresConfigActionsHaveConfigFields() {
         for action in NotificationActionCatalog.all where action.requiresConfig {
-            XCTAssertFalse(action.configFields.isEmpty,
-                "\(action.type) requires config but has no config fields")
+            XCTAssertFalse(
+                action.configFields.isEmpty,
+                "\(action.type) requires config but has no config fields"
+            )
         }
     }
 }

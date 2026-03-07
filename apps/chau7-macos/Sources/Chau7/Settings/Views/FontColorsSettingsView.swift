@@ -5,8 +5,8 @@ import AppKit
 
 struct FontColorsSettingsView: View {
     @ObservedObject private var settings = FeatureSettings.shared
-    @State private var customFontInput: String = ""
-    @State private var customFontValid: Bool? = nil  // nil = not yet validated
+    @State private var customFontInput = ""
+    @State private var customFontValid: Bool? // nil = not yet validated
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -73,7 +73,7 @@ struct FontColorsSettingsView: View {
                 label: L("settings.appearance.fontSize", "Font Size"),
                 help: L("settings.appearance.fontSize.help", "Terminal font size in points (8-72)"),
                 value: $settings.fontSize,
-                range: 8...72,
+                range: 8 ... 72,
                 suffix: " pt"
             )
 
@@ -84,7 +84,7 @@ struct FontColorsSettingsView: View {
                     get: { Double(settings.defaultZoomPercent) },
                     set: { settings.defaultZoomPercent = Int($0) }
                 ),
-                range: 50...200,
+                range: 50 ... 200,
                 step: 5,
                 format: "%.0f",
                 suffix: "%"
@@ -126,7 +126,7 @@ struct FontColorsSettingsView: View {
                     get: { settings.windowOpacity * 100 },
                     set: { settings.windowOpacity = $0 / 100 }
                 ),
-                range: 30...100,
+                range: 30 ... 100,
                 step: 5,
                 format: "%.0f",
                 suffix: "%"

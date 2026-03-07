@@ -46,7 +46,7 @@ final class SplashWindowController {
         window.backgroundColor = .clear
         window.hasShadow = true
         window.level = .floating
-        window.isReleasedWhenClosed = false  // Prevent premature deallocation
+        window.isReleasedWhenClosed = false // Prevent premature deallocation
         window.center()
         window.contentView = hostingView
         // Borderless windows can't become key — use orderFront to avoid
@@ -63,15 +63,15 @@ final class SplashWindowController {
         }
 
         // Capture window strongly to ensure it survives the animation
-        NSAnimationContext.runAnimationGroup({ context in
+        NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.3
             window.animator().alphaValue = 0
-        }, completionHandler: { [weak self] in
+        } completionHandler: { [weak self] in
             // Order out instead of close to avoid deallocation issues
             window.orderOut(nil)
             self?.window = nil
             completion()
-        })
+        }
     }
 
     /// Sets the window's appearance for theme consistency

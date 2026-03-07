@@ -6,12 +6,12 @@ import Foundation
 final class BookmarkManager: ObservableObject {
     static let shared = BookmarkManager()
 
-    @Published private(set) var bookmarks: [UUID: [Bookmark]] = [:]  // tabID -> bookmarks
+    @Published private(set) var bookmarks: [UUID: [Bookmark]] = [:] // tabID -> bookmarks
 
     struct Bookmark: Identifiable, Equatable {
         let id = UUID()
         let tabID: UUID
-        let scrollOffset: Int  // Row offset in terminal buffer
+        let scrollOffset: Int // Row offset in terminal buffer
         let linePreview: String
         let timestamp: Date
         var label: String?

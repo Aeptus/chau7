@@ -143,10 +143,12 @@ enum AnsiParser {
         case 2:
             return ansi256Color(Int(spec.index))
         case 3:
-            return NSColor(calibratedRed: CGFloat(spec.r) / 255.0,
-                           green: CGFloat(spec.g) / 255.0,
-                           blue: CGFloat(spec.b) / 255.0,
-                           alpha: 1.0)
+            return NSColor(
+                calibratedRed: CGFloat(spec.r) / 255.0,
+                green: CGFloat(spec.g) / 255.0,
+                blue: CGFloat(spec.b) / 255.0,
+                alpha: 1.0
+            )
         default:
             return nil
         }
@@ -174,11 +176,11 @@ enum AnsiParser {
         var i = start
         i = input.index(after: i) // skip '['
         var params = ""
-        var command: Character? = nil
+        var command: Character?
 
         while i < input.endIndex {
             let ch = input[i]
-            if ch >= "@" && ch <= "~" {
+            if ch >= "@", ch <= "~" {
                 command = ch
                 i = input.index(after: i)
                 break
@@ -223,15 +225,15 @@ enum AnsiParser {
                 style.underline = false
             case 27:
                 style.inverse = false
-            case 30...37:
+            case 30 ... 37:
                 style.fg = ansiColor(code - 30, bright: false)
-            case 90...97:
+            case 90 ... 97:
                 style.fg = ansiColor(code - 90, bright: true)
             case 39:
                 style.fg = nil
-            case 40...47:
+            case 40 ... 47:
                 style.bg = ansiColor(code - 40, bright: false)
-            case 100...107:
+            case 100 ... 107:
                 style.bg = ansiColor(code - 100, bright: true)
             case 49:
                 style.bg = nil
@@ -243,10 +245,12 @@ enum AnsiParser {
                         let r = params[i + 2]
                         let g = params[i + 3]
                         let b = params[i + 4]
-                        let color = NSColor(calibratedRed: CGFloat(r) / 255.0,
-                                            green: CGFloat(g) / 255.0,
-                                            blue: CGFloat(b) / 255.0,
-                                            alpha: 1.0)
+                        let color = NSColor(
+                            calibratedRed: CGFloat(r) / 255.0,
+                            green: CGFloat(g) / 255.0,
+                            blue: CGFloat(b) / 255.0,
+                            alpha: 1.0
+                        )
                         if isForeground { style.fg = color } else { style.bg = color }
                         i += 4
                     } else if mode == 5, i + 2 < params.count {
@@ -287,7 +291,7 @@ enum AnsiParser {
 
         var attrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: fg,
+            .foregroundColor: fg
         ]
 
         if bg != baseBg {
@@ -302,6 +306,7 @@ enum AnsiParser {
     }
 
     // MARK: - Pre-computed Color Palettes (Memory Optimization)
+
     // Colors computed once at startup instead of on every call
 
     private static let standardColors: [NSColor] = [
@@ -326,23 +331,23 @@ enum AnsiParser {
         NSColor(calibratedWhite: 0.95, alpha: 1.0)
     ]
 
-    // Pre-computed 256-color palette (indices 16-255)
+    /// Pre-computed 256-color palette (indices 16-255)
     private static let extendedPalette: [NSColor] = {
         var colors: [NSColor] = []
         colors.reserveCapacity(240)
 
         // 6x6x6 color cube (indices 16-231)
         let steps: [CGFloat] = [0.0, 0.37, 0.53, 0.69, 0.84, 1.0]
-        for r in 0..<6 {
-            for g in 0..<6 {
-                for b in 0..<6 {
+        for r in 0 ..< 6 {
+            for g in 0 ..< 6 {
+                for b in 0 ..< 6 {
                     colors.append(NSColor(calibratedRed: steps[r], green: steps[g], blue: steps[b], alpha: 1.0))
                 }
             }
         }
 
         // Grayscale (indices 232-255)
-        for i in 0..<24 {
+        for i in 0 ..< 24 {
             let level = CGFloat(i) / 23.0
             let value = 0.08 + (0.84 * level)
             colors.append(NSColor(calibratedWhite: value, alpha: 1.0))
@@ -361,7 +366,7 @@ enum AnsiParser {
         if index < 16 {
             return ansiColor(index % 8, bright: index >= 8)
         }
-        if index >= 16 && index <= 255 {
+        if index >= 16, index <= 255 {
             // Use pre-computed extended palette (indices 16-255 map to 0-239)
             return extendedPalette[index - 16]
         }

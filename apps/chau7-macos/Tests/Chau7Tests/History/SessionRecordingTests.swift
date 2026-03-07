@@ -60,7 +60,7 @@ final class SessionRecordingTests: XCTestCase {
         let frames = [
             RecordedFrame(data: Data("frame1".utf8), eventType: .output),
             RecordedFrame(data: Data("frame2".utf8), eventType: .commandStart),
-            RecordedFrame(data: Data("frame3".utf8), eventType: .commandEnd),
+            RecordedFrame(data: Data("frame3".utf8), eventType: .commandEnd)
         ]
 
         let encoder = JSONEncoder()

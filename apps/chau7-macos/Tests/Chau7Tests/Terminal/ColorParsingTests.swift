@@ -239,7 +239,7 @@ final class ColorParsingTests: XCTestCase {
     func testRGBInitFromIntegers() {
         let rgb = ColorParsing.RGB(r: 255, g: 128, b: 0)
         XCTAssertEqual(rgb.red, 1.0, accuracy: 0.001)
-        XCTAssertEqual(rgb.green, 128.0/255.0, accuracy: 0.001)
+        XCTAssertEqual(rgb.green, 128.0 / 255.0, accuracy: 0.001)
         XCTAssertEqual(rgb.blue, 0.0, accuracy: 0.001)
     }
 }

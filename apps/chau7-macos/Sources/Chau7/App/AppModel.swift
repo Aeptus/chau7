@@ -15,7 +15,7 @@ struct SessionStatus: Identifiable, Equatable {
 /// - Note: Thread Safety - @Published properties must be modified on main thread.
 ///   Use DispatchQueue.main.async when updating state from background callbacks.
 final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
-    enum NotificationPermissionState: String, Codable, Sendable {
+    enum NotificationPermissionState: String, Codable {
         case unavailableNotBundled
         case unknown
         case notDetermined
@@ -123,7 +123,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             let staleNormalized = Self.normalizeSecondsText(
                 staleSecondsText,
                 defaultValue: 180.0,
-                min: (Self.parseSecondsText(idleSecondsText, defaultValue: 5.0) + 1.0)
+                min: Self.parseSecondsText(idleSecondsText, defaultValue: 5.0) + 1.0
             )
             if staleSecondsText != staleNormalized {
                 staleSecondsText = staleNormalized
@@ -210,10 +210,10 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
     }
 
-    @Published var notificationStatus: String = "Unknown"
+    @Published var notificationStatus = "Unknown"
     @Published var notificationPermissionState: NotificationPermissionState = .unknown
-    @Published var notificationWarning: String? = nil
-    @Published var logFilePath: String = ""
+    @Published var notificationWarning: String?
+    @Published var logFilePath = ""
     @Published var logLines: [String] = []
     @Published var codexHistoryEntries: [HistoryEntry] = []
     @Published var claudeHistoryEntries: [HistoryEntry] = []
@@ -241,7 +241,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     private let maxHistoryEntries = 200
     private let maxTerminalLines = 250
     private let terminalPrefillLines = 200
-    private let maxEntryAgeSeconds: TimeInterval = 7 * 24 * 60 * 60  // 7 days
+    private let maxEntryAgeSeconds: TimeInterval = 7 * 24 * 60 * 60 // 7 days
     private var notificationSettingsSnapshot: NotificationSettingsSnapshot?
 
     private struct NotificationSettingsSnapshot {
@@ -351,7 +351,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
         super.init()
 
-        logFilePath = Log.filePath
+        self.logFilePath = Log.filePath
         Log.sink = { [weak self] line in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -420,7 +420,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         ) { [weak self] notification in
             guard let self = self,
                   let event = notification.userInfo?["event"] as? APICallEvent else { return }
-            self.handleAPICallEvent(event)
+            handleAPICallEvent(event)
         }
         Log.info("API call observer started")
     }
@@ -473,32 +473,32 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             guard let self else { return }
 
             // Clean old history entries (timestamp is TimeInterval since 1970)
-            let codexBefore = self.codexHistoryEntries.count
-            self.codexHistoryEntries.removeAll { entry in
+            let codexBefore = codexHistoryEntries.count
+            codexHistoryEntries.removeAll { entry in
                 entry.timestamp < cutoffInterval
             }
-            let codexRemoved = codexBefore - self.codexHistoryEntries.count
+            let codexRemoved = codexBefore - codexHistoryEntries.count
 
-            let claudeBefore = self.claudeHistoryEntries.count
-            self.claudeHistoryEntries.removeAll { entry in
+            let claudeBefore = claudeHistoryEntries.count
+            claudeHistoryEntries.removeAll { entry in
                 entry.timestamp < cutoffInterval
             }
-            let claudeRemoved = claudeBefore - self.claudeHistoryEntries.count
+            let claudeRemoved = claudeBefore - claudeHistoryEntries.count
 
             // Clean old session statuses (stale sessions older than 7 days)
-            let sessionsBefore = self.sessionStatuses.count
-            self.sessionStatuses.removeAll { status in
+            let sessionsBefore = sessionStatuses.count
+            sessionStatuses.removeAll { status in
                 status.lastSeen < cutoff
             }
-            let sessionsRemoved = sessionsBefore - self.sessionStatuses.count
+            let sessionsRemoved = sessionsBefore - sessionStatuses.count
 
             // Clean old events (ts is ISO8601 string)
-            let eventsBefore = self.recentEvents.count
-            self.recentEvents.removeAll { event in
+            let eventsBefore = recentEvents.count
+            recentEvents.removeAll { event in
                 guard let date = DateFormatters.iso8601.date(from: event.ts) else { return false }
                 return date < cutoff
             }
-            let eventsRemoved = eventsBefore - self.recentEvents.count
+            let eventsRemoved = eventsBefore - recentEvents.count
 
             let totalRemoved = codexRemoved + claudeRemoved + sessionsRemoved + eventsRemoved
             if totalRemoved > 0 {
@@ -598,7 +598,10 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 self.notificationWarning = self.notificationWarning(for: permissionState, snapshot: snapshot)
             }
             Log.info("Notification status: \(permissionState.localizedLabel)")
-            Log.trace("Notification settings: alert=\(settings.alertSetting.rawValue) sound=\(settings.soundSetting.rawValue) badge=\(settings.badgeSetting.rawValue) lock=\(settings.lockScreenSetting.rawValue) center=\(settings.notificationCenterSetting.rawValue) style=\(settings.alertStyle.rawValue)")
+            Log
+                .trace(
+                    "Notification settings: alert=\(settings.alertSetting.rawValue) sound=\(settings.soundSetting.rawValue) badge=\(settings.badgeSetting.rawValue) lock=\(settings.lockScreenSetting.rawValue) center=\(settings.notificationCenterSetting.rawValue) style=\(settings.alertStyle.rawValue)"
+                )
         }
     }
 
@@ -615,7 +618,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
 
         // Skip if already requested (unless forced by user)
-        if !force && FeatureSettings.shared.hasRequestedNotificationPermission {
+        if !force, FeatureSettings.shared.hasRequestedNotificationPermission {
             Log.trace("Notification permission already requested, skipping automatic prompt.")
             return
         }
@@ -698,7 +701,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     private func notificationPresentationOptions() -> UNNotificationPresentationOptions {
         guard let snapshot = notificationSettingsSnapshot else { return [] }
         var options: UNNotificationPresentationOptions = []
-        if snapshot.alertSetting == .enabled && snapshot.alertStyle != .none {
+        if snapshot.alertSetting == .enabled, snapshot.alertStyle != .none {
             options.insert(.banner)
         }
         if snapshot.soundSetting == .enabled {
@@ -756,8 +759,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.recentEvents.append(event)
-            self.recentEvents.trimToLast(25)
+            recentEvents.append(event)
+            recentEvents.trimToLast(25)
         }
     }
 
@@ -929,8 +932,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         // Set up callbacks (all called on main thread)
         monitor.onEvent = { [weak self] event in
             guard let self else { return }
-            self.claudeCodeEvents.append(event)
-            self.claudeCodeEvents.trimToLast(50)
+            claudeCodeEvents.append(event)
+            claudeCodeEvents.trimToLast(50)
 
             // Also feed into the tool-agnostic recentEvents stream so Claude Code
             // events appear in the command center timeline alongside events from
@@ -944,8 +947,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 ts: DateFormatters.iso8601.string(from: event.timestamp),
                 directory: event.cwd.isEmpty ? nil : event.cwd
             )
-            self.recentEvents.append(aiEvent)
-            self.recentEvents.trimToLast(25)
+            recentEvents.append(aiEvent)
+            recentEvents.trimToLast(25)
         }
 
         monitor.onSessionIdle = { [weak self] session in
@@ -1000,11 +1003,11 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             if toolName == "Codex" {
-                self.codexHistoryEntries.append(entry)
-                self.codexHistoryEntries.trimToLast(self.maxHistoryEntries)
+                codexHistoryEntries.append(entry)
+                codexHistoryEntries.trimToLast(maxHistoryEntries)
             } else {
-                self.claudeHistoryEntries.append(entry)
-                self.claudeHistoryEntries.trimToLast(self.maxHistoryEntries)
+                claudeHistoryEntries.append(entry)
+                claudeHistoryEntries.trimToLast(maxHistoryEntries)
             }
 
             // Note: History entries are user prompts written to the conversation log.
@@ -1052,11 +1055,11 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             let statusId = "\(toolName)-\(sessionId)"
-            if let index = self.sessionStatuses.firstIndex(where: { $0.id == statusId }) {
-                self.sessionStatuses[index].state = state
-                self.sessionStatuses[index].lastSeen = lastSeen
+            if let index = sessionStatuses.firstIndex(where: { $0.id == statusId }) {
+                sessionStatuses[index].state = state
+                sessionStatuses[index].lastSeen = lastSeen
             } else {
-                self.sessionStatuses.append(SessionStatus(
+                sessionStatuses.append(SessionStatus(
                     id: statusId,
                     sessionId: sessionId,
                     tool: toolName,
@@ -1089,8 +1092,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            self.recentEvents.append(event)
-            self.recentEvents.trimToLast(25)
+            recentEvents.append(event)
+            recentEvents.trimToLast(25)
         }
     }
 
@@ -1103,11 +1106,11 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             if toolName == "Codex" {
-                self.codexTerminalLines.append(trimmedNewlines)
-                self.codexTerminalLines.trimToLast(self.maxTerminalLines)
+                codexTerminalLines.append(trimmedNewlines)
+                codexTerminalLines.trimToLast(maxTerminalLines)
             } else {
-                self.claudeTerminalLines.append(trimmedNewlines)
-                self.claudeTerminalLines.trimToLast(self.maxTerminalLines)
+                claudeTerminalLines.append(trimmedNewlines)
+                claudeTerminalLines.trimToLast(maxTerminalLines)
             }
         }
     }

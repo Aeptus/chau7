@@ -10,7 +10,9 @@ enum TabColor: String, CaseIterable, Identifiable {
     case purple
     case gray
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var color: Color {
         switch self {

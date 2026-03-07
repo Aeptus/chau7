@@ -2,13 +2,14 @@ import SwiftUI
 import Chau7Core
 
 // MARK: - Reusable Terminal Line Components (Code Optimization)
+
 // Consolidates duplicate line rendering logic from MainPanelView
 
 /// A single terminal line with optional normalization and styling
 struct TerminalLineView: View {
     let line: String
-    var isInput: Bool = false
-    var normalize: Bool = true
+    var isInput = false
+    var normalize = true
     var fontSize: CGFloat = 11
 
     var body: some View {
@@ -26,7 +27,7 @@ struct TerminalLineView: View {
 /// A list of terminal lines with consistent styling
 struct TerminalLinesView: View {
     let lines: [String]
-    var normalize: Bool = true
+    var normalize = true
     var fontSize: CGFloat = 11
 
     var body: some View {
@@ -43,9 +44,9 @@ struct TerminalLinesView: View {
 /// A scrollable container for terminal output
 struct ScrollableTerminalView: View {
     let lines: [String]
-    var normalize: Bool = true
+    var normalize = true
     var fontSize: CGFloat = 11
-    var maxHeight: CGFloat? = nil
+    var maxHeight: CGFloat?
 
     var body: some View {
         ScrollView {
@@ -67,7 +68,7 @@ struct ScrollableTerminalView: View {
 /// History entry row with timestamp
 struct HistoryEntryRow: View {
     let entry: HistoryEntry
-    var showTimestamp: Bool = true
+    var showTimestamp = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -79,8 +80,8 @@ struct HistoryEntryRow: View {
                         String(entry.sessionId.prefix(8))
                     )
                 )
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(.tertiary)
             }
 
             Text(entry.summary)

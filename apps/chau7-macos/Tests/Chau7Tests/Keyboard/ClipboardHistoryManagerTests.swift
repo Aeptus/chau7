@@ -7,7 +7,7 @@ final class ClipboardHistoryManagerTests: XCTestCase {
 
     private var manager: ClipboardHistoryManager!
     private var savedItems: [ClipboardHistoryManager.ClipboardItem] = []
-    private var savedMaxItems: Int = 50
+    private var savedMaxItems = 50
 
     override func setUp() {
         super.setUp()
@@ -53,14 +53,20 @@ final class ClipboardHistoryManagerTests: XCTestCase {
     func testTrimToMaxItems() {
         FeatureSettings.shared.clipboardHistoryMaxItems = 3
 
-        for i in 0..<5 {
+        for i in 0 ..< 5 {
             manager.addItem("item-\(i)")
         }
 
-        XCTAssertLessThanOrEqual(manager.items.count, 3,
-            "Items should be trimmed to maxItems")
-        XCTAssertEqual(manager.items[0].text, "item-4",
-            "Most recent item should be at the top")
+        XCTAssertLessThanOrEqual(
+            manager.items.count,
+            3,
+            "Items should be trimmed to maxItems"
+        )
+        XCTAssertEqual(
+            manager.items[0].text,
+            "item-4",
+            "Most recent item should be at the top"
+        )
     }
 
     // MARK: - Pinned Items Survive Trim
@@ -72,7 +78,7 @@ final class ClipboardHistoryManagerTests: XCTestCase {
         manager.togglePin(manager.items[0])
 
         // Fill beyond max with unpinned items
-        for i in 0..<5 {
+        for i in 0 ..< 5 {
             manager.addItem("filler-\(i)")
         }
 
@@ -107,12 +113,18 @@ final class ClipboardHistoryManagerTests: XCTestCase {
         let itemToPaste = manager.items[2]
         manager.paste(itemToPaste)
 
-        XCTAssertEqual(manager.items[0].text, itemToPaste.text,
-            "Pasted item should move to top")
+        XCTAssertEqual(
+            manager.items[0].text,
+            itemToPaste.text,
+            "Pasted item should move to top"
+        )
 
         let pasteboard = NSPasteboard.general
-        XCTAssertEqual(pasteboard.string(forType: .string), itemToPaste.text,
-            "Pasteboard should contain the pasted text")
+        XCTAssertEqual(
+            pasteboard.string(forType: .string),
+            itemToPaste.text,
+            "Pasteboard should contain the pasted text"
+        )
     }
 
     // MARK: - Remove
@@ -125,10 +137,14 @@ final class ClipboardHistoryManagerTests: XCTestCase {
         manager.remove(toRemove)
 
         XCTAssertEqual(manager.items.count, 1)
-        XCTAssertNil(manager.items.first(where: { $0.text == "remove-me" }),
-            "Removed item should not be present")
-        XCTAssertNotNil(manager.items.first(where: { $0.text == "keep" }),
-            "Non-removed item should remain")
+        XCTAssertNil(
+            manager.items.first(where: { $0.text == "remove-me" }),
+            "Removed item should not be present"
+        )
+        XCTAssertNotNil(
+            manager.items.first(where: { $0.text == "keep" }),
+            "Non-removed item should remain"
+        )
     }
 
     // MARK: - Clear
@@ -170,10 +186,15 @@ final class ClipboardHistoryManagerTests: XCTestCase {
             text: longText,
             timestamp: Date()
         )
-        XCTAssertTrue(longItem.preview.hasSuffix("..."),
-            "Long preview should end with ellipsis")
-        XCTAssertEqual(longItem.preview.count, 60,
-            "Long preview should be exactly 60 characters (57 + '...')")
+        XCTAssertTrue(
+            longItem.preview.hasSuffix("..."),
+            "Long preview should end with ellipsis"
+        )
+        XCTAssertEqual(
+            longItem.preview.count,
+            60,
+            "Long preview should be exactly 60 characters (57 + '...')"
+        )
     }
 }
 #endif

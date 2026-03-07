@@ -109,12 +109,18 @@ final class CommandBlockOverlayTests: XCTestCase {
         manager.commandFinished(tabID: "test-tab", line: 40, exitCode: 0)
 
         let block1 = manager.blockContaining(line: 15, tabID: "test-tab")
-        XCTAssertEqual(block1?.command, "cmd1",
-                       "Line 15 should be in the first block (10..20)")
+        XCTAssertEqual(
+            block1?.command,
+            "cmd1",
+            "Line 15 should be in the first block (10..20)"
+        )
 
         let block2 = manager.blockContaining(line: 30, tabID: "test-tab")
-        XCTAssertEqual(block2?.command, "cmd2",
-                       "Line 30 should be in the second block (25..40)")
+        XCTAssertEqual(
+            block2?.command,
+            "cmd2",
+            "Line 30 should be in the second block (25..40)"
+        )
 
         let none = manager.blockContaining(line: 22, tabID: "test-tab")
         XCTAssertNil(none, "Line 22 is between blocks and should return nil")
@@ -124,8 +130,11 @@ final class CommandBlockOverlayTests: XCTestCase {
         manager.commandStarted(tabID: "test-tab", command: "running", line: 50, directory: nil)
         // Block is still running (no endLine), so it spans from startLine onward
         let block = manager.blockContaining(line: 100, tabID: "test-tab")
-        XCTAssertEqual(block?.command, "running",
-                       "A running block should contain any line beyond its start")
+        XCTAssertEqual(
+            block?.command,
+            "running",
+            "A running block should contain any line beyond its start"
+        )
     }
 
     func testBlockContainingLineBeforeStart() {
@@ -155,8 +164,10 @@ final class CommandBlockOverlayTests: XCTestCase {
 
         manager.clearBlocks(tabID: "test-tab")
 
-        XCTAssertTrue(manager.blocksForTab("test-tab").isEmpty,
-                      "clearBlocks should remove all blocks for the tab")
+        XCTAssertTrue(
+            manager.blocksForTab("test-tab").isEmpty,
+            "clearBlocks should remove all blocks for the tab"
+        )
     }
 
     func testClearBlocksDoesNotAffectOtherTabs() {
@@ -166,8 +177,11 @@ final class CommandBlockOverlayTests: XCTestCase {
         manager.clearBlocks(tabID: "tab-A")
 
         XCTAssertTrue(manager.blocksForTab("tab-A").isEmpty)
-        XCTAssertEqual(manager.blocksForTab("tab-B").count, 1,
-                       "Clearing one tab should not affect other tabs")
+        XCTAssertEqual(
+            manager.blocksForTab("tab-B").count,
+            1,
+            "Clearing one tab should not affect other tabs"
+        )
     }
 
     // MARK: - Trimming / Capacity
@@ -175,7 +189,7 @@ final class CommandBlockOverlayTests: XCTestCase {
     func testTrimBlocksWhenOverCapacity() {
         let maxBlocks = CommandBlockManager.maxBlocksPerTab
         // Add more than maxBlocksPerTab blocks
-        for i in 0..<(maxBlocks + 10) {
+        for i in 0 ..< (maxBlocks + 10) {
             manager.commandStarted(
                 tabID: "test-tab",
                 command: "cmd-\(i)",
@@ -185,11 +199,17 @@ final class CommandBlockOverlayTests: XCTestCase {
         }
 
         let blocks = manager.blocksForTab("test-tab")
-        XCTAssertLessThanOrEqual(blocks.count, maxBlocks,
-                                 "Blocks should be trimmed to the max capacity")
+        XCTAssertLessThanOrEqual(
+            blocks.count,
+            maxBlocks,
+            "Blocks should be trimmed to the max capacity"
+        )
         // The oldest blocks should have been removed
-        XCTAssertEqual(blocks.first?.command, "cmd-10",
-                       "The oldest blocks should be trimmed first")
+        XCTAssertEqual(
+            blocks.first?.command,
+            "cmd-10",
+            "The oldest blocks should be trimmed first"
+        )
     }
 
     // MARK: - CommandBlock Color Logic (mirrors CommandBlockOverlayView.blockColor)
@@ -228,7 +248,7 @@ final class CommandBlockOverlayTests: XCTestCase {
     func testBlockVisibilityWhenOverlapping() {
         // Simulate the visibility check from CommandBlockOverlayView
         let block = CommandBlock(command: "test", startLine: 10, endLine: 20)
-        let visibleRange: Range<Int> = 5..<25
+        let visibleRange: Range<Int> = 5 ..< 25
 
         let blockEnd = block.endLine ?? Int.max
         let isVisible = block.startLine < visibleRange.upperBound && blockEnd >= visibleRange.lowerBound
@@ -237,7 +257,7 @@ final class CommandBlockOverlayTests: XCTestCase {
 
     func testBlockVisibilityWhenAboveViewport() {
         let block = CommandBlock(command: "test", startLine: 1, endLine: 3)
-        let visibleRange: Range<Int> = 10..<20
+        let visibleRange: Range<Int> = 10 ..< 20
 
         let blockEnd = block.endLine ?? Int.max
         let isVisible = block.startLine < visibleRange.upperBound && blockEnd >= visibleRange.lowerBound
@@ -246,7 +266,7 @@ final class CommandBlockOverlayTests: XCTestCase {
 
     func testBlockVisibilityWhenBelowViewport() {
         let block = CommandBlock(command: "test", startLine: 50, endLine: 60)
-        let visibleRange: Range<Int> = 10..<20
+        let visibleRange: Range<Int> = 10 ..< 20
 
         let blockEnd = block.endLine ?? Int.max
         let isVisible = block.startLine < visibleRange.upperBound && blockEnd >= visibleRange.lowerBound
@@ -256,7 +276,7 @@ final class CommandBlockOverlayTests: XCTestCase {
     func testRunningBlockVisibilityUsesMaxInt() {
         // Running blocks have endLine == nil, treated as Int.max for visibility
         let block = CommandBlock(command: "running", startLine: 15)
-        let visibleRange: Range<Int> = 10..<20
+        let visibleRange: Range<Int> = 10 ..< 20
 
         let blockEnd = block.endLine ?? Int.max
         let isVisible = block.startLine < visibleRange.upperBound && blockEnd >= visibleRange.lowerBound

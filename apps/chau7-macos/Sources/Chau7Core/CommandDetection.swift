@@ -106,19 +106,19 @@ public enum CommandDetection {
 
     /// Common dev ports and their typical associations
     public static let commonDevPorts: [Int: String] = [
-        3000: "Dev Server",      // Next.js, Create React App, many others
+        3000: "Dev Server", // Next.js, Create React App, many others
         3001: "Dev Server",
-        4000: "Dev Server",      // Phoenix, some Node apps
-        4200: "Angular",         // Angular CLI default
-        5000: "Dev Server",      // Flask, many others
-        5173: "Vite",            // Vite default
+        4000: "Dev Server", // Phoenix, some Node apps
+        4200: "Angular", // Angular CLI default
+        5000: "Dev Server", // Flask, many others
+        5173: "Vite", // Vite default
         5174: "Vite",
-        8000: "Dev Server",      // Django, many others
-        8080: "Dev Server",      // Common alternative
+        8000: "Dev Server", // Django, many others
+        8080: "Dev Server", // Common alternative
         8081: "Dev Server",
-        8888: "Dev Server",      // Jupyter, some servers
+        8888: "Dev Server", // Jupyter, some servers
         9000: "Dev Server",
-        19000: "Expo",           // Expo default
+        19000: "Expo", // Expo default
         19001: "Expo",
         19002: "Expo"
     ]
@@ -195,8 +195,8 @@ public enum CommandDetection {
         // Vite — the banner is "  VITE v6.x.x  ready in Nms"
         ("VITE v", "Vite"),
         ("vite v", "Vite"),
-        ("localhost:5173", "Vite"),     // Vite default port
-        ("localhost:5174", "Vite"),     // Vite secondary port
+        ("localhost:5173", "Vite"), // Vite default port
+        ("localhost:5174", "Vite"), // Vite secondary port
         // Next.js
         ("ready started server on", "Next.js"),
         ("▲ Next.js", "Next.js"),
@@ -246,7 +246,7 @@ public enum CommandDetection {
     ]
 
     /// Shell wrapper commands that should be skipped
-    public static let wrapperCommands: Set<String> = [
+    public static let wrapperCommands: Set = [
         "command",
         "builtin",
         "exec",
@@ -255,7 +255,7 @@ public enum CommandDetection {
     ]
 
     /// Sudo options that take a value argument
-    public static let sudoOptionsWithValue: Set<String> = [
+    public static let sudoOptionsWithValue: Set = [
         "-u", "-g", "-h", "-p", "-a", "-c", "-t", "-r"
     ]
 
@@ -498,22 +498,22 @@ public enum CommandDetection {
                 continue
             }
 
-            if char == "\\" && !inSingleQuote {
+            if char == "\\", !inSingleQuote {
                 isEscaped = true
                 continue
             }
 
-            if char == "'" && !inDoubleQuote {
+            if char == "'", !inDoubleQuote {
                 inSingleQuote.toggle()
                 continue
             }
 
-            if char == "\"" && !inSingleQuote {
+            if char == "\"", !inSingleQuote {
                 inDoubleQuote.toggle()
                 continue
             }
 
-            if !inSingleQuote && !inDoubleQuote {
+            if !inSingleQuote, !inDoubleQuote {
                 if char == "#" {
                     break
                 }
@@ -547,7 +547,7 @@ public enum CommandDetection {
         let name = token[..<eqIndex]
         guard let first = name.first, first == "_" || first.isLetter else { return false }
         for ch in name.dropFirst() {
-            if ch != "_" && !ch.isLetter && !ch.isNumber {
+            if ch != "_", !ch.isLetter, !ch.isNumber {
                 return false
             }
         }
@@ -600,7 +600,7 @@ public enum CommandDetection {
 
     static func findSubcommand(tokens: [String], after command: String, looking targets: [String]) -> String? {
         guard let cmdIndex = tokens.firstIndex(where: { normalizeToken($0) == command }) else { return nil }
-        for i in (cmdIndex + 1)..<tokens.count {
+        for i in (cmdIndex + 1) ..< tokens.count {
             let token = tokens[i]
             if token.hasPrefix("-") { continue }
             let normalized = normalizeToken(token)
@@ -625,9 +625,9 @@ public enum EventParsing {
         case toolComplete = "tool_complete"
         case permissionRequest = "permission_request"
         case responseComplete = "response_complete"
-        case notification = "notification"
+        case notification
         case sessionEnd = "session_end"
-        case unknown = "unknown"
+        case unknown
 
         public init(from hookEvent: String) {
             switch hookEvent {

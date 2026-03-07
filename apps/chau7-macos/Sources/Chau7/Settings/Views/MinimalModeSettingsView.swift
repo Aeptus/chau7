@@ -84,7 +84,6 @@ struct MinimalModeSettingsView: View {
 
     // MARK: - Status Row
 
-    @ViewBuilder
     private func statusRow(label: String, active: Bool) -> some View {
         HStack {
             Circle()

@@ -15,7 +15,10 @@ fn main() {
     }
 
     if args.len() > 2 {
-        eprintln!("chau7-md: warning: extra arguments ignored, only rendering {}", args[1]);
+        eprintln!(
+            "chau7-md: warning: extra arguments ignored, only rendering {}",
+            args[1]
+        );
     }
 
     let markdown = if args.len() > 1 {

@@ -47,7 +47,7 @@ final class TerminalMigrationWizard: ObservableObject {
             return []
         }
 
-        return profiles.compactMap { (name, settings) -> ImportableProfile? in
+        return profiles.compactMap { name, settings -> ImportableProfile? in
             var profile = ImportableProfile(name: name, source: .terminalApp)
 
             // Font
@@ -222,7 +222,7 @@ struct ImportableProfile: Identifiable {
 
 enum ProfileSource: String {
     case terminalApp = "terminal"
-    case iterm2 = "iterm2"
+    case iterm2
 
     var displayName: String {
         switch self {
@@ -242,9 +242,11 @@ enum ProfileSource: String {
 extension NSColor {
     var hexString: String {
         guard let rgb = usingColorSpace(.sRGB) else { return "#000000" }
-        return String(format: "#%02X%02X%02X",
-                      Int(rgb.redComponent * 255),
-                      Int(rgb.greenComponent * 255),
-                      Int(rgb.blueComponent * 255))
+        return String(
+            format: "#%02X%02X%02X",
+            Int(rgb.redComponent * 255),
+            Int(rgb.greenComponent * 255),
+            Int(rgb.blueComponent * 255)
+        )
     }
 }

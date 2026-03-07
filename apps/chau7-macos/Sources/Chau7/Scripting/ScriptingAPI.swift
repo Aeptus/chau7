@@ -45,7 +45,7 @@ final class ScriptingAPI: ObservableObject {
     }
 
     private init() {
-        isEnabled = UserDefaults.standard.bool(forKey: "feature.scriptingAPI")
+        self.isEnabled = UserDefaults.standard.bool(forKey: "feature.scriptingAPI")
         if isEnabled { startServer() }
         Log.info("ScriptingAPI initialized: enabled=\(isEnabled)")
     }
@@ -153,7 +153,7 @@ final class ScriptingAPI: ObservableObject {
 
         let handler = ScriptingClientHandler(fd: clientFD, queue: socketQueue) { [weak self] json in
             guard let self = self else { return ["error": "server gone"] as [String: Any] }
-            return await self.handleRequest(json)
+            return await handleRequest(json)
         } onDisconnect: { [weak self] fd in
             DispatchQueue.main.async {
                 self?.clientHandlers.removeValue(forKey: fd)
@@ -265,7 +265,7 @@ final class ScriptingAPI: ObservableObject {
         let items: [[String: Any]] = records.map { r in
             var dict: [String: Any] = [
                 "command": r.command,
-                "timestamp": r.timestamp.timeIntervalSince1970,
+                "timestamp": r.timestamp.timeIntervalSince1970
             ]
             if let d = r.directory { dict["directory"] = d }
             if let e = r.exitCode { dict["exit_code"] = e }
@@ -295,10 +295,10 @@ final class ScriptingAPI: ObservableObject {
             return ["error": "missing param: value"]
         }
 
-        let allowedKeys: Set<String> = [
+        let allowedKeys: Set = [
             "feature.scriptingAPI",
             "feature.persistentHistory",
-            "history.maxRecords",
+            "history.maxRecords"
         ]
         guard allowedKeys.contains(key) else {
             return ["error": "unknown or disallowed setting key: \(key)"]
@@ -341,7 +341,7 @@ final class ScriptingAPI: ObservableObject {
                 "uptime_seconds": Int(uptime),
                 "connected_clients": connectedClients,
                 "server_running": isRunning,
-                "history_count": PersistentHistoryStore.shared.totalCount(),
+                "history_count": PersistentHistoryStore.shared.totalCount()
             ] as [String: Any]
         ]
     }

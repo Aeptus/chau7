@@ -3,14 +3,14 @@ import Foundation
 /// Parsed entry from an SSH config file
 public struct SSHConfigEntry: Codable, Identifiable, Equatable, Sendable {
     public let id: UUID
-    public let host: String           // Host pattern
-    public var hostname: String?      // HostName
-    public var user: String?          // User
-    public var port: Int?             // Port
-    public var identityFile: String?  // IdentityFile
-    public var proxyJump: String?     // ProxyJump
-    public var forwardAgent: Bool?    // ForwardAgent
-    public var extraOptions: [String: String]  // Everything else
+    public let host: String // Host pattern
+    public var hostname: String? // HostName
+    public var user: String? // User
+    public var port: Int? // Port
+    public var identityFile: String? // IdentityFile
+    public var proxyJump: String? // ProxyJump
+    public var forwardAgent: Bool? // ForwardAgent
+    public var extraOptions: [String: String] // Everything else
 
     public init(
         id: UUID = UUID(),
@@ -60,9 +60,9 @@ public enum SSHConfigParser {
 
             // Split into key and value (SSH config supports both space and = separators)
             let parts: [String]
-            if let eqRange = trimmed.range(of: "="), !trimmed[trimmed.startIndex..<eqRange.lowerBound].contains(" ") {
+            if let eqRange = trimmed.range(of: "="), !trimmed[trimmed.startIndex ..< eqRange.lowerBound].contains(" ") {
                 // key=value or key = value (no spaces in key before =)
-                let key = String(trimmed[trimmed.startIndex..<eqRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+                let key = String(trimmed[trimmed.startIndex ..< eqRange.lowerBound]).trimmingCharacters(in: .whitespaces)
                 let value = String(trimmed[eqRange.upperBound...]).trimmingCharacters(in: .whitespaces)
                 parts = [key, value]
             } else {
@@ -89,7 +89,7 @@ public enum SSHConfigParser {
                 case "identityfile": entry.identityFile = value
                 case "proxyjump": entry.proxyJump = value
                 case "forwardagent": entry.forwardAgent = (value.lowercased() == "yes")
-                default: entry.extraOptions[parts[0]] = value  // Preserve original case for key
+                default: entry.extraOptions[parts[0]] = value // Preserve original case for key
                 }
                 currentEntry = entry
             }

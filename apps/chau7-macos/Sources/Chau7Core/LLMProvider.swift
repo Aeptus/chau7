@@ -9,7 +9,9 @@ public enum LLMProviderType: String, Codable, CaseIterable, Identifiable, Sendab
     case ollama
     case custom
 
-    public var id: String { rawValue }
+    public var id: String {
+        rawValue
+    }
 
     public var displayName: String {
         switch self {
@@ -54,7 +56,7 @@ public enum LLMProviderType: String, Codable, CaseIterable, Identifiable, Sendab
 /// API keys are stored separately in the Keychain (not serialized here).
 public struct LLMProviderConfig: Codable, Equatable, Sendable {
     public var provider: LLMProviderType
-    public var apiKey: String  // Stored in Keychain, transient in memory — excluded from Codable
+    public var apiKey: String // Stored in Keychain, transient in memory — excluded from Codable
     public var endpoint: String
     public var model: String
     public var maxTokens: Int
@@ -66,11 +68,11 @@ public struct LLMProviderConfig: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        provider = try container.decode(LLMProviderType.self, forKey: .provider)
-        endpoint = try container.decode(String.self, forKey: .endpoint)
-        model = try container.decode(String.self, forKey: .model)
-        maxTokens = try container.decode(Int.self, forKey: .maxTokens)
-        apiKey = ""  // Must be loaded from Keychain separately
+        self.provider = try container.decode(LLMProviderType.self, forKey: .provider)
+        self.endpoint = try container.decode(String.self, forKey: .endpoint)
+        self.model = try container.decode(String.self, forKey: .model)
+        self.maxTokens = try container.decode(Int.self, forKey: .maxTokens)
+        self.apiKey = "" // Must be loaded from Keychain separately
     }
 
     public init(provider: LLMProviderType, apiKey: String = "", endpoint: String? = nil, model: String? = nil, maxTokens: Int = 1024) {
@@ -97,7 +99,7 @@ public struct LLMProviderConfig: Codable, Equatable, Sendable {
 
     /// Validates that the configuration has the minimum required fields
     public var isValid: Bool {
-        if provider.requiresAPIKey && apiKey.isEmpty { return false }
+        if provider.requiresAPIKey, apiKey.isEmpty { return false }
         if endpoint.isEmpty { return false }
         if model.isEmpty { return false }
         if maxTokens < 1 { return false }
@@ -146,8 +148,8 @@ public enum ExplanationConfidence: String, Codable, Sendable {
 
 /// Risk level for a suggested fix
 public enum FixRiskLevel: String, Codable, Sendable {
-    case safe      // Read-only or reversible
-    case moderate  // Modifies files but recoverable
+    case safe // Read-only or reversible
+    case moderate // Modifies files but recoverable
     case dangerous // Could cause data loss or system changes
 }
 

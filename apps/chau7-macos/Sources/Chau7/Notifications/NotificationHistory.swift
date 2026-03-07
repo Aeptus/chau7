@@ -6,7 +6,7 @@ import Chau7Core
 @MainActor
 final class NotificationHistory {
 
-    struct Entry: Identifiable, Codable, Sendable {
+    struct Entry: Identifiable, Codable {
         let id: UUID
         let triggerId: String
         let source: String
@@ -65,5 +65,7 @@ final class NotificationHistory {
     }
 
     /// Total entries currently held.
-    var count: Int { entries.count }
+    var count: Int {
+        entries.count
+    }
 }

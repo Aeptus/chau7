@@ -38,7 +38,7 @@ final class LLMClient {
             throw LLMClientError.invalidResponse
         }
 
-        guard (200...299).contains(httpResponse.statusCode) else {
+        guard (200 ... 299).contains(httpResponse.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? "no body"
             Log.error("LLMClient: HTTP \(httpResponse.statusCode): \(body.prefix(200))")
             throw LLMClientError.httpError(httpResponse.statusCode, body)

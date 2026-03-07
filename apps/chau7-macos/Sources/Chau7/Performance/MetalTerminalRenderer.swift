@@ -1,4 +1,5 @@
 // MARK: - Metal-Based Terminal Renderer
+
 // GPU-accelerated rendering with dynamic glyph atlas, cursor, and decorations.
 // Uses instanced rendering with on-demand glyph rasterization.
 
@@ -15,10 +16,12 @@ extension simd_float4x4 {
             SIMD4<Float>(2.0 / (right - left), 0, 0, 0),
             SIMD4<Float>(0, 2.0 / (top - bottom), 0, 0),
             SIMD4<Float>(0, 0, -2.0 / (far - near), 0),
-            SIMD4<Float>(-(right + left) / (right - left),
-                        -(top + bottom) / (top - bottom),
-                        -(far + near) / (far - near),
-                        1)
+            SIMD4<Float>(
+                -(right + left) / (right - left),
+                -(top + bottom) / (top - bottom),
+                -(far + near) / (far - near),
+                1
+            )
         ))
     }
 }
@@ -36,12 +39,12 @@ public final class MetalTerminalRenderer: NSObject {
 
     /// Per-cell instance data uploaded to GPU each frame
     struct CellInstance {
-        var position: SIMD2<Float>      // Screen position (x, y) in points
-        var texCoord: SIMD4<Float>      // Glyph UV coords (u, v, width, height)
-        var foreground: SIMD4<Float>    // Foreground color (RGBA)
-        var background: SIMD4<Float>    // Background color (RGBA)
-        var flags: UInt32               // Bold=1, italic=2, underline=4, strikethrough=8, blink=16
-        var padding: UInt32 = 0         // Alignment padding
+        var position: SIMD2<Float> // Screen position (x, y) in points
+        var texCoord: SIMD4<Float> // Glyph UV coords (u, v, width, height)
+        var foreground: SIMD4<Float> // Foreground color (RGBA)
+        var background: SIMD4<Float> // Background color (RGBA)
+        var flags: UInt32 // Bold=1, italic=2, underline=4, strikethrough=8, blink=16
+        var padding: UInt32 = 0 // Alignment padding
     }
 
     /// Glyph cache key: codepoint + style variant
@@ -53,10 +56,10 @@ public final class MetalTerminalRenderer: NSObject {
 
     /// Glyph information in the atlas
     struct GlyphInfo {
-        let textureRect: CGRect     // UV coordinates in atlas
-        let bearing: CGPoint        // Offset from baseline
-        let advance: CGFloat        // Horizontal advance
-        let isWide: Bool            // Double-width (CJK)
+        let textureRect: CGRect // UV coordinates in atlas
+        let bearing: CGPoint // Offset from baseline
+        let advance: CGFloat // Horizontal advance
+        let isWide: Bool // Double-width (CJK)
     }
 
     // MARK: - Shared Pipeline Cache (compiled once, reused across tabs)
@@ -82,8 +85,8 @@ public final class MetalTerminalRenderer: NSObject {
 
     private var glyphAtlas: MTLTexture!
     private var atlasContext: CGContext!
-    private var atlasWidth: Int = 2048
-    private var atlasHeight: Int = 2048
+    private var atlasWidth = 2048
+    private var atlasHeight = 2048
     private var glyphCache: [GlyphKey: GlyphInfo] = [:]
 
     /// Packing cursor for the next glyph slot
@@ -95,10 +98,10 @@ public final class MetalTerminalRenderer: NSObject {
     private var atlasDirty = false
 
     /// Cache miss count for profiling
-    private(set) var glyphCacheMisses: Int = 0
+    private(set) var glyphCacheMisses = 0
 
     /// Diagnostic frame counter for throttled logging
-    private var diagFrameCounter: Int = 0
+    private var diagFrameCounter = 0
 
     // MARK: - Font
 
@@ -117,34 +120,34 @@ public final class MetalTerminalRenderer: NSObject {
     // MARK: - Cursor State
 
     /// Set by the coordinator before each render call
-    var cursorRow: Int = 0
-    var cursorCol: Int = 0
+    var cursorRow = 0
+    var cursorCol = 0
     /// "block", "underline", or "bar"
-    var cursorStyle: String = "block"
-    var cursorVisible: Bool = true
+    var cursorStyle = "block"
+    var cursorVisible = true
     var cursorColor: SIMD4<Float> = SIMD4(1, 1, 1, 0.7)
 
     // MARK: - Blink State
 
     /// Current cursor blink phase (true = visible)
-    var cursorBlinkPhase: Bool = true
+    var cursorBlinkPhase = true
     /// Whether cursor blink is enabled
-    var cursorBlinkEnabled: Bool = true
+    var cursorBlinkEnabled = true
     /// Current text blink phase (true = visible) — for cells with blink flag (bit 4)
-    var textBlinkPhase: Bool = true
+    var textBlinkPhase = true
     /// Whether any cell in the current frame has the blink flag
-    var hasBlinkingCells: Bool = false
+    var hasBlinkingCells = false
 
-    // Uniforms — include blinkVisible and scaleFactor for the fragment shader
+    /// Uniforms — include blinkVisible and scaleFactor for the fragment shader
     struct Uniforms {
         var projectionMatrix: simd_float4x4
         var atlasSize: SIMD2<Float>
         var cellSize: SIMD2<Float>
         var viewportSize: SIMD2<Float>
         var scaleFactor: Float
-        var blinkVisible: Float  // 1.0 = show blinking text, 0.0 = hide
-        var underlineY: Float    // normalized Y position for underline (0=top, 1=bottom)
-        var _pad: Float = 0      // alignment padding
+        var blinkVisible: Float // 1.0 = show blinking text, 0.0 = hide
+        var underlineY: Float // normalized Y position for underline (0=top, 1=bottom)
+        var _pad: Float = 0 // alignment padding
     }
 
     // MARK: - Initialization
@@ -233,7 +236,7 @@ public final class MetalTerminalRenderer: NSObject {
         uniformBuffer = uniBuffer
 
         let vertices: [SIMD2<Float>] = [
-            SIMD2(0, 0), SIMD2(1, 0), SIMD2(0, 1), SIMD2(1, 1),
+            SIMD2(0, 0), SIMD2(1, 0), SIMD2(0, 1), SIMD2(1, 1)
         ]
         guard let vtxBuffer = device.makeBuffer(bytes: vertices, length: vertices.count * MemoryLayout<SIMD2<Float>>.stride, options: .storageModeShared) else {
             throw MetalError.bufferAllocationFailed
@@ -271,7 +274,7 @@ public final class MetalTerminalRenderer: NSObject {
     /// Accepts an NSFont directly to avoid issues with private system font names
     /// (e.g. ".SFMono-Regular") that CTFontCreateWithName may not resolve correctly.
     public func setFont(nsFont: NSFont, scaleFactor: CGFloat = 1.0) {
-        self.fontSize = nsFont.pointSize
+        fontSize = nsFont.pointSize
         self.scaleFactor = scaleFactor
 
         // Scale font for Retina rasterization.
@@ -306,23 +309,23 @@ public final class MetalTerminalRenderer: NSObject {
         // Store scaled font metrics for glyph placement within atlas slots
         let ascent = CTFontGetAscent(regularFont)
         let descent = CTFontGetDescent(regularFont)
-        self.fontAscent = ascent
-        self.fontDescent = descent
+        fontAscent = ascent
+        fontDescent = descent
 
         // Derive underline position from font metrics (in normalized cell space).
         // CTFontGetUnderlinePosition returns a negative offset below the baseline.
         // In cell space: baseline is at (ascent / cellHeight_pt), underline is below that.
         let baseCT = nsFont as CTFont
         let ptAscent = CTFontGetAscent(baseCT)
-        let ulOffset = CTFontGetUnderlinePosition(baseCT)  // negative, e.g. -1.5
-        let baselineFrac = ptAscent / pointCellSize.height   // e.g. 0.82
+        let ulOffset = CTFontGetUnderlinePosition(baseCT) // negative, e.g. -1.5
+        let baselineFrac = ptAscent / pointCellSize.height // e.g. 0.82
         let ulFrac = baselineFrac - ulOffset / pointCellSize.height // e.g. 0.82 + 1.5/17 ≈ 0.91
-        self.underlinePosition = Float(min(max(ulFrac, 0.7), 0.95))
+        underlinePosition = Float(min(max(ulFrac, 0.7), 0.95))
 
         Log.info("MetalRenderer: Font configured — \(CTFontCopyFullName(regularFont)), scaledSize=\(scaledSize), cellSize=\(cellSize), ascent=\(ascent), descent=\(descent)")
 
         // Guard against zero cell size (would make nothing visible)
-        guard cellSize.width > 0 && cellSize.height > 0 else {
+        guard cellSize.width > 0, cellSize.height > 0 else {
             Log.error("MetalRenderer: Zero cell size from font \(CTFontCopyFullName(regularFont))")
             return
         }
@@ -354,7 +357,7 @@ public final class MetalTerminalRenderer: NSObject {
             (false, false), (true, false), (false, true), (true, true)
         ]
         for style in styles {
-            for cp: UInt32 in 32...126 {
+            for cp: UInt32 in 32 ... 126 {
                 _ = rasterizeGlyph(codePoint: cp, bold: style.bold, italic: style.italic)
             }
         }
@@ -455,7 +458,7 @@ public final class MetalTerminalRenderer: NSObject {
         CTFontDrawGlyphs(drawFont, glyphs, &position, 1, context)
 
         // Diagnostic: check if box-drawing glyph produced visible pixels (trace-only)
-        if isBoxDraw && Log.isTraceEnabled, let data = context.data {
+        if isBoxDraw, Log.isTraceEnabled, let data = context.data {
             let bytesPerRow = context.bytesPerRow
             let slotRowStart = Int(packY)
             let slotRowEnd = min(Int(packY + slotHeight), atlasHeight)
@@ -465,15 +468,18 @@ public final class MetalTerminalRenderer: NSObject {
             var nonZeroAlpha = 0
             var totalPixels = 0
             let ptr = data.bindMemory(to: UInt8.self, capacity: atlasHeight * bytesPerRow)
-            for row in slotRowStart..<slotRowEnd {
-                for col in slotColStart..<slotColEnd {
+            for row in slotRowStart ..< slotRowEnd {
+                for col in slotColStart ..< slotColEnd {
                     let offset = row * bytesPerRow + col * 4
                     let alpha = ptr[offset + 3]
                     if alpha > 0 { nonZeroAlpha += 1 }
                     totalPixels += 1
                 }
             }
-            Log.trace("[DIAG-SWIFT] rasterizeGlyph U+\(String(codePoint, radix: 16, uppercase: true)) pixelCheck: \(nonZeroAlpha)/\(totalPixels) non-zero alpha, slot=(\(slotColStart),\(slotRowStart))-(\(slotColEnd),\(slotRowEnd)), baseline=\(baselineY), packY=\(packY)")
+            Log
+                .trace(
+                    "[DIAG-SWIFT] rasterizeGlyph U+\(String(codePoint, radix: 16, uppercase: true)) pixelCheck: \(nonZeroAlpha)/\(totalPixels) non-zero alpha, slot=(\(slotColStart),\(slotRowStart))-(\(slotColEnd),\(slotRowEnd)), baseline=\(baselineY), packY=\(packY)"
+                )
 
             dumpAtlasToPNG()
         }
@@ -618,10 +624,10 @@ public final class MetalTerminalRenderer: NSObject {
         let ch = Float(cellSize.height / scaleFactor)
 
         var foundBlinkingCells = false
-        var boxDrawCount: Int = 0  // Diagnostic counter
-        let traceBoxDraw = Log.isTraceEnabled && (diagFrameCounter % 600 == 0)
+        var boxDrawCount = 0 // Diagnostic counter
+        let traceBoxDraw = Log.isTraceEnabled && diagFrameCounter.isMultiple(of: 600)
 
-        for i in 0..<count {
+        for i in 0 ..< count {
             let cell = cells[i]
             let row = i / cols
             let col = i % cols
@@ -635,13 +641,16 @@ public final class MetalTerminalRenderer: NSObject {
             }
 
             // Count box-drawing chars reaching Metal (diagnostic details trace-only)
-            if cell.character >= 0x2500 && cell.character <= 0x257F {
+            if cell.character >= 0x2500, cell.character <= 0x257F {
                 boxDrawCount += 1
-                if traceBoxDraw && (cell.character != 0x2500 || boxDrawCount == 1) && boxDrawCount <= 3 {
+                if traceBoxDraw, cell.character != 0x2500 || boxDrawCount == 1, boxDrawCount <= 3 {
                     let fg = cell.foregroundColor
                     let bg = cell.backgroundColor
                     let ch = Unicode.Scalar(cell.character).map { String(Character($0)) } ?? "?"
-                    Log.trace("[DIAG-SWIFT] box-draw: '\(ch)' U+\(String(cell.character, radix: 16)) at (\(row),\(col)) fg=(\(String(format:"%.2f",fg.x)),\(String(format:"%.2f",fg.y)),\(String(format:"%.2f",fg.z))) bg=(\(String(format:"%.2f",bg.x)),\(String(format:"%.2f",bg.y)),\(String(format:"%.2f",bg.z)))")
+                    Log
+                        .trace(
+                            "[DIAG-SWIFT] box-draw: '\(ch)' U+\(String(cell.character, radix: 16)) at (\(row),\(col)) fg=(\(String(format: "%.2f", fg.x)),\(String(format: "%.2f", fg.y)),\(String(format: "%.2f", fg.z))) bg=(\(String(format: "%.2f", bg.x)),\(String(format: "%.2f", bg.y)),\(String(format: "%.2f", bg.z)))"
+                        )
                 }
             }
 
@@ -673,7 +682,7 @@ public final class MetalTerminalRenderer: NSObject {
         // Diagnostic: log box-drawing count (trace-only, throttled to ~1/sec at 60fps)
         if boxDrawCount > 0 {
             diagFrameCounter += 1
-            if Log.isTraceEnabled && diagFrameCounter % 300 == 1 {
+            if Log.isTraceEnabled, diagFrameCounter % 300 == 1 {
                 Log.trace("[DIAG-SWIFT] updateInstanceBuffer: \(boxDrawCount) box-drawing cells in frame (\(count) total cells, \(cols) cols)")
             }
         }
@@ -681,9 +690,9 @@ public final class MetalTerminalRenderer: NSObject {
         // Cursor: overwrite the cursor cell's flags to signal the shader
         // Only show cursor when blink phase is on (or blink is disabled)
         let showCursor = cursorVisible && (!cursorBlinkEnabled || cursorBlinkPhase)
-        if showCursor && cols > 0 {
+        if showCursor, cols > 0 {
             let cursorIndex = cursorRow * cols + cursorCol
-            if cursorIndex >= 0 && cursorIndex < count {
+            if cursorIndex >= 0, cursorIndex < count {
                 // Encode cursor type in upper bits: bit 5=cursor present, bits 6-7=style
                 var flags = instances[cursorIndex].flags | (1 << 5) // cursor present
                 switch cursorStyle {
@@ -742,10 +751,12 @@ public struct TerminalCell {
     /// Cursor bits (set by renderer): cursor_present=32, cursor_style in bits 6-7
     public var flags: UInt32
 
-    public init(character: UInt32 = 0x20,
-                foreground: SIMD4<Float> = SIMD4(1, 1, 1, 1),
-                background: SIMD4<Float> = SIMD4(0, 0, 0, 1),
-                flags: UInt32 = 0) {
+    public init(
+        character: UInt32 = 0x20,
+        foreground: SIMD4<Float> = SIMD4(1, 1, 1, 1),
+        background: SIMD4<Float> = SIMD4(0, 0, 0, 1),
+        flags: UInt32 = 0
+    ) {
         self.character = character
         self.foregroundColor = foreground
         self.backgroundColor = background

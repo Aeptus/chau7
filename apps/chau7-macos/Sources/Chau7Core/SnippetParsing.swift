@@ -44,7 +44,7 @@ public enum SnippetParsing {
     /// - Parameter input: The snippet text with placeholders
     /// - Returns: Expansion result with processed text and placeholder info
     public static func expandPlaceholders(in input: String) -> ExpansionResult {
-        let range = NSRange(input.startIndex..<input.endIndex, in: input)
+        let range = NSRange(input.startIndex ..< input.endIndex, in: input)
         let matches = placeholderRegex.matches(in: input, range: range)
 
         guard !matches.isEmpty else {
@@ -59,7 +59,7 @@ public enum SnippetParsing {
 
         for match in matches {
             guard let fullRange = Range(match.range(at: 0), in: input) else { continue }
-            let before = input[cursor..<fullRange.lowerBound]
+            let before = input[cursor ..< fullRange.lowerBound]
             output.append(contentsOf: before)
             currentLength += before.count
 
@@ -78,7 +78,7 @@ public enum SnippetParsing {
             cursor = fullRange.upperBound
         }
 
-        output.append(contentsOf: input[cursor..<input.endIndex])
+        output.append(contentsOf: input[cursor ..< input.endIndex])
 
         let sorted = placeholders.sorted {
             if $0.index != $1.index {
@@ -105,7 +105,7 @@ public enum SnippetParsing {
     ///   - provider: Function that returns value for an environment variable name
     /// - Returns: Text with environment variables expanded
     public static func replaceEnvTokens(in input: String, provider: (String) -> String) -> String {
-        let range = NSRange(input.startIndex..<input.endIndex, in: input)
+        let range = NSRange(input.startIndex ..< input.endIndex, in: input)
         var output = input
         let matches = envTokenRegex.matches(in: input, range: range).reversed()
 

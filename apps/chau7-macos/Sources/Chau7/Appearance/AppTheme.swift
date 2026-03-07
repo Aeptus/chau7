@@ -5,7 +5,9 @@ enum AppTheme: String, CaseIterable, Identifiable {
     case light
     case dark
 
-    var id: String { rawValue }
+    var id: String {
+        rawValue
+    }
 
     var displayName: String {
         switch self {

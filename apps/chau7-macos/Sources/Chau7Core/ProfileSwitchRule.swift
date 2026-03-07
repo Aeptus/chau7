@@ -120,18 +120,30 @@ extension ProfileSwitchRule {
         if patternIdx >= patternSegments.count { return false }
         let pat = patternSegments[patternIdx]
         if pat == "**" {
-            if matchSegments(pathSegments: pathSegments, patternSegments: patternSegments,
-                             pathIdx: pathIdx, patternIdx: patternIdx + 1) { return true }
+            if matchSegments(
+                pathSegments: pathSegments,
+                patternSegments: patternSegments,
+                pathIdx: pathIdx,
+                patternIdx: patternIdx + 1
+            ) { return true }
             if pathIdx < pathSegments.count {
-                return matchSegments(pathSegments: pathSegments, patternSegments: patternSegments,
-                                     pathIdx: pathIdx + 1, patternIdx: patternIdx)
+                return matchSegments(
+                    pathSegments: pathSegments,
+                    patternSegments: patternSegments,
+                    pathIdx: pathIdx + 1,
+                    patternIdx: patternIdx
+                )
             }
             return false
         }
         if pathIdx >= pathSegments.count { return false }
         if pat == "*" || matchesSimpleWildcard(string: pathSegments[pathIdx], pattern: pat) {
-            return matchSegments(pathSegments: pathSegments, patternSegments: patternSegments,
-                                 pathIdx: pathIdx + 1, patternIdx: patternIdx + 1)
+            return matchSegments(
+                pathSegments: pathSegments,
+                patternSegments: patternSegments,
+                pathIdx: pathIdx + 1,
+                patternIdx: patternIdx + 1
+            )
         }
         return false
     }
@@ -168,8 +180,8 @@ extension ProfileSwitchRule {
 
 // MARK: - Rule Sorting
 
-extension Array where Element == ProfileSwitchRule {
-    public func sortedByPriority() -> [ProfileSwitchRule] {
+public extension [ProfileSwitchRule] {
+    func sortedByPriority() -> [ProfileSwitchRule] {
         sorted { lhs, rhs in
             if lhs.priority != rhs.priority { return lhs.priority > rhs.priority }
             return lhs.name < rhs.name

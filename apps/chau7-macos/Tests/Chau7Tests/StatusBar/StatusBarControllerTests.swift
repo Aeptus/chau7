@@ -10,8 +10,10 @@ final class StatusBarControllerTests: XCTestCase {
     func testSharedInstanceIsSingleton() {
         let first = StatusBarController.shared
         let second = StatusBarController.shared
-        XCTAssertTrue(first === second,
-            "StatusBarController.shared should always return the same instance")
+        XCTAssertTrue(
+            first === second,
+            "StatusBarController.shared should always return the same instance"
+        )
     }
 
     // MARK: - Initial State
@@ -38,7 +40,7 @@ final class StatusBarControllerTests: XCTestCase {
 
     func testUpdateIconWithoutSetupDoesNotCrash() {
         let controller = StatusBarController.shared
-        controller.cleanup()  // Ensure clean state
+        controller.cleanup() // Ensure clean state
         // updateIcon is @objc and could be called via notification even if
         // statusItem is nil. It should guard safely.
         controller.updateIcon()
@@ -49,8 +51,11 @@ final class StatusBarControllerTests: XCTestCase {
     /// Verify that the StreamSelection enum has all expected cases
     func testStreamSelectionCases() {
         let allCases = StreamSelection.allCases
-        XCTAssertEqual(allCases.count, 5,
-            "StreamSelection should have 5 cases")
+        XCTAssertEqual(
+            allCases.count,
+            5,
+            "StreamSelection should have 5 cases"
+        )
         XCTAssertTrue(allCases.contains(.codexHistory))
         XCTAssertTrue(allCases.contains(.claudeHistory))
         XCTAssertTrue(allCases.contains(.codexTerminal))
@@ -69,8 +74,11 @@ final class StatusBarControllerTests: XCTestCase {
     func testStreamSelectionIdentifiable() {
         // Each case's id should equal its rawValue
         for selection in StreamSelection.allCases {
-            XCTAssertEqual(selection.id, selection.rawValue,
-                "\(selection).id should match its rawValue")
+            XCTAssertEqual(
+                selection.id,
+                selection.rawValue,
+                "\(selection).id should match its rawValue"
+            )
         }
     }
 
@@ -88,8 +96,11 @@ final class StatusBarControllerTests: XCTestCase {
         // The controller observes "MonitoringStateChanged" notification.
         // Verify the string name is consistent with what the panel posts.
         let name = NSNotification.Name("MonitoringStateChanged")
-        XCTAssertEqual(name.rawValue, "MonitoringStateChanged",
-            "Notification name should match the expected string")
+        XCTAssertEqual(
+            name.rawValue,
+            "MonitoringStateChanged",
+            "Notification name should match the expected string"
+        )
     }
 
     // MARK: - Popover Content Size
@@ -103,8 +114,11 @@ final class StatusBarControllerTests: XCTestCase {
         XCTAssertGreaterThan(expectedWidth, 0, "Popover width should be positive")
         XCTAssertGreaterThan(expectedHeight, 0, "Popover height should be positive")
         // The popover should be taller than it is wide (panel layout)
-        XCTAssertGreaterThan(expectedHeight, expectedWidth,
-            "Status bar panel should be taller than wide")
+        XCTAssertGreaterThan(
+            expectedHeight,
+            expectedWidth,
+            "Status bar panel should be taller than wide"
+        )
     }
 
     // MARK: - Stream Selection Unique IDs
@@ -112,8 +126,11 @@ final class StatusBarControllerTests: XCTestCase {
     func testStreamSelectionIdsAreUnique() {
         let ids = StreamSelection.allCases.map(\.id)
         let uniqueIds = Set(ids)
-        XCTAssertEqual(ids.count, uniqueIds.count,
-            "All stream selection cases should have unique IDs")
+        XCTAssertEqual(
+            ids.count,
+            uniqueIds.count,
+            "All stream selection cases should have unique IDs"
+        )
     }
 }
 #endif

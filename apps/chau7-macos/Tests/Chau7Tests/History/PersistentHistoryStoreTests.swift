@@ -88,7 +88,7 @@ final class PersistentHistoryStoreTests: XCTestCase {
     }
 
     func testSearchWithLimit() {
-        for i in 0..<20 {
+        for i in 0 ..< 20 {
             store.insertSync(HistoryRecord(
                 command: "command-\(i)",
                 timestamp: Date().addingTimeInterval(Double(i))
@@ -102,7 +102,7 @@ final class PersistentHistoryStoreTests: XCTestCase {
     // MARK: - Recent with Limit
 
     func testRecentWithLimit() {
-        for i in 0..<10 {
+        for i in 0 ..< 10 {
             store.insertSync(HistoryRecord(
                 command: "cmd-\(i)",
                 timestamp: Date().addingTimeInterval(Double(i))
@@ -154,11 +154,11 @@ final class PersistentHistoryStoreTests: XCTestCase {
     func testFrequentCommands() {
         let now = Date()
         // "git status" appears 3 times
-        for i in 0..<3 {
+        for i in 0 ..< 3 {
             store.insertSync(HistoryRecord(command: "git status", timestamp: now.addingTimeInterval(Double(i))))
         }
         // "ls" appears 5 times
-        for i in 0..<5 {
+        for i in 0 ..< 5 {
             store.insertSync(HistoryRecord(command: "ls", timestamp: now.addingTimeInterval(Double(i + 10))))
         }
         // "pwd" appears once
@@ -181,7 +181,7 @@ final class PersistentHistoryStoreTests: XCTestCase {
     }
 
     func testFrequentCommandsLimit() {
-        for i in 0..<10 {
+        for i in 0 ..< 10 {
             store.insertSync(HistoryRecord(
                 command: "unique-cmd-\(i)",
                 timestamp: Date()
@@ -207,7 +207,7 @@ final class PersistentHistoryStoreTests: XCTestCase {
     // MARK: - Clear Operations
 
     func testClearAll() {
-        for i in 0..<5 {
+        for i in 0 ..< 5 {
             store.insertSync(HistoryRecord(command: "cmd-\(i)", timestamp: Date()))
         }
         XCTAssertEqual(store.totalCount(), 5)
@@ -220,14 +220,14 @@ final class PersistentHistoryStoreTests: XCTestCase {
     func testClearOlderThan() {
         let now = Date()
         // Insert old records (60 days ago)
-        for i in 0..<3 {
+        for i in 0 ..< 3 {
             store.insertSync(HistoryRecord(
                 command: "old-\(i)",
                 timestamp: now.addingTimeInterval(-60 * 86400 + Double(i))
             ))
         }
         // Insert recent records (1 day ago)
-        for i in 0..<2 {
+        for i in 0 ..< 2 {
             store.insertSync(HistoryRecord(
                 command: "new-\(i)",
                 timestamp: now.addingTimeInterval(-86400 + Double(i))
@@ -248,7 +248,7 @@ final class PersistentHistoryStoreTests: XCTestCase {
     func testTrimAtCapacity() {
         store.maxRecords = 5
 
-        for i in 0..<10 {
+        for i in 0 ..< 10 {
             store.insertSync(HistoryRecord(
                 command: "cmd-\(i)",
                 timestamp: Date().addingTimeInterval(Double(i))

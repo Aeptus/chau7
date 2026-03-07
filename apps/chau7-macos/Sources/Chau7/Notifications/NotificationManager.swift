@@ -56,7 +56,6 @@ final class NotificationManager {
             useNativeNotifications = false
         case .notDetermined:
             resetNativeNotificationState()
-            break
         @unknown default:
             break
         }

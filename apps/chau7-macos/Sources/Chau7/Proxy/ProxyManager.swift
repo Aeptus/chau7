@@ -15,7 +15,7 @@ public final class ProxyManager: ObservableObject {
 
     @Published public private(set) var isRunning = false
     @Published public private(set) var lastError: String?
-    @Published public private(set) var port: Int = 18080
+    @Published public private(set) var port = 18080
 
     // MARK: - Private Properties
 
@@ -650,11 +650,11 @@ public final class ProxyManager: ObservableObject {
     @objc private func settingsChanged() {
         let settings = FeatureSettings.shared
 
-        if settings.isAPIAnalyticsEnabled && !isRunning {
+        if settings.isAPIAnalyticsEnabled, !isRunning {
             start(port: settings.apiAnalyticsPort)
-        } else if !settings.isAPIAnalyticsEnabled && isRunning {
+        } else if !settings.isAPIAnalyticsEnabled, isRunning {
             stop()
-        } else if isRunning && settings.apiAnalyticsPort != port {
+        } else if isRunning, settings.apiAnalyticsPort != port {
             // Port changed, restart
             restart()
         }

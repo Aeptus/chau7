@@ -8,19 +8,19 @@ final class TmuxControlParserTests: XCTestCase {
     func testParseBegin() {
         let parser = TmuxControlParser()
         let result = parser.parseLine("%begin 1234567890 1 0")
-        XCTAssertEqual(result, .begin(1234567890, 1))
+        XCTAssertEqual(result, .begin(1_234_567_890, 1))
     }
 
     func testParseEnd() {
         let parser = TmuxControlParser()
         let result = parser.parseLine("%end 1234567890 1 0")
-        XCTAssertEqual(result, .end(1234567890, 1))
+        XCTAssertEqual(result, .end(1_234_567_890, 1))
     }
 
     func testParseError() {
         let parser = TmuxControlParser()
         let result = parser.parseLine("%error 1234567890 1 0")
-        XCTAssertEqual(result, .error(1234567890, 1, "0"))
+        XCTAssertEqual(result, .error(1_234_567_890, 1, "0"))
     }
 
     func testParseErrorWithMessage() {

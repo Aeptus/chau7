@@ -11,7 +11,7 @@ final class FullscreenToolbarController: NSObject {
     // MARK: - State
 
     /// Whether we're in fullscreen mode
-    private(set) var isFullscreen: Bool = false
+    private(set) var isFullscreen = false
 
     /// The window being controlled
     private weak var window: NSWindow?

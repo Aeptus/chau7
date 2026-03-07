@@ -8,10 +8,11 @@ struct AnsiLogView: NSViewRepresentable {
     let baseBackground: NSColor
 
     // MARK: - Cached Fonts (Memory Optimization)
+
     // Fonts are expensive to create - cache them based on point size with eviction
 
     private static var fontCache: [CGFloat: (regular: NSFont, bold: NSFont)] = [:]
-    private static var fontCacheOrder: [CGFloat] = []  // LRU tracking
+    private static var fontCacheOrder: [CGFloat] = [] // LRU tracking
     private static let fontCacheLock = NSLock()
 
     private static func getCachedFonts(pointSize: CGFloat) -> (regular: NSFont, bold: NSFont) {
@@ -85,7 +86,7 @@ struct AnsiLogView: NSViewRepresentable {
     }
 
     class Coordinator {
-        var lastLineCount: Int = 0
+        var lastLineCount = 0
         var cachedLines: [NSAttributedString] = []
     }
 
@@ -105,11 +106,11 @@ struct AnsiLogView: NSViewRepresentable {
         let previousCount = coordinator.lastLineCount
         let currentCount = lines.count
 
-        if currentCount > previousCount && previousCount > 0 && coordinator.cachedLines.count == previousCount {
+        if currentCount > previousCount, previousCount > 0, coordinator.cachedLines.count == previousCount {
             // Incremental update - only render new lines
             let textStorage = textView.textStorage!
 
-            for index in previousCount..<currentCount {
+            for index in previousCount ..< currentCount {
                 let line = lines[index]
                 let isInput = line.hasPrefix("[INPUT]")
                 let font = isInput ? fonts.bold : fonts.regular

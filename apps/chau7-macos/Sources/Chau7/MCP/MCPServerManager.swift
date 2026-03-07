@@ -91,8 +91,8 @@ final class MCPServerManager {
         }
         source.setCancelHandler { [weak self] in
             guard let self else { return }
-            close(self.serverSocket)
-            unlink(self.socketPath)
+            close(serverSocket)
+            unlink(socketPath)
         }
         source.resume()
         acceptSource = source

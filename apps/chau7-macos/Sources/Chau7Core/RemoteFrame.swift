@@ -50,7 +50,9 @@ public struct RemoteFrame: Equatable, Sendable {
     }
 
     /// Typed frame type accessor.
-    public var frameType: RemoteFrameType? { RemoteFrameType(rawValue: type) }
+    public var frameType: RemoteFrameType? {
+        RemoteFrameType(rawValue: type)
+    }
 
     public func encode() -> Data {
         var data = Data(capacity: Self.headerSize + payload.count)
@@ -99,7 +101,7 @@ public struct RemoteFrame: Equatable, Sendable {
             throw RemoteFrameError.invalidLength
         }
 
-        let payload = data.subdata(in: headerSize..<expectedSize)
+        let payload = data.subdata(in: headerSize ..< expectedSize)
         return RemoteFrame(
             version: version,
             type: type,

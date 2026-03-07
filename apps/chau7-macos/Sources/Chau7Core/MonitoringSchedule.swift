@@ -77,8 +77,8 @@ public enum MonitoringSchedule {
 
     public static let defaultMinimumPollInterval: TimeInterval = 0.75
     public static let defaultMaxPollInterval: TimeInterval = 3.0
-    public static let defaultBackoffMultiplier: Double = 1.8
-    public static let defaultMaxConsecutiveNoDataPolls: Int = 8
+    public static let defaultBackoffMultiplier = 1.8
+    public static let defaultMaxConsecutiveNoDataPolls = 8
 
     /// Computes the next poll interval with exponential backoff.
     /// - Parameters:

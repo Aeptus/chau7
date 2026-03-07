@@ -20,28 +20,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let window: NSWindow
         let model: OverlayTabsModel
     }
+
     private var overlayHosts: [OverlayHost] = []
     private weak var activeOverlayModel: OverlayTabsModel?
     private var lastOverlayDiagLogAt: CFAbsoluteTime = 0
-    private var lastOverlayDiagReason: String = ""
+    private var lastOverlayDiagReason = ""
     private var keyMonitor: Any?
     private var opacityObserver: Any?
     private var appThemeObserver: Any?
     private var splashController: SplashWindowController?
     private var settingsWindow: NSWindow?
-    private var isClosingTab: Bool = false  // Flag to prevent windowShouldClose from hiding window during tab close
-    private var nextOverlayWindowNumber: Int = 1
+    private var isClosingTab = false // Flag to prevent windowShouldClose from hiding window during tab close
+    private var nextOverlayWindowNumber = 1
     /// Tracks windows that were hidden via orderOut - used to trigger tab bar refresh only when needed
     private var hiddenWindowNumbers: Set<Int> = []
     /// Tracks windows that have been shown at least once
     private var shownWindowNumbers: Set<Int> = []
-    private var didFinishLaunching: Bool = false
-    private var didPerformInitialSetup: Bool = false
+    private var didFinishLaunching = false
+    private var didPerformInitialSetup = false
     private var lastOverlayLifecycleLogAt: CFAbsoluteTime = 0
-    private var lastOverlayLifecycleReason: String = ""
+    private var lastOverlayLifecycleReason = ""
 
     // MARK: - App Nap Prevention
-    // Activity token to prevent App Nap from throttling the terminal
+
+    /// Activity token to prevent App Nap from throttling the terminal
     private var activityToken: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -457,7 +459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
         // Send Ctrl+L to the shell - it will clear screen and redraw prompt
-        terminalView.send(data: [0x0c])
+        terminalView.send(data: [0x0C])
         terminalView.clearSelection()
         Log.info("Sent Ctrl+L to shell for clear screen.")
     }
@@ -585,8 +587,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     // MARK: - Smart Select All (Cmd+A / Cmd+A Cmd+A)
+
     private var lastSelectAllTime: Date?
-    private let doubleTapThreshold: TimeInterval = 0.4  // 400ms for double-tap
+    private let doubleTapThreshold: TimeInterval = 0.4 // 400ms for double-tap
 
     func selectAll() {
         guard let window = NSApp.keyWindow else { return }
@@ -602,7 +605,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 }
                 terminalView.clearCommandSelectionState()
                 Log.info("Cmd+A Cmd+A: Selected all terminal buffer.")
-                lastSelectAllTime = nil  // Reset for next sequence
+                lastSelectAllTime = nil // Reset for next sequence
             } else {
                 // Single tap: Select current command (including wrapped rows)
                 terminalView.selectCurrentCommand()
@@ -839,7 +842,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if !wasShownBefore {
                 shownWindowNumbers.insert(window.windowNumber)
             }
-            if wasHidden && wasShownBefore {
+            if wasHidden, wasShownBefore {
                 host.model.noteTabBarVisibilityChanged(isVisible: true)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     Log.info("Proactive tab bar refresh after window show")
@@ -895,7 +898,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         logOverlayWindowLifecycle(reason: "didResize", window: window)
         let titlebarHeight = window.frame.height - window.contentLayoutRect.height
         if window.contentLayoutRect.width <= 0 || window.contentLayoutRect.height <= 0 || titlebarHeight <= 0 || !titlebarHeight.isFinite {
-            Log.warn("windowDidResize: invalid resize geometry for overlay window. frame=\(window.frame) content=\(window.contentLayoutRect) titlebarHeight=\(titlebarHeight). Forcing toolbar recreation")
+            Log
+                .warn(
+                    "windowDidResize: invalid resize geometry for overlay window. frame=\(window.frame) content=\(window.contentLayoutRect) titlebarHeight=\(titlebarHeight). Forcing toolbar recreation"
+                )
             TabBarToolbarDelegate.shared.recreateToolbar(for: window)
         }
         TabBarToolbarDelegate.shared.updateToolbarItemSizing(for: window)
@@ -1087,7 +1093,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let titlebarHeight = max(0, window.frame.height - window.contentLayoutRect.height)
         let title = window.title.isEmpty ? "unnamed" : window.title
         let occlusionVisible = window.occlusionState.contains(.visible)
-        Log.info("Overlay window lifecycle (\(reason)): overlay=\(isOverlayHost) title=\(title) tabs=\(tabCount) windowNumber=\(window.windowNumber) style=\(window.styleMask.rawValue) toolbar=\(toolbarState) key=\(window.isKeyWindow) main=\(window.isMainWindow) visible=\(window.isVisible) onActiveSpace=\(window.isOnActiveSpace) mini=\(window.isMiniaturized) occlusionVisible=\(occlusionVisible) occlusion=\(window.occlusionState) frame=\(window.frame) content=\(window.contentLayoutRect) titlebarHeight=\(titlebarHeight) alpha=\(window.alphaValue)")
+        Log
+            .info(
+                "Overlay window lifecycle (\(reason)): overlay=\(isOverlayHost) title=\(title) tabs=\(tabCount) windowNumber=\(window.windowNumber) style=\(window.styleMask.rawValue) toolbar=\(toolbarState) key=\(window.isKeyWindow) main=\(window.isMainWindow) visible=\(window.isVisible) onActiveSpace=\(window.isOnActiveSpace) mini=\(window.isMiniaturized) occlusionVisible=\(occlusionVisible) occlusion=\(window.occlusionState) frame=\(window.frame) content=\(window.contentLayoutRect) titlebarHeight=\(titlebarHeight) alpha=\(window.alphaValue)"
+            )
     }
 
     private func applyWindowOpacity() {
@@ -1104,7 +1113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         // Deduplicate: skip if same reason within 2 seconds
         let now = CFAbsoluteTimeGetCurrent()
-        if reason == lastOverlayDiagReason && (now - lastOverlayDiagLogAt) < 2.0 {
+        if reason == lastOverlayDiagReason, (now - lastOverlayDiagLogAt) < 2.0 {
             return
         }
         lastOverlayDiagLogAt = now
@@ -1119,7 +1128,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         } else {
             blurDesc = "none"
         }
-        Log.trace("Overlay window state (\(reason)): key=\(window.isKeyWindow) main=\(window.isMainWindow) visible=\(window.isVisible) onActiveSpace=\(window.isOnActiveSpace) mini=\(window.isMiniaturized) occlusionVisible=\(occlusionVisible) occlusion=\(window.occlusionState) alpha=\(window.alphaValue) level=\(window.level.rawValue) appearance=\(appearance) blur[\(blurDesc)]")
+        Log
+            .trace(
+                "Overlay window state (\(reason)): key=\(window.isKeyWindow) main=\(window.isMainWindow) visible=\(window.isVisible) onActiveSpace=\(window.isOnActiveSpace) mini=\(window.isMiniaturized) occlusionVisible=\(occlusionVisible) occlusion=\(window.occlusionState) alpha=\(window.alphaValue) level=\(window.level.rawValue) appearance=\(appearance) blur[\(blurDesc)]"
+            )
         host.model.logVisualState(reason: "window:\(reason)")
     }
 
@@ -1230,7 +1242,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 if !itemKey.isEmpty {
                     let itemModifiers = item.keyEquivalentModifierMask
                         .intersection(.deviceIndependentFlagsMask)
-                    if itemKey == key && itemModifiers == modifiers {
+                    if itemKey == key, itemModifiers == modifiers {
                         return true
                     }
                 }

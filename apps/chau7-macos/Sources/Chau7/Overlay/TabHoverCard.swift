@@ -94,11 +94,14 @@ private struct TabHoverCardContent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+
             // MARK: Header
+
             headerRow
             Divider().background(Color.white.opacity(0.1))
 
             // MARK: Info Rows
+
             VStack(alignment: .leading, spacing: 8) {
                 directoryRow
                 gitRow
@@ -114,6 +117,7 @@ private struct TabHoverCardContent: View {
             .padding(.vertical, 10)
 
             // MARK: Footer
+
             Divider().background(Color.white.opacity(0.1))
             footerRow
         }

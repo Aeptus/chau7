@@ -5,7 +5,7 @@ import Carbon
 
 /// Represents a keyboard shortcut
 struct KeyBinding: Equatable {
-    let key: String  // e.g., "c", "v", "w", "escape"
+    let key: String // e.g., "c", "v", "w", "escape"
     let modifiers: NSEvent.ModifierFlags
     let action: KeyAction
 
@@ -96,7 +96,7 @@ enum KeyAction: String, CaseIterable {
     case reopenClosedTab
     case nextTab
     case previousTab
-    case refreshTabBar  // Recovery: force re-render of tab bar
+    case refreshTabBar // Recovery: force re-render of tab bar
     case selectTab1, selectTab2, selectTab3, selectTab4
     case selectTab5, selectTab6, selectTab7, selectTab8, selectTab9
 
@@ -118,11 +118,11 @@ enum KeyAction: String, CaseIterable {
     case toggleFullscreen
 
     // Terminal
-    case interrupt  // Ctrl+C
-    case eof        // Ctrl+D
-    case suspend    // Ctrl+Z
-    case clearLine  // Ctrl+U
-    case clearWord  // Ctrl+W
+    case interrupt // Ctrl+C
+    case eof // Ctrl+D
+    case suspend // Ctrl+Z
+    case clearLine // Ctrl+U
+    case clearWord // Ctrl+W
 
     // Features
     case toggleBroadcast
@@ -230,7 +230,7 @@ final class KeybindingsManager: ObservableObject {
     static let shared = KeybindingsManager()
 
     @Published private(set) var activeBindings: [KeyBinding] = []
-    private var shortcutsSignature: String = ""
+    private var shortcutsSignature = ""
 
     // MARK: - Initialization
 
@@ -316,7 +316,6 @@ final class KeybindingsManager: ObservableObject {
             delegate?.selectTab(number: 8)
         case .selectTab9:
             delegate?.selectTab(number: 9)
-
         // Editing
         case .copy:
             delegate?.copyOrInterrupt()
@@ -326,7 +325,6 @@ final class KeybindingsManager: ObservableObject {
             NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
         case .clear:
             delegate?.clearScrollback()
-
         // Search
         case .toggleSearch:
             delegate?.toggleSearch()
@@ -334,7 +332,6 @@ final class KeybindingsManager: ObservableObject {
             delegate?.nextSearchMatch()
         case .previousMatch:
             delegate?.previousSearchMatch()
-
         // View
         case .zoomIn:
             delegate?.zoomIn()
@@ -344,19 +341,17 @@ final class KeybindingsManager: ObservableObject {
             delegate?.zoomReset()
         case .toggleFullscreen:
             NSApp.keyWindow?.toggleFullScreen(nil)
-
         // Terminal signals - send control codes to the terminal
         case .interrupt:
-            overlayModel?.selectedTab?.session?.sendInput("\u{03}")  // Ctrl+C
+            overlayModel?.selectedTab?.session?.sendInput("\u{03}") // Ctrl+C
         case .eof:
-            overlayModel?.selectedTab?.session?.sendInput("\u{04}")  // Ctrl+D
+            overlayModel?.selectedTab?.session?.sendInput("\u{04}") // Ctrl+D
         case .suspend:
-            overlayModel?.selectedTab?.session?.sendInput("\u{1A}")  // Ctrl+Z
+            overlayModel?.selectedTab?.session?.sendInput("\u{1A}") // Ctrl+Z
         case .clearLine:
-            overlayModel?.selectedTab?.session?.sendInput("\u{15}")  // Ctrl+U
+            overlayModel?.selectedTab?.session?.sendInput("\u{15}") // Ctrl+U
         case .clearWord:
-            overlayModel?.selectedTab?.session?.sendInput("\u{17}")  // Ctrl+W
-
+            overlayModel?.selectedTab?.session?.sendInput("\u{17}") // Ctrl+W
         // Features
         case .toggleBroadcast:
             overlayModel?.toggleBroadcast()
@@ -378,13 +373,11 @@ final class KeybindingsManager: ObservableObject {
             delegate?.splitVertically()
         case .openTextEditor:
             delegate?.openTextEditorPane()
-
         // Navigation
         case .previousInputLine:
             delegate?.scrollToPreviousInputLine()
         case .nextInputLine:
             delegate?.scrollToNextInputLine()
-
         // Window
         case .closeWindow:
             delegate?.closeWindow()
@@ -410,7 +403,7 @@ final class KeybindingsManager: ObservableObject {
         return nil
     }
 
-    // Modifier display order for consistent formatting
+    /// Modifier display order for consistent formatting
     private static let modifierOrder: [(NSEvent.ModifierFlags, String)] = [
         (.control, "Ctrl"),
         (.option, "Opt"),

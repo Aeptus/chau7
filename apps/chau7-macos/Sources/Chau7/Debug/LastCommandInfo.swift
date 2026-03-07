@@ -37,7 +37,7 @@ struct LastCommandInfo: Equatable {
     }
 
     var badgeText: String {
-        guard let _ = exitCode else { return "..." }
+        guard exitCode != nil else { return "..." }
         return "\(statusIcon) \(durationString)"
     }
 }

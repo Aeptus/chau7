@@ -5,7 +5,7 @@ final class ConfigFileParserTests: XCTestCase {
 
     // MARK: - Section Headers
 
-    func testParseSectionHeaders() throws {
+    func testParseSectionHeaders() {
         let content = """
         [general]
         shell = "/bin/zsh"
@@ -18,7 +18,7 @@ final class ConfigFileParserTests: XCTestCase {
         XCTAssertNotNil(raw["appearance"])
     }
 
-    func testParseSectionHeaderWithSpaces() throws {
+    func testParseSectionHeaderWithSpaces() {
         let content = """
         [ general ]
         shell = "/bin/zsh"
@@ -29,7 +29,7 @@ final class ConfigFileParserTests: XCTestCase {
 
     // MARK: - Key Value Pairs
 
-    func testParseKeyValuePairs() throws {
+    func testParseKeyValuePairs() {
         let content = """
         [general]
         shell = "/bin/zsh"
@@ -40,7 +40,7 @@ final class ConfigFileParserTests: XCTestCase {
         XCTAssertEqual(raw["general"]?["startup_command"] as? String, "neofetch")
     }
 
-    func testParseKeyValueWithoutSpaces() throws {
+    func testParseKeyValueWithoutSpaces() {
         let content = """
         [general]
         shell="/bin/zsh"
@@ -51,7 +51,7 @@ final class ConfigFileParserTests: XCTestCase {
 
     // MARK: - String Values
 
-    func testParseDoubleQuotedString() throws {
+    func testParseDoubleQuotedString() {
         let content = """
         [general]
         shell = "/bin/zsh"
@@ -60,7 +60,7 @@ final class ConfigFileParserTests: XCTestCase {
         XCTAssertEqual(raw["general"]?["shell"] as? String, "/bin/zsh")
     }
 
-    func testParseSingleQuotedString() throws {
+    func testParseSingleQuotedString() {
         let content = """
         [general]
         shell = '/bin/zsh'
@@ -69,7 +69,7 @@ final class ConfigFileParserTests: XCTestCase {
         XCTAssertEqual(raw["general"]?["shell"] as? String, "/bin/zsh")
     }
 
-    func testParseUnquotedString() throws {
+    func testParseUnquotedString() {
         let content = """
         [appearance]
         cursor_style = block
@@ -80,7 +80,7 @@ final class ConfigFileParserTests: XCTestCase {
 
     // MARK: - Boolean Values
 
-    func testParseBooleanTrue() throws {
+    func testParseBooleanTrue() {
         let content = """
         [terminal]
         bell_enabled = true
@@ -89,7 +89,7 @@ final class ConfigFileParserTests: XCTestCase {
         XCTAssertEqual(raw["terminal"]?["bell_enabled"] as? Bool, true)
     }
 
-    func testParseBooleanFalse() throws {
+    func testParseBooleanFalse() {
         let content = """
         [terminal]
         bell_enabled = false
@@ -98,7 +98,7 @@ final class ConfigFileParserTests: XCTestCase {
         XCTAssertEqual(raw["terminal"]?["bell_enabled"] as? Bool, false)
     }
 
-    func testParseBooleanCaseInsensitive() throws {
+    func testParseBooleanCaseInsensitive() {
         let content = """
         [terminal]
         bell_enabled = True
@@ -111,7 +111,7 @@ final class ConfigFileParserTests: XCTestCase {
 
     // MARK: - Integer Values
 
-    func testParseInteger() throws {
+    func testParseInteger() {
         let content = """
         [terminal]
         scrollback_lines = 10000
@@ -120,7 +120,7 @@ final class ConfigFileParserTests: XCTestCase {
         XCTAssertEqual(raw["terminal"]?["scrollback_lines"] as? Int, 10000)
     }
 
-    func testParseZeroInteger() throws {
+    func testParseZeroInteger() {
         let content = """
         [terminal]
         scrollback_lines = 0
@@ -131,7 +131,7 @@ final class ConfigFileParserTests: XCTestCase {
 
     // MARK: - Double Values
 
-    func testParseDouble() throws {
+    func testParseDouble() {
         let content = """
         [appearance]
         opacity = 0.85
@@ -140,7 +140,7 @@ final class ConfigFileParserTests: XCTestCase {
         XCTAssertEqual(raw["appearance"]?["opacity"] as? Double, 0.85)
     }
 
-    func testParseDoubleOnePointZero() throws {
+    func testParseDoubleOnePointZero() {
         let content = """
         [appearance]
         opacity = 1.0
@@ -151,7 +151,7 @@ final class ConfigFileParserTests: XCTestCase {
 
     // MARK: - Comments
 
-    func testParseHashComments() throws {
+    func testParseHashComments() {
         let content = """
         # This is a comment
         [general]
@@ -163,7 +163,7 @@ final class ConfigFileParserTests: XCTestCase {
         XCTAssertEqual(raw["general"]?.count, 1)
     }
 
-    func testParseSlashSlashComments() throws {
+    func testParseSlashSlashComments() {
         let content = """
         // This is a comment
         [general]
@@ -177,7 +177,7 @@ final class ConfigFileParserTests: XCTestCase {
 
     // MARK: - Empty Lines
 
-    func testParseEmptyLines() throws {
+    func testParseEmptyLines() {
         let content = """
         [general]
 
@@ -191,7 +191,7 @@ final class ConfigFileParserTests: XCTestCase {
         XCTAssertEqual(raw["general"]?["startup_command"] as? String, "neofetch")
     }
 
-    func testParseEmptyContent() throws {
+    func testParseEmptyContent() {
         let config = ConfigFileParser.parse("")
         XCTAssertNil(config.general)
         XCTAssertNil(config.appearance)
@@ -200,7 +200,7 @@ final class ConfigFileParserTests: XCTestCase {
 
     // MARK: - Profile Sections
 
-    func testParseProfileSections() throws {
+    func testParseProfileSections() {
         let content = """
         [profile.work]
         font_family = "SF Mono"
@@ -226,7 +226,7 @@ final class ConfigFileParserTests: XCTestCase {
 
     // MARK: - Serialization Round-Trip
 
-    func testSerializationRoundTrip() throws {
+    func testSerializationRoundTrip() {
         let original = Chau7ConfigFile(
             general: .init(shell: "/bin/zsh", startupCommand: "neofetch", closeOnExit: true),
             appearance: .init(fontFamily: "Menlo", fontSize: 13, cursorStyle: "block", cursorBlink: false, opacity: 0.95),
@@ -256,7 +256,7 @@ final class ConfigFileParserTests: XCTestCase {
 
     // MARK: - parseRaw Type Inference
 
-    func testParseRawReturnsCorrectTypes() throws {
+    func testParseRawReturnsCorrectTypes() {
         let content = """
         [mixed]
         str_val = "hello"
@@ -286,7 +286,7 @@ final class ConfigFileParserTests: XCTestCase {
 
     // MARK: - Typed Chau7ConfigFile
 
-    func testParseIntoTypedConfig() throws {
+    func testParseIntoTypedConfig() {
         let content = """
         [general]
         shell = "/bin/zsh"
@@ -351,7 +351,7 @@ final class ConfigFileParserTests: XCTestCase {
 
     // MARK: - Global Keys (no section)
 
-    func testParseGlobalKeysOutsideSection() throws {
+    func testParseGlobalKeysOutsideSection() {
         let content = """
         some_key = "some_value"
 
@@ -365,7 +365,7 @@ final class ConfigFileParserTests: XCTestCase {
 
     // MARK: - Malformed Lines
 
-    func testSkipsMalformedLines() throws {
+    func testSkipsMalformedLines() {
         let content = """
         [general]
         shell = "/bin/zsh"
@@ -399,7 +399,7 @@ final class ConfigFileParserTests: XCTestCase {
         XCTAssertTrue(serialized.contains("\\\""))
     }
 
-    func testMultipleProfiles() throws {
+    func testMultipleProfiles() {
         let content = """
         [profile.dev]
         font_family = "Fira Code"

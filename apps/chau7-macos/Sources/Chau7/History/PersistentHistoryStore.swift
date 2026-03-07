@@ -33,7 +33,7 @@ final class PersistentHistoryStore {
     let sessionID: String = UUID().uuidString
 
     /// Maximum number of records to keep
-    var maxRecords: Int = 50_000
+    var maxRecords = 50000
 
     private init() {
         openDatabase()
@@ -47,7 +47,7 @@ final class PersistentHistoryStore {
         if sqlite3_open(path, &db) != SQLITE_OK {
             let msg = db.map { String(cString: sqlite3_errmsg($0)) } ?? "unknown"
             Log.error("PersistentHistoryStore: failed to open database at \(path): \(msg)")
-            db = nil
+            self.db = nil
         }
         execute("PRAGMA journal_mode=WAL")
         execute("PRAGMA synchronous=NORMAL")
@@ -116,7 +116,7 @@ final class PersistentHistoryStore {
 
     func insert(_ record: HistoryRecord) {
         dbQueue.async { [weak self] in
-            guard let self = self, let db = self.db else { return }
+            guard let self = self, let db = db else { return }
             let sql = """
                 INSERT INTO history (command, directory, exit_code, shell, tab_id, session_id, timestamp, duration)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -129,11 +129,11 @@ final class PersistentHistoryStore {
             defer { sqlite3_finalize(stmt) }
 
             sqlite3_bind_text(stmt, 1, (record.command as NSString).utf8String, -1, nil)
-            self.bindOptionalText(stmt, 2, record.directory)
-            self.bindOptionalInt(stmt, 3, record.exitCode)
-            self.bindOptionalText(stmt, 4, record.shell)
-            self.bindOptionalText(stmt, 5, record.tabID)
-            self.bindOptionalText(stmt, 6, record.sessionID ?? self.sessionID)
+            bindOptionalText(stmt, 2, record.directory)
+            bindOptionalInt(stmt, 3, record.exitCode)
+            bindOptionalText(stmt, 4, record.shell)
+            bindOptionalText(stmt, 5, record.tabID)
+            bindOptionalText(stmt, 6, record.sessionID ?? sessionID)
             sqlite3_bind_double(stmt, 7, record.timestamp.timeIntervalSince1970)
             if let d = record.duration {
                 sqlite3_bind_double(stmt, 8, d)
@@ -147,7 +147,7 @@ final class PersistentHistoryStore {
                 Log.trace("PersistentHistoryStore: inserted '\(record.command)'")
             }
 
-            self.trimIfNeeded()
+            trimIfNeeded()
         }
     }
 

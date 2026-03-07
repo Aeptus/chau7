@@ -62,16 +62,16 @@ final class TerminalOutputCapture {
         queue.async { [weak self] in
             guard let self else { return }
             if self.handle == nil {
-                self.openHandle()
+                openHandle()
             }
-            guard let handle = self.handle else { return }
+            guard let handle = handle else { return }
             let line = "\(timestamp) | PTY | \(source) | bytes=\(data.count) | \(escaped)\n"
             if let payload = line.data(using: .utf8) {
                 handle.write(payload)
             }
-            self.writeCount += 1
-            if self.writeCount % 200 == 0 {
-                self.trimLogIfNeeded()
+            writeCount += 1
+            if writeCount.isMultiple(of: 200) {
+                trimLogIfNeeded()
             }
         }
     }
@@ -118,15 +118,15 @@ final class TerminalOutputCapture {
 
         for byte in data {
             switch byte {
-            case 0x1b:
+            case 0x1B:
                 result.append("\\x1b")
-            case 0x0a:
+            case 0x0A:
                 result.append("\\n")
-            case 0x0d:
+            case 0x0D:
                 result.append("\\r")
             case 0x09:
                 result.append("\\t")
-            case 0x20...0x7e:
+            case 0x20 ... 0x7E:
                 result.append(Character(UnicodeScalar(byte)))
             default:
                 result.append(String(format: "\\x%02X", byte))

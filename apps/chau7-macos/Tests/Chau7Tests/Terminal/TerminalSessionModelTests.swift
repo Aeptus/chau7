@@ -18,80 +18,111 @@ final class TerminalSessionModelTests: XCTestCase {
     func testCommandStatusCasesAreDistinct() {
         let all: [CommandStatus] = [.idle, .running, .waitingForInput, .stuck, .exited]
         let rawValues = Set(all.map(\.rawValue))
-        XCTAssertEqual(rawValues.count, all.count,
-            "All CommandStatus cases should have unique raw values")
+        XCTAssertEqual(
+            rawValues.count,
+            all.count,
+            "All CommandStatus cases should have unique raw values"
+        )
     }
 
     // MARK: - resolveStartDirectory (static, pure)
 
     func testResolveStartDirectoryWithAbsolutePath() {
         let result = TerminalSessionModel.resolveStartDirectory("/tmp")
-        XCTAssertEqual(result, "/tmp",
-            "Absolute paths should be returned as-is (after standardization)")
+        XCTAssertEqual(
+            result,
+            "/tmp",
+            "Absolute paths should be returned as-is (after standardization)"
+        )
     }
 
     func testResolveStartDirectoryWithTilde() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let result = TerminalSessionModel.resolveStartDirectory("~")
-        XCTAssertEqual(result, home,
-            "Tilde should expand to the user's home directory")
+        XCTAssertEqual(
+            result,
+            home,
+            "Tilde should expand to the user's home directory"
+        )
     }
 
     func testResolveStartDirectoryWithTildeSubpath() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let result = TerminalSessionModel.resolveStartDirectory("~/Documents")
         let expected = (home as NSString).appendingPathComponent("Documents")
-        XCTAssertEqual(result, expected,
-            "~/Documents should expand to home/Documents")
+        XCTAssertEqual(
+            result,
+            expected,
+            "~/Documents should expand to home/Documents"
+        )
     }
 
     func testResolveStartDirectoryWithEmptyString() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let result = TerminalSessionModel.resolveStartDirectory("")
-        XCTAssertEqual(result, home,
-            "Empty string should resolve to home directory")
+        XCTAssertEqual(
+            result,
+            home,
+            "Empty string should resolve to home directory"
+        )
     }
 
     func testResolveStartDirectoryWithWhitespace() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let result = TerminalSessionModel.resolveStartDirectory("   ")
-        XCTAssertEqual(result, home,
-            "Whitespace-only string should resolve to home directory")
+        XCTAssertEqual(
+            result,
+            home,
+            "Whitespace-only string should resolve to home directory"
+        )
     }
 
     func testResolveStartDirectoryWithRelativePath() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let result = TerminalSessionModel.resolveStartDirectory("Desktop")
         let expected = URL(fileURLWithPath: (home as NSString).appendingPathComponent("Desktop")).standardized.path
-        XCTAssertEqual(result, expected,
-            "Relative path should be resolved against home directory")
+        XCTAssertEqual(
+            result,
+            expected,
+            "Relative path should be resolved against home directory"
+        )
     }
 
     func testResolveStartDirectoryStandardizesPath() {
         // Paths with .. components should be standardized
         let result = TerminalSessionModel.resolveStartDirectory("/tmp/../tmp")
-        XCTAssertEqual(result, "/tmp",
-            "Paths with .. should be standardized")
+        XCTAssertEqual(
+            result,
+            "/tmp",
+            "Paths with .. should be standardized"
+        )
     }
 
     func testResolveStartDirectoryWithDotDot() {
         let result = TerminalSessionModel.resolveStartDirectory("/usr/local/..")
-        XCTAssertEqual(result, "/usr",
-            "Path with trailing .. should resolve to parent")
+        XCTAssertEqual(
+            result,
+            "/usr",
+            "Path with trailing .. should resolve to parent"
+        )
     }
 
     // MARK: - defaultStartDirectory
 
     func testDefaultStartDirectoryReturnsNonEmpty() {
         let result = TerminalSessionModel.defaultStartDirectory()
-        XCTAssertFalse(result.isEmpty,
-            "Default start directory should never be empty")
+        XCTAssertFalse(
+            result.isEmpty,
+            "Default start directory should never be empty"
+        )
     }
 
     func testDefaultStartDirectoryIsAbsolute() {
         let result = TerminalSessionModel.defaultStartDirectory()
-        XCTAssertTrue(result.hasPrefix("/"),
-            "Default start directory should be an absolute path")
+        XCTAssertTrue(
+            result.hasPrefix("/"),
+            "Default start directory should be an absolute path"
+        )
     }
 
     // MARK: - LagKind Enum
@@ -124,10 +155,16 @@ final class TerminalSessionModelTests: XCTestCase {
             p50: 7, p95: 15, sampleCount: 100,
             timestamp: event1.timestamp, tabTitle: "Shell", appName: "", cwd: "/tmp"
         )
-        XCTAssertNotEqual(event1, event2,
-            "LagEvents should not be equal because they have distinct UUIDs")
-        XCTAssertEqual(event1, event1,
-            "A LagEvent should be equal to itself")
+        XCTAssertNotEqual(
+            event1,
+            event2,
+            "LagEvents should not be equal because they have distinct UUIDs"
+        )
+        XCTAssertEqual(
+            event1,
+            event1,
+            "A LagEvent should be equal to itself"
+        )
     }
 
     func testLagEventIdentifiable() {
@@ -148,30 +185,57 @@ final class TerminalSessionModelTests: XCTestCase {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
 
-        XCTAssertEqual(session.title, "Shell",
-            "Default title should be 'Shell'")
-        XCTAssertEqual(session.status, .idle,
-            "Default status should be .idle")
-        XCTAssertFalse(session.isGitRepo,
-            "Default isGitRepo should be false")
-        XCTAssertNil(session.gitBranch,
-            "Default gitBranch should be nil")
-        XCTAssertNil(session.gitRootPath,
-            "Default gitRootPath should be nil")
-        XCTAssertNil(session.activeAppName,
-            "Default activeAppName should be nil")
-        XCTAssertNil(session.devServer,
-            "Default devServer should be nil")
-        XCTAssertNil(session.tabTitleOverride,
-            "Default tabTitleOverride should be nil")
-        XCTAssertTrue(session.searchMatches.isEmpty,
-            "Default searchMatches should be empty")
-        XCTAssertEqual(session.activeSearchIndex, 0,
-            "Default activeSearchIndex should be 0")
-        XCTAssertTrue(session.isAtPrompt,
-            "Default isAtPrompt should be true")
-        XCTAssertTrue(session.lagTimeline.isEmpty,
-            "Default lagTimeline should be empty")
+        XCTAssertEqual(
+            session.title,
+            "Shell",
+            "Default title should be 'Shell'"
+        )
+        XCTAssertEqual(
+            session.status,
+            .idle,
+            "Default status should be .idle"
+        )
+        XCTAssertFalse(
+            session.isGitRepo,
+            "Default isGitRepo should be false"
+        )
+        XCTAssertNil(
+            session.gitBranch,
+            "Default gitBranch should be nil"
+        )
+        XCTAssertNil(
+            session.gitRootPath,
+            "Default gitRootPath should be nil"
+        )
+        XCTAssertNil(
+            session.activeAppName,
+            "Default activeAppName should be nil"
+        )
+        XCTAssertNil(
+            session.devServer,
+            "Default devServer should be nil"
+        )
+        XCTAssertNil(
+            session.tabTitleOverride,
+            "Default tabTitleOverride should be nil"
+        )
+        XCTAssertTrue(
+            session.searchMatches.isEmpty,
+            "Default searchMatches should be empty"
+        )
+        XCTAssertEqual(
+            session.activeSearchIndex,
+            0,
+            "Default activeSearchIndex should be 0"
+        )
+        XCTAssertTrue(
+            session.isAtPrompt,
+            "Default isAtPrompt should be true"
+        )
+        XCTAssertTrue(
+            session.lagTimeline.isEmpty,
+            "Default lagTimeline should be empty"
+        )
     }
 
     func testRestoreAIMetadata() {
@@ -195,15 +259,20 @@ final class TerminalSessionModelTests: XCTestCase {
         let model = AppModel()
         let session1 = TerminalSessionModel(appModel: model)
         let session2 = TerminalSessionModel(appModel: model)
-        XCTAssertNotEqual(session1.tabIdentifier, session2.tabIdentifier,
-            "Each session should have a unique tab identifier")
+        XCTAssertNotEqual(
+            session1.tabIdentifier,
+            session2.tabIdentifier,
+            "Each session should have a unique tab identifier"
+        )
     }
 
     func testSessionTabIdentifierIsNonEmpty() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
-        XCTAssertFalse(session.tabIdentifier.isEmpty,
-            "Tab identifier should not be empty")
+        XCTAssertFalse(
+            session.tabIdentifier.isEmpty,
+            "Tab identifier should not be empty"
+        )
     }
 
     // MARK: - Default Current Directory
@@ -211,15 +280,19 @@ final class TerminalSessionModelTests: XCTestCase {
     func testSessionCurrentDirectoryIsAbsolute() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
-        XCTAssertTrue(session.currentDirectory.hasPrefix("/"),
-            "Current directory should be an absolute path")
+        XCTAssertTrue(
+            session.currentDirectory.hasPrefix("/"),
+            "Current directory should be an absolute path"
+        )
     }
 
     func testSessionCurrentDirectoryIsNonEmpty() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
-        XCTAssertFalse(session.currentDirectory.isEmpty,
-            "Current directory should not be empty")
+        XCTAssertFalse(
+            session.currentDirectory.isEmpty,
+            "Current directory should not be empty"
+        )
     }
 
     // MARK: - Token Optimization Override Default
@@ -227,8 +300,11 @@ final class TerminalSessionModelTests: XCTestCase {
     func testTokenOptOverrideDefaultValue() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
-        XCTAssertEqual(session.tokenOptOverride, .default,
-            "Token optimization override should default to .default")
+        XCTAssertEqual(
+            session.tokenOptOverride,
+            .default,
+            "Token optimization override should default to .default"
+        )
     }
 
     // MARK: - Latency Properties Initial Values
@@ -249,15 +325,19 @@ final class TerminalSessionModelTests: XCTestCase {
     func testExistingTerminalViewNilByDefault() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
-        XCTAssertNil(session.existingTerminalView,
-            "No terminal view should be attached by default")
+        XCTAssertNil(
+            session.existingTerminalView,
+            "No terminal view should be attached by default"
+        )
     }
 
     func testExistingRustTerminalViewNilByDefault() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
-        XCTAssertNil(session.existingRustTerminalView,
-            "No Rust terminal view should be attached by default")
+        XCTAssertNil(
+            session.existingRustTerminalView,
+            "No Rust terminal view should be attached by default"
+        )
     }
 
     // MARK: - clearSearch
@@ -268,10 +348,15 @@ final class TerminalSessionModelTests: XCTestCase {
 
         // Clear search on a fresh session should be safe and leave search state empty
         session.clearSearch()
-        XCTAssertTrue(session.searchMatches.isEmpty,
-            "Search matches should be empty after clearSearch")
-        XCTAssertEqual(session.activeSearchIndex, 0,
-            "Active search index should be 0 after clearSearch")
+        XCTAssertTrue(
+            session.searchMatches.isEmpty,
+            "Search matches should be empty after clearSearch"
+        )
+        XCTAssertEqual(
+            session.activeSearchIndex,
+            0,
+            "Active search index should be 0 after clearSearch"
+        )
     }
 
     // MARK: - Font Size Default
@@ -279,10 +364,16 @@ final class TerminalSessionModelTests: XCTestCase {
     func testDefaultFontSizeIsReasonable() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
-        XCTAssertGreaterThanOrEqual(session.fontSize, 8,
-            "Font size should be at least 8pt")
-        XCTAssertLessThanOrEqual(session.fontSize, 72,
-            "Font size should be at most 72pt")
+        XCTAssertGreaterThanOrEqual(
+            session.fontSize,
+            8,
+            "Font size should be at least 8pt"
+        )
+        XCTAssertLessThanOrEqual(
+            session.fontSize,
+            72,
+            "Font size should be at most 72pt"
+        )
     }
 
     // MARK: - Snapshot
@@ -290,8 +381,10 @@ final class TerminalSessionModelTests: XCTestCase {
     func testLastRenderedSnapshotNilByDefault() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
-        XCTAssertNil(session.lastRenderedSnapshot,
-            "No snapshot should exist for a fresh session")
+        XCTAssertNil(
+            session.lastRenderedSnapshot,
+            "No snapshot should exist for a fresh session"
+        )
     }
 
     // MARK: - Prefill Input

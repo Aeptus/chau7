@@ -6,9 +6,12 @@ import AppKit
 /// Represents a terminal color scheme with all 16 ANSI colors plus background, foreground, cursor, and selection colors.
 /// Includes caching for performance optimization when converting hex values to NSColor.
 struct TerminalColorScheme: Codable, Identifiable, Equatable {
-    var id: String { name }
+    var id: String {
+        name
+    }
+
     let name: String
-    let background: String  // Hex color
+    let background: String // Hex color
     let foreground: String
     let cursor: String
     let selection: String
@@ -168,14 +171,22 @@ struct TerminalColorScheme: Codable, Identifiable, Equatable {
 
 extension TerminalColorScheme {
     /// Returns the background color as NSColor
-    var backgroundNSColor: NSColor { nsColor(for: background) }
+    var backgroundNSColor: NSColor {
+        nsColor(for: background)
+    }
 
     /// Returns the foreground color as NSColor
-    var foregroundNSColor: NSColor { nsColor(for: foreground) }
+    var foregroundNSColor: NSColor {
+        nsColor(for: foreground)
+    }
 
     /// Returns the cursor color as NSColor
-    var cursorNSColor: NSColor { nsColor(for: cursor) }
+    var cursorNSColor: NSColor {
+        nsColor(for: cursor)
+    }
 
     /// Returns the selection color as NSColor
-    var selectionNSColor: NSColor { nsColor(for: selection) }
+    var selectionNSColor: NSColor {
+        nsColor(for: selection)
+    }
 }

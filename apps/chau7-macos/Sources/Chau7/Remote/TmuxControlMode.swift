@@ -10,7 +10,7 @@ import Chau7Core
 /// - tmux session state is synchronized both ways
 @MainActor
 final class TmuxControlMode: ObservableObject {
-    @Published var isConnected: Bool = false
+    @Published var isConnected = false
     @Published var sessionName: String?
     @Published var windows: [TmuxWindow] = []
     @Published var lastError: String?
@@ -82,15 +82,23 @@ final class TmuxControlMode: ObservableObject {
         // Write command + newline to the tmux control mode session
     }
 
-    // tmux commands
+    /// tmux commands
     func newWindow(name: String? = nil) {
         send("new-window" + (name.map { " -n \(Self.sanitizeTmuxArg($0))" } ?? ""))
     }
-    func selectWindow(id: String) { send("select-window -t \(Self.sanitizeTmuxArg(id))") }
+
+    func selectWindow(id: String) {
+        send("select-window -t \(Self.sanitizeTmuxArg(id))")
+    }
+
     func renameWindow(id: String, name: String) {
         send("rename-window -t \(Self.sanitizeTmuxArg(id)) \(Self.sanitizeTmuxArg(name))")
     }
-    func splitPane(direction: SplitDirection) { send("split-window \(direction == .horizontal ? "-h" : "-v")") }
+
+    func splitPane(direction: SplitDirection) {
+        send("split-window \(direction == .horizontal ? "-h" : "-v")")
+    }
+
     func resizePane(direction: ResizeDirection, amount: Int) {
         let clamped = min(max(amount, 1), 1000)
         send("resize-pane -\(direction.flag) \(clamped)")
@@ -127,12 +135,12 @@ struct TmuxWindow: Identifiable, Equatable {
     let id: String
     var name: String
     var panes: [TmuxPane] = []
-    var isActive: Bool = false
+    var isActive = false
 }
 
 struct TmuxPane: Identifiable, Equatable {
     let id: String
-    var isActive: Bool = false
-    var width: Int = 80
-    var height: Int = 24
+    var isActive = false
+    var width = 80
+    var height = 24
 }

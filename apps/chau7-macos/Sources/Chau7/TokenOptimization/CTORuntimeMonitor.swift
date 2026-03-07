@@ -29,10 +29,10 @@ final class CTORuntimeMonitor {
     private var deferredSessionIDs: Set<String> = []
     private var recentDecisions: [CTODecisionEvent] = []
     private var deferredFlushDelaySumMs: Int64 = 0
-    private var deferredFlushDelayMinMs: Int = 0
-    private var deferredFlushDelayMaxMs: Int = 0
+    private var deferredFlushDelayMinMs = 0
+    private var deferredFlushDelayMaxMs = 0
     private var deferredFlushDelayLastMs: Int?
-    private var deferredFlushDelayCount: Int = 0
+    private var deferredFlushDelayCount = 0
     private var currentMode: TokenOptimizationMode = .off
     private let firstSeenAt: Date
     private let maxRecentDecisions = 50
@@ -148,7 +148,7 @@ final class CTORuntimeMonitor {
         withLock {
             setupCount += 1
             setupCountSnapshot = setupCount
-            shouldLogSummary = setupCount % 5 == 0
+            shouldLogSummary = setupCount.isMultiple(of: 5)
         }
         LogEnhanced.info(
             .cto,
@@ -323,7 +323,7 @@ final class CTORuntimeMonitor {
                 delayToActivateMs: delayToActivateMs,
                 debugNote: note
             )
-            if recalcCount % summaryInterval == 0 {
+            if recalcCount.isMultiple(of: summaryInterval) {
                 shouldEmitSummary = true
             }
         }

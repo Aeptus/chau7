@@ -8,7 +8,7 @@ final class SharedSSHProfileManager: ObservableObject {
     static let shared = SharedSSHProfileManager()
 
     @Published var configEntries: [SSHConfigEntry] = []
-    @Published var isWatching: Bool = false
+    @Published var isWatching = false
     @Published var lastSyncTime: Date?
 
     private var fileMonitorSource: DispatchSourceFileSystemObject?
@@ -63,7 +63,7 @@ final class SharedSSHProfileManager: ObservableObject {
 
     func importAllEntries() -> [SSHConnection] {
         let connections = configEntries
-            .filter { !$0.host.contains("*") }  // Skip wildcard entries
+            .filter { !$0.host.contains("*") } // Skip wildcard entries
             .map { importEntry($0) }
         Log.info("SharedSSHProfileManager: imported \(connections.count) connections")
         return connections

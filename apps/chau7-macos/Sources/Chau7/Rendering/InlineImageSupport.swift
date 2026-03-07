@@ -9,10 +9,11 @@ import AppKit
 final class InlineImageHandler {
     static let shared = InlineImageHandler()
 
-    // Image display settings
+    /// Image display settings
     var isEnabled: Bool {
-        get { FeatureSettings.shared.isInlineImagesEnabled }
+        FeatureSettings.shared.isInlineImagesEnabled
     }
+
     var maxImageWidth: CGFloat = 800
     var maxImageHeight: CGFloat = 600
 
@@ -180,8 +181,8 @@ struct InlineImageArgs {
     var size: Int?
     var width: InlineImageDimension = .auto
     var height: InlineImageDimension = .auto
-    var preserveAspectRatio: Bool = true
-    var inline: Bool = true
+    var preserveAspectRatio = true
+    var inline = true
 }
 
 enum InlineImageDimension {
@@ -222,6 +223,7 @@ final class InlineImageView: NSView {
         imageView.image = image
     }
 
+    @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
@@ -242,7 +244,7 @@ final class InlineImageView: NSView {
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url, let self = self else { return }
 
-            if let tiff = self.image.image.tiffRepresentation,
+            if let tiff = image.image.tiffRepresentation,
                let bitmap = NSBitmapImageRep(data: tiff),
                let data = bitmap.representation(using: .png, properties: [:]) {
                 FileOperations.writeData(data, to: url)
@@ -267,69 +269,69 @@ final class InlineImageView: NSView {
 // MARK: - imgcat Script Generator
 
 /// Generates the imgcat script for users
-struct ImgcatScript {
+enum ImgcatScript {
     static let script = """
-#!/bin/bash
-# imgcat - Display images inline in Chau7 terminal
-# Based on iTerm2's imgcat protocol
-# Usage: imgcat [options] <image_file>
-#        cat image.png | imgcat
+    #!/bin/bash
+    # imgcat - Display images inline in Chau7 terminal
+    # Based on iTerm2's imgcat protocol
+    # Usage: imgcat [options] <image_file>
+    #        cat image.png | imgcat
 
-print_image() {
-    local file="$1"
-    local name="${2:-$(basename "$file")}"
+    print_image() {
+        local file="$1"
+        local name="${2:-$(basename "$file")}"
 
-    if [ -z "$file" ] || [ "$file" = "-" ]; then
-        # Read from stdin
-        local data=$(base64)
-        name="${name:-image}"
-    else
-        if [ ! -f "$file" ]; then
-            echo "imgcat: $file: No such file" >&2
-            return 1
+        if [ -z "$file" ] || [ "$file" = "-" ]; then
+            # Read from stdin
+            local data=$(base64)
+            name="${name:-image}"
+        else
+            if [ ! -f "$file" ]; then
+                echo "imgcat: $file: No such file" >&2
+                return 1
+            fi
+            local data=$(base64 < "$file")
         fi
-        local data=$(base64 < "$file")
+
+        # Get file size
+        local size=${#data}
+
+        # Print iTerm2 image escape sequence
+        printf '\\e]1337;File=name=%s;size=%d;inline=1:%s\\a' \\
+            "$(echo -n "$name" | base64)" "$size" "$data"
+    }
+
+    # Handle options
+    while getopts "h" opt; do
+        case $opt in
+            h)
+                echo "Usage: imgcat [options] <image_file>"
+                echo "       cat image.png | imgcat"
+                echo ""
+                echo "Display images inline in the terminal."
+                echo ""
+                echo "Options:"
+                echo "  -h    Show this help message"
+                exit 0
+                ;;
+        esac
+    done
+    shift $((OPTIND-1))
+
+    # Main
+    if [ $# -eq 0 ]; then
+        # Read from stdin
+        print_image "-"
+    elif [ "$1" = "-" ]; then
+        print_image "-"
+    else
+        for file in "$@"; do
+            print_image "$file"
+        done
     fi
 
-    # Get file size
-    local size=${#data}
-
-    # Print iTerm2 image escape sequence
-    printf '\\e]1337;File=name=%s;size=%d;inline=1:%s\\a' \\
-        "$(echo -n "$name" | base64)" "$size" "$data"
-}
-
-# Handle options
-while getopts "h" opt; do
-    case $opt in
-        h)
-            echo "Usage: imgcat [options] <image_file>"
-            echo "       cat image.png | imgcat"
-            echo ""
-            echo "Display images inline in the terminal."
-            echo ""
-            echo "Options:"
-            echo "  -h    Show this help message"
-            exit 0
-            ;;
-    esac
-done
-shift $((OPTIND-1))
-
-# Main
-if [ $# -eq 0 ]; then
-    # Read from stdin
-    print_image "-"
-elif [ "$1" = "-" ]; then
-    print_image "-"
-else
-    for file in "$@"; do
-        print_image "$file"
-    done
-fi
-
-echo ""  # Newline after image
-"""
+    echo ""  # Newline after image
+    """
 
     /// Install the imgcat script to ~/bin or /usr/local/bin
     static func install(to directory: String = "~/bin") -> Bool {

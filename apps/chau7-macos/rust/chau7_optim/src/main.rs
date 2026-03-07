@@ -7,8 +7,8 @@ mod config;
 mod container;
 mod curl_cmd;
 mod deps;
-mod discover;
 mod diff_cmd;
+mod discover;
 mod display_helpers;
 mod env_cmd;
 mod filter;
@@ -752,8 +752,14 @@ enum GoCommands {
 
 /// Git global options that appear before the subcommand (e.g., `git -C /path status`).
 /// These must be extracted before Clap parsing since Clap can't handle them.
-const GIT_GLOBAL_FLAGS_WITH_VALUE: &[&str] = &["-C", "-c", "--git-dir", "--work-tree", "--namespace"];
-const GIT_GLOBAL_FLAGS_STANDALONE: &[&str] = &["--no-pager", "--bare", "--no-replace-objects", "--literal-pathspecs"];
+const GIT_GLOBAL_FLAGS_WITH_VALUE: &[&str] =
+    &["-C", "-c", "--git-dir", "--work-tree", "--namespace"];
+const GIT_GLOBAL_FLAGS_STANDALONE: &[&str] = &[
+    "--no-pager",
+    "--bare",
+    "--no-replace-objects",
+    "--literal-pathspecs",
+];
 
 /// Extract git global options from raw args, returning (global_opts, cleaned_args).
 /// Rewrites `["chau7-optim", "git", "-C", "/path", "status", ...]`
@@ -785,10 +791,12 @@ fn extract_git_global_args(raw: &[String]) -> (Vec<String>, Vec<String>) {
             global_args.push("-C".to_string());
             global_args.push(arg[2..].to_string());
             i += 1;
-        } else if arg.starts_with("--git-dir=") || arg.starts_with("--work-tree=") || arg.starts_with("--namespace=") || arg.starts_with("-c") && arg.contains('=') {
-            global_args.push(arg.clone());
-            i += 1;
-        } else if GIT_GLOBAL_FLAGS_STANDALONE.contains(&arg.as_str()) {
+        } else if arg.starts_with("--git-dir=")
+            || arg.starts_with("--work-tree=")
+            || arg.starts_with("--namespace=")
+            || (arg.starts_with("-c") && arg.contains('='))
+            || GIT_GLOBAL_FLAGS_STANDALONE.contains(&arg.as_str())
+        {
             global_args.push(arg.clone());
             i += 1;
         } else {
@@ -870,19 +878,49 @@ fn main() -> Result<()> {
 
         Commands::Git { command } => match command {
             GitCommands::Diff { args } => {
-                git::run(git::GitCommand::Diff, &args, None, cli.verbose, &git_global_args)?;
+                git::run(
+                    git::GitCommand::Diff,
+                    &args,
+                    None,
+                    cli.verbose,
+                    &git_global_args,
+                )?;
             }
             GitCommands::Log { args } => {
-                git::run(git::GitCommand::Log, &args, None, cli.verbose, &git_global_args)?;
+                git::run(
+                    git::GitCommand::Log,
+                    &args,
+                    None,
+                    cli.verbose,
+                    &git_global_args,
+                )?;
             }
             GitCommands::Status { args } => {
-                git::run(git::GitCommand::Status, &args, None, cli.verbose, &git_global_args)?;
+                git::run(
+                    git::GitCommand::Status,
+                    &args,
+                    None,
+                    cli.verbose,
+                    &git_global_args,
+                )?;
             }
             GitCommands::Show { args } => {
-                git::run(git::GitCommand::Show, &args, None, cli.verbose, &git_global_args)?;
+                git::run(
+                    git::GitCommand::Show,
+                    &args,
+                    None,
+                    cli.verbose,
+                    &git_global_args,
+                )?;
             }
             GitCommands::Add { args } => {
-                git::run(git::GitCommand::Add, &args, None, cli.verbose, &git_global_args)?;
+                git::run(
+                    git::GitCommand::Add,
+                    &args,
+                    None,
+                    cli.verbose,
+                    &git_global_args,
+                )?;
             }
             GitCommands::Commit { message } => {
                 git::run(
@@ -894,16 +932,40 @@ fn main() -> Result<()> {
                 )?;
             }
             GitCommands::Push { args } => {
-                git::run(git::GitCommand::Push, &args, None, cli.verbose, &git_global_args)?;
+                git::run(
+                    git::GitCommand::Push,
+                    &args,
+                    None,
+                    cli.verbose,
+                    &git_global_args,
+                )?;
             }
             GitCommands::Pull { args } => {
-                git::run(git::GitCommand::Pull, &args, None, cli.verbose, &git_global_args)?;
+                git::run(
+                    git::GitCommand::Pull,
+                    &args,
+                    None,
+                    cli.verbose,
+                    &git_global_args,
+                )?;
             }
             GitCommands::Branch { args } => {
-                git::run(git::GitCommand::Branch, &args, None, cli.verbose, &git_global_args)?;
+                git::run(
+                    git::GitCommand::Branch,
+                    &args,
+                    None,
+                    cli.verbose,
+                    &git_global_args,
+                )?;
             }
             GitCommands::Fetch { args } => {
-                git::run(git::GitCommand::Fetch, &args, None, cli.verbose, &git_global_args)?;
+                git::run(
+                    git::GitCommand::Fetch,
+                    &args,
+                    None,
+                    cli.verbose,
+                    &git_global_args,
+                )?;
             }
             GitCommands::Stash { subcommand, args } => {
                 git::run(
@@ -915,7 +977,13 @@ fn main() -> Result<()> {
                 )?;
             }
             GitCommands::Worktree { args } => {
-                git::run(git::GitCommand::Worktree, &args, None, cli.verbose, &git_global_args)?;
+                git::run(
+                    git::GitCommand::Worktree,
+                    &args,
+                    None,
+                    cli.verbose,
+                    &git_global_args,
+                )?;
             }
             GitCommands::Other(args) => {
                 git::run_passthrough(&args, cli.verbose, &git_global_args)?;
@@ -1268,7 +1336,10 @@ fn main() -> Result<()> {
                             .arg("prisma")
                             .status()
                             .context("Failed to run npx prisma")?;
-                        timer.track_passthrough("npx prisma", "chau7-optim npx prisma (passthrough)");
+                        timer.track_passthrough(
+                            "npx prisma",
+                            "chau7-optim npx prisma (passthrough)",
+                        );
                         if !status.success() {
                             std::process::exit(status.code().unwrap_or(1));
                         }
@@ -1333,10 +1404,7 @@ fn main() -> Result<()> {
             // Everything else falls through to the real python binary.
             if args.len() >= 2 && args[0] == "-m" {
                 python_cmd::run_module(&args[1], &args[2..], cli.verbose)?;
-            } else if args.len() >= 2
-                && args[0].ends_with("manage.py")
-                && args[1] == "test"
-            {
+            } else if args.len() >= 2 && args[0].ends_with("manage.py") && args[1] == "test" {
                 python_cmd::run_manage_test(&args, cli.verbose)?;
             } else {
                 // One-liners, scripts, --version, etc. — intentional skip
@@ -1412,8 +1480,7 @@ mod tests {
 
     #[test]
     fn test_git_commit_single_message() {
-        let cli =
-            Cli::try_parse_from(["chau7-optim", "git", "commit", "-m", "fix: typo"]).unwrap();
+        let cli = Cli::try_parse_from(["chau7-optim", "git", "commit", "-m", "fix: typo"]).unwrap();
         match cli.command {
             Commands::Git {
                 command: GitCommands::Commit { message },

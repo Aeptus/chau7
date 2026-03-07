@@ -54,7 +54,10 @@ public struct HistoryRecord: Codable, Identifiable, Equatable, Sendable {
 
 /// Aggregated frequency data for a command, combining count and recency.
 public struct FrequentCommand: Codable, Identifiable, Equatable, Sendable {
-    public var id: String { command }
+    public var id: String {
+        command
+    }
+
     /// The command string.
     public let command: String
     /// How many times the command has been executed.

@@ -8,7 +8,7 @@ enum PowerUserTips {
     struct Tip: Identifiable {
         let id: String
         let category: Category
-        let shortcut: String?  // Optional shortcut to highlight
+        let shortcut: String? // Optional shortcut to highlight
 
         enum Category {
             case keyboard
@@ -76,7 +76,7 @@ enum PowerUserTips {
 
         // Tab colors
         Tip(id: "tip.tab_colors", category: .tabs, shortcut: nil),
-        Tip(id: "tip.rename_tab", category: .tabs, shortcut: nil),
+        Tip(id: "tip.rename_tab", category: .tabs, shortcut: nil)
     ]
 
     // MARK: - Get Random Tip
@@ -89,7 +89,7 @@ enum PowerUserTips {
 
     /// Returns a formatted tip string for display
     static func formattedTip(_ tip: Tip) -> String {
-        let text = L(tip.id, tip.id)  // Localized tip text
+        let text = L(tip.id, tip.id) // Localized tip text
         if let shortcut = tip.shortcut {
             return "💡 \(text) [\(shortcut)]"
         }

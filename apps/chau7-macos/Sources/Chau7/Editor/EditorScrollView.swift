@@ -32,10 +32,10 @@ class EditorScrollView: NSScrollView {
     /// Sets up the line number gutter as a vertical ruler on the scroll view.
     func setupLineNumberGutter() {
         let gutter = LineNumberGutterView(textView: editorTextView, scrollView: self)
-        self.lineNumberView = gutter
-        self.verticalRulerView = gutter
-        self.hasVerticalRuler = true
-        self.rulersVisible = true
+        lineNumberView = gutter
+        verticalRulerView = gutter
+        hasVerticalRuler = true
+        rulersVisible = true
     }
 }
 
@@ -127,7 +127,7 @@ class LineNumberGutterView: NSRulerView {
         // Draw line numbers for visible range
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
-            .foregroundColor: NSColor.secondaryLabelColor,
+            .foregroundColor: NSColor.secondaryLabelColor
         ]
 
         text.enumerateSubstrings(

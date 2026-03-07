@@ -37,8 +37,11 @@ final class OverlayTabsModelTests: XCTestCase {
 
     func testInitialState() {
         XCTAssertEqual(model.tabs.count, 1, "Model should start with exactly one tab")
-        XCTAssertEqual(model.selectedTabID, model.tabs.first?.id,
-                       "The single initial tab should be selected")
+        XCTAssertEqual(
+            model.selectedTabID,
+            model.tabs.first?.id,
+            "The single initial tab should be selected"
+        )
         XCTAssertFalse(model.isSearchVisible)
         XCTAssertFalse(model.isBroadcastMode)
     }
@@ -48,36 +51,48 @@ final class OverlayTabsModelTests: XCTestCase {
     func testNewTabIncreasesCount() {
         let initialCount = model.tabs.count
         model.newTab()
-        XCTAssertEqual(model.tabs.count, initialCount + 1,
-                       "newTab should add exactly one tab")
+        XCTAssertEqual(
+            model.tabs.count,
+            initialCount + 1,
+            "newTab should add exactly one tab"
+        )
     }
 
     func testNewTabBecomesSelected() {
         model.newTab()
         let lastTab = model.tabs.last!
-        XCTAssertEqual(model.selectedTabID, lastTab.id,
-                       "Newly created tab should become the selected tab")
+        XCTAssertEqual(
+            model.selectedTabID,
+            lastTab.id,
+            "Newly created tab should become the selected tab"
+        )
     }
 
     func testNewTabGetsUniqueID() {
         model.newTab()
         model.newTab()
         let ids = model.tabs.map(\.id)
-        XCTAssertEqual(Set(ids).count, ids.count,
-                       "Every tab should have a unique ID")
+        XCTAssertEqual(
+            Set(ids).count,
+            ids.count,
+            "Every tab should have a unique ID"
+        )
     }
 
     func testNewTabCyclesColors() {
         // Start with 1 tab, add enough to cycle through all colors
         let colorCount = TabColor.allCases.count
-        for _ in 0..<colorCount {
+        for _ in 0 ..< colorCount {
             model.newTab()
         }
         // The (colorCount + 1)th tab should wrap around to the first color
         let wrappedTab = model.tabs[colorCount]
         let firstColor = TabColor.allCases[colorCount % colorCount]
-        XCTAssertEqual(wrappedTab.color, firstColor,
-                       "Tab colors should cycle through TabColor.allCases")
+        XCTAssertEqual(
+            wrappedTab.color,
+            firstColor,
+            "Tab colors should cycle through TabColor.allCases"
+        )
     }
 
     func testNewTabAtDirectorySetsCwd() {
@@ -99,10 +114,15 @@ final class OverlayTabsModelTests: XCTestCase {
         let tabToClose = model.tabs[1]
         model.closeTab(id: tabToClose.id)
 
-        XCTAssertEqual(model.tabs.count, 2,
-                       "Closing a tab should reduce the count by one")
-        XCTAssertNil(model.tabs.first(where: { $0.id == tabToClose.id }),
-                     "Closed tab should no longer be in the array")
+        XCTAssertEqual(
+            model.tabs.count,
+            2,
+            "Closing a tab should reduce the count by one"
+        )
+        XCTAssertNil(
+            model.tabs.first(where: { $0.id == tabToClose.id }),
+            "Closed tab should no longer be in the array"
+        )
     }
 
     func testCloseSelectedTabSelectsNeighbor() {
@@ -115,8 +135,11 @@ final class OverlayTabsModelTests: XCTestCase {
         model.closeTab(id: middleTab.id)
 
         // After closing the middle tab, the tab to its left should be selected
-        XCTAssertEqual(model.selectedTabID, model.tabs[0].id,
-                       "Closing the selected tab should select the tab to its left")
+        XCTAssertEqual(
+            model.selectedTabID,
+            model.tabs[0].id,
+            "Closing the selected tab should select the tab to its left"
+        )
     }
 
     func testCloseNonSelectedTabKeepsSelection() {
@@ -128,8 +151,11 @@ final class OverlayTabsModelTests: XCTestCase {
 
         model.closeTab(id: lastTab.id)
 
-        XCTAssertEqual(model.selectedTabID, firstTab.id,
-                       "Closing a non-selected tab should not change the selection")
+        XCTAssertEqual(
+            model.selectedTabID,
+            firstTab.id,
+            "Closing a non-selected tab should not change the selection"
+        )
     }
 
     // MARK: - Close Last Tab Behavior
@@ -146,12 +172,21 @@ final class OverlayTabsModelTests: XCTestCase {
 
         model.closeCurrentTab()
 
-        XCTAssertEqual(model.tabs.count, 1,
-                       "Closing the last tab with keepWindow should create a replacement")
-        XCTAssertNotEqual(model.tabs[0].id, originalID,
-                          "The replacement tab should have a different ID")
-        XCTAssertEqual(model.selectedTabID, model.tabs[0].id,
-                       "The replacement tab should be selected")
+        XCTAssertEqual(
+            model.tabs.count,
+            1,
+            "Closing the last tab with keepWindow should create a replacement"
+        )
+        XCTAssertNotEqual(
+            model.tabs[0].id,
+            originalID,
+            "The replacement tab should have a different ID"
+        )
+        XCTAssertEqual(
+            model.selectedTabID,
+            model.tabs[0].id,
+            "The replacement tab should be selected"
+        )
     }
 
     // MARK: - Close Other Tabs
@@ -187,8 +222,11 @@ final class OverlayTabsModelTests: XCTestCase {
         model.moveTab(id: tabA.id, toIndex: 2)
         // After moving A to position 2: [B, A, C] (adjusted to index 1 since remove shifts)
         // Actually: remove at 0, clampedIndex=2, adjusted=2-1=1 -> insert at 1: [B, A, C]
-        XCTAssertEqual(model.tabs[1].id, tabA.id,
-                       "Tab A should move from index 0 to index 1 (adjusted)")
+        XCTAssertEqual(
+            model.tabs[1].id,
+            tabA.id,
+            "Tab A should move from index 0 to index 1 (adjusted)"
+        )
         XCTAssertEqual(model.tabs[2].id, tabC.id)
     }
 
@@ -198,8 +236,11 @@ final class OverlayTabsModelTests: XCTestCase {
         // Try to move to an index beyond bounds
         model.moveTab(id: firstTab.id, toIndex: 999)
         // Should clamp and not crash
-        XCTAssertEqual(model.tabs.last?.id, firstTab.id,
-                       "Moving to a very large index should clamp to end")
+        XCTAssertEqual(
+            model.tabs.last?.id,
+            firstTab.id,
+            "Moving to a very large index should clamp to end"
+        )
     }
 
     func testMoveTabSameIndexIsNoop() {
@@ -210,8 +251,11 @@ final class OverlayTabsModelTests: XCTestCase {
 
         model.moveTab(id: middleTab.id, toIndex: 1)
 
-        XCTAssertEqual(model.tabs.map(\.id), originalOrder,
-                       "Moving a tab to its current index should be a no-op")
+        XCTAssertEqual(
+            model.tabs.map(\.id),
+            originalOrder,
+            "Moving a tab to its current index should be a no-op"
+        )
     }
 
     func testMoveTabFromIndexRight() {
@@ -223,8 +267,11 @@ final class OverlayTabsModelTests: XCTestCase {
         model.moveTab(fromIndex: 0, toIndex: 1)
 
         XCTAssertEqual(model.tabs[0].id, tabB.id)
-        XCTAssertEqual(model.tabs[1].id, tabA.id,
-                       "Moving index 0 to 1 should swap adjacent tabs")
+        XCTAssertEqual(
+            model.tabs[1].id,
+            tabA.id,
+            "Moving index 0 to 1 should swap adjacent tabs"
+        )
     }
 
     func testMoveTabFromIndexLeft() {
@@ -236,8 +283,11 @@ final class OverlayTabsModelTests: XCTestCase {
         model.moveTab(fromIndex: 2, toIndex: 1)
 
         XCTAssertEqual(model.tabs[1].id, tabC.id)
-        XCTAssertEqual(model.tabs[2].id, tabB.id,
-                       "Moving index 2 to 1 should swap adjacent tabs")
+        XCTAssertEqual(
+            model.tabs[2].id,
+            tabB.id,
+            "Moving index 2 to 1 should swap adjacent tabs"
+        )
     }
 
     func testMoveTabFromIndexSameIsNoop() {
@@ -245,8 +295,11 @@ final class OverlayTabsModelTests: XCTestCase {
         let originalOrder = model.tabs.map(\.id)
 
         model.moveTab(fromIndex: 0, toIndex: 0)
-        XCTAssertEqual(model.tabs.map(\.id), originalOrder,
-                       "Moving to same index should be a no-op")
+        XCTAssertEqual(
+            model.tabs.map(\.id),
+            originalOrder,
+            "Moving to same index should be a no-op"
+        )
     }
 
     func testMoveTabFromIndexOutOfBoundsIsNoop() {
@@ -254,12 +307,18 @@ final class OverlayTabsModelTests: XCTestCase {
         let originalOrder = model.tabs.map(\.id)
 
         model.moveTab(fromIndex: -1, toIndex: 0)
-        XCTAssertEqual(model.tabs.map(\.id), originalOrder,
-                       "Negative source index should be a no-op")
+        XCTAssertEqual(
+            model.tabs.map(\.id),
+            originalOrder,
+            "Negative source index should be a no-op"
+        )
 
         model.moveTab(fromIndex: 0, toIndex: model.tabs.count)
-        XCTAssertEqual(model.tabs.map(\.id), originalOrder,
-                       "Destination beyond bounds should be a no-op")
+        XCTAssertEqual(
+            model.tabs.map(\.id),
+            originalOrder,
+            "Destination beyond bounds should be a no-op"
+        )
     }
 
     func testMoveCurrentTabRight() {
@@ -270,8 +329,11 @@ final class OverlayTabsModelTests: XCTestCase {
 
         model.moveCurrentTabRight()
 
-        XCTAssertEqual(model.tabs[1].id, tabA.id,
-                       "moveCurrentTabRight should move the selected tab one position right")
+        XCTAssertEqual(
+            model.tabs[1].id,
+            tabA.id,
+            "moveCurrentTabRight should move the selected tab one position right"
+        )
     }
 
     func testMoveCurrentTabLeft() {
@@ -282,8 +344,11 @@ final class OverlayTabsModelTests: XCTestCase {
 
         model.moveCurrentTabLeft()
 
-        XCTAssertEqual(model.tabs[1].id, tabC.id,
-                       "moveCurrentTabLeft should move the selected tab one position left")
+        XCTAssertEqual(
+            model.tabs[1].id,
+            tabC.id,
+            "moveCurrentTabLeft should move the selected tab one position left"
+        )
     }
 
     // MARK: - Active Tab Management
@@ -295,8 +360,11 @@ final class OverlayTabsModelTests: XCTestCase {
 
         model.selectTab(id: targetTab.id)
 
-        XCTAssertEqual(model.selectedTabID, targetTab.id,
-                       "selectTab should update selectedTabID")
+        XCTAssertEqual(
+            model.selectedTabID,
+            targetTab.id,
+            "selectTab should update selectedTabID"
+        )
     }
 
     func testSelectTabByNumber() {
@@ -307,15 +375,21 @@ final class OverlayTabsModelTests: XCTestCase {
         // selectTab(number:) is 1-indexed
         model.selectTab(number: 2)
 
-        XCTAssertEqual(model.selectedTabID, secondTab.id,
-                       "selectTab(number: 2) should select the second tab")
+        XCTAssertEqual(
+            model.selectedTabID,
+            secondTab.id,
+            "selectTab(number: 2) should select the second tab"
+        )
     }
 
     func testSelectTabByNumberOutOfRange() {
         let originalSelected = model.selectedTabID
         model.selectTab(number: 999)
-        XCTAssertEqual(model.selectedTabID, originalSelected,
-                       "Selecting an out-of-range tab number should be a no-op")
+        XCTAssertEqual(
+            model.selectedTabID,
+            originalSelected,
+            "Selecting an out-of-range tab number should be a no-op"
+        )
     }
 
     func testSelectNextTabWrapsAround() {
@@ -326,8 +400,11 @@ final class OverlayTabsModelTests: XCTestCase {
 
         model.selectNextTab()
 
-        XCTAssertEqual(model.selectedTabID, model.tabs[0].id,
-                       "selectNextTab from the last tab should wrap to the first")
+        XCTAssertEqual(
+            model.selectedTabID,
+            model.tabs[0].id,
+            "selectNextTab from the last tab should wrap to the first"
+        )
     }
 
     func testSelectPreviousTabWrapsAround() {
@@ -338,15 +415,21 @@ final class OverlayTabsModelTests: XCTestCase {
 
         model.selectPreviousTab()
 
-        XCTAssertEqual(model.selectedTabID, model.tabs[1].id,
-                       "selectPreviousTab from the first tab should wrap to the last")
+        XCTAssertEqual(
+            model.selectedTabID,
+            model.tabs[1].id,
+            "selectPreviousTab from the first tab should wrap to the last"
+        )
     }
 
     func testSelectNextTabWithSingleTabIsNoop() {
         let originalSelected = model.selectedTabID
         model.selectNextTab()
-        XCTAssertEqual(model.selectedTabID, originalSelected,
-                       "selectNextTab with one tab should be a no-op")
+        XCTAssertEqual(
+            model.selectedTabID,
+            originalSelected,
+            "selectNextTab with one tab should be a no-op"
+        )
     }
 
     func testSelectedTabProperty() {
@@ -371,12 +454,21 @@ final class OverlayTabsModelTests: XCTestCase {
         model.searchQuery = "test"
         model.toggleSearch() // Close
 
-        XCTAssertEqual(model.searchQuery, "",
-                       "Closing search should clear the search query")
-        XCTAssertEqual(model.searchResults.count, 0,
-                       "Closing search should clear the results")
-        XCTAssertEqual(model.searchMatchCount, 0,
-                       "Closing search should reset match count")
+        XCTAssertEqual(
+            model.searchQuery,
+            "",
+            "Closing search should clear the search query"
+        )
+        XCTAssertEqual(
+            model.searchResults.count,
+            0,
+            "Closing search should clear the results"
+        )
+        XCTAssertEqual(
+            model.searchMatchCount,
+            0,
+            "Closing search should reset match count"
+        )
     }
 
     func testToggleSearchClosesRename() {
@@ -384,15 +476,19 @@ final class OverlayTabsModelTests: XCTestCase {
         model.toggleSearch() // Open search
 
         XCTAssertTrue(model.isSearchVisible)
-        XCTAssertFalse(model.isRenameVisible,
-                       "Opening search should close the rename overlay")
+        XCTAssertFalse(
+            model.isRenameVisible,
+            "Opening search should close the rename overlay"
+        )
     }
 
     // MARK: - Reopen Closed Tab
 
     func testCanReopenClosedTabInitiallyFalse() {
-        XCTAssertFalse(model.canReopenClosedTab,
-                       "No tabs have been closed yet, so canReopenClosedTab should be false")
+        XCTAssertFalse(
+            model.canReopenClosedTab,
+            "No tabs have been closed yet, so canReopenClosedTab should be false"
+        )
     }
 
     func testClosingTabPopulatesClosedTabStack() {
@@ -406,8 +502,10 @@ final class OverlayTabsModelTests: XCTestCase {
 
         model.closeTab(id: model.tabs[1].id)
 
-        XCTAssertTrue(model.canReopenClosedTab,
-                       "After closing a tab, canReopenClosedTab should be true")
+        XCTAssertTrue(
+            model.canReopenClosedTab,
+            "After closing a tab, canReopenClosedTab should be true"
+        )
     }
 
     // MARK: - Broadcast Mode
@@ -421,8 +519,10 @@ final class OverlayTabsModelTests: XCTestCase {
     // MARK: - Has Active Overlay
 
     func testHasActiveOverlay() {
-        XCTAssertFalse(model.hasActiveOverlay,
-                       "No overlay should be active initially")
+        XCTAssertFalse(
+            model.hasActiveOverlay,
+            "No overlay should be active initially"
+        )
 
         model.isSearchVisible = true
         XCTAssertTrue(model.hasActiveOverlay)
@@ -819,7 +919,7 @@ final class OverlayTabsModelTests: XCTestCase {
         let restoredModel = OverlayTabsModel(appModel: appModel)
         guard let firstSession = restoredModel.tabs.first(where: { $0.customTitle == "First" })?
             .splitController.terminalSessions.first(where: { $0.0 == firstPaneID })?.1,
-              let secondSession = restoredModel.tabs.first(where: { $0.customTitle == "Second" })?
+            let secondSession = restoredModel.tabs.first(where: { $0.customTitle == "Second" })?
             .splitController.terminalSessions.first(where: { $0.0 == secondPaneID })?.1 else {
             XCTFail("Expected restored sessions for both tabs")
             return
@@ -841,7 +941,7 @@ final class OverlayTabsModelTests: XCTestCase {
 
         let expectationDone = expectation(description: "restore from legacy top-level metadata")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
-            let expected: Set<String> = [
+            let expected: Set = [
                 "claude --resume legacy-111",
                 "claude --resume legacy-222"
             ]
@@ -924,7 +1024,7 @@ final class OverlayTabsModelTests: XCTestCase {
         let restoredModel = OverlayTabsModel(appModel: appModel)
         guard let firstSession = restoredModel.tabs.first(where: { $0.customTitle == "First" })?
             .splitController.terminalSessions.first(where: { $0.0 == firstPaneID })?.1,
-              let secondSession = restoredModel.tabs.first(where: { $0.customTitle == "Second" })?
+            let secondSession = restoredModel.tabs.first(where: { $0.customTitle == "Second" })?
             .splitController.terminalSessions.first(where: { $0.0 == secondPaneID })?.1 else {
             XCTFail("Expected restored sessions for both saved tabs")
             return
@@ -946,7 +1046,7 @@ final class OverlayTabsModelTests: XCTestCase {
 
         let expectationDone = expectation(description: "restore restores each codex pane with distinct session id")
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) {
-            let expected: Set<String> = ["codex resume codex-session-111", "codex resume codex-session-222"]
+            let expected: Set = ["codex resume codex-session-111", "codex resume codex-session-222"]
             XCTAssertEqual(Set(capturedInputs), expected)
             XCTAssertEqual(capturedInputs.count, 2)
             expectationDone.fulfill()
@@ -1106,24 +1206,24 @@ final class OverlayTabsModelTests: XCTestCase {
     }
 
     func testReadFirstLineFromDataSupportsVeryLongLine() {
-        let longLine = String(repeating: "a", count: 12_000) + "\n" + String(repeating: "b", count: 20)
+        let longLine = String(repeating: "a", count: 12000) + "\n" + String(repeating: "b", count: 20)
         guard let data = longLine.data(using: .utf8) else {
             XCTFail("Failed to encode test payload")
             return
         }
 
         let line = OverlayTabsModel.readFirstLine(from: data)
-        XCTAssertEqual(line, String(repeating: "a", count: 12_000))
+        XCTAssertEqual(line, String(repeating: "a", count: 12000))
     }
 
     func testReadFirstLineFromDataReturnsNilWhenAboveCap() {
-        let oversizedLine = String(repeating: "x", count: 20_000)
+        let oversizedLine = String(repeating: "x", count: 20000)
         guard let data = oversizedLine.data(using: .utf8) else {
             XCTFail("Failed to encode test payload")
             return
         }
 
-        XCTAssertNil(OverlayTabsModel.readFirstLine(from: data, maxBytes: 16_000))
+        XCTAssertNil(OverlayTabsModel.readFirstLine(from: data, maxBytes: 16000))
     }
 }
 #endif
