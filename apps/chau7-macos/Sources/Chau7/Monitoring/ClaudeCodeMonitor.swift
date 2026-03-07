@@ -297,7 +297,7 @@ final class ClaudeCodeMonitor: ObservableObject {
             ts: DateFormatters.nowISO8601(),
             directory: event.cwd
         )
-        NotificationManager.shared.notify(for: aiEvent)
+        Task { @MainActor in NotificationManager.shared.notify(for: aiEvent) }
     }
 
     private func notifyPermissionRequest(_ event: ClaudeCodeEvent) {
@@ -310,7 +310,7 @@ final class ClaudeCodeMonitor: ObservableObject {
             ts: DateFormatters.nowISO8601(),
             directory: event.cwd
         )
-        NotificationManager.shared.notify(for: aiEvent)
+        Task { @MainActor in NotificationManager.shared.notify(for: aiEvent) }
     }
 
     private func shouldNotifyPermissionRequest(_ event: ClaudeCodeEvent) -> Bool {
@@ -339,7 +339,7 @@ final class ClaudeCodeMonitor: ObservableObject {
             ts: DateFormatters.nowISO8601(),
             directory: session.cwd
         )
-        NotificationManager.shared.notify(for: aiEvent)
+        Task { @MainActor in NotificationManager.shared.notify(for: aiEvent) }
     }
 
     // MARK: - Transcript Access

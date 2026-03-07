@@ -589,9 +589,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 badgeSetting: settings.badgeSetting,
                 alertStyle: settings.alertStyle
             )
-            NotificationManager.shared.updateAuthorizationStatus(settings.authorizationStatus)
             DispatchQueue.main.async {
                 guard let self else { return }
+                NotificationManager.shared.updateAuthorizationStatus(settings.authorizationStatus)
                 self.notificationPermissionState = permissionState
                 self.notificationStatus = permissionState.localizedLabel
                 self.notificationSettingsSnapshot = snapshot
@@ -733,7 +733,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             message: "This is a test notification from Chau7.",
             ts: DateFormatters.nowISO8601()
         )
-        NotificationManager.shared.notify(for: event)
+        Task { @MainActor in NotificationManager.shared.notify(for: event) }
     }
 
     func recordEvent(source: AIEventSource, type: String, tool: String, message: String, notify: Bool, directory: String? = nil) {
@@ -754,10 +754,10 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         } else {
             Log.info("Recorded event: type=\(type) tool=\(tool) message=\"\(sanitizedMessage)\"")
         }
-        if notify {
-            NotificationManager.shared.notify(for: event)
-        }
         DispatchQueue.main.async { [weak self] in
+            if notify {
+                NotificationManager.shared.notify(for: event)
+            }
             guard let self else { return }
             recentEvents.append(event)
             recentEvents.trimToLast(25)
@@ -812,8 +812,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
         tailer = FileTailer<AIEvent>.eventTailer(fileURL: url) { [weak self] event in
             Log.trace("Event received: type=\(event.type) tool=\(event.tool) message=\"\(event.message)\"")
-            NotificationManager.shared.notify(for: event)
             DispatchQueue.main.async {
+                NotificationManager.shared.notify(for: event)
                 guard let self else { return }
                 self.recentEvents.append(event)
                 self.recentEvents.trimToLast(25)
@@ -1088,9 +1088,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             ts: DateFormatters.nowISO8601()
         )
 
-        NotificationManager.shared.notify(for: event)
-
         DispatchQueue.main.async { [weak self] in
+            NotificationManager.shared.notify(for: event)
             guard let self else { return }
             recentEvents.append(event)
             recentEvents.trimToLast(25)

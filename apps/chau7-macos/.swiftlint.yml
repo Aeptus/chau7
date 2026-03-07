@@ -55,7 +55,7 @@ opt_in_rules:
   - last_where
   - legacy_multiple
   - lower_acl_than_parent
-  - modifier_order
+  # modifier_order — SwiftFormat handles modifier ordering
   - overridden_super_call
   - prefer_self_type_over_type_of_self
   - prefer_zero_over_explicit_init
