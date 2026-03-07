@@ -1258,6 +1258,14 @@ struct UnifiedTabButton: View {
             }
 
             if !isMinimalDisplay {
+                // MCP indicator
+                if tab.isMCPControlled && FeatureSettings.shared.mcpShowTabIndicator {
+                    Image(systemName: "face.dashed")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.purple)
+                        .help("MCP-controlled tab")
+                }
+
                 if isSuspended {
                     Image(systemName: "pause.circle.fill")
                         .font(.system(size: 11, weight: .semibold))
@@ -1306,7 +1314,7 @@ struct UnifiedTabButton: View {
         .background(
             isSelected
                 ? tab.effectiveColor.color.opacity(0.25)
-                : Color.black.opacity(0.18)
+                : (tab.isMCPControlled && FeatureSettings.shared.mcpShowTabIndicator ? Color.purple.opacity(0.15) : Color.black.opacity(0.18))
         )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(notificationBorderOverlay)

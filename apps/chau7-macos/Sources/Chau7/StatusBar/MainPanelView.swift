@@ -539,6 +539,8 @@ struct SettingsDetailView: View {
                         AIIntegrationSettingsView()
                     case .tokenOptimization:
                         TokenOptimizationSettingsView(overlayModel: overlayModel)
+                    case .mcpControl:
+                        MCPSettingsView()
                     case .remoteControl:
                         RemoteSettingsView()
                     case .apiProxy:

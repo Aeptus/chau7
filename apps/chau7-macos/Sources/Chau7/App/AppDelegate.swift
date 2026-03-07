@@ -126,8 +126,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             ProtectedPathPolicy.activatePersistedBookmarks()
         }
 
-        // Start MCP telemetry server
+        // Start MCP telemetry server and register terminal control
         MCPServerManager.shared.start()
+        TerminalControlService.shared.register(overlayModel)
 
         // Initialize status bar controller (replaces MenuBarExtra for multi-monitor support)
         StatusBarController.shared.setup(model: model)
@@ -276,6 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func newOverlayWindow() {
         guard let model else { return }
         let tabsModel = OverlayTabsModel(appModel: model)
+        TerminalControlService.shared.register(tabsModel)
         let windowNumber = allocateOverlayWindowNumber()
         let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
         overlayHosts.append(OverlayHost(window: window, model: tabsModel))

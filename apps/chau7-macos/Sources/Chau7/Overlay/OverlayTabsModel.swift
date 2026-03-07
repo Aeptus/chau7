@@ -83,6 +83,10 @@ struct OverlayTab: Identifiable, Equatable {
     var lastCommand: LastCommandInfo? = nil  // F20: Last command tracking
     var bookmarks: [BookmarkManager.Bookmark] = []  // F17: Bookmarks
 
+    // MARK: - MCP Control
+    /// Whether this tab was created by an MCP client.
+    var isMCPControlled: Bool = false
+
     // MARK: - Token Optimization (CTO) Per-Tab Override
     /// Per-tab override for token optimization. Defaults to `.default` which
     /// follows the global mode. Users can force-on or force-off per tab.
@@ -178,6 +182,7 @@ struct OverlayTab: Identifiable, Equatable {
 
     static func == (lhs: OverlayTab, rhs: OverlayTab) -> Bool {
         lhs.id == rhs.id
+            && lhs.isMCPControlled == rhs.isMCPControlled
             && lhs.tokenOptOverride == rhs.tokenOptOverride
             && lhs.notificationStyle == rhs.notificationStyle
     }
@@ -1886,7 +1891,7 @@ final class OverlayTabsModel: ObservableObject {
         return result == .alertFirstButtonReturn
     }
 
-    func closeTab(id: UUID) {
+    func closeTab(id: UUID, skipWarning: Bool = false) {
         dispatchPrecondition(condition: .onQueue(.main))
         dismissHoverCard()
         Log.info("closeTab called with id=\(id). tabs.count=\(tabs.count)")
@@ -1905,7 +1910,7 @@ final class OverlayTabsModel: ObservableObject {
         // Check if we need to show a warning dialog
         let warnForProcess = settings.warnOnCloseWithRunningProcess && hasRunningProcess
         let warnAlways = settings.alwaysWarnOnTabClose
-        let shouldWarn = warnForProcess || warnAlways
+        let shouldWarn = !skipWarning && (warnForProcess || warnAlways)
 
         if shouldWarn {
             let confirmed = confirmTabClose(

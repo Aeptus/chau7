@@ -1650,6 +1650,24 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
+    // MARK: - MCP Settings
+
+    @Published var mcpEnabled: Bool {
+        didSet { UserDefaults.standard.set(mcpEnabled, forKey: Keys.mcpEnabled) }
+    }
+
+    @Published var mcpMaxTabs: Int {
+        didSet { UserDefaults.standard.set(mcpMaxTabs, forKey: Keys.mcpMaxTabs) }
+    }
+
+    @Published var mcpRequiresApproval: Bool {
+        didSet { UserDefaults.standard.set(mcpRequiresApproval, forKey: Keys.mcpRequiresApproval) }
+    }
+
+    @Published var mcpShowTabIndicator: Bool {
+        didSet { UserDefaults.standard.set(mcpShowTabIndicator, forKey: Keys.mcpShowTabIndicator) }
+    }
+
     // MARK: - Remote Control Settings
 
     @Published var isRemoteEnabled: Bool {
@@ -1882,6 +1900,11 @@ final class FeatureSettings: ObservableObject {
         static let apiAnalyticsLogPrompts = "analytics.api.logPrompts"
         // Token Optimization (CTO)
         static let tokenOptimizationMode = "cto.mode"
+        // MCP
+        static let mcpEnabled = "mcp.enabled"
+        static let mcpMaxTabs = "mcp.maxTabs"
+        static let mcpRequiresApproval = "mcp.requiresApproval"
+        static let mcpShowTabIndicator = "mcp.showTabIndicator"
         // Remote Control
         static let remoteEnabled = "remote.enabled"
         static let remoteRelayURL = "remote.relayURL"
@@ -2223,6 +2246,12 @@ final class FeatureSettings: ObservableObject {
             self.tokenOptimizationMode = .off
         }
 
+        // MCP (default: enabled, 4 tabs, no approval, indicator on)
+        self.mcpEnabled = defaults.object(forKey: Keys.mcpEnabled) as? Bool ?? true
+        self.mcpMaxTabs = defaults.object(forKey: Keys.mcpMaxTabs) as? Int ?? 4
+        self.mcpRequiresApproval = defaults.object(forKey: Keys.mcpRequiresApproval) as? Bool ?? false
+        self.mcpShowTabIndicator = defaults.object(forKey: Keys.mcpShowTabIndicator) as? Bool ?? true
+
         // Remote Control (default: disabled)
         self.isRemoteEnabled = defaults.object(forKey: Keys.remoteEnabled) as? Bool ?? false
         self.remoteRelayURL = defaults.string(forKey: Keys.remoteRelayURL) ?? "wss://relay.example.com/connect"
@@ -2477,6 +2506,10 @@ final class FeatureSettings: ObservableObject {
         var isSemanticSearchEnabled: Bool
         var isSplitPanesEnabled: Bool
         var keybindingPreset: String
+        var mcpEnabled: Bool? = nil
+        var mcpMaxTabs: Int? = nil
+        var mcpRequiresApproval: Bool? = nil
+        var mcpShowTabIndicator: Bool? = nil
         var isRemoteEnabled: Bool? = nil
         var remoteRelayURL: String? = nil
         var isCTOEnabled: Bool = false
@@ -2566,6 +2599,10 @@ final class FeatureSettings: ObservableObject {
             isSemanticSearchEnabled: isSemanticSearchEnabled,
             isSplitPanesEnabled: isSplitPanesEnabled,
             keybindingPreset: keybindingPreset,
+            mcpEnabled: mcpEnabled,
+            mcpMaxTabs: mcpMaxTabs,
+            mcpRequiresApproval: mcpRequiresApproval,
+            mcpShowTabIndicator: mcpShowTabIndicator,
             isRemoteEnabled: isRemoteEnabled,
             remoteRelayURL: remoteRelayURL,
             isCTOEnabled: isCTOEnabled,
@@ -2708,6 +2745,10 @@ final class FeatureSettings: ObservableObject {
         isSemanticSearchEnabled = imported.isSemanticSearchEnabled
         isSplitPanesEnabled = imported.isSplitPanesEnabled
         keybindingPreset = imported.keybindingPreset
+        if let v = imported.mcpEnabled { mcpEnabled = v }
+        if let v = imported.mcpMaxTabs { mcpMaxTabs = v }
+        if let v = imported.mcpRequiresApproval { mcpRequiresApproval = v }
+        if let v = imported.mcpShowTabIndicator { mcpShowTabIndicator = v }
         if let remoteEnabled = imported.isRemoteEnabled {
             isRemoteEnabled = remoteEnabled
         }
@@ -2820,6 +2861,10 @@ final class FeatureSettings: ObservableObject {
         isJSONPrettyPrintEnabled = false
         isSemanticSearchEnabled = false
         isSplitPanesEnabled = true
+        mcpEnabled = true
+        mcpMaxTabs = 4
+        mcpRequiresApproval = false
+        mcpShowTabIndicator = true
         isRemoteEnabled = false
         remoteRelayURL = "wss://relay.example.com/connect"
         isCTOEnabled = false
@@ -3070,6 +3115,10 @@ extension FeatureSettings {
             isSemanticSearchEnabled: false,
             isSplitPanesEnabled: true,
             keybindingPreset: "default",
+            mcpEnabled: true,
+            mcpMaxTabs: 4,
+            mcpRequiresApproval: false,
+            mcpShowTabIndicator: true,
             isRemoteEnabled: false,
             remoteRelayURL: "wss://relay.example.com/connect",
             isCTOEnabled: false,

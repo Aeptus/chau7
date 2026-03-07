@@ -53,7 +53,7 @@ enum SettingsSectionGroup: String, CaseIterable, Identifiable {
         case .lookAndFeel:       return [.fontColors, .display, .tabs]
         case .terminal:          return [.shell, .scrollbackPerf, .dangerousCommands, .graphics, .tmux]
         case .inputProductivity: return [.keyboardMouse, .snippetsTools]
-        case .integrations:      return [.aiDetection, .tokenOptimization, .remoteControl, .apiProxy]
+        case .integrations:      return [.aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy]
         case .monitoring:        return [.notifications, .logsHistory]
         }
     }
@@ -82,6 +82,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     // Integrations
     case aiDetection
     case tokenOptimization
+    case mcpControl
     case remoteControl
     case apiProxy
     // Monitoring
@@ -107,6 +108,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .snippetsTools:     return L("settings.snippetsTools", "Snippets & Tools")
         case .aiDetection:       return L("settings.aiDetection", "AI Detection")
         case .tokenOptimization: return L("settings.tokenOptimization", "Token Optimization (CTO)")
+        case .mcpControl:        return L("settings.mcpControl", "MCP Control")
         case .remoteControl:     return L("settings.remoteControl", "Remote Control")
         case .apiProxy:          return L("settings.apiProxy", "API Proxy")
         case .notifications:     return L("settings.notifications", "Notifications")
@@ -131,6 +133,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .snippetsTools:     return "bolt.fill"
         case .aiDetection:       return "sparkles"
         case .tokenOptimization: return "bolt.horizontal.circle"
+        case .mcpControl:        return "face.dashed"
         case .remoteControl:     return "antenna.radiowaves.left.and.right"
         case .apiProxy:          return "network"
         case .notifications:     return "bell.badge"
@@ -155,6 +158,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .snippetsTools:     return L("settings.snippetsTools.description", "Snippets, clipboard, bookmarks, and search")
         case .aiDetection:       return L("settings.aiDetection.description", "AI CLI detection, theming, and LLM provider")
         case .tokenOptimization: return L("settings.tokenOptimization.description", "CTO wrapper scripts, per-tab control, and prefix")
+        case .mcpControl:        return L("settings.mcpControl.description", "MCP agent tab creation, limits, and approval")
         case .remoteControl:     return L("settings.remoteControl.description", "Remote access, pairing, and SSH profiles")
         case .apiProxy:          return L("settings.apiProxy.description", "API call tracking and analytics proxy")
         case .notifications:     return L("settings.notifications.description", "Alert preferences and event filters")
@@ -172,7 +176,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
             return .terminal
         case .keyboardMouse, .snippetsTools:
             return .inputProductivity
-        case .aiDetection, .tokenOptimization, .remoteControl, .apiProxy:
+        case .aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy:
             return .integrations
         case .notifications, .logsHistory:
             return .monitoring

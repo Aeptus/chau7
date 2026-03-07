@@ -6,23 +6,30 @@ import Chau7Core
 final class MCPSession {
     private let fd: Int32
     private let queryService = TelemetryQueryService()
+    private let controlService = TerminalControlService.shared
 
     init(fd: Int32) {
         self.fd = fd
     }
 
     /// Blocking run loop: reads JSON-RPC messages, dispatches, writes responses.
+    /// Note: this takes ownership of fd — the fd is closed when the session ends.
     func run() {
         let readStream = fdopen(fd, "r")
-        let writeStream = fdopen(fd, "w")
-        guard let readStream, let writeStream else { return }
-
-        defer {
-            fclose(readStream)
-            fclose(writeStream)
+        // dup() so each FILE* owns its own fd — avoids double-close
+        let writeFD = dup(fd)
+        let writeStream = writeFD >= 0 ? fdopen(writeFD, "w") : nil
+        guard let readStream, let writeStream else {
+            if let readStream { fclose(readStream) }
+            else { close(fd) }
+            if writeFD >= 0 && writeStream == nil { close(writeFD) }
+            return
         }
 
-        var buffer = Data()
+        defer {
+            fclose(readStream)   // closes original fd
+            fclose(writeStream)  // closes dup'd fd
+        }
 
         while true {
             var line: UnsafeMutablePointer<CChar>?
@@ -63,8 +70,8 @@ final class MCPSession {
                     "resources": ["subscribe": false, "listChanged": false]
                 ],
                 "serverInfo": [
-                    "name": "chau7-telemetry",
-                    "version": "1.0.0"
+                    "name": "chau7",
+                    "version": "1.1.0"
                 ]
             ])
 
@@ -188,6 +195,84 @@ final class MCPSession {
                 "name": "session_current",
                 "description": "Get currently active AI sessions",
                 "inputSchema": ["type": "object", "properties": [:]]
+            ],
+
+            // MARK: Control Plane Tools
+
+            [
+                "name": "tab_list",
+                "description": "List all open Chau7 tabs across all windows. Each tab includes a window_id field identifying which window it belongs to.",
+                "inputSchema": ["type": "object", "properties": [:]]
+            ],
+            [
+                "name": "tab_create",
+                "description": "Open a new terminal tab in Chau7. Returns the tab ID for subsequent operations.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "directory": ["type": "string", "description": "Working directory for the new tab"],
+                        "window_id": ["type": "integer", "description": "Target window (from tab_list). Defaults to window 0."]
+                    ]
+                ]
+            ],
+            [
+                "name": "tab_exec",
+                "description": "Execute a shell command in a tab. The tab must be at prompt (idle). Use tab_status to check first.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "tab_id": ["type": "string", "description": "Tab UUID from tab_create or tab_list"],
+                        "command": ["type": "string", "description": "Shell command to execute"]
+                    ],
+                    "required": ["tab_id", "command"]
+                ]
+            ],
+            [
+                "name": "tab_status",
+                "description": "Get detailed status of a tab: process state, working directory, active app, child processes, and active telemetry run",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "tab_id": ["type": "string", "description": "Tab UUID"]
+                    ],
+                    "required": ["tab_id"]
+                ]
+            ],
+            [
+                "name": "tab_send_input",
+                "description": "Send raw input to a tab's terminal (for interactive prompts, confirmations, etc). Does NOT append newline — include \\n if needed.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "tab_id": ["type": "string", "description": "Tab UUID"],
+                        "input": ["type": "string", "description": "Raw text to send to the terminal"]
+                    ],
+                    "required": ["tab_id", "input"]
+                ]
+            ],
+            [
+                "name": "tab_close",
+                "description": "Close a tab. Fails if a process is running unless force=true.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "tab_id": ["type": "string", "description": "Tab UUID"],
+                        "force": ["type": "boolean", "description": "Close even if processes are running"]
+                    ],
+                    "required": ["tab_id"]
+                ]
+            ],
+            [
+                "name": "tab_output",
+                "description": "Get recent terminal output from a tab. Returns the last N lines of the scrollback buffer.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "tab_id": ["type": "string", "description": "Tab UUID"],
+                        "lines": ["type": "integer", "description": "Number of lines to return (default 50, max 5000)"]
+                    ],
+                    "required": ["tab_id"]
+                ]
             ]
         ]
     }
@@ -238,6 +323,50 @@ final class MCPSession {
 
         case "session_current":
             return queryService.currentSessions()
+
+        // Control plane
+        case "tab_list":
+            return controlService.listTabs()
+
+        case "tab_create":
+            return controlService.createTab(
+                directory: arguments["directory"] as? String,
+                windowID: arguments["window_id"] as? Int
+            )
+
+        case "tab_exec":
+            guard let tabID = arguments["tab_id"] as? String,
+                  let command = arguments["command"] as? String else {
+                return jsonError("tab_id and command are required")
+            }
+            return controlService.execInTab(tabID: tabID, command: command)
+
+        case "tab_status":
+            guard let tabID = arguments["tab_id"] as? String else {
+                return jsonError("tab_id is required")
+            }
+            return controlService.tabStatus(tabID: tabID)
+
+        case "tab_send_input":
+            guard let tabID = arguments["tab_id"] as? String,
+                  let input = arguments["input"] as? String else {
+                return jsonError("tab_id and input are required")
+            }
+            return controlService.sendInput(tabID: tabID, input: input)
+
+        case "tab_close":
+            guard let tabID = arguments["tab_id"] as? String else {
+                return jsonError("tab_id is required")
+            }
+            let force = arguments["force"] as? Bool ?? false
+            return controlService.closeTab(tabID: tabID, force: force)
+
+        case "tab_output":
+            guard let tabID = arguments["tab_id"] as? String else {
+                return jsonError("tab_id is required")
+            }
+            let lines = max(1, min(arguments["lines"] as? Int ?? 50, 5000))
+            return controlService.tabOutput(tabID: tabID, lines: lines)
 
         default:
             return jsonError("Unknown tool: \(name)")
