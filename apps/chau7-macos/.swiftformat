@@ -51,3 +51,4 @@
 --disable redundantOptionalBinding
 --disable conditionalAssignment
 --disable noForceUnwrapInTests
+--disable redundantSendable

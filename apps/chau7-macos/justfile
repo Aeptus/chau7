@@ -10,9 +10,9 @@ rust_dir := "rust"
 check: build test lint fmt-check
     @echo "\n✅ All checks passed."
 
-# Swift build
+# Swift build (warnings are errors)
 build:
-    {{swift}} build
+    {{swift}} build -Xswiftc -warnings-as-errors
 
 # Swift tests
 test:

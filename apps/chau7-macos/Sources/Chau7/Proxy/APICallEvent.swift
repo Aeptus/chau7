@@ -103,7 +103,7 @@ public struct APICallEvent: Identifiable, Codable, Equatable, Sendable {
 
 public extension APICallEvent {
     /// Supported LLM API providers
-    enum Provider: String, Codable, CaseIterable {
+    enum Provider: String, Codable, CaseIterable, Sendable {
         case anthropic
         case openai
         case gemini

@@ -204,8 +204,10 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
 
         // item.minSize/maxSize are the only reliable toolbar sizing API.
         // Auto Layout constraints on the hosting view don't control toolbar space allocation.
-        item.minSize = NSSize(width: minWidth, height: height)
-        item.maxSize = NSSize(width: maxWidth, height: height)
+        // Use KVC to avoid deprecation warnings — Apple deprecated these in macOS 12
+        // but never shipped a replacement API (constraints don't control toolbar allocation).
+        item.setValue(NSValue(size: NSSize(width: minWidth, height: height)), forKey: "minSize")
+        item.setValue(NSValue(size: NSSize(width: maxWidth, height: height)), forKey: "maxSize")
 
         guard let view = item.view as? TabBarHostingView else { return }
         view.desiredSize = NSSize(width: maxWidth, height: height)

@@ -910,8 +910,9 @@ final class NotificationActionExecutor {
     // MARK: - Process Helpers
 
     /// Run a process synchronously. Returns true on success.
+    /// Pure function — safe to call from any thread.
     @discardableResult
-    private static func runProcessSync(
+    private nonisolated static func runProcessSync(
         executable: String,
         arguments: [String],
         currentDirectory: String? = nil,
@@ -946,7 +947,7 @@ final class NotificationActionExecutor {
     }
 
     /// Run a process asynchronously on a background queue (does not block the action queue).
-    private func runProcess(executable: String, arguments: [String], label: String, currentDirectory: String? = nil) {
+    private nonisolated func runProcess(executable: String, arguments: [String], label: String, currentDirectory: String? = nil) {
         DispatchQueue.global(qos: .userInitiated).async {
             Self.runProcessSync(executable: executable, arguments: arguments, currentDirectory: currentDirectory, label: label)
         }
