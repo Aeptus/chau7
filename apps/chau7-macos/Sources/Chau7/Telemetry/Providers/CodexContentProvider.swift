@@ -22,21 +22,21 @@ final class CodexContentProvider: RunContentProvider {
         return lower.contains("codex") || lower.contains("openai") || lower == "gpt"
     }
 
-    func extractContent(sessionID: String?, cwd: String, startedAt: Date) -> ExtractedRunContent? {
+    func extractContent(runID: String, sessionID: String?, cwd: String, startedAt: Date) -> ExtractedRunContent? {
         // Try JSONL first (richer data), fall back to SQLite
         if let sessionID,
-           let result = extractFromJSONL(sessionID: sessionID, cwd: cwd, startedAt: startedAt) {
+           let result = extractFromJSONL(runID: runID, sessionID: sessionID, cwd: cwd, startedAt: startedAt) {
             return result
         }
         if let sessionID {
-            return extractFromSQLite(sessionID: sessionID)
+            return extractFromSQLite(runID: runID, sessionID: sessionID)
         }
         return nil
     }
 
     // MARK: - JSONL Extraction
 
-    private func extractFromJSONL(sessionID: String, cwd: String, startedAt: Date) -> ExtractedRunContent? {
+    private func extractFromJSONL(runID: String, sessionID: String, cwd: String, startedAt: Date) -> ExtractedRunContent? {
         guard let file = findRolloutFile(sessionID: sessionID, startedAt: startedAt) else {
             return nil
         }
@@ -49,7 +49,6 @@ final class CodexContentProvider: RunContentProvider {
         var toolCalls: [TelemetryToolCall] = []
         var totalInputTokens: Int?
         var totalOutputTokens: Int?
-        let runID = sessionID
         var turnIndex = 0
         var callIndex = 0
 
@@ -156,7 +155,7 @@ final class CodexContentProvider: RunContentProvider {
 
     // MARK: - SQLite Fallback
 
-    private func extractFromSQLite(sessionID: String) -> ExtractedRunContent? {
+    private func extractFromSQLite(runID: String, sessionID: String) -> ExtractedRunContent? {
         let dbPath = NSHomeDirectory() + "/.codex/state_5.sqlite"
         guard FileManager.default.fileExists(atPath: dbPath) else { return nil }
 
@@ -172,39 +171,35 @@ final class CodexContentProvider: RunContentProvider {
         sqlite3_bind_text(stmt, 1, (sessionID as NSString).utf8String, -1, nil)
         guard sqlite3_step(stmt) == SQLITE_ROW else { return nil }
 
-        // Extract what we can from the threads table
-        let tokensUsed = Int(sqlite3_column_int(stmt, colIndex(stmt, "tokens_used")))
+        // Extract all needed data while stmt is valid
+        let tokensIdx = colIndex(stmt, "tokens_used")
+        let tokensUsed = tokensIdx >= 0 ? Int(sqlite3_column_int(stmt, tokensIdx)) : 0
         let firstMessage = colString(stmt, "first_user_message")
+        let rolloutPath = colString(stmt, "rollout_path")
+
+        // If rollout file exists, prefer JSONL extraction (richer data).
+        // We've already extracted what we need from stmt, so defer cleanup is safe.
+        if let rolloutPath,
+           FileManager.default.fileExists(atPath: rolloutPath) {
+            if let result = extractFromJSONL(runID: runID, sessionID: sessionID, cwd: "", startedAt: .distantPast) {
+                return result
+            }
+        }
 
         // Build a minimal turn from the first user message
         var turns: [TelemetryTurn] = []
         if let msg = firstMessage, !msg.isEmpty {
             turns.append(TelemetryTurn(
-                runID: sessionID, turnIndex: 0, role: .human,
+                id: "\(runID)-t0",
+                runID: runID, turnIndex: 0, role: .human,
                 content: msg
             ))
-        }
-
-        // Try to find the rollout file for richer data
-        if let rolloutPath = colString(stmt, "rollout_path"),
-           FileManager.default.fileExists(atPath: rolloutPath) {
-            // Re-attempt JSONL extraction with the known path
-            let rolloutURL = URL(fileURLWithPath: rolloutPath)
-            if let data = try? Data(contentsOf: rolloutURL),
-               let text = String(data: data, encoding: .utf8),
-               !text.isEmpty {
-                // If we can read the JSONL, prefer that
-                sqlite3_finalize(stmt)
-                sqlite3_close(db)
-                // Avoid double-close by setting to nil
-                return extractFromJSONL(sessionID: sessionID, cwd: "", startedAt: .distantPast)
-            }
         }
 
         return ExtractedRunContent(
             turns: turns,
             totalInputTokens: tokensUsed > 0 ? tokensUsed : nil,
-            rawTranscriptRef: colString(stmt, "rollout_path")
+            rawTranscriptRef: rolloutPath
         )
     }
 
@@ -280,9 +275,13 @@ final class CodexContentProvider: RunContentProvider {
         return String(cString: ptr)
     }
 
-    private static func parseISO8601(_ string: String) -> Date? {
+    private static let isoFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f.date(from: string)
+        return f
+    }()
+
+    private static func parseISO8601(_ string: String) -> Date? {
+        isoFormatter.date(from: string)
     }
 }

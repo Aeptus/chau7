@@ -69,9 +69,14 @@ final class TelemetryRecorder {
         run.exitStatus = exitStatus
         run.durationMs = Int(endedAt.timeIntervalSince(run.startedAt) * 1000)
 
-        // Extract content from provider-specific storage
+        var turns: [TelemetryTurn] = []
+        var toolCalls: [TelemetryToolCall] = []
+
+        // Extract content from provider-specific storage.
+        // The provider receives runID so all child entities are born with correct IDs.
         if let provider = providers.first(where: { $0.canHandle(provider: run.provider) }) {
             if let content = provider.extractContent(
+                runID: runID,
                 sessionID: run.sessionID,
                 cwd: run.cwd,
                 startedAt: run.startedAt
@@ -82,16 +87,14 @@ final class TelemetryRecorder {
                 run.costUSD = content.costUSD
                 run.rawTranscriptRef = content.rawTranscriptRef
                 run.turnCount = content.turns.count
-
-                // Persist turns and tool calls
-                store.insertTurns(content.turns)
-                if !content.toolCalls.isEmpty {
-                    store.insertToolCalls(content.toolCalls)
-                }
+                turns = content.turns
+                toolCalls = content.toolCalls
             }
         }
 
-        store.insertRun(run)
+        // Atomic: UPDATE the run row + INSERT turns + INSERT tool calls in one transaction.
+        // This avoids the INSERT OR REPLACE cascade-delete problem.
+        store.finalizeRun(run, turns: turns, toolCalls: toolCalls)
         Log.info("TelemetryRecorder: run ended \(runID) exit=\(exitStatus ?? -1) duration=\(run.durationMs ?? 0)ms turns=\(run.turnCount)")
     }
 
@@ -105,13 +108,8 @@ final class TelemetryRecorder {
         inProgressRuns[runID]?.sessionID = sessionID
         lock.unlock()
 
-        // Also update in SQLite
-        store.insertRunSync(TelemetryRun(
-            id: runID,
-            sessionID: sessionID,
-            provider: inProgressRuns[runID]?.provider ?? "unknown",
-            cwd: inProgressRuns[runID]?.cwd ?? ""
-        ))
+        // Update just the session_id column in SQLite
+        store.updateRunSessionID(runID, sessionID: sessionID)
     }
 
     /// Tag a run (e.g., "control", "aethyme").
