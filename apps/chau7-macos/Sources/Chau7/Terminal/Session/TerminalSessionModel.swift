@@ -737,6 +737,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     }
 
     private func finishAILogging(exitCode: Int?) {
+        // Telemetry: record run end
+        TelemetryRecorder.shared.runEnded(tabID: tabIdentifier, exitStatus: exitCode)
+
         // Notify shell event detector (outside lock to avoid potential deadlock)
         commandFinishedNotified = true
         promptSeenForPendingCommand = true
@@ -1148,6 +1151,16 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         aiDetectionSetAt = Date()
         aiDetectionChunksSinceCleared = 0
         startAILoggingIfNeeded(toolName: appName, commandLine: nil)
+
+        // Telemetry: record run start
+        TelemetryRecorder.shared.runStarted(
+            tabID: tabIdentifier,
+            provider: AIResumeParser.normalizeProviderName(appName) ?? appName,
+            cwd: currentDirectory,
+            repoPath: gitRootPath,
+            sessionID: lastAISessionId
+        )
+
         Log.info("AI detected from output pattern: \(appName) (matched: \(pattern))")
     }
 
@@ -1407,6 +1420,10 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         if let metadata = AIResumeParser.extractMetadata(from: trimmed) {
             lastAIProvider = metadata.provider
             lastAISessionId = metadata.sessionId
+            // Update telemetry run with discovered session ID
+            if !metadata.sessionId.isEmpty {
+                TelemetryRecorder.shared.updateSessionID(tabID: tabIdentifier, sessionID: metadata.sessionId)
+            }
             return
         }
 

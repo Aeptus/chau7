@@ -126,6 +126,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             ProtectedPathPolicy.activatePersistedBookmarks()
         }
 
+        // Start MCP telemetry server
+        MCPServerManager.shared.start()
+
         // Initialize status bar controller (replaces MenuBarExtra for multi-monitor support)
         StatusBarController.shared.setup(model: model)
 
@@ -176,6 +179,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             host.model.saveTabState()
         }
         Log.info("Saved tab state for restoration")
+
+        // Stop MCP telemetry server
+        MCPServerManager.shared.stop()
 
         // CTO: clean up all flag files and wrappers (no-op if mode was .off)
         CTOManager.shared.teardown()
