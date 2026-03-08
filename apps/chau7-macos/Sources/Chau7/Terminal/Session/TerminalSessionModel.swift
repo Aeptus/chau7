@@ -100,16 +100,16 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         return Self.displayName(fromProvider: lastAIProvider)
     }
 
-    /// Whether an AI agent is actively running (not just remembered from a previous session).
-    /// Used by the tab bar to grey-out stale AI logos on restored tabs.
+    /// Whether an AI agent was detected in the current session (vs restored from a previous one).
+    /// When false, the tab bar dims the AI logo to indicate it's a stale remnant.
+    /// Only `restoreAIMetadata` sets this to true; live detection paths clear it.
+    private(set) var isRestoredAISession = false
+
+    /// Whether the AI logo should appear at full opacity.
+    /// Grey (false) only for restored sessions that haven't been re-detected live.
     var isAIRunning: Bool {
         guard aiDisplayAppName != nil else { return false }
-        switch status {
-        case .running, .waitingForInput, .stuck:
-            return true
-        case .idle, .exited:
-            return false
-        }
+        return !isRestoredAISession
     }
 
     @Published var devServer: DevServerMonitor.DevServerInfo?
@@ -262,6 +262,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     // re-run detection for a window after clearing (catches late banners).
     private var aiDetectionChunksSinceCleared = 0
     private let aiDetectionRetryChunks = 30 // re-check for ~30 output chunks after clearing
+    // Last detected app name — survives clearing so re-detection only matches the same tool.
+    // Prevents Claude Code output mentioning "codex" from switching the tab's AI branding.
+    private var lastDetectedAppName: String?
     private var pendingCommandLine: String?
     private var promptSeenForPendingCommand = false
     private var commandFinishedNotified = false
@@ -1131,6 +1134,11 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         aiDetectionChunksSinceCleared += 1
         guard aiDetectionChunksSinceCleared <= aiDetectionRetryChunks else { return }
 
+        // During re-detection (lastDetectedAppName is set), only accept matches for
+        // the same tool. This prevents Claude Code output mentioning "codex" or
+        // "chatgpt" from hijacking the tab's AI branding.
+        let redetectOnly = lastDetectedAppName
+
         let token = FeatureProfiler.shared.begin(.aiDetect, bytes: data.count, metadata: "output-patterns")
         defer { FeatureProfiler.shared.end(token) }
 
@@ -1154,16 +1162,20 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         if let index = RustPatternMatcher.outputPatterns.firstMatchIndex(haystack: haystack, patterns: patternStrings) {
             if index >= 0, index < patterns.count {
                 let match = patterns[index]
-                applyDetection(appName: match.appName, pattern: match.pattern)
-                return
+                if redetectOnly == nil || match.appName == redetectOnly {
+                    applyDetection(appName: match.appName, pattern: match.pattern)
+                    return
+                }
             }
         }
 
         // Fallback: linear scan (patterns already lowercased, haystack already lowercased)
         for (pattern, appName) in patterns {
             if haystack.contains(pattern) {
-                applyDetection(appName: appName, pattern: pattern)
-                return
+                if redetectOnly == nil || appName == redetectOnly {
+                    applyDetection(appName: appName, pattern: pattern)
+                    return
+                }
             }
         }
     }
@@ -1171,6 +1183,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     /// Sets the detected app and starts logging. Shared by Rust and fallback paths.
     private func applyDetection(appName: String, pattern: String) {
         activeAppName = appName
+        lastDetectedAppName = appName
+        isRestoredAISession = false
         aiDetectionSetAt = Date()
         aiDetectionChunksSinceCleared = 0
         startAILoggingIfNeeded(toolName: appName, commandLine: nil)
@@ -1396,6 +1410,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private func updateActiveAppName(from commandLine: String) {
         if let match = CommandDetection.detectApp(from: commandLine) {
             activeAppName = match
+            isRestoredAISession = false
             aiDetectionSetAt = Date()
             aiDetectionChunksSinceCleared = 0
             aiDetectionBuffer.removeAll(keepingCapacity: true)
@@ -1419,6 +1434,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             if lowercasedLine.contains(pattern) {
                 let name = rule.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
                 activeAppName = name.isEmpty ? "Custom AI" : name
+                isRestoredAISession = false
                 aiDetectionSetAt = Date()
                 aiDetectionChunksSinceCleared = 0
                 if let activeAppName {
@@ -1466,6 +1482,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         let restoredDisplayName = Self.displayName(fromProvider: normalizedProvider)
         activeAppName = restoredDisplayName
         lastAIProvider = normalizedProvider
+        isRestoredAISession = true
 
         if let sessionId {
             let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
