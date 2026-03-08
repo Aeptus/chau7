@@ -161,6 +161,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private var retainedRustTerminalView: RustTerminalView?
     /// Prefill command queued when restore/restoration occurs before terminal is ready.
     private var pendingPrefillInput: String?
+    /// Retry counter for pending prefill flush attempts.
+    private var pendingPrefillRetries = 0
     /// Restore commands (cd, scrollback cat) queued when the terminal view hasn't been
     /// created yet. Flushed on view attachment before the prefill command.
     private var pendingRestoreInput: String?
@@ -2105,12 +2107,41 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     }
 
     private func flushPendingPrefillInputIfReady() {
-        guard let text = pendingPrefillInput else { return }
-        guard canPrefillInput() else { return }
+        guard let text = pendingPrefillInput else {
+            pendingPrefillRetries = 0
+            return
+        }
 
-        let insertion = SnippetInsertion(text: text, placeholders: [], finalCursorOffset: text.count)
-        pendingPrefillInput = nil
-        activeTerminalView?.insertSnippet(insertion)
+        // After several retries the shell has had time to start — force-clear
+        // isShellLoading to break the deadlock where the initial OSC 7 directory
+        // matches the saved directory and handlePromptDetected is never called.
+        if pendingPrefillRetries >= 4, isShellLoading {
+            isShellLoading = false
+        }
+
+        if canPrefillInput() {
+            let insertion = SnippetInsertion(text: text, placeholders: [], finalCursorOffset: text.count)
+            pendingPrefillInput = nil
+            pendingPrefillRetries = 0
+            activeTerminalView?.insertSnippet(insertion)
+            Log.info("Resume prefill delivered: \(text.prefix(60))")
+            return
+        }
+
+        // No view yet — wait for attachRustTerminal to call us again.
+        guard existingRustTerminalView != nil else { return }
+
+        // View exists but shell isn't ready — schedule a retry.
+        guard pendingPrefillRetries < 20 else {
+            Log.warn("Resume prefill: retries exhausted, waiting for next prompt (\(text.prefix(60)))")
+            pendingPrefillRetries = 0 // reset so handlePromptDetected can restart
+            return
+        }
+        pendingPrefillRetries += 1
+        let delay = min(0.3 + Double(pendingPrefillRetries) * 0.3, 3.0)
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.flushPendingPrefillInputIfReady()
+        }
     }
 
     func canPrefillInput() -> Bool {

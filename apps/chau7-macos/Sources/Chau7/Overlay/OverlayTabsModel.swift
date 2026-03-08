@@ -1434,7 +1434,16 @@ final class OverlayTabsModel: ObservableObject {
         delay: TimeInterval = 0
     ) {
         guard remainingAttempts > 0 else {
-            Log.warn("restoreTabState: exhausted resume retries for tab=\(targetTabID), pane=\(paneID)")
+            // Last resort: queue the command so the session's own retry logic
+            // can deliver it when the terminal becomes ready (e.g. tab unsuspends).
+            if let tab = tabs.first(where: { $0.id == targetTabID }),
+               let session = tab.splitController.root.findSession(id: paneID) {
+                session.prefillInput(command)
+                Log.warn("restoreTabState: retries exhausted, queued prefill for tab=\(targetTabID) pane=\(paneID)")
+            } else {
+                Log.warn("restoreTabState: retries exhausted, tab/pane gone for tab=\(targetTabID) pane=\(paneID)")
+            }
+            latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
             return
         }
 
@@ -1458,18 +1467,13 @@ final class OverlayTabsModel: ObservableObject {
             }
 
             if !reResolvedSession.canPrefillInput() {
-                if reResolvedSession.existingRustTerminalView == nil {
-                    Log.warn("restoreTabState: pane missing terminal view, queueing resume prefill for tab=\(targetTabID) pane=\(paneID)")
-                    reResolvedSession.prefillInput(command)
-                    latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
-                    return
-                }
+                let hasView = reResolvedSession.existingRustTerminalView != nil
                 let nextDelay = min(delay + Self.resumeCommandRetryDelaySeconds, Self.resumeCommandMaxRetryDelay)
                 Log.warn(
                     """
                     restoreTabState: resume command not ready for tab=\(targetTabID) pane=\(paneID) \
                     (loading=\(reResolvedSession.isShellLoading), atPrompt=\(reResolvedSession.isAtPrompt), \
-                    status=\(reResolvedSession.status), hasView=\(reResolvedSession.existingRustTerminalView != nil)); \
+                    status=\(reResolvedSession.status), hasView=\(hasView)); \
                     retry in \(String(format: "%.2f", nextDelay))s
                     """
                 )
