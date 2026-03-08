@@ -2458,7 +2458,12 @@ final class OverlayTabsModel: ObservableObject {
         }
 
         tabs[index].notificationStyle = style
-        Log.info("Tab notification style set: \(style?.icon ?? "cleared") for tab \(targetID)")
+        if let style {
+            let desc = style.icon ?? "border/color"
+            Log.info("Tab notification style set: \(desc) for tab \(targetID)")
+        } else {
+            Log.info("Tab notification style cleared for tab \(targetID)")
+        }
     }
 
     /// Sets a notification style on the tab associated with a terminal session

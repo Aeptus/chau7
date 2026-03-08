@@ -33,6 +33,10 @@ enum NotificationPipeline {
         return group.groupTriggerId(for: trigger.type)
     }
 
+    /// Action types that only affect tab visuals and have their own active-tab guards,
+    /// so they should still fire even when the tab is currently selected.
+    private static let tabVisualActions: Set<NotificationActionType> = [.styleTab, .badgeTab]
+
     static func evaluate(_ input: Input) -> Decision {
         // 1. Find matching trigger (O(1) via catalog index)
         let trigger = NotificationTriggerCatalog.trigger(for: input.event)
@@ -45,6 +49,7 @@ enum NotificationPipeline {
         }
 
         // 3. Evaluate trigger conditions (3-tier: per-trigger → group → default)
+        var suppressedByTabActive = false
         if let trigger {
             let condition: TriggerCondition
             if let perTrigger = input.triggerConditions[trigger.id] {
@@ -62,7 +67,10 @@ enum NotificationPipeline {
                 return .drop(reason: "App is active (onlyWhenUnfocused)")
             }
             if condition.onlyWhenTabInactive, input.isToolTabActive {
-                return .drop(reason: "Tool tab is active (onlyWhenTabInactive)")
+                // Don't drop yet — tab-visual actions (styleTab, badgeTab) have their
+                // own active-tab guard and should still fire so the highlight is queued
+                // for when the user switches away. We'll filter non-visual actions below.
+                suppressedByTabActive = true
             }
         }
 
@@ -75,7 +83,7 @@ enum NotificationPipeline {
         }
 
         // 5. Resolve actions (3-tier: per-trigger → group → default)
-        let actions: [NotificationActionConfig]
+        var actions: [NotificationActionConfig]
         if let bound = input.actionBindings[trigger.id], !bound.isEmpty {
             actions = bound
         } else if let gid = groupTriggerId(for: trigger),
@@ -83,6 +91,14 @@ enum NotificationPipeline {
             actions = groupActions
         } else {
             actions = [NotificationActionConfig(actionType: .showNotification, enabled: true)]
+        }
+
+        // 5b. When suppressed by tab-active condition, keep only tab-visual actions
+        if suppressedByTabActive {
+            actions = actions.filter { tabVisualActions.contains($0.actionType) }
+            if actions.isEmpty {
+                return .drop(reason: "Tool tab is active (onlyWhenTabInactive)")
+            }
         }
 
         // 6. Optimize: single default showNotification → use native path
