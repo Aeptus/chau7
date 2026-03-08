@@ -1282,13 +1282,6 @@ struct UnifiedTabButton: View {
                         .help("MCP-controlled tab")
                 }
 
-                if isSuspended {
-                    Image(systemName: "pause.circle.fill")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .help(L("tab.renderingSuspended", "Rendering suspended"))
-                }
-
                 // F20: Command badge
                 if let badge = tab.commandBadge {
                     Text(badge)
@@ -1526,13 +1519,6 @@ struct TabButton: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-
-            if isSuspended {
-                Image(systemName: "pause.circle.fill")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .help(L("tab.renderingSuspended", "Rendering suspended"))
-            }
 
             // F20: Command badge (duration + exit status)
             if let badge = commandBadge {
