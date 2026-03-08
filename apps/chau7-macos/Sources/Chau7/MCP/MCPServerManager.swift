@@ -19,9 +19,40 @@ final class MCPServerManager {
         self.socketPath = NSHomeDirectory() + "/.chau7/mcp.sock"
     }
 
+    // MARK: - Bridge Installation
+
+    /// Copies the MCP bridge binary from the app bundle to ~/.chau7/bin/
+    /// so that Claude Code (and other MCP clients) can invoke it via .mcp.json.
+    private func installBridgeIfNeeded() {
+        let bridgeName = "chau7-mcp-bridge"
+        guard let bundledURL = Bundle.main.url(forResource: bridgeName, withExtension: nil) else {
+            Log.trace("MCPServer: \(bridgeName) not found in app bundle (dev build?)")
+            return
+        }
+
+        let fm = FileManager.default
+        let binDir = URL(fileURLWithPath: NSHomeDirectory() + "/.chau7/bin")
+        let dest = binDir.appendingPathComponent(bridgeName)
+
+        do {
+            if !fm.fileExists(atPath: binDir.path) {
+                try fm.createDirectory(at: binDir, withIntermediateDirectories: true)
+            }
+            if fm.fileExists(atPath: dest.path) {
+                try fm.removeItem(at: dest)
+            }
+            try fm.copyItem(at: bundledURL, to: dest)
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dest.path)
+            Log.info("MCPServer: installed \(bridgeName) to \(dest.path)")
+        } catch {
+            Log.error("MCPServer: failed to install \(bridgeName): \(error)")
+        }
+    }
+
     // MARK: - Lifecycle
 
     func start() {
+        installBridgeIfNeeded()
         queue.async { [weak self] in
             self?._start()
         }

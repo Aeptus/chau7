@@ -142,6 +142,16 @@ for helper in chau7-md chau7-optim; do
     fi
 done
 
+# Compile and bundle the MCP bridge (Swift → native binary)
+MCP_BRIDGE_SRC="$ROOT_DIR/../../tools/chau7-mcp-bridge/main.swift"
+MCP_BRIDGE_BIN="$CONTENTS/Resources/chau7-mcp-bridge"
+if [[ -f "$MCP_BRIDGE_SRC" ]]; then
+    run_cmd swiftc -O -o "$MCP_BRIDGE_BIN" "$MCP_BRIDGE_SRC"
+    log_ok "Compiled and bundled chau7-mcp-bridge"
+else
+    log_warn "MCP bridge source not found at $MCP_BRIDGE_SRC"
+fi
+
 # Ad-hoc codesign the app bundle so macOS doesn't SIGKILL on dlopen().
 # Without this, replacing the Rust dylib invalidates the kernel's cached
 # code signature, causing EXC_BAD_ACCESS (Code Signature Invalid) on launch.
