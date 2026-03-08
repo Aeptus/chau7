@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log"
 	"net/http"
@@ -103,18 +104,45 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	// Start server in goroutine
+	// Start HTTP server in goroutine
 	go func() {
-		log.Printf("[INFO] chau7-proxy starting on %s", server.Addr)
+		log.Printf("[INFO] chau7-proxy HTTP starting on %s", server.Addr)
 		log.Printf("[INFO] Database: %s", config.DBPath)
 		if config.IPCSocketPath != "" {
 			log.Printf("[INFO] IPC socket: %s", config.IPCSocketPath)
 		}
 
 		if err := server.ListenAndServe(); err != http.ErrServerClosed {
-			log.Fatalf("Server error: %v", err)
+			log.Fatalf("HTTP server error: %v", err)
 		}
 	}()
+
+	// Start TLS server for WSS-capable clients (e.g. subscription Codex)
+	var tlsServer *http.Server
+	if config.TLSCertPath != "" && config.TLSKeyPath != "" {
+		if err := ensureSelfSignedCert(config.TLSCertPath, config.TLSKeyPath); err != nil {
+			log.Printf("[WARN] Failed to generate TLS cert: %v (TLS listener disabled)", err)
+		} else {
+			tlsServer = &http.Server{
+				Addr:         fmt.Sprintf("127.0.0.1:%d", config.TLSPort),
+				Handler:      mux,
+				ReadTimeout:  30 * time.Second,
+				WriteTimeout: 5 * time.Minute,
+				IdleTimeout:  120 * time.Second,
+				// Disable HTTP/2 so that standard HTTP/1.1 WebSocket upgrade
+				// works. HTTP/2 uses a different mechanism (RFC 8441 Extended
+				// CONNECT) that our simple hijack-based tunneler doesn't support.
+				TLSNextProto: make(map[string]func(*http.Server, *tls.Conn, http.Handler)),
+			}
+
+			go func() {
+				log.Printf("[INFO] chau7-proxy TLS/WSS starting on %s", tlsServer.Addr)
+				if err := tlsServer.ListenAndServeTLS(config.TLSCertPath, config.TLSKeyPath); err != http.ErrServerClosed {
+					log.Printf("[WARN] TLS server error: %v", err)
+				}
+			}()
+		}
+	}
 
 	// Wait for shutdown signal
 	quit := make(chan os.Signal, 1)
@@ -126,6 +154,12 @@ func main() {
 	// Graceful shutdown with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	if tlsServer != nil {
+		if err := tlsServer.Shutdown(ctx); err != nil {
+			log.Printf("[WARN] TLS shutdown error: %v", err)
+		}
+	}
 
 	if err := server.Shutdown(ctx); err != nil {
 		log.Printf("[WARN] Shutdown error: %v", err)

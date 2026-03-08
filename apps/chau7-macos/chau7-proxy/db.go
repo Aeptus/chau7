@@ -181,7 +181,10 @@ type DailyStats struct {
 
 // initSchema creates the database schema
 func initSchema(db *sql.DB) error {
-	schema := `
+	// Create tables first (without indexes that depend on migrated columns).
+	// CREATE TABLE IF NOT EXISTS is a no-op for existing tables, so new columns
+	// in the definition are only applied to fresh databases.
+	tables := `
 		CREATE TABLE IF NOT EXISTS api_calls (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			session_id TEXT,
@@ -203,7 +206,6 @@ func initSchema(db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_api_calls_session ON api_calls(session_id);
 		CREATE INDEX IF NOT EXISTS idx_api_calls_timestamp ON api_calls(timestamp);
 		CREATE INDEX IF NOT EXISTS idx_api_calls_provider ON api_calls(provider, model);
-		CREATE INDEX IF NOT EXISTS idx_api_calls_task ON api_calls(task_id);
 
 		CREATE TABLE IF NOT EXISTS model_pricing (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -269,13 +271,22 @@ func initSchema(db *sql.DB) error {
 		);
 	`
 
-	_, err := db.Exec(schema)
-	if err != nil {
+	if _, err := db.Exec(tables); err != nil {
 		return err
 	}
 
-	// Run migrations for existing databases
-	return runMigrations(db)
+	// Run migrations to add columns missing from pre-existing tables.
+	// This must happen before creating indexes on those columns.
+	if err := runMigrations(db); err != nil {
+		return err
+	}
+
+	// Post-migration indexes (depend on columns added by runMigrations).
+	postMigrationIndexes := `
+		CREATE INDEX IF NOT EXISTS idx_api_calls_task ON api_calls(task_id);
+	`
+	_, err := db.Exec(postMigrationIndexes)
+	return err
 }
 
 // runMigrations handles schema upgrades for existing databases

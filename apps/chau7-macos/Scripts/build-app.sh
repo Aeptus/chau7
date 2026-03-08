@@ -142,6 +142,15 @@ for helper in chau7-md chau7-optim; do
     fi
 done
 
+# Copy Go proxy binary if available
+PROXY_BIN="$ROOT_DIR/chau7-proxy/build/darwin/chau7-proxy"
+if [[ -f "$PROXY_BIN" ]]; then
+    run_cmd cp "$PROXY_BIN" "$CONTENTS/Resources/chau7-proxy"
+    log_ok "Copied proxy binary: chau7-proxy"
+else
+    log_warn "Proxy binary not found at $PROXY_BIN (run chau7-proxy/build.sh first)"
+fi
+
 # Compile and bundle the MCP bridge (Swift → native binary)
 MCP_BRIDGE_SRC="$ROOT_DIR/../../tools/chau7-mcp-bridge/main.swift"
 MCP_BRIDGE_BIN="$CONTENTS/Resources/chau7-mcp-bridge"

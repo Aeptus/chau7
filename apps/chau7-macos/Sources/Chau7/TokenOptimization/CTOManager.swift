@@ -472,14 +472,40 @@ final class CTOManager {
 
     // MARK: - CTO Gain Statistics
 
-    /// Wrapper for the JSON envelope from `chau7-optim gain --format json`.
-    private struct GainResponse: Codable {
+    /// Daily token savings entry from `chau7-optim gain --daily --format json`.
+    struct DailyGainEntry: Codable {
+        let date: String
+        let commands: Int
+        let inputTokens: Int
+        let outputTokens: Int
+        let savedTokens: Int
+        let savingsPct: Double
+
+        enum CodingKeys: String, CodingKey {
+            case date
+            case commands
+            case inputTokens = "input_tokens"
+            case outputTokens = "output_tokens"
+            case savedTokens = "saved_tokens"
+            case savingsPct = "savings_pct"
+        }
+    }
+
+    /// Full response from `chau7-optim gain --daily --format json`.
+    struct DailyGainResponse: Codable {
         let summary: CTOGainStats
+        let daily: [DailyGainEntry]?
     }
 
     /// Fetches aggregated token savings from `chau7-optim gain --format json`.
     /// Returns nil if the optimizer is not installed or the command fails.
     func fetchGainStats() async -> CTOGainStats? {
+        let response = await fetchDailyGainStats()
+        return response?.summary
+    }
+
+    /// Fetches token savings with daily breakdown from `chau7-optim gain --daily --format json`.
+    func fetchDailyGainStats() async -> DailyGainResponse? {
         guard isOptimizerInstalled else { return nil }
 
         let optimPath = optimizerPath
@@ -487,7 +513,7 @@ final class CTOManager {
             DispatchQueue.global(qos: .utility).async {
                 let process = Process()
                 process.executableURL = optimPath
-                process.arguments = ["gain", "--format", "json"]
+                process.arguments = ["gain", "--daily", "--format", "json"]
 
                 let pipe = Pipe()
                 process.standardOutput = pipe
@@ -510,14 +536,43 @@ final class CTOManager {
                 }
 
                 do {
-                    let response = try JSONDecoder().decode(GainResponse.self, from: data)
-                    continuation.resume(returning: response.summary)
+                    let response = try JSONDecoder().decode(DailyGainResponse.self, from: data)
+                    continuation.resume(returning: response)
                 } catch {
                     Log.error("CTOManager: failed to decode chau7-optim gain output: \(error)")
                     continuation.resume(returning: nil)
                 }
             }
         }
+    }
+
+    /// Aggregates daily gain entries from a given cutoff date into a single `CTOGainStats`.
+    static func aggregateDailyStats(_ daily: [DailyGainEntry], since cutoff: Date) -> CTOGainStats {
+        let cal = Calendar.current
+        let cutoffDay = cal.startOfDay(for: cutoff)
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+
+        let filtered = daily.filter { entry in
+            guard let entryDate = dateFormatter.date(from: entry.date) else { return false }
+            return entryDate >= cutoffDay
+        }
+
+        let totalCommands = filtered.reduce(0) { $0 + $1.commands }
+        let totalInput = filtered.reduce(0) { $0 + $1.inputTokens }
+        let totalOutput = filtered.reduce(0) { $0 + $1.outputTokens }
+        let totalSaved = filtered.reduce(0) { $0 + $1.savedTokens }
+        let avgPct = totalInput > 0 ? (Double(totalSaved) / Double(totalInput)) * 100 : 0
+
+        return CTOGainStats(
+            commands: totalCommands,
+            inputTokens: totalInput,
+            outputTokens: totalOutput,
+            savedTokens: totalSaved,
+            savingsPct: avgPct,
+            totalTimeMs: 0,
+            avgTimeMs: 0
+        )
     }
 
     // MARK: - Command Log

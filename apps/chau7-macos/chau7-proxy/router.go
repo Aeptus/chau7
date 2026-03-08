@@ -108,7 +108,9 @@ func DetectProvider(r *http.Request) Provider {
 	return ProviderOpenAI
 }
 
-// GetUpstreamURL constructs the full upstream URL for a request
+// GetUpstreamURL constructs the full upstream URL for a request.
+// For OpenAI, it detects subscription (ChatGPT OAuth) vs API-key auth
+// and routes to the correct backend.
 func GetUpstreamURL(provider Provider, r *http.Request) string {
 	cfg, ok := ProviderConfigs[provider]
 	if !ok {
@@ -116,6 +118,20 @@ func GetUpstreamURL(provider Provider, r *http.Request) string {
 	}
 
 	path := r.URL.Path
+
+	// Subscription-based Codex uses chatgpt.com, not api.openai.com.
+	// Detect by checking the Authorization header: OAuth tokens are JWTs
+	// ("Bearer eyJ..."), API keys start with "sk-".
+	if provider == ProviderOpenAI && isSubscriptionAuth(r) {
+		// Rewrite /v1/<endpoint> → /backend-api/codex/<endpoint>
+		trimmed := strings.TrimPrefix(path, "/v1")
+		url := "https://chatgpt.com/backend-api/codex" + trimmed
+		if r.URL.RawQuery != "" {
+			url += "?" + r.URL.RawQuery
+		}
+		return url
+	}
+
 	if provider == ProviderOpenAI && !strings.HasPrefix(path, "/v1/") {
 		path = "/v1" + path
 	}
@@ -126,6 +142,22 @@ func GetUpstreamURL(provider Provider, r *http.Request) string {
 	}
 
 	return url
+}
+
+// isSubscriptionAuth returns true if the request uses a ChatGPT subscription
+// OAuth token rather than an API key. OAuth tokens are JWTs (start with "eyJ"),
+// while API keys start with "sk-".
+func isSubscriptionAuth(r *http.Request) bool {
+	auth := r.Header.Get("Authorization")
+	if auth == "" {
+		return false
+	}
+	token := strings.TrimPrefix(auth, "Bearer ")
+	if token == auth {
+		return false // no "Bearer " prefix
+	}
+	// API keys start with "sk-"; OAuth JWTs start with "eyJ" (base64 of '{"')
+	return !strings.HasPrefix(token, "sk-")
 }
 
 // IsStreamingRequest checks if the request expects a streaming response

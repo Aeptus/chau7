@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -12,6 +13,15 @@ import (
 type Config struct {
 	// Port is the HTTP port to listen on (default: 18080)
 	Port int
+
+	// TLSPort is the HTTPS/WSS port for WebSocket-capable clients (default: Port+1).
+	// A self-signed certificate is auto-generated on first start.
+	TLSPort int
+
+	// TLSCertPath and TLSKeyPath are paths to the self-signed cert and key.
+	// If empty, defaults to <data_dir>/proxy-cert.pem and proxy-key.pem.
+	TLSCertPath string
+	TLSKeyPath  string
 
 	// DBPath is the path to the SQLite database file
 	DBPath string
@@ -64,6 +74,9 @@ type Config struct {
 //   - CHAU7_MOCKUP_URL: Mockup SaaS base URL (optional, v1.2)
 //   - CHAU7_MOCKUP_API_KEY: Mockup API key (optional, v1.2)
 //   - CHAU7_ENABLE_BASELINE: "1" to enable baseline estimation (default: "1", v1.2)
+//   - CHAU7_TLS_PORT: HTTPS/WSS port (default: CHAU7_PROXY_PORT+1)
+//   - CHAU7_TLS_CERT: Path to TLS certificate PEM (default: <db_dir>/proxy-cert.pem)
+//   - CHAU7_TLS_KEY: Path to TLS private key PEM (default: <db_dir>/proxy-key.pem)
 func LoadConfig() *Config {
 	cfg := &Config{
 		Port:                 18080,
@@ -85,6 +98,26 @@ func LoadConfig() *Config {
 		if port, err := strconv.Atoi(portStr); err == nil && port > 0 && port < 65536 {
 			cfg.Port = port
 		}
+	}
+
+	// TLS port defaults to HTTP port + 1
+	cfg.TLSPort = cfg.Port + 1
+	if tlsPortStr := os.Getenv("CHAU7_TLS_PORT"); tlsPortStr != "" {
+		if port, err := strconv.Atoi(tlsPortStr); err == nil && port > 0 && port < 65536 {
+			cfg.TLSPort = port
+		}
+	}
+
+	// TLS cert/key paths default to alongside the database
+	if certPath := os.Getenv("CHAU7_TLS_CERT"); certPath != "" {
+		cfg.TLSCertPath = certPath
+	} else if cfg.DBPath != "" {
+		cfg.TLSCertPath = filepath.Join(filepath.Dir(cfg.DBPath), "proxy-cert.pem")
+	}
+	if keyPath := os.Getenv("CHAU7_TLS_KEY"); keyPath != "" {
+		cfg.TLSKeyPath = keyPath
+	} else if cfg.DBPath != "" {
+		cfg.TLSKeyPath = filepath.Join(filepath.Dir(cfg.DBPath), "proxy-key.pem")
 	}
 
 	if os.Getenv("CHAU7_LOG_PROMPTS") == "1" {
