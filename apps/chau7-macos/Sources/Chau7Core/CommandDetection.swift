@@ -6,54 +6,9 @@ import Foundation
 /// Extracted for testability.
 public enum CommandDetection {
 
-    /// Map of command names to their display names (AI tools)
-    public static let appNameMap: [String: String] = [
-        // OpenAI Codex
-        "codex": "Codex",
-        "codex-cli": "Codex",
-        "codex-pty": "Codex",
-        "codex-wrapper": "Codex",
-        // Anthropic Claude
-        "claude": "Claude",
-        "claude-code": "Claude",
-        "claude-cli": "Claude",
-        "claude-pty": "Claude",
-        "claude-wrapper": "Claude",
-        // Google Gemini
-        "gemini": "Gemini",
-        "gemini-cli": "Gemini",
-        "gemini-pty": "Gemini",
-        // OpenAI ChatGPT
-        "chatgpt": "ChatGPT",
-        "chatgpt-cli": "ChatGPT",
-        "gpt": "ChatGPT",
-        "gpt-cli": "ChatGPT",
-        "openai": "ChatGPT",
-        // GitHub Copilot
-        "copilot": "Copilot",
-        "copilot-cli": "Copilot",
-        "github-copilot": "Copilot",
-        // Aider
-        "aider": "Aider",
-        "aider-chat": "Aider",
-        // Cursor
-        "cursor": "Cursor",
-        // Sourcegraph Cody
-        "cody": "Cody",
-        // Amazon Q (formerly CodeWhisperer)
-        "amazon-q": "Amazon Q",
-        "q": "Amazon Q",
-        // Devin
-        "devin": "Devin",
-        // Continue.dev
-        "continue": "Continue",
-        // Goose (Block)
-        "goose": "Goose",
-        // Mentat
-        "mentat": "Mentat",
-        // amp
-        "amp": "Amp"
-    ]
+    /// Map of command names to their display names (AI tools).
+    /// Derived from `AIToolRegistry.allTools` — add new tools there.
+    public static let appNameMap: [String: String] = AIToolRegistry.commandNameMap
 
     /// Map of dev server command names to their display names
     public static let devServerMap: [String: String] = [
@@ -127,68 +82,9 @@ public enum CommandDetection {
     /// IMPORTANT: All patterns are stored **lowercased** so the matcher can do a
     /// single case-insensitive comparison by lowercasing the haystack once.
     /// Generic words like "cursor" are avoided — use specific identifiers only.
-    public static let outputDetectionPatterns: [(pattern: String, appName: String)] = [
-        // Claude Code banners — box-drawing characters are unique to the CLI
-        ("╭─ claude", "Claude"),
-        ("╰─ claude", "Claude"),
-        ("powered by anthropic", "Claude"),
-        ("claude.ai/", "Claude"),
-        ("claude.ai", "Claude"),
-        ("claude code", "Claude"),
-        ("anthropic's claude", "Claude"),
-        // Gemini patterns
-        ("google ai studio", "Gemini"),
-        ("gemini pro", "Gemini"),
-        ("gemini.google", "Gemini"),
-        ("google gemini", "Gemini"),
-        ("gemini cli", "Gemini"),
-        // ChatGPT patterns
-        ("chatgpt", "ChatGPT"),
-        ("openai.com/", "ChatGPT"),
-        ("openai.com", "ChatGPT"),
-        // Copilot patterns
-        ("github copilot", "Copilot"),
-        ("copilot cli", "Copilot"),
-        ("gh copilot", "Copilot"),
-        // Codex patterns — box-drawing characters are unique to the CLI
-        ("╭─ codex", "Codex"),
-        ("╰─ codex", "Codex"),
-        ("openai codex", "Codex"),
-        ("codex cli", "Codex"),
-        ("codex.openai", "Codex"),
-        // Aider patterns — use specific identifiers
-        ("aider v", "Aider"),
-        ("aider is running", "Aider"),
-        ("aider.chat", "Aider"),
-        // Cursor patterns — must be very specific, "cursor" alone is too generic
-        ("cursor.sh", "Cursor"),
-        ("cursor ide", "Cursor"),
-        ("cursor cli", "Cursor"),
-        ("cursor.com", "Cursor"),
-        // Sourcegraph Cody
-        ("sourcegraph cody", "Cody"),
-        ("cody cli", "Cody"),
-        ("cody.dev", "Cody"),
-        // Amazon Q (formerly CodeWhisperer)
-        ("amazon q developer", "Amazon Q"),
-        ("amazon q cli", "Amazon Q"),
-        ("codewhisperer", "Amazon Q"),
-        // Goose (Block)
-        ("goose v", "Goose"),
-        ("goose.ai", "Goose"),
-        ("block goose", "Goose"),
-        // Mentat
-        ("mentat v", "Mentat"),
-        ("mentat.ai", "Mentat"),
-        // Amp
-        ("amp.dev", "Amp"),
-        ("amp cli", "Amp"),
-        // Devin
-        ("devin cli", "Devin"),
-        ("devin.ai", "Devin"),
-        // Continue.dev
-        ("continue.dev", "Continue")
-    ]
+    /// Derived from `AIToolRegistry.allTools` — add new tools there.
+    public static let outputDetectionPatterns: [(pattern: String, appName: String)] =
+        AIToolRegistry.outputPatternList
 
     /// Output patterns that indicate a dev server is running
     public static let devServerOutputPatterns: [(pattern: String, appName: String)] = [

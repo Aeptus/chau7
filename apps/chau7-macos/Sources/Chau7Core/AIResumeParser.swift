@@ -52,11 +52,11 @@ public enum AIResumeParser {
     }
 
     /// Normalizes a known app name to a canonical provider key.
+    /// Queries `AIToolRegistry` for tools with resume support.
     public static func normalizeProviderName(_ value: String) -> String? {
-        let lowered = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if lowered.contains("claude") { return "claude" }
-        if lowered.contains("codex") { return "codex" }
-        return nil
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return AIToolRegistry.resumeProviderKey(for: trimmed)
     }
 
     /// Validates that a string looks like a plausible session ID.
