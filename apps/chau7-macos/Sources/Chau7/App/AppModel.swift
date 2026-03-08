@@ -949,6 +949,15 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             )
             recentEvents.append(aiEvent)
             recentEvents.trimToLast(25)
+
+            // Bridge session IDs from Claude Code hooks to the telemetry system.
+            // Hook events carry sessionId + cwd; match to in-progress telemetry runs
+            // so content extraction can find the right transcript files on run end.
+            if !event.sessionId.isEmpty, !event.cwd.isEmpty {
+                TelemetryRecorder.shared.updateSessionID(
+                    provider: "claude", cwd: event.cwd, sessionID: event.sessionId
+                )
+            }
         }
 
         monitor.onSessionIdle = { [weak self] session in
