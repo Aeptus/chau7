@@ -144,6 +144,14 @@ public struct AIDetectionState: Sendable {
         guard phase == .detected || phase == .restored else { return false }
         guard currentApp != nil else { return false }
 
+        // Restored sessions stay in .restored (dimmed logo in UI).
+        // Clear currentApp so output scanning can detect a new live tool,
+        // but don't change the phase — isRestored should remain true.
+        if phase == .restored {
+            currentApp = nil
+            return true
+        }
+
         // Cooldown: don't clear too soon after detection
         if let detectedAt {
             let elapsed = Date().timeIntervalSince(detectedAt)
