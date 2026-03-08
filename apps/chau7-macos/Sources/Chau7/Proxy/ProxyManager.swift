@@ -16,27 +16,30 @@ public final class ProxyManager: ObservableObject {
     @Published public private(set) var isRunning = false
     @Published public private(set) var lastError: String?
     @Published public private(set) var port = 18080
+    @Published public private(set) var tlsPort = 18081
 
     // MARK: - Private Properties
 
     private var process: Process?
     private var outputPipe: Pipe?
     private var errorPipe: Pipe?
+    private var isStopping = false
     private let logger = Logger(subsystem: "com.chau7.proxy", category: "ProxyManager")
 
     /// Path to the bundled proxy binary
     private var proxyBinaryPath: URL? {
-        // Look in the resource bundle first
-        if let bundlePath = Chau7Resources.bundle.url(forResource: "chau7-proxy", withExtension: nil) {
-            return bundlePath
-        }
-
-        // Fallback to Resources directory
-        if let resourcesURL = Chau7Resources.bundle.resourceURL {
+        // Prefer the copy placed directly in Contents/Resources/ by build-app.sh.
+        // The SPM resource bundle may contain a stale binary from a prior build.
+        if let resourcesURL = Bundle.main.resourceURL {
             let proxyPath = resourcesURL.appendingPathComponent("chau7-proxy")
             if FileManager.default.fileExists(atPath: proxyPath.path) {
                 return proxyPath
             }
+        }
+
+        // Fallback to SPM resource bundle
+        if let bundlePath = Chau7Resources.bundle.url(forResource: "chau7-proxy", withExtension: nil) {
+            return bundlePath
         }
 
         // Development fallback: check project build directory
@@ -82,6 +85,14 @@ public final class ProxyManager: ObservableObject {
 
     private var socketPath: URL {
         dataDirectory.appendingPathComponent("proxy.sock")
+    }
+
+    private var tlsCertPath: URL {
+        dataDirectory.appendingPathComponent("proxy-cert.pem")
+    }
+
+    private var tlsKeyPath: URL {
+        dataDirectory.appendingPathComponent("proxy-key.pem")
     }
 
     private func apiURL(path: String, queryItems: [URLQueryItem]? = nil) -> URL? {
@@ -130,6 +141,8 @@ public final class ProxyManager: ObservableObject {
             return
         }
 
+        isStopping = false
+
         guard let binaryPath = proxyBinaryPath else {
             let error = "Proxy binary not found. Please build chau7-proxy first."
             logger.error("\(error)")
@@ -146,6 +159,7 @@ public final class ProxyManager: ObservableObject {
         }
 
         self.port = port
+        self.tlsPort = port + 1
 
         // Remove stale socket file
         try? FileManager.default.removeItem(at: socketPath)
@@ -162,6 +176,9 @@ public final class ProxyManager: ObservableObject {
         env["CHAU7_IPC_SOCKET"] = socketPath.path
         env["CHAU7_LOG_LEVEL"] = "info"
         env["CHAU7_LOG_PROMPTS"] = FeatureSettings.shared.apiAnalyticsLogPrompts ? "1" : "0"
+        env["CHAU7_TLS_PORT"] = String(port + 1)
+        env["CHAU7_TLS_CERT"] = tlsCertPath.path
+        env["CHAU7_TLS_KEY"] = tlsKeyPath.path
         process.environment = env
 
         // Setup pipes for output
@@ -186,17 +203,26 @@ public final class ProxyManager: ObservableObject {
             self?.logger.warning("Proxy stderr: \(output)")
         }
 
-        // Handle process termination
+        // Handle process termination with auto-restart on unexpected exit
         process.terminationHandler = { [weak self] proc in
             Task { @MainActor in
                 guard let self = self else { return }
                 self.isRunning = false
+                self.process = nil
 
-                if proc.terminationStatus != 0 {
+                if proc.terminationStatus != 0 && !self.isStopping {
                     let error = "Proxy exited with status \(proc.terminationStatus)"
                     self.logger.error("\(error)")
                     self.lastError = error
                     NotificationCenter.default.post(name: .proxyStatusChanged, object: nil, userInfo: ["status": "stopped", "error": error])
+
+                    // Auto-restart after unexpected termination (e.g. killed by agent)
+                    let restartPort = self.port
+                    self.logger.info("Auto-restarting proxy in 2s...")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                        guard let self, !self.isRunning, !self.isStopping else { return }
+                        self.start(port: restartPort)
+                    }
                 } else {
                     self.logger.info("Proxy stopped cleanly")
                     NotificationCenter.default.post(name: .proxyStatusChanged, object: nil, userInfo: ["status": "stopped"])
@@ -229,6 +255,7 @@ public final class ProxyManager: ObservableObject {
             return
         }
 
+        isStopping = true
         logger.info("Stopping proxy...")
 
         // Send SIGTERM for graceful shutdown

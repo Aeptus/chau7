@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -45,6 +47,15 @@ func NewProxyHandler(config *Config, db *Database, ipc *IPCNotifier, taskManager
 
 // ServeHTTP handles incoming HTTP requests
 func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// WebSocket upgrade: tunnel bidirectionally instead of request-response proxy.
+	// Codex CLI uses WebSocket transport for the Responses API; stripping the
+	// Upgrade header forces a fallback to HTTPS POST which may fail auth checks
+	// for ChatGPT-OAuth tokens that lack api.responses.write scope.
+	if isWebSocketUpgrade(r) {
+		p.handleWebSocket(w, r)
+		return
+	}
+
 	startTime := time.Now()
 
 	// Extract correlation headers
@@ -345,4 +356,99 @@ func extractPromptPreview(body []byte, verbose bool) string {
 	}
 
 	return prompt
+}
+
+// isWebSocketUpgrade returns true when the request is an HTTP/1.1 WebSocket handshake.
+func isWebSocketUpgrade(r *http.Request) bool {
+	return strings.EqualFold(r.Header.Get("Upgrade"), "websocket") &&
+		strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade")
+}
+
+// handleWebSocket tunnels a WebSocket upgrade request to the upstream provider.
+// It hijacks the client connection, dials the upstream over TLS, replays the
+// upgrade request verbatim, and then pipes bytes bidirectionally.
+func (p *ProxyHandler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	provider := DetectProvider(r)
+	upstreamURL := GetUpstreamURL(provider, r)
+
+	log.Printf("[INFO] WebSocket upgrade: %s -> %s", r.URL.Path, upstreamURL)
+
+	// Parse upstream URL to get host:port for TLS dial
+	upstreamParsed, err := url.Parse(upstreamURL)
+	if err != nil {
+		log.Printf("[ERROR] WebSocket: bad upstream URL: %v", err)
+		http.Error(w, "Bad upstream URL", http.StatusBadGateway)
+		return
+	}
+
+	host := upstreamParsed.Hostname()
+	port := upstreamParsed.Port()
+	if port == "" {
+		if upstreamParsed.Scheme == "https" || upstreamParsed.Scheme == "wss" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+
+	// Connect to upstream over TLS
+	tlsConn, err := tls.Dial("tcp", host+":"+port, &tls.Config{ServerName: host})
+	if err != nil {
+		log.Printf("[ERROR] WebSocket: TLS dial failed: %v", err)
+		http.Error(w, "Upstream connection failed", http.StatusBadGateway)
+		return
+	}
+	defer tlsConn.Close()
+
+	// Build the upgrade request to send to upstream.
+	// Use the upstream path and forward all headers except X-Chau7-*.
+	path := upstreamParsed.Path
+	if upstreamParsed.RawQuery != "" {
+		path += "?" + upstreamParsed.RawQuery
+	}
+
+	var reqBuf bytes.Buffer
+	fmt.Fprintf(&reqBuf, "%s %s HTTP/1.1\r\n", r.Method, path)
+	fmt.Fprintf(&reqBuf, "Host: %s\r\n", host)
+	for key, values := range r.Header {
+		if IsCorrelationHeader(key) {
+			continue
+		}
+		for _, v := range values {
+			fmt.Fprintf(&reqBuf, "%s: %s\r\n", key, v)
+		}
+	}
+	reqBuf.WriteString("\r\n")
+
+	if _, err := tlsConn.Write(reqBuf.Bytes()); err != nil {
+		log.Printf("[ERROR] WebSocket: failed to write upgrade request: %v", err)
+		http.Error(w, "Failed to send upgrade", http.StatusBadGateway)
+		return
+	}
+
+	// Hijack the client connection
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		log.Printf("[ERROR] WebSocket: response writer does not support hijacking")
+		http.Error(w, "WebSocket not supported", http.StatusInternalServerError)
+		return
+	}
+	clientConn, _, err := hijacker.Hijack()
+	if err != nil {
+		log.Printf("[ERROR] WebSocket: hijack failed: %v", err)
+		return
+	}
+	defer clientConn.Close()
+
+	// Bidirectional pipe: client <-> upstream
+	done := make(chan struct{}, 2)
+	go func() {
+		io.Copy(clientConn, tlsConn)
+		done <- struct{}{}
+	}()
+	go func() {
+		io.Copy(tlsConn, clientConn)
+		done <- struct{}{}
+	}()
+	<-done
 }

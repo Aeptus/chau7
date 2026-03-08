@@ -21,6 +21,7 @@ struct DebugConsoleView: View {
     @State private var perfShowSlowOnly = true
     @State private var ctoRuntimeSnapshot: CTORuntimeSnapshot = CTORuntimeMonitor.shared.snapshot()
     @State private var ctoGainStats: CTOGainStats?
+    @State private var ctoDailyGainEntries: [CTOManager.DailyGainEntry] = []
     @State private var ctoCommandLog: [CTOManager.CommandLogEntry] = []
     @State private var ctoShowAdvanced = false
     @State private var ctoTimePeriod: CTOTimePeriod = .session
@@ -335,16 +336,23 @@ struct DebugConsoleView: View {
     private var ctoHeroSection: some View {
         GroupBox {
             let log = ctoFilteredLog
+            let filteredStats = ctoFilteredGainStats
             HStack(spacing: 0) {
                 ctoHeroMetric(
-                    title: "Optimization Rate",
+                    title: "Command Rate",
                     value: ctoFilteredRate,
                     color: ctoFilteredRateColor
                 )
                 Divider().frame(height: 40)
                 ctoHeroMetric(
+                    title: "Token Rate",
+                    value: filteredStats.map { String(format: "%.0f%%", $0.savingsPct) } ?? "--",
+                    color: ctoTokenRateColor
+                )
+                Divider().frame(height: 40)
+                ctoHeroMetric(
                     title: "Tokens Saved",
-                    value: ctoGainStats.map { formatTokenCount($0.savedTokens) } ?? "--",
+                    value: filteredStats.map { formatTokenCount($0.savedTokens) } ?? "--",
                     color: .green
                 )
                 Divider().frame(height: 40)
@@ -397,6 +405,14 @@ struct DebugConsoleView: View {
         let rate = Double(optimized) / Double(log.count) * 100
         if rate >= 80 { return .green }
         if rate >= 50 { return .orange }
+        return .red
+    }
+
+    private var ctoTokenRateColor: Color {
+        guard let stats = ctoFilteredGainStats else { return .secondary }
+        let pct = stats.savingsPct
+        if pct >= 40 { return .green }
+        if pct >= 20 { return .orange }
         return .red
     }
 
@@ -1354,25 +1370,39 @@ struct DebugConsoleView: View {
         ctoRuntimeSnapshot = CTORuntimeMonitor.shared.snapshot()
         ctoCommandLog = CTOManager.shared.readCommandLog()
         Task {
-            let stats = await CTOManager.shared.fetchGainStats()
-            await MainActor.run { ctoGainStats = stats }
+            let response = await CTOManager.shared.fetchDailyGainStats()
+            await MainActor.run {
+                ctoGainStats = response?.summary
+                ctoDailyGainEntries = response?.daily ?? []
+            }
         }
     }
 
     /// Command log filtered by the selected time period.
     private var ctoFilteredLog: [CTOManager.CommandLogEntry] {
-        let cutoff: Date
+        guard ctoTimePeriod != .all else { return ctoCommandLog }
+        return ctoCommandLog.filter { $0.timestamp >= ctoTimePeriodCutoff }
+    }
+
+    /// Gain stats filtered by the selected time period using daily breakdown data.
+    private var ctoFilteredGainStats: CTOGainStats? {
+        guard ctoTimePeriod != .all else { return ctoGainStats }
+        guard !ctoDailyGainEntries.isEmpty else { return ctoGainStats }
+        return CTOManager.aggregateDailyStats(ctoDailyGainEntries, since: ctoTimePeriodCutoff)
+    }
+
+    /// Cutoff date for the selected time period.
+    private var ctoTimePeriodCutoff: Date {
         switch ctoTimePeriod {
         case .session:
-            cutoff = ctoRuntimeSnapshot.firstSeenAt
+            return ctoRuntimeSnapshot.firstSeenAt
         case .today:
-            cutoff = Calendar.current.startOfDay(for: Date())
+            return Calendar.current.startOfDay(for: Date())
         case .week:
-            cutoff = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? .distantPast
+            return Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? .distantPast
         case .all:
-            return ctoCommandLog
+            return .distantPast
         }
-        return ctoCommandLog.filter { $0.timestamp >= cutoff }
     }
 
     private func ctoFormatDuration(_ seconds: Int) -> String {

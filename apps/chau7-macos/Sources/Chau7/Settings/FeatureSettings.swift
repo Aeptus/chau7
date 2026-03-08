@@ -1656,6 +1656,14 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
+    /// Redirect OpenAI traffic through the proxy. Disable for subscription-based
+    /// Codex which requires WebSocket transport incompatible with HTTP proxying.
+    @Published var apiAnalyticsIncludeOpenAI: Bool {
+        didSet {
+            UserDefaults.standard.set(apiAnalyticsIncludeOpenAI, forKey: Keys.apiAnalyticsIncludeOpenAI)
+        }
+    }
+
     // MARK: - Token Optimization (CTO) Settings
 
     @Published var tokenOptimizationMode: TokenOptimizationMode {
@@ -1913,6 +1921,7 @@ final class FeatureSettings: ObservableObject {
         static let apiAnalyticsEnabled = "analytics.api.enabled"
         static let apiAnalyticsPort = "analytics.api.port"
         static let apiAnalyticsLogPrompts = "analytics.api.logPrompts"
+        static let apiAnalyticsIncludeOpenAI = "analytics.api.includeOpenAI"
         /// Token Optimization (CTO)
         static let tokenOptimizationMode = "cto.mode"
         // MCP
@@ -2252,6 +2261,7 @@ final class FeatureSettings: ObservableObject {
         self.isAPIAnalyticsEnabled = defaults.object(forKey: Keys.apiAnalyticsEnabled) as? Bool ?? false
         self.apiAnalyticsPort = defaults.object(forKey: Keys.apiAnalyticsPort) as? Int ?? 18080
         self.apiAnalyticsLogPrompts = defaults.object(forKey: Keys.apiAnalyticsLogPrompts) as? Bool ?? false
+        self.apiAnalyticsIncludeOpenAI = defaults.object(forKey: Keys.apiAnalyticsIncludeOpenAI) as? Bool ?? false
 
         // Token Optimization (default: off)
         if let modeRaw = defaults.string(forKey: Keys.tokenOptimizationMode),

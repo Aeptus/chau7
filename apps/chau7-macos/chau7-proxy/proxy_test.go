@@ -179,7 +179,7 @@ func TestProxyHandler_HopByHopHeadersFiltered(t *testing.T) {
 	req.Header.Set("Connection", "keep-alive")
 	req.Header.Set("Keep-Alive", "timeout=5")
 	req.Header.Set("Transfer-Encoding", "chunked")
-	req.Header.Set("Authorization", "Bearer test")
+	req.Header.Set("Authorization", "Bearer sk-test")
 
 	w := httptest.NewRecorder()
 	proxy.ServeHTTP(w, req)
