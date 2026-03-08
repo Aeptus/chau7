@@ -100,16 +100,11 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         return Self.displayName(fromProvider: lastAIProvider)
     }
 
-    /// Whether an AI agent was detected in the current session (vs restored from a previous one).
-    /// When false, the tab bar dims the AI logo to indicate it's a stale remnant.
-    /// Only `restoreAIMetadata` sets this to true; live detection paths clear it.
-    private(set) var isRestoredAISession = false
-
     /// Whether the AI logo should appear at full opacity.
     /// Grey (false) only for restored sessions that haven't been re-detected live.
     var isAIRunning: Bool {
         guard aiDisplayAppName != nil else { return false }
-        return !isRestoredAISession
+        return !aiDetection.isRestored
     }
 
     @Published var devServer: DevServerMonitor.DevServerInfo?
@@ -250,21 +245,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private var shellIntegrationOutputCount = 0
     private var shouldAutoFocusOnAttach = true // Auto-focus when terminal view is attached
     private var didStartDevServerMonitor = false // Track if dev server monitor has started
-    // AI detection sliding buffer — holds the tail of the previous output chunk so patterns
-    // split across chunk boundaries are still detected (e.g. "╭─ Clau" + "de Code").
-    private var aiDetectionBuffer = Data()
-    private let aiDetectionBufferCapacity = 256 // keep last N bytes across chunks
-    // Cooldown: after detection is set, don't clear it for this many seconds (prevents
-    // premature clearing when AI tools trigger OSC 7 / shell prompts mid-session).
-    private var aiDetectionSetAt: Date?
-    private let aiDetectionCooldownSeconds: TimeInterval = 3.0
-    // Allow re-detection: track how many output chunks since last clearing so we can
-    // re-run detection for a window after clearing (catches late banners).
-    private var aiDetectionChunksSinceCleared = 0
-    private let aiDetectionRetryChunks = 30 // re-check for ~30 output chunks after clearing
-    // Last detected app name — survives clearing so re-detection only matches the same tool.
-    // Prevents Claude Code output mentioning "codex" from switching the tab's AI branding.
-    private var lastDetectedAppName: String?
+    // AI detection state machine — handles sliding buffer, cooldown, re-detection
+    // locking, and phase transitions. See AIDetectionState.swift for details.
+    private var aiDetection = AIDetectionState()
     private var pendingCommandLine: String?
     private var promptSeenForPendingCommand = false
     private var commandFinishedNotified = false
@@ -891,25 +874,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     }
 
     private func clearActiveAppAfterPrompt() {
-        guard activeAppName != nil else { return }
-
-        // Cooldown: don't clear detection too soon after it was set.
-        // AI tools like Aider and Claude Code emit OSC 7 / prompt sequences
-        // during their own interactive sessions. Clearing immediately causes
-        // intermittent detection loss and broken logging.
-        if let setAt = aiDetectionSetAt {
-            let elapsed = Date().timeIntervalSince(setAt)
-            if elapsed < aiDetectionCooldownSeconds {
-                Log.trace("Skipping active-app clearing — cooldown active (\(String(format: "%.1f", elapsed))s < \(aiDetectionCooldownSeconds)s)")
-                return
-            }
-        }
-
+        guard aiDetection.handlePromptReturn() else { return }
         Log.trace("Clearing active app after OSC 7 prompt update.")
-        activeAppName = nil
-        aiDetectionSetAt = nil
-        aiDetectionChunksSinceCleared = 0 // reset re-detection window
-        aiDetectionBuffer.removeAll(keepingCapacity: true)
+        activeAppName = aiDetection.currentApp // nil after prompt return
         // finishAILogging is idempotent and has internal synchronization
         finishAILogging(exitCode: nil)
     }
@@ -1115,90 +1082,62 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     /// Attempts to detect AI CLI from output patterns when command detection missed it.
     ///
     /// Improvements over the original implementation:
-    /// 1. **Sliding buffer** — keeps the tail of the previous chunk so patterns split
-    ///    across chunk boundaries ("╭─ Clau" | "de Code") are still matched.
-    /// 2. **2 KB check window** — increased from 500 bytes; AI banners often appear
-    ///    after loading spinners that easily exceed 500 bytes.
-    /// 3. **Case-insensitive** — lowercases the haystack once; all patterns in
-    ///    `outputDetectionPatterns` are already stored lowercased.
-    /// 4. **Re-detection** — after clearing (OSC 7 / prompt), keeps checking for
-    ///    a short window to catch late banners.
+    /// Detects AI tool from terminal output using the `AIDetectionState` state machine.
+    ///
+    /// The state machine handles: sliding buffer, phase gating, cooldown,
+    /// re-detection locking (same tool only), and retry window exhaustion.
+    /// This method only does pattern matching and fires side effects on state change.
     private func maybeDetectAppFromOutput(_ data: Data) {
-        // If already detected, just count down the re-detection window silently
-        if activeAppName != nil {
-            aiDetectionChunksSinceCleared = 0
-            return
-        }
-
-        // After clearing, only re-check for a limited window
-        aiDetectionChunksSinceCleared += 1
-        guard aiDetectionChunksSinceCleared <= aiDetectionRetryChunks else { return }
-
-        // During re-detection (lastDetectedAppName is set), only accept matches for
-        // the same tool. This prevents Claude Code output mentioning "codex" or
-        // "chatgpt" from hijacking the tab's AI branding.
-        let redetectOnly = lastDetectedAppName
+        // State machine handles phase checks, sliding buffer, and retry window.
+        // Returns nil when scanning should be skipped (already detected, window exhausted, etc.)
+        guard let haystack = aiDetection.prepareHaystack(chunk: data) else { return }
 
         let token = FeatureProfiler.shared.begin(.aiDetect, bytes: data.count, metadata: "output-patterns")
         defer { FeatureProfiler.shared.end(token) }
 
-        // Build sliding buffer: previous tail + current chunk (up to 2 KB)
-        var combined = aiDetectionBuffer
-        combined.append(data.prefix(2048))
-        let checkData = combined.suffix(2048)
-
-        // Update the sliding buffer with the tail of the current chunk
-        let tailSize = min(data.count, aiDetectionBufferCapacity)
-        aiDetectionBuffer = data.suffix(tailSize)
-
-        guard let rawString = String(data: checkData, encoding: .utf8) else { return }
-        // Lowercase once — all patterns are stored lowercased
-        let haystack = rawString.lowercased()
-
         let patterns = outputDetectionPatterns()
         let patternStrings = patterns.map { $0.pattern }
+
+        // Find a match — state machine will decide whether to accept it
+        var matchedApp: String?
+        var matchedPattern: String?
 
         // Fast path: Rust Aho-Corasick on the lowercased haystack
         if let index = RustPatternMatcher.outputPatterns.firstMatchIndex(haystack: haystack, patterns: patternStrings) {
             if index >= 0, index < patterns.count {
-                let match = patterns[index]
-                if redetectOnly == nil || match.appName == redetectOnly {
-                    applyDetection(appName: match.appName, pattern: match.pattern)
-                    return
-                }
+                matchedApp = patterns[index].appName
+                matchedPattern = patterns[index].pattern
             }
         }
 
         // Fallback: linear scan (patterns already lowercased, haystack already lowercased)
-        for (pattern, appName) in patterns {
-            if haystack.contains(pattern) {
-                if redetectOnly == nil || appName == redetectOnly {
-                    applyDetection(appName: appName, pattern: pattern)
-                    return
+        if matchedApp == nil {
+            for (pattern, appName) in patterns {
+                if haystack.contains(pattern) {
+                    matchedApp = appName
+                    matchedPattern = pattern
+                    break
                 }
             }
         }
-    }
 
-    /// Sets the detected app and starts logging. Shared by Rust and fallback paths.
-    private func applyDetection(appName: String, pattern: String) {
-        activeAppName = appName
-        lastDetectedAppName = appName
-        isRestoredAISession = false
-        aiDetectionSetAt = Date()
-        aiDetectionChunksSinceCleared = 0
-        startAILoggingIfNeeded(toolName: appName, commandLine: nil)
+        // State machine filters: redetecting rejects different tools, detected is unreachable
+        guard aiDetection.handleOutputMatch(appName: matchedApp),
+              let app = aiDetection.currentApp else { return }
 
-        // Telemetry: record run start
+        // State changed → sync @Published property and fire side effects
+        activeAppName = app
+        startAILoggingIfNeeded(toolName: app, commandLine: nil)
+
         TelemetryRecorder.shared.runStarted(
             tabID: tabIdentifier,
-            provider: AIResumeParser.normalizeProviderName(appName) ?? appName,
+            provider: AIResumeParser.normalizeProviderName(app) ?? app,
             cwd: currentDirectory,
             repoPath: gitRootPath,
             sessionID: lastAISessionId
         )
 
-        Log.info("AI detected from output pattern: \(appName) (matched: \(pattern))")
+        Log.info("AI detected from output pattern: \(app) (matched: \(matchedPattern ?? "unknown"))")
     }
 
     private func outputDetectionPatterns() -> [(pattern: String, appName: String)] {
@@ -1409,11 +1348,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
     private func updateActiveAppName(from commandLine: String) {
         if let match = CommandDetection.detectApp(from: commandLine) {
+            aiDetection.handleCommand(appName: match)
             activeAppName = match
-            isRestoredAISession = false
-            aiDetectionSetAt = Date()
-            aiDetectionChunksSinceCleared = 0
-            aiDetectionBuffer.removeAll(keepingCapacity: true)
             Log.info("AI detected: \(match) from command '\(commandLine.prefix(50))'")
             startAILoggingIfNeeded(toolName: match, commandLine: commandLine)
             return
@@ -1423,7 +1359,6 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         if let devServerName = CommandDetection.detectDevServer(from: commandLine) {
             Log.trace("Dev server command detected: \(devServerName) from '\(commandLine.prefix(50))'")
             devServerMonitor.setCommandHint(devServerName)
-            // Don't set activeAppName for dev servers - they're different from AI tools
         }
 
         // Custom detection rules (substring match on command line)
@@ -1433,13 +1368,10 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             if pattern.isEmpty { continue }
             if lowercasedLine.contains(pattern) {
                 let name = rule.displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-                activeAppName = name.isEmpty ? "Custom AI" : name
-                isRestoredAISession = false
-                aiDetectionSetAt = Date()
-                aiDetectionChunksSinceCleared = 0
-                if let activeAppName {
-                    startAILoggingIfNeeded(toolName: activeAppName, commandLine: commandLine)
-                }
+                let displayName = name.isEmpty ? "Custom AI" : name
+                aiDetection.handleCommand(appName: displayName)
+                activeAppName = displayName
+                startAILoggingIfNeeded(toolName: displayName, commandLine: commandLine)
                 return
             }
         }
@@ -1448,6 +1380,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             // Keep lastAIProvider/lastAISessionId so tab restore can resume the
             // most recent session for this pane even after shell-level exits.
             Log.trace("Clearing active app due to exit command input.")
+            aiDetection.handleExit()
             activeAppName = nil
         }
     }
@@ -1480,9 +1413,11 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             provider ?? ""
         )
         let restoredDisplayName = Self.displayName(fromProvider: normalizedProvider)
+        if let name = restoredDisplayName {
+            aiDetection.handleRestore(appName: name)
+        }
         activeAppName = restoredDisplayName
         lastAIProvider = normalizedProvider
-        isRestoredAISession = true
 
         if let sessionId {
             let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
