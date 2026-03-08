@@ -1441,6 +1441,7 @@ struct TabSessionContent: View {
                     logo
                         .resizable()
                         .frame(width: 14, height: 14)
+                        .opacity(session.isAIRunning ? 1.0 : 0.35)
                         .accessibilityHidden(true)
                 } else if let devIcon = devServerIconName {
                     Image(systemName: devIcon)
@@ -1513,6 +1514,7 @@ struct TabButton: View {
                 logo
                     .resizable()
                     .frame(width: 14, height: 14)
+                    .opacity(session.isAIRunning ? 1.0 : 0.35)
                     .accessibilityHidden(true)
             }
 

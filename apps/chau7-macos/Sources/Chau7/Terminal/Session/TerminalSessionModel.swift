@@ -100,6 +100,18 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         return Self.displayName(fromProvider: lastAIProvider)
     }
 
+    /// Whether an AI agent is actively running (not just remembered from a previous session).
+    /// Used by the tab bar to grey-out stale AI logos on restored tabs.
+    var isAIRunning: Bool {
+        guard aiDisplayAppName != nil else { return false }
+        switch status {
+        case .running, .waitingForInput, .stuck:
+            return true
+        case .idle, .exited:
+            return false
+        }
+    }
+
     @Published var devServer: DevServerMonitor.DevServerInfo?
     @Published var processGroup: ProcessGroupSnapshot?
     @Published var tabTitleOverride: String?

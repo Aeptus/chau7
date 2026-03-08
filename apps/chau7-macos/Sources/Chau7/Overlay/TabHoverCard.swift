@@ -134,6 +134,7 @@ private struct TabHoverCardContent: View {
             // AI logo or color dot
             if let logo = aiLogo {
                 logo.resizable().frame(width: 16, height: 16)
+                    .opacity(session.isAIRunning ? 1.0 : 0.35)
             } else {
                 Circle()
                     .fill(tab.effectiveColor.color)
