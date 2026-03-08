@@ -153,6 +153,34 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertNil(state.lastDetectedApp)
     }
 
+    func testPromptReturnFromRestoredKeepsDimmedLogo() {
+        var state = AIDetectionState()
+        state.handleRestore(appName: "Claude")
+        XCTAssertTrue(state.isRestored)
+
+        // Prompt return clears currentApp but keeps restored phase (dimmed logo)
+        let changed = state.handlePromptReturn()
+        XCTAssertTrue(changed)
+        XCTAssertNil(state.currentApp)
+        XCTAssertTrue(state.isRestored)
+        XCTAssertEqual(state.phase, .restored)
+    }
+
+    func testRestoredSessionCanBeOverriddenByOutputAfterPromptReturn() {
+        var state = AIDetectionState()
+        state.handleRestore(appName: "Codex")
+        state.handlePromptReturn()
+        // Still restored with nil currentApp — output scanning should work
+        XCTAssertTrue(state.isRestored)
+        XCTAssertNil(state.currentApp)
+
+        // Live detection overrides the restored session
+        state.handleOutputMatch(appName: "Claude")
+        XCTAssertFalse(state.isRestored)
+        XCTAssertEqual(state.currentApp, "Claude")
+        XCTAssertEqual(state.phase, .detected)
+    }
+
     // MARK: - Exit
 
     func testHandleExit() {
