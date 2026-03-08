@@ -75,7 +75,12 @@ final class MCPServerManager {
 
     /// Claude Code global config (~/.claude.json) — JSON with mcpServers key.
     private func registerClaudeCodeGlobal(home: String, command: String) {
+        let fm = FileManager.default
         let path = home + "/.claude.json"
+        // Only create if Claude Code is installed (don't litter ~/ with unexpected dotfiles)
+        if !fm.fileExists(atPath: path), !fm.fileExists(atPath: home + "/.claude") {
+            return
+        }
         let entry: [String: Any] = ["command": command, "args": [] as [String]]
         mergeJSONMCPEntry(atPath: path, serverName: "chau7", entry: entry, mcpKey: "mcpServers")
     }
@@ -120,19 +125,31 @@ final class MCPServerManager {
                 let lines = content.components(separatedBy: "\n")
                 var updated: [String] = []
                 var inChau7Section = false
+                var commandUpdated = false
                 for line in lines {
-                    if line.trimmingCharacters(in: .whitespaces) == "[mcp_servers.chau7]" {
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    if trimmed == "[mcp_servers.chau7]" {
                         inChau7Section = true
                         updated.append(line)
-                    } else if inChau7Section, line.trimmingCharacters(in: .whitespaces).hasPrefix("command") {
+                    } else if inChau7Section, trimmed.hasPrefix("command ") || trimmed.hasPrefix("command=") {
                         updated.append("command = \"\(command)\"")
+                        commandUpdated = true
                         inChau7Section = false
                     } else {
-                        if inChau7Section, line.trimmingCharacters(in: .whitespaces).hasPrefix("[") {
+                        if inChau7Section, trimmed.hasPrefix("[") {
+                            // Leaving section without finding command key — insert it
+                            if !commandUpdated {
+                                updated.append("command = \"\(command)\"")
+                                commandUpdated = true
+                            }
                             inChau7Section = false
                         }
                         updated.append(line)
                     }
+                }
+                // Handle case where command was never found and section was at EOF
+                if inChau7Section, !commandUpdated {
+                    updated.append("command = \"\(command)\"")
                 }
                 content = updated.joined(separator: "\n")
                 try content.write(toFile: path, atomically: true, encoding: .utf8)
@@ -164,9 +181,12 @@ final class MCPServerManager {
         let fm = FileManager.default
         var root: [String: Any] = [:]
 
-        if fm.fileExists(atPath: path),
-           let data = fm.contents(atPath: path),
-           let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+        if fm.fileExists(atPath: path) {
+            guard let data = fm.contents(atPath: path),
+                  let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                Log.warn("MCPServer: skipping \(path) — file exists but is not valid JSON")
+                return
+            }
             root = parsed
         }
 
