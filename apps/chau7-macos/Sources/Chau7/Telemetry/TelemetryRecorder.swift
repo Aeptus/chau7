@@ -89,7 +89,12 @@ final class TelemetryRecorder {
                 run.turnCount = content.turns.count
                 turns = content.turns
                 toolCalls = content.toolCalls
+                Log.info("TelemetryRecorder: extracted \(turns.count) turns, \(toolCalls.count) tool calls, model=\(content.model ?? "?")")
+            } else {
+                Log.warn("TelemetryRecorder: content extraction returned nil for run \(runID) session=\(run.sessionID ?? "nil") cwd=\(run.cwd)")
             }
+        } else {
+            Log.trace("TelemetryRecorder: no content provider for \(run.provider)")
         }
 
         // Atomic: UPDATE the run row + INSERT turns + INSERT tool calls in one transaction.
@@ -110,6 +115,33 @@ final class TelemetryRecorder {
 
         // Update just the session_id column in SQLite
         store.updateRunSessionID(runID, sessionID: sessionID)
+    }
+
+    /// Update session ID for an active run matched by provider and working directory.
+    /// Used when session IDs arrive from external monitors (e.g. Claude Code hooks)
+    /// that don't know the Chau7 tab ID.
+    ///
+    /// Uses flexible cwd matching: exact match or parent/child directory relationship,
+    /// since the hook event cwd may be a subdirectory of the terminal's cwd or vice versa.
+    func updateSessionID(provider: String, cwd: String, sessionID: String) {
+        lock.lock()
+        let normalizedProvider = provider.lowercased()
+        let match = inProgressRuns.first { (_, run) in
+            guard run.provider.lowercased().contains(normalizedProvider) else { return false }
+            guard run.sessionID == nil || run.sessionID?.isEmpty == true else { return false }
+            // Flexible cwd match: exact, parent, or child directory
+            let a = run.cwd
+            let b = cwd
+            return a == b || a.hasPrefix(b + "/") || b.hasPrefix(a + "/")
+        }
+        if let (_, run) = match {
+            inProgressRuns[run.id]?.sessionID = sessionID
+            lock.unlock()
+            store.updateRunSessionID(run.id, sessionID: sessionID)
+            Log.info("TelemetryRecorder: session ID updated via cwd match: \(sessionID.prefix(8)) → run \(run.id.prefix(8))")
+        } else {
+            lock.unlock()
+        }
     }
 
     /// Tag a run (e.g., "control", "aethyme").
