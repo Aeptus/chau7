@@ -22,7 +22,7 @@ final class MCPServerManager {
     // MARK: - Bridge Installation
 
     /// Copies the MCP bridge binary from the app bundle to ~/.chau7/bin/
-    /// so that Claude Code (and other MCP clients) can invoke it via .mcp.json.
+    /// and registers the MCP server config with all known AI coding tools.
     private func installBridgeIfNeeded() {
         let bridgeName = "chau7-mcp-bridge"
         guard let bundledURL = Bundle.main.url(forResource: bridgeName, withExtension: nil) else {
@@ -46,6 +46,145 @@ final class MCPServerManager {
             Log.info("MCPServer: installed \(bridgeName) to \(dest.path)")
         } catch {
             Log.error("MCPServer: failed to install \(bridgeName): \(error)")
+        }
+
+        registerMCPWithAllTools(bridgePath: dest.path)
+    }
+
+    /// Registers the Chau7 MCP server with every known AI coding tool's config.
+    /// Each tool has its own config format and location; we only touch the chau7
+    /// entry and leave everything else intact.
+    private func registerMCPWithAllTools(bridgePath: String) {
+        let home = NSHomeDirectory()
+        let command = bridgePath
+
+        // Claude Code: ~/.claude.json (global) — project .mcp.json is committed separately
+        registerClaudeCodeGlobal(home: home, command: command)
+
+        // Codex (OpenAI): ~/.codex/config.toml
+        registerCodex(home: home, command: command)
+
+        // Cursor: ~/.cursor/mcp.json
+        registerCursorGlobal(home: home, command: command)
+
+        // Windsurf: ~/.codeium/windsurf/mcp_config.json
+        registerWindsurf(home: home, command: command)
+    }
+
+    // MARK: - Per-Tool MCP Registration
+
+    /// Claude Code global config (~/.claude.json) — JSON with mcpServers key.
+    private func registerClaudeCodeGlobal(home: String, command: String) {
+        let path = home + "/.claude.json"
+        let entry: [String: Any] = ["command": command, "args": [] as [String]]
+        mergeJSONMCPEntry(atPath: path, serverName: "chau7", entry: entry, mcpKey: "mcpServers")
+    }
+
+    /// Cursor global config (~/.cursor/mcp.json) — same JSON shape as Claude Code.
+    private func registerCursorGlobal(home: String, command: String) {
+        let dir = home + "/.cursor"
+        let path = dir + "/mcp.json"
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: dir) {
+            // Don't create ~/.cursor/ if Cursor isn't installed
+            return
+        }
+        let entry: [String: Any] = ["command": command, "args": [] as [String]]
+        mergeJSONMCPEntry(atPath: path, serverName: "chau7", entry: entry, mcpKey: "mcpServers")
+    }
+
+    /// Windsurf config (~/.codeium/windsurf/mcp_config.json) — JSON with mcpServers key.
+    private func registerWindsurf(home: String, command: String) {
+        let dir = home + "/.codeium/windsurf"
+        let path = dir + "/mcp_config.json"
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: dir) {
+            return
+        }
+        let entry: [String: Any] = ["command": command, "args": [] as [String]]
+        mergeJSONMCPEntry(atPath: path, serverName: "chau7", entry: entry, mcpKey: "mcpServers")
+    }
+
+    /// Codex config (~/.codex/config.toml) — TOML with [mcp_servers.chau7] section.
+    private func registerCodex(home: String, command: String) {
+        let path = home + "/.codex/config.toml"
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: path) else { return }
+
+        do {
+            var content = try String(contentsOfFile: path, encoding: .utf8)
+
+            // Already registered?
+            if content.contains("[mcp_servers.chau7]") {
+                // Update command path in case the binary moved
+                let lines = content.components(separatedBy: "\n")
+                var updated: [String] = []
+                var inChau7Section = false
+                for line in lines {
+                    if line.trimmingCharacters(in: .whitespaces) == "[mcp_servers.chau7]" {
+                        inChau7Section = true
+                        updated.append(line)
+                    } else if inChau7Section, line.trimmingCharacters(in: .whitespaces).hasPrefix("command") {
+                        updated.append("command = \"\(command)\"")
+                        inChau7Section = false
+                    } else {
+                        if inChau7Section, line.trimmingCharacters(in: .whitespaces).hasPrefix("[") {
+                            inChau7Section = false
+                        }
+                        updated.append(line)
+                    }
+                }
+                content = updated.joined(separator: "\n")
+                try content.write(toFile: path, atomically: true, encoding: .utf8)
+            } else {
+                // Insert before [features] if it exists, otherwise append
+                let section = """
+                \n[mcp_servers.chau7]
+                command = "\(command)"
+                args = []
+                """
+                if let range = content.range(of: "\n[features]") {
+                    content.insert(contentsOf: section + "\n", at: range.lowerBound)
+                } else {
+                    content += section + "\n"
+                }
+                try content.write(toFile: path, atomically: true, encoding: .utf8)
+            }
+            Log.info("MCPServer: registered with Codex config at \(path)")
+        } catch {
+            Log.error("MCPServer: failed to register with Codex: \(error)")
+        }
+    }
+
+    // MARK: - JSON Config Helpers
+
+    /// Merges a chau7 MCP server entry into a JSON config file.
+    /// Creates the file if it doesn't exist. Only touches the chau7 key.
+    private func mergeJSONMCPEntry(atPath path: String, serverName: String, entry: [String: Any], mcpKey: String) {
+        let fm = FileManager.default
+        var root: [String: Any] = [:]
+
+        if fm.fileExists(atPath: path),
+           let data = fm.contents(atPath: path),
+           let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            root = parsed
+        }
+
+        var servers = root[mcpKey] as? [String: Any] ?? [:]
+        servers[serverName] = entry
+        root[mcpKey] = servers
+
+        do {
+            let data = try JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys])
+            // Ensure parent directory exists
+            let dir = (path as NSString).deletingLastPathComponent
+            if !fm.fileExists(atPath: dir) {
+                try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
+            }
+            try data.write(to: URL(fileURLWithPath: path))
+            Log.info("MCPServer: registered with config at \(path)")
+        } catch {
+            Log.error("MCPServer: failed to write config at \(path): \(error)")
         }
     }
 
