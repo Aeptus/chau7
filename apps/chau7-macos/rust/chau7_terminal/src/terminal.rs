@@ -11,7 +11,7 @@ use alacritty_terminal::event::Event;
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line, Point, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
-use alacritty_terminal::term::cell::{Flags as CellFlags, LineLength};
+use alacritty_terminal::term::cell::{Cell, Flags as CellFlags, LineLength};
 use alacritty_terminal::term::{Config as TermConfig, Term, TermMode};
 use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor, Processor};
 use crossbeam_channel::{Receiver, TryRecvError, bounded};
@@ -1610,7 +1610,7 @@ impl Chau7Terminal {
     }
 
     fn grid_line_text(
-        grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::Cell>,
+        grid: &alacritty_terminal::grid::Grid<Cell>,
         line: Line,
     ) -> (String, bool) {
         let grid_line = &grid[line];
@@ -1643,7 +1643,7 @@ impl Chau7Terminal {
     }
 
     fn grid_line_wraps(
-        grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::Cell>,
+        grid: &alacritty_terminal::grid::Grid<Cell>,
         line: Line,
     ) -> bool {
         let grid_line = &grid[line];
@@ -1652,7 +1652,7 @@ impl Chau7Terminal {
     }
 
     fn grid_column_utf16_offset(
-        grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::Cell>,
+        grid: &alacritty_terminal::grid::Grid<Cell>,
         line: Line,
         column: usize,
     ) -> usize {
