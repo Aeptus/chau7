@@ -4,7 +4,7 @@ import XCTest
 
 final class CodexSessionResolverTests: XCTestCase {
     func testBestMatchingSessionIDChoosesClosestObservedCandidate() {
-        let referenceDate = Date(timeIntervalSince1970: 1_000)
+        let referenceDate = Date(timeIntervalSince1970: 1000)
         let candidates = [
             CodexSessionResolver.Candidate(
                 sessionId: "session-a",

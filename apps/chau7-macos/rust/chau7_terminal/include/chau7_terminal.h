@@ -478,6 +478,20 @@ void chau7_terminal_free_string(char *s);
 char *chau7_terminal_get_line_text(struct Chau7Terminal *term, int32_t row);
 
 /*
+ Get the full logical wrapped line containing the specified physical row.
+
+ # Safety
+ - `term` must be a valid pointer
+ - `start_row` and `column_offset` may be null
+ - The returned string must be freed with `chau7_terminal_free_string`
+ */
+char *chau7_terminal_get_logical_line_text(struct Chau7Terminal *term,
+                                           int32_t row,
+                                           uint32_t column,
+                                           int32_t *start_row,
+                                           uint32_t *column_offset);
+
+/*
  Get cursor position
 
  # Safety

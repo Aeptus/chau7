@@ -229,10 +229,11 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         return sessionStatuses
             .filter {
                 $0.sessionId == trimmedSessionId &&
-                $0.tool.caseInsensitiveCompare(trimmedTool) == .orderedSame
+                    $0.tool.caseInsensitiveCompare(trimmedTool) == .orderedSame
             }
             .max(by: { $0.lastSeen < $1.lastSeen })
     }
+
     /// Tool-agnostic event stream from ALL monitors (file tailer, terminal, API proxy, hooks, etc.).
     /// This is the canonical event feed for cross-tool UI — command center timeline, notifications, etc.
     @Published var recentEvents: [AIEvent] = []

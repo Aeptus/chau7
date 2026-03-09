@@ -1,7 +1,7 @@
 import Foundation
 import Chau7Core
 
-struct CodexSessionResolver {
+enum CodexSessionResolver {
     struct Candidate: Equatable {
         let sessionId: String
         let cwd: String
@@ -111,8 +111,10 @@ struct CodexSessionResolver {
 
         if let referenceDate {
             for dayOffset in [0, -1, 1] {
-                if let url = dayDirectory(for: referenceDate.addingTimeInterval(Double(dayOffset) * 86_400),
-                                          under: sessionsDir) {
+                if let url = dayDirectory(
+                    for: referenceDate.addingTimeInterval(Double(dayOffset) * 86400),
+                    under: sessionsDir
+                ) {
                     append(url)
                 }
             }

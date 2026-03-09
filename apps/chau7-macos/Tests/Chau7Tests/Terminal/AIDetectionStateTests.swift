@@ -122,7 +122,7 @@ final class AIDetectionStateTests: XCTestCase {
 
         // Exhaust the retry window (30 chunks of no match)
         let chunk = "some random output".data(using: .utf8)!
-        for _ in 0...30 {
+        for _ in 0 ... 30 {
             _ = state.prepareHaystack(chunk: chunk)
         }
 

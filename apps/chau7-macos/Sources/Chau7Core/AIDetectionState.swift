@@ -32,7 +32,9 @@ public struct AIDetectionState: Sendable {
     public private(set) var currentApp: String?
 
     /// Whether the current state came from persistence rather than live detection.
-    public var isRestored: Bool { phase == .restored }
+    public var isRestored: Bool {
+        phase == .restored
+    }
 
     /// The last live-detected app name. Survives phase transitions.
     /// Used to lock re-detection to the same tool after prompt return.
@@ -46,7 +48,7 @@ public struct AIDetectionState: Sendable {
     /// Timestamp when detection was last set (for cooldown calculation).
     private var detectedAt: Date?
     /// Chunks processed since entering the redetecting phase.
-    private var chunksSinceClearing: Int = 0
+    private var chunksSinceClearing = 0
     /// Sliding buffer for cross-chunk pattern matching.
     private var slidingBuffer = Data()
 
@@ -55,9 +57,9 @@ public struct AIDetectionState: Sendable {
     /// Don't clear detection within this many seconds of the last detection event.
     private let cooldownSeconds: TimeInterval = 3.0
     /// After clearing, re-check this many output chunks before giving up.
-    private let retryChunks: Int = 30
+    private let retryChunks = 30
     /// Size of the sliding buffer tail kept across chunks.
-    private let bufferCapacity: Int = 256
+    private let bufferCapacity = 256
 
     // MARK: - Init
 
