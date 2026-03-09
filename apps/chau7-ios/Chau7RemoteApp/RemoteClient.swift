@@ -17,7 +17,7 @@ final class RemoteClient {
     private(set) var strippedOutputText = ""
     private(set) var tabs: [RemoteTab] = []
     private(set) var isConnected = false
-    private(set) var status: String = "Disconnected"
+    private(set) var status = "Disconnected"
     var activeTabID: UInt32 = 0
     var lastError: String?
     var pendingApprovals: [ApprovalRequest] = []
@@ -236,15 +236,15 @@ final class RemoteClient {
     // MARK: - Frame Handlers
 
     private func handleHello(_ data: Data) {
-        guard let p = try? JSONDecoder().decode(HelloPayload.self, from: data),
-              let nonce = Data(base64Encoded: p.nonce) else { return }
+        guard let msg = try? JSONDecoder().decode(HelloPayload.self, from: data),
+              let nonce = Data(base64Encoded: msg.nonce) else { return }
         nonceMac = nonce
         establishSessionIfPossible()
     }
 
     private func handlePairAccept(_ data: Data) {
-        guard let p = try? JSONDecoder().decode(PairAcceptPayload.self, from: data),
-              let keyData = Data(base64Encoded: p.macPub) else { return }
+        guard let msg = try? JSONDecoder().decode(PairAcceptPayload.self, from: data),
+              let keyData = Data(base64Encoded: msg.macPub) else { return }
         macPublicKey = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: keyData)
         _ = KeychainStore.save(key: "mac_public_key", data: keyData)
         sendHello()
@@ -252,8 +252,8 @@ final class RemoteClient {
     }
 
     private func handlePairReject(_ data: Data) {
-        if let p = try? JSONDecoder().decode(PairRejectPayload.self, from: data) {
-            lastError = "Pairing rejected: \(p.reason)"
+        if let msg = try? JSONDecoder().decode(PairRejectPayload.self, from: data) {
+            lastError = "Pairing rejected: \(msg.reason)"
         } else {
             lastError = "Pairing rejected"
         }
@@ -262,8 +262,8 @@ final class RemoteClient {
     }
 
     private func handleError(_ data: Data) {
-        if let p = try? JSONDecoder().decode(RemoteErrorPayload.self, from: data) {
-            lastError = "\(p.code): \(p.message)"
+        if let msg = try? JSONDecoder().decode(RemoteErrorPayload.self, from: data) {
+            lastError = "\(msg.code): \(msg.message)"
         } else if let text = String(data: data, encoding: .utf8), !text.isEmpty {
             lastError = text
         }
@@ -271,9 +271,9 @@ final class RemoteClient {
     }
 
     private func handleTabList(_ data: Data) {
-        guard let p = try? JSONDecoder().decode(TabListPayload.self, from: data) else { return }
-        tabs = p.tabs
-        if let active = p.tabs.first(where: { $0.isActive }) {
+        guard let msg = try? JSONDecoder().decode(TabListPayload.self, from: data) else { return }
+        tabs = msg.tabs
+        if let active = msg.tabs.first(where: { $0.isActive }) {
             activeTabID = active.tabID
         }
     }
@@ -284,30 +284,31 @@ final class RemoteClient {
         outputText.append(text)
         if outputText.utf8.count > Self.maxOutputBytes {
             let excess = outputText.utf8.count - Self.maxOutputBytes
-            if let idx = outputText.utf8.index(outputText.utf8.startIndex, offsetBy: excess, limitedBy: outputText.utf8.endIndex) {
-                // Advance to next character boundary to avoid splitting multi-byte chars
-                let safeIdx = outputText.index(idx, offsetBy: 0, limitedBy: outputText.endIndex) ?? outputText.startIndex
-                outputText = String(outputText[safeIdx...])
+            let start = outputText.utf8.startIndex
+            let end = outputText.utf8.endIndex
+            if let idx = outputText.utf8.index(start, offsetBy: excess, limitedBy: end) {
+                let charIdx = outputText.index(after: String.Index(idx, within: outputText) ?? outputText.startIndex)
+                outputText = String(outputText[charIdx...])
             }
         }
         strippedOutputText = ANSIStripper.strip(outputText)
     }
 
     private func handleApprovalRequest(_ data: Data) {
-        guard let p = try? JSONDecoder().decode(ApprovalRequestPayload.self, from: data) else { return }
+        guard let msg = try? JSONDecoder().decode(ApprovalRequestPayload.self, from: data) else { return }
         pendingApprovals.append(ApprovalRequest(
-            requestID: p.requestID, command: p.command,
-            flaggedCommand: p.flaggedCommand, timestamp: Date()
+            requestID: msg.requestID, command: msg.command,
+            flaggedCommand: msg.flaggedCommand, timestamp: Date()
         ))
 
         let content = UNMutableNotificationContent()
         content.title = "MCP Command Approval"
-        content.body = p.command
+        content.body = msg.command
         content.sound = .default
         content.categoryIdentifier = "MCP_APPROVAL"
-        content.userInfo = ["request_id": p.requestID]
+        content.userInfo = ["request_id": msg.requestID]
         let req = UNNotificationRequest(
-            identifier: p.requestID,
+            identifier: msg.requestID,
             content: content,
             trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
         )
