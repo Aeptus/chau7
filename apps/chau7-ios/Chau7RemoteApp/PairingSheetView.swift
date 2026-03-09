@@ -1,8 +1,7 @@
 import SwiftUI
-import UIKit
 
 struct PairingSheetView: View {
-    @ObservedObject var client: RemoteClient
+    var client: RemoteClient
     @Environment(\.dismiss) private var dismiss
     @State private var draftPayload = ""
     @State private var error: String?

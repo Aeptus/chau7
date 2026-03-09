@@ -1,12 +1,22 @@
 import SwiftUI
 
-struct RemoteSettingsView: View {
-    @ObservedObject var client: RemoteClient
+/// Shared keys and defaults for @AppStorage, preventing drift between views.
+enum AppSettings {
+    static let holdToSendKey = "hold_to_send"
+    static let holdToSendDefault = true
+    static let appendNewlineKey = "append_newline"
+    static let appendNewlineDefault = true
+    static let renderANSIKey = "render_ansi"
+    static let renderANSIDefault = false
+}
+
+struct SettingsView: View {
+    var client: RemoteClient
     @Binding var isPairingPresented: Bool
 
-    @AppStorage("hold_to_send") private var holdToSend = true
-    @AppStorage("append_newline") private var appendNewline = true
-    @AppStorage("render_ansi") private var renderANSI = false
+    @AppStorage(AppSettings.holdToSendKey) private var holdToSend = AppSettings.holdToSendDefault
+    @AppStorage(AppSettings.appendNewlineKey) private var appendNewline = AppSettings.appendNewlineDefault
+    @AppStorage(AppSettings.renderANSIKey) private var renderANSI = AppSettings.renderANSIDefault
 
     var body: some View {
         NavigationStack {
@@ -51,7 +61,7 @@ struct RemoteSettingsView: View {
                 }
 
                 Section("About") {
-                    LabeledContent("Version", value: "1.1.0")
+                    LabeledContent("Version", value: RemoteClient.appVersion)
                 }
             }
             .navigationTitle("Settings")
