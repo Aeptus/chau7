@@ -501,13 +501,13 @@ final class OverlayTabsModel: ObservableObject {
         ) { [weak self] note in
             guard let self else { return }
             guard let session = note.object as? TerminalSessionModel else { return }
-            guard self.tabs.contains(where: { tab in
+            guard tabs.contains(where: { tab in
                 tab.splitController.terminalSessions.contains { _, candidate in candidate === session }
             }) else { return }
 
             Log.info("renderSuspension: session state changed tabSession=\(session.tabIdentifier) \(session.renderSuspensionDebugSummary)")
-            self.updateSuspensionState()
-            self.objectWillChange.send()
+            updateSuspensionState()
+            objectWillChange.send()
         }
     }
 

@@ -160,7 +160,7 @@ public final class ProxyManager: ObservableObject {
         }
 
         self.port = port
-        self.tlsPort = port + 1
+        tlsPort = port + 1
 
         // Remove stale socket file
         try? FileManager.default.removeItem(at: socketPath)
@@ -211,7 +211,7 @@ public final class ProxyManager: ObservableObject {
                 self.isRunning = false
                 self.process = nil
 
-                if proc.terminationStatus != 0 && !self.isStopping {
+                if proc.terminationStatus != 0, !self.isStopping {
                     let error = "Proxy exited with status \(proc.terminationStatus)"
                     self.logger.error("\(error)")
                     self.lastError = error
@@ -222,7 +222,7 @@ public final class ProxyManager: ObservableObject {
                     self.logger.info("Auto-restarting proxy in 2s...")
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                         guard let self, !self.isRunning, !self.isStopping else { return }
-                        self.start(port: restartPort)
+                        start(port: restartPort)
                     }
                 } else {
                     self.logger.info("Proxy stopped cleanly")
@@ -305,8 +305,8 @@ public final class ProxyManager: ObservableObject {
 
     private func waitForExit(of process: Process, timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning && Date() < deadline {
-            usleep(50_000)
+        while process.isRunning, Date() < deadline {
+            usleep(50000)
         }
         return !process.isRunning
     }

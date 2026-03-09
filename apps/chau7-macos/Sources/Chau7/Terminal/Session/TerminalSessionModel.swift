@@ -304,7 +304,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private let inputLagLogThresholdMs: Double = 60
     private let outputLagLogThresholdMs: Double = 120
     private let highlightLagLogThresholdMs: Double = 120
-    private let maxAcceptedLatencyMs: Double = 10_000
+    private let maxAcceptedLatencyMs: Double = 10000
     private let latencyLogCooldownSeconds: TimeInterval = 15
     private var lastInputLagLogAt: Date?
     private var lastOutputLagLogAt: Date?

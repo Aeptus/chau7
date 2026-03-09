@@ -216,8 +216,8 @@ final class RemoteControlManager: ObservableObject {
 
     private func waitForExit(of process: Process, timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning && Date() < deadline {
-            usleep(50_000)
+        while process.isRunning, Date() < deadline {
+            usleep(50000)
         }
         return !process.isRunning
     }

@@ -185,7 +185,7 @@ public enum AIToolRegistry {
             resumeProviderKey: nil,
             resumeFormat: nil,
             logoAssetName: nil
-        ),
+        )
     ]
 
     // MARK: - Derived Lookup Tables
@@ -202,11 +202,9 @@ public enum AIToolRegistry {
     }()
 
     /// Flat pattern list preserving per-tool order, for output detection.
-    public static let outputPatternList: [(pattern: String, appName: String)] = {
-        allTools.flatMap { tool in
-            tool.outputPatterns.map { (pattern: $0, appName: tool.displayName) }
-        }
-    }()
+    public static let outputPatternList: [(pattern: String, appName: String)] = allTools.flatMap { tool in
+        tool.outputPatterns.map { (pattern: $0, appName: tool.displayName) }
+    }
 
     // MARK: - Queries
 
