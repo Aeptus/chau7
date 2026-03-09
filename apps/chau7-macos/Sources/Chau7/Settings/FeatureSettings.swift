@@ -450,6 +450,20 @@ enum DangerousCommandHighlightScope: String, CaseIterable, Codable {
     case allOutputs = "all_outputs"
 }
 
+enum MCPPermissionMode: String, CaseIterable, Codable {
+    case allowAll = "allow_all"
+    case allowlist = "allowlist"
+    case askUnlisted = "ask_unlisted"
+
+    var displayName: String {
+        switch self {
+        case .allowAll: return "Allow All"
+        case .allowlist: return "Allowlist Only"
+        case .askUnlisted: return "Ask for Unlisted"
+        }
+    }
+}
+
 // MARK: - Feature Settings (Centralized configuration for all features)
 
 /// Centralized feature flags and settings for Chau7.
@@ -1668,6 +1682,18 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(mcpShowTabIndicator, forKey: Keys.mcpShowTabIndicator) }
     }
 
+    @Published var mcpPermissionMode: MCPPermissionMode {
+        didSet { UserDefaults.standard.set(mcpPermissionMode.rawValue, forKey: Keys.mcpPermissionMode) }
+    }
+
+    @Published var mcpAllowedCommands: [String] {
+        didSet { UserDefaults.standard.set(mcpAllowedCommands, forKey: Keys.mcpAllowedCommands) }
+    }
+
+    @Published var mcpBlockedCommands: [String] {
+        didSet { UserDefaults.standard.set(mcpBlockedCommands, forKey: Keys.mcpBlockedCommands) }
+    }
+
     // MARK: - Remote Control Settings
 
     @Published var isRemoteEnabled: Bool {
@@ -1905,6 +1931,9 @@ final class FeatureSettings: ObservableObject {
         static let mcpMaxTabs = "mcp.maxTabs"
         static let mcpRequiresApproval = "mcp.requiresApproval"
         static let mcpShowTabIndicator = "mcp.showTabIndicator"
+        static let mcpPermissionMode = "mcp.permissionMode"
+        static let mcpAllowedCommands = "mcp.allowedCommands"
+        static let mcpBlockedCommands = "mcp.blockedCommands"
         // Remote Control
         static let remoteEnabled = "remote.enabled"
         static let remoteRelayURL = "remote.relayURL"
@@ -2251,6 +2280,14 @@ final class FeatureSettings: ObservableObject {
         self.mcpMaxTabs = defaults.object(forKey: Keys.mcpMaxTabs) as? Int ?? 4
         self.mcpRequiresApproval = defaults.object(forKey: Keys.mcpRequiresApproval) as? Bool ?? false
         self.mcpShowTabIndicator = defaults.object(forKey: Keys.mcpShowTabIndicator) as? Bool ?? true
+        if let modeRaw = defaults.string(forKey: Keys.mcpPermissionMode),
+           let mode = MCPPermissionMode(rawValue: modeRaw) {
+            self.mcpPermissionMode = mode
+        } else {
+            self.mcpPermissionMode = .allowAll
+        }
+        self.mcpAllowedCommands = defaults.stringArray(forKey: Keys.mcpAllowedCommands) ?? []
+        self.mcpBlockedCommands = defaults.stringArray(forKey: Keys.mcpBlockedCommands) ?? []
 
         // Remote Control (default: disabled)
         self.isRemoteEnabled = defaults.object(forKey: Keys.remoteEnabled) as? Bool ?? false
@@ -2510,6 +2547,9 @@ final class FeatureSettings: ObservableObject {
         var mcpMaxTabs: Int? = nil
         var mcpRequiresApproval: Bool? = nil
         var mcpShowTabIndicator: Bool? = nil
+        var mcpPermissionMode: String? = nil
+        var mcpAllowedCommands: [String]? = nil
+        var mcpBlockedCommands: [String]? = nil
         var isRemoteEnabled: Bool? = nil
         var remoteRelayURL: String? = nil
         var isCTOEnabled: Bool = false
@@ -2603,6 +2643,9 @@ final class FeatureSettings: ObservableObject {
             mcpMaxTabs: mcpMaxTabs,
             mcpRequiresApproval: mcpRequiresApproval,
             mcpShowTabIndicator: mcpShowTabIndicator,
+            mcpPermissionMode: mcpPermissionMode.rawValue,
+            mcpAllowedCommands: mcpAllowedCommands,
+            mcpBlockedCommands: mcpBlockedCommands,
             isRemoteEnabled: isRemoteEnabled,
             remoteRelayURL: remoteRelayURL,
             isCTOEnabled: isCTOEnabled,
@@ -2749,6 +2792,9 @@ final class FeatureSettings: ObservableObject {
         if let v = imported.mcpMaxTabs { mcpMaxTabs = v }
         if let v = imported.mcpRequiresApproval { mcpRequiresApproval = v }
         if let v = imported.mcpShowTabIndicator { mcpShowTabIndicator = v }
+        if let v = imported.mcpPermissionMode, let mode = MCPPermissionMode(rawValue: v) { mcpPermissionMode = mode }
+        if let v = imported.mcpAllowedCommands { mcpAllowedCommands = v }
+        if let v = imported.mcpBlockedCommands { mcpBlockedCommands = v }
         if let remoteEnabled = imported.isRemoteEnabled {
             isRemoteEnabled = remoteEnabled
         }
@@ -2865,6 +2911,9 @@ final class FeatureSettings: ObservableObject {
         mcpMaxTabs = 4
         mcpRequiresApproval = false
         mcpShowTabIndicator = true
+        mcpPermissionMode = .allowAll
+        mcpAllowedCommands = []
+        mcpBlockedCommands = []
         isRemoteEnabled = false
         remoteRelayURL = "wss://relay.example.com/connect"
         isCTOEnabled = false
@@ -3119,6 +3168,9 @@ extension FeatureSettings {
             mcpMaxTabs: 4,
             mcpRequiresApproval: false,
             mcpShowTabIndicator: true,
+            mcpPermissionMode: MCPPermissionMode.allowAll.rawValue,
+            mcpAllowedCommands: [],
+            mcpBlockedCommands: [],
             isRemoteEnabled: false,
             remoteRelayURL: "wss://relay.example.com/connect",
             isCTOEnabled: false,

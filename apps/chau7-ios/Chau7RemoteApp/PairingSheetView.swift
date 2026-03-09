@@ -2,10 +2,10 @@ import SwiftUI
 import UIKit
 
 struct PairingSheetView: View {
-    @Binding var pairingPayload: String
-    @Binding var pairingError: String?
+    @ObservedObject var client: RemoteClient
     @Environment(\.dismiss) private var dismiss
-    @State private var draftPayload: String = ""
+    @State private var draftPayload = ""
+    @State private var error: String?
 
     var body: some View {
         NavigationStack {
@@ -22,7 +22,7 @@ struct PairingSheetView: View {
                             .stroke(Color.secondary.opacity(0.3))
                     )
 
-                if let error = pairingError {
+                if let error {
                     Text(error)
                         .font(.caption)
                         .foregroundStyle(.red)
@@ -35,40 +35,36 @@ struct PairingSheetView: View {
                         }
                     }
                     Spacer()
-                    Button("Save") {
-                        savePayload()
-                    }
-                    .buttonStyle(.borderedProminent)
+                    Button("Save") { save() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(draftPayload.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .padding()
             .navigationTitle("Pairing")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
+                    Button("Done") { dismiss() }
                 }
             }
             .onAppear {
-                draftPayload = pairingPayload
+                if let info = client.pairingInfo,
+                   let data = try? JSONEncoder().encode(info),
+                   let str = String(data: data, encoding: .utf8) {
+                    draftPayload = str
+                }
             }
         }
     }
 
-    private func savePayload() {
-        pairingError = nil
+    private func save() {
+        error = nil
         guard let data = draftPayload.data(using: .utf8),
               let info = try? JSONDecoder().decode(PairingInfo.self, from: data) else {
-            pairingError = "Invalid pairing JSON"
+            error = "Invalid pairing JSON"
             return
         }
-        if let normalized = try? JSONEncoder().encode(info),
-           let normalizedString = String(data: normalized, encoding: .utf8) {
-            pairingPayload = normalizedString
-        } else {
-            pairingPayload = draftPayload
-        }
+        client.pairingInfo = info
         dismiss()
     }
 }
