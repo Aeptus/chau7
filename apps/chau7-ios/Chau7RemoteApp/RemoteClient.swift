@@ -1,18 +1,35 @@
 import Foundation
 import CryptoKit
-import Security
 import UIKit
-import Combine
 import Chau7Core
+import UserNotifications
+import os
 
-@MainActor
-final class RemoteClient: ObservableObject {
-    @Published var outputText: String = ""
-    @Published var tabs: [RemoteTab] = []
-    @Published var isConnected: Bool = false
-    @Published var status: String = "Disconnected"
-    @Published var activeTabID: UInt32 = 0
-    @Published var lastError: String?
+private let log = Logger(subsystem: "ch7", category: "RemoteClient")
+
+/// Manages the encrypted WebSocket connection to a macOS Chau7 instance.
+@MainActor @Observable
+final class RemoteClient {
+
+    // MARK: - State
+
+    var outputText = ""
+    private(set) var strippedOutputText = ""
+    private(set) var tabs: [RemoteTab] = []
+    private(set) var isConnected = false
+    private(set) var status = "Disconnected"
+    var activeTabID: UInt32 = 0
+    var lastError: String?
+    var pendingApprovals: [ApprovalRequest] = []
+    var approvalHistory: [ApprovalHistoryEntry] = []
+
+    // MARK: - Pairing (persisted in Keychain)
+
+    var pairingInfo: PairingInfo? {
+        didSet { persistPairing() }
+    }
+
+    // MARK: - Private
 
     private var webSocket: URLSessionWebSocketTask?
     private var seqCounter: UInt64 = 1
@@ -21,85 +38,137 @@ final class RemoteClient: ObservableObject {
     private var nonceMac: Data?
     private var macPublicKey: Curve25519.KeyAgreement.PublicKey?
     private let iosKey: Curve25519.KeyAgreement.PrivateKey
-    private var pairingInfo: PairingInfo?
+    private var notificationTask: Task<Void, Never>?
+    private var reconnectAttempt = 0
+    private var reconnectTask: Task<Void, Never>?
+    private var shouldReconnect = false
+
+    private static let maxOutputBytes = 200_000
+    private static let maxFrameBytes = 65_536
+    private static let maxHistory = 50
+    private static let maxReconnectAttempts = 5
+    static let appVersion = "1.1.0"
+
+    // MARK: - Init
 
     init() {
-        iosKey = RemoteClient.loadOrCreateKey()
+        iosKey = Self.loadOrCreateKey()
+        pairingInfo = Self.loadPairing()
+
+        notificationTask = Task { [weak self] in
+            for await note in NotificationCenter.default.notifications(named: .approvalNotificationResponse) {
+                guard let self,
+                      let id = note.userInfo?["request_id"] as? String,
+                      let approved = note.userInfo?["approved"] as? Bool else { continue }
+                self.respondToApproval(requestID: id, approved: approved)
+            }
+        }
+    }
+
+    deinit {
+        notificationTask?.cancel()
+    }
+
+    // MARK: - Connection
+
+    func connect() {
+        guard let pairing = pairingInfo else { return }
+        connect(pairing: pairing)
     }
 
     func connect(pairing: PairingInfo) {
+        disconnect(autoReconnect: false)
         pairingInfo = pairing
         lastError = nil
+        shouldReconnect = true
+        reconnectAttempt = 0
+
         if let keyData = Data(base64Encoded: pairing.macPub) {
             macPublicKey = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: keyData)
         }
-        let urlString = pairing.relayURL.trimmedTrailingSlash() + "/\(pairing.deviceID)?role=ios"
-        guard let url = URL(string: urlString) else { return }
+
+        var components = URLComponents(string: pairing.relayURL.strippingTrailingSlash)
+        components?.path += "/\(pairing.deviceID)"
+        components?.queryItems = [URLQueryItem(name: "role", value: "ios")]
+        guard let url = components?.url else {
+            lastError = "Invalid relay URL"
+            return
+        }
 
         let task = URLSession.shared.webSocketTask(with: url)
         webSocket = task
         task.resume()
         status = "Connecting"
-        isConnected = true
 
         sendHello()
         sendPairRequest()
         listen()
     }
 
-    func disconnect() {
+    func disconnect(autoReconnect: Bool = false) {
+        shouldReconnect = false
+        reconnectTask?.cancel()
+        reconnectTask = nil
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
         isConnected = false
         status = "Disconnected"
-        lastError = nil
         crypto = nil
+        nonceIOS = nil
+        nonceMac = nil
         tabs = []
+        if !autoReconnect {
+            lastError = nil
+            pendingApprovals = []
+        }
     }
+
+    // MARK: - Input
 
     func sendInput(_ text: String, appendNewline: Bool) {
         guard !text.isEmpty else { return }
-        var data = text.data(using: .utf8) ?? Data()
-        if appendNewline {
-            data.append(0x0A)
-        }
-        let frame = RemoteFrame(
-            type: RemoteFrameType.input.rawValue,
-            tabID: activeTabID,
-            seq: nextSeq(),
-            payload: data
-        )
-        send(frame: frame, encrypt: true)
+        var data = Data(text.utf8)
+        if appendNewline { data.append(0x0A) }
+        sendEncrypted(type: .input, tabID: activeTabID, payload: data)
     }
 
     func switchTab(_ tabID: UInt32) {
         activeTabID = tabID
-        let payload = TabSwitchPayload(tabID: tabID)
-        guard let data = try? JSONEncoder().encode(payload) else { return }
-        let frame = RemoteFrame(
-            type: RemoteFrameType.tabSwitch.rawValue,
-            tabID: 0,
-            seq: nextSeq(),
-            payload: data
-        )
-        send(frame: frame, encrypt: true)
+        sendJSON(TabSwitchPayload(tabID: tabID), type: .tabSwitch)
     }
+
+    // MARK: - Approvals
+
+    func respondToApproval(requestID: String, approved: Bool) {
+        guard let idx = pendingApprovals.firstIndex(where: { $0.requestID == requestID }) else { return }
+        let request = pendingApprovals.remove(at: idx)
+
+        approvalHistory.append(ApprovalHistoryEntry(
+            command: request.command, approved: approved, timestamp: Date()
+        ))
+        if approvalHistory.count > Self.maxHistory {
+            approvalHistory.removeFirst(approvalHistory.count - Self.maxHistory)
+        }
+
+        sendJSON(ApprovalResponsePayload(requestID: requestID, approved: approved), type: .approvalResponse)
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [requestID])
+    }
+
+    // MARK: - Receive Loop
 
     private func listen() {
         webSocket?.receive { [weak self] result in
             Task { @MainActor in
                 guard let self else { return }
                 switch result {
-                case .failure:
-                    self.disconnect()
-                case .success(let message):
-                    switch message {
-                    case .data(let data):
-                        self.handleData(data)
-                    case .string(let text):
-                        self.handleData(Data(text.utf8))
-                    @unknown default:
-                        break
+                case .failure(let error):
+                    log.error("WebSocket receive failed: \(error.localizedDescription)")
+                    self.handleDisconnect()
+                case .success(let msg):
+                    switch msg {
+                    case .data(let data): self.handleFrame(data)
+                    case .string(let text): self.handleFrame(Data(text.utf8))
+                    @unknown default: break
                     }
                     self.listen()
                 }
@@ -107,196 +176,218 @@ final class RemoteClient: ObservableObject {
         }
     }
 
-    private func handleData(_ data: Data) {
-        guard let frame = try? RemoteFrame.decode(from: data) else { return }
-        var workingFrame = frame
-        if frame.flags & RemoteFrame.flagEncrypted != 0 {
-            guard let crypto else { return }
-            do {
-                let payload = try crypto.decrypt(frame: frame)
-                workingFrame.flags &= ~RemoteFrame.flagEncrypted
-                workingFrame.payload = payload
-            } catch {
-                return
-            }
-        }
+    private func handleDisconnect() {
+        let wasConnected = isConnected
+        isConnected = false
+        status = "Disconnected"
+        crypto = nil
 
-        switch RemoteFrameType(rawValue: workingFrame.type) {
-        case .hello:
-            handleHello(workingFrame.payload)
-        case .pairAccept:
-            handlePairAccept(workingFrame.payload)
-        case .pairReject:
-            handlePairReject(workingFrame.payload)
-        case .sessionReady:
-            status = "Session ready"
-            lastError = nil
-        case .tabList:
-            handleTabList(workingFrame.payload)
-        case .output:
-            appendOutput(workingFrame.payload)
-        case .snapshot:
-            outputText = String(data: workingFrame.payload, encoding: .utf8) ?? ""
-        case .ping:
-            lastPingPayload = workingFrame.payload
-            sendPong()
-        case .error:
-            handleErrorPayload(workingFrame.payload)
-        default:
-            break
+        guard wasConnected, shouldReconnect, reconnectAttempt < Self.maxReconnectAttempts else { return }
+        reconnectAttempt += 1
+        let delay = pow(2.0, Double(reconnectAttempt))
+        status = "Reconnecting (\(reconnectAttempt)/\(Self.maxReconnectAttempts))..."
+
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self, let pairing = self.pairingInfo else { return }
+            self.connect(pairing: pairing)
         }
     }
 
+    // MARK: - Frame Dispatch
+
+    private func handleFrame(_ data: Data) {
+        guard let frame = try? RemoteFrame.decode(from: data) else {
+            log.warning("Failed to decode frame (\(data.count) bytes)")
+            return
+        }
+
+        let payload: Data
+        if frame.flags & RemoteFrame.flagEncrypted != 0 {
+            guard let crypto, let decrypted = try? crypto.decrypt(frame: frame) else {
+                log.warning("Decryption failed for frame type=\(frame.type)")
+                return
+            }
+            payload = decrypted
+        } else {
+            payload = frame.payload
+        }
+
+        switch RemoteFrameType(rawValue: frame.type) {
+        case .hello:           handleHello(payload)
+        case .pairAccept:      handlePairAccept(payload)
+        case .pairReject:      handlePairReject(payload)
+        case .sessionReady:
+            isConnected = true
+            status = "Session ready"
+            lastError = nil
+        case .tabList:         handleTabList(payload)
+        case .output:          appendOutput(payload)
+        case .snapshot:
+            outputText = String(data: payload, encoding: .utf8) ?? ""
+            strippedOutputText = ANSIStripper.strip(outputText)
+        case .approvalRequest: handleApprovalRequest(payload)
+        case .ping:            sendEncrypted(type: .pong, tabID: frame.tabID, payload: payload)
+        case .error:           handleError(payload)
+        default:               break
+        }
+    }
+
+    // MARK: - Frame Handlers
+
     private func handleHello(_ data: Data) {
-        guard let payload = try? JSONDecoder().decode(HelloPayload.self, from: data) else { return }
-        guard let nonce = Data(base64Encoded: payload.nonce) else { return }
+        guard let msg = try? JSONDecoder().decode(HelloPayload.self, from: data),
+              let nonce = Data(base64Encoded: msg.nonce) else { return }
         nonceMac = nonce
         establishSessionIfPossible()
     }
 
     private func handlePairAccept(_ data: Data) {
-        guard let payload = try? JSONDecoder().decode(PairAcceptPayload.self, from: data) else { return }
-        if let keyData = Data(base64Encoded: payload.macPub) {
-            macPublicKey = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: keyData)
-            _ = KeychainStore.save(key: "mac_public_key", data: keyData)
-        }
+        guard let msg = try? JSONDecoder().decode(PairAcceptPayload.self, from: data),
+              let keyData = Data(base64Encoded: msg.macPub) else { return }
+        macPublicKey = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: keyData)
+        _ = KeychainStore.save(key: "mac_public_key", data: keyData)
         sendHello()
         establishSessionIfPossible()
     }
 
     private func handlePairReject(_ data: Data) {
-        if let payload = try? JSONDecoder().decode(PairRejectPayload.self, from: data) {
-            lastError = "Pairing rejected (\(payload.reason))"
-        } else if let text = String(data: data, encoding: .utf8), !text.isEmpty {
-            lastError = "Pairing rejected (\(text))"
+        if let msg = try? JSONDecoder().decode(PairRejectPayload.self, from: data) {
+            lastError = "Pairing rejected: \(msg.reason)"
         } else {
             lastError = "Pairing rejected"
         }
         status = "Pairing rejected"
+        shouldReconnect = false
     }
 
-    private func handleErrorPayload(_ data: Data) {
-        if let payload = try? JSONDecoder().decode(RemoteErrorPayload.self, from: data) {
-            lastError = "Remote error (\(payload.code)): \(payload.message)"
+    private func handleError(_ data: Data) {
+        if let msg = try? JSONDecoder().decode(RemoteErrorPayload.self, from: data) {
+            lastError = "\(msg.code): \(msg.message)"
         } else if let text = String(data: data, encoding: .utf8), !text.isEmpty {
-            lastError = "Remote error: \(text)"
-        } else {
-            lastError = "Remote error"
+            lastError = text
         }
         status = "Error"
     }
 
     private func handleTabList(_ data: Data) {
-        guard let payload = try? JSONDecoder().decode(TabListPayload.self, from: data) else { return }
-        tabs = payload.tabs
-        if let active = payload.tabs.first(where: { $0.isActive }) {
+        guard let msg = try? JSONDecoder().decode(TabListPayload.self, from: data) else { return }
+        tabs = msg.tabs
+        if let active = msg.tabs.first(where: { $0.isActive }) {
             activeTabID = active.tabID
         }
     }
 
-    private static let maxFrameBytes = 65536
-    private static let maxOutputBytes = 200000
-
     private func appendOutput(_ data: Data) {
-        let cappedData = data.count > Self.maxFrameBytes ? data.prefix(Self.maxFrameBytes) : data
-        guard let text = String(data: cappedData, encoding: .utf8) else { return }
+        let capped = data.prefix(Self.maxFrameBytes)
+        guard let text = String(data: capped, encoding: .utf8) else { return }
         outputText.append(text)
         if outputText.utf8.count > Self.maxOutputBytes {
-            outputText = String(outputText.suffix(Self.maxOutputBytes))
+            let excess = outputText.utf8.count - Self.maxOutputBytes
+            let start = outputText.utf8.startIndex
+            let end = outputText.utf8.endIndex
+            if let idx = outputText.utf8.index(start, offsetBy: excess, limitedBy: end) {
+                let charIdx = outputText.index(after: String.Index(idx, within: outputText) ?? outputText.startIndex)
+                outputText = String(outputText[charIdx...])
+            }
         }
+        strippedOutputText = ANSIStripper.strip(outputText)
     }
 
-    private func sendHello() {
-        guard let pairingInfo else { return }
-        if nonceIOS == nil {
-            nonceIOS = randomBytes(count: 16)
-        }
-        let pubKeyFP = fingerprint(data: iosKey.publicKey.rawRepresentation)
-        let payload = HelloPayload(
-            deviceID: pairingInfo.deviceID,
-            role: "ios",
-            nonce: nonceIOS?.base64EncodedString() ?? "",
-            pubKeyFP: pubKeyFP,
-            appVersion: "0.1.0"
+    private func handleApprovalRequest(_ data: Data) {
+        guard let msg = try? JSONDecoder().decode(ApprovalRequestPayload.self, from: data) else { return }
+        pendingApprovals.append(ApprovalRequest(
+            requestID: msg.requestID, command: msg.command,
+            flaggedCommand: msg.flaggedCommand, timestamp: Date()
+        ))
+
+        let content = UNMutableNotificationContent()
+        content.title = "MCP Command Approval"
+        content.body = msg.command
+        content.sound = .default
+        content.categoryIdentifier = "MCP_APPROVAL"
+        content.userInfo = ["request_id": msg.requestID]
+        let req = UNNotificationRequest(
+            identifier: msg.requestID,
+            content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
         )
-        guard let data = try? JSONEncoder().encode(payload) else { return }
-        let frame = RemoteFrame(
-            type: RemoteFrameType.hello.rawValue,
-            tabID: 0,
-            seq: nextSeq(),
-            payload: data
-        )
-        send(frame: frame, encrypt: false)
+        UNUserNotificationCenter.current().add(req)
     }
 
-    private func sendPairRequest() {
-        guard let pairingInfo else { return }
-        let payload = PairRequestPayload(
-            deviceID: pairingInfo.deviceID,
-            pairingCode: pairingInfo.pairingCode,
-            iosPub: iosKey.publicKey.rawRepresentation.base64EncodedString(),
-            iosName: UIDevice.current.name
-        )
-        guard let data = try? JSONEncoder().encode(payload) else { return }
-        let frame = RemoteFrame(
-            type: RemoteFrameType.pairRequest.rawValue,
-            tabID: 0,
-            seq: nextSeq(),
-            payload: data
-        )
-        send(frame: frame, encrypt: false)
-    }
-
-    private var lastPingPayload: Data = Data()
-
-    private func sendPong() {
-        let frame = RemoteFrame(
-            type: RemoteFrameType.pong.rawValue,
-            tabID: 0,
-            seq: nextSeq(),
-            payload: lastPingPayload
-        )
-        send(frame: frame, encrypt: true)
-    }
+    // MARK: - Session Establishment
 
     private func establishSessionIfPossible() {
-        guard crypto == nil else { return }
-        guard let nonceIOS, let nonceMac else { return }
-        let macPub = macPublicKey ?? loadStoredMacKey()
-        guard let macPub else { return }
-        let shared = try? iosKey.sharedSecretFromKeyAgreement(with: macPub)
-        guard let shared else { return }
-        guard let session = RemoteCryptoSession.create(sharedSecret: shared, nonceMac: nonceMac, nonceIOS: nonceIOS) else { return }
-        crypto = session
+        guard crypto == nil, let nonceIOS, let nonceMac else { return }
+        guard let macPub = macPublicKey ?? loadStoredMacKey(),
+              let shared = try? iosKey.sharedSecretFromKeyAgreement(with: macPub),
+              let session = RemoteCryptoSession.create(sharedSecret: shared, nonceMac: nonceMac, nonceIOS: nonceIOS)
+        else { return }
 
-        let ready = SessionReadyPayload(sessionID: randomBytes(count: 8).base64EncodedString())
-        if let data = try? JSONEncoder().encode(ready) {
-            let frame = RemoteFrame(
-                type: RemoteFrameType.sessionReady.rawValue,
-                tabID: 0,
-                seq: nextSeq(),
-                payload: data
-            )
-            send(frame: frame, encrypt: true)
-        }
+        crypto = session
+        reconnectAttempt = 0
+        isConnected = true
+        sendJSON(SessionReadyPayload(sessionID: CryptoUtils.randomBytes(count: 8).base64EncodedString()),
+                 type: .sessionReady, encrypt: true)
         status = "Encrypted"
     }
 
-    private func send(frame: RemoteFrame, encrypt: Bool) {
-        guard let webSocket else { return }
-        var outgoing = frame
-        if encrypt {
-            guard let crypto else { return }
-            guard let encrypted = try? crypto.encrypt(frame: frame) else { return }
-            outgoing = encrypted
+    // MARK: - Outgoing
+
+    private func sendHello() {
+        guard let pairing = pairingInfo else { return }
+        if nonceIOS == nil { nonceIOS = CryptoUtils.randomBytes(count: 16) }
+        sendJSON(HelloPayload(
+            deviceID: pairing.deviceID, role: "ios",
+            nonce: nonceIOS?.base64EncodedString() ?? "",
+            pubKeyFP: CryptoUtils.fingerprint(data: iosKey.publicKey.rawRepresentation),
+            appVersion: Self.appVersion
+        ), type: .hello, encrypt: false)
+    }
+
+    private func sendPairRequest() {
+        guard let pairing = pairingInfo else { return }
+        sendJSON(PairRequestPayload(
+            deviceID: pairing.deviceID, pairingCode: pairing.pairingCode,
+            iosPub: iosKey.publicKey.rawRepresentation.base64EncodedString(),
+            iosName: UIDevice.current.name
+        ), type: .pairRequest, encrypt: false)
+    }
+
+    private func sendJSON<T: Encodable>(_ payload: T, type: RemoteFrameType, encrypt: Bool = true) {
+        guard let data = try? JSONEncoder().encode(payload) else {
+            log.error("Failed to encode \(String(describing: T.self)) for frame type \(type.rawValue)")
+            return
         }
-        webSocket.send(.data(outgoing.encode())) { _ in }
+        if encrypt {
+            sendEncrypted(type: type, tabID: 0, payload: data)
+        } else {
+            send(RemoteFrame(type: type.rawValue, tabID: 0, seq: nextSeq(), payload: data))
+        }
+    }
+
+    private func sendEncrypted(type: RemoteFrameType, tabID: UInt32, payload: Data) {
+        guard let crypto else { return }
+        let frame = RemoteFrame(type: type.rawValue, tabID: tabID, seq: nextSeq(), payload: payload)
+        guard let encrypted = try? crypto.encrypt(frame: frame) else {
+            log.error("Encryption failed for frame type \(type.rawValue)")
+            return
+        }
+        send(encrypted)
+    }
+
+    private func send(_ frame: RemoteFrame) {
+        webSocket?.send(.data(frame.encode())) { error in
+            if let error { log.error("WebSocket send failed: \(error.localizedDescription)") }
+        }
     }
 
     private func nextSeq() -> UInt64 {
         defer { seqCounter &+= 1 }
         return seqCounter
     }
+
+    // MARK: - Key Management
 
     private func loadStoredMacKey() -> Curve25519.KeyAgreement.PublicKey? {
         guard let data = KeychainStore.load(key: "mac_public_key") else { return nil }
@@ -312,127 +403,20 @@ final class RemoteClient: ObservableObject {
         _ = KeychainStore.save(key: "ios_private_key", data: key.rawRepresentation)
         return key
     }
-}
 
-struct PairingInfo: Codable, Equatable {
-    let relayURL: String
-    let deviceID: String
-    let macPub: String
-    let pairingCode: String
-    let expiresAt: String
+    // MARK: - Pairing Persistence
 
-    enum CodingKeys: String, CodingKey {
-        case relayURL = "relay_url"
-        case deviceID = "device_id"
-        case macPub = "mac_pub"
-        case pairingCode = "pairing_code"
-        case expiresAt = "expires_at"
-    }
-}
-
-struct HelloPayload: Codable {
-    let deviceID: String
-    let role: String
-    let nonce: String
-    let pubKeyFP: String
-    let appVersion: String
-
-    enum CodingKeys: String, CodingKey {
-        case deviceID = "device_id"
-        case role
-        case nonce
-        case pubKeyFP = "pub_key_fp"
-        case appVersion = "app_version"
-    }
-}
-
-struct PairRequestPayload: Codable {
-    let deviceID: String
-    let pairingCode: String
-    let iosPub: String
-    let iosName: String
-
-    enum CodingKeys: String, CodingKey {
-        case deviceID = "device_id"
-        case pairingCode = "pairing_code"
-        case iosPub = "ios_pub"
-        case iosName = "ios_name"
-    }
-}
-
-struct PairAcceptPayload: Codable {
-    let deviceID: String
-    let macPub: String
-    let macName: String
-
-    enum CodingKeys: String, CodingKey {
-        case deviceID = "device_id"
-        case macPub = "mac_pub"
-        case macName = "mac_name"
-    }
-}
-
-struct PairRejectPayload: Codable {
-    let reason: String
-}
-
-struct RemoteErrorPayload: Codable {
-    let code: String
-    let message: String
-}
-
-struct SessionReadyPayload: Codable {
-    let sessionID: String
-
-    enum CodingKeys: String, CodingKey {
-        case sessionID = "session_id"
-    }
-}
-
-struct TabSwitchPayload: Codable {
-    let tabID: UInt32
-
-    enum CodingKeys: String, CodingKey {
-        case tabID = "tab_id"
-    }
-}
-
-struct TabListPayload: Codable {
-    let tabs: [RemoteTab]
-}
-
-struct RemoteTab: Codable, Identifiable {
-    let tabID: UInt32
-    let title: String
-    let isActive: Bool
-
-    var id: UInt32 { tabID }
-
-    enum CodingKeys: String, CodingKey {
-        case tabID = "tab_id"
-        case title
-        case isActive = "is_active"
-    }
-}
-
-private func randomBytes(count: Int) -> Data {
-    var data = Data(count: count)
-    _ = data.withUnsafeMutableBytes { buffer in
-        SecRandomCopyBytes(kSecRandomDefault, count, buffer.baseAddress!)
-    }
-    return data
-}
-
-private func fingerprint(data: Data) -> String {
-    let hash = SHA256.hash(data: data)
-    return Data(hash.prefix(8)).base64EncodedString()
-}
-
-private extension String {
-    func trimmedTrailingSlash() -> String {
-        if hasSuffix("/") {
-            return String(dropLast())
+    private func persistPairing() {
+        guard let info = pairingInfo,
+              let data = try? JSONEncoder().encode(info) else {
+            _ = KeychainStore.delete(key: "pairing_payload")
+            return
         }
-        return self
+        _ = KeychainStore.save(key: "pairing_payload", data: data)
+    }
+
+    private static func loadPairing() -> PairingInfo? {
+        guard let data = KeychainStore.load(key: "pairing_payload") else { return nil }
+        return try? JSONDecoder().decode(PairingInfo.self, from: data)
     }
 }
