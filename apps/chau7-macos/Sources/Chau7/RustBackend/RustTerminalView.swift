@@ -5669,7 +5669,11 @@ final class RustTerminalView: NSView {
         return false
     }
 
-    // MARK: - Command Selection
+}
+
+// MARK: - Command Selection
+
+extension RustTerminalView {
 
     /// Select current command line (including wrapped lines)
     /// Uses Lines selection type which automatically handles wrapped lines in alacritty_terminal.
