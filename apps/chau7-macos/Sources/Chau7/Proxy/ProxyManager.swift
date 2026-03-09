@@ -1,5 +1,6 @@
 import Foundation
 import os.log
+import Darwin
 
 /// ProxyManager handles the lifecycle of the chau7-proxy Go binary.
 /// It starts the proxy when API analytics is enabled and stops it when disabled.
@@ -257,21 +258,9 @@ public final class ProxyManager: ObservableObject {
 
         isStopping = true
         logger.info("Stopping proxy...")
-
-        // Send SIGTERM for graceful shutdown
-        process.terminate()
-
-        // Give it a moment to shut down gracefully
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-            if self?.process?.isRunning == true {
-                self?.logger.warning("Proxy didn't stop gracefully, killing...")
-                self?.process?.interrupt()
-            }
-        }
-
-        // Clean up pipes
-        outputPipe?.fileHandleForReading.readabilityHandler = nil
-        errorPipe?.fileHandleForReading.readabilityHandler = nil
+        process.terminationHandler = nil
+        cleanupPipes()
+        terminateProcess(process, name: "proxy")
 
         isRunning = false
         self.process = nil
@@ -285,6 +274,41 @@ public final class ProxyManager: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             self?.startIfEnabled()
         }
+    }
+
+    private func cleanupPipes() {
+        outputPipe?.fileHandleForReading.readabilityHandler = nil
+        errorPipe?.fileHandleForReading.readabilityHandler = nil
+        outputPipe = nil
+        errorPipe = nil
+    }
+
+    private func terminateProcess(_ process: Process, name: String) {
+        guard process.isRunning else { return }
+
+        process.terminate()
+        if waitForExit(of: process, timeout: 1.0) {
+            return
+        }
+
+        logger.warning("\(name) did not exit after SIGTERM; sending SIGINT")
+        process.interrupt()
+        if waitForExit(of: process, timeout: 0.5) {
+            return
+        }
+
+        let pid = process.processIdentifier
+        logger.error("\(name) still running after SIGINT; sending SIGKILL to pid \(pid)")
+        _ = Darwin.kill(pid, SIGKILL)
+        _ = waitForExit(of: process, timeout: 0.5)
+    }
+
+    private func waitForExit(of process: Process, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning && Date() < deadline {
+            usleep(50_000)
+        }
+        return !process.isRunning
     }
 
     /// Checks if the proxy is healthy by hitting the health endpoint

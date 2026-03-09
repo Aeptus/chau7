@@ -273,6 +273,18 @@ final class MCPSession {
                     ],
                     "required": ["tab_id"]
                 ]
+            ],
+            [
+                "name": "tab_set_cto",
+                "description": "Set the CTO (Command Token Optimization) override for a tab. 'default' follows the global mode, 'forceOn' always active, 'forceOff' always inactive.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "tab_id": ["type": "string", "description": "Tab UUID"],
+                        "override": ["type": "string", "description": "Override value: 'default', 'forceOn', or 'forceOff'"]
+                    ],
+                    "required": ["tab_id", "override"]
+                ]
             ]
         ]
     }
@@ -367,6 +379,13 @@ final class MCPSession {
             }
             let lines = max(1, min(arguments["lines"] as? Int ?? 50, 5000))
             return controlService.tabOutput(tabID: tabID, lines: lines)
+
+        case "tab_set_cto":
+            guard let tabID = arguments["tab_id"] as? String,
+                  let override = arguments["override"] as? String else {
+                return jsonError("tab_id and override are required")
+            }
+            return controlService.setCTO(tabID: tabID, override: override)
 
         default:
             return jsonError("Unknown tool: \(name)")

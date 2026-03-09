@@ -1,130 +1,322 @@
 # Chau7 Features
 
-Chau7 is a macOS menu bar helper and terminal overlay built for AI-assisted CLI work. It watches local JSONL logs, sends notifications, and provides a multi-tab SwiftTerm terminal with workflow tools.
+The AI-native terminal for macOS. GPU-accelerated, MCP-enabled, built for developers who ship with AI.
+
+> See also: [features.csv](features.csv) for the machine-readable feature inventory (185 features, 30 categories).
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Core Experience](#core-experience)
-- [Terminal Overlay and Emulator](#terminal-overlay-and-emulator)
-- [AI Integration and Monitoring](#ai-integration-and-monitoring)
-- [Productivity Tools](#productivity-tools)
-- [Settings and Customization](#settings-and-customization)
-- [Debugging and Diagnostics](#debugging-and-diagnostics)
+- [Terminal Core](#terminal-core)
+- [Performance](#performance)
+- [AI Detection & Integration](#ai-detection--integration)
+- [MCP Server](#mcp-server)
+- [MCP Tools](#mcp-tools)
+- [API Analytics & Token Tracking](#api-analytics--token-tracking)
+- [Tabs, Panes & Windows](#tabs-panes--windows)
+- [Productivity](#productivity)
+- [Appearance & Theming](#appearance--theming)
+- [Settings & Configuration](#settings--configuration)
+- [Accessibility & Localization](#accessibility--localization)
+- [SSH, Profiles & Remote](#ssh-profiles--remote)
+- [Scripting & Debugging](#scripting--debugging)
 - [Keyboard Shortcuts](#keyboard-shortcuts)
 - [File Locations](#file-locations)
 - [Environment Variables](#environment-variables)
-- [Experimental or Not Yet Wired](#experimental-or-not-yet-wired)
-- [Architecture](#architecture)
 
 ---
 
-## Overview
+## Terminal Core
 
-- Menu bar status item with popover for quick actions, recent events, and Claude Code sessions.
-- Local event and history log tailing for AI tools.
-- Floating, multi-tab terminal overlay with productivity overlays (search, snippets, clipboard).
+- **Rust terminal backend** — custom emulator via FFI: fast, memory-safe, correct.
+- Full ANSI/VT100 with 16-color, 256-color, and 24-bit true color support.
+- Kitty keyboard protocol (full progressive enhancement).
+- Inline images: iTerm2 (ESC ] 1337), Sixel, and Kitty image protocols.
+- Configurable cursor styles (block, underline, bar) with optional blinking.
+- Large configurable scrollback buffer with GPU-accelerated scrolling.
+- Shell selection: Zsh, Bash, Fish, or custom path — Apple Silicon and Intel native.
+- Dead key and IME support with proper `NSTextInputClient` marked text handling.
+- Shell integration via OSC 7 for working directory tracking.
+- Default start directory and optional startup commands.
+- Copy on select, Option+click cursor positioning, paste escaping.
 
-## Core Experience
+## Performance
 
-### Menu Bar and Notifications
+Chau7's rendering pipeline is purpose-built for latency-sensitive terminal work:
 
-- Status bar icon with active/paused indicator.
-- Popover shows active Claude Code sessions, recent events, and quick toggles (monitoring, broadcast, AI themes, syntax toggle, opacity).
-- Native notifications for AI events and idle detection with per-type filters.
+| Layer | What It Does |
+| --- | --- |
+| **Metal GPU rendering** | Hardware-accelerated text via Apple Metal |
+| **IOSurface direct display** | Bypass the macOS compositor — GPU straight to display |
+| **Glyph atlas caching** | Dynamic glyph cache eliminates redundant rasterization |
+| **SIMD escape parsing** | 16–32 byte SIMD-accelerated ANSI parsing in Rust |
+| **Lock-free ring buffer** | SPSC lock-free PTY pipeline — zero contention |
+| **Triple buffering** | Atomic swap terminal state — no tearing, no blocking |
+| **Low-latency input (IOKit HID)** | Bypass NSEvent queue for sub-10ms keyboard latency |
+| **Real-time thread priority** | Mach real-time policy on render and input threads |
+| **Predictive rendering** | Pre-cache likely output to shave display latency |
+| **Dirty region tracking** | Only re-render what changed |
+| **Feature profiler** | Per-feature timing with os.signpost integration |
 
-### Event Monitoring
+## AI Detection & Integration
 
-- Tails AI event log lines from `~/.ai-events.log` (configurable).
-- Monitors Codex and Claude history logs for idle and stale sessions.
-- Optional tailing of Codex and Claude PTY logs for live output display (ANSI or normalized).
+### Auto-Detection
+
+Chau7 recognizes AI CLIs the moment they launch — no configuration required:
+
+- **Claude** (claude, claude-code, claude-cli)
+- **Codex** (codex, codex-cli, codex-pty)
+- **Gemini** (gemini, gemini-cli)
+- **ChatGPT** (chatgpt, gpt, openai)
+- **GitHub Copilot** (copilot, gh copilot)
+- **Aider**, **Cursor**, and custom-defined tools
+
+Detection methods:
+- Command line tokenization with wrapper skipping (env, sudo, npx, bunx, pnpm).
+- Output banner matching for all supported CLIs.
+- Custom detection rules with display name, tab color, and logo.
+
+### AI Features
+
+- **Branded tab logos** — each agent gets its logo in the tab.
+- **Auto tab theming** — tabs adopt the brand color of the active AI agent.
+- **LLM error explanation** — one-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint.
+- **Claude Code deep integration** — monitor hook events: prompts, tools, permissions, responses.
+- **AI event notifications** — finished, failed, needs_validation, permission, tool_complete, session_end, idle.
+- **PTY output logging** — capture raw terminal output for AI tool sessions.
+- **Codex session resolver** — maps Codex OpenAI capture sessions to working directories with LRU caching.
+
+### Context Token Optimization (CTO)
+
+- Monitor and optimize LLM API token usage in real time.
+- Per-tab or global CTO mode with flag files that AI tools read.
+- Runtime monitor: decision counts, mode changes, deferred operations, health assessment.
+- MCP-controllable via `tab_set_cto`.
+
+## MCP Server
+
+Chau7 runs an embedded MCP (Model Context Protocol) server — your AI agents can see and control your terminal.
+
+### Architecture
+
+- **Protocol**: JSON-RPC 2.0 over Unix domain socket (`~/.chau7/mcp.sock`).
+- **Version**: MCP 2024-11-05 with tools and resources capabilities.
+- **Bridge**: `~/.chau7/bin/chau7-mcp-bridge` (stdio-to-socket bridge for standard MCP clients).
+- **Thread safety**: All terminal operations dispatch to main thread via `DispatchQueue.main.sync`.
+
+### Auto-Registration
+
+On every launch, Chau7 automatically registers itself as an MCP server in:
+
+| AI Tool | Config File | Format |
+| --- | --- | --- |
+| Claude Code | `~/.claude.json` | JSON (`mcpServers.chau7`) |
+| Cursor | `~/.cursor/mcp.json` | JSON (`mcpServers.chau7`) |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` | JSON (`mcpServers.chau7`) |
+| Codex | `~/.codex/config.toml` | TOML (`[mcp_servers.chau7]`) |
+
+Registration only occurs if the AI tool's config directory exists — no files are created for tools you don't use.
+
+### Safety Controls
+
+- **Enable/disable toggle** — `mcpEnabled` setting (default: on).
+- **Approval gate** — optional confirmation dialog before MCP operations (`mcpRequiresApproval`).
+- **Tab limit** — configurable max MCP-created tabs (default: 4, hard cap: 50).
+- **Tab indicator** — purple badge on MCP-controlled tabs (`mcpShowTabIndicator`).
+
+## MCP Tools
+
+### Tab Management (8 tools)
+
+| Tool | Description |
+| --- | --- |
+| `tab_list` | List all tabs across all windows with status, cwd, git branch, CTO state, active app |
+| `tab_create` | Open a new tab with optional directory and target window — respects approval gate and tab limit |
+| `tab_exec` | Execute a command in a tab — auto-queues if shell is still loading, checks prompt state |
+| `tab_status` | Detailed status: process state, child processes (PID/CPU/RSS), active telemetry run, git branch |
+| `tab_send_input` | Send raw input for interactive prompts — no auto-newline appended |
+| `tab_close` | Close a tab with optional force flag — checks for running processes |
+| `tab_output` | Get recent terminal output (last N lines, max 5000) with 512KB cap |
+| `tab_set_cto` | Set per-tab CTO override (default/forceOn/forceOff) — recalculates flag files |
+
+### Telemetry (8 tools)
+
+| Tool | Description |
+| --- | --- |
+| `run_get` | Get a single telemetry run by ID (active or from store) |
+| `run_list` | List runs with filters: session_id, repo_path, provider, date range, tags, limit/offset |
+| `run_tool_calls` | Get all tool calls for a run — see exactly what an AI agent did |
+| `run_transcript` | Full conversation transcript for a run — complete AI session replay |
+| `run_tag` | Set tags on a run for organization and filtering |
+| `run_latest_for_repo` | Most recent run for a repository — optionally filter by provider |
+| `session_list` | List AI sessions with run counts — filter by repo_path, active_only |
+| `session_current` | Get currently active AI sessions across all tabs |
+
+### Resources (4 endpoints)
+
+| URI | Description |
+| --- | --- |
+| `chau7://telemetry/runs` | Latest 20 telemetry run summaries |
+| `chau7://telemetry/sessions` | AI session index with metadata |
+| `chau7://telemetry/sessions/current` | Currently active AI sessions |
+| `chau7://telemetry/runs/<run_id>` | Specific run details by ID |
+
+## API Analytics & Token Tracking
+
+- **TLS/WSS proxy** — Go-based `chau7-proxy` intercepts API calls to Claude, OpenAI (Codex), Gemini, Anthropic with TLS and WebSocket support.
+- **Token counting & cost calculation** — input/output tokens per call with aggregate cost.
+- **Latency tracking** — API response times for performance analysis.
+- **Task detection & assessment** — auto-detect AI task candidates with confidence scoring; approve or fail with notes.
+- **Baseline estimator** — calculate token savings from context caching.
+- **Analytics dashboard** — command stats, error rates, API usage, and timing.
+- **Timeline visualization** — scrubber timeline showing command blocks and metrics.
+- **Provider filtering** — include or exclude specific API providers.
+- **Correlation headers** — `X-Chau7-Context-Pack`, `X-Chau7-Tab-ID`, `X-Chau7-Project` for tracing.
+
+## Tabs, Panes & Windows
+
+### Tabs
+
+- Unlimited tabs per window — `Cmd+T` to create, `Cmd+1–9` to jump.
+- Tab renaming (`Cmd+Shift+R`), 12+ colors, reordering via drag or shortcuts.
+- AI agent logos, git branch indicator, directory path, last command badge.
+- Broadcast input to all tabs with per-tab exclusion and visual indicator.
+- Background rendering suspension for inactive tabs (configurable delay).
+- Close other tabs (`Cmd+Opt+W`), configurable new tab position.
+
+### Split Panes
+
+- Horizontal (`Cmd+Opt+H`) and vertical (`Cmd+Opt+V`) splits with draggable dividers.
+- Arbitrary nesting via binary tree layout controller.
+- Built-in text editor in split panes — syntax highlighting, line numbers, bracket matching, find/replace.
+- Multi-language syntax: HTML, CSS, JavaScript, Python, and more.
 
 ### Windows
 
-- Overlay terminal window with blur background, resizable and multi-window.
-- Dropdown terminal window (quake-style) with global hotkey and configurable height.
-- Settings, Debug Console, Help, Snippets, and SSH manager windows.
+- **Overlay / floating terminal** — on top of all apps with blur background.
+- **Dropdown terminal** — `Ctrl+`` quake-style with configurable height.
+- Multiple windows (`Cmd+N`), adjustable opacity, native fullscreen.
+- Minimal mode — strip all chrome for maximum terminal space.
+- Window position memory per workspace, session restoration on relaunch.
+- Menu bar only mode — no Dock icon.
 
-## Terminal Overlay and Emulator
+## Productivity
 
-### Terminal Session
+### Search
 
-- SwiftTerm PTY with ANSI/VT100 and true-color support.
-- Shell selection (system, zsh, bash, fish, custom path).
-- Default start directory and optional startup command.
-- Shell integration for working directory tracking (OSC 7).
-- Command idle detection (`CHAU7_IDLE_SECONDS`) with notifications.
+- Find overlay (`Cmd+F`) with regex and case sensitivity toggles.
+- Visual match highlighting across terminal output.
+- `Cmd+G` / `Cmd+Shift+G` navigation, `Cmd+E` to search from selection.
 
-### Tabs and Navigation
+### Command Safety
 
-- Multiple tabs per window with new/close, rename, move left/right, and custom colors.
-- Auto tab color based on detected AI CLI.
-- AI product icons in the tab bar when detected.
-- Last-command badge (duration and exit status) and git branch indicator.
-- Background rendering suspension for inactive tabs with configurable delay.
-- Search overlay with regex and case sensitive options, match list, and next/previous navigation.
+- **Dangerous command guard** — intercepts `rm -rf`, `dd`, `mkfs`, etc. with confirmation.
+- Custom danger patterns via regex.
+- Visual highlighting of dangerous commands in output.
 
-### Input and Mouse Helpers
+### Path & URL Handling
 
-- Cmd+click URLs and file paths (line and column supported) with configurable editor and browser.
-- Option+click cursor positioning on the command line.
-- Copy on select.
-- Paste escaped to avoid shell interpolation.
+- `Cmd+click` on file paths (line:column supported) and URLs.
+- Configurable action: browser (Safari, Chrome, Firefox, Edge, Brave, Arc), editor, or Finder.
 
-## AI Integration and Monitoring
+### Keyboard & Clipboard
 
-### Supported AI CLIs
+- Fully customizable keybindings with interactive editor and conflict detection.
+- Vim and Emacs presets.
+- Clipboard history (`Cmd+Shift+V`) — 100 entries, LRU eviction, pinning.
+- Paste escaping for shell-sensitive characters ($, backticks, quotes).
 
-- Claude (claude, claude-code, claude-cli)
-- Codex (codex, codex-cli, codex-pty)
-- Gemini (gemini, gemini-cli)
-- ChatGPT (chatgpt, gpt, openai)
-- GitHub Copilot (copilot, gh copilot)
+### Snippets
 
-### Detection Methods
+- Snippet manager (`Cmd+;`) — create, edit, delete, import, export.
+- Three scopes: global (user), per-SSH-profile, per-repo (`.chau7/config.toml`).
+- Placeholder support: `${cursor}` and `${selection}`.
 
-- Command line tokenization with wrapper skipping (env, sudo, npx, bunx, pnpm).
-- Output banner detection (Claude, Codex, Gemini, ChatGPT, Copilot).
-- Custom detection rules with display name and tab color.
+### History & Bookmarks
 
-### Claude Code Monitoring
+- Per-tab and global command history (arrow keys and `Cmd+Up/Down`).
+- SQLite-backed persistence — searchable and fast.
+- Session analytics: command frequency, timing, success rates.
+- Terminal bookmarks — pin positions and navigate back.
 
-- Tails `~/.chau7/claude-events.jsonl` for session and tool events.
-- Tracks session state (responding, waiting permission, waiting input).
-- Sends notifications for permission requests and response completion.
+### Command Palette
 
-### AI Event Notifications
+- `Cmd+Shift+P` — fuzzy-searchable command palette (VS Code style).
 
-- Event types: finished, failed, needs_validation, permission, tool_complete, session_end, idle.
-- Per-type notification filters in Settings.
+### Notifications
 
-## Productivity Tools
+- Native macOS desktop notifications for task completion, failures, permissions.
+- Dock badge and bounce (critical/non-critical).
+- Configurable sounds (Glass, Purr, etc.) with volume control.
+- Command idle detection with configurable threshold.
+- Auto tab styling on events with auto-clear timeout.
+- Rate limiting and per-trigger enable/disable.
 
-- Command palette (Cmd+Shift+P) with searchable commands.
-- Snippet manager with global, profile, and repo sources plus placeholder navigation.
-- Clipboard history with pinning and quick paste.
-- Bookmarks per tab (add and list; jump currently only switches tabs).
-- Broadcast input to all tabs (with per-tab exclusion).
-- SSH connection manager with saved profiles, jump hosts, and import from `~/.ssh/config`.
-- Export terminal text and print output.
+## Appearance & Theming
 
-## Settings and Customization
+- Full color schemes: 16 ANSI + background, foreground, cursor, selection.
+- Light / dark / system theme modes.
+- 100+ monospace fonts — system, popular coding fonts, or any installed font.
+- Font size 8–72pt, per-tab zoom (`Cmd++/-`, 50–200%), adjustable line spacing.
+- Command blocks — colored left-border gutter (green success, red fail, blue running).
+- Optional line timestamps (multiple formats).
+- Optional JSON pretty-print in terminal output.
 
-- Searchable settings UI with categorized sections.
-- Settings profiles (save/load named profiles).
-- iCloud sync for settings (opt-in).
-- Export/import settings as JSON.
-- Fonts, default zoom, and color scheme presets.
-- Window opacity and per-workspace overlay position memory.
-- Notification filters and AI detection rules.
-- Terminal monitoring toggles (events, history, terminal logs).
+## Settings & Configuration
 
-## Debugging and Diagnostics
+- Comprehensive settings UI with fuzzy search across 100+ settings.
+- Settings profiles — save, load, export, import named configurations.
+- Per-folder config: `.chau7/config.toml` in any repo for project-specific settings.
+- Config file watcher — auto-reload on changes, no restart needed.
+- Optional iCloud sync across devices.
+- Reset individual settings or all to defaults.
 
-- Debug Console with State, Contexts, Events, Logs, and Report tabs.
-- Structured logging with correlation IDs and trace mode.
-- Bug report generator and state snapshots.
-- Log file view in Settings.
+## Accessibility & Localization
+
+- Full VoiceOver support.
+- Respects High Contrast and Reduced Motion system preferences.
+- 4 languages: English, French, Arabic, Hebrew — with proper RTL layout.
+- Runtime language switching without restart.
+
+## SSH, Profiles & Remote
+
+### SSH
+
+- Connection manager — saved hosts, ports, identity files, jump hosts (ProxyJump).
+- Auto-import from `~/.ssh/config` with file watching.
+
+### Profiles
+
+- Auto-switching based on directory, SSH host, or environment variables.
+- Per-profile color scheme, shell, font, and keybindings.
+
+### Remote (Experimental)
+
+- Read-only remote terminal sharing with viewer approval flow.
+- Cloudflare Workers relay — no port forwarding required.
+- Tmux integration — map tmux windows/panes to Chau7 tabs.
+- Session recording with timestamps and timeline scrubber.
+
+## Scripting & Debugging
+
+### Scripting API
+
+- JSON-RPC Unix socket API — control tabs, run commands, query history, manage snippets, modify settings.
+
+### Debugging
+
+- Debug console (`Cmd+Shift+D`) — State, Contexts, Events, Logs, Report tabs.
+- Live state inspector for tabs, sessions, and models.
+- Feature profiler with os.signpost integration.
+- Structured logging with category-based filtering and correlation IDs.
+- One-click bug report generator with full app state snapshot.
+- Verbose (`CHAU7_VERBOSE=1`) and trace (`CHAU7_TRACE=1`) modes.
+
+### Monitoring
+
+- Dev server detection by port scanning.
+- Git branch change notifications.
+- Shell event pattern matching with custom regex.
+- Directory change detection.
 
 ## Keyboard Shortcuts
 
@@ -185,7 +377,7 @@ Chau7 is a macOS menu bar helper and terminal overlay built for AI-assisted CLI 
 | Cmd+Shift+O | SSH connections |
 | Cmd+Shift+S | Export text |
 | Cmd+P | Print |
-| Esc | Close overlays (search, rename, snippets, etc) |
+| Esc | Close overlays (search, rename, snippets, etc.) |
 | Ctrl+` | Toggle dropdown terminal (if enabled) |
 
 ## File Locations
@@ -196,6 +388,8 @@ Chau7 is a macOS menu bar helper and terminal overlay built for AI-assisted CLI 
 | Claude history log | `~/.claude/history.jsonl` |
 | Codex history log | `~/.codex/history.jsonl` |
 | Claude Code events | `~/.chau7/claude-events.jsonl` |
+| MCP socket | `~/.chau7/mcp.sock` |
+| MCP bridge binary | `~/.chau7/bin/chau7-mcp-bridge` |
 | App log | `~/Library/Logs/Chau7.log` |
 | Codex PTY log | `~/Library/Logs/Chau7/codex-pty.log` |
 | Claude PTY log | `~/Library/Logs/Chau7/claude-pty.log` |
@@ -203,6 +397,7 @@ Chau7 is a macOS menu bar helper and terminal overlay built for AI-assisted CLI 
 | Global snippets | `~/.chau7/snippets.json` |
 | Profile snippets | `~/.chau7/profile-snippets.json` |
 | Repo snippets | `.chau7/snippets.json` |
+| Repo config | `.chau7/config.toml` |
 | Bug reports | `~/.chau7/reports/` |
 | State snapshots | `~/.chau7/snapshots/` |
 | LaunchAgent sample | `apps/chau7-macos/LaunchAgent/com.chau7.plist` |
@@ -230,14 +425,13 @@ Chau7 is a macOS menu bar helper and terminal overlay built for AI-assisted CLI 
 | CHAU7_PTY_DUMP_PATH | Override PTY capture log path |
 | CHAU7_PTY_DUMP_MAX_BYTES | Max PTY capture log size before trimming (default 20MB) |
 
-Legacy AI_* and SMART_OVERLAY_* environment variables are still supported.
+Legacy `AI_*` and `SMART_OVERLAY_*` environment variables are still supported.
 
-## Experimental or Not Yet Wired
+## Migration
 
-- Syntax highlighting currently applies to log stream views; live terminal output uses ANSI styling.
-- Tab bar visibility toggle (UI only).
-- Keybinding presets and shortcut editor (stored in settings, not used by runtime).
-- Bell, cursor style/blink, and scrollback size settings (UI only).
+- Import profiles from Terminal.app and iTerm2 (auto-detected).
+- Guided first-run setup.
+- Contextual power user tips.
 
 ## Architecture
 
@@ -245,21 +439,23 @@ Legacy AI_* and SMART_OVERLAY_* environment variables are still supported.
 Chau7/
 ├── apps/
 │   ├── chau7-macos/
-│   │   ├── Sources/      # Main app + Chau7Core
-│   │   ├── Tests/        # Unit tests
-│   │   ├── Scripts/      # Build and helper scripts
-│   │   └── Package.swift # Swift Package Manager config
-│   └── chau7-ios/        # Native iOS companion app
+│   │   ├── Sources/Chau7/       # 158 Swift files, 32 directories
+│   │   ├── Sources/Chau7Core/   # 26 pure-function files (testable)
+│   │   ├── Tests/               # 701 unit tests
+│   │   ├── rust/                # Rust terminal backend (chau7_terminal, chau7_parse)
+│   │   ├── chau7-proxy/         # Go TLS/WSS API proxy
+│   │   └── Package.swift
+│   └── chau7-ios/               # Native iOS companion
 ├── services/
-│   ├── chau7-relay/      # Cloudflare relay service
-│   └── chau7-remote/     # Go remote agent
+│   ├── chau7-relay/             # Cloudflare Workers relay
+│   └── chau7-remote/            # Go remote agent
 └── docs/
-    └── remote-control/  # Remote control specs
 ```
 
 Key patterns:
-
 - ObservableObject for state management.
 - Singleton managers for shared features.
 - Pure functions in Chau7Core for testability.
 - Correlation IDs for trace logging.
+- Binary tree layout for split pane nesting.
+- MCP server with thread-safe main-thread dispatch.

@@ -6,9 +6,12 @@ import Chau7Core
 /// All methods are safe to call from any thread — dispatches to main as needed.
 ///
 /// Threading model: OverlayTabsModel lives on the main thread.
-/// MCP sessions run on dedicated background queues. This service uses
-/// DispatchQueue.main.sync to cross that boundary safely (no deadlock risk
-/// because the main thread never waits on an MCP queue).
+/// MCP sessions run on dedicated background queues. Read-only operations use
+/// DispatchQueue.main.sync. Input-sending operations (execInTab, sendInput)
+/// validate synchronously but send asynchronously via DispatchQueue.main.async
+/// to avoid deadlocking: the onInput callback chain re-enters Rust FFI
+/// (isPtyEchoDisabled → pty_handle.lock()), which deadlocks if the Rust poll
+/// thread concurrently holds that lock for PtyWrite event processing.
 final class TerminalControlService {
     static let shared = TerminalControlService()
 
@@ -148,26 +151,41 @@ final class TerminalControlService {
     }
 
     func execInTab(tabID: String, command: String) -> String {
-        onMain {
+        // Validate tab existence and prompt state synchronously on main,
+        // but send the actual input asynchronously to avoid deadlocking
+        // the main thread. The Rust terminal's sendInput → onInput callback
+        // chain can re-enter pty_handle.lock() (via isPtyEchoDisabled),
+        // which deadlocks if the poll thread holds that lock concurrently.
+        let validationResult: (isValid: Bool, error: String?, isLoading: Bool, isAtPrompt: Bool) = onMain {
             guard let (_, session) = self.resolveTab(tabID) else {
-                return self.jsonError("Tab not found: \(tabID)")
+                return (false, self.jsonError("Tab not found: \(tabID)"), false, false)
             }
-
-            if session.isShellLoading {
-                // Shell still initializing — queue the input so it runs after shell loads
-                session.sendOrQueueInput(command + "\n")
-                Log.info("MCP: queued exec in \(tabID): \(command.prefix(80))")
-                return self.encodeAny(["ok": true, "queued": true])
-            }
-
-            guard session.isAtPrompt else {
-                return self.jsonError("Tab is not at prompt (status: \(session.status.rawValue)). Wait for the current process to finish or use tab_send_input for interactive input.")
-            }
-
-            session.sendInput(command + "\n")
-            Log.info("MCP: exec in \(tabID): \(command.prefix(80))")
-            return self.encodeAny(["ok": true, "queued": false])
+            return (true, nil, session.isShellLoading, session.isAtPrompt)
         }
+
+        guard validationResult.isValid else {
+            return validationResult.error!
+        }
+
+        if validationResult.isLoading {
+            DispatchQueue.main.async {
+                guard let (_, session) = self.resolveTab(tabID) else { return }
+                session.sendOrQueueInput(command + "\n")
+            }
+            Log.info("MCP: queued exec in \(tabID): \(command.prefix(80))")
+            return encodeAny(["ok": true, "queued": true])
+        }
+
+        guard validationResult.isAtPrompt else {
+            return jsonError("Tab is not at prompt (status: not at prompt). Wait for the current process to finish or use tab_send_input for interactive input.")
+        }
+
+        DispatchQueue.main.async {
+            guard let (_, session) = self.resolveTab(tabID) else { return }
+            session.sendInput(command + "\n")
+        }
+        Log.info("MCP: exec in \(tabID): \(command.prefix(80))")
+        return encodeAny(["ok": true, "queued": false])
     }
 
     func tabStatus(tabID: String) -> String {
@@ -210,14 +228,22 @@ final class TerminalControlService {
     }
 
     func sendInput(tabID: String, input: String) -> String {
-        onMain {
-            guard let (_, session) = self.resolveTab(tabID) else {
-                return self.jsonError("Tab not found: \(tabID)")
-            }
-            session.sendInput(input)
-            Log.info("MCP: send_input to \(tabID) (\(input.count) chars)")
-            return self.encodeAny(["ok": true])
+        // Validate tab existence synchronously, send input asynchronously.
+        // Same deadlock avoidance as execInTab — sendInput triggers the
+        // same onInput → handleInputLine → isPtyEchoDisabled → pty_handle.lock() chain.
+        let tabExists: Bool = onMain {
+            self.resolveTab(tabID) != nil
         }
+        guard tabExists else {
+            return jsonError("Tab not found: \(tabID)")
+        }
+
+        DispatchQueue.main.async {
+            guard let (_, session) = self.resolveTab(tabID) else { return }
+            session.sendInput(input)
+        }
+        Log.info("MCP: send_input to \(tabID) (\(input.count) chars)")
+        return encodeAny(["ok": true])
     }
 
     func closeTab(tabID: String, force: Bool) -> String {
@@ -283,6 +309,62 @@ final class TerminalControlService {
         }
     }
 
+    func setCTO(tabID: String, override overrideStr: String) -> String {
+        onMain {
+            guard let override = TabTokenOptOverride(rawValue: overrideStr) else {
+                let valid = TabTokenOptOverride.allCases.map(\.rawValue).joined(separator: ", ")
+                return self.jsonError("Invalid override value: \(overrideStr). Valid values: \(valid)")
+            }
+
+            guard let uuid = UUID(uuidString: tabID) else {
+                return self.jsonError("Invalid tab ID: \(tabID)")
+            }
+            guard let model = self.modelForTab(uuid) else {
+                return self.jsonError("Tab not found: \(tabID)")
+            }
+            guard let index = model.tabs.firstIndex(where: { $0.id == uuid }) else {
+                return self.jsonError("Tab not found: \(tabID)")
+            }
+
+            let mode = FeatureSettings.shared.tokenOptimizationMode
+            guard mode != .off else {
+                return self.jsonError("Token optimization is globally disabled (mode=off). Enable it in settings first.")
+            }
+
+            model.tabs[index].tokenOptOverride = override
+            model.tabs[index].session?.tokenOptOverride = override
+
+            // Recalculate flag file and record decision
+            if let sessionID = model.tabs[index].session?.tabIdentifier {
+                let isAI = model.tabs[index].session?.activeAppName != nil
+                let decision = CTOFlagManager.recalculate(
+                    sessionID: sessionID,
+                    mode: mode,
+                    override: override,
+                    isAIActive: isAI
+                )
+                CTORuntimeMonitor.shared.recordDecision(
+                    sessionID: sessionID,
+                    mode: mode,
+                    override: override,
+                    isAIActive: isAI,
+                    previousState: decision.previousState,
+                    nextState: decision.nextState,
+                    changed: decision.changed,
+                    reason: decisionReason(mode: mode, override: override, isAIActive: isAI)
+                )
+            }
+
+            let tab = model.tabs[index]
+            Log.info("MCP: setCTO tab \(tabID) override=\(overrideStr)")
+            return self.encodeAny([
+                "ok": true,
+                "cto_active": tab.isTokenOptActive,
+                "cto_override": tab.tokenOptOverride.rawValue
+            ])
+        }
+    }
+
     // MARK: - Helpers
 
     /// Find the OverlayTabsModel that owns a given tab UUID.
@@ -309,7 +391,9 @@ final class TerminalControlService {
             "status": session?.status.rawValue ?? "unknown",
             "cwd": session?.currentDirectory ?? "",
             "is_at_prompt": session?.isAtPrompt ?? false,
-            "is_mcp_controlled": tab.isMCPControlled
+            "is_mcp_controlled": tab.isMCPControlled,
+            "cto_active": tab.isTokenOptActive,
+            "cto_override": tab.tokenOptOverride.rawValue
         ]
         if let app = session?.activeAppName {
             result["active_app"] = app

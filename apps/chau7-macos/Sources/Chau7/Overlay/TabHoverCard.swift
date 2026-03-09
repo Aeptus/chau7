@@ -86,7 +86,7 @@ private struct TabHoverCardContent: View {
     }
 
     private var footerSessionId: String? {
-        guard let raw = session.lastAISessionId else { return nil }
+        guard let raw = session.effectiveAISessionId else { return nil }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard AIResumeParser.isValidSessionId(trimmed) else { return nil }
         return trimmed

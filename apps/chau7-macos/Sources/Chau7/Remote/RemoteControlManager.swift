@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import os.log
 import Chau7Core
+import Darwin
 
 @MainActor
 final class RemoteControlManager: ObservableObject {
@@ -173,7 +174,9 @@ final class RemoteControlManager: ObservableObject {
 
     func stopAgent() {
         guard let process else { return }
-        process.terminate()
+        process.terminationHandler = nil
+        cleanupPipes()
+        terminateProcess(process, name: "remote agent")
         self.process = nil
         isAgentRunning = false
     }
@@ -182,6 +185,41 @@ final class RemoteControlManager: ObservableObject {
         guard isAgentRunning else { return }
         stopAgent()
         startAgent()
+    }
+
+    private func cleanupPipes() {
+        outputPipe?.fileHandleForReading.readabilityHandler = nil
+        errorPipe?.fileHandleForReading.readabilityHandler = nil
+        outputPipe = nil
+        errorPipe = nil
+    }
+
+    private func terminateProcess(_ process: Process, name: String) {
+        guard process.isRunning else { return }
+
+        process.terminate()
+        if waitForExit(of: process, timeout: 1.0) {
+            return
+        }
+
+        logger.warning("\(name) did not exit after SIGTERM; sending SIGINT")
+        process.interrupt()
+        if waitForExit(of: process, timeout: 0.5) {
+            return
+        }
+
+        let pid = process.processIdentifier
+        logger.error("\(name) still running after SIGINT; sending SIGKILL to pid \(pid)")
+        _ = Darwin.kill(pid, SIGKILL)
+        _ = waitForExit(of: process, timeout: 0.5)
+    }
+
+    private func waitForExit(of process: Process, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while process.isRunning && Date() < deadline {
+            usleep(50_000)
+        }
+        return !process.isRunning
     }
 
     private func handleIPCFrame(_ frame: RemoteFrame) {

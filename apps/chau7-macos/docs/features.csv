@@ -1,0 +1,186 @@
+Category,Feature,Description,Status,Differentiator
+Terminal Core,Rust Terminal Backend,"Custom terminal emulator written in Rust with FFI bridge — fast, memory-safe, and correct",Shipped,Yes
+Terminal Core,Full ANSI/VT100 Support,"16-color, 256-color, and 24-bit true color with full SGR attributes (bold, italic, underline, strikethrough)",Shipped,No
+Terminal Core,Kitty Keyboard Protocol,Full Kitty progressive enhancement keyboard protocol for modern key handling,Shipped,No
+Terminal Core,Inline Image Protocols,"iTerm2 (ESC ] 1337), Sixel, and Kitty image protocol — display images directly in your terminal",Shipped,No
+Terminal Core,Configurable Cursor Styles,"Block, underline, bar — with optional blinking",Shipped,No
+Terminal Core,Large Scrollback Buffer,Configurable scrollback size with GPU-accelerated scrolling,Shipped,No
+Terminal Core,Shell Selection,"Zsh, Bash, Fish, or custom shell path — Apple Silicon and Intel native",Shipped,No
+Terminal Core,Dead Key & IME Support,"Proper dead key, accent, and diacritic input via NSTextInputClient marked text",Shipped,No
+Terminal Core,Default Start Directory,Configurable default working directory for new terminals,Shipped,No
+Terminal Core,Startup Commands,Run custom commands automatically when a new terminal session starts,Shipped,No
+Terminal Core,Shell Integration (OSC 7),Tracks working directory changes via OSC 7 escape sequences,Shipped,No
+Terminal Core,Copy on Select,Selected text is automatically copied to the clipboard,Shipped,No
+Terminal Core,Click-to-Position,Option+click to position the cursor anywhere on the command line,Shipped,No
+Performance,Metal GPU Rendering,Hardware-accelerated text rendering via Apple Metal — smooth even at high throughput,Shipped,Yes
+Performance,IOSurface Direct Display,Bypass the macOS compositor entirely for GPU-to-display output,Shipped,Yes
+Performance,Glyph Atlas Caching,Dynamic glyph cache eliminates redundant text rasterization,Shipped,Yes
+Performance,SIMD Escape Parsing,"16–32 byte SIMD-accelerated ANSI escape sequence parsing in Rust for maximum parse throughput",Shipped,Yes
+Performance,Lock-Free Ring Buffer,SPSC lock-free PTY data pipeline — zero contention between read and render threads,Shipped,Yes
+Performance,Triple Buffering,Triple-buffered terminal state with atomic swaps — no tearing and no render blocking,Shipped,Yes
+Performance,Low-Latency Input (IOKit HID),IOKit HID keyboard input bypasses NSEvent queue for sub-10ms input latency,Shipped,Yes
+Performance,Real-Time Thread Priority,Mach real-time thread policy for render and input threads,Shipped,Yes
+Performance,Predictive Rendering,Pre-cache likely terminal output to reduce display latency,Shipped,Yes
+Performance,Dirty Region Tracking,Only re-render changed terminal regions — saves GPU cycles on partial updates,Shipped,Yes
+Performance,Feature Profiler,Per-feature timing metrics with os.signpost integration for performance analysis,Shipped,No
+AI Detection,AI Agent Auto-Detection,"Instantly recognizes Claude Code, Gemini CLI, Codex, ChatGPT, GitHub Copilot, Aider, Cursor",Shipped,Yes
+AI Detection,Branded Tab Logos,Each detected AI agent gets its branded logo displayed in the tab,Shipped,Yes
+AI Detection,Auto Tab Theming,Tabs automatically adopt the brand color of the active AI agent,Shipped,Yes
+AI Detection,Custom Detection Rules,Define custom patterns to detect and theme any CLI tool with display name and tab color,Shipped,Yes
+AI Detection,Command Line Tokenization,"Smart detection with wrapper skipping (env, sudo, npx, bunx, pnpm)",Shipped,Yes
+AI Detection,Output Banner Detection,"Detect AI tools from their output banners (Claude, Codex, Gemini, ChatGPT, Copilot)",Shipped,Yes
+AI Integration,LLM Error Explanation,"One-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint — plain-language root cause and fix suggestions",Shipped,Yes
+AI Integration,Claude Code Deep Integration,"Monitor Claude Code hook events: prompts, tools, permissions, responses — first-class agentic workflow support",Shipped,Yes
+AI Integration,AI Event Notifications,"Notifications for finished, failed, needs_validation, permission, tool_complete, session_end, idle events",Shipped,Yes
+AI Integration,AI Event Log Tailing,Real-time tailing of ~/.ai-events.log for AI tool events,Shipped,No
+AI Integration,PTY Output Logging,Capture raw terminal output for AI tool sessions (codex-pty and claude-pty logs),Shipped,No
+AI Integration,Codex Session Resolver,Maps Codex OpenAI capture sessions to working directories with LRU caching,Shipped,Yes
+AI Integration,Context Token Optimization (CTO),Monitor and optimize LLM API token usage in real time — per tab or globally,Shipped,Yes
+AI Integration,CTO Runtime Monitor,"Real-time CTO metrics: decision counts, mode changes, deferred operations, health assessment",Shipped,Yes
+AI Integration,CTO Flag Manager,Manages per-tab CTO flag files that AI tools read to adjust context behavior,Shipped,Yes
+MCP Server,Built-in MCP Server,"Embedded JSON-RPC 2.0 server on Unix socket (~/.chau7/mcp.sock) — AI agents can control your terminal",Shipped,Yes
+MCP Server,MCP Protocol v2024-11-05,Full MCP protocol compliance with tools and resources capabilities,Shipped,Yes
+MCP Server,MCP Bridge Binary,"Stdio-to-socket bridge binary installed at ~/.chau7/bin/chau7-mcp-bridge for standard MCP client compatibility",Shipped,Yes
+MCP Server,Auto-Registration: Claude Code,Automatically registers Chau7 MCP server in ~/.claude.json when Claude Code is installed,Shipped,Yes
+MCP Server,Auto-Registration: Cursor,Automatically registers in ~/.cursor/mcp.json when Cursor is installed,Shipped,Yes
+MCP Server,Auto-Registration: Windsurf,Automatically registers in ~/.codeium/windsurf/mcp_config.json when Windsurf is installed,Shipped,Yes
+MCP Server,Auto-Registration: Codex,Automatically registers in ~/.codex/config.toml when Codex config exists,Shipped,Yes
+MCP Server,MCP Enable/Disable Toggle,Global on/off toggle for the MCP server (mcpEnabled setting),Shipped,No
+MCP Server,MCP Approval Gate,Optional approval dialog before MCP operations touch your terminal (mcpRequiresApproval),Shipped,No
+MCP Server,MCP Tab Limit,Configurable maximum MCP-created tabs per session (default 4 — hard cap 50),Shipped,No
+MCP Server,MCP Tab Indicator,Purple indicator badge on MCP-controlled tabs (mcpShowTabIndicator),Shipped,No
+MCP Tools — Tab Management,tab_list,"List all open tabs across all windows with status, cwd, git branch, CTO state, active app",Shipped,Yes
+MCP Tools — Tab Management,tab_create,"Open a new terminal tab with optional directory and target window — respects approval gate and tab limit",Shipped,Yes
+MCP Tools — Tab Management,tab_exec,"Execute a shell command in a tab — auto-queues if shell is still loading, checks prompt state",Shipped,Yes
+MCP Tools — Tab Management,tab_status,"Detailed tab status: process state, child processes (PID/CPU/RSS), active telemetry run, git branch",Shipped,Yes
+MCP Tools — Tab Management,tab_send_input,"Send raw input to terminal for interactive prompts and confirmations — no auto-newline",Shipped,Yes
+MCP Tools — Tab Management,tab_close,Close a tab with optional force flag — checks for running processes before closing,Shipped,Yes
+MCP Tools — Tab Management,tab_output,"Get recent terminal output (last N lines, max 5000) with 512KB hard cap and trailing-blank stripping",Shipped,Yes
+MCP Tools — Tab Management,tab_set_cto,"Set per-tab CTO override (default/forceOn/forceOff) — recalculates flag files and records decision",Shipped,Yes
+MCP Tools — Telemetry,run_get,Get a single telemetry run by ID (active or from store),Shipped,Yes
+MCP Tools — Telemetry,run_list,"List telemetry runs with filters: session_id, repo_path, provider, date range, tags, limit/offset",Shipped,Yes
+MCP Tools — Telemetry,run_tool_calls,Get all tool calls for a telemetry run — see exactly what an AI agent did,Shipped,Yes
+MCP Tools — Telemetry,run_transcript,Get the full conversation transcript (turns) for a run — complete AI session replay,Shipped,Yes
+MCP Tools — Telemetry,run_tag,Set tags on a telemetry run for organization and filtering,Shipped,Yes
+MCP Tools — Telemetry,run_latest_for_repo,Get the most recent run for a repository — optionally filter by provider,Shipped,Yes
+MCP Tools — Telemetry,session_list,"List AI sessions with run counts — filter by repo_path, active_only",Shipped,Yes
+MCP Tools — Telemetry,session_current,Get currently active AI sessions across all tabs,Shipped,Yes
+MCP Resources,chau7://telemetry/runs,Read-only resource: latest 20 telemetry run summaries,Shipped,No
+MCP Resources,chau7://telemetry/sessions,Read-only resource: AI session index with metadata,Shipped,No
+MCP Resources,chau7://telemetry/sessions/current,Read-only resource: currently active AI sessions,Shipped,No
+MCP Resources,chau7://telemetry/runs/<run_id>,Dynamic resource: specific run details by ID,Shipped,No
+API Analytics,API Call Logging,"Capture every LLM API call — tokens in/out, cost, latency, model, endpoint",Shipped,Yes
+API Analytics,TLS/WSS Proxy,"Go-based proxy (chau7-proxy) intercepts API calls to Claude, OpenAI, Gemini, Anthropic with TLS and WebSocket support",Shipped,Yes
+API Analytics,Token Counting & Cost Calculation,Count input/output tokens per call and calculate aggregate cost,Shipped,Yes
+API Analytics,Latency Tracking,Record API response times for performance analysis,Shipped,No
+API Analytics,Task Detection & Assessment,Auto-detect AI task candidates from API activity with confidence scoring — approve or fail with notes,Shipped,Yes
+API Analytics,Baseline Estimator,Calculate token savings from context caching strategies,Shipped,Yes
+API Analytics,Analytics Dashboard,Command stats and error rates and API usage and timing in a unified dashboard view,Shipped,No
+API Analytics,Timeline Visualization,Visual timeline scrubber showing command blocks and metrics over time,Shipped,No
+API Analytics,Provider Filtering,Include or exclude specific API providers from capture,Shipped,No
+Tab Management,Multi-Tab Interface,"Unlimited tabs per window — Cmd+T to create, Cmd+1–9 to jump",Shipped,No
+Tab Management,Tab Renaming,Custom tab names via Cmd+Shift+R,Shipped,No
+Tab Management,Tab Colors,"12+ colors: blue, teal, green, red, orange, pink, purple, yellow, gray, and more",Shipped,No
+Tab Management,Tab Reordering,Drag tabs or Cmd+Opt+Shift+[/] to move left/right — snap-based drag keeps tab under cursor,Shipped,No
+Tab Management,Git Branch Indicator,Current git branch displayed in the tab — no need to type git branch,Shipped,No
+Tab Management,Directory Path Display,Working directory visible in the tab title,Shipped,No
+Tab Management,Last Command Badge,Tab shows last command name with duration and exit status,Shipped,No
+Tab Management,Broadcast Input,Type once and send to all tabs — with per-tab exclusion and visual indicator,Shipped,No
+Tab Management,Close Other Tabs,Cmd+Opt+W to close all tabs except the current one,Shipped,No
+Tab Management,New Tab Position,Configure where new tabs appear (after current or at end),Shipped,No
+Tab Management,Background Tab Suspension,Inactive tabs suspend rendering after configurable delay to save resources,Shipped,No
+Split Panes,Horizontal Split,Cmd+Opt+H — split side-by-side with draggable dividers,Shipped,No
+Split Panes,Vertical Split,Cmd+Opt+V — stack panes vertically,Shipped,No
+Split Panes,Nested Splits,Arbitrary nesting depth via binary tree layout controller,Shipped,No
+Split Panes,Built-in Text Editor,"Full editor in a split pane — syntax highlighting, line numbers, bracket matching, find/replace",Shipped,Yes
+Split Panes,Multi-Language Syntax,"Syntax highlighting for HTML, CSS, JavaScript, Python, and more",Shipped,No
+Split Panes,Terminal + Editor Side-by-Side,Edit code and run it in the same window — no app switching,Shipped,Yes
+Window Management,Overlay / Floating Terminal,Floating terminal layer on top of all other apps with blur background — always accessible,Shipped,Yes
+Window Management,Dropdown Terminal (Quake-Style),Ctrl+` to summon a dropdown terminal from anywhere — configurable height,Shipped,No
+Window Management,Multiple Windows,Cmd+N for multiple independent terminal windows,Shipped,No
+Window Management,Adjustable Window Opacity,Transparent terminal windows — see through to your code,Shipped,No
+Window Management,Fullscreen Mode,Native macOS fullscreen with configurable toolbar behavior,Shipped,No
+Window Management,Minimal Mode,Strip all chrome — maximum terminal space with zero distraction,Shipped,No
+Window Management,Window Position Memory,Windows reopen exactly where you left them per workspace,Shipped,No
+Window Management,Session Restoration,All windows and tabs restored on relaunch,Shipped,No
+Window Management,Menu Bar Only Mode,Run as a menu bar app — no Dock icon needed,Shipped,No
+Search & Find,Find Overlay,Cmd+F — search terminal output with match highlighting,Shipped,No
+Search & Find,Regex Search,Toggle regex mode for advanced pattern matching,Shipped,No
+Search & Find,Case Sensitivity Toggle,Persistent case-sensitive search preference,Shipped,No
+Search & Find,Find Next/Previous,Cmd+G / Cmd+Shift+G to cycle through matches,Shipped,No
+Search & Find,Use Selection for Find,Cmd+E to populate search with current selection,Shipped,No
+Search & Find,Visual Match Highlighting,All matches highlighted across terminal output,Shipped,No
+Command Safety,Dangerous Command Guard,"Intercepts rm -rf, dd, mkfs, and other destructive commands — confirms before execution",Shipped,Yes
+Command Safety,Custom Danger Patterns,Add your own regex patterns to the danger guard,Shipped,No
+Command Safety,Visual Danger Highlighting,Dangerous commands visually highlighted in output,Shipped,No
+Command Safety,Path Click Handler,"Cmd+click file paths and URLs — configurable action (browser, editor, Finder) with line:column support",Shipped,No
+Keyboard & Clipboard,Fully Customizable Keybindings,Remap any shortcut with interactive editor and conflict detection,Shipped,No
+Keyboard & Clipboard,Vim & Emacs Presets,One-click keybinding presets,Shipped,No
+Keyboard & Clipboard,Clipboard History,"Cmd+Shift+V — last 100 clipboard entries with LRU eviction, pinning, and quick paste",Shipped,No
+Keyboard & Clipboard,Paste Escaping,"Auto-escape shell-sensitive characters ($, backticks, quotes, backslash) on paste",Shipped,No
+Snippets,Snippet Manager,"Cmd+; to open — create, edit, delete, import, export snippets",Shipped,No
+Snippets,Three Scopes,"Global (user), per-SSH-profile, and per-repo snippets",Shipped,No
+Snippets,Placeholder Support,"${cursor} and ${selection} placeholders for smart insertion",Shipped,No
+Snippets,Repo-Level Snippets,.chau7/config.toml in your repo — share snippets with your team,Shipped,No
+History & Bookmarks,Per-Tab & Global History,"Arrow keys for local history, Cmd+Up/Down for cross-tab",Shipped,No
+History & Bookmarks,SQLite-Backed Persistence,History survives restarts — searchable and fast,Shipped,No
+History & Bookmarks,Session Analytics,"Command frequency, timing, and success rates",Shipped,No
+History & Bookmarks,Terminal Bookmarks,Pin important positions in your terminal and navigate back instantly,Shipped,No
+Notifications,Desktop Notifications,"Native macOS notifications for task completion, failures, permission requests",Shipped,No
+Notifications,Dock Badge & Bounce,Animated dock badge and critical/non-critical bounce for key events,Shipped,No
+Notifications,Configurable Sounds,"Alert sounds (Glass, Purr, etc.) with volume control",Shipped,No
+Notifications,Command Idle Detection,Notify when a command has been idle beyond configurable threshold,Shipped,No
+Notifications,Auto Tab Styling,Tabs change color on events — auto-clear after configurable timeout,Shipped,No
+Notifications,Rate Limiting,Prevent notification spam with configurable thresholds,Shipped,No
+Notifications,Per-Trigger Control,Enable/disable and customize actions for each event type individually,Shipped,No
+SSH & Profiles,SSH Connection Manager,"Save hosts, ports, identity files, jump hosts (ProxyJump) — all in one place",Shipped,No
+SSH & Profiles,Auto-Import from ~/.ssh/config,Watches SSH config and imports new hosts automatically,Shipped,No
+SSH & Profiles,Profile Auto-Switching,"Settings change automatically based on directory, SSH host, or environment variables",Shipped,Yes
+SSH & Profiles,Per-Profile Customization,"Each profile gets its own color scheme, shell, font, and keybindings",Shipped,No
+Remote & Collaboration,Remote Terminal Viewing,Share a read-only view of your terminal — others see what you see,Experimental,Yes
+Remote & Collaboration,Viewer Approval Flow,Approve or deny viewer connections — you control access,Experimental,No
+Remote & Collaboration,Cloudflare Relay,Cloudflare Workers relay — no port forwarding required,Experimental,Yes
+Remote & Collaboration,Tmux Integration,Map tmux windows and panes to Chau7 tabs seamlessly,Experimental,Yes
+Remote & Collaboration,Session Recording,Record terminal sessions with timestamps for replay,Shipped,No
+Remote & Collaboration,Timeline Scrubber,Scrub through recorded sessions like a video,Shipped,No
+Appearance,Full Color Schemes,"16 ANSI colors + background, foreground, cursor, selection — fully customizable",Shipped,No
+Appearance,Light / Dark / System,Respects macOS appearance or override manually,Shipped,No
+Appearance,100+ Monospace Fonts,System fonts plus popular coding fonts — or use any installed font,Shipped,No
+Appearance,Adjustable Font Size,"8–72pt with per-tab zoom (Cmd++/-, 50–200%)",Shipped,No
+Appearance,Line Spacing,Fine-tune line height for your preference,Shipped,No
+Appearance,Command Blocks,"Colored left-border gutter marks — green (success), red (fail), blue (running)",Shipped,Yes
+Appearance,Line Timestamps,Optional timestamps on each terminal line in multiple formats,Shipped,No
+Appearance,JSON Pretty-Print,Optional auto-formatting of JSON output in terminal,Shipped,No
+Settings,Comprehensive Settings UI,Tabbed interface with fuzzy search across 100+ settings,Shipped,No
+Settings,Settings Profiles,"Save, load, export, and import named configurations",Shipped,No
+Settings,Per-Folder Config,.chau7/config.toml in any repo — project-specific settings,Shipped,No
+Settings,Config File Watcher,Auto-reload on config changes — no restart needed,Shipped,No
+Settings,iCloud Sync,Optional iCloud sync of settings across devices,Shipped,No
+Settings,100+ Feature Flags,Fine-grained toggle control over every behavior,Shipped,No
+Migration,Terminal.app Import,Auto-detect and import existing Terminal.app profiles,Shipped,No
+Migration,iTerm2 Import,Import iTerm2 profiles and color schemes,Shipped,No
+Migration,Guided First-Run Setup,Walk through initial configuration on first launch,Shipped,No
+Migration,Power User Tips,Contextual tips surface as you use the app,Shipped,No
+Accessibility,VoiceOver Support,Full macOS accessibility integration,Shipped,No
+Accessibility,High Contrast & Reduced Motion,Respects system accessibility preferences,Shipped,No
+Accessibility,4 Languages,"English, French, Arabic, Hebrew — with proper RTL layout",Shipped,No
+Accessibility,Runtime Language Switching,Change language without restarting the app,Shipped,No
+Scripting,JSON-RPC API,"Unix socket API for external automation — control tabs, run commands, query history, manage snippets",Shipped,Yes
+Scripting,Settings API,Query and modify settings programmatically from any language,Shipped,No
+Debugging,Debug Console,"Cmd+Shift+D — live log viewer with State, Contexts, Events, Logs, and Report tabs",Shipped,No
+Debugging,State Inspector,View live app state: tabs and sessions and models,Shipped,No
+Debugging,Feature Profiler,Per-feature timing metrics with os.signpost integration,Shipped,No
+Debugging,Structured Logging,"Category-based logging with correlation IDs (App, Tabs, Terminal, Render, etc.)",Shipped,No
+Debugging,Bug Report Generator,One-click detailed bug reports with full app state snapshot,Shipped,No
+Debugging,Verbose & Trace Modes,CHAU7_VERBOSE=1 and CHAU7_TRACE=1 for deep diagnostics,Shipped,No
+Command Palette,Command Palette,Cmd+Shift+P for fuzzy-searchable command palette (VS Code style),Shipped,No
+Monitoring,Dev Server Detection,Auto-detect running dev servers by port scanning,Shipped,No
+Monitoring,Git Change Detection,Notifications on git branch changes,Shipped,No
+Monitoring,Shell Event Pattern Matching,Custom regex patterns to watch for in terminal output,Shipped,No
+Monitoring,Directory Change Detection,Notify on working directory changes,Shipped,No
+Monitoring,Output Pattern Watching,Define custom output patterns to trigger actions,Shipped,No
+Status Bar,Menu Bar Status Item,Quick access icon with active/paused indicator,Shipped,No
+Status Bar,Popover Panel,"Recent events, active sessions, and quick toggles in a popover",Shipped,No
+Networking,TLS/WSS Proxy Support,TLS and WebSocket proxy for Codex OpenAI API capture,Shipped,Yes
+Networking,API Proxy Interception,Transparent HTTP/HTTPS proxy for API call capture and analysis,Shipped,Yes
+Networking,Configurable Proxy Endpoints,Set custom proxy host and port for API interception,Shipped,No

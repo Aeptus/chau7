@@ -17,6 +17,8 @@ final class FileTailer<T> {
     private var readHandle: FileHandle?
     private var parseErrorCount = 0
     private let maxParseErrorLogs = 10
+    private var lastOverflowWarningAt: Date?
+    private let overflowWarningCooldown: TimeInterval = 30
 
     // MARK: - Memory Protection
 
@@ -119,12 +121,12 @@ final class FileTailer<T> {
                    let trimIndex = buffer[newlineIndex...].firstIndex(of: "\n") {
                     let dropCount = buffer.distance(from: buffer.startIndex, to: buffer.index(after: trimIndex))
                     buffer.removeFirst(dropCount)
-                    Log.warn("FileTailer buffer exceeded \(maxBufferSize) bytes, kept recent \(buffer.count) chars. path=\(fileURL.path)")
+                    logOverflowIfNeeded()
                 } else {
                     // No newline found, just drop from the start
                     let dropCount = buffer.count - targetSize
                     buffer.removeFirst(dropCount)
-                    Log.warn("FileTailer buffer exceeded \(maxBufferSize) bytes, kept recent \(buffer.count) chars. path=\(fileURL.path)")
+                    logOverflowIfNeeded()
                 }
             }
             let normalized = buffer.replacingOccurrences(of: "\r", with: "\n")
@@ -156,6 +158,17 @@ final class FileTailer<T> {
 
     private func currentFileSize() -> UInt64? {
         try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? UInt64
+    }
+
+    private func logOverflowIfNeeded() {
+        let now = Date()
+        if let lastOverflowWarningAt,
+           now.timeIntervalSince(lastOverflowWarningAt) < overflowWarningCooldown {
+            Log.trace("FileTailer overflow trimmed without warning. path=\(fileURL.path)")
+            return
+        }
+        lastOverflowWarningAt = now
+        Log.warn("FileTailer buffer exceeded \(maxBufferSize) bytes, kept recent \(buffer.count) chars. path=\(fileURL.path)")
     }
 
     private func prefillLastLines(count: Int) {

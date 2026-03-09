@@ -298,6 +298,10 @@ struct DebugConsoleView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
 
+                Text(ctoPeriodNote)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+
                 // Hero: key metrics
                 ctoHeroSection
 
@@ -322,7 +326,7 @@ struct DebugConsoleView: View {
                     .buttonStyle(.bordered)
                     .controlSize(.small)
                     Spacer()
-                    Text("Mode: \(ctoRuntimeSnapshot.mode)")
+                    Text("Global Mode: \(ctoRuntimeSnapshot.mode)")
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                 }
@@ -345,13 +349,13 @@ struct DebugConsoleView: View {
                 )
                 Divider().frame(height: 40)
                 ctoHeroMetric(
-                    title: "Token Rate",
+                    title: ctoSavingsMetricTitle(base: "Token Rate"),
                     value: filteredStats.map { String(format: "%.0f%%", $0.savingsPct) } ?? "--",
                     color: ctoTokenRateColor
                 )
                 Divider().frame(height: 40)
                 ctoHeroMetric(
-                    title: "Tokens Saved",
+                    title: ctoSavingsMetricTitle(base: "Tokens Saved"),
                     value: filteredStats.map { formatTokenCount($0.savedTokens) } ?? "--",
                     color: .green
                 )
@@ -414,6 +418,19 @@ struct DebugConsoleView: View {
         if pct >= 40 { return .green }
         if pct >= 20 { return .orange }
         return .red
+    }
+
+    private var ctoPeriodNote: String {
+        switch ctoTimePeriod {
+        case .session:
+            return "Command counts use the selected period. Token savings come from daily optimizer totals, so Session shows today's savings."
+        case .today, .week, .all:
+            return "Command counts and token savings use the selected period."
+        }
+    }
+
+    private func ctoSavingsMetricTitle(base: String) -> String {
+        ctoTimePeriod == .session ? "\(base) (Day)" : base
     }
 
     private func formatTokenCount(_ count: Int) -> String {
@@ -586,6 +603,9 @@ struct DebugConsoleView: View {
 
                 // Health + metrics
                 VStack(alignment: .leading, spacing: 6) {
+                    Text("Runtime telemetry below is monitor-lifetime and ignores the period filter.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
                     statRow(icon: "checkmark.seal.fill", iconColor: healthColor, label: "Runtime health", value: health.state.rawValue)
                     statRow(icon: "star.circle", iconColor: healthColor, label: "Health score", value: "\(health.score)/100")
                     statRow(icon: "arrow.triangle.2.circlepath", iconColor: .blue, label: "Recalculations", value: "\(ctoRuntimeSnapshot.recalcCount)")

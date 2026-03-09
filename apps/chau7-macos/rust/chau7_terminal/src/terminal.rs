@@ -11,7 +11,7 @@ use alacritty_terminal::event::Event;
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::index::{Column, Line, Point, Side};
 use alacritty_terminal::selection::{Selection, SelectionType};
-use alacritty_terminal::term::cell::Flags as CellFlags;
+use alacritty_terminal::term::cell::{Flags as CellFlags, LineLength};
 use alacritty_terminal::term::{Config as TermConfig, Term, TermMode};
 use alacritty_terminal::vte::ansi::{Color as AnsiColor, NamedColor, Processor};
 use crossbeam_channel::{Receiver, TryRecvError, bounded};
@@ -1379,7 +1379,6 @@ impl Chau7Terminal {
     pub fn line_text(&self, row: i32) -> Option<String> {
         let term = self.term.lock();
         let grid = term.grid();
-        let cols = grid.columns();
         let rows = grid.screen_lines() as i32;
         let history = grid.history_size() as i32;
 
@@ -1390,23 +1389,52 @@ impl Chau7Terminal {
         }
 
         let line = Line(row);
-        let mut text = String::with_capacity(cols);
-        for col in 0..cols {
-            let point = Point::new(line, Column(col));
-            let cell = &grid[point];
-            let ch = cell.c;
-            if ch == '\u{0}' {
-                text.push(' ');
-            } else {
-                text.push(ch);
+        let (text, _) = Self::grid_line_text(grid, line);
+        Some(text.trim_end_matches('\n').to_string())
+    }
+
+    /// Get the full logical wrapped line containing the specified physical row.
+    ///
+    /// Returns the flattened text, the starting physical row, and the UTF-16
+    /// offset within that flattened text for the specified physical column.
+    pub fn logical_line_text(&self, row: i32, column: usize) -> Option<(String, i32, usize)> {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let rows = grid.screen_lines() as i32;
+        let history = grid.history_size() as i32;
+
+        let min_row = -history;
+        let max_row = rows - 1;
+        if row < min_row || row > max_row {
+            return None;
+        }
+
+        let mut start_row = row;
+        while start_row > min_row && Self::grid_line_wraps(grid, Line(start_row - 1)) {
+            start_row -= 1;
+        }
+
+        let mut end_row = row;
+        while end_row < max_row && Self::grid_line_wraps(grid, Line(end_row)) {
+            end_row += 1;
+        }
+
+        let mut text = String::new();
+        let mut clicked_utf16_offset = 0usize;
+        for physical_row in start_row..=end_row {
+            let line = Line(physical_row);
+            let (line_text, _) = Self::grid_line_text(grid, line);
+            if physical_row < row {
+                clicked_utf16_offset += line_text.encode_utf16().count();
+            } else if physical_row == row {
+                clicked_utf16_offset += Self::grid_column_utf16_offset(grid, line, column);
             }
+            text.push_str(&line_text);
         }
 
-        while text.ends_with(' ') {
-            text.pop();
-        }
-
-        Some(text)
+        let text = text.trim_end_matches('\n').to_string();
+        let clicked_utf16_offset = clicked_utf16_offset.min(text.encode_utf16().count());
+        Some((text, start_row, clicked_utf16_offset))
     }
 
     /// Check if bracketed paste mode is enabled
@@ -1558,31 +1586,95 @@ impl Chau7Terminal {
     pub fn full_buffer_text(&self) -> String {
         let term = self.term.lock();
         let grid = term.grid();
-        let cols = grid.columns();
         let screen_lines = grid.screen_lines() as i32;
         let history = grid.history_size() as i32;
 
         let mut result = String::new();
+        let mut wrapped_rows = 0usize;
         for row in (-history)..screen_lines {
             let line = Line(row);
-            let mut line_text = String::with_capacity(cols);
-            for col in 0..cols {
-                let point = Point::new(line, Column(col));
-                let cell = &grid[point];
-                let ch = cell.c;
-                if ch == '\u{0}' {
-                    line_text.push(' ');
-                } else {
-                    line_text.push(ch);
-                }
-            }
-            while line_text.ends_with(' ') {
-                line_text.pop();
+            let (line_text, wraps) = Self::grid_line_text(grid, line);
+            if wraps {
+                wrapped_rows += 1;
             }
             result.push_str(&line_text);
-            result.push('\n');
         }
+        debug!(
+            "[terminal-{}] full_buffer_text exported {} chars from {} physical rows ({} wrapped rows)",
+            self.id,
+            result.len(),
+            history + screen_lines,
+            wrapped_rows
+        );
         result
+    }
+
+    fn grid_line_text(
+        grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::Cell>,
+        line: Line,
+    ) -> (String, bool) {
+        let grid_line = &grid[line];
+        let line_length = grid_line.line_length();
+        let wraps = Self::grid_line_wraps(grid, line);
+
+        let mut text = String::with_capacity(line_length.0);
+        for col in 0..line_length.0 {
+            let cell = &grid_line[Column(col)];
+            if cell.flags.intersects(
+                CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER,
+            ) {
+                continue;
+            }
+
+            text.push(if cell.c == '\u{0}' { ' ' } else { cell.c });
+            for ch in cell.zerowidth().into_iter().flatten() {
+                text.push(*ch);
+            }
+        }
+
+        if !wraps {
+            while text.ends_with(' ') {
+                text.pop();
+            }
+            text.push('\n');
+        }
+
+        (text, wraps)
+    }
+
+    fn grid_line_wraps(
+        grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::Cell>,
+        line: Line,
+    ) -> bool {
+        let grid_line = &grid[line];
+        let line_length = grid_line.line_length();
+        line_length.0 > 0 && grid_line[line_length - 1].flags.contains(CellFlags::WRAPLINE)
+    }
+
+    fn grid_column_utf16_offset(
+        grid: &alacritty_terminal::grid::Grid<alacritty_terminal::term::Cell>,
+        line: Line,
+        column: usize,
+    ) -> usize {
+        let grid_line = &grid[line];
+        let line_length = grid_line.line_length();
+        let upper_bound = column.min(line_length.0);
+        let mut count = 0usize;
+
+        for col in 0..upper_bound {
+            let cell = &grid_line[Column(col)];
+            if cell
+                .flags
+                .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
+            {
+                continue;
+            }
+
+            count += cell.c.len_utf16();
+            count += cell.zerowidth().into_iter().flatten().count();
+        }
+
+        count
     }
 
     /// Reset performance metrics
@@ -1829,5 +1921,58 @@ mod tests {
         unsafe {
             let _ = Vec::from_raw_parts(snapshot.cells, total, snapshot.capacity);
         }
+    }
+
+    #[test]
+    fn test_full_buffer_text_preserves_soft_wrapped_logical_lines() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(5, 4, "", &[]).expect("Should create terminal");
+        term.inject_output(b"hello world");
+
+        let text = term.full_buffer_text();
+
+        assert!(
+            text.contains("hello world"),
+            "Expected wrapped output to remain one logical line, got: {:?}",
+            text
+        );
+        assert!(
+            !text.contains("hello\n worl"),
+            "Expected no hard newline at soft-wrap boundary, got: {:?}",
+            text
+        );
+    }
+
+    #[test]
+    fn test_logical_line_text_returns_wrapped_text_and_clicked_offset() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(5, 4, "", &[]).expect("Should create terminal");
+        term.inject_output(b"docs/readme.md");
+
+        let (text, start_row, clicked_offset) = term
+            .logical_line_text(1, 2)
+            .expect("Expected wrapped logical line");
+
+        assert_eq!(text, "docs/readme.md");
+        assert_eq!(start_row, 0);
+        assert_eq!(clicked_offset, 7);
+    }
+
+    #[test]
+    fn test_logical_line_text_uses_utf16_offset_for_combining_sequences() {
+        let _ = env_logger::try_init();
+
+        let term = Chau7Terminal::new_with_env(20, 4, "", &[]).expect("Should create terminal");
+        term.inject_output("e\u{301}docs/readme.md".as_bytes());
+
+        let (text, start_row, clicked_offset) = term
+            .logical_line_text(0, 2)
+            .expect("Expected logical line");
+
+        assert_eq!(text, "e\u{301}docs/readme.md");
+        assert_eq!(start_row, 0);
+        assert_eq!(clicked_offset, 3);
     }
 }

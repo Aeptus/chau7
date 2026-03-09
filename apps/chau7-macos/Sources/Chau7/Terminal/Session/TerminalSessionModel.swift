@@ -3,6 +3,11 @@ import AppKit
 import Darwin
 import Chau7Core
 
+extension Notification.Name {
+    static let terminalSessionRenderSuspensionStateChanged =
+        Notification.Name("com.chau7.terminalSessionRenderSuspensionStateChanged")
+}
+
 enum CommandStatus: String {
     case idle
     case running
@@ -86,6 +91,12 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     @Published var activeAppName: String? {
         didSet {
             recalculateCTOFlag()
+            if activeAppName != oldValue {
+                NotificationCenter.default.post(
+                    name: .terminalSessionRenderSuspensionStateChanged,
+                    object: self
+                )
+            }
         }
     }
 
@@ -100,11 +111,59 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         return Self.displayName(fromProvider: lastAIProvider)
     }
 
+    var effectiveAIProvider: String? {
+        if let provider = AIResumeParser.normalizeProviderName(lastAIProvider ?? "") {
+            return provider
+        }
+        if let provider = TelemetryRecorder.shared.activeRunForTab(tabIdentifier)?.provider {
+            return AIResumeParser.normalizeProviderName(provider)
+        }
+        return nil
+    }
+
+    var effectiveAISessionId: String? {
+        if let sessionId = lastAISessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
+           AIResumeParser.isValidSessionId(sessionId) {
+            return sessionId
+        }
+
+        let telemetrySessionId = TelemetryRecorder.shared.activeRunForTab(tabIdentifier)?.sessionID
+        guard let telemetrySessionId = telemetrySessionId?.trimmingCharacters(in: .whitespacesAndNewlines),
+              AIResumeParser.isValidSessionId(telemetrySessionId) else {
+            return nil
+        }
+        return telemetrySessionId
+    }
+
+    var effectiveStatus: CommandStatus {
+        guard let historyState = matchedAIHistoryState else { return status }
+        return Self.resolveEffectiveStatus(historyState: historyState, fallback: status)
+    }
+
+    var effectiveIsAtPrompt: Bool {
+        guard let historyState = matchedAIHistoryState else { return isAtPrompt }
+        return Self.resolveEffectivePromptState(historyState: historyState, fallback: isAtPrompt)
+    }
+
     /// Whether the AI logo should appear at full opacity.
     /// Grey (false) only for restored sessions that haven't been re-detected live.
     var isAIRunning: Bool {
         guard aiDisplayAppName != nil else { return false }
         return !aiDetection.isRestored
+    }
+
+    var shouldKeepLiveRenderingInBackground: Bool {
+        guard hasBackgroundRenderingAIContext else { return false }
+        return effectiveStatus != .exited
+    }
+
+    var renderSuspensionDebugSummary: String {
+        let app = aiDisplayAppName
+            ?? Self.displayName(fromProvider: effectiveAIProvider)
+            ?? "shell"
+        let provider = effectiveAIProvider ?? "nil"
+        let sessionId = effectiveAISessionId ?? "nil"
+        return "app=\(app) provider=\(provider) sessionId=\(sessionId) status=\(effectiveStatus.rawValue) prompt=\(effectiveIsAtPrompt)"
     }
 
     @Published var devServer: DevServerMonitor.DevServerInfo?
@@ -133,6 +192,21 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private(set) var lastAIProvider: String?
     private(set) var lastAISessionId: String?
 
+    private var hasBackgroundRenderingAIContext: Bool {
+        aiDisplayAppName != nil || effectiveAIProvider != nil || effectiveAISessionId != nil
+    }
+
+    private var matchedAIHistoryState: HistorySessionState? {
+        guard let appModel,
+              let provider = effectiveAIProvider,
+              let sessionId = effectiveAISessionId else {
+            return nil
+        }
+
+        let toolName = Self.displayName(fromProvider: provider) ?? provider.capitalized
+        return appModel.latestSessionStatus(toolName: toolName, sessionId: sessionId)?.state
+    }
+
     private static func displayName(fromProvider provider: String?) -> String? {
         guard let normalized = AIResumeParser.normalizeProviderName(provider ?? "") else {
             return nil
@@ -145,6 +219,34 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             return "Codex"
         default:
             return normalized.capitalized
+        }
+    }
+
+    static func resolveEffectiveStatus(
+        historyState: HistorySessionState,
+        fallback: CommandStatus
+    ) -> CommandStatus {
+        switch historyState {
+        case .active:
+            return fallback == .waitingForInput ? .waitingForInput : .running
+        case .idle:
+            return fallback == .exited ? .exited : .idle
+        case .closed:
+            return fallback
+        }
+    }
+
+    static func resolveEffectivePromptState(
+        historyState: HistorySessionState,
+        fallback: Bool
+    ) -> Bool {
+        switch historyState {
+        case .active:
+            return false
+        case .idle:
+            return true
+        case .closed:
+            return fallback
         }
     }
 
@@ -195,11 +297,14 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private var inputLatencySampleCount = 0
     private var inputLatencyTotalMs: Double = 0
     private var pendingOutputLatencyAt: CFAbsoluteTime?
+    private var pendingAITimingInputAt: Date?
+    private var pendingAITimingInputChars = 0
     private var outputLatencySampleCount = 0
     private var outputLatencyTotalMs: Double = 0
     private let inputLagLogThresholdMs: Double = 60
     private let outputLagLogThresholdMs: Double = 120
     private let highlightLagLogThresholdMs: Double = 120
+    private let maxAcceptedLatencyMs: Double = 10_000
     private let latencyLogCooldownSeconds: TimeInterval = 15
     private var lastInputLagLogAt: Date?
     private var lastOutputLagLogAt: Date?
@@ -225,6 +330,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private var dirtyOutputRange: ClosedRange<Int>?
     private var outputLatencyFallbackWorkItem: DispatchWorkItem?
     private let outputLatencyFallbackSeconds: TimeInterval = 0.2
+    private let aiTimingWindowSeconds: TimeInterval = 120
     private let remoteOutputQueue = DispatchQueue(label: "com.chau7.remoteOutput", qos: .utility)
     /// Queue for heavy output processing to avoid blocking main thread (Fix #6)
     private let outputProcessingQueue = DispatchQueue(label: "com.chau7.outputProcessing", qos: .userInitiated)
@@ -254,6 +360,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private let terminationStateQueue = DispatchQueue(label: "com.chau7.terminal.termination")
     private var didHandleProcessTermination = false
     private var closeSessionRequested = false
+    private var forcedTerminationWorkItem: DispatchWorkItem?
     private let dangerousCommandTracker = InputLineTracker(maxEntries: FeatureSettings.shared.scrollbackLines)
     private var dangerousOutputHighlightWorkItem: DispatchWorkItem?
     private var dangerousOutputHighlightLastRun = Date.distantPast
@@ -353,6 +460,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         aiLogSession?.close()
         devServerMonitor.stop()
         processResourceMonitor.stop()
+        forcedTerminationWorkItem?.cancel()
     }
 
     // MARK: - Process Resource Monitoring (hover card)
@@ -383,7 +491,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
     /// Accessor for the active terminal view
     private var activeTerminalView: (any TerminalViewLike)? {
-        rustTerminalView
+        rustTerminalView ?? retainedRustTerminalView
     }
 
     func attachRustTerminal(_ view: RustTerminalView) {
@@ -516,6 +624,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             updateOutputBurstState(bytes: data.count, outputGap: outputGap, now: now)
             markOutputLatencyStart()
             markDirtyOutputRange(for: data)
+            noteAIFirstOutputIfNeeded(bytes: data.count, at: now)
         }
         bufferNeedsRefresh = true
         recordInputLatencyIfNeeded()
@@ -922,6 +1031,10 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         guard let start = pendingInputLatencyAt else { return }
         pendingInputLatencyAt = nil
         let elapsedMs = max(0, (now - start) * 1000)
+        guard elapsedMs <= maxAcceptedLatencyMs else {
+            Log.debug("Discarded stale input latency sample: \(Int(elapsedMs.rounded()))ms")
+            return
+        }
         inputLatencySamples.append(Int(elapsedMs.rounded()))
         inputLatencySampleCount += 1
         inputLatencyTotalMs += elapsedMs
@@ -973,6 +1086,10 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         outputLatencyFallbackWorkItem?.cancel()
         outputLatencyFallbackWorkItem = nil
         let elapsedMs = max(0, (now - start) * 1000)
+        guard elapsedMs <= maxAcceptedLatencyMs else {
+            Log.debug("Discarded stale output latency sample: \(Int(elapsedMs.rounded()))ms")
+            return
+        }
         outputLatencySamples.append(Int(elapsedMs.rounded()))
         outputLatencySampleCount += 1
         outputLatencyTotalMs += elapsedMs
@@ -991,10 +1108,18 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private func scheduleOutputLatencyFallback() {
         guard outputLatencyFallbackWorkItem == nil else { return }
         let work = DispatchWorkItem { [weak self] in
-            self?.recordOutputLatencyIfNeeded()
+            self?.clearPendingOutputLatencyMeasurement()
         }
         outputLatencyFallbackWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + outputLatencyFallbackSeconds, execute: work)
+    }
+
+    private func clearPendingOutputLatencyMeasurement() {
+        guard pendingOutputLatencyAt != nil else { return }
+        pendingOutputLatencyAt = nil
+        outputLatencyFallbackWorkItem?.cancel()
+        outputLatencyFallbackWorkItem = nil
+        Log.trace("Cleared synthetic output latency sample after fallback timeout")
     }
 
     private func markDirtyOutputRange(for data: Data) {
@@ -1262,6 +1387,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         shellEventDetector.commandStarted(command: trimmed, in: currentDirectory)
         trackAIResumeMetadata(from: trimmed)
         updateActiveAppName(from: trimmed)
+        noteAIInputTimingIfNeeded(for: trimmed)
         recordInputLineIfNeeded()
         trackSemanticCommand(trimmed)
         recordDangerousCommandLineIfNeeded(trimmed)
@@ -1469,6 +1595,47 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         if FeatureSettings.shared.isSemanticSearchEnabled || activeAppName != nil {
             view.recordInputLine()
         }
+    }
+
+    private func noteAIInputTimingIfNeeded(for commandLine: String) {
+        let detectedApp = CommandDetection.detectApp(from: commandLine)
+        guard hasBackgroundRenderingAIContext || detectedApp != nil else {
+            clearPendingAITiming()
+            return
+        }
+
+        pendingAITimingInputAt = Date()
+        pendingAITimingInputChars = commandLine.count
+        let app = aiDisplayAppName
+            ?? detectedApp
+            ?? Self.displayName(fromProvider: effectiveAIProvider)
+            ?? "unknown"
+        Log.info(
+            "AI timing: input submitted tab=\(tabIdentifier) app=\(app) provider=\(effectiveAIProvider ?? "nil") sessionId=\(effectiveAISessionId ?? "nil") chars=\(commandLine.count) status=\(effectiveStatus.rawValue) prompt=\(effectiveIsAtPrompt)"
+        )
+    }
+
+    private func noteAIFirstOutputIfNeeded(bytes: Int, at now: Date) {
+        guard let inputAt = pendingAITimingInputAt else { return }
+
+        let elapsed = now.timeIntervalSince(inputAt)
+        guard elapsed >= 0, elapsed <= aiTimingWindowSeconds else {
+            clearPendingAITiming()
+            return
+        }
+
+        let app = aiDisplayAppName
+            ?? Self.displayName(fromProvider: effectiveAIProvider)
+            ?? "unknown"
+        Log.info(
+            "AI timing: first output tab=\(tabIdentifier) app=\(app) provider=\(effectiveAIProvider ?? "nil") sessionId=\(effectiveAISessionId ?? "nil") inputChars=\(pendingAITimingInputChars) bytes=\(bytes) afterMs=\(Int((elapsed * 1000).rounded())) status=\(effectiveStatus.rawValue) prompt=\(effectiveIsAtPrompt)"
+        )
+        clearPendingAITiming()
+    }
+
+    private func clearPendingAITiming() {
+        pendingAITimingInputAt = nil
+        pendingAITimingInputChars = 0
     }
 
     private func recordDangerousCommandLineIfNeeded(_ commandLine: String) {
@@ -1947,10 +2114,21 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
         // Send exit to the shell (works with both backends)
         activeTerminalView?.send(txt: "exit\n")
+        scheduleForcedTerminationIfNeeded()
         Log.trace("Sent exit command to shell session.")
     }
 
+    func closeSessionForTermination() {
+        closeSession()
+        let shellPID = existingRustTerminalView?.shellPid ?? 0
+        guard shellPID > 0 else { return }
+        Log.warn("App termination requested immediate shell shutdown for session '\(title)' (pid=\(shellPID))")
+        sendTerminationSignal(SIGTERM, toShellPID: shellPID)
+    }
+
     private func handleProcessTermination(exitCode: Int32?) {
+        forcedTerminationWorkItem?.cancel()
+        forcedTerminationWorkItem = nil
         var shouldEmit = false
         var requestedByClose = false
         terminationStateQueue.sync {
@@ -2005,6 +2183,64 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             notify: shouldNotify,
             directory: currentDirectory
         )
+    }
+
+    private func scheduleForcedTerminationIfNeeded() {
+        let shellPID = existingRustTerminalView?.shellPid ?? 0
+        guard shellPID > 0 else { return }
+
+        forcedTerminationWorkItem?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.forceTerminateShellProcessGroupIfNeeded(expectedPID: shellPID)
+        }
+        forcedTerminationWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+    }
+
+    private func forceTerminateShellProcessGroupIfNeeded(expectedPID: pid_t) {
+        var shouldForce = false
+        terminationStateQueue.sync {
+            shouldForce = closeSessionRequested && !didHandleProcessTermination
+        }
+        guard shouldForce else { return }
+
+        let currentPID = existingRustTerminalView?.shellPid ?? 0
+        guard currentPID == expectedPID, currentPID > 0 else { return }
+
+        Log.warn("Force-terminating shell process group for session '\(title)' (pid=\(currentPID))")
+        sendTerminationSignal(SIGTERM, toShellPID: currentPID)
+
+        let hardKill = DispatchWorkItem { [weak self] in
+            self?.forceKillShellProcessGroupIfNeeded(expectedPID: expectedPID)
+        }
+        forcedTerminationWorkItem = hardKill
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: hardKill)
+    }
+
+    private func forceKillShellProcessGroupIfNeeded(expectedPID: pid_t) {
+        var shouldForce = false
+        terminationStateQueue.sync {
+            shouldForce = closeSessionRequested && !didHandleProcessTermination
+        }
+        guard shouldForce else { return }
+
+        let currentPID = existingRustTerminalView?.shellPid ?? 0
+        guard currentPID == expectedPID, currentPID > 0 else { return }
+
+        Log.error("Shell process group still alive after SIGTERM; sending SIGKILL (pid=\(currentPID))")
+        sendTerminationSignal(SIGKILL, toShellPID: currentPID)
+    }
+
+    private func sendTerminationSignal(_ signal: Int32, toShellPID shellPID: pid_t) {
+        if Darwin.kill(-shellPID, signal) == 0 {
+            return
+        }
+        if errno == ESRCH {
+            _ = Darwin.kill(shellPID, signal)
+        } else {
+            Log.warn("Failed to send signal \(signal) to process group \(shellPID): errno=\(errno)")
+            _ = Darwin.kill(shellPID, signal)
+        }
     }
 
     func copyOrInterrupt() {
@@ -2109,16 +2345,26 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     }
 
     func canPrefillInput() -> Bool {
+        Self.isPrefillReady(
+            isShellLoading: isShellLoading,
+            isAtPrompt: isAtPrompt,
+            hasView: existingRustTerminalView != nil,
+            status: status
+        )
+    }
+
+    static func isPrefillReady(
+        isShellLoading: Bool,
+        isAtPrompt: Bool,
+        hasView: Bool,
+        status: CommandStatus
+    ) -> Bool {
         guard !isShellLoading else { return false }
         guard isAtPrompt else { return false }
-        guard existingRustTerminalView != nil else { return false }
+        guard hasView else { return false }
 
-        switch status {
-        case .running, .stuck, .exited:
-            return false
-        case .idle, .waitingForInput:
-            return true
-        }
+        // Prompt detection is more authoritative than laggy status transitions.
+        return status != .exited
     }
 
     // MARK: - F21: Snippet Insertion

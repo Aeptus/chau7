@@ -91,7 +91,11 @@ let package = Package(
         // Test target
         .testTarget(
             name: "Chau7Tests",
-            dependencies: ["Chau7Core"],
+            dependencies: [
+                "Chau7Core",
+                "Chau7",
+                .product(name: "Atomics", package: "swift-atomics")
+            ],
             path: "Tests/Chau7Tests",
             exclude: [
                 "AI/README.md",
