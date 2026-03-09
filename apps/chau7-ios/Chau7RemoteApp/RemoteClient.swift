@@ -3,25 +3,29 @@ import CryptoKit
 import UIKit
 import Chau7Core
 import UserNotifications
+import os
+
+private let log = Logger(subsystem: "ch7", category: "RemoteClient")
 
 /// Manages the encrypted WebSocket connection to a macOS Chau7 instance.
-@MainActor
-final class RemoteClient: ObservableObject {
+@MainActor @Observable
+final class RemoteClient {
 
-    // MARK: - Published State
+    // MARK: - State
 
-    @Published var outputText = ""
-    @Published private(set) var tabs: [RemoteTab] = []
-    @Published private(set) var isConnected = false
-    @Published private(set) var status: String = "Disconnected"
-    @Published var activeTabID: UInt32 = 0
-    @Published var lastError: String?
-    @Published var pendingApprovals: [ApprovalRequest] = []
-    @Published var approvalHistory: [ApprovalHistoryEntry] = []
+    var outputText = ""
+    private(set) var strippedOutputText = ""
+    private(set) var tabs: [RemoteTab] = []
+    private(set) var isConnected = false
+    private(set) var status: String = "Disconnected"
+    var activeTabID: UInt32 = 0
+    var lastError: String?
+    var pendingApprovals: [ApprovalRequest] = []
+    var approvalHistory: [ApprovalHistoryEntry] = []
 
     // MARK: - Pairing (persisted in Keychain)
 
-    @Published var pairingInfo: PairingInfo? {
+    var pairingInfo: PairingInfo? {
         didSet { persistPairing() }
     }
 
@@ -34,7 +38,7 @@ final class RemoteClient: ObservableObject {
     private var nonceMac: Data?
     private var macPublicKey: Curve25519.KeyAgreement.PublicKey?
     private let iosKey: Curve25519.KeyAgreement.PrivateKey
-    private var notificationObserver: Any?
+    private var notificationTask: Task<Void, Never>?
     private var reconnectAttempt = 0
     private var reconnectTask: Task<Void, Never>?
     private var shouldReconnect = false
@@ -43,12 +47,7 @@ final class RemoteClient: ObservableObject {
     private static let maxFrameBytes = 65_536
     private static let maxHistory = 50
     private static let maxReconnectAttempts = 5
-    private static let appVersion = "1.1.0"
-
-    // MARK: - Haptics (cached)
-
-    private let lightHaptic = UIImpactFeedbackGenerator(style: .light)
-    private let warningHaptic = UINotificationFeedbackGenerator()
+    static let appVersion = "1.1.0"
 
     // MARK: - Init
 
@@ -56,18 +55,18 @@ final class RemoteClient: ObservableObject {
         iosKey = Self.loadOrCreateKey()
         pairingInfo = Self.loadPairing()
 
-        notificationObserver = NotificationCenter.default.addObserver(
-            forName: .approvalNotificationResponse, object: nil, queue: .main
-        ) { [weak self] note in
-            guard let self,
-                  let id = note.userInfo?["request_id"] as? String,
-                  let approved = note.userInfo?["approved"] as? Bool else { return }
-            Task { @MainActor in self.respondToApproval(requestID: id, approved: approved) }
+        notificationTask = Task { [weak self] in
+            for await note in NotificationCenter.default.notifications(named: .approvalNotificationResponse) {
+                guard let self,
+                      let id = note.userInfo?["request_id"] as? String,
+                      let approved = note.userInfo?["approved"] as? Bool else { continue }
+                self.respondToApproval(requestID: id, approved: approved)
+            }
         }
     }
 
     deinit {
-        if let obs = notificationObserver { NotificationCenter.default.removeObserver(obs) }
+        notificationTask?.cancel()
     }
 
     // MARK: - Connection
@@ -88,8 +87,10 @@ final class RemoteClient: ObservableObject {
             macPublicKey = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: keyData)
         }
 
-        let urlString = pairing.relayURL.strippingTrailingSlash + "/\(pairing.deviceID)?role=ios"
-        guard let url = URL(string: urlString) else {
+        var components = URLComponents(string: pairing.relayURL.strippingTrailingSlash)
+        components?.path += "/\(pairing.deviceID)"
+        components?.queryItems = [URLQueryItem(name: "role", value: "ios")]
+        guard let url = components?.url else {
             lastError = "Invalid relay URL"
             return
         }
@@ -98,7 +99,6 @@ final class RemoteClient: ObservableObject {
         webSocket = task
         task.resume()
         status = "Connecting"
-        isConnected = true
 
         sendHello()
         sendPairRequest()
@@ -137,10 +137,6 @@ final class RemoteClient: ObservableObject {
         sendJSON(TabSwitchPayload(tabID: tabID), type: .tabSwitch)
     }
 
-    func triggerLightHaptic() {
-        lightHaptic.impactOccurred()
-    }
-
     // MARK: - Approvals
 
     func respondToApproval(requestID: String, approved: Bool) {
@@ -155,8 +151,6 @@ final class RemoteClient: ObservableObject {
         }
 
         sendJSON(ApprovalResponsePayload(requestID: requestID, approved: approved), type: .approvalResponse)
-
-        // Dismiss matching local notification
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [requestID])
     }
 
@@ -167,7 +161,8 @@ final class RemoteClient: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 switch result {
-                case .failure:
+                case .failure(let error):
+                    log.error("WebSocket receive failed: \(error.localizedDescription)")
                     self.handleDisconnect()
                 case .success(let msg):
                     switch msg {
@@ -192,9 +187,9 @@ final class RemoteClient: ObservableObject {
         let delay = pow(2.0, Double(reconnectAttempt))
         status = "Reconnecting (\(reconnectAttempt)/\(Self.maxReconnectAttempts))..."
 
-        reconnectTask = Task {
+        reconnectTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
-            guard !Task.isCancelled, let pairing = self.pairingInfo else { return }
+            guard !Task.isCancelled, let self, let pairing = self.pairingInfo else { return }
             self.connect(pairing: pairing)
         }
     }
@@ -202,11 +197,17 @@ final class RemoteClient: ObservableObject {
     // MARK: - Frame Dispatch
 
     private func handleFrame(_ data: Data) {
-        guard let frame = try? RemoteFrame.decode(from: data) else { return }
+        guard let frame = try? RemoteFrame.decode(from: data) else {
+            log.warning("Failed to decode frame (\(data.count) bytes)")
+            return
+        }
 
         let payload: Data
         if frame.flags & RemoteFrame.flagEncrypted != 0 {
-            guard let crypto, let decrypted = try? crypto.decrypt(frame: frame) else { return }
+            guard let crypto, let decrypted = try? crypto.decrypt(frame: frame) else {
+                log.warning("Decryption failed for frame type=\(frame.type)")
+                return
+            }
             payload = decrypted
         } else {
             payload = frame.payload
@@ -216,10 +217,15 @@ final class RemoteClient: ObservableObject {
         case .hello:           handleHello(payload)
         case .pairAccept:      handlePairAccept(payload)
         case .pairReject:      handlePairReject(payload)
-        case .sessionReady:    status = "Session ready"; lastError = nil
+        case .sessionReady:
+            isConnected = true
+            status = "Session ready"
+            lastError = nil
         case .tabList:         handleTabList(payload)
         case .output:          appendOutput(payload)
-        case .snapshot:        outputText = String(data: payload, encoding: .utf8) ?? ""
+        case .snapshot:
+            outputText = String(data: payload, encoding: .utf8) ?? ""
+            strippedOutputText = ANSIStripper.strip(outputText)
         case .approvalRequest: handleApprovalRequest(payload)
         case .ping:            sendEncrypted(type: .pong, tabID: frame.tabID, payload: payload)
         case .error:           handleError(payload)
@@ -277,12 +283,14 @@ final class RemoteClient: ObservableObject {
         guard let text = String(data: capped, encoding: .utf8) else { return }
         outputText.append(text)
         if outputText.utf8.count > Self.maxOutputBytes {
-            // Trim from the front, keeping recent output
             let excess = outputText.utf8.count - Self.maxOutputBytes
             if let idx = outputText.utf8.index(outputText.utf8.startIndex, offsetBy: excess, limitedBy: outputText.utf8.endIndex) {
-                outputText = String(outputText[idx...])
+                // Advance to next character boundary to avoid splitting multi-byte chars
+                let safeIdx = outputText.index(idx, offsetBy: 0, limitedBy: outputText.endIndex) ?? outputText.startIndex
+                outputText = String(outputText[safeIdx...])
             }
         }
+        strippedOutputText = ANSIStripper.strip(outputText)
     }
 
     private func handleApprovalRequest(_ data: Data) {
@@ -292,9 +300,6 @@ final class RemoteClient: ObservableObject {
             flaggedCommand: p.flaggedCommand, timestamp: Date()
         ))
 
-        warningHaptic.notificationOccurred(.warning)
-
-        // Fire local notification for background handling
         let content = UNMutableNotificationContent()
         content.title = "MCP Command Approval"
         content.body = p.command
@@ -320,6 +325,7 @@ final class RemoteClient: ObservableObject {
 
         crypto = session
         reconnectAttempt = 0
+        isConnected = true
         sendJSON(SessionReadyPayload(sessionID: CryptoUtils.randomBytes(count: 8).base64EncodedString()),
                  type: .sessionReady, encrypt: true)
         status = "Encrypted"
@@ -348,7 +354,10 @@ final class RemoteClient: ObservableObject {
     }
 
     private func sendJSON<T: Encodable>(_ payload: T, type: RemoteFrameType, encrypt: Bool = true) {
-        guard let data = try? JSONEncoder().encode(payload) else { return }
+        guard let data = try? JSONEncoder().encode(payload) else {
+            log.error("Failed to encode \(String(describing: T.self)) for frame type \(type.rawValue)")
+            return
+        }
         if encrypt {
             sendEncrypted(type: type, tabID: 0, payload: data)
         } else {
@@ -359,12 +368,17 @@ final class RemoteClient: ObservableObject {
     private func sendEncrypted(type: RemoteFrameType, tabID: UInt32, payload: Data) {
         guard let crypto else { return }
         let frame = RemoteFrame(type: type.rawValue, tabID: tabID, seq: nextSeq(), payload: payload)
-        guard let encrypted = try? crypto.encrypt(frame: frame) else { return }
+        guard let encrypted = try? crypto.encrypt(frame: frame) else {
+            log.error("Encryption failed for frame type \(type.rawValue)")
+            return
+        }
         send(encrypted)
     }
 
     private func send(_ frame: RemoteFrame) {
-        webSocket?.send(.data(frame.encode())) { _ in }
+        webSocket?.send(.data(frame.encode())) { error in
+            if let error { log.error("WebSocket send failed: \(error.localizedDescription)") }
+        }
     }
 
     private func nextSeq() -> UInt64 {

@@ -1,5 +1,8 @@
 import SwiftUI
 import UserNotifications
+import os
+
+private let log = Logger(subsystem: "ch7", category: "App")
 
 @main
 struct Chau7RemoteApp: App {
@@ -18,7 +21,13 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error {
+                log.error("Notification auth failed: \(error.localizedDescription)")
+            } else if !granted {
+                log.info("Notification permission denied by user")
+            }
+        }
         center.setNotificationCategories([
             UNNotificationCategory(
                 identifier: "MCP_APPROVAL",
@@ -57,7 +66,7 @@ extension Notification.Name {
 // MARK: - Root View
 
 struct RemoteRootView: View {
-    @StateObject private var client = RemoteClient()
+    @State private var client = RemoteClient()
     @State private var selectedTab = Tab.terminal
     @State private var isPairingPresented = false
 
@@ -74,7 +83,7 @@ struct RemoteRootView: View {
                 .tag(Tab.approvals)
                 .badge(client.pendingApprovals.count)
 
-            RemoteSettingsView(client: client, isPairingPresented: $isPairingPresented)
+            SettingsView(client: client, isPairingPresented: $isPairingPresented)
                 .tabItem { Label("Settings", systemImage: "gearshape") }
                 .tag(Tab.settings)
         }

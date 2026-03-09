@@ -1,13 +1,14 @@
 import SwiftUI
 
 struct TerminalView: View {
-    @ObservedObject var client: RemoteClient
+    var client: RemoteClient
     @Binding var isPairingPresented: Bool
 
-    @AppStorage("hold_to_send") private var holdToSend = true
-    @AppStorage("append_newline") private var appendNewline = true
-    @AppStorage("render_ansi") private var renderANSI = false
+    @AppStorage(AppSettings.holdToSendKey) private var holdToSend = AppSettings.holdToSendDefault
+    @AppStorage(AppSettings.appendNewlineKey) private var appendNewline = AppSettings.appendNewlineDefault
+    @AppStorage(AppSettings.renderANSIKey) private var renderANSI = AppSettings.renderANSIDefault
     @State private var inputText = ""
+    @State private var sendCount = 0
 
     var body: some View {
         NavigationStack {
@@ -79,7 +80,7 @@ struct TerminalView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(client.tabs) { tab in
-                    TabChip(tab: tab, isSelected: tab.isActive) {
+                    TabChip(tab: tab, isSelected: tab.tabID == client.activeTabID) {
                         client.switchTab(tab.tabID)
                     }
                 }
@@ -95,7 +96,7 @@ struct TerminalView: View {
     private var outputView: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                Text(renderANSI ? client.outputText : ANSIStripper.strip(client.outputText))
+                Text(renderANSI ? client.outputText : client.strippedOutputText)
                     .font(.system(size: 13, design: .monospaced))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(8)
@@ -158,9 +159,9 @@ struct TerminalView: View {
             Button {} label: {
                 Image(systemName: "arrow.up.circle.fill").font(.title2)
             }
+            .sensoryFeedback(.impact(flexibility: .solid, intensity: 0.5), trigger: sendCount)
             .simultaneousGesture(
                 LongPressGesture(minimumDuration: 0.4).onEnded { _ in
-                    client.triggerLightHaptic()
                     submitInput()
                 }
             )
@@ -175,6 +176,7 @@ struct TerminalView: View {
     private func submitInput() {
         let text = inputText
         inputText = ""
+        sendCount += 1
         client.sendInput(text, appendNewline: appendNewline)
     }
 }
@@ -209,6 +211,7 @@ struct TermKey: View {
     let label: String
     let sequence: String
     let client: RemoteClient
+    @State private var tapCount = 0
 
     init(_ label: String, send sequence: String, client: RemoteClient) {
         self.label = label
@@ -218,7 +221,7 @@ struct TermKey: View {
 
     var body: some View {
         Button {
-            client.triggerLightHaptic()
+            tapCount += 1
             client.sendInput(sequence, appendNewline: false)
         } label: {
             Text(label)
@@ -228,6 +231,7 @@ struct TermKey: View {
                 .background(Color(UIColor.quaternarySystemFill))
                 .cornerRadius(6)
         }
+        .sensoryFeedback(.impact(flexibility: .solid, intensity: 0.3), trigger: tapCount)
         .buttonStyle(.plain)
         .disabled(!client.isConnected)
     }

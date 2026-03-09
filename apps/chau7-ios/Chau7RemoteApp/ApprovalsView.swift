@@ -1,9 +1,8 @@
 import SwiftUI
 
 struct ApprovalsView: View {
-    @ObservedObject var client: RemoteClient
-
-    private let haptic = UINotificationFeedbackGenerator()
+    var client: RemoteClient
+    @State private var hapticTrigger = false
 
     var body: some View {
         NavigationStack {
@@ -20,7 +19,7 @@ struct ApprovalsView: View {
                     Section("Pending") {
                         ForEach(client.pendingApprovals) { request in
                             ApprovalRequestCard(request: request) { approved in
-                                haptic.notificationOccurred(approved ? .success : .error)
+                                hapticTrigger.toggle()
                                 client.respondToApproval(requestID: request.requestID, approved: approved)
                             }
                         }
@@ -37,6 +36,7 @@ struct ApprovalsView: View {
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Approvals")
+            .sensoryFeedback(.success, trigger: hapticTrigger)
         }
     }
 }
