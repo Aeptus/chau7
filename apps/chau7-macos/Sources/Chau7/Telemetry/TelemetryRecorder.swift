@@ -126,7 +126,7 @@ final class TelemetryRecorder {
     func updateSessionID(provider: String, cwd: String, sessionID: String) {
         lock.lock()
         let normalizedProvider = provider.lowercased()
-        let match = inProgressRuns.first { (_, run) in
+        let match = inProgressRuns.first { _, run in
             guard run.provider.lowercased().contains(normalizedProvider) else { return false }
             guard run.sessionID == nil || run.sessionID?.isEmpty == true else { return false }
             // Flexible cwd match: exact, parent, or child directory
