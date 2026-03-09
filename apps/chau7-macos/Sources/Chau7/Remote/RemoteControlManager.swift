@@ -205,6 +205,8 @@ final class RemoteControlManager: ObservableObject {
             handleTabSwitch(frame)
         case .input:
             handleInput(frame)
+        case .approvalResponse:
+            handleApprovalResponse(frame)
         case .ping:
             sendFrame(type: .pong, tabID: frame.tabID, payload: frame.payload)
         case .error:
@@ -253,6 +255,25 @@ final class RemoteControlManager: ObservableObject {
         }
     }
 
+    // MARK: - Approval Frames
+
+    /// Send a command approval request to the iOS app.
+    func sendApprovalRequest(requestID: String, payload: Data) {
+        guard isIPCConnected else { return }
+        sendFrame(type: .approvalRequest, tabID: 0, payload: payload)
+        logger.info("Remote: sent approval request \(requestID)")
+    }
+
+    private func handleApprovalResponse(_ frame: RemoteFrame) {
+        do {
+            let response = try JSONDecoder().decode(ApprovalResponsePayload.self, from: frame.payload)
+            TerminalControlService.shared.resolveApproval(requestID: response.requestID, approved: response.approved)
+            logger.info("Remote: approval response for \(response.requestID): \(response.approved ? "allowed" : "denied")")
+        } catch {
+            logger.warning("Failed to decode approval response: \(error.localizedDescription)")
+        }
+    }
+
     private func sendInitialState() {
         sendTabList()
         sendSnapshot(for: 0)
@@ -279,7 +300,8 @@ final class RemoteControlManager: ObservableObject {
                 RemoteTabDescriptor(
                     tabID: tabID,
                     title: tab.displayTitle,
-                    isActive: tab.id == overlayModel.selectedTabID
+                    isActive: tab.id == overlayModel.selectedTabID,
+                    isMCPControlled: tab.isMCPControlled
                 )
             )
         }
@@ -513,11 +535,13 @@ struct RemoteTabDescriptor: Codable, Equatable {
     let tabID: UInt32
     let title: String
     let isActive: Bool
+    let isMCPControlled: Bool
 
     enum CodingKeys: String, CodingKey {
         case tabID = "tab_id"
         case title
         case isActive = "is_active"
+        case isMCPControlled = "is_mcp_controlled"
     }
 }
 

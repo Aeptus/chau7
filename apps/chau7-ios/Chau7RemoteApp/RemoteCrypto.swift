@@ -25,34 +25,50 @@ struct RemoteCryptoSession {
     }
 
     func encrypt(frame: RemoteFrame) throws -> RemoteFrame {
-        var encrypted = frame
-        encrypted.flags |= RemoteFrame.flagEncrypted
-        let nonce = try makeNonce(prefix: noncePrefix, seq: frame.seq)
-        let payloadLen = UInt32(frame.payload.count + 16)
-        let header = encrypted.headerBytes(payloadLen: payloadLen)
+        let nonce = try makeNonce(seq: frame.seq)
+        // Build header with encrypted flag set and ciphertext+tag length
+        let encryptedPayloadLen = UInt32(frame.payload.count + 16)
+        let header = RemoteFrame(
+            version: frame.version,
+            type: frame.type,
+            flags: frame.flags | RemoteFrame.flagEncrypted,
+            reserved: frame.reserved,
+            tabID: frame.tabID,
+            seq: frame.seq,
+            payload: Data()
+        ).headerBytes(payloadLen: encryptedPayloadLen)
+
         let sealed = try ChaChaPoly.seal(frame.payload, using: key, nonce: nonce, authenticating: header)
-        var combined = sealed.ciphertext
-        combined.append(sealed.tag)
-        encrypted.payload = combined
-        return encrypted
+        var ciphertext = sealed.ciphertext
+        ciphertext.append(sealed.tag)
+
+        return RemoteFrame(
+            version: frame.version,
+            type: frame.type,
+            flags: frame.flags | RemoteFrame.flagEncrypted,
+            reserved: frame.reserved,
+            tabID: frame.tabID,
+            seq: frame.seq,
+            payload: ciphertext
+        )
     }
 
     func decrypt(frame: RemoteFrame) throws -> Data {
-        let header = frame.headerBytes(payloadLen: UInt32(frame.payload.count))
         guard frame.payload.count >= 16 else {
             throw RemoteCryptoError.invalidCiphertext
         }
+        let header = frame.headerBytes(payloadLen: UInt32(frame.payload.count))
         let tagStart = frame.payload.count - 16
         let ciphertext = Data(frame.payload.prefix(tagStart))
         let tag = Data(frame.payload.suffix(16))
-        let nonce = try makeNonce(prefix: noncePrefix, seq: frame.seq)
+        let nonce = try makeNonce(seq: frame.seq)
         let sealedBox = try ChaChaPoly.SealedBox(nonce: nonce, ciphertext: ciphertext, tag: tag)
         return try ChaChaPoly.open(sealedBox, using: key, authenticating: header)
     }
 
-    private func makeNonce(prefix: Data, seq: UInt64) throws -> ChaChaPoly.Nonce {
+    private func makeNonce(seq: UInt64) throws -> ChaChaPoly.Nonce {
         var data = Data(count: 12)
-        data.replaceSubrange(0..<4, with: prefix)
+        data.replaceSubrange(0..<4, with: noncePrefix)
         var seqLE = seq.littleEndian
         withUnsafeBytes(of: &seqLE) { buffer in
             data.replaceSubrange(4..<12, with: buffer)
