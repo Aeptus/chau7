@@ -3,6 +3,9 @@ import SwiftUI
 struct MCPSettingsView: View {
     @ObservedObject private var settings = FeatureSettings.shared
 
+    @State private var newAllowedCommand = ""
+    @State private var newBlockedCommand = ""
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SettingsSectionHeader(L("settings.mcp.general", "General"), icon: "face.dashed")
@@ -31,6 +34,55 @@ struct MCPSettingsView: View {
                 .disabled(!settings.mcpEnabled)
             }
 
+            // MARK: - Command Permissions
+
+            SettingsSectionHeader(L("settings.mcp.permissions", "Command Permissions"), icon: "lock.shield")
+
+            SettingsRow(L("settings.mcp.permissionMode", "Permission Mode"), help: L("settings.mcp.permissionMode.help", "Controls how MCP commands are filtered")) {
+                Picker("", selection: $settings.mcpPermissionMode) {
+                    ForEach(MCPPermissionMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(!settings.mcpEnabled)
+            }
+
+            if settings.mcpPermissionMode != .allowAll {
+                commandListSection(
+                    title: L("settings.mcp.allowedCommands", "Allowed Commands"),
+                    help: L("settings.mcp.allowedCommands.help", "Commands that run immediately without prompting"),
+                    commands: $settings.mcpAllowedCommands,
+                    newCommand: $newAllowedCommand,
+                    placeholder: "e.g. git, ls, cat"
+                )
+            }
+
+            commandListSection(
+                title: L("settings.mcp.blockedCommands", "Blocked Commands"),
+                help: L("settings.mcp.blockedCommands.help", "Commands that are always rejected — never execute"),
+                commands: $settings.mcpBlockedCommands,
+                newCommand: $newBlockedCommand,
+                placeholder: "e.g. rm, sudo, curl"
+            )
+
+            switch settings.mcpPermissionMode {
+            case .allowAll:
+                Text("All commands run immediately except those in the blocked list.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case .allowlist:
+                Text("Only commands in the allowed list run. Unlisted commands are denied.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            case .askUnlisted:
+                Text("Commands not in either list will prompt for approval.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // MARK: - Appearance
+
             SettingsSectionHeader(L("settings.mcp.appearance", "Appearance"), icon: "paintpalette")
 
             SettingsToggle(
@@ -39,5 +91,113 @@ struct MCPSettingsView: View {
                 isOn: $settings.mcpShowTabIndicator
             )
         }
+    }
+
+    private func commandListSection(
+        title: String,
+        help: String,
+        commands: Binding<[String]>,
+        newCommand: Binding<String>,
+        placeholder: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.subheadline.weight(.medium))
+
+            // Tag-style chips for existing commands
+            if !commands.wrappedValue.isEmpty {
+                MCPCommandFlowLayout(spacing: 6) {
+                    ForEach(commands.wrappedValue, id: \.self) { cmd in
+                        HStack(spacing: 4) {
+                            Text(cmd)
+                                .font(.system(.caption, design: .monospaced))
+                            Button(action: {
+                                commands.wrappedValue.removeAll { $0 == cmd }
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.secondary.opacity(0.12))
+                        .cornerRadius(6)
+                    }
+                }
+            }
+
+            // Add new command
+            HStack(spacing: 6) {
+                TextField(placeholder, text: newCommand)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+                    .onSubmit {
+                        addCommand(to: commands, from: newCommand)
+                    }
+                Button("Add") {
+                    addCommand(to: commands, from: newCommand)
+                }
+                .disabled(newCommand.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(.leading, 4)
+    }
+
+    private func addCommand(to list: Binding<[String]>, from text: Binding<String>) {
+        let trimmed = text.wrappedValue.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !trimmed.isEmpty, !list.wrappedValue.contains(trimmed) else {
+            text.wrappedValue = ""
+            return
+        }
+        list.wrappedValue.append(trimmed)
+        text.wrappedValue = ""
+    }
+}
+
+/// Simple flow layout for tag chips.
+private struct MCPCommandFlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = layout(proposal: proposal, subviews: subviews)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = layout(proposal: proposal, subviews: subviews)
+        for (index, position) in result.positions.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y), proposal: .unspecified)
+        }
+    }
+
+    private struct LayoutResult {
+        var size: CGSize
+        var positions: [CGPoint]
+    }
+
+    private func layout(proposal: ProposedViewSize, subviews: Subviews) -> LayoutResult {
+        let maxWidth = proposal.width ?? .infinity
+        var positions: [CGPoint] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var totalHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > maxWidth, x > 0 {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            positions.append(CGPoint(x: x, y: y))
+            rowHeight = max(rowHeight, size.height)
+            x += size.width + spacing
+            totalHeight = y + rowHeight
+        }
+
+        return LayoutResult(size: CGSize(width: maxWidth, height: totalHeight), positions: positions)
     }
 }

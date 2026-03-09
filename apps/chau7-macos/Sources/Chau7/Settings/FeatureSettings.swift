@@ -459,12 +459,50 @@ enum DangerousCommandHighlightScope: String, CaseIterable, Codable {
     case allOutputs = "all_outputs"
 }
 
+enum MCPPermissionMode: String, CaseIterable, Codable {
+    case allowAll = "allow_all"
+    case allowlist
+    case askUnlisted = "ask_unlisted"
+
+    var displayName: String {
+        switch self {
+        case .allowAll: return "Allow All"
+        case .allowlist: return "Allowlist Only"
+        case .askUnlisted: return "Ask for Unlisted"
+        }
+    }
+}
+
 // MARK: - Feature Settings (Centralized configuration for all features)
 
 /// Centralized feature flags and settings for Chau7.
 /// All features can be toggled in Settings and values are persisted in UserDefaults.
 final class FeatureSettings: ObservableObject {
     static let shared = FeatureSettings()
+
+    private struct MCPRemoteSettings {
+        var enabled: Bool
+        var maxTabs: Int
+        var requiresApproval: Bool
+        var showTabIndicator: Bool
+        var permissionMode: MCPPermissionMode
+        var allowedCommands: [String]
+        var blockedCommands: [String]
+        var remoteEnabled: Bool
+        var remoteRelayURL: String
+    }
+
+    private struct IntegrationSettings {
+        var shellEventConfig: ShellEventConfig
+        var appEventConfig: AppEventConfig
+        var hasRequestedNotificationPermission: Bool
+        var isTmuxIntegrationEnabled: Bool
+        var isTmuxAutoAttachEnabled: Bool
+        var errorExplainEnabled: Bool
+        var isCTOEnabled: Bool
+        var ctoPrefix: String
+        var ctoTabOverrides: [String: Bool]
+    }
 
     // MARK: - Font Settings (NEW)
 
@@ -1691,6 +1729,18 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(mcpShowTabIndicator, forKey: Keys.mcpShowTabIndicator) }
     }
 
+    @Published var mcpPermissionMode: MCPPermissionMode {
+        didSet { UserDefaults.standard.set(mcpPermissionMode.rawValue, forKey: Keys.mcpPermissionMode) }
+    }
+
+    @Published var mcpAllowedCommands: [String] {
+        didSet { UserDefaults.standard.set(mcpAllowedCommands, forKey: Keys.mcpAllowedCommands) }
+    }
+
+    @Published var mcpBlockedCommands: [String] {
+        didSet { UserDefaults.standard.set(mcpBlockedCommands, forKey: Keys.mcpBlockedCommands) }
+    }
+
     // MARK: - Remote Control Settings
 
     @Published var isRemoteEnabled: Bool {
@@ -1929,6 +1979,9 @@ final class FeatureSettings: ObservableObject {
         static let mcpMaxTabs = "mcp.maxTabs"
         static let mcpRequiresApproval = "mcp.requiresApproval"
         static let mcpShowTabIndicator = "mcp.showTabIndicator"
+        static let mcpPermissionMode = "mcp.permissionMode"
+        static let mcpAllowedCommands = "mcp.allowedCommands"
+        static let mcpBlockedCommands = "mcp.blockedCommands"
         // Remote Control
         static let remoteEnabled = "remote.enabled"
         static let remoteRelayURL = "remote.relayURL"
@@ -2271,53 +2324,103 @@ final class FeatureSettings: ObservableObject {
             self.tokenOptimizationMode = .off
         }
 
+        let mcpRemote = Self.mcpAndRemoteSettings(from: defaults)
+        (mcpEnabled, mcpMaxTabs, mcpRequiresApproval, mcpShowTabIndicator) = (
+            mcpRemote.enabled,
+            mcpRemote.maxTabs,
+            mcpRemote.requiresApproval,
+            mcpRemote.showTabIndicator
+        )
+        (mcpPermissionMode, mcpAllowedCommands, mcpBlockedCommands) = (
+            mcpRemote.permissionMode,
+            mcpRemote.allowedCommands,
+            mcpRemote.blockedCommands
+        )
+        (isRemoteEnabled, remoteRelayURL) = (mcpRemote.remoteEnabled, mcpRemote.remoteRelayURL)
+
+        let integration = Self.integrationSettings(from: defaults)
+        self.shellEventConfig = integration.shellEventConfig
+        self.appEventConfig = integration.appEventConfig
+        self.hasRequestedNotificationPermission = integration.hasRequestedNotificationPermission
+        self.isTmuxIntegrationEnabled = integration.isTmuxIntegrationEnabled
+        self.isTmuxAutoAttachEnabled = integration.isTmuxAutoAttachEnabled
+        self.errorExplainEnabled = integration.errorExplainEnabled
+        self.isCTOEnabled = integration.isCTOEnabled
+        self.ctoPrefix = integration.ctoPrefix
+        self.ctoTabOverrides = integration.ctoTabOverrides
+    }
+
+    private static func mcpAndRemoteSettings(from defaults: UserDefaults) -> MCPRemoteSettings {
         // MCP (default: enabled, 4 tabs, no approval, indicator on)
-        self.mcpEnabled = defaults.object(forKey: Keys.mcpEnabled) as? Bool ?? true
-        self.mcpMaxTabs = defaults.object(forKey: Keys.mcpMaxTabs) as? Int ?? 4
-        self.mcpRequiresApproval = defaults.object(forKey: Keys.mcpRequiresApproval) as? Bool ?? false
-        self.mcpShowTabIndicator = defaults.object(forKey: Keys.mcpShowTabIndicator) as? Bool ?? true
+        let enabled = defaults.object(forKey: Keys.mcpEnabled) as? Bool ?? true
+        let maxTabs = defaults.object(forKey: Keys.mcpMaxTabs) as? Int ?? 4
+        let requiresApproval = defaults.object(forKey: Keys.mcpRequiresApproval) as? Bool ?? false
+        let showTabIndicator = defaults.object(forKey: Keys.mcpShowTabIndicator) as? Bool ?? true
+        let permissionMode: MCPPermissionMode
+        if let modeRaw = defaults.string(forKey: Keys.mcpPermissionMode),
+           let mode = MCPPermissionMode(rawValue: modeRaw) {
+            permissionMode = mode
+        } else {
+            permissionMode = .allowAll
+        }
+        let allowedCommands = defaults.stringArray(forKey: Keys.mcpAllowedCommands) ?? []
+        let blockedCommands = defaults.stringArray(forKey: Keys.mcpBlockedCommands) ?? []
 
         // Remote Control (default: disabled)
-        self.isRemoteEnabled = defaults.object(forKey: Keys.remoteEnabled) as? Bool ?? false
-        self.remoteRelayURL = defaults.string(forKey: Keys.remoteRelayURL) ?? "wss://relay.example.com/connect"
+        let remoteEnabled = defaults.object(forKey: Keys.remoteEnabled) as? Bool ?? false
+        let remoteRelayURL = defaults.string(forKey: Keys.remoteRelayURL) ?? "wss://relay.example.com/connect"
 
-        // Shell Event Detection
+        return MCPRemoteSettings(
+            enabled: enabled,
+            maxTabs: maxTabs,
+            requiresApproval: requiresApproval,
+            showTabIndicator: showTabIndicator,
+            permissionMode: permissionMode,
+            allowedCommands: allowedCommands,
+            blockedCommands: blockedCommands,
+            remoteEnabled: remoteEnabled,
+            remoteRelayURL: remoteRelayURL
+        )
+    }
+
+    private static func integrationSettings(from defaults: UserDefaults) -> IntegrationSettings {
+        let shellEventConfig: ShellEventConfig
         if let data = defaults.data(forKey: Keys.shellEventConfig),
            let config = JSONOperations.decode(ShellEventConfig.self, from: data, context: "shellEventConfig") {
-            self.shellEventConfig = config
+            shellEventConfig = config
         } else {
-            self.shellEventConfig = .default
+            shellEventConfig = .default
         }
 
-        // App Event Detection
+        let appEventConfig: AppEventConfig
         if let data = defaults.data(forKey: Keys.appEventConfig),
            let config = JSONOperations.decode(AppEventConfig.self, from: data, context: "appEventConfig") {
-            self.appEventConfig = config
+            appEventConfig = config
         } else {
-            self.appEventConfig = .default
+            appEventConfig = .default
         }
 
-        // Notification Permission tracking (persistent)
-        self.hasRequestedNotificationPermission = defaults.object(forKey: Keys.hasRequestedNotificationPermission) as? Bool ?? false
-
-        // Tmux Integration
-        self.isTmuxIntegrationEnabled = defaults.object(forKey: Keys.tmuxIntegrationEnabled) as? Bool ?? false
-        self.isTmuxAutoAttachEnabled = defaults.object(forKey: Keys.tmuxAutoAttachEnabled) as? Bool ?? false
-
-        // LLM / Error Explanation
-        self.errorExplainEnabled = defaults.object(forKey: Keys.errorExplainEnabled) as? Bool ?? false
-
-        // CTO Integration
-        self.isCTOEnabled = defaults.object(forKey: Keys.ctoEnabled) as? Bool ?? false
-        self.ctoPrefix = defaults.string(forKey: Keys.ctoPrefix) ?? ""
+        let ctoTabOverrides: [String: Bool]
         if let raw = defaults.dictionary(forKey: Keys.ctoTabOverrides) {
-            self.ctoTabOverrides = raw.compactMapValues { value in
+            ctoTabOverrides = raw.compactMapValues { value in
                 guard let boolValue = value as? Bool else { return nil }
                 return boolValue
             }
         } else {
-            self.ctoTabOverrides = [:]
+            ctoTabOverrides = [:]
         }
+
+        return IntegrationSettings(
+            shellEventConfig: shellEventConfig,
+            appEventConfig: appEventConfig,
+            hasRequestedNotificationPermission: defaults.object(forKey: Keys.hasRequestedNotificationPermission) as? Bool ?? false,
+            isTmuxIntegrationEnabled: defaults.object(forKey: Keys.tmuxIntegrationEnabled) as? Bool ?? false,
+            isTmuxAutoAttachEnabled: defaults.object(forKey: Keys.tmuxAutoAttachEnabled) as? Bool ?? false,
+            errorExplainEnabled: defaults.object(forKey: Keys.errorExplainEnabled) as? Bool ?? false,
+            isCTOEnabled: defaults.object(forKey: Keys.ctoEnabled) as? Bool ?? false,
+            ctoPrefix: defaults.string(forKey: Keys.ctoPrefix) ?? "",
+            ctoTabOverrides: ctoTabOverrides
+        )
     }
 
     private static func migratedShortcutsIfNeeded(_ shortcuts: [KeyboardShortcut]) -> [KeyboardShortcut] {
@@ -2535,11 +2638,14 @@ final class FeatureSettings: ObservableObject {
         var mcpMaxTabs: Int?
         var mcpRequiresApproval: Bool?
         var mcpShowTabIndicator: Bool?
+        var mcpPermissionMode: String?
+        var mcpAllowedCommands: [String]?
+        var mcpBlockedCommands: [String]?
         var isRemoteEnabled: Bool?
         var remoteRelayURL: String?
         var isCTOEnabled = false
         var ctoPrefix = ""
-        var ctoTabOverrides: [String: Bool] = [:]
+        var ctoTabOverrides = [String: Bool]()
         var exportVersion = 1
     }
 
@@ -2628,6 +2734,9 @@ final class FeatureSettings: ObservableObject {
             mcpMaxTabs: mcpMaxTabs,
             mcpRequiresApproval: mcpRequiresApproval,
             mcpShowTabIndicator: mcpShowTabIndicator,
+            mcpPermissionMode: mcpPermissionMode.rawValue,
+            mcpAllowedCommands: mcpAllowedCommands,
+            mcpBlockedCommands: mcpBlockedCommands,
             isRemoteEnabled: isRemoteEnabled,
             remoteRelayURL: remoteRelayURL,
             isCTOEnabled: isCTOEnabled,
@@ -2774,6 +2883,9 @@ final class FeatureSettings: ObservableObject {
         if let v = imported.mcpMaxTabs { mcpMaxTabs = v }
         if let v = imported.mcpRequiresApproval { mcpRequiresApproval = v }
         if let v = imported.mcpShowTabIndicator { mcpShowTabIndicator = v }
+        if let v = imported.mcpPermissionMode, let mode = MCPPermissionMode(rawValue: v) { mcpPermissionMode = mode }
+        if let v = imported.mcpAllowedCommands { mcpAllowedCommands = v }
+        if let v = imported.mcpBlockedCommands { mcpBlockedCommands = v }
         if let remoteEnabled = imported.isRemoteEnabled {
             isRemoteEnabled = remoteEnabled
         }
@@ -2890,6 +3002,9 @@ final class FeatureSettings: ObservableObject {
         mcpMaxTabs = 4
         mcpRequiresApproval = false
         mcpShowTabIndicator = true
+        mcpPermissionMode = .allowAll
+        mcpAllowedCommands = []
+        mcpBlockedCommands = []
         isRemoteEnabled = false
         remoteRelayURL = "wss://relay.example.com/connect"
         isCTOEnabled = false
@@ -3144,6 +3259,9 @@ extension FeatureSettings {
             mcpMaxTabs: 4,
             mcpRequiresApproval: false,
             mcpShowTabIndicator: true,
+            mcpPermissionMode: MCPPermissionMode.allowAll.rawValue,
+            mcpAllowedCommands: [],
+            mcpBlockedCommands: [],
             isRemoteEnabled: false,
             remoteRelayURL: "wss://relay.example.com/connect",
             isCTOEnabled: false,

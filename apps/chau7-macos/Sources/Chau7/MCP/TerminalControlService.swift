@@ -30,6 +30,12 @@ final class TerminalControlService {
     /// Maximum output size returned by tab_output (512 KB).
     private static let maxOutputBytes = 512 * 1024
 
+    // MARK: - Pending Approvals
+
+    /// Tracks in-flight approval requests so iOS responses can resolve them.
+    private var pendingApprovals: [String: (Bool) -> Void] = [:]
+    private let approvalLock = NSLock()
+
     /// Register an overlay model. Call from AppDelegate for every new window.
     func register(_ model: OverlayTabsModel) {
         // Already registered? Skip.
@@ -151,6 +157,10 @@ final class TerminalControlService {
     }
 
     func execInTab(tabID: String, command: String) -> String {
+        if let err = enforceVerdict(MCPCommandFilter.check(command), fullInput: command, context: "tab \(tabID)") {
+            return err
+        }
+
         // Validate tab existence and prompt state synchronously on main,
         // but send the actual input asynchronously to avoid deadlocking
         // the main thread. The Rust terminal's sendInput → onInput callback
@@ -228,6 +238,10 @@ final class TerminalControlService {
     }
 
     func sendInput(tabID: String, input: String) -> String {
+        if let err = enforceVerdict(MCPCommandFilter.checkRawInput(input), fullInput: input, context: "tab \(tabID)") {
+            return err
+        }
+
         // Validate tab existence synchronously, send input asynchronously.
         // Same deadlock avoidance as execInTab — sendInput triggers the
         // same onInput → handleInputLine → isPtyEchoDisabled → pty_handle.lock() chain.
@@ -365,6 +379,16 @@ final class TerminalControlService {
         }
     }
 
+    // MARK: - Approval Response (from iOS)
+
+    /// Called by RemoteControlManager when the iOS app responds to an approval request.
+    func resolveApproval(requestID: String, approved: Bool) {
+        approvalLock.lock()
+        let handler = pendingApprovals.removeValue(forKey: requestID)
+        approvalLock.unlock()
+        handler?(approved)
+    }
+
     // MARK: - Helpers
 
     /// Find the OverlayTabsModel that owns a given tab UUID.
@@ -410,7 +434,17 @@ final class TerminalControlService {
         return DispatchQueue.main.sync { block() }
     }
 
-    /// Show a modal approval dialog. Must be called on main thread.
+    /// Dispatch to the main actor and return result.
+    private func onMainActor<T>(_ block: @MainActor @escaping () -> T) -> T {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated(block)
+        }
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated(block)
+        }
+    }
+
+    /// Show a modal approval dialog for tab creation. Must be called on main thread.
     private func requestApproval(message: String) -> Bool {
         let alert = NSAlert()
         alert.messageText = "MCP Tab Request"
@@ -419,6 +453,77 @@ final class TerminalControlService {
         alert.addButton(withTitle: "Allow")
         alert.addButton(withTitle: "Deny")
         return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// Dual-path command approval: shows NSAlert on Mac AND sends request to iOS.
+    /// First response (Mac or iOS) wins. Must be called on main thread.
+    private func requestCommandApproval(command: String, flaggedCommand: String) -> Bool {
+        let requestID = UUID().uuidString
+
+        // Send approval request to iOS via RemoteControlManager
+        let payload = ApprovalRequestPayload(
+            requestID: requestID,
+            command: command,
+            flaggedCommand: flaggedCommand,
+            timestamp: ISO8601DateFormatter().string(from: Date())
+        )
+        if let data = try? JSONEncoder().encode(payload) {
+            onMainActor {
+                RemoteControlManager.shared.sendApprovalRequest(requestID: requestID, payload: data)
+            }
+        }
+
+        // Show local alert — this blocks the main thread until user clicks
+        let alert = NSAlert()
+        alert.messageText = "MCP Command Approval"
+        alert.informativeText = "An MCP client wants to execute:\n\n\(command)\n\nAllow this command?"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Allow")
+        alert.addButton(withTitle: "Deny")
+
+        // Register a handler so iOS response can dismiss the alert
+        var iosResolved = false
+        var iosApproved = false
+        approvalLock.lock()
+        pendingApprovals[requestID] = { approved in
+            iosResolved = true
+            iosApproved = approved
+            // Dismiss the Mac alert from iOS response
+            DispatchQueue.main.async {
+                NSApp.stopModal(withCode: approved ? .alertFirstButtonReturn : .alertSecondButtonReturn)
+            }
+        }
+        approvalLock.unlock()
+
+        let response = alert.runModal()
+
+        // Clean up pending handler if Mac user responded first
+        approvalLock.lock()
+        pendingApprovals.removeValue(forKey: requestID)
+        approvalLock.unlock()
+
+        if iosResolved {
+            return iosApproved
+        }
+        return response == .alertFirstButtonReturn
+    }
+
+    /// Returns an error string if the verdict blocks/denies execution, nil if allowed.
+    private func enforceVerdict(_ verdict: MCPCommandVerdict, fullInput: String, context: String) -> String? {
+        switch verdict {
+        case .allowed:
+            return nil
+        case .blocked(let cmd):
+            Log.info("MCP: blocked '\(cmd)' in \(context)")
+            return jsonError("Command '\(cmd)' is blocked by MCP permissions.")
+        case .needsApproval(let cmd):
+            let approved = onMain { self.requestCommandApproval(command: fullInput, flaggedCommand: cmd) }
+            if !approved {
+                Log.info("MCP: user denied '\(cmd)' in \(context)")
+                return jsonError("Command '\(cmd)' was denied by user.")
+            }
+            return nil
+        }
     }
 
     private func noWindowError() -> String {
@@ -435,5 +540,31 @@ final class TerminalControlService {
             return "{}"
         }
         return str
+    }
+}
+
+// MARK: - Approval Payloads
+
+struct ApprovalRequestPayload: Codable {
+    let requestID: String
+    let command: String
+    let flaggedCommand: String
+    let timestamp: String
+
+    enum CodingKeys: String, CodingKey {
+        case requestID = "request_id"
+        case command
+        case flaggedCommand = "flagged_command"
+        case timestamp
+    }
+}
+
+struct ApprovalResponsePayload: Codable {
+    let requestID: String
+    let approved: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case requestID = "request_id"
+        case approved
     }
 }
