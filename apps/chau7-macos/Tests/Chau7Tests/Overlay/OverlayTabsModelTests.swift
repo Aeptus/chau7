@@ -9,6 +9,10 @@ final class OverlayTabsModelTests: XCTestCase {
     private var model: OverlayTabsModel!
     private var appModel: AppModel!
 
+    private func drainMainQueue() {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+
     private func storeSavedTabStates(_ states: [SavedTabState]) {
         guard let data = try? JSONEncoder().encode(states) else {
             XCTFail("Failed to encode saved tab states")
@@ -102,6 +106,54 @@ final class OverlayTabsModelTests: XCTestCase {
         // The actual directory change is deferred to the shell process.
         XCTAssertEqual(model.tabs.count, 2)
         XCTAssertEqual(model.selectedTabID, model.tabs.last?.id)
+    }
+
+    // MARK: - Render Suspension
+
+    func testRenderSuspensionKeepsBackgroundAITabLive() {
+        let selectedTab = model.tabs[0]
+        model.newTab()
+        model.newTab()
+
+        let aiTab = model.tabs[1]
+        let shellTab = model.tabs[2]
+        aiTab.session?.activeAppName = "Codex"
+
+        model.selectTab(id: selectedTab.id)
+        model.configureRenderSuspension(enabled: true, delay: 0)
+        drainMainQueue()
+
+        XCTAssertFalse(
+            model.suspendedTabIDs.contains(aiTab.id),
+            "Background AI tabs should remain live-rendered"
+        )
+        XCTAssertTrue(
+            model.suspendedTabIDs.contains(shellTab.id),
+            "Non-AI background tabs should still suspend"
+        )
+    }
+
+    func testRenderSuspensionUnsuspendsTabWhenBackgroundSessionBecomesAI() {
+        let selectedTab = model.tabs[0]
+        model.newTab()
+
+        let backgroundTab = model.tabs[1]
+        model.selectTab(id: selectedTab.id)
+        model.configureRenderSuspension(enabled: true, delay: 0)
+        drainMainQueue()
+
+        XCTAssertTrue(
+            model.suspendedTabIDs.contains(backgroundTab.id),
+            "Background shell tabs should suspend before AI detection"
+        )
+
+        backgroundTab.session?.activeAppName = "Codex"
+        drainMainQueue()
+
+        XCTAssertFalse(
+            model.suspendedTabIDs.contains(backgroundTab.id),
+            "AI detection should immediately unsuspend the background tab"
+        )
     }
 
     // MARK: - Tab Close (closeTab)

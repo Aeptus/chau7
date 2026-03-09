@@ -564,6 +564,53 @@ pub unsafe extern "C" fn chau7_terminal_get_line_text(
     }
 }
 
+/// Get the full logical wrapped line containing the specified physical row.
+///
+/// # Safety
+/// - `term` must be a valid pointer
+/// - `start_row` and `column_offset` may be null
+/// - The returned string must be freed with `chau7_terminal_free_string`
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_get_logical_line_text(
+    term: *mut Chau7Terminal,
+    row: i32,
+    column: u32,
+    start_row: *mut i32,
+    column_offset: *mut u32,
+) -> *mut c_char {
+    unsafe {
+        trace!(
+            "chau7_terminal_get_logical_line_text({:p}, row={}, column={})",
+            term, row, column
+        );
+        if term.is_null() {
+            warn!("chau7_terminal_get_logical_line_text: term is null");
+            return std::ptr::null_mut();
+        }
+
+        let terminal = &*term;
+        match terminal.logical_line_text(row, column as usize) {
+            Some((text, logical_start_row, logical_column_offset)) => {
+                if !start_row.is_null() {
+                    *start_row = logical_start_row;
+                }
+                if !column_offset.is_null() {
+                    *column_offset = logical_column_offset as u32;
+                }
+
+                match CString::new(text) {
+                    Ok(cstr) => cstr.into_raw(),
+                    Err(_) => {
+                        warn!("chau7_terminal_get_logical_line_text: text contained null byte");
+                        std::ptr::null_mut()
+                    }
+                }
+            }
+            None => std::ptr::null_mut(),
+        }
+    }
+}
+
 // ============================================================================
 // Cursor
 // ============================================================================

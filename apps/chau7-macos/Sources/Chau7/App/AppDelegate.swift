@@ -50,6 +50,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Log.info("AppDelegate did finish launching.")
         didFinishLaunching = true
 
+        // Strip env vars from parent process that would confuse nested CLI tools.
+        // When Chau7 is launched from within a Claude Code session (e.g. via
+        // build-and-run.sh), CLAUDECODE=1 leaks into every terminal child process,
+        // causing Claude Code inside Chau7 to refuse to start.
+        unsetenv("CLAUDECODE")
+
         // CRITICAL: Prevent App Nap from throttling the terminal
         // This eliminates the "first keystroke lag" issue
         activityToken = ProcessInfo.processInfo.beginActivity(
@@ -180,6 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Save tab state for restoration on next launch
         for host in overlayHosts {
             host.model.saveTabState()
+            host.model.closeAllSessionsForTermination()
         }
         Log.info("Saved tab state for restoration")
 
@@ -189,14 +196,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // CTO: clean up all flag files and wrappers (no-op if mode was .off)
         CTOManager.shared.teardown()
 
-        // Stop API analytics proxy
-        Task { @MainActor in
+        MainActor.assumeIsolated {
             ProxyManager.shared.stop()
             ProxyIPCServer.shared.stop()
-            Log.info("API proxy subsystem stopped")
-        }
-        Task { @MainActor in
             RemoteControlManager.shared.stopAgent()
+            Log.info("API proxy subsystem stopped")
         }
 
         // End App Nap prevention activity

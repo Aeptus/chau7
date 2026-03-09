@@ -388,6 +388,7 @@ final class OverlayTabsModel: ObservableObject {
     private var renameOriginalTitle = ""
     private var renameOriginalColor: TabColor = .blue
     private var suspendWorkItems: [UUID: DispatchWorkItem] = [:]
+    private var liveRenderExemptTabIDs: Set<UUID> = []
     /// Per-pane token for restore-time resume prefills.
     /// Prevents stale delayed retries from writing outdated commands.
     private var latestRestoreResumeTokenByPaneID: [UUID: String] = [:]
@@ -402,6 +403,7 @@ final class OverlayTabsModel: ObservableObject {
     /// CTO notification observer tokens (stored for cleanup in deinit)
     private var ctoModeObserver: NSObjectProtocol?
     private var ctoFlagObserver: NSObjectProtocol?
+    private var renderSuspensionObserver: NSObjectProtocol?
     private var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
 
     weak var overlayWindow: NSWindow?
@@ -491,6 +493,22 @@ final class OverlayTabsModel: ObservableObject {
         ) { [weak self] _ in
             self?.objectWillChange.send()
         }
+
+        self.renderSuspensionObserver = NotificationCenter.default.addObserver(
+            forName: .terminalSessionRenderSuspensionStateChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            guard let self else { return }
+            guard let session = note.object as? TerminalSessionModel else { return }
+            guard self.tabs.contains(where: { tab in
+                tab.splitController.terminalSessions.contains { _, candidate in candidate === session }
+            }) else { return }
+
+            Log.info("renderSuspension: session state changed tabSession=\(session.tabIdentifier) \(session.renderSuspensionDebugSummary)")
+            self.updateSuspensionState()
+            self.objectWillChange.send()
+        }
     }
 
     deinit {
@@ -499,6 +517,7 @@ final class OverlayTabsModel: ObservableObject {
         autoSaveTimer = nil
         if let ctoModeObserver { NotificationCenter.default.removeObserver(ctoModeObserver) }
         if let ctoFlagObserver { NotificationCenter.default.removeObserver(ctoFlagObserver) }
+        if let renderSuspensionObserver { NotificationCenter.default.removeObserver(renderSuspensionObserver) }
     }
 
     // MARK: - Tab State Persistence
@@ -519,15 +538,10 @@ final class OverlayTabsModel: ObservableObject {
             for (paneID, session) in terminalSessions {
                 let dir = session.currentDirectory
                 let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
-                let detectedApp = Self.detectAIAppName(fromOutput: scrollback)
-                let resumeAppName = session.aiDisplayAppName ?? detectedApp
-                let resumeMetadata = Self.resolveAIResumeMetadata(
-                    appName: resumeAppName,
+                let resumeMetadata = resolveResumeMetadata(
+                    for: session,
                     directory: dir,
-                    outputHint: scrollback,
-                    explicitAIProvider: session.lastAIProvider,
-                    explicitAISessionId: session.lastAISessionId,
-                    referenceDate: Self.normalizedResumeReferenceDate(session.lastOutputDate)
+                    outputHint: scrollback
                 )
                 let resumeCommand = Self.buildAIResumeCommand(
                     provider: resumeMetadata?.provider,
@@ -590,15 +604,10 @@ final class OverlayTabsModel: ObservableObject {
         for (paneID, session) in terminalSessions {
             let dir = session.currentDirectory
             let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
-            let detectedApp = Self.detectAIAppName(fromOutput: scrollback)
-            let resumeAppName = session.aiDisplayAppName ?? detectedApp
-            let resumeMetadata = Self.resolveAIResumeMetadata(
-                appName: resumeAppName,
+            let resumeMetadata = resolveResumeMetadata(
+                for: session,
                 directory: dir,
-                outputHint: scrollback,
-                explicitAIProvider: session.lastAIProvider,
-                explicitAISessionId: session.lastAISessionId,
-                referenceDate: Self.normalizedResumeReferenceDate(session.lastOutputDate)
+                outputHint: scrollback
             )
             let resumeCommand = Self.buildAIResumeCommand(
                 provider: resumeMetadata?.provider,
@@ -652,6 +661,65 @@ final class OverlayTabsModel: ObservableObject {
         }
 
         Log.info("Captured closed tab snapshot: \"\(tab.displayTitle)\" at index \(index) (stack size: \(closedTabStack.count))")
+    }
+
+    private func resolveResumeMetadata(
+        for session: TerminalSessionModel,
+        directory: String,
+        outputHint: String?
+    ) -> (provider: String, sessionId: String)? {
+        let referenceDate = Self.normalizedResumeReferenceDate(session.lastOutputDate)
+        let detectedApp = Self.detectAIAppName(fromOutput: outputHint)
+        let resumeAppName = session.aiDisplayAppName ?? detectedApp
+
+        if let resolved = Self.resolveAIResumeMetadata(
+            appName: resumeAppName,
+            directory: directory,
+            outputHint: outputHint,
+            explicitAIProvider: session.effectiveAIProvider,
+            explicitAISessionId: session.effectiveAISessionId,
+            referenceDate: referenceDate
+        ) {
+            return resolved
+        }
+
+        let inferredProvider = Self.normalizedAIProvider(from: resumeAppName)
+        guard inferredProvider == "codex" || session.effectiveAIProvider == "codex" else {
+            return nil
+        }
+
+        let observedCandidates = appModel.codexHistoryEntries.suffix(64).compactMap { entry -> CodexSessionResolver.Candidate? in
+            let observedAt = Date(timeIntervalSince1970: entry.timestamp)
+            guard let metadata = CodexSessionResolver.metadata(
+                forSessionID: entry.sessionId,
+                referenceDate: observedAt
+            ) else {
+                return nil
+            }
+            return CodexSessionResolver.Candidate(
+                sessionId: metadata.sessionId,
+                cwd: metadata.cwd,
+                touchedAt: observedAt
+            )
+        }
+
+        guard let sessionId = CodexSessionResolver.bestMatchingSessionID(
+            forDirectory: directory,
+            referenceDate: referenceDate,
+            candidates: observedCandidates
+        ) else {
+            Log.info(
+                """
+                saveTabState: unresolved Codex resume metadata \
+                dir=\(directory) explicitSession=\(session.effectiveAISessionId ?? "nil") \
+                observedCandidates=\(observedCandidates.count)
+                """
+            )
+            return nil
+        }
+
+        Log.trace("saveTabState: recovered Codex resume metadata from observed history for dir=\(directory)")
+        return (provider: "codex", sessionId: sessionId)
     }
 
     /// Build a resume command for an AI session running in the given directory.
@@ -1997,6 +2065,7 @@ final class OverlayTabsModel: ObservableObject {
                     )
                 )
             }
+            CTORuntimeMonitor.shared.untrackSession(sessionID)
         }
 
         // Close all sessions in the split pane tree (not just primary)
@@ -2006,19 +2075,15 @@ final class OverlayTabsModel: ObservableObject {
             let behavior = FeatureSettings.shared.lastTabCloseBehavior
             if behavior == .closeWindow {
                 Log.info("closeTab: last tab - closing window per settings")
-                needsFreshTabOnShow = true
+                tabs[index] = makeFreshTab(inheritedDirectory: inheritedDirectory)
+                selectedTabID = tabs[index].id
+                needsFreshTabOnShow = false
                 onCloseLastTab?()
                 return
             }
             // Last tab - create a fresh one instead of closing window
             Log.info("closeTab: last tab - creating fresh tab")
-            var newTab = OverlayTab(appModel: appModel)
-            if let firstColor = TabColor.allCases.first {
-                newTab.color = firstColor
-            }
-            if let directory = inheritedDirectory {
-                newTab.session?.updateCurrentDirectory(directory)
-            }
+            let newTab = makeFreshTab(inheritedDirectory: inheritedDirectory)
             tabs[index] = newTab
             selectedTabID = newTab.id
             Log.info("closeTab: new tab created with id=\(newTab.id)")
@@ -2079,6 +2144,15 @@ final class OverlayTabsModel: ObservableObject {
         }
 
         Log.info("closeTab completed. tabs.count=\(tabs.count)")
+    }
+
+    func closeAllSessionsForTermination() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        for tab in tabs {
+            for session in tab.splitController.root.allSessions {
+                session.closeSessionForTermination()
+            }
+        }
     }
 
     func closeOtherTabs() {
@@ -2177,6 +2251,9 @@ final class OverlayTabsModel: ObservableObject {
 
         // Close all sessions in all tabs except current one
         for tab in currentOtherTabs {
+            if let sessionID = tab.session?.tabIdentifier {
+                CTORuntimeMonitor.shared.untrackSession(sessionID)
+            }
             tab.splitController.root.closeAllSessions()
         }
 
@@ -2298,13 +2375,21 @@ final class OverlayTabsModel: ObservableObject {
         needsFreshTabOnShow = false
         guard let index = tabs.firstIndex(where: { $0.id == selectedTabID }) else { return }
 
+        let newTab = makeFreshTab(inheritedDirectory: nil)
+        tabs[index] = newTab
+        selectedTabID = newTab.id
+        updateSnippetContextForSelection()
+    }
+
+    private func makeFreshTab(inheritedDirectory: String?) -> OverlayTab {
         var newTab = OverlayTab(appModel: appModel)
         if let firstColor = TabColor.allCases.first {
             newTab.color = firstColor
         }
-        tabs[index] = newTab
-        selectedTabID = newTab.id
-        updateSnippetContextForSelection()
+        if let inheritedDirectory {
+            newTab.session?.updateCurrentDirectory(inheritedDirectory)
+        }
+        return newTab
     }
 
     func selectTab(number: Int) {
@@ -3194,11 +3279,13 @@ final class OverlayTabsModel: ObservableObject {
             .forEach { $0.value.cancel() }
         suspendWorkItems = suspendWorkItems.filter { validIDs.contains($0.key) }
         suspendedTabIDs = suspendedTabIDs.intersection(validIDs)
+        liveRenderExemptTabIDs = liveRenderExemptTabIDs.intersection(validIDs)
 
         guard isRenderSuspensionEnabled else {
             suspendWorkItems.values.forEach { $0.cancel() }
             suspendWorkItems.removeAll()
             suspendedTabIDs.removeAll()
+            liveRenderExemptTabIDs.removeAll()
             if previousSuspended != suspendedTabIDs {
                 logVisualState(reason: "renderSuspension: cleared")
             }
@@ -3207,9 +3294,25 @@ final class OverlayTabsModel: ObservableObject {
 
         // Selected tab should always be active.
         suspendedTabIDs.remove(selectedTabID)
+        liveRenderExemptTabIDs.remove(selectedTabID)
         cancelSuspension(for: selectedTabID)
 
         for tab in tabs where tab.id != selectedTabID {
+            if shouldKeepLiveRenderingInBackground(for: tab) {
+                cancelSuspension(for: tab.id)
+                let wasSuspended = suspendedTabIDs.remove(tab.id) != nil
+                let becameExempt = liveRenderExemptTabIDs.insert(tab.id).inserted
+                if wasSuspended || becameExempt {
+                    Log.info(
+                        "renderSuspension: keeping tab \(tab.id) live for AI activity (\(tabRenderSuspensionSummary(tab)))"
+                    )
+                }
+                continue
+            }
+
+            if liveRenderExemptTabIDs.remove(tab.id) != nil {
+                Log.info("renderSuspension: tab \(tab.id) returned to normal suspension (\(tabRenderSuspensionSummary(tab)))")
+            }
             scheduleSuspension(for: tab.id)
         }
 
@@ -3221,21 +3324,59 @@ final class OverlayTabsModel: ObservableObject {
     private func scheduleSuspension(for id: UUID) {
         guard !suspendedTabIDs.contains(id) else { return }
         guard suspendWorkItems[id] == nil else { return }
+        guard let tab = tabs.first(where: { $0.id == id }) else { return }
+
+        if shouldKeepLiveRenderingInBackground(for: tab) {
+            let inserted = liveRenderExemptTabIDs.insert(id).inserted
+            if inserted {
+                Log.info("renderSuspension: skipped scheduling for tab \(id) (\(tabRenderSuspensionSummary(tab)))")
+            }
+            return
+        }
 
         let item = DispatchWorkItem { [weak self] in
             DispatchQueue.main.async {
                 guard let self else { return }
                 guard self.isRenderSuspensionEnabled else { return }
                 guard self.selectedTabID != id else { return }
+                guard let tab = self.tabs.first(where: { $0.id == id }) else { return }
+                guard !self.shouldKeepLiveRenderingInBackground(for: tab) else {
+                    let becameExempt = self.liveRenderExemptTabIDs.insert(id).inserted
+                    if becameExempt {
+                        Log.info(
+                            "renderSuspension: cancelled at deadline for AI-active tab \(id) (\(self.tabRenderSuspensionSummary(tab)))"
+                        )
+                    }
+                    self.suspendWorkItems.removeValue(forKey: id)
+                    return
+                }
                 let inserted = self.suspendedTabIDs.insert(id).inserted
                 self.suspendWorkItems.removeValue(forKey: id)
                 if inserted {
+                    Log.info("renderSuspension: suspended tab \(id) (\(self.tabRenderSuspensionSummary(tab)))")
                     self.logVisualState(reason: "renderSuspension: suspended tab \(id)")
                 }
             }
         }
         suspendWorkItems[id] = item
+        Log.trace("renderSuspension: scheduled tab \(id) in \(renderSuspensionDelay)s (\(tabRenderSuspensionSummary(tab)))")
         DispatchQueue.main.asyncAfter(deadline: .now() + renderSuspensionDelay, execute: item)
+    }
+
+    private func shouldKeepLiveRenderingInBackground(for tab: OverlayTab) -> Bool {
+        tab.splitController.terminalSessions.contains { _, session in
+            session.shouldKeepLiveRenderingInBackground
+        }
+    }
+
+    private func tabRenderSuspensionSummary(_ tab: OverlayTab) -> String {
+        let summaries = tab.splitController.terminalSessions.map { paneID, session in
+            "pane=\(paneID) \(session.renderSuspensionDebugSummary)"
+        }
+        if summaries.isEmpty {
+            return "no-terminal-sessions"
+        }
+        return summaries.joined(separator: " | ")
     }
 
     private func cancelSuspension(for id: UUID) {

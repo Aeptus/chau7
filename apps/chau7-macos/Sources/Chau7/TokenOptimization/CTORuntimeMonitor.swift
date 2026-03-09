@@ -170,15 +170,29 @@ final class CTORuntimeMonitor {
         LogEnhanced.info(.cto, "CTO manager teardown observed", metadata: ["teardowns": "\(teardownCountSnapshot)"])
     }
 
+    func untrackSession(_ sessionID: String) {
+        let removedAnyState = withLock {
+            let removedTracked = trackedSessionIDs.remove(sessionID) != nil
+            let removedActive = activeSessions.remove(sessionID) != nil
+            let removedDeferred = deferredSessionIDs.remove(sessionID) != nil
+            activeSessionCount = activeSessions.count
+            trackedSessions = trackedSessionIDs.count
+            return removedTracked || removedActive || removedDeferred
+        }
+
+        guard removedAnyState else { return }
+        LogEnhanced.trace(.cto, "CTO session untracked", metadata: ["session": sessionID])
+    }
+
     func recordManagerBulkRemove(count: Int) {
         withLock {
             removedCount += count
             reasonBreakdown[.off, default: 0] += count
             deferredSessionIDs.removeAll()
-            trackedSessionIDs.subtract(Array(activeSessions))
+            trackedSessionIDs.subtract(activeSessions)
             activeSessions.removeAll()
             activeSessionCount = 0
-            trackedSessions = 0
+            trackedSessions = trackedSessionIDs.count
         }
         if count > 0 {
             LogEnhanced.info(
@@ -392,7 +406,6 @@ final class CTORuntimeMonitor {
         delayToActivateMs: Int?,
         debugNote: String?
     ) -> CTODecisionEvent {
-        currentMode = mode
         recalcCount += 1
         reasonBreakdown[reason, default: 0] += 1
         if changed {

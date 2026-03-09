@@ -177,6 +177,30 @@ final class TerminalSessionModelTests: XCTestCase {
         XCTAssertNotNil(event.id, "LagEvent should have a non-nil id")
     }
 
+    // MARK: - Restore Prefill Readiness
+
+    func testIsPrefillReadyAllowsPromptEvenIfStatusIsRunning() {
+        XCTAssertTrue(
+            TerminalSessionModel.isPrefillReady(
+                isShellLoading: false,
+                isAtPrompt: true,
+                hasView: true,
+                status: .running
+            )
+        )
+    }
+
+    func testIsPrefillReadyRejectsExitedSession() {
+        XCTAssertFalse(
+            TerminalSessionModel.isPrefillReady(
+                isShellLoading: false,
+                isAtPrompt: true,
+                hasView: true,
+                status: .exited
+            )
+        )
+    }
+
     // MARK: - Session Property Defaults (requires AppModel)
 
     /// Verify defaults on a freshly created session.

@@ -13,6 +13,10 @@ enum PathClickHandler {
         let range: NSRange
     }
 
+    static func findPath(in text: String, atUTF16Index index: Int) -> PathMatch? {
+        findPaths(in: text).first { NSLocationInRange(index, $0.range) }
+    }
+
     static func findPaths(in text: String) -> [PathMatch] {
         var matches: [PathMatch] = []
         let nsText = text as NSString
@@ -37,7 +41,7 @@ enum PathClickHandler {
                 column = Int(nsText.substring(with: match.range(at: 3)))
             }
 
-            matches.append(PathMatch(path: path, line: line, column: column, range: match.range))
+            matches.append(PathMatch(path: path, line: line, column: column, range: match.range(at: 1)))
         }
 
         return matches

@@ -532,6 +532,7 @@ private final class RustTerminalFFI {
 
     /// Direct line text retrieval (avoids full grid snapshot per row)
     private typealias GetLineTextFn = @convention(c) (OpaquePointer?, Int32) -> UnsafeMutablePointer<CChar>?
+    private typealias GetLogicalLineTextFn = @convention(c) (OpaquePointer?, Int32, UInt32, UnsafeMutablePointer<Int32>?, UnsafeMutablePointer<UInt32>?) -> UnsafeMutablePointer<CChar>?
 
     /// Hyperlink (OSC 8) FFI types (Phase 5)
     private typealias GetLinkUrlFn = @convention(c) (OpaquePointer?, UInt16) -> UnsafeMutablePointer<CChar>?
@@ -600,6 +601,7 @@ private final class RustTerminalFFI {
         let isEchoDisabled: IsEchoDisabledFn? // Optional - for reliable password detection
         /// Direct line text retrieval (avoids full grid snapshot per row)
         let getLineTextDirect: GetLineTextFn? // Optional - direct line text without grid snapshot
+        let getLogicalLineTextDirect: GetLogicalLineTextFn? // Optional - logical wrapped line text for hit-testing
         /// Hyperlink support (OSC 8 — Phase 5)
         let getLinkUrl: GetLinkUrlFn? // Optional - for OSC 8 hyperlink URL retrieval
         // Clipboard support (OSC 52 — Phase 5)
@@ -883,6 +885,11 @@ private final class RustTerminalFFI {
             Log.info("RustTerminalFFI: get_line_text symbol not found (optional, falling back to grid snapshot)")
         }
 
+        let getLogicalLineTextDirectSym = loadSymbol("chau7_terminal_get_logical_line_text")
+        if getLogicalLineTextDirectSym == nil {
+            Log.info("RustTerminalFFI: get_logical_line_text symbol not found (optional, falling back to physical row hit-testing)")
+        }
+
         // Hyperlink support (OSC 8 — Phase 5)
         let getLinkUrlSym = loadSymbol("chau7_terminal_get_link_url")
         if getLinkUrlSym == nil {
@@ -951,6 +958,7 @@ private final class RustTerminalFFI {
             isEchoDisabled: isEchoDisabledSym.map { unsafeBitCast($0, to: IsEchoDisabledFn.self) },
             // Direct line text retrieval
             getLineTextDirect: getLineTextDirectSym.map { unsafeBitCast($0, to: GetLineTextFn.self) },
+            getLogicalLineTextDirect: getLogicalLineTextDirectSym.map { unsafeBitCast($0, to: GetLogicalLineTextFn.self) },
             // Hyperlink support (OSC 8 — Phase 5)
             getLinkUrl: getLinkUrlSym.map { unsafeBitCast($0, to: GetLinkUrlFn.self) },
             // Clipboard support (OSC 52 — Phase 5)
@@ -970,6 +978,12 @@ private final class RustTerminalFFI {
     private let terminal: OpaquePointer
     private static var instanceCounter: UInt64 = 0
     private let instanceId: UInt64
+
+    struct LogicalLineHit {
+        let text: String
+        let startRow: Int
+        let clickedUTF16Offset: Int
+    }
 
     init?(cols: UInt16, rows: UInt16, shell: String? = nil) {
         Self.instanceCounter += 1
@@ -1253,6 +1267,36 @@ private final class RustTerminalFFI {
             lineText.removeLast()
         }
         return lineText
+    }
+
+    func getLogicalLineHit(row: Int, column: Int) -> LogicalLineHit? {
+        let clampedColumn = max(0, column)
+        if let fns = Self.functions, let getLogicalLineTextFn = fns.getLogicalLineTextDirect {
+            var startRow = Int32(row)
+            var clickedUTF16Offset: UInt32 = 0
+            guard let ptr = getLogicalLineTextFn(
+                terminal,
+                Int32(row),
+                UInt32(clampedColumn),
+                &startRow,
+                &clickedUTF16Offset
+            ) else {
+                return nil
+            }
+            defer { fns.freeString(ptr) }
+            return LogicalLineHit(
+                text: String(cString: ptr),
+                startRow: Int(startRow),
+                clickedUTF16Offset: Int(clickedUTF16Offset)
+            )
+        }
+
+        guard let text = getLineText(row: row) else { return nil }
+        return LogicalLineHit(
+            text: text,
+            startRow: row,
+            clickedUTF16Offset: min(clampedColumn, (text as NSString).length)
+        )
     }
 
     func clearSelection() {
@@ -1905,6 +1949,8 @@ final class RustTerminalView: NSView {
     var notifyUpdateChanges = true {
         didSet {
             guard notifyUpdateChanges != oldValue else { return }
+            let mode = notifyUpdateChanges ? "live-render" : "drain-only"
+            Log.info("RustTerminalView[\(viewId)]: notifyUpdateChanges -> \(mode)")
             if notifyUpdateChanges {
                 // Tab became active: resume full-speed CVDisplayLink, stop slow drain
                 resumeDisplayLink()
@@ -1970,6 +2016,8 @@ final class RustTerminalView: NSView {
 
     /// Track startup bytes for debugging
     private var startupBytesLogged = 0
+    private var recentMissingCmdClickPaths: [String: Date] = [:]
+    private let missingCmdClickWarningCooldown: TimeInterval = 5
 
     /// One-shot timer that fires onShellStartupSlow if no PTY output arrives
     private var shellStartupTimeoutWork: DispatchWorkItem?
@@ -2788,7 +2836,7 @@ final class RustTerminalView: NSView {
                 shellStartupTimeoutWork = nil
             }
 
-            // Log first 2KB of startup output for debugging
+            // Keep raw PTY startup previews out of the main log unless trace is enabled.
             if startupBytesLogged < 2048 {
                 let bytesToLog = min(outputData.count, 2048 - startupBytesLogged)
                 let preview = outputData.prefix(bytesToLog)
@@ -2799,8 +2847,8 @@ final class RustTerminalView: NSView {
                     else if b == 27 { return "⎋" }
                     else { return "·" }
                 }
-                Log.info("RustTerminalView[\(viewId)]: PTY startup output (\(outputData.count) bytes): \(String(printable))")
-                startupBytesLogged += outputData.count
+                Log.trace("RustTerminalView[\(viewId)]: PTY startup output (\(outputData.count) bytes): \(String(printable))")
+                startupBytesLogged += bytesToLog
             }
 
             let extraction = extractInlineImages(from: outputData)
@@ -5031,6 +5079,18 @@ final class RustTerminalView: NSView {
 
     // MARK: - F03: Cmd+Click Paths/URLs
 
+    private struct ClickableLineHit {
+        let text: String
+        let clickedUTF16Index: Int
+        let gridRow: Int
+        let gridColumn: Int
+    }
+
+    private struct URLMatch {
+        let url: String
+        let range: NSRange
+    }
+
     /// Handle Cmd+click on file paths or URLs
     private func handleCmdClick(at point: NSPoint) -> Bool {
         // OSC 8 hyperlink check — takes priority over text-based URL matching
@@ -5046,36 +5106,59 @@ final class RustTerminalView: NSView {
             }
         }
 
-        guard let lineText = getLineAtPoint(point) else { return false }
+        guard let lineHit = getClickableLineHit(at: point) else { return false }
+        let urlMatches = findURLs(in: lineHit.text)
+        let pathMatches = PathClickHandler.findPaths(in: lineHit.text)
+        Log.debug(
+            "RustTerminalView[\(viewId)]: Cmd+click - logical hit row=\(lineHit.gridRow) col=\(lineHit.gridColumn) index=\(lineHit.clickedUTF16Index) urls=\(urlMatches.count) paths=\(pathMatches.count)"
+        )
 
-        // Check for URLs first
-        let urlMatches = findURLs(in: lineText)
-        if let firstURL = urlMatches.first {
-            PathClickHandler.openURL(firstURL)
-            Log.info("RustTerminalView[\(viewId)]: Cmd+click - opened URL \(firstURL)")
+        if let urlMatch = urlMatches.first(where: { NSLocationInRange(lineHit.clickedUTF16Index, $0.range) }) {
+            PathClickHandler.openURL(urlMatch.url)
+            Log.info("RustTerminalView[\(viewId)]: Cmd+click - opened URL \(urlMatch.url)")
             return true
         }
 
-        // Check for file paths
-        let pathMatches = PathClickHandler.findPaths(in: lineText)
-        if let firstPath = pathMatches.first {
-            let resolvedPath = PathClickHandler.resolvePath(firstPath.path, relativeTo: currentDirectory)
+        if let pathMatch = PathClickHandler.findPath(in: lineHit.text, atUTF16Index: lineHit.clickedUTF16Index) {
+            let resolvedPath = PathClickHandler.resolvePath(pathMatch.path, relativeTo: currentDirectory)
             guard FileManager.default.fileExists(atPath: resolvedPath) else {
-                Log.warn("RustTerminalView[\(viewId)]: Cmd+click - file does not exist: \(resolvedPath)")
+                logMissingCmdClickPath(resolvedPath)
                 return false
             }
 
             if FeatureSettings.shared.cmdClickOpensInternalEditor,
                let callback = onFilePathClicked {
-                callback(resolvedPath, firstPath.line, firstPath.column)
+                callback(resolvedPath, pathMatch.line, pathMatch.column)
                 Log.info("RustTerminalView[\(viewId)]: Cmd+click - opening in internal editor: \(resolvedPath)")
             } else {
-                PathClickHandler.openPath(firstPath, relativeTo: currentDirectory)
-                Log.info("RustTerminalView[\(viewId)]: Cmd+click - opened path \(firstPath.path)")
+                PathClickHandler.openPath(pathMatch, relativeTo: currentDirectory)
+                Log.info("RustTerminalView[\(viewId)]: Cmd+click - opened path \(pathMatch.path)")
             }
             return true
         }
+
+        if !urlMatches.isEmpty || !pathMatches.isEmpty {
+            Log.debug(
+                "RustTerminalView[\(viewId)]: Cmd+click - no clickable target under cursor despite matches on logical line"
+            )
+        }
         return false
+    }
+
+    private func logMissingCmdClickPath(_ path: String) {
+        let now = Date()
+        recentMissingCmdClickPaths = recentMissingCmdClickPaths.filter {
+            now.timeIntervalSince($0.value) < missingCmdClickWarningCooldown
+        }
+
+        if let last = recentMissingCmdClickPaths[path],
+           now.timeIntervalSince(last) < missingCmdClickWarningCooldown {
+            Log.trace("RustTerminalView[\(viewId)]: Cmd+click - repeated missing path suppressed: \(path)")
+            return
+        }
+
+        recentMissingCmdClickPaths[path] = now
+        Log.warn("RustTerminalView[\(viewId)]: Cmd+click - file does not exist: \(path)")
     }
 
     // MARK: - Click-to-Position Cursor
@@ -5133,11 +5216,12 @@ final class RustTerminalView: NSView {
 
     // MARK: - Path/URL Detection Helpers
 
-    private func getLineAtPoint(_ point: NSPoint) -> String? {
+    private func getClickableLineHit(at point: NSPoint) -> ClickableLineHit? {
         guard let rust = rustTerminal else { return nil }
         guard bounds.height > 0, rows > 0 else { return nil }
-        // Standard macOS coordinates: y=0 at bottom, row 0 at top of terminal
-        let screenRow = Int((bounds.height - point.y) / cellHeight)
+        let cell = pointToCell(point)
+        let screenRow = Int(cell.row)
+        let screenCol = Int(cell.col)
 
         // Account for display offset when scrolled up.
         // When displayOffset > 0, we're viewing scrollback. The visible row 0 corresponds
@@ -5145,17 +5229,25 @@ final class RustTerminalView: NSView {
         // to grid coordinates to get the correct line content.
         let displayOffset = Int(rust.displayOffset)
         let gridRow = screenRow - displayOffset
+        guard let logicalHit = rust.getLogicalLineHit(row: gridRow, column: screenCol) else {
+            return nil
+        }
 
-        return rust.getLineText(row: gridRow)
+        return ClickableLineHit(
+            text: logicalHit.text,
+            clickedUTF16Index: logicalHit.clickedUTF16Offset,
+            gridRow: gridRow,
+            gridColumn: screenCol
+        )
     }
 
-    private func findURLs(in text: String) -> [String] {
-        var urls: [String] = []
+    private func findURLs(in text: String) -> [URLMatch] {
+        var urls: [URLMatch] = []
         let nsText = text as NSString
         let range = NSRange(location: 0, length: nsText.length)
         RegexPatterns.url.enumerateMatches(in: text, options: [], range: range) { match, _, _ in
             guard let match = match else { return }
-            urls.append(nsText.substring(with: match.range))
+            urls.append(URLMatch(url: nsText.substring(with: match.range), range: match.range))
         }
         return urls
     }
@@ -5166,14 +5258,16 @@ final class RustTerminalView: NSView {
             NSCursor.iBeam.set()
             return
         }
-        guard let lineText = getLineAtPoint(location) else {
+        guard let lineHit = getClickableLineHit(at: location) else {
             NSCursor.iBeam.set()
             return
         }
         pathDetectionWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             guard let self = self else { return }
-            let hasClickable = !findURLs(in: lineText).isEmpty || !PathClickHandler.findPaths(in: lineText).isEmpty
+            let hasClickable = findURLs(in: lineHit.text).contains {
+                NSLocationInRange(lineHit.clickedUTF16Index, $0.range)
+            } || PathClickHandler.findPath(in: lineHit.text, atUTF16Index: lineHit.clickedUTF16Index) != nil
             DispatchQueue.main.async {
                 if hasClickable { NSCursor.pointingHand.set() }
                 else { NSCursor.iBeam.set() }

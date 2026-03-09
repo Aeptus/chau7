@@ -220,6 +220,19 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     @Published var codexTerminalLines: [String] = []
     @Published var claudeTerminalLines: [String] = []
     @Published var sessionStatuses: [SessionStatus] = []
+
+    func latestSessionStatus(toolName: String, sessionId: String) -> SessionStatus? {
+        let trimmedTool = toolName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedSessionId = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTool.isEmpty, !trimmedSessionId.isEmpty else { return nil }
+
+        return sessionStatuses
+            .filter {
+                $0.sessionId == trimmedSessionId &&
+                $0.tool.caseInsensitiveCompare(trimmedTool) == .orderedSame
+            }
+            .max(by: { $0.lastSeen < $1.lastSeen })
+    }
     /// Tool-agnostic event stream from ALL monitors (file tailer, terminal, API proxy, hooks, etc.).
     /// This is the canonical event feed for cross-tool UI — command center timeline, notifications, etc.
     @Published var recentEvents: [AIEvent] = []
@@ -1009,6 +1022,23 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         // Sanitize summary to remove escape sequences from logged messages
         let sanitizedSummary = EscapeSequenceSanitizer.sanitizeForLogging(entry.summary)
         Log.info("History entry: tool=\(toolName) session=\(entry.sessionId) summary=\"\(sanitizedSummary)\"")
+
+        if toolName == "Codex" {
+            let referenceDate = Date(timeIntervalSince1970: entry.timestamp)
+            if let metadata = CodexSessionResolver.metadata(
+                forSessionID: entry.sessionId,
+                referenceDate: referenceDate
+            ) {
+                TelemetryRecorder.shared.updateSessionID(
+                    provider: "codex",
+                    cwd: metadata.cwd,
+                    sessionID: entry.sessionId
+                )
+            } else {
+                Log.trace("Codex history bridge: no session metadata found for session=\(entry.sessionId.prefix(8))")
+            }
+        }
+
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             if toolName == "Codex" {
