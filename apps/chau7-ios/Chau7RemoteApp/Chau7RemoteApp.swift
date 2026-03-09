@@ -18,7 +18,11 @@ struct Chau7RemoteApp: App {
 // MARK: - App Delegate (Notification Handling)
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
-    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
+    ) -> Bool {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
@@ -32,8 +36,14 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             UNNotificationCategory(
                 identifier: "MCP_APPROVAL",
                 actions: [
-                    UNNotificationAction(identifier: "APPROVE", title: "Allow", options: [.authenticationRequired]),
-                    UNNotificationAction(identifier: "DENY", title: "Deny", options: [.destructive])
+                    UNNotificationAction(
+                        identifier: "APPROVE", title: "Allow",
+                        options: [.authenticationRequired]
+                    ),
+                    UNNotificationAction(
+                        identifier: "DENY", title: "Deny",
+                        options: [.destructive]
+                    )
                 ],
                 intentIdentifiers: [],
                 options: []
@@ -42,12 +52,19 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         return true
     }
 
-    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
         [.banner, .sound]
     }
 
-    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        guard let requestID = response.notification.request.content.userInfo["request_id"] as? String,
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        let userInfo = response.notification.request.content.userInfo
+        guard let requestID = userInfo["request_id"] as? String,
               !requestID.isEmpty else { return }
         let approved = response.actionIdentifier == "APPROVE"
         await MainActor.run {
@@ -87,8 +104,8 @@ struct RemoteRootView: View {
                 .tabItem { Label("Settings", systemImage: "gearshape") }
                 .tag(Tab.settings)
         }
-        .onChange(of: client.pendingApprovals.count) { old, new in
-            if new > old { selectedTab = .approvals }
+        .onChange(of: client.pendingApprovals.count) { oldCount, newCount in
+            if newCount > oldCount { selectedTab = .approvals }
         }
         .sheet(isPresented: $isPairingPresented) {
             PairingSheetView(client: client)
