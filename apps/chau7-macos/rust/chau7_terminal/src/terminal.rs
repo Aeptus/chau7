@@ -1609,10 +1609,7 @@ impl Chau7Terminal {
         result
     }
 
-    fn grid_line_text(
-        grid: &alacritty_terminal::grid::Grid<Cell>,
-        line: Line,
-    ) -> (String, bool) {
+    fn grid_line_text(grid: &alacritty_terminal::grid::Grid<Cell>, line: Line) -> (String, bool) {
         let grid_line = &grid[line];
         let line_length = grid_line.line_length();
         let wraps = Self::grid_line_wraps(grid, line);
@@ -1620,9 +1617,10 @@ impl Chau7Terminal {
         let mut text = String::with_capacity(line_length.0);
         for col in 0..line_length.0 {
             let cell = &grid_line[Column(col)];
-            if cell.flags.intersects(
-                CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER,
-            ) {
+            if cell
+                .flags
+                .intersects(CellFlags::WIDE_CHAR_SPACER | CellFlags::LEADING_WIDE_CHAR_SPACER)
+            {
                 continue;
             }
 
@@ -1642,13 +1640,13 @@ impl Chau7Terminal {
         (text, wraps)
     }
 
-    fn grid_line_wraps(
-        grid: &alacritty_terminal::grid::Grid<Cell>,
-        line: Line,
-    ) -> bool {
+    fn grid_line_wraps(grid: &alacritty_terminal::grid::Grid<Cell>, line: Line) -> bool {
         let grid_line = &grid[line];
         let line_length = grid_line.line_length();
-        line_length.0 > 0 && grid_line[line_length - 1].flags.contains(CellFlags::WRAPLINE)
+        line_length.0 > 0
+            && grid_line[line_length - 1]
+                .flags
+                .contains(CellFlags::WRAPLINE)
     }
 
     fn grid_column_utf16_offset(
@@ -1967,9 +1965,8 @@ mod tests {
         let term = Chau7Terminal::new_with_env(20, 4, "", &[]).expect("Should create terminal");
         term.inject_output("e\u{301}docs/readme.md".as_bytes());
 
-        let (text, start_row, clicked_offset) = term
-            .logical_line_text(0, 2)
-            .expect("Expected logical line");
+        let (text, start_row, clicked_offset) =
+            term.logical_line_text(0, 2).expect("Expected logical line");
 
         assert_eq!(text, "e\u{301}docs/readme.md");
         assert_eq!(start_row, 0);
