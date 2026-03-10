@@ -3670,6 +3670,10 @@ final class RustTerminalView: NSView {
     private var markedTextStorage: String?
     private var markedSelectedRange = NSRange(location: NSNotFound, length: 0)
 
+    func shouldSuppressRawTextFallback(afterInputContextHandled handled: Bool) -> Bool {
+        handled || markedTextStorage != nil
+    }
+
     private func makeInputEventSignature(_ event: NSEvent) -> String {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let characters = event.characters ?? ""
@@ -3727,26 +3731,7 @@ final class RustTerminalView: NSView {
 
         // Route regular text input through NSTextInputContext so that
         // Password AutoFill and IME can deliver text via insertText.
-        handlingKeyDown = true
-        let handled = inputContext?.handleEvent(event) ?? false
-        handlingKeyDown = false
-
-        if !handled {
-            // Fallback: inputContext didn't consume it, send characters directly
-            if let chars = event.characters, !chars.isEmpty {
-                applyLocalEchoForText(chars)
-                let escaped = chars.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
-                Log.trace("RustTerminalView[\(viewId)]: keyDown - Sending characters (fallback): '\(escaped)' (keyCode=\(keyCode))")
-                send(txt: chars)
-            } else if let charsNoMod = event.charactersIgnoringModifiers, !charsNoMod.isEmpty {
-                applyLocalEchoForText(charsNoMod)
-                let escaped = charsNoMod.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
-                Log.trace("RustTerminalView[\(viewId)]: keyDown - Sending chars (no mod, fallback): '\(escaped)' (keyCode=\(keyCode))")
-                send(txt: charsNoMod)
-            } else {
-                Log.trace("RustTerminalView[\(viewId)]: keyDown - No characters to send (keyCode=\(keyCode))")
-            }
-        }
+        _ = routeTextInputThroughInputContext(event, logContext: "keyDown", keyCode: keyCode)
     }
 
     /// Handle key event from event monitor - routes to Rust terminal
@@ -3779,22 +3764,45 @@ final class RustTerminalView: NSView {
             return true
         }
 
-        // Fallback to characters for regular text input
+        return routeTextInputThroughInputContext(event, logContext: "handleTerminalKeyEvent", keyCode: keyCode)
+    }
+
+    private func routeTextInputThroughInputContext(_ event: NSEvent, logContext: String, keyCode: UInt16) -> Bool {
+        handlingKeyDown = true
+        let inputContextHandled = inputContext?.handleEvent(event) ?? false
+        handlingKeyDown = false
+
+        if shouldSuppressRawTextFallback(afterInputContextHandled: inputContextHandled) {
+            if !inputContextHandled, let markedTextStorage, !markedTextStorage.isEmpty {
+                let escaped = markedTextStorage.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
+                Log.trace(
+                    "RustTerminalView[\(viewId)]: \(logContext) - Preserving marked text composition: '\(escaped)' (keyCode=\(keyCode))"
+                )
+            }
+            return true
+        }
+
+        return sendFallbackTextInput(event, logContext: logContext, keyCode: keyCode)
+    }
+
+    private func sendFallbackTextInput(_ event: NSEvent, logContext: String, keyCode: UInt16) -> Bool {
         if let chars = event.characters, !chars.isEmpty {
             let escaped = chars.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
-            Log.trace("RustTerminalView[\(viewId)]: handleTerminalKeyEvent - Sending characters: '\(escaped)' (keyCode=\(keyCode))")
+            Log.trace("RustTerminalView[\(viewId)]: \(logContext) - Sending characters (fallback): '\(escaped)' (keyCode=\(keyCode))")
             applyLocalEchoForText(chars)
             send(txt: chars)
             return true
-        } else if let charsNoMod = event.charactersIgnoringModifiers, !charsNoMod.isEmpty {
+        }
+
+        if let charsNoMod = event.charactersIgnoringModifiers, !charsNoMod.isEmpty {
             let escaped = charsNoMod.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
-            Log.trace("RustTerminalView[\(viewId)]: handleTerminalKeyEvent - Sending chars (no mod): '\(escaped)' (keyCode=\(keyCode))")
+            Log.trace("RustTerminalView[\(viewId)]: \(logContext) - Sending chars (no mod, fallback): '\(escaped)' (keyCode=\(keyCode))")
             applyLocalEchoForText(charsNoMod)
             send(txt: charsNoMod)
             return true
         }
 
-        Log.trace("RustTerminalView[\(viewId)]: handleTerminalKeyEvent - No characters to send (keyCode=\(keyCode))")
+        Log.trace("RustTerminalView[\(viewId)]: \(logContext) - No characters to send (keyCode=\(keyCode))")
         return false
     }
 
