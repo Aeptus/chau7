@@ -33,6 +33,11 @@ struct PairingSheetView: View {
                             draftPayload = text
                         }
                     }
+                    Button("Clear", role: .destructive) {
+                        draftPayload = ""
+                        error = nil
+                    }
+                    .disabled(draftPayload.isEmpty)
                     Spacer()
                     Button("Save") { save() }
                         .buttonStyle(.borderedProminent)

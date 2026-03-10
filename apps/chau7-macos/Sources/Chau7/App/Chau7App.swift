@@ -14,8 +14,8 @@ struct Chau7App: App {
         let model = AppModel()
         _model = StateObject(wrappedValue: model)
         let overlayModel = OverlayTabsModel(appModel: model)
-        NotificationManager.shared.tabTitleProvider = { [weak overlayModel] tool in
-            overlayModel?.notificationTabTitle(forTool: tool)
+        NotificationManager.shared.tabTitleProvider = { [weak overlayModel] target in
+            overlayModel?.notificationTabTitle(for: target)
         }
 
         // Wire notification system — single delegate replaces 5 separate closures
@@ -25,9 +25,9 @@ struct Chau7App: App {
         )
 
         // Wire activeTabChecker so onlyWhenTabInactive condition works
-        NotificationManager.shared.activeTabChecker = { [weak overlayModel] tool in
+        NotificationManager.shared.activeTabChecker = { [weak overlayModel] target in
             guard let overlay = overlayModel else { return false }
-            return overlay.isToolInSelectedTab(tool)
+            return overlay.isToolInSelectedTab(target)
         }
 
         _overlayModel = StateObject(wrappedValue: overlayModel)

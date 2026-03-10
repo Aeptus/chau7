@@ -33,7 +33,7 @@ final class TerminalControlService {
     // MARK: - Pending Approvals
 
     /// Tracks in-flight approval requests so iOS responses can resolve them.
-    private var pendingApprovals: [String: (Bool) -> Void] = [:]
+    private var pendingApprovals: [String: (MCPApprovalResult) -> Void] = [:]
     private let approvalLock = NSLock()
 
     /// Register an overlay model. Call from AppDelegate for every new window.
@@ -157,7 +157,9 @@ final class TerminalControlService {
     }
 
     func execInTab(tabID: String, command: String) -> String {
-        if let err = enforceVerdict(MCPCommandFilter.check(command), fullInput: command, context: "tab \(tabID)") {
+        let context = onMain { self.gatherTabContext(tabID) }
+        let (verdict, permissions) = MCPCommandFilter.check(command, context: context)
+        if let err = enforceVerdict(verdict, permissions: permissions, fullInput: command, context: "tab \(tabID)") {
             return err
         }
 
@@ -238,7 +240,9 @@ final class TerminalControlService {
     }
 
     func sendInput(tabID: String, input: String) -> String {
-        if let err = enforceVerdict(MCPCommandFilter.checkRawInput(input), fullInput: input, context: "tab \(tabID)") {
+        let context = onMain { self.gatherTabContext(tabID) }
+        let (verdict, permissions) = MCPCommandFilter.checkRawInput(input, context: context)
+        if let err = enforceVerdict(verdict, permissions: permissions, fullInput: input, context: "tab \(tabID)") {
             return err
         }
 
@@ -383,10 +387,32 @@ final class TerminalControlService {
 
     /// Called by RemoteControlManager when the iOS app responds to an approval request.
     func resolveApproval(requestID: String, approved: Bool) {
+        let result: MCPApprovalResult = approved ? .allowedOnce : .denied
         approvalLock.lock()
         let handler = pendingApprovals.removeValue(forKey: requestID)
         approvalLock.unlock()
-        handler?(approved)
+        handler?(result)
+    }
+
+    // MARK: - Runtime Integration
+
+    /// Check if a tab is managed by the agent runtime.
+    func isRuntimeManagedTab(_ tabID: UUID) -> Bool {
+        RuntimeSessionManager.shared.isRuntimeManaged(tabID)
+    }
+
+    // MARK: - Tab Context
+
+    /// Build an MCPTabContext from the current state of a tab. Must be called on main.
+    private func gatherTabContext(_ tabID: String) -> MCPTabContext? {
+        guard let (_, session) = resolveTab(tabID) else { return nil }
+        return MCPTabContext(
+            directory: session.currentDirectory,
+            gitBranch: session.gitBranch,
+            sshHost: nil,
+            processes: session.processGroup?.children.map(\.name),
+            environment: nil
+        )
     }
 
     // MARK: - Helpers
@@ -455,9 +481,9 @@ final class TerminalControlService {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    /// Dual-path command approval: shows NSAlert on Mac AND sends request to iOS.
-    /// First response (Mac or iOS) wins. Must be called on main thread.
-    private func requestCommandApproval(command: String, flaggedCommand: String) -> Bool {
+    /// Dual-path command approval: shows a three-option NSAlert on Mac AND sends
+    /// request to iOS. First response (Mac or iOS) wins. Must be called on main thread.
+    private func requestCommandApproval(command: String, flaggedCommand: String, permissions: ResolvedPermissions) -> MCPApprovalResult {
         let requestID = UUID().uuidString
 
         // Send approval request to iOS via RemoteControlManager
@@ -473,24 +499,30 @@ final class TerminalControlService {
             }
         }
 
-        // Show local alert — this blocks the main thread until user clicks
+        // Show local alert with three options
         let alert = NSAlert()
         alert.messageText = "MCP Command Approval"
-        alert.informativeText = "An MCP client wants to execute:\n\n\(command)\n\nAllow this command?"
+
+        let sourceInfo = permissions.matchedProfile != nil
+            ? "Permissions source: profile \"\(permissions.matchedProfile!.name)\""
+            : "Permissions source: global settings"
+        alert.informativeText = "An MCP client wants to execute:\n\n\(command)\n\n\(sourceInfo)"
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Allow")
+
+        // Buttons: Deny (default, safest), Allow Once, Always Allow
         alert.addButton(withTitle: "Deny")
+        alert.addButton(withTitle: "Allow Once")
+        alert.addButton(withTitle: "Always Allow")
 
         // Register a handler so iOS response can dismiss the alert
-        var iosResolved = false
-        var iosApproved = false
+        var iosResult: MCPApprovalResult?
         approvalLock.lock()
-        pendingApprovals[requestID] = { approved in
-            iosResolved = true
-            iosApproved = approved
+        pendingApprovals[requestID] = { result in
+            iosResult = result
             // Dismiss the Mac alert from iOS response
             DispatchQueue.main.async {
-                NSApp.stopModal(withCode: approved ? .alertFirstButtonReturn : .alertSecondButtonReturn)
+                let code: NSApplication.ModalResponse = result == .denied ? .alertFirstButtonReturn : .alertSecondButtonReturn
+                NSApp.stopModal(withCode: code)
             }
         }
         approvalLock.unlock()
@@ -502,14 +534,29 @@ final class TerminalControlService {
         pendingApprovals.removeValue(forKey: requestID)
         approvalLock.unlock()
 
-        if iosResolved {
-            return iosApproved
+        if let iosResult = iosResult {
+            return iosResult
         }
-        return response == .alertFirstButtonReturn
+
+        switch response {
+        case .alertFirstButtonReturn:
+            return .denied
+        case .alertSecondButtonReturn:
+            return .allowedOnce
+        case .alertThirdButtonReturn:
+            return .alwaysAllow
+        default:
+            return .denied
+        }
     }
 
     /// Returns an error string if the verdict blocks/denies execution, nil if allowed.
-    private func enforceVerdict(_ verdict: MCPCommandVerdict, fullInput: String, context: String) -> String? {
+    private func enforceVerdict(
+        _ verdict: MCPCommandVerdict,
+        permissions: ResolvedPermissions,
+        fullInput: String,
+        context: String
+    ) -> String? {
         switch verdict {
         case .allowed:
             return nil
@@ -517,12 +564,21 @@ final class TerminalControlService {
             Log.info("MCP: blocked '\(cmd)' in \(context)")
             return jsonError("Command '\(cmd)' is blocked by MCP permissions.")
         case .needsApproval(let cmd):
-            let approved = onMain { self.requestCommandApproval(command: fullInput, flaggedCommand: cmd) }
-            if !approved {
+            let result = onMain {
+                self.requestCommandApproval(command: fullInput, flaggedCommand: cmd, permissions: permissions)
+            }
+            switch result {
+            case .denied:
                 Log.info("MCP: user denied '\(cmd)' in \(context)")
                 return jsonError("Command '\(cmd)' was denied by user.")
+            case .allowedOnce:
+                Log.info("MCP: user allowed once '\(cmd)' in \(context)")
+                return nil
+            case .alwaysAllow:
+                Log.info("MCP: user always-allowed '\(cmd)' in \(context) (\(permissions.sourceName))")
+                FeatureSettings.shared.addToAllowedCommands(cmd, profileID: permissions.profileID)
+                return nil
             }
-            return nil
         }
     }
 

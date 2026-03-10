@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 // MARK: - Typed Errors for Chau7
@@ -246,6 +247,48 @@ enum FileOperations {
         } catch {
             Log.error("Failed to write data to \(url.path): \(error.localizedDescription)")
             return false
+        }
+    }
+
+    /// Appends Data using POSIX writes so I/O failures surface as errno values
+    /// instead of Objective-C exceptions from FileHandle.
+    @discardableResult
+    static func appendData(_ data: Data, to url: URL, permissions: mode_t = 0o644) -> Bool {
+        guard !data.isEmpty else { return true }
+
+        createDirectory(at: url.deletingLastPathComponent())
+
+        let fd = open(url.path, O_WRONLY | O_CREAT | O_APPEND, permissions)
+        guard fd >= 0 else {
+            let errorCode = errno
+            Log.error("Failed to open file for append at \(url.path): \(String(cString: strerror(errorCode)))")
+            return false
+        }
+        defer { close(fd) }
+
+        return data.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress else { return true }
+            var offset = 0
+
+            while offset < data.count {
+                let remaining = data.count - offset
+                let written = Darwin.write(fd, baseAddress.advanced(by: offset), remaining)
+
+                if written > 0 {
+                    offset += written
+                    continue
+                }
+
+                if written == -1, errno == EINTR {
+                    continue
+                }
+
+                let errorCode = errno
+                Log.error("Failed to append data to \(url.path): \(String(cString: strerror(errorCode)))")
+                return false
+            }
+
+            return true
         }
     }
 }

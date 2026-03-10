@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4A94D77231F2A00100A1B001 /* RemoteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D77131F2A00100A1B001 /* RemoteModels.swift */; };
+		4A94D77431F2A00100A1B001 /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D77331F2A00100A1B001 /* TerminalView.swift */; };
+		4A94D77631F2A00100A1B001 /* ApprovalsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D77531F2A00100A1B001 /* ApprovalsView.swift */; };
+		4A94D77831F2A00100A1B001 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D77731F2A00100A1B001 /* SettingsView.swift */; };
 		84B3034D2F3107BB00A7D19E /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B303492F3107BB00A7D19E /* KeychainStore.swift */; };
 		84B3034E2F3107BB00A7D19E /* RemoteCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B3034C2F3107BB00A7D19E /* RemoteCrypto.swift */; };
 		84B3034F2F3107BB00A7D19E /* PairingSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B3034A2F3107BB00A7D19E /* PairingSheetView.swift */; };
@@ -16,6 +20,10 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		4A94D77131F2A00100A1B001 /* RemoteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteModels.swift; sourceTree = "<group>"; };
+		4A94D77331F2A00100A1B001 /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
+		4A94D77531F2A00100A1B001 /* ApprovalsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalsView.swift; sourceTree = "<group>"; };
+		4A94D77731F2A00100A1B001 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		84B3033A2F31076300A7D19E /* Chau7RemoteApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Chau7RemoteApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		84B303482F3107BB00A7D19E /* Chau7RemoteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chau7RemoteApp.swift; sourceTree = "<group>"; };
 		84B303492F3107BB00A7D19E /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
@@ -52,6 +60,10 @@
 				84B3034A2F3107BB00A7D19E /* PairingSheetView.swift */,
 				84B3034B2F3107BB00A7D19E /* RemoteClient.swift */,
 				84B3034C2F3107BB00A7D19E /* RemoteCrypto.swift */,
+				4A94D77131F2A00100A1B001 /* RemoteModels.swift */,
+				4A94D77331F2A00100A1B001 /* TerminalView.swift */,
+				4A94D77531F2A00100A1B001 /* ApprovalsView.swift */,
+				4A94D77731F2A00100A1B001 /* SettingsView.swift */,
 				84B3033C2F31076300A7D19E /* Chau7RemoteApp */,
 				84B3033B2F31076300A7D19E /* Products */,
 			);
@@ -143,6 +155,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4A94D77631F2A00100A1B001 /* ApprovalsView.swift in Sources */,
+				4A94D77231F2A00100A1B001 /* RemoteModels.swift in Sources */,
+				4A94D77831F2A00100A1B001 /* SettingsView.swift in Sources */,
+				4A94D77431F2A00100A1B001 /* TerminalView.swift in Sources */,
 				84B3034D2F3107BB00A7D19E /* KeychainStore.swift in Sources */,
 				84B3034E2F3107BB00A7D19E /* RemoteCrypto.swift in Sources */,
 				84B3034F2F3107BB00A7D19E /* PairingSheetView.swift in Sources */,

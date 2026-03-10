@@ -967,7 +967,7 @@ struct Chau7OverlayView: View {
             if settings.isShortcutHelperHintEnabled {
                 HStack {
                     Spacer()
-                    VStack(alignment: .trailing, spacing: 1) {
+                    VStack(alignment: .trailing, spacing: 6) {
                         ShortcutHelperHintView(
                             label: L("shortcut.helper.label", "Keyboard Shortcuts"),
                             shortcut: "⌘/"
@@ -981,6 +981,14 @@ struct Chau7OverlayView: View {
                             )
                         )
                     }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(Color.white.opacity(0.14))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .padding(.trailing, 12)
                 }
                 .padding(.top, OverlayLayout.tabBarHeight + 8)
@@ -1016,6 +1024,7 @@ private struct ShortcutHelperHintView: View {
         HStack(spacing: 6) {
             Text(label)
                 .font(.custom("Avenir Next", size: 11).weight(.semibold))
+                .foregroundStyle(Color.white.opacity(0.92))
             Text(shortcut)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .padding(.horizontal, 6)
@@ -1023,10 +1032,6 @@ private struct ShortcutHelperHintView: View {
                 .background(Color.black.opacity(0.25))
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Color.black.opacity(0.18))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .accessibilityLabel(
             String(
                 format: L("accessibility.shortcutHelper", "%@ %@"),

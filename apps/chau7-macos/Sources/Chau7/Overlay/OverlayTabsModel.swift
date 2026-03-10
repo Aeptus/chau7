@@ -226,6 +226,16 @@ struct OverlayTab: Identifiable, Equatable {
         self.splitController = splitController
         self.createdAt = Date()
     }
+
+    /// Propagates this tab's UUID to the split controller and all current terminal
+    /// sessions so events carry a deterministic tabID for the TabResolver fast-path.
+    /// Must be called after the tab's `id` is finalized (i.e. after init or restore).
+    mutating func stampOwnerTabID() {
+        splitController.ownerTabID = id
+        for (_, session) in splitController.terminalSessions {
+            session.ownerTabID = id
+        }
+    }
 }
 
 // MARK: - Tab State Persistence
@@ -430,6 +440,7 @@ final class OverlayTabsModel: ObservableObject {
             if let firstColor = TabColor.allCases.first {
                 first.color = firstColor
             }
+            first.stampOwnerTabID()
             self.tabs = [first]
             self.selectedTabID = first.id
         }
@@ -1240,6 +1251,7 @@ final class OverlayTabsModel: ObservableObject {
             var tab = OverlayTab(appModel: appModel, splitController: controller, id: restoredTabID)
             tab.customTitle = state.customTitle
             tab.color = TabColor(rawValue: state.color) ?? colors[i % colors.count]
+            tab.stampOwnerTabID()
 
             // Restore per-tab token optimization override
             if let overrideRaw = state.tokenOptOverride,
@@ -1585,8 +1597,8 @@ final class OverlayTabsModel: ObservableObject {
         tabs.first { $0.id == selectedTabID }
     }
 
-    func notificationTabTitle(forTool tool: String) -> String? {
-        tabMatchingTool(tool)?.displayTitle
+    func notificationTabTitle(for target: TabTarget) -> String? {
+        TabResolver.resolve(target, in: tabs)?.displayTitle
     }
 
     var overlayWorkspaceIdentifier: String? {
@@ -1778,6 +1790,7 @@ final class OverlayTabsModel: ObservableObject {
         if !colors.isEmpty {
             tab.color = colors[tabs.count % colors.count]
         }
+        tab.stampOwnerTabID()
         if let directory = inheritedStartDirectory() {
             tab.session?.updateCurrentDirectory(directory)
         }
@@ -1828,6 +1841,7 @@ final class OverlayTabsModel: ObservableObject {
         if !colors.isEmpty {
             tab.color = colors[tabs.count % colors.count]
         }
+        tab.stampOwnerTabID()
 
         // Set the starting directory for the new tab (triggers git status refresh)
         tab.session?.updateCurrentDirectory(directory)
@@ -2283,6 +2297,7 @@ final class OverlayTabsModel: ObservableObject {
         var tab = OverlayTab(appModel: appModel, splitController: controller)
         tab.customTitle = state.customTitle
         tab.color = TabColor(rawValue: state.color) ?? .blue
+        tab.stampOwnerTabID()
         if let overrideRaw = state.tokenOptOverride,
            let override = TabTokenOptOverride(rawValue: overrideRaw) {
             tab.tokenOptOverride = override
@@ -2386,6 +2401,7 @@ final class OverlayTabsModel: ObservableObject {
         if let firstColor = TabColor.allCases.first {
             newTab.color = firstColor
         }
+        newTab.stampOwnerTabID()
         if let inheritedDirectory {
             newTab.session?.updateCurrentDirectory(inheritedDirectory)
         }
@@ -2563,12 +2579,13 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     /// Applies a notification style to a tab based on tool name (used by notification action system)
-    func applyNotificationStyle(forTool tool: String, directory: String? = nil, stylePreset: String, config: [String: String]) {
+    @discardableResult
+    func applyNotificationStyle(for target: TabTarget, stylePreset: String, config: [String: String]) -> UUID? {
         dispatchPrecondition(condition: .onQueue(.main))
 
-        guard let tab = tabMatchingTool(tool, directory: directory) else {
-            Log.info("applyNotificationStyle: No tab found matching tool '\(tool)'")
-            return
+        guard let tab = TabResolver.resolve(target, in: tabs) else {
+            Log.info("applyNotificationStyle: No tab found matching tool '\(target.tool)'")
+            return nil
         }
 
         let style: TabNotificationStyle? = stylePreset == "clear"
@@ -2576,6 +2593,7 @@ final class OverlayTabsModel: ObservableObject {
             : buildNotificationStyle(preset: stylePreset, config: config)
 
         setNotificationStyle(style, for: tab.id)
+        return tab.id
     }
 
     /// Builds a TabNotificationStyle from preset and config
@@ -2660,162 +2678,49 @@ final class OverlayTabsModel: ObservableObject {
 
     // MARK: - Notification Action Handlers
 
-    /// Finds the tab matching the tool name and selects it.
-    func focusTabByTool(_ tool: String, directory: String? = nil) {
-        guard let tab = tabMatchingTool(tool, directory: directory) else {
-            Log.info("focusTabByTool: No tab found for '\(tool)'")
+    /// Finds the tab matching the target and selects it.
+    func focusTab(for target: TabTarget) {
+        guard let tab = TabResolver.resolve(target, in: tabs) else {
+            Log.info("focusTab: No tab found for '\(target.tool)'")
             return
         }
         selectTab(id: tab.id)
     }
 
-    /// Sets a badge on the tab matching the tool name via the unified TabNotificationStyle.
-    func setBadgeByTool(_ tool: String, directory: String? = nil, text: String, color: String) {
-        guard let tab = tabMatchingTool(tool, directory: directory) else {
-            Log.info("setBadgeByTool: No tab found for '\(tool)'")
+    /// Sets a badge on the tab matching the target via the unified TabNotificationStyle.
+    func setBadge(for target: TabTarget, text: String, color: String) {
+        guard let tab = TabResolver.resolve(target, in: tabs) else {
+            Log.info("setBadge: No tab found for '\(target.tool)'")
             return
         }
         var style = tab.notificationStyle ?? TabNotificationStyle()
         style.badgeText = text
         style.badgeColor = colorFromString(color)
         setNotificationStyle(style, for: tab.id)
-        Log.info("setBadgeByTool: Set badge '\(text)' on tab for '\(tool)'")
+        Log.info("setBadge: Set badge '\(text)' on tab for '\(target.tool)'")
     }
 
-    /// Inserts a snippet by ID into the tab matching the tool name.
-    func insertSnippetById(_ snippetId: String, forTool tool: String, directory: String? = nil, autoExecute: Bool) {
+    /// Inserts a snippet by ID into the tab matching the target.
+    func insertSnippet(id snippetId: String, for target: TabTarget, autoExecute: Bool) {
         guard let entry = SnippetManager.shared.entries.first(where: { $0.snippet.id == snippetId }) else {
-            Log.warn("insertSnippetById: Snippet '\(snippetId)' not found")
+            Log.warn("insertSnippet: Snippet '\(snippetId)' not found")
             return
         }
-        if let tab = tabMatchingTool(tool, directory: directory) {
+        if let tab = TabResolver.resolve(target, in: tabs) {
             selectTab(id: tab.id)
         }
         insertSnippet(entry)
-        Log.info("insertSnippetById: Inserted snippet '\(snippetId)' for tool '\(tool)'")
+        Log.info("insertSnippet: Inserted snippet '\(snippetId)' for tool '\(target.tool)'")
     }
 
-    /// Returns true if the given tool name matches the currently selected tab.
-    func isToolInSelectedTab(_ tool: String) -> Bool {
-        guard let matched = tabMatchingTool(tool) else { return false }
+    /// Returns true if the given target matches the currently selected tab.
+    func isToolInSelectedTab(_ target: TabTarget) -> Bool {
+        // Fast-path: if we have a tab ID, just compare directly
+        if let tabID = target.tabID {
+            return tabID == selectedTabID
+        }
+        guard let matched = TabResolver.resolve(target, in: tabs) else { return false }
         return matched.id == selectedTabID
-    }
-
-    /// Shared tool→tab matching logic with optional directory disambiguation.
-    /// When `directory` is provided and multiple tabs match, prefer the tab
-    /// whose terminal session is in (or under) that directory.
-    private func tabMatchingTool(_ tool: String, directory: String? = nil) -> OverlayTab? {
-        let candidates = Self.toolMatchCandidates(for: tool)
-        guard !candidates.isEmpty else { return nil }
-
-        func matchesCandidate(_ rawName: String?) -> Bool {
-            guard let normalized = Self.normalizedToolLabel(rawName) else { return false }
-            if candidates.contains(normalized) { return true }
-            return candidates.contains { candidate in
-                normalized.contains(candidate) || candidate.contains(normalized)
-            }
-        }
-
-        /// When a directory hint is available, narrow a set of matching tabs
-        /// to the one whose session cwd best matches the event directory.
-        func disambiguate(_ matches: [OverlayTab]) -> OverlayTab? {
-            guard matches.count > 1, let dir = directory?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !dir.isEmpty else {
-                return matches.first
-            }
-            let normalized = URL(fileURLWithPath: dir).standardized.path
-            return matches.first(where: { tab in
-                tab.splitController.terminalSessions.contains { _, session in
-                    let cwd = URL(fileURLWithPath: session.currentDirectory).standardized.path
-                    return cwd == normalized || cwd.hasPrefix(normalized + "/")
-                }
-            }) ?? matches.first
-        }
-
-        // 1) Fast exact match on focused session branding
-        let brandMatches = tabs.filter { matchesCandidate($0.displaySession?.aiDisplayAppName) }
-        if !brandMatches.isEmpty { return disambiguate(brandMatches) }
-
-        // 2) Match on tab chrome title
-        let titleMatches = tabs.filter { matchesCandidate($0.displayTitle) }
-        if !titleMatches.isEmpty { return disambiguate(titleMatches) }
-
-        // 3) Deep scan every terminal session in each tab
-        let deepMatches = tabs.filter { tab in
-            tab.splitController.terminalSessions.contains { _, session in
-                if matchesCandidate(session.aiDisplayAppName) { return true }
-                if matchesCandidate(session.activeAppName) { return true }
-                if let provider = AIResumeParser.normalizeProviderName(session.lastAIProvider ?? ""),
-                   candidates.contains(provider) {
-                    return true
-                }
-                return false
-            }
-        }
-        if !deepMatches.isEmpty { return disambiguate(deepMatches) }
-
-        // 4) Claude-specific fallback: correlate tabs by cwd against live
-        // Claude monitor sessions and pick the most recently active one.
-        if candidates.contains("claude") {
-            let bestByCwd = tabs.compactMap { tab -> (tab: OverlayTab, lastActivity: Date)? in
-                var activities: [Date] = []
-                for pair in tab.splitController.terminalSessions {
-                    let session = pair.1
-                    let dir = session.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !dir.isEmpty else { continue }
-                    let sessionCandidates = ClaudeCodeMonitor.shared.sessionCandidates(forDirectory: dir)
-                    if let lastActivity = sessionCandidates.map({ $0.lastActivity }).max() {
-                        activities.append(lastActivity)
-                    }
-                }
-                let bestActivity = activities.max()
-                guard let bestActivity else { return nil }
-                return (tab: tab, lastActivity: bestActivity)
-            }
-            .max(by: { $0.lastActivity < $1.lastActivity })?.tab
-
-            if let bestByCwd {
-                Log.info("tabMatchingTool: resolved '\(tool)' via Claude cwd fallback to tab=\(bestByCwd.id)")
-                return bestByCwd
-            }
-        }
-
-        return nil
-    }
-
-    private static func normalizedToolLabel(_ value: String?) -> String? {
-        guard let value else { return nil }
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !trimmed.isEmpty else { return nil }
-
-        if let provider = AIResumeParser.normalizeProviderName(trimmed) {
-            return provider
-        }
-        return trimmed
-    }
-
-    private static func toolMatchCandidates(for tool: String) -> [String] {
-        guard let normalized = normalizedToolLabel(tool) else { return [] }
-
-        var candidates: [String] = [normalized]
-        var seen = Set(candidates)
-
-        func append(_ value: String) {
-            guard seen.insert(value).inserted else { return }
-            candidates.append(value)
-        }
-
-        switch normalized {
-        case "claude":
-            append("claude code")
-            append("continue")
-        case "codex":
-            append("openai codex")
-        default:
-            break
-        }
-
-        return candidates
     }
 
     // MARK: - Tab Bar Recovery

@@ -33,6 +33,10 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sen
     public static let apiProxy = AIEventSource(rawValue: "api_proxy")
     public static let unknown = AIEventSource(rawValue: "unknown")
 
+    // MARK: - Runtime
+
+    public static let runtime = AIEventSource(rawValue: "runtime")
+
     // MARK: - Shell Sources
 
     public static let shell = AIEventSource(rawValue: "shell")
@@ -62,6 +66,7 @@ public struct AIEventSource: RawRepresentable, Equatable, Hashable, Codable, Sen
 /// - `message`: Human-readable detail from the source
 /// - `ts`: ISO8601 timestamp string
 /// - `directory`: Optional working directory for tab disambiguation
+/// - `tabID`: Optional tab UUID for deterministic routing (set by in-app event sources)
 public struct AIEvent: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let source: AIEventSource
@@ -70,8 +75,9 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
     public let message: String
     public let ts: String
     public let directory: String?
+    public let tabID: UUID?
 
-    public init(source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String, directory: String? = nil) {
+    public init(source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String, directory: String? = nil, tabID: UUID? = nil) {
         self.id = UUID()
         self.source = source
         self.type = type
@@ -79,9 +85,10 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         self.message = message
         self.ts = ts
         self.directory = directory
+        self.tabID = tabID
     }
 
-    public init(id: UUID, source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String, directory: String? = nil) {
+    public init(id: UUID, source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String, directory: String? = nil, tabID: UUID? = nil) {
         self.id = id
         self.source = source
         self.type = type
@@ -89,6 +96,12 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         self.message = message
         self.ts = ts
         self.directory = directory
+        self.tabID = tabID
+    }
+
+    /// Returns the routing target for tab resolution from this event's fields.
+    public var tabTarget: TabTarget {
+        TabTarget(tool: tool, directory: directory, tabID: tabID)
     }
 
     /// Returns the notification title for this event.

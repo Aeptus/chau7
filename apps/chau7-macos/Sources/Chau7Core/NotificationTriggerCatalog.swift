@@ -321,7 +321,8 @@ public enum NotificationTriggerCatalog {
         (.copilot, "GitHub Copilot", "copilot"),
         (.aider, "Aider", "aider"),
         (.cline, "Cline", "cline"),
-        (.continueAI, "Continue", "continueAI")
+        (.continueAI, "Continue", "continueAI"),
+        (.runtime, "Runtime Agent", "runtime")
     ]
 
     /// All AI triggers generated from the source × type matrix.

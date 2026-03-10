@@ -418,6 +418,10 @@ final class SplitPaneController: ObservableObject {
 
     private weak var appModel: AppModel?
 
+    /// The owning tab's UUID, propagated to new terminal sessions so events
+    /// carry a deterministic tabID for the TabResolver fast-path.
+    var ownerTabID: UUID?
+
     /// F03: Callback for terminal Cmd+Click on file paths - opens in internal editor
     lazy var onFilePathClicked: (String, Int?, Int?) -> Void = { [weak self] path, line, _ in
         self?.openFileInEditor(path: path, line: line)
@@ -483,6 +487,7 @@ final class SplitPaneController: ObservableObject {
         guard let appModel else { return }
 
         let newSession = TerminalSessionModel(appModel: appModel)
+        newSession.ownerTabID = ownerTabID
         let newID = UUID()
         let newNode = SplitNode.terminal(id: newID, session: newSession)
 

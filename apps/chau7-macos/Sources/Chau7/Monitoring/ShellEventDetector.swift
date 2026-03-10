@@ -9,6 +9,10 @@ final class ShellEventDetector {
         FeatureSettings.shared.shellEventConfig
     }
 
+    /// The owning tab's UUID, set by TerminalSessionModel so emitted events
+    /// carry a deterministic tabID for the TabResolver fast-path.
+    var ownerTabID: UUID?
+
     // Track state for change detection
     private var lastDirectory: String?
     private var lastGitBranch: String?
@@ -234,6 +238,7 @@ final class ShellEventDetector {
 
     private func emitEvent(type: String, message: String) {
         let dir = lastDirectory
+        let tabID = ownerTabID
         DispatchQueue.main.async { [weak self] in
             self?.appModel?.recordEvent(
                 source: .shell,
@@ -241,7 +246,8 @@ final class ShellEventDetector {
                 tool: "Shell",
                 message: message,
                 notify: true,
-                directory: dir
+                directory: dir,
+                tabID: tabID
             )
         }
     }
