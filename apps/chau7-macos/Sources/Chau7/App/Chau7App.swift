@@ -30,6 +30,15 @@ struct Chau7App: App {
             return overlay.isToolInSelectedTab(target)
         }
 
+        // Wire tabResolver so external events (e.g. Claude Code hooks) get
+        // their tabID filled in before coalescing and pipeline evaluation.
+        // Uses TabResolver.resolve for full 5-tier matching (brand, title,
+        // deep scan, Claude cwd fallback) — not just directory matching.
+        NotificationManager.shared.tabResolver = { [weak overlayModel] target in
+            guard let overlay = overlayModel else { return nil }
+            return TabResolver.resolve(target, in: overlay.tabs)?.id
+        }
+
         _overlayModel = StateObject(wrappedValue: overlayModel)
         _ = SnippetManager.shared
         AppIcon.apply()

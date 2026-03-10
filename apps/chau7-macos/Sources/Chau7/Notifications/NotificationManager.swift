@@ -28,6 +28,11 @@ final class NotificationManager {
     /// Injectable check: returns true if the given target's tab is currently selected.
     var activeTabChecker: ((TabTarget) -> Bool)?
 
+    /// Injectable resolver: maps a TabTarget to the owning tab's UUID.
+    /// Used to fill in missing tabIDs on events from external sources (e.g. Claude Code hooks).
+    /// Wired to `TabResolver.resolve` — gets full 5-tier matching for free.
+    var tabResolver: ((TabTarget) -> UUID?)?
+
     // MARK: - Focus/DND State (push-based)
 
     private var isFocusModeActive = false
@@ -57,7 +62,8 @@ final class NotificationManager {
         case .notDetermined:
             resetNativeNotificationState()
         @unknown default:
-            break
+            Log.warn("Unknown UNAuthorizationStatus (\(status.rawValue)) in updateAuthorizationStatus, treating as notDetermined")
+            resetNativeNotificationState()
         }
     }
 
@@ -76,6 +82,10 @@ final class NotificationManager {
     }
 
     private func enqueueEvent(_ event: AIEvent) {
+        var event = event
+        if event.tabID == nil {
+            event = event.resolvingTabID(tabResolver?(event.tabTarget))
+        }
         let key = MonitoringSchedule.notificationCoalescingKey(for: event)
         let isNewKey = pendingNotifications[key] == nil
         pendingNotifications[key] = event
@@ -136,7 +146,14 @@ final class NotificationManager {
                 return
             }
             showDefaultNotification(for: event)
-            history.record(event: event, triggerId: rateLimitKey, actionsExecuted: ["showNotification"], wasRateLimited: false)
+            // Safe to call without re-checking isToolTabActive: processEvent runs
+            // entirely on @MainActor, so no tab switch can interleave between the
+            // pipeline's active-tab check and this call. The pipeline already
+            // dropped events for active tabs before reaching .fireDefault.
+            let didStyleTab = applyDefaultTabStyle(for: event)
+            var actions = ["showNotification"]
+            if didStyleTab { actions.append("styleTab") }
+            history.record(event: event, triggerId: rateLimitKey, actionsExecuted: actions, wasRateLimited: false)
 
         case .fireActions(let triggerId, let actions):
             guard rateLimiter.checkAndConsume(triggerId: triggerId) else {
@@ -152,6 +169,42 @@ final class NotificationManager {
                 wasRateLimited: false
             )
         }
+    }
+
+    // MARK: - Default Tab Styling
+
+    private static let defaultTabStyleTypes: Set<String> = [
+        "finished", "error", "permission", "idle", "context_limit", "failed"
+    ]
+
+    /// Applies a default tab style for attention-worthy events when no explicit
+    /// `.styleTab` action is configured. This ensures tab visual feedback works
+    /// out-of-the-box without requiring user configuration.
+    ///
+    /// Routes through `NotificationActionExecutor` (not the delegate directly)
+    /// so the executor's auto-clear timer management kicks in — the style
+    /// automatically clears after 30 seconds.
+    ///
+    /// Returns `true` if a style action was dispatched (for audit trail).
+    @discardableResult
+    private func applyDefaultTabStyle(for event: AIEvent) -> Bool {
+        guard Self.defaultTabStyleTypes.contains(event.type.lowercased()) else { return false }
+        let preset: String
+        switch event.type.lowercased() {
+        case "error", "failed", "context_limit":
+            preset = "error"
+        case "permission":
+            preset = "attention"
+        default:
+            preset = "waiting"
+        }
+        let action = NotificationActionConfig(
+            actionType: .styleTab,
+            enabled: true,
+            config: ["style": preset, "autoClearSeconds": "30"]
+        )
+        NotificationActionExecutor.shared.execute(actions: [action], for: event)
+        return true
     }
 
     // MARK: - Notification Dispatch
@@ -344,9 +397,11 @@ final class NotificationManager {
         }
     }
 
-    /// Check if the screen is locked via CGSessionCopyCurrentDictionary
+    /// Check if the screen is locked via CGSessionCopyCurrentDictionary.
+    /// Returns false (conservative) when the API is unavailable.
     private func isScreenLocked() -> Bool {
         guard let sessionInfo = CGSessionCopyCurrentDictionary() as? [String: Any] else {
+            Log.trace("CGSessionCopyCurrentDictionary returned nil (sandboxed or API unavailable)")
             return false
         }
         return sessionInfo["CGSSessionScreenIsLocked"] as? Bool ?? false

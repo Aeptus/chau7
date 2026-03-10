@@ -121,6 +121,11 @@ enum TabResolver {
     /// When a directory hint is available, narrow a set of matching tabs
     /// to the one whose session cwd best matches the event directory.
     /// Falls back to most recently created tab for deterministic ordering.
+    ///
+    /// Directory matching is bidirectional: matches if the tab cwd is inside the
+    /// event directory OR the event directory is inside the tab cwd. This handles
+    /// both "tool started at project root, tab cd'd into src/" and "tool reports
+    /// a subdirectory, tab is at project root."
     private static func disambiguate(_ matches: [OverlayTab], directory: String?) -> OverlayTab? {
         guard matches.count > 1 else { return matches.first }
 
@@ -131,7 +136,9 @@ enum TabResolver {
             if let dirMatch = matches.first(where: { tab in
                 tab.splitController.terminalSessions.contains { _, session in
                     let cwd = URL(fileURLWithPath: session.currentDirectory).standardized.path
-                    return cwd == normalized || cwd.hasPrefix(normalized + "/")
+                    return cwd == normalized
+                        || cwd.hasPrefix(normalized + "/")
+                        || normalized.hasPrefix(cwd + "/")
                 }
             }) {
                 return dirMatch

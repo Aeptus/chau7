@@ -1225,7 +1225,11 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         let failuresBefore = aiDetection.utf8DecodeFailures
         guard let haystack = aiDetection.prepareHaystack(chunk: data) else {
             if aiDetection.utf8DecodeFailures > failuresBefore {
-                Log.trace("UTF-8 decode failure in AI detection sliding buffer (total: \(aiDetection.utf8DecodeFailures))")
+                if aiDetection.utf8DecodeFailures == 1 {
+                    Log.warn("First UTF-8 decode failure in AI detection sliding buffer — may indicate encoding issue")
+                } else {
+                    Log.trace("UTF-8 decode failure in AI detection sliding buffer (total: \(aiDetection.utf8DecodeFailures))")
+                }
             }
             return
         }

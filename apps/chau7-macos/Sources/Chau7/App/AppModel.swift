@@ -966,6 +966,10 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             recentEvents.append(aiEvent)
             recentEvents.trimToLast(25)
 
+            // Feed into the notification pipeline so tab styling, system
+            // notifications, and all configured actions fire for Claude Code events.
+            NotificationManager.shared.notify(for: aiEvent)
+
             // Bridge session IDs from Claude Code hooks to the telemetry system.
             // Hook events carry sessionId + cwd; match to in-progress telemetry runs
             // so content extraction can find the right transcript files on run end.
