@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ligatures — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 renders font ligatures for programming fonts like Fira Code and JetBrains Mono, turning operators into clean symbols.">
+    <meta property="og:title" content="Ligatures — Chau7">
+    <meta property="og:description" content="Chau7 renders font ligatures for programming fonts like Fira Code and JetBrains Mono, turning operators into clean symbols.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="ligatures.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Terminal Core", "item": "../features.html#terminal" },
+            { "@type": "ListItem", "position": 4, "name": "Ligatures" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Which fonts are supported for ligatures?","acceptedAnswer":{"@type":"Answer","text":"Any OpenType font with ligature tables works, including Fira Code, JetBrains Mono, Cascadia Code, Iosevka, Victor Mono, and Hasklig. Chau7 reads the font&#x27;s standard ligature (liga) and contextual alternates (calt) tables automatically."}},{"@type":"Question","name":"Do ligatures affect cursor positioning or text selection?","acceptedAnswer":{"@type":"Answer","text":"No. The cursor and text selection operate on character cells, not visual glyphs. A ligature that visually replaces three characters still occupies three selectable cells, and the cursor steps through each cell individually."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#terminal">Terminal Core</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Ligatures</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="terminal">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">TERMINAL CORE</div>
+                <h1 class="hero-title">Ligatures</h1>
+                <p class="hero-subtitle">Programming ligatures rendered correctly. Arrow operators, equality checks, and pipes as clean typographic symbols.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How to enable font ligatures in terminal emulator macOS</li>
+                    <li class="question-item">Fira Code ligatures not working in my terminal</li>
+                    <li class="question-item">Which terminals support programming font ligatures?</li>
+                    <li class="question-item">JetBrains Mono ligatures in terminal on macOS</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Programming fonts like Fira Code, JetBrains Mono, Cascadia Code, and Iosevka include OpenType ligature tables that replace multi-character sequences (like ->, ==, !=, |>) with single typographic glyphs. Chau7 detects these ligature substitutions by running Core Text layout on each visible line and checking for glyph replacements that span multiple character cells.</p>
+                <p>When a ligature is detected, Chau7 renders the substituted glyph across the spanned cells while maintaining correct cursor positioning. The cursor always moves in single-cell increments regardless of visual ligatures, so editing and selection behave identically to non-ligatured text. Ligatures update in real time as characters are typed or output changes.</p>
+                <p>Ligature rendering is toggled per-profile, so you can enable ligatures in your coding profile while keeping them disabled in a profile used for log viewing where character-exact rendering is preferred. The ligature detection cache is shared with the glyph atlas, so enabling ligatures adds no measurable overhead to the render path.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Programming ligatures improve code readability by rendering compound operators as distinct visual symbols. An arrow operator (->) becomes a single arrow glyph, and an inequality (!=) becomes a crossed-equals sign. Many developers choose their terminal specifically based on ligature support, and Chau7 renders them correctly without the alignment bugs that plague other GPU-accelerated terminals.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="vt100-xterm-emulation.html">
+                        <h4>Full VT100/xterm Emulation</h4>
+                        <p>Complete terminal emulation with 256-color, true color (24-bit), and all standard escape sequences.</p>
+                    </a>
+                    <a class="catalog-card" href="unicode-emoji-support.html">
+                        <h4>Unicode &amp; Emoji Support</h4>
+                        <p>Full Unicode rendering including CJK, RTL, combining characters, and color emoji.</p>
+                    </a>
+                    <a class="catalog-card" href="shell-integration.html">
+                        <h4>Shell Integration</h4>
+                        <p>Deep integration with zsh, bash, and fish for command detection, working directory tracking, and exit codes.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Which fonts are supported for ligatures?</summary>
+                        <div class="faq-answer"><p>Any OpenType font with ligature tables works, including Fira Code, JetBrains Mono, Cascadia Code, Iosevka, Victor Mono, and Hasklig. Chau7 reads the font's standard ligature (liga) and contextual alternates (calt) tables automatically.</p></div>
+                    </details>
+                    <details>
+                        <summary>Do ligatures affect cursor positioning or text selection?</summary>
+                        <div class="faq-answer"><p>No. The cursor and text selection operate on character cells, not visual glyphs. A ligature that visually replaces three characters still occupies three selectable cells, and the cursor steps through each cell individually.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Beautiful code in your terminal. Download Chau7.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

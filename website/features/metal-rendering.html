@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Metal Rendering — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 uses Apple Metal for GPU-accelerated terminal rendering with glyph atlas caching and dirty region tracking for maximum frame rates.">
+    <meta property="og:title" content="Metal Rendering — Chau7">
+    <meta property="og:description" content="Chau7 uses Apple Metal for GPU-accelerated terminal rendering with glyph atlas caching and dirty region tracking for maximum frame rates.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="metal-rendering.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "GPU Rendering", "item": "../features.html#rendering" },
+            { "@type": "ListItem", "position": 4, "name": "Metal Rendering" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Does Metal rendering work on all Macs?","acceptedAnswer":{"@type":"Answer","text":"Yes. Every Mac shipped since 2012 supports Metal. Chau7 targets Metal 2 features available on Apple Silicon and recent Intel Macs, with automatic fallback to Metal 1 on older hardware."}},{"@type":"Question","name":"How much GPU memory does the glyph atlas use?","acceptedAnswer":{"@type":"Answer","text":"The atlas starts at 1024x1024 pixels (4 MB for RGBA) and grows on demand. A typical developer font at 13pt requires roughly 2-3 MB for the full ASCII range plus common symbols. CJK or emoji glyphs are cached incrementally as they appear."}},{"@type":"Question","name":"Can I disable GPU rendering?","acceptedAnswer":{"@type":"Answer","text":"There is no need to. Metal rendering uses less energy than CPU rendering because the GPU is purpose-built for textured quad compositing. In benchmarks, Chau7&#x27;s Metal path draws fewer watts than a Core Text-based renderer at the same frame rate."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#rendering">GPU Rendering</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Metal Rendering</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="rendering">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge badge-purple">GPU RENDERING</div>
+                <h1 class="hero-title">Metal Rendering</h1>
+                <p class="hero-subtitle">Every frame rendered on the GPU, every glyph cached in a texture atlas, every update clipped to the dirty region.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Terminal freezes with large output</li>
+                    <li class="question-item">Why is my terminal lagging on macOS when catting large files?</li>
+                    <li class="question-item">How to fix slow terminal rendering with lots of colored output</li>
+                    <li class="question-item">VS Code terminal freezing lag fix</li>
+                    <li class="question-item">Fastest GPU-accelerated terminal emulator for macOS 2025</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 renders the entire terminal grid on the GPU using Apple's Metal API. Each visible character is looked up in a glyph atlas, a single GPU texture that caches pre-rasterized glyphs at the current font size and DPI. When a glyph is encountered for the first time it is rasterized by Core Text and uploaded to the atlas. Subsequent frames reference the cached texture coordinates, avoiding per-frame CPU rasterization entirely.</p>
+                <p>Dirty region tracking ensures the GPU only re-renders cells that actually changed since the last frame. When the parser updates the screen buffer, it marks a bounding rectangle of modified cells. The Metal render pass reads only those cells and composites them into the existing framebuffer. For a typical interactive session where a single line changes at a time, this means the GPU touches fewer than 1% of the total cells per frame.</p>
+                <p>The Metal pipeline uses instanced rendering: one draw call submits all visible glyphs as textured quads with per-instance color, position, and atlas coordinates. Background colors are rendered in a separate pass underneath. The result is a two-draw-call frame for any terminal size, regardless of how many unique colors or attributes appear on screen.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>CPU-based terminal renderers redraw the entire screen on every update, which causes visible stutter when programs flood the terminal with output. Metal rendering keeps Chau7 at a locked frame rate even during heavy output, eliminating the freezes and dropped frames that plague non-GPU terminals during builds, log tailing, and large file concatenation.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="iosurface-display.html">
+                        <h4>IOSurface Display <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Direct GPU-to-display via IOSurface, bypassing the macOS window compositor for zero-copy display.</p>
+                    </a>
+                    <a class="catalog-card" href="simd-parsing.html">
+                        <h4>SIMD Parsing <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>16-32 byte SIMD-accelerated ANSI escape parsing in Rust for cache-line-speed throughput.</p>
+                    </a>
+                    <a class="catalog-card" href="iokit-hid-input.html">
+                        <h4>IOKit HID Input <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Bypasses NSEvent queue for raw keyboard events with sub-millisecond overhead.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Does Metal rendering work on all Macs?</summary>
+                        <div class="faq-answer"><p>Yes. Every Mac shipped since 2012 supports Metal. Chau7 targets Metal 2 features available on Apple Silicon and recent Intel Macs, with automatic fallback to Metal 1 on older hardware.</p></div>
+                    </details>
+                    <details>
+                        <summary>How much GPU memory does the glyph atlas use?</summary>
+                        <div class="faq-answer"><p>The atlas starts at 1024x1024 pixels (4 MB for RGBA) and grows on demand. A typical developer font at 13pt requires roughly 2-3 MB for the full ASCII range plus common symbols. CJK or emoji glyphs are cached incrementally as they appear.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I disable GPU rendering?</summary>
+                        <div class="faq-answer"><p>There is no need to. Metal rendering uses less energy than CPU rendering because the GPU is purpose-built for textured quad compositing. In benchmarks, Chau7's Metal path draws fewer watts than a Core Text-based renderer at the same frame rate.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>See GPU-accelerated rendering in action. Download Chau7.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

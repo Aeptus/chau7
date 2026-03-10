@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lock-Free SPSC Buffer — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 uses a lock-free single-producer single-consumer ring buffer for zero-contention PTY data transfer between threads.">
+    <meta property="og:title" content="Lock-Free SPSC Buffer — Chau7">
+    <meta property="og:description" content="Chau7 uses a lock-free single-producer single-consumer ring buffer for zero-contention PTY data transfer between threads.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="lock-free-spsc-buffer.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "GPU Rendering", "item": "../features.html#rendering" },
+            { "@type": "ListItem", "position": 4, "name": "Lock-Free SPSC Buffer" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"What happens if the ring buffer fills up?","acceptedAnswer":{"@type":"Answer","text":"If the parser falls behind the reader, the reader detects a full buffer via the cursor positions and applies backpressure by pausing the PTY read. This is the correct behavior: it signals the child process to slow down via standard POSIX flow control, preventing unbounded memory growth."}},{"@type":"Question","name":"Why SPSC instead of a multi-producer or multi-consumer buffer?","acceptedAnswer":{"@type":"Answer","text":"The PTY data path has exactly one producer (the reader thread) and one consumer (the parser thread). An SPSC buffer exploits this fixed topology to eliminate all atomic read-modify-write operations, using only atomic loads and stores. Multi-producer or multi-consumer queues require compare-and-swap loops that are strictly more expensive."}},{"@type":"Question","name":"How large is the ring buffer?","acceptedAnswer":{"@type":"Answer","text":"The default size is 256 KB, which provides roughly 3ms of buffering at 80 MB/s throughput. This is large enough to absorb scheduling jitter between the reader and parser threads while small enough to remain resident in L2 cache on Apple Silicon."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#rendering">GPU Rendering</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Lock-Free SPSC Buffer</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="rendering">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge badge-purple">GPU RENDERING</div>
+                <h1 class="hero-title">Lock-Free SPSC Buffer</h1>
+                <p class="hero-subtitle">One thread reads from the PTY, one thread parses. A lock-free ring buffer connects them with zero contention.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How to build a lock-free buffer for terminal PTY data</li>
+                    <li class="question-item">Terminal performance bottleneck between PTY reader and parser</li>
+                    <li class="question-item">Single producer single consumer ring buffer for real-time applications</li>
+                    <li class="question-item">Reducing thread contention in terminal emulator architecture</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>The PTY reader thread and the ANSI parser thread communicate through a lock-free single-producer single-consumer (SPSC) ring buffer. The reader writes raw bytes from the PTY file descriptor into the ring buffer. The parser reads bytes out of the ring buffer and processes escape sequences. No mutex, spinlock, or kernel synchronization primitive is used at any point in this path.</p>
+                <p>The ring buffer uses two atomic cursors: a write cursor advanced by the reader and a read cursor advanced by the parser. Each thread only writes its own cursor and reads the other, so there is no contention. The buffer is sized to a power of two (typically 256 KB), allowing index wrapping with a simple bitwise AND instead of a modulo operation.</p>
+                <p>Cache-line padding separates the two cursors to prevent false sharing on ARM and x86 architectures. The reader and parser operate on independent cache lines, so neither thread's writes invalidate the other's cached cursor value. This eliminates the last source of cross-core overhead in the data pipeline.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>The PTY-to-parser pipeline is the hottest data path in a terminal emulator. Every byte of program output flows through it. Any contention or blocking in this path directly reduces throughput and increases latency. A lock-free SPSC buffer ensures this pipeline runs at memory-bandwidth speed with zero syscall overhead, keeping the terminal responsive even during sustained multi-gigabyte output.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="metal-rendering.html">
+                        <h4>Metal Rendering <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Hardware-accelerated rendering via Apple Metal API with glyph atlas and dirty region tracking.</p>
+                    </a>
+                    <a class="catalog-card" href="iosurface-display.html">
+                        <h4>IOSurface Display <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Direct GPU-to-display via IOSurface, bypassing the macOS window compositor for zero-copy display.</p>
+                    </a>
+                    <a class="catalog-card" href="simd-parsing.html">
+                        <h4>SIMD Parsing <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>16-32 byte SIMD-accelerated ANSI escape parsing in Rust for cache-line-speed throughput.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>What happens if the ring buffer fills up?</summary>
+                        <div class="faq-answer"><p>If the parser falls behind the reader, the reader detects a full buffer via the cursor positions and applies backpressure by pausing the PTY read. This is the correct behavior: it signals the child process to slow down via standard POSIX flow control, preventing unbounded memory growth.</p></div>
+                    </details>
+                    <details>
+                        <summary>Why SPSC instead of a multi-producer or multi-consumer buffer?</summary>
+                        <div class="faq-answer"><p>The PTY data path has exactly one producer (the reader thread) and one consumer (the parser thread). An SPSC buffer exploits this fixed topology to eliminate all atomic read-modify-write operations, using only atomic loads and stores. Multi-producer or multi-consumer queues require compare-and-swap loops that are strictly more expensive.</p></div>
+                    </details>
+                    <details>
+                        <summary>How large is the ring buffer?</summary>
+                        <div class="faq-answer"><p>The default size is 256 KB, which provides roughly 3ms of buffering at 80 MB/s throughput. This is large enough to absorb scheduling jitter between the reader and parser threads while small enough to remain resident in L2 cache on Apple Silicon.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Zero-contention terminal performance. Download Chau7.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

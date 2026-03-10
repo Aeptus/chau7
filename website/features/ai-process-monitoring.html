@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Process Monitoring — Chau7 Terminal</title>
+    <meta name="description" content="Monitor CPU usage, memory consumption, and process IDs of AI coding agents running in each Chau7 terminal tab. Keep resource-heavy agents in check.">
+    <meta property="og:title" content="AI Process Monitoring — Chau7">
+    <meta property="og:description" content="Monitor CPU usage, memory consumption, and process IDs of AI coding agents running in each Chau7 terminal tab. Keep resource-heavy agents in check.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="ai-process-monitoring.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "AI Detection", "item": "../features.html#ai-detection" },
+            { "@type": "ListItem", "position": 4, "name": "AI Process Monitoring" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Does process monitoring add significant overhead?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7 reads standard system metrics on a throttled interval. The overhead is comparable to running a lightweight top query and is imperceptible during normal use."}},{"@type":"Question","name":"Can I see historical resource usage for a session?","acceptedAnswer":{"@type":"Answer","text":"Process metrics are captured as part of the telemetry run data. You can query past sessions through the MCP server to review resource consumption over time."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#ai-detection">AI Detection</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">AI Process Monitoring</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="ai-detection">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge badge-alt">AI DETECTION</div>
+                <h1 class="hero-title">AI Process Monitoring</h1>
+                <p class="hero-subtitle">Know exactly what your AI agents are consuming.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How much CPU does Claude Code use?</li>
+                    <li class="question-item">Monitor AI agent memory usage in terminal</li>
+                    <li class="question-item">Which AI coding tool is using the most resources?</li>
+                    <li class="question-item">How to track process stats for AI CLI tools?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 ties process-level metrics directly to the AI agent detected in each tab. Once an agent is identified, Chau7 tracks its PID along with CPU and resident memory usage. These metrics are sampled periodically and surfaced in the tab status panel accessible via the MCP server or the UI.</p>
+                <p>Because monitoring is scoped per tab, you can compare resource usage across agents side by side. A Claude Code session in one tab and a Codex session in another each report their own independent metrics without cross-contamination.</p>
+                <p>The data feeds into the broader telemetry system, so you can correlate resource spikes with specific AI operations, prompts, or tool-call bursts after the fact.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>AI coding agents can be resource-intensive, especially during long-running sessions with heavy tool use. Activity Monitor shows a wall of processes with no context about which tab or agent owns them. Chau7 gives you per-tab, per-agent resource visibility so you can identify and manage runaway sessions before they slow down your machine.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="auto-ai-cli-detection.html">
+                        <h4>Auto AI CLI Detection <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Detects Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they launch in any tab.</p>
+                    </a>
+                    <a class="catalog-card" href="ai-tab-branding.html">
+                        <h4>AI Tab Branding <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Tabs automatically adopt the brand color and logo of the active AI agent.</p>
+                    </a>
+                    <a class="catalog-card" href="custom-detection-rules.html">
+                        <h4>Custom Detection Rules</h4>
+                        <p>Define custom process name patterns for AI tools not yet in the built-in list.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Does process monitoring add significant overhead?</summary>
+                        <div class="faq-answer"><p>No. Chau7 reads standard system metrics on a throttled interval. The overhead is comparable to running a lightweight top query and is imperceptible during normal use.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I see historical resource usage for a session?</summary>
+                        <div class="faq-answer"><p>Process metrics are captured as part of the telemetry run data. You can query past sessions through the MCP server to review resource consumption over time.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 and monitor every AI agent's resource footprint per tab.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

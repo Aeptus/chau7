@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Session Recording — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 records terminal sessions with precise timestamps for every output event — built-in, no external tools required.">
+    <meta property="og:title" content="Session Recording — Chau7">
+    <meta property="og:description" content="Chau7 records terminal sessions with precise timestamps for every output event — built-in, no external tools required.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="session-recording.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Session", "item": "../features.html#session" },
+            { "@type": "ListItem", "position": 4, "name": "Session Recording" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"How much storage do session recordings use?","acceptedAnswer":{"@type":"Answer","text":"Recordings capture raw terminal bytes, not pixels, so they are extremely compact. A typical hour-long session produces a few megabytes. Idle time (no output) adds almost no storage because only output events are recorded."}},{"@type":"Question","name":"Can I export recordings to share with others?","acceptedAnswer":{"@type":"Answer","text":"Recordings can be replayed in Chau7&#x27;s timeline scrubber. The recording format captures the full terminal protocol, preserving colors, formatting, and cursor positioning exactly as they appeared."}},{"@type":"Question","name":"Does recording affect terminal performance?","acceptedAnswer":{"@type":"Answer","text":"No measurable impact. Recording adds a timestamp and write to a buffer for each output event — operations that take microseconds. The terminal remains fully responsive during recording."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#session">Session</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Session Recording</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="session">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">SESSION</div>
+                <h1 class="hero-title">Session Recording</h1>
+                <p class="hero-subtitle">Record every terminal session with millisecond-precise timestamps, built directly into the terminal.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How do I record a terminal session with timestamps?</li>
+                    <li class="question-item">Is there a terminal with built-in session recording?</li>
+                    <li class="question-item">How to record terminal for demo or tutorial without asciinema?</li>
+                    <li class="question-item">Can I replay a terminal session exactly as it happened?</li>
+                    <li class="question-item">What is the best way to record terminal output for documentation?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 captures every byte of terminal output along with a millisecond-precision timestamp as it arrives from the shell process. This creates a complete, time-accurate record of the session — not a screen recording or a text dump, but a faithful reproduction of every escape sequence, color change, cursor movement, and character that appeared in the terminal.</p>
+                <p>Recordings are stored efficiently as timestamped event streams. Because they capture the raw terminal protocol rather than rendered pixels, a multi-hour session typically compresses to a few megabytes. The recordings can be replayed in Chau7's timeline scrubber at original speed, fast-forwarded through idle periods, or scrubbed to any point to inspect the terminal state at that exact moment.</p>
+                <p>Recording is integrated directly into the terminal — there is no separate tool to install, no wrapper script to remember, and no compatibility issues with your shell or the programs you run. Every session can be recorded, and recordings start and stop without interrupting your workflow.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Terminal session recording has been a third-party bolt-on for decades. Tools like asciinema, script, and screen recordings each have tradeoffs: external dependencies, missing escape sequences, lossy compression, or no timestamp precision. Built-in recording eliminates all of these compromises and makes it trivial to capture any session for demos, debugging, documentation, or audit trails.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="timeline-scrubber.html">
+                        <h4>Timeline Scrubber</h4>
+                        <p>Visual timeline for recorded sessions. Scrub to any point and replay terminal state.</p>
+                    </a>
+                    <a class="catalog-card" href="session-restore.html">
+                        <h4>Session Restore</h4>
+                        <p>Restore tabs, working directories, and terminal state after app restart.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>How much storage do session recordings use?</summary>
+                        <div class="faq-answer"><p>Recordings capture raw terminal bytes, not pixels, so they are extremely compact. A typical hour-long session produces a few megabytes. Idle time (no output) adds almost no storage because only output events are recorded.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I export recordings to share with others?</summary>
+                        <div class="faq-answer"><p>Recordings can be replayed in Chau7's timeline scrubber. The recording format captures the full terminal protocol, preserving colors, formatting, and cursor positioning exactly as they appeared.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does recording affect terminal performance?</summary>
+                        <div class="faq-answer"><p>No measurable impact. Recording adds a timestamp and write to a buffer for each output event — operations that take microseconds. The terminal remains fully responsive during recording.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Built-in session recording — stop installing extra tools, try Chau7</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

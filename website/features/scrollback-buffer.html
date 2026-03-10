@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scrollback Buffer — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 provides a configurable scrollback buffer with efficient memory management and regex search, so you never lose terminal history.">
+    <meta property="og:title" content="Scrollback Buffer — Chau7">
+    <meta property="og:description" content="Chau7 provides a configurable scrollback buffer with efficient memory management and regex search, so you never lose terminal history.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="scrollback-buffer.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Terminal Core", "item": "../features.html#terminal" },
+            { "@type": "ListItem", "position": 4, "name": "Scrollback Buffer" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"How much memory does the scrollback buffer use?","acceptedAnswer":{"@type":"Answer","text":"With attribute compression, 10,000 lines of typical terminal output (80 columns, mixed colors) consumes roughly 2-4 MB. Scrollback for a 200-column window with heavy color usage may reach 8-10 MB for the same line count. Memory usage scales linearly with the configured limit."}},{"@type":"Question","name":"Can I save scrollback to a file?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 supports exporting the current scrollback buffer to a plain text or ANSI-colored text file via the Edit menu or a keyboard shortcut."}},{"@type":"Question","name":"Does scrollback persist after quitting and reopening Chau7?","acceptedAnswer":{"@type":"Answer","text":"Scrollback is preserved across app restarts when session restoration is enabled. Chau7 serializes scrollback content to disk as part of its session state, so reopening the app restores your full terminal history."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#terminal">Terminal Core</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Scrollback Buffer</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="terminal">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">TERMINAL CORE</div>
+                <h1 class="hero-title">Scrollback Buffer</h1>
+                <p class="hero-subtitle">Scroll back through thousands of lines. Search with regex. Never lose output again.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Terminal scrollback buffer lost on restart</li>
+                    <li class="question-item">How to search scrollback history in terminal emulator</li>
+                    <li class="question-item">Terminal scrollback buffer size limit too small</li>
+                    <li class="question-item">VS Code terminal scrollback lost when switching tabs</li>
+                    <li class="question-item">How to increase terminal scrollback buffer on macOS</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>When terminal output scrolls past the visible area, Chau7 moves the off-screen lines into a scrollback buffer. The buffer stores lines in a compressed ring format: contiguous runs of cells with identical attributes are collapsed into a single attributed span, reducing memory usage by 3-5x compared to storing every cell individually. The default scrollback limit is 10,000 lines per tab, configurable up to unlimited.</p>
+                <p>Scrollback search supports both literal string matching and full regular expressions. The search runs on a background thread and highlights matches progressively as they are found, so you can start navigating results immediately even in very large scrollback histories. Search wraps around and supports case-sensitive and case-insensitive modes.</p>
+                <p>Scrollback content persists across terminal clears (Cmd+K clears the visible screen but preserves scrollback) and survives tab suspension. When a tab is restored, its full scrollback history is available immediately. This means you never lose the output of a long-running build or test suite just because you scrolled past it or switched to another tab.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Developers frequently need to scroll back through build output, test results, or log streams to find a specific error or timestamp. Losing scrollback when switching tabs, clearing the screen, or restarting the terminal breaks this workflow. Chau7's persistent, searchable scrollback ensures your terminal history is always available when you need it.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="vt100-xterm-emulation.html">
+                        <h4>Full VT100/xterm Emulation</h4>
+                        <p>Complete terminal emulation with 256-color, true color (24-bit), and all standard escape sequences.</p>
+                    </a>
+                    <a class="catalog-card" href="unicode-emoji-support.html">
+                        <h4>Unicode &amp; Emoji Support</h4>
+                        <p>Full Unicode rendering including CJK, RTL, combining characters, and color emoji.</p>
+                    </a>
+                    <a class="catalog-card" href="shell-integration.html">
+                        <h4>Shell Integration</h4>
+                        <p>Deep integration with zsh, bash, and fish for command detection, working directory tracking, and exit codes.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>How much memory does the scrollback buffer use?</summary>
+                        <div class="faq-answer"><p>With attribute compression, 10,000 lines of typical terminal output (80 columns, mixed colors) consumes roughly 2-4 MB. Scrollback for a 200-column window with heavy color usage may reach 8-10 MB for the same line count. Memory usage scales linearly with the configured limit.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I save scrollback to a file?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 supports exporting the current scrollback buffer to a plain text or ANSI-colored text file via the Edit menu or a keyboard shortcut.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does scrollback persist after quitting and reopening Chau7?</summary>
+                        <div class="faq-answer"><p>Scrollback is preserved across app restarts when session restoration is enabled. Chau7 serializes scrollback content to disk as part of its session state, so reopening the app restores your full terminal history.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Never lose terminal output again. Download Chau7.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

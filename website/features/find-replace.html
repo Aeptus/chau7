@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Find & Replace — Chau7 Terminal</title>
+    <meta name="description" content="Find and replace text in Chau7's built-in editor with regex support, match highlighting, and incremental search for fast in-terminal editing.">
+    <meta property="og:title" content="Find & Replace — Chau7">
+    <meta property="og:description" content="Find and replace text in Chau7's built-in editor with regex support, match highlighting, and incremental search for fast in-terminal editing.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="find-replace.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Built-in Editor", "item": "../features.html#editor" },
+            { "@type": "ListItem", "position": 4, "name": "Find & Replace" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Does find and replace support regular expressions?","acceptedAnswer":{"@type":"Answer","text":"Yes. Toggle regex mode in the find bar to use full regular expression syntax with capture groups and backreference substitution in the replace field."}},{"@type":"Question","name":"Can I replace all occurrences at once?","acceptedAnswer":{"@type":"Answer","text":"Yes. The replace-all button applies the replacement to every match in the document, with a confirmation showing the total number of replacements."}},{"@type":"Question","name":"Is search incremental?","acceptedAnswer":{"@type":"Answer","text":"Yes. Matches highlight as you type, with a live count of total results and the current match position in the document."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#editor">Built-in Editor</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Find & Replace</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="editor">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">BUILT-IN EDITOR</div>
+                <h1 class="hero-title">Find & Replace</h1>
+                <p class="hero-subtitle">Search and transform text without leaving the terminal</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Find and replace in terminal text editor</li>
+                    <li class="question-item">Regex search in terminal editor macOS</li>
+                    <li class="question-item">Search across file in terminal editor highlight matches</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7's editor includes a find and replace bar activated with Cmd+F. As you type a search query, matches highlight incrementally throughout the document with a distinct background color. A match counter shows total results and the current match index, and arrow keys or Enter/Shift+Enter cycle through matches with the viewport scrolling to keep the current match centered.</p>
+                <p>Regex mode toggles on with a button in the find bar, enabling full regular expression search with capture groups. Replace supports backreferences ($1, $2) for capture group substitution. Replace-one and replace-all operations are available, with replace-all showing a confirmation count before applying. Case sensitivity toggles independently from regex mode.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Find and replace is a fundamental editing operation that many terminal editors make unnecessarily complex. Chau7 provides the same incremental search and regex replace experience you expect from a GUI editor, accessible with standard keyboard shortcuts, so quick text transformations do not require sed one-liners or Vim command-line gymnastics.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="syntax-highlighting.html">
+                        <h4>Syntax Highlighting</h4>
+                        <p>Language-aware syntax highlighting for 50+ languages in the built-in editor.</p>
+                    </a>
+                    <a class="catalog-card" href="bracket-matching.html">
+                        <h4>Bracket Matching</h4>
+                        <p>Automatic bracket, brace, and parenthesis matching with jump-to-match.</p>
+                    </a>
+                    <a class="catalog-card" href="line-numbers.html">
+                        <h4>Line Numbers</h4>
+                        <p>Configurable line number gutter with relative line numbers option.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Does find and replace support regular expressions?</summary>
+                        <div class="faq-answer"><p>Yes. Toggle regex mode in the find bar to use full regular expression syntax with capture groups and backreference substitution in the replace field.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I replace all occurrences at once?</summary>
+                        <div class="faq-answer"><p>Yes. The replace-all button applies the replacement to every match in the document, with a confirmation showing the total number of replacements.</p></div>
+                    </details>
+                    <details>
+                        <summary>Is search incremental?</summary>
+                        <div class="faq-answer"><p>Yes. Matches highlight as you type, with a live count of total results and the current match position in the document.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 and find what you need in your files instantly</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

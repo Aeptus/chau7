@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Protocol — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 displays inline images in the terminal via the iTerm2 image protocol and Sixel graphics for visual CLI workflows.">
+    <meta property="og:title" content="Image Protocol — Chau7">
+    <meta property="og:description" content="Chau7 displays inline images in the terminal via the iTerm2 image protocol and Sixel graphics for visual CLI workflows.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="image-protocol.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Terminal Core", "item": "../features.html#terminal" },
+            { "@type": "ListItem", "position": 4, "name": "Image Protocol" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Which image formats are supported?","acceptedAnswer":{"@type":"Answer","text":"The iTerm2 protocol supports PNG, JPEG, GIF (including animated GIF), BMP, TIFF, and PDF. Sixel graphics produce raster output at the resolution specified by the Sixel data stream."}},{"@type":"Question","name":"Do images survive scrollback?","acceptedAnswer":{"@type":"Answer","text":"Yes. Images are stored in the scrollback buffer alongside text content and remain visible when you scroll up. They are released from memory only when they exit the scrollback limit."}},{"@type":"Question","name":"Can I use imgcat or similar tools with Chau7?","acceptedAnswer":{"@type":"Answer","text":"Yes. Any tool that outputs iTerm2 image protocol sequences works with Chau7 out of the box, including imgcat, viu, timg, and catimg."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#terminal">Terminal Core</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Image Protocol</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="terminal">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">TERMINAL CORE</div>
+                <h1 class="hero-title">Image Protocol</h1>
+                <p class="hero-subtitle">Images inline in your terminal. Display plots, screenshots, and diagrams without leaving the command line.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How to display images in the terminal on macOS</li>
+                    <li class="question-item">iTerm2 image protocol support in other terminals</li>
+                    <li class="question-item">Sixel graphics terminal emulator macOS</li>
+                    <li class="question-item">Show inline images in terminal for data science workflows</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 supports two inline image protocols. The iTerm2 image protocol uses an OSC 1337 escape sequence to transmit a base64-encoded image (PNG, JPEG, GIF, or PDF) that the terminal renders inline at the cursor position. The image is decoded on a background thread and uploaded to a Metal texture for GPU-composited display alongside text content.</p>
+                <p>Sixel graphics support allows programs that output Sixel-encoded raster data (common in scientific computing and retro computing tools) to render images directly in the terminal grid. Chau7 decodes the Sixel color registers and pixel data into an RGBA bitmap that is composited into the terminal framebuffer at the correct cell position.</p>
+                <p>Both protocols respect the terminal grid: images occupy a calculated number of character cells based on their pixel dimensions and the current cell size. Scrollback preserves images, so they remain visible when scrolling up through previous output. Images are memory-mapped and released when they scroll out of the scrollback buffer.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Data science, DevOps, and design workflows increasingly produce visual output: matplotlib charts, architecture diagrams, image diffs, and QR codes. Without inline image support, users must open a separate application to view every image. Inline display keeps the entire workflow in the terminal, reducing context switches and improving productivity.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="vt100-xterm-emulation.html">
+                        <h4>Full VT100/xterm Emulation</h4>
+                        <p>Complete terminal emulation with 256-color, true color (24-bit), and all standard escape sequences.</p>
+                    </a>
+                    <a class="catalog-card" href="unicode-emoji-support.html">
+                        <h4>Unicode &amp; Emoji Support</h4>
+                        <p>Full Unicode rendering including CJK, RTL, combining characters, and color emoji.</p>
+                    </a>
+                    <a class="catalog-card" href="shell-integration.html">
+                        <h4>Shell Integration</h4>
+                        <p>Deep integration with zsh, bash, and fish for command detection, working directory tracking, and exit codes.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Which image formats are supported?</summary>
+                        <div class="faq-answer"><p>The iTerm2 protocol supports PNG, JPEG, GIF (including animated GIF), BMP, TIFF, and PDF. Sixel graphics produce raster output at the resolution specified by the Sixel data stream.</p></div>
+                    </details>
+                    <details>
+                        <summary>Do images survive scrollback?</summary>
+                        <div class="faq-answer"><p>Yes. Images are stored in the scrollback buffer alongside text content and remain visible when you scroll up. They are released from memory only when they exit the scrollback limit.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I use imgcat or similar tools with Chau7?</summary>
+                        <div class="faq-answer"><p>Yes. Any tool that outputs iTerm2 image protocol sequences works with Chau7 out of the box, including imgcat, viu, timg, and catimg.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>See images right in your terminal. Download Chau7.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

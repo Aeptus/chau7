@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>100+ Fonts — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 bundles 100+ monospace fonts with variable weight and size support. Use Nerd Fonts, ligatures, and system fonts without extra setup.">
+    <meta property="og:title" content="100+ Fonts — Chau7">
+    <meta property="og:description" content="Chau7 bundles 100+ monospace fonts with variable weight and size support. Use Nerd Fonts, ligatures, and system fonts without extra setup.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="fonts.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Customization", "item": "../features.html#customization" },
+            { "@type": "ListItem", "position": 4, "name": "100+ Fonts" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Can I use my own custom fonts?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 detects any monospace font installed on your system and makes it available in the font picker alongside the 100+ bundled fonts."}},{"@type":"Question","name":"Do Nerd Font glyphs work out of the box?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 bundles Nerd Font variants so powerline symbols, devicons, and other special glyphs render without any manual font installation."}},{"@type":"Question","name":"Can I set different fonts per profile?","acceptedAnswer":{"@type":"Answer","text":"Yes. Each profile stores its own font family, size, and weight, so you can use different typography for SSH sessions, local development, or presentations."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#customization">Customization</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">100+ Fonts</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="customization">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">CUSTOMIZATION</div>
+                <h1 class="hero-title">100+ Fonts</h1>
+                <p class="hero-subtitle">Every monospace font you need, ready to go</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How do I install Nerd Fonts in my terminal?</li>
+                    <li class="question-item">Terminal font rendering looks blurry on macOS Retina</li>
+                    <li class="question-item">Best monospace font for programming 2025</li>
+                    <li class="question-item">Terminal nerd fonts setup without Homebrew</li>
+                    <li class="question-item">How to change font weight in terminal emulator</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 ships with over 100 monospace fonts embedded directly in the application bundle, including popular choices like JetBrains Mono, Fira Code, Cascadia Code, Iosevk, and Hack. Nerd Font variants are included out of the box, so powerline symbols, file icons, and dev glyphs render correctly without downloading or installing anything. The font picker shows a live preview of each font at your current size and weight settings.</p>
+                <p>Variable font support means you can dial in exactly the weight you want rather than picking from a handful of static weights. Adjust from hairline to black in continuous increments using a slider. Font size scales smoothly with pinch-to-zoom or keyboard shortcuts, and per-profile font configuration lets you use different typefaces for different workflows.</p>
+                <p>System fonts are fully supported alongside bundled fonts. If you have a custom typeface installed at the OS level, Chau7 detects and offers it in the font picker. Font rendering uses Core Text natively for sharp subpixel antialiasing on Retina and non-Retina displays alike.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Font choice directly affects readability during long coding sessions. Chau7 eliminates the friction of finding, downloading, and installing terminal fonts by bundling everything developers actually use. Variable weight support and per-profile configuration let you fine-tune legibility for different monitors, lighting conditions, and personal preference without leaving the app.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="themes.html">
+                        <h4>Themes</h4>
+                        <p>Built-in themes with full 256-color and true color customization. Import iTerm2 color schemes.</p>
+                    </a>
+                    <a class="catalog-card" href="custom-keybindings.html">
+                        <h4>Custom Keybindings</h4>
+                        <p>Fully remappable keyboard shortcuts with Vim keybinding presets available.</p>
+                    </a>
+                    <a class="catalog-card" href="cursor-styles.html">
+                        <h4>Cursor Styles</h4>
+                        <p>Block, beam, and underline cursors with configurable blink rate and color.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Can I use my own custom fonts?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 detects any monospace font installed on your system and makes it available in the font picker alongside the 100+ bundled fonts.</p></div>
+                    </details>
+                    <details>
+                        <summary>Do Nerd Font glyphs work out of the box?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 bundles Nerd Font variants so powerline symbols, devicons, and other special glyphs render without any manual font installation.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I set different fonts per profile?</summary>
+                        <div class="faq-answer"><p>Yes. Each profile stores its own font family, size, and weight, so you can use different typography for SSH sessions, local development, or presentations.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 and start coding with the perfect font in seconds</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

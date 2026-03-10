@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terminal Search — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 provides in-terminal search with regex, case sensitivity toggles, and match-by-match navigation through scrollback output.">
+    <meta property="og:title" content="Terminal Search — Chau7">
+    <meta property="og:description" content="Chau7 provides in-terminal search with regex, case sensitivity toggles, and match-by-match navigation through scrollback output.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="terminal-search.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Search", "item": "../features.html#search" },
+            { "@type": "ListItem", "position": 4, "name": "Terminal Search" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"How large is the scrollback buffer?","acceptedAnswer":{"@type":"Answer","text":"The default scrollback is 10,000 lines per tab, configurable up to 100,000 lines. Search performance remains fast across the full buffer thanks to incremental indexing."}},{"@type":"Question","name":"Can I copy search results?","acceptedAnswer":{"@type":"Answer","text":"Yes. When a match is highlighted, Cmd+C copies the matched text. You can also select and copy a range of matches or the lines containing them."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#search">Search</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Terminal Search</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="search">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">SEARCH</div>
+                <h1 class="hero-title">Terminal Search</h1>
+                <p class="hero-subtitle">Find anything in your terminal output. Regex, case-sensitive, and match-by-match navigation.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How do I search through terminal output in a terminal emulator?</li>
+                    <li class="question-item">Is there a terminal with regex search in scrollback?</li>
+                    <li class="question-item">Can I search terminal history with case sensitivity and navigation?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Press Cmd+F to open the search bar. Type a query to highlight all matches in the terminal scrollback buffer. Navigate between matches with Enter (next) and Shift+Enter (previous), or click the arrow buttons. The current match is highlighted distinctly from other matches, and a counter shows your position in the result set.</p>
+                <p>Toggle regex mode to search with full regular expression patterns — find IP addresses, error codes, timestamps, or any structured pattern in your output. Case sensitivity is togglable independently, and whole-word matching is available for precise searches.</p>
+                <p>Search operates over the entire scrollback buffer, not just the visible viewport. For terminals with large scrollback (tens of thousands of lines), search is incremental — results appear as you type, with matches nearest to your current scroll position shown first.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Terminal output is ephemeral by nature — it scrolls past and is gone. When you need to find an error message from five minutes ago, a specific log line, or a URL buried in build output, piping everything through grep after the fact is not an option. Built-in search with regex and match navigation turns your scrollback buffer into a searchable document.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="command-palette.html">
+                        <h4>Command Palette</h4>
+                        <p>Cmd+Shift+P for fuzzy-searchable commands. Find any action across all features.</p>
+                    </a>
+                    <a class="catalog-card" href="command-history-search.html">
+                        <h4>Command History Search</h4>
+                        <p>Fuzzy search through command history with frecency ranking.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>How large is the scrollback buffer?</summary>
+                        <div class="faq-answer"><p>The default scrollback is 10,000 lines per tab, configurable up to 100,000 lines. Search performance remains fast across the full buffer thanks to incremental indexing.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I copy search results?</summary>
+                        <div class="faq-answer"><p>Yes. When a match is highlighted, Cmd+C copies the matched text. You can also select and copy a range of matches or the lines containing them.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Search your terminal output — try Chau7</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

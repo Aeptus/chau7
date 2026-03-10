@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Themes — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 includes built-in terminal themes with 256-color and true color support. Import iTerm2 color schemes or create your own custom palette.">
+    <meta property="og:title" content="Themes — Chau7">
+    <meta property="og:description" content="Chau7 includes built-in terminal themes with 256-color and true color support. Import iTerm2 color schemes or create your own custom palette.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="themes.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Customization", "item": "../features.html#customization" },
+            { "@type": "ListItem", "position": 4, "name": "Themes" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Can I import my existing iTerm2 color scheme?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 reads .itermcolors files natively. Import via the preferences window and the color scheme converts automatically."}},{"@type":"Question","name":"Does Chau7 support true color (24-bit)?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 renders full 24-bit RGB color, so applications like delta, bat, and modern Vim colorschemes display with accurate color reproduction."}},{"@type":"Question","name":"Can I create my own theme from scratch?","acceptedAnswer":{"@type":"Answer","text":"Yes. The built-in theme editor provides a color picker for every slot in the palette including ANSI colors, background, foreground, cursor, and selection."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#customization">Customization</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Themes</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="customization">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">CUSTOMIZATION</div>
+                <h1 class="hero-title">Themes</h1>
+                <p class="hero-subtitle">Beautiful color schemes without the configuration headache</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Best terminal color scheme for dark mode 2025</li>
+                    <li class="question-item">How to import iTerm2 color scheme into another terminal</li>
+                    <li class="question-item">Terminal true color support macOS</li>
+                    <li class="question-item">Catppuccin Dracula Gruvbox terminal theme setup</li>
+                    <li class="question-item">How to customize terminal colors beyond 16 ANSI</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 ships with a curated collection of built-in themes covering popular palettes like Catppuccin, Dracula, Gruvbox, Nord, Solarized, Tokyo Night, and more. Each theme defines the full 16 ANSI colors, background, foreground, cursor, and selection colors. Switching themes applies instantly with a live preview so you can browse without committing.</p>
+                <p>Full 256-color and 24-bit true color rendering means themes look exactly as designed. Applications that emit RGB escape sequences get accurate color reproduction rather than being quantized down to the nearest ANSI color. The theme editor lets you modify any color in the palette with a native macOS color picker and see changes in real time.</p>
+                <p>iTerm2 color scheme import is supported directly. Drop an .itermcolors file onto the preferences window or use the import button, and Chau7 converts it to a native theme automatically. This gives you access to the entire iTerm2 color scheme ecosystem without manual hex value transcription.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>A well-chosen color scheme reduces eye strain and makes syntax-highlighted output easier to scan. Chau7 removes the fragmentation of theme discovery by bundling popular schemes and supporting direct iTerm2 import, so you spend time coding instead of copying hex values between blog posts and config files.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="fonts.html">
+                        <h4>100+ Fonts</h4>
+                        <p>Bundled monospace fonts plus system font support. Variable font weight and size configuration.</p>
+                    </a>
+                    <a class="catalog-card" href="custom-keybindings.html">
+                        <h4>Custom Keybindings</h4>
+                        <p>Fully remappable keyboard shortcuts with Vim keybinding presets available.</p>
+                    </a>
+                    <a class="catalog-card" href="cursor-styles.html">
+                        <h4>Cursor Styles</h4>
+                        <p>Block, beam, and underline cursors with configurable blink rate and color.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Can I import my existing iTerm2 color scheme?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 reads .itermcolors files natively. Import via the preferences window and the color scheme converts automatically.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7 support true color (24-bit)?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 renders full 24-bit RGB color, so applications like delta, bat, and modern Vim colorschemes display with accurate color reproduction.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I create my own theme from scratch?</summary>
+                        <div class="faq-answer"><p>Yes. The built-in theme editor provides a color picker for every slot in the palette including ANSI colors, background, foreground, cursor, and selection.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 and find your perfect color scheme instantly</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

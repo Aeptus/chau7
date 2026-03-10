@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timeline Scrubber — Chau7 Terminal</title>
+    <meta name="description" content="Chau7's timeline scrubber lets you visually navigate recorded terminal sessions and replay terminal state at any point.">
+    <meta property="og:title" content="Timeline Scrubber — Chau7">
+    <meta property="og:description" content="Chau7's timeline scrubber lets you visually navigate recorded terminal sessions and replay terminal state at any point.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="timeline-scrubber.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Session", "item": "../features.html#session" },
+            { "@type": "ListItem", "position": 4, "name": "Timeline Scrubber" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Can I search within a recorded session?","acceptedAnswer":{"@type":"Answer","text":"The scrubber provides visual navigation through the timeline. Combined with the activity visualization, you can quickly identify high-output periods that typically correspond to the events you are looking for."}},{"@type":"Question","name":"Does the timeline show command boundaries?","acceptedAnswer":{"@type":"Answer","text":"The timeline visualizes output density over time. Commands that produce lots of output appear as distinct peaks, making it easy to identify individual command executions and navigate between them."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#session">Session</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Timeline Scrubber</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="session">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">SESSION</div>
+                <h1 class="hero-title">Timeline Scrubber</h1>
+                <p class="hero-subtitle">Scrub through recorded sessions with a visual timeline and see the terminal state at any moment.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How do I replay a terminal session at a specific point in time?</li>
+                    <li class="question-item">Is there a visual timeline for terminal recordings?</li>
+                    <li class="question-item">How to fast-forward through idle time in a terminal recording?</li>
+                    <li class="question-item">Can I scrub through terminal output like a video?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>The timeline scrubber presents a visual representation of a recorded session's activity over time. Dense output periods appear as peaks in the timeline, while idle periods are visible as gaps. You can click anywhere on the timeline to jump to that moment, or drag the playhead to scrub through the session and watch the terminal state change in real time.</p>
+                <p>Playback supports variable speed: normal speed for realistic replay, fast-forward to skip idle sections, and frame-by-frame stepping for detailed inspection. At any point during playback or scrubbing, the terminal view shows the exact state that existed at that timestamp — every character, color, and cursor position is reconstructed from the recording data.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Raw terminal recordings are useless without a way to navigate them. Scrolling through a text dump or watching a real-time replay of a 2-hour session wastes time. The timeline scrubber turns recordings into a random-access medium — jump to the moment your build failed, scrub back to see what command caused the error, and step forward through the output line by line.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="session-recording.html">
+                        <h4>Session Recording <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Record terminal sessions with precise timestamps for every output event.</p>
+                    </a>
+                    <a class="catalog-card" href="session-restore.html">
+                        <h4>Session Restore</h4>
+                        <p>Restore tabs, working directories, and terminal state after app restart.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Can I search within a recorded session?</summary>
+                        <div class="faq-answer"><p>The scrubber provides visual navigation through the timeline. Combined with the activity visualization, you can quickly identify high-output periods that typically correspond to the events you are looking for.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does the timeline show command boundaries?</summary>
+                        <div class="faq-answer"><p>The timeline visualizes output density over time. Commands that produce lots of output appear as distinct peaks, making it easy to identify individual command executions and navigate between them.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Navigate terminal history visually — try Chau7's timeline scrubber</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

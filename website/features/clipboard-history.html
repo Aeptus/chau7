@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clipboard History — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 provides built-in terminal clipboard history with search and pinning, solving the Ctrl+C conflict that frustrates every beginner.">
+    <meta property="og:title" content="Clipboard History — Chau7">
+    <meta property="og:description" content="Chau7 provides built-in terminal clipboard history with search and pinning, solving the Ctrl+C conflict that frustrates every beginner.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="clipboard-history.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Clipboard", "item": "../features.html#clipboard" },
+            { "@type": "ListItem", "position": 4, "name": "Clipboard History" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Does clipboard history capture passwords or sensitive data?","acceptedAnswer":{"@type":"Answer","text":"By default, Chau7 detects password prompts and SSH key passphrases and excludes them from history. You can also manually mark entries for deletion or configure regex-based exclusion rules for patterns like API keys or tokens."}},{"@type":"Question","name":"How many entries does it store?","acceptedAnswer":{"@type":"Answer","text":"The default is 1,000 entries with no time expiry. You can adjust both limits in settings — increase the count for heavy usage or set a time-based expiry to automatically prune old entries."}},{"@type":"Question","name":"Does it sync with the system clipboard?","acceptedAnswer":{"@type":"Answer","text":"Clipboard history captures copies from within Chau7. System clipboard contents pasted into Chau7 are recorded as paste events. The two histories are separate but complementary — Chau7 never overwrites your system clipboard unless you explicitly paste from history."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#clipboard">Clipboard</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Clipboard History</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="clipboard">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">CLIPBOARD</div>
+                <h1 class="hero-title">Clipboard History</h1>
+                <p class="hero-subtitle">Every copy is remembered. Search, pin, and reuse anything you have copied.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Why does Ctrl+C kill my process instead of copying in the terminal?</li>
+                    <li class="question-item">Is there a clipboard manager built into a terminal emulator?</li>
+                    <li class="question-item">How do I access clipboard history in the terminal?</li>
+                    <li class="question-item">Copy paste terminal Ctrl+C conflict — how to fix it?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 captures every text selection you copy from the terminal — whether via Cmd+C, the context menu, or mouse selection with auto-copy enabled — and stores it in a searchable history panel. Open it with a keyboard shortcut to browse, filter, or fuzzy-search through past copies. Pin frequently used entries so they stay at the top regardless of new copies.</p>
+                <p>The history persists across sessions and app restarts, stored locally on disk with configurable retention (number of entries or time-based expiry). Each entry records the timestamp, source tab, and a preview, making it easy to find that connection string you copied three hours ago.</p>
+                <p>Clipboard history integrates with the snippet system. Promote any history entry to a reusable snippet with a single click, or paste directly from history into the active terminal without affecting the system clipboard.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>The terminal clipboard experience has been broken for decades. Ctrl+C sends SIGINT instead of copying, selections vanish the moment you copy something new, and there is no way to retrieve what you copied an hour ago. Chau7 fixes all of this with a clipboard history that treats terminal copy/paste as a first-class feature rather than an afterthought.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="paste-confirmation.html">
+                        <h4>Paste Confirmation</h4>
+                        <p>Warns before pasting multi-line content or content containing newlines to prevent accidental command execution.</p>
+                    </a>
+                    <a class="catalog-card" href="snippets.html">
+                        <h4>Snippets</h4>
+                        <p>Reusable code snippets with placeholder variables. Insert via command palette or keyboard shortcut.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Does clipboard history capture passwords or sensitive data?</summary>
+                        <div class="faq-answer"><p>By default, Chau7 detects password prompts and SSH key passphrases and excludes them from history. You can also manually mark entries for deletion or configure regex-based exclusion rules for patterns like API keys or tokens.</p></div>
+                    </details>
+                    <details>
+                        <summary>How many entries does it store?</summary>
+                        <div class="faq-answer"><p>The default is 1,000 entries with no time expiry. You can adjust both limits in settings — increase the count for heavy usage or set a time-based expiry to automatically prune old entries.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does it sync with the system clipboard?</summary>
+                        <div class="faq-answer"><p>Clipboard history captures copies from within Chau7. System clipboard contents pasted into Chau7 are recorded as paste events. The two histories are separate but complementary — Chau7 never overwrites your system clipboard unless you explicitly paste from history.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Fix terminal copy-paste — download Chau7</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

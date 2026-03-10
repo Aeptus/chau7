@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tab Profiles — Chau7 Terminal</title>
+    <meta name="description" content="Configure per-tab shell, working directory, and environment variables in Chau7 for project-specific terminal setups.">
+    <meta property="og:title" content="Tab Profiles — Chau7">
+    <meta property="og:description" content="Configure per-tab shell, working directory, and environment variables in Chau7 for project-specific terminal setups.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="tab-profiles.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Tab Management", "item": "../features.html#tabs" },
+            { "@type": "ListItem", "position": 4, "name": "Tab Profiles" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Can I share tab profiles with my team?","acceptedAnswer":{"@type":"Answer","text":"Tab profiles are stored in Chau7&#x27;s local settings. Export and import functionality allows you to share profile configurations with teammates who use Chau7."}},{"@type":"Question","name":"Do environment variables in profiles override system variables?","acceptedAnswer":{"@type":"Answer","text":"Yes. Profile environment variables are layered on top of the system environment. If a variable exists in both, the profile value takes precedence for that tab."}},{"@type":"Question","name":"Can I set a profile as the default for new tabs?","acceptedAnswer":{"@type":"Answer","text":"Yes. You can designate any profile as the default, and all new tabs will use that profile&#x27;s shell, directory, and environment configuration unless you explicitly choose a different one."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#tabs">Tab Management</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Tab Profiles</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="tabs">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">TAB MANAGEMENT</div>
+                <h1 class="hero-title">Tab Profiles</h1>
+                <p class="hero-subtitle">Configure each tab with its own shell, working directory, and environment variables.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How do I set a default directory for a terminal tab?</li>
+                    <li class="question-item">Can terminal tabs have different shells?</li>
+                    <li class="question-item">How to set per-tab environment variables in a terminal?</li>
+                    <li class="question-item">Which terminal supports per-tab configuration profiles?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Tab profiles let you preconfigure the shell, starting directory, and environment variables for new tabs. Instead of opening a tab and then navigating to your project directory or switching shells, you open a tab with a profile that drops you exactly where you need to be with the right environment already set.</p>
+                <p>Each profile specifies a shell (bash, zsh, fish, or any executable), a working directory, and a set of environment variables. When you create a new tab from a profile, Chau7 launches the specified shell in the specified directory with the specified environment layered on top of your system defaults. Profiles are saved in Chau7's settings and available from the tab creation menu.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Developers working on multiple projects constantly switch contexts — different directories, different Node versions, different AWS profiles, different shells. Tab profiles turn a multi-step context switch (open tab, cd to project, export variables, activate environment) into a single click.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="multi-tab.html">
+                        <h4>Multi-Tab</h4>
+                        <p>Unlimited tabs with drag-to-reorder, tab pinning, and tab-specific titles.</p>
+                    </a>
+                    <a class="catalog-card" href="split-panes.html">
+                        <h4>Split Panes</h4>
+                        <p>Horizontal and vertical splits within any tab. Resize with drag handles or keyboard shortcuts.</p>
+                    </a>
+                    <a class="catalog-card" href="tab-drag-drop.html">
+                        <h4>Tab Drag &amp; Drop</h4>
+                        <p>Drag tabs between windows or within the tab bar. Snap positioning with smooth animations.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Can I share tab profiles with my team?</summary>
+                        <div class="faq-answer"><p>Tab profiles are stored in Chau7's local settings. Export and import functionality allows you to share profile configurations with teammates who use Chau7.</p></div>
+                    </details>
+                    <details>
+                        <summary>Do environment variables in profiles override system variables?</summary>
+                        <div class="faq-answer"><p>Yes. Profile environment variables are layered on top of the system environment. If a variable exists in both, the profile value takes precedence for that tab.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I set a profile as the default for new tabs?</summary>
+                        <div class="faq-answer"><p>Yes. You can designate any profile as the default, and all new tabs will use that profile's shell, directory, and environment configuration unless you explicitly choose a different one.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>One-click project context — set up tab profiles in Chau7</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

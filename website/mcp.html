@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Tools — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 exposes 20 MCP tools over Unix socket for AI agent control. Tab management, telemetry, session tracking. Auto-registers in Claude Code, Cursor, Windsurf, Codex.">
+    <meta property="og:title" content="Chau7 MCP Tools — 20 Tools for AI Agent Control">
+    <meta property="og:description" content="Your AI agent just got a terminal. 20 tools. Unix socket. Zero config.">
+    <meta property="og:image" content="screenshots/03-mcp-tab-demo.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="mcp.html">
+    <link rel="stylesheet" href="style.css">    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "What is MCP?",
+                "acceptedAnswer": { "@type": "Answer", "text": "MCP (Model Context Protocol) is an open standard that lets AI agents interact with external tools and data sources. Chau7 implements an MCP server that exposes terminal control as 20 tools over a Unix socket." }
+            },
+            {
+                "@type": "Question",
+                "name": "Which AI tools work with Chau7's MCP?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Claude Code, Cursor, Windsurf, and Codex all auto-discover Chau7's MCP server on launch. Any MCP-compatible client can connect via the Unix socket." }
+            },
+            {
+                "@type": "Question",
+                "name": "Is MCP access safe?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Chau7 provides an approval gate for MCP actions, tab limits, enable/disable toggle, and MCP-created tab indicators. You control what agents can do." }
+            },
+            {
+                "@type": "Question",
+                "name": "Do I need to configure anything?",
+                "acceptedAnswer": { "@type": "Answer", "text": "No. Chau7 auto-registers its MCP server in Claude Code, Cursor, Windsurf, and Codex configuration files on every launch. Zero manual setup." }
+            }
+        ]
+    }]
+    </script>
+</head>
+<body class="mcp-page">
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="index.html" class="nav-logo">
+                <img src="logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="features.html">Features</a>
+                <a href="mcp.html">MCP</a>
+                <a href="performance.html">Performance</a>
+                <a href="compare.html">Compare</a>
+                <a href="pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Hero -->
+        <section class="hero hero-mcp">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="hero-badge badge-alt">Model Context Protocol</div>
+                <h1 class="hero-title">
+                    Your AI agent just got<br>a <span class="gradient-text-alt">terminal</span>.
+                </h1>
+                <p class="hero-subtitle">
+                    20 tools. Unix socket. Zero config. Chau7 exposes every tab, command,
+                    and session to any MCP-compatible AI agent.
+                </p>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="perf-section" aria-labelledby="how-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="how-heading">How it works</h2>
+                    <p>Three steps from launch to full terminal control.</p>
+                </div>
+                <div class="steps-grid">
+                    <div class="step-card">
+                        <div class="step-num">1</div>
+                        <h4>Launch Chau7</h4>
+                        <p>On startup, Chau7 auto-registers its MCP server in Claude Code, Cursor, Windsurf, and Codex config files.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">2</div>
+                        <h4>AI connects via MCP</h4>
+                        <p>Your AI agent discovers the Unix socket and calls tools like <code>tab_create</code>, <code>tab_exec</code>, and <code>tab_output</code>.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">3</div>
+                        <h4>Full terminal control</h4>
+                        <p>Create tabs, run commands, read output, inspect processes, track sessions — no hacks, no screen scraping.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tool Catalog -->
+        <section class="mcp-section" aria-labelledby="tools-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="tools-heading">20 tools. <span class="gradient-text-alt">Everything exposed.</span></h2>
+                    <p>Full terminal lifecycle control and AI telemetry, accessible through the standard MCP protocol.</p>
+                </div>
+
+                <div class="mcp-grid">
+                    <div class="mcp-block">
+                        <h4>Tab Management (8 tools)</h4>
+                        <div class="tool-list">
+                            <div class="tool"><code>tab_list</code><span>List all tabs across windows with status, git branch, CTO state</span></div>
+                            <div class="tool"><code>tab_create</code><span>Open new tabs with directory &amp; window targeting</span></div>
+                            <div class="tool"><code>tab_exec</code><span>Execute commands with prompt-state checking</span></div>
+                            <div class="tool"><code>tab_status</code><span>Process tree, telemetry run, git branch, CTO state</span></div>
+                            <div class="tool"><code>tab_send_input</code><span>Raw input for interactive prompts (no newline appended)</span></div>
+                            <div class="tool"><code>tab_close</code><span>Close with optional force flag for running processes</span></div>
+                            <div class="tool"><code>tab_output</code><span>Last N lines of scrollback (max 5000, 512KB cap)</span></div>
+                            <div class="tool"><code>tab_set_cto</code><span>Per-tab Context Token Optimization override</span></div>
+                        </div>
+                    </div>
+                    <div class="mcp-block">
+                        <h4>Telemetry &amp; Analytics (8 tools)</h4>
+                        <div class="tool-list">
+                            <div class="tool"><code>run_get</code><span>Full telemetry run by UUID</span></div>
+                            <div class="tool"><code>run_list</code><span>Filter by session, repo, provider, date range, tags</span></div>
+                            <div class="tool"><code>run_tool_calls</code><span>Every tool call an AI agent made in a run</span></div>
+                            <div class="tool"><code>run_transcript</code><span>Complete conversation turns for replay</span></div>
+                            <div class="tool"><code>run_tag</code><span>Tag runs for organization and filtering</span></div>
+                            <div class="tool"><code>run_latest_for_repo</code><span>Most recent run per repository path</span></div>
+                            <div class="tool"><code>session_list</code><span>Sessions with run counts, filterable by repo</span></div>
+                            <div class="tool"><code>session_current</code><span>Currently active AI sessions across all tabs</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Resources -->
+                <div class="mcp-block" style="margin-bottom: 2.5rem;">
+                    <h4>MCP Resources (4 endpoints)</h4>
+                    <div class="resource-list">
+                        <div class="resource-item"><code>tab://list</code><span>All open tabs with metadata</span></div>
+                        <div class="resource-item"><code>session://list</code><span>Active AI sessions</span></div>
+                        <div class="resource-item"><code>run://latest</code><span>Most recent telemetry run</span></div>
+                        <div class="resource-item"><code>config://mcp</code><span>Current MCP server configuration</span></div>
+                    </div>
+                </div>
+
+                <!-- Demo: tab_status -->
+                <div class="mcp-demo">
+                    <div class="demo-header">
+                        <span class="demo-dot red"></span>
+                        <span class="demo-dot yellow"></span>
+                        <span class="demo-dot green"></span>
+                        <span class="demo-title">tab_status response</span>
+                    </div>
+                    <pre class="demo-code"><code>{
+  <span class="json-key">"tab_id"</span>: <span class="json-str">"C1C4AB49-DA22-46F6-831B-FF7CFC2BDDC3"</span>,
+  <span class="json-key">"active_app"</span>: <span class="json-str">"Claude"</span>,
+  <span class="json-key">"status"</span>: <span class="json-str">"running"</span>,
+  <span class="json-key">"git_branch"</span>: <span class="json-str">"main"</span>,
+  <span class="json-key">"cto_active"</span>: <span class="json-bool">true</span>,
+  <span class="json-key">"is_mcp_controlled"</span>: <span class="json-bool">false</span>,
+  <span class="json-key">"processes"</span>: [
+    { <span class="json-key">"name"</span>: <span class="json-str">"claude"</span>, <span class="json-key">"pid"</span>: <span class="json-num">48291</span>, <span class="json-key">"cpu_percent"</span>: <span class="json-num">12.3</span> }
+  ],
+  <span class="json-key">"active_run"</span>: {
+    <span class="json-key">"provider"</span>: <span class="json-str">"claude"</span>,
+    <span class="json-key">"duration_so_far_ms"</span>: <span class="json-num">184200</span>
+  }
+}</code></pre>
+                </div>
+
+                <!-- Demo: run_tool_calls -->
+                <div class="mcp-demo">
+                    <div class="demo-header">
+                        <span class="demo-dot red"></span>
+                        <span class="demo-dot yellow"></span>
+                        <span class="demo-dot green"></span>
+                        <span class="demo-title">run_tool_calls response</span>
+                    </div>
+                    <pre class="demo-code"><code>{
+  <span class="json-key">"run_id"</span>: <span class="json-str">"a3f8c2e1-9b4d-4f6a-8e7c-5d2b1a0f3e9d"</span>,
+  <span class="json-key">"tool_calls"</span>: [
+    {
+      <span class="json-key">"tool"</span>: <span class="json-str">"Read"</span>,
+      <span class="json-key">"input"</span>: { <span class="json-key">"file_path"</span>: <span class="json-str">"/src/main.swift"</span> },
+      <span class="json-key">"duration_ms"</span>: <span class="json-num">45</span>
+    },
+    {
+      <span class="json-key">"tool"</span>: <span class="json-str">"Edit"</span>,
+      <span class="json-key">"input"</span>: { <span class="json-key">"file_path"</span>: <span class="json-str">"/src/main.swift"</span> },
+      <span class="json-key">"duration_ms"</span>: <span class="json-num">120</span>
+    }
+  ]
+}</code></pre>
+                </div>
+
+                <!-- Auto-Registration -->
+                <div class="mcp-autoregister">
+                    <h4>Zero-config auto-registration</h4>
+                    <p>On every launch, Chau7 registers itself in your AI tools' MCP config files. No manual setup.</p>
+                    <div class="autoregister-grid">
+                        <div class="ar-item"><span class="ar-tool">Claude Code</span><code>~/.claude.json</code></div>
+                        <div class="ar-item"><span class="ar-tool">Cursor</span><code>~/.cursor/mcp.json</code></div>
+                        <div class="ar-item"><span class="ar-tool">Windsurf</span><code>~/.codeium/windsurf/mcp_config.json</code></div>
+                        <div class="ar-item"><span class="ar-tool">Codex</span><code>~/.codex/config.toml</code></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Safety & Controls -->
+        <section class="perf-section" aria-labelledby="safety-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="safety-heading">You control what agents can do.</h2>
+                    <p>MCP access is powerful — and fully controllable.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>Approval Gate</h4>
+                        <p>MCP tool calls can require explicit user approval before executing. Enable per-tool or globally.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Tab Limits</h4>
+                        <p>Set maximum number of MCP-created tabs to prevent runaway agents from spawning unlimited sessions.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Enable / Disable Toggle</h4>
+                        <p>Turn MCP server on or off entirely from Settings. When off, the Unix socket is not created.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>MCP Tab Indicator</h4>
+                        <p>Tabs created by MCP are visually tagged so you always know which tabs an AI agent opened.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="faq-section" aria-labelledby="faq-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="faq-heading">Frequently asked questions</h2>
+                </div>
+                <div class="faq-list">
+                    <details>
+                        <summary>What is MCP?</summary>
+                        <div class="faq-answer">
+                            <p>MCP (Model Context Protocol) is an open standard that lets AI agents interact with external tools and data sources. Chau7 implements an MCP server that exposes terminal control as 20 tools over a Unix socket. <a href="https://modelcontextprotocol.io" target="_blank">Learn more about MCP</a>.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Which AI tools work with Chau7's MCP?</summary>
+                        <div class="faq-answer">
+                            <p>Claude Code, Cursor, Windsurf, and Codex auto-discover Chau7's MCP server on launch. Any MCP-compatible client can connect via the Unix socket at the path specified in the config files.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Is MCP access safe?</summary>
+                        <div class="faq-answer">
+                            <p>Yes. Chau7 provides an approval gate for MCP actions, configurable tab limits, a global enable/disable toggle, and visual indicators for MCP-created tabs. You always know what an agent is doing, and you control what it can do.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Do I need to configure anything?</summary>
+                        <div class="faq-answer">
+                            <p>No. Chau7 auto-registers its MCP server in Claude Code (<code>~/.claude.json</code>), Cursor (<code>~/.cursor/mcp.json</code>), Windsurf (<code>~/.codeium/windsurf/mcp_config.json</code>), and Codex (<code>~/.codex/config.toml</code>) on every launch. Zero manual setup required.</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Give your AI agent real terminal access.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="features.html">Features</a>
+                    <a href="mcp.html">MCP Tools</a>
+                    <a href="performance.html">Performance</a>
+                    <a href="compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

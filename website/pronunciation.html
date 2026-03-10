@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>How to Say "Chau7" — Pronunciation Guide</title>
+    <meta name="description" content="It's 'show-set'. Chau7 = chau + sept (7 in French) = chaussette = French for sock. Yes, your terminal is named after a sock.">
+    <meta property="og:title" content="How to Say Chau7 — A Survival Guide">
+    <meta property="og:description" content="It's 'show-set'. Not 'chow-seven'. Not 'cow-seven'. Definitely not 'chow-mein-7'.">
+    <meta property="og:image" content="screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="pronunciation.html">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .pronounce-hero {
+            text-align: center;
+            padding: 8rem 2rem 4rem;
+        }
+        .pronounce-hero .hero-title {
+            font-size: clamp(2.5rem, 6vw, 4rem);
+        }
+        .phonetic-big {
+            font-family: var(--serif);
+            font-size: clamp(3rem, 8vw, 6rem);
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            background: var(--gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 2rem 0 0.5rem;
+            line-height: 1.1;
+        }
+        .phonetic-ipa {
+            font-family: var(--mono);
+            font-size: 1.3rem;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+        }
+        .sock-reveal {
+            font-size: 1.2rem;
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+        }
+        .sock-emoji {
+            font-size: 2rem;
+            display: inline-block;
+            animation: sock-wiggle 2s ease-in-out infinite;
+        }
+        @keyframes sock-wiggle {
+            0%, 100% { transform: rotate(0deg); }
+            25% { transform: rotate(-10deg); }
+            75% { transform: rotate(10deg); }
+        }
+        .breakdown-section {
+            padding: 4rem 0;
+        }
+        .breakdown-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+        .breakdown-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 2rem;
+            text-align: center;
+        }
+        .breakdown-card .step-number {
+            font-family: var(--serif);
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.75rem;
+        }
+        .breakdown-card .fragment {
+            font-family: var(--mono);
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 0.5rem;
+        }
+        .breakdown-card .sounds-like {
+            font-size: 1rem;
+            color: var(--text-muted);
+        }
+        .breakdown-card .sounds-like strong {
+            color: var(--text);
+        }
+        .equation-section {
+            padding: 4rem 0;
+            text-align: center;
+        }
+        .equation {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+            font-family: var(--serif);
+            font-size: clamp(1.2rem, 3vw, 1.8rem);
+            margin: 2rem 0;
+            color: var(--text);
+        }
+        .equation .eq-part {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 0.75rem 1.25rem;
+        }
+        .equation .eq-op {
+            font-weight: 700;
+            color: var(--accent);
+        }
+        .survival-section {
+            padding: 4rem 0;
+        }
+        .survival-list {
+            list-style: none;
+            max-width: 700px;
+            margin: 2rem auto 0;
+        }
+        .survival-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 1rem;
+            padding: 1.25rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .survival-item:last-child { border-bottom: none; }
+        .survival-icon {
+            font-size: 1.5rem;
+            flex-shrink: 0;
+            width: 2rem;
+            text-align: center;
+        }
+        .survival-content h3 {
+            font-size: 1.1rem;
+            margin-bottom: 0.25rem;
+        }
+        .survival-content p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+        .wrong-ways {
+            padding: 4rem 0;
+        }
+        .wrong-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .wrong-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            padding: 1.25rem;
+            text-align: center;
+            position: relative;
+        }
+        .wrong-card .wrong-text {
+            font-family: var(--mono);
+            font-size: 1.1rem;
+            text-decoration: line-through;
+            color: var(--text-muted);
+            opacity: 0.7;
+        }
+        .wrong-card .wrong-verdict {
+            font-size: 0.8rem;
+            color: #8c3c3c;
+            margin-top: 0.5rem;
+            font-weight: 600;
+        }
+        .origin-section {
+            padding: 4rem 0;
+        }
+        .origin-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 3rem;
+            max-width: 700px;
+            margin: 2rem auto 0;
+        }
+        .origin-card p {
+            color: var(--text-muted);
+            line-height: 1.8;
+            margin-bottom: 1rem;
+        }
+        .origin-card p:last-child { margin-bottom: 0; }
+        .origin-card strong { color: var(--text); }
+        .tldr-section {
+            padding: 4rem 0;
+            text-align: center;
+        }
+        .tldr-box {
+            background: var(--bg-card);
+            border: 2px solid var(--accent);
+            border-radius: var(--radius);
+            padding: 3rem;
+            max-width: 600px;
+            margin: 2rem auto 0;
+        }
+        .tldr-label {
+            font-family: var(--mono);
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 1rem;
+        }
+        .tldr-pronunciation {
+            font-family: var(--serif);
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 0.5rem;
+        }
+        .tldr-meaning {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="index.html" class="nav-logo">
+                <img src="logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="features.html">Features</a>
+                <a href="mcp.html">MCP</a>
+                <a href="performance.html">Performance</a>
+                <a href="compare.html">Compare</a>
+                <a href="pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Hero -->
+        <section class="pronounce-hero">
+            <div class="hero-glow"></div>
+            <h1 class="hero-title">How do you say <span class="gradient-text">Chau7</span>?</h1>
+            <div class="phonetic-big">show &middot; set</div>
+            <div class="phonetic-ipa">/ʃo.sɛt/</div>
+            <p class="sock-reveal">
+                It's French for <strong>"sock"</strong>. <span class="sock-emoji">🧦</span><br>
+                Yes, really. Your terminal is named after a sock.
+            </p>
+        </section>
+
+        <!-- The Equation -->
+        <section class="equation-section">
+            <div class="section-inner">
+                <h2>The math</h2>
+                <div class="equation">
+                    <span class="eq-part">chau</span>
+                    <span class="eq-op">+</span>
+                    <span class="eq-part">7 <small>(sept)</small></span>
+                    <span class="eq-op">=</span>
+                    <span class="eq-part">chaussette</span>
+                    <span class="eq-op">=</span>
+                    <span class="eq-part">🧦</span>
+                </div>
+                <p style="color: var(--text-muted); max-width: 500px; margin: 0 auto;">
+                    <em>Sept</em> is the French word for 7. Stick it onto <em>chau</em> and you get <em>chaussette</em> — the common French word for sock. Computer science has never been this cozy.
+                </p>
+            </div>
+        </section>
+
+        <!-- Breakdown for non-French speakers -->
+        <section class="breakdown-section">
+            <div class="section-inner">
+                <h2 style="text-align:center;">A survival guide for non-French speakers</h2>
+                <div class="breakdown-grid">
+                    <div class="breakdown-card">
+                        <div class="step-number">Syllable 1</div>
+                        <div class="fragment">show</div>
+                        <div class="sounds-like">Like a <strong>TV show</strong>.<br>Not "chow". Not "cow". Not "chaos".</div>
+                    </div>
+                    <div class="breakdown-card">
+                        <div class="step-number">Syllable 2</div>
+                        <div class="fragment">set</div>
+                        <div class="sounds-like">Like "<strong>set</strong> a variable".<br>Developers already know this one.</div>
+                    </div>
+                    <div class="breakdown-card">
+                        <div class="step-number">Put together</div>
+                        <div class="fragment">show-set</div>
+                        <div class="sounds-like">Rhymes with "<strong>no sweat</strong>".<br>Two syllables. You got this.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Common wrong pronunciations -->
+        <section class="wrong-ways">
+            <div class="section-inner">
+                <h2 style="text-align:center;">How <em>not</em> to say it</h2>
+                <p style="text-align:center; color: var(--text-muted); margin-top: 0.5rem;">We've heard them all. We judge silently.</p>
+                <div class="wrong-grid">
+                    <div class="wrong-card">
+                        <div class="wrong-text">chow-seven</div>
+                        <div class="wrong-verdict">This isn't a restaurant</div>
+                    </div>
+                    <div class="wrong-card">
+                        <div class="wrong-text">cow-7</div>
+                        <div class="wrong-verdict">Not a farm animal serial number</div>
+                    </div>
+                    <div class="wrong-card">
+                        <div class="wrong-text">chaw-sept</div>
+                        <div class="wrong-verdict">Close, but no baguette</div>
+                    </div>
+                    <div class="wrong-card">
+                        <div class="wrong-text">chau-seven</div>
+                        <div class="wrong-verdict">Half French, half confused</div>
+                    </div>
+                    <div class="wrong-card">
+                        <div class="wrong-text">ch-ow-sette</div>
+                        <div class="wrong-verdict">You're hurting the vowels</div>
+                    </div>
+                    <div class="wrong-card">
+                        <div class="wrong-text">the sock terminal</div>
+                        <div class="wrong-verdict">Technically correct, oddly endearing</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Mnemonics -->
+        <section class="survival-section">
+            <div class="section-inner">
+                <h2 style="text-align:center;">Memory tricks</h2>
+                <ul class="survival-list">
+                    <li class="survival-item">
+                        <span class="survival-icon">🎬</span>
+                        <div class="survival-content">
+                            <h3>The Hollywood method</h3>
+                            <p>"I'm watching a <strong>show</strong>, and I need to <strong>set</strong> up my terminal." Show-set. Done.</p>
+                        </div>
+                    </li>
+                    <li class="survival-item">
+                        <span class="survival-icon">🎵</span>
+                        <div class="survival-content">
+                            <h3>The musical method</h3>
+                            <p>Sing it to the rhythm of "sunset". Same cadence. <strong>Show</strong>-set. <strong>Sun</strong>-set. Feel the vibe.</p>
+                        </div>
+                    </li>
+                    <li class="survival-item">
+                        <span class="survival-icon">🧦</span>
+                        <div class="survival-content">
+                            <h3>The sock method</h3>
+                            <p>Just remember it means "sock" in French. Every time you open your terminal, you're putting on a sock. A very fast, GPU-accelerated sock.</p>
+                        </div>
+                    </li>
+                    <li class="survival-item">
+                        <span class="survival-icon">💡</span>
+                        <div class="survival-content">
+                            <h3>The "no sweat" method</h3>
+                            <p>"Show-set" rhymes with "no sweat". And using Chau7? Also no sweat. The mnemonic writes itself.</p>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Origin Story -->
+        <section class="origin-section">
+            <div class="section-inner">
+                <h2 style="text-align:center;">Why name a terminal after a sock?</h2>
+                <div class="origin-card">
+                    <p>
+                        Some apps are named after Greek gods. Others after celestial phenomena.
+                        We went with an <strong>insider joke from a French MP3 saga</strong>.
+                    </p>
+                    <p>
+                        If you grew up in France in the 2000s, you know <strong>Le Donjon de Naheulbeuk</strong> — a
+                        hilariously chaotic fantasy audio saga that an entire generation downloaded on eMule and
+                        passed around on burned CDs. It's the French equivalent of discovering Monty Python,
+                        except everyone has a D20 and nobody agrees on initiative order.
+                    </p>
+                    <p>
+                        <em>Chaussette</em> is a running gag in the saga — absurd, out of place, and unforgettable.
+                        If you know, you know. If you don't, you just downloaded a terminal named after a sock
+                        and that's also pretty funny.
+                    </p>
+                    <p>
+                        Plus, <em>chaussette</em> is a seven-letter pun hiding a number. If you're going to name a
+                        developer tool, you might as well make it a puzzle. And this time it's not a bar&hellip;
+                        but that would be a great bar name.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- TL;DR -->
+        <section class="tldr-section">
+            <div class="section-inner">
+                <div class="tldr-box">
+                    <div class="tldr-label">TL;DR</div>
+                    <div class="tldr-pronunciation">show-set</div>
+                    <div class="tldr-meaning">It's a sock. It's fast. It sees your AI. Download it.</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Now that you can say it, try it.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="features.html">Features</a>
+                    <a href="mcp.html">MCP Tools</a>
+                    <a href="performance.html">Performance</a>
+                    <a href="compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

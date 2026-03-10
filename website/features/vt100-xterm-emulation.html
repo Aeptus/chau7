@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Full VT100/xterm Emulation — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 provides complete VT100 and xterm terminal emulation with 256-color, 24-bit true color, and full escape sequence support.">
+    <meta property="og:title" content="Full VT100/xterm Emulation — Chau7">
+    <meta property="og:description" content="Chau7 provides complete VT100 and xterm terminal emulation with 256-color, 24-bit true color, and full escape sequence support.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="vt100-xterm-emulation.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Terminal Core", "item": "../features.html#terminal" },
+            { "@type": "ListItem", "position": 4, "name": "Full VT100/xterm Emulation" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"What TERM value does Chau7 set?","acceptedAnswer":{"@type":"Answer","text":"Chau7 sets TERM=xterm-256color by default, which provides broad compatibility with existing terminfo databases. A custom Chau7 terminfo entry is also available for applications that want to query advanced capabilities like true color and Sixel support."}},{"@type":"Question","name":"Does Chau7 support the Kitty keyboard protocol?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 implements the progressive enhancement keyboard protocol (CSI u) that Kitty popularized, allowing applications to distinguish key-down, key-up, and repeat events with full modifier information."}},{"@type":"Question","name":"How does Chau7 handle broken escape sequences from misbehaving programs?","acceptedAnswer":{"@type":"Answer","text":"The parser uses a timeout-based recovery mechanism. If an escape sequence is incomplete after a configurable timeout (default 100ms), the parser treats the ESC byte as a literal character and resumes normal parsing. This prevents a single malformed sequence from corrupting the rest of the output stream."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#terminal">Terminal Core</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Full VT100/xterm Emulation</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="terminal">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">TERMINAL CORE</div>
+                <h1 class="hero-title">Full VT100/xterm Emulation</h1>
+                <p class="hero-subtitle">Every escape sequence, every color mode, every compatibility edge case. Complete VT100 and xterm emulation.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Terminal not rendering colors correctly in tmux or Vim</li>
+                    <li class="question-item">Which terminal emulators support true color 24-bit on macOS?</li>
+                    <li class="question-item">xterm escape sequences not working in my terminal</li>
+                    <li class="question-item">How to check if my terminal supports 256 colors</li>
+                    <li class="question-item">Terminal emulator compatibility with ncurses applications</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 implements the full VT100, VT220, and xterm control sequence specification. This includes CSI sequences for cursor movement, screen manipulation, and character attributes; OSC sequences for window titles, color palette changes, and clipboard access; DCS sequences for DECRQSS and Sixel graphics; and all standard mode settings (DECCKM, DECAWM, DECOM, and dozens more).</p>
+                <p>Color support spans the complete range: the original 8 ANSI colors, 16-color extended palette, 256-color indexed palette (SGR 38;5;n), and full 24-bit true color (SGR 38;2;r;g;b). The terminal correctly advertises its capabilities via the TERM environment variable and responds to DA (Device Attributes) queries so that applications like Vim, tmux, and htop automatically detect and use the best available color mode.</p>
+                <p>Emulation accuracy is validated against a suite of terminal conformance tests, including vttest, esctest, and a custom test harness that verifies behavior against xterm's reference implementation. Edge cases like origin mode interaction with scroll regions, character set switching (G0/G1/G2/G3), and protected area support are all handled correctly.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Terminal emulation bugs manifest as garbled output, broken TUI layouts, missing colors, and applications that refuse to start. Complete and accurate emulation means every command-line tool, from decades-old ncurses programs to modern TUI frameworks like Ratatui and Textual, renders correctly in Chau7 without workarounds or special configuration.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="unicode-emoji-support.html">
+                        <h4>Unicode &amp; Emoji Support</h4>
+                        <p>Full Unicode rendering including CJK, RTL, combining characters, and color emoji.</p>
+                    </a>
+                    <a class="catalog-card" href="shell-integration.html">
+                        <h4>Shell Integration</h4>
+                        <p>Deep integration with zsh, bash, and fish for command detection, working directory tracking, and exit codes.</p>
+                    </a>
+                    <a class="catalog-card" href="scrollback-buffer.html">
+                        <h4>Scrollback Buffer</h4>
+                        <p>Configurable scrollback with efficient memory usage. Search within scrollback with regex support.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>What TERM value does Chau7 set?</summary>
+                        <div class="faq-answer"><p>Chau7 sets TERM=xterm-256color by default, which provides broad compatibility with existing terminfo databases. A custom Chau7 terminfo entry is also available for applications that want to query advanced capabilities like true color and Sixel support.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7 support the Kitty keyboard protocol?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 implements the progressive enhancement keyboard protocol (CSI u) that Kitty popularized, allowing applications to distinguish key-down, key-up, and repeat events with full modifier information.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7 handle broken escape sequences from misbehaving programs?</summary>
+                        <div class="faq-answer"><p>The parser uses a timeout-based recovery mechanism. If an escape sequence is incomplete after a configurable timeout (default 100ms), the parser treats the ESC byte as a literal character and resumes normal parsing. This prevents a single malformed sequence from corrupting the rest of the output stream.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Full terminal compatibility, zero compromises. Download Chau7.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Latency Tracking — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 measures time-to-first-token and total duration for every LLM API call. Identify slow requests and provider performance issues across your AI agent sessions.">
+    <meta property="og:title" content="Latency Tracking — Chau7">
+    <meta property="og:description" content="Chau7 measures time-to-first-token and total duration for every LLM API call. Identify slow requests and provider performance issues across your AI agent sessions.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="latency-tracking.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "API Analytics", "item": "../features.html#api-analytics" },
+            { "@type": "ListItem", "position": 4, "name": "Latency Tracking" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"What is time-to-first-token and why does it matter?","acceptedAnswer":{"@type":"Answer","text":"Time-to-first-token (TTFT) measures the delay between sending a request and receiving the first piece of the response. It directly determines how responsive an AI agent feels. A low TTFT means the agent starts producing output quickly even if the full response takes longer."}},{"@type":"Question","name":"Can I compare latency across different providers?","acceptedAnswer":{"@type":"Answer","text":"Yes. Since latency is tracked per call with provider and model metadata, you can filter and compare performance across providers, models, and time periods through the MCP server or Analytics Dashboard."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#api-analytics">API Analytics</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Latency Tracking</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="api-analytics">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge badge-blue">API ANALYTICS</div>
+                <h1 class="hero-title">Latency Tracking</h1>
+                <p class="hero-subtitle">Measure every millisecond between prompt and response.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How to measure LLM API latency in terminal?</li>
+                    <li class="question-item">Time to first token tracking for AI coding agents</li>
+                    <li class="question-item">Why is my AI coding agent slow?</li>
+                    <li class="question-item">LLM API response time monitoring tool</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Latency Tracking records two key timestamps for every intercepted API call: time-to-first-token (TTFT), which measures how long it takes for the first byte of the response to arrive, and total duration, which captures the full round-trip time from request sent to response complete. For streaming responses, TTFT reflects when the first streamed chunk arrives.</p>
+                <p>Both metrics are stored per call and associated with the originating tab, session, and run. This lets you identify slow calls, compare provider performance across sessions, and spot patterns like latency spikes during peak hours or degradation on large context windows.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>AI agent responsiveness depends directly on API latency, and latency varies significantly by provider, model, time of day, and context size. Without measurement, slow sessions feel frustrating but undiagnosable. Latency Tracking gives you the data to pinpoint whether delays are on the provider side, the network, or in the agent's own processing.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="tls-wss-proxy.html">
+                        <h4>TLS/WSS Proxy <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Transparent proxy captures API calls to OpenAI, Anthropic, and other LLM providers for analysis.</p>
+                    </a>
+                    <a class="catalog-card" href="token-counting.html">
+                        <h4>Token Counting</h4>
+                        <p>Track input and output tokens per API call with provider-specific tokenization.</p>
+                    </a>
+                    <a class="catalog-card" href="cost-tracking.html">
+                        <h4>Cost Tracking <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Calculate cost per API call based on provider pricing. View per-session and cumulative costs.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>What is time-to-first-token and why does it matter?</summary>
+                        <div class="faq-answer"><p>Time-to-first-token (TTFT) measures the delay between sending a request and receiving the first piece of the response. It directly determines how responsive an AI agent feels. A low TTFT means the agent starts producing output quickly even if the full response takes longer.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I compare latency across different providers?</summary>
+                        <div class="faq-answer"><p>Yes. Since latency is tracked per call with provider and model metadata, you can filter and compare performance across providers, models, and time periods through the MCP server or Analytics Dashboard.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 and measure the latency of every AI API call.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

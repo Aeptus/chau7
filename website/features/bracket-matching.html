@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bracket Matching — Chau7 Terminal</title>
+    <meta name="description" content="Chau7's built-in editor highlights matching brackets, braces, and parentheses. Jump to matching delimiter instantly for faster code navigation.">
+    <meta property="og:title" content="Bracket Matching — Chau7">
+    <meta property="og:description" content="Chau7's built-in editor highlights matching brackets, braces, and parentheses. Jump to matching delimiter instantly for faster code navigation.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="bracket-matching.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Built-in Editor", "item": "../features.html#editor" },
+            { "@type": "ListItem", "position": 4, "name": "Bracket Matching" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"What delimiter types are matched?","acceptedAnswer":{"@type":"Answer","text":"Parentheses (), square brackets [], curly braces {}, and angle brackets &lt;&gt; are all matched with visual highlighting."}},{"@type":"Question","name":"How do I jump to the matching bracket?","acceptedAnswer":{"@type":"Answer","text":"Use the jump-to-match keyboard shortcut with your cursor next to any bracket. The cursor moves directly to the corresponding opening or closing delimiter."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#editor">Built-in Editor</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Bracket Matching</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="editor">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">BUILT-IN EDITOR</div>
+                <h1 class="hero-title">Bracket Matching</h1>
+                <p class="hero-subtitle">Never lose track of a closing bracket again</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Terminal editor bracket matching highlight</li>
+                    <li class="question-item">Jump to matching brace in terminal editor</li>
+                    <li class="question-item">Find closing parenthesis in nested code terminal</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>When your cursor is adjacent to a bracket, brace, or parenthesis, Chau7's editor highlights the matching delimiter with a distinct background color. This works for all common delimiter pairs: parentheses (), square brackets [], curly braces {}, and angle brackets <>. Mismatched or unmatched delimiters are highlighted in an error color so you spot structural problems immediately.</p>
+                <p>Jump-to-match moves the cursor directly to the corresponding delimiter with a single keyboard shortcut. This works in both directions: from opening to closing and from closing to opening. Combined with selection, you can select everything between matching delimiters in two keystrokes, which is invaluable for extracting or restructuring nested code blocks.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Deeply nested brackets in JSON, YAML, or code are one of the most common sources of syntax errors during terminal editing. Visual bracket matching and jump-to-match let you verify structure at a glance and navigate nested content without manually counting delimiters.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="syntax-highlighting.html">
+                        <h4>Syntax Highlighting</h4>
+                        <p>Language-aware syntax highlighting for 50+ languages in the built-in editor.</p>
+                    </a>
+                    <a class="catalog-card" href="find-replace.html">
+                        <h4>Find &amp; Replace</h4>
+                        <p>In-editor find and replace with regex support and match highlighting.</p>
+                    </a>
+                    <a class="catalog-card" href="line-numbers.html">
+                        <h4>Line Numbers</h4>
+                        <p>Configurable line number gutter with relative line numbers option.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>What delimiter types are matched?</summary>
+                        <div class="faq-answer"><p>Parentheses (), square brackets [], curly braces {}, and angle brackets <> are all matched with visual highlighting.</p></div>
+                    </details>
+                    <details>
+                        <summary>How do I jump to the matching bracket?</summary>
+                        <div class="faq-answer"><p>Use the jump-to-match keyboard shortcut with your cursor next to any bracket. The cursor moves directly to the corresponding opening or closing delimiter.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 and navigate nested code with confidence</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceOver Support — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 provides full macOS VoiceOver support for blind and low-vision developers. Terminal output is announced with semantic navigation of content.">
+    <meta property="og:title" content="VoiceOver Support — Chau7">
+    <meta property="og:description" content="Chau7 provides full macOS VoiceOver support for blind and low-vision developers. Terminal output is announced with semantic navigation of content.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="voiceover-support.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Accessibility", "item": "../features.html#accessibility" },
+            { "@type": "ListItem", "position": 4, "name": "VoiceOver Support" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Does VoiceOver announce new terminal output?","acceptedAnswer":{"@type":"Answer","text":"Yes. New output is announced automatically as it appears, so screen reader users hear command results without manually navigating to them."}},{"@type":"Question","name":"Can I navigate terminal content with VoiceOver?","acceptedAnswer":{"@type":"Answer","text":"Yes. Standard VoiceOver navigation (line by line, word by word, character by character) works within the terminal buffer with accurate cursor and selection reporting."}},{"@type":"Question","name":"Are all UI elements accessible?","acceptedAnswer":{"@type":"Answer","text":"Yes. Tab bar, split panes, preferences, dialogs, and all controls have correct accessibility roles, labels, and descriptions for complete VoiceOver navigation."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#accessibility">Accessibility</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">VoiceOver Support</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="accessibility">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">ACCESSIBILITY</div>
+                <h1 class="hero-title">VoiceOver Support</h1>
+                <p class="hero-subtitle">A terminal that works with your screen reader</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Terminal VoiceOver macOS blind developer</li>
+                    <li class="question-item">Screen reader accessible terminal emulator Mac</li>
+                    <li class="question-item">VoiceOver read terminal output macOS</li>
+                    <li class="question-item">Accessible terminal for visually impaired developers</li>
+                    <li class="question-item">Best terminal app for blind users macOS</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 implements full NSAccessibility protocol support, exposing terminal content to VoiceOver as navigable text elements. New terminal output is announced automatically so screen reader users hear command results as they appear. The accessibility tree is structured semantically: the prompt, command, and output regions are distinct elements that VoiceOver can navigate independently.</p>
+                <p>Interactive VoiceOver navigation works within the terminal buffer. Users can move line by line, word by word, or character by character through terminal content using standard VoiceOver gestures and keyboard commands. The cursor position, selection state, and current line are all reported accurately to the accessibility system.</p>
+                <p>Tab bar, split panes, preferences, and all UI controls are fully accessible with correct roles, labels, and descriptions. Keyboard focus management ensures VoiceOver users can navigate the complete application structure without sighted assistance. Accessibility labels use descriptive text rather than technical identifiers.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Terminal.app's VoiceOver support has long been inadequate for professional use, and most third-party terminals treat accessibility as an afterthought. Blind and low-vision developers deserve a terminal that integrates properly with macOS screen reading. Chau7 treats VoiceOver support as a first-class feature, not an afterthought, because terminal access is a prerequisite for developer productivity.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="high-contrast-mode.html">
+                        <h4>High Contrast Mode</h4>
+                        <p>Respects macOS High Contrast accessibility setting with enhanced border and text contrast.</p>
+                    </a>
+                    <a class="catalog-card" href="reduced-motion.html">
+                        <h4>Reduced Motion</h4>
+                        <p>Respects macOS Reduced Motion preference. Disables animations system-wide.</p>
+                    </a>
+                    <a class="catalog-card" href="localization.html">
+                        <h4>Localization (4 Languages)</h4>
+                        <p>Full localization with RTL support. Runtime language switching without restart.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Does VoiceOver announce new terminal output?</summary>
+                        <div class="faq-answer"><p>Yes. New output is announced automatically as it appears, so screen reader users hear command results without manually navigating to them.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I navigate terminal content with VoiceOver?</summary>
+                        <div class="faq-answer"><p>Yes. Standard VoiceOver navigation (line by line, word by word, character by character) works within the terminal buffer with accurate cursor and selection reporting.</p></div>
+                    </details>
+                    <details>
+                        <summary>Are all UI elements accessible?</summary>
+                        <div class="faq-answer"><p>Yes. Tab bar, split panes, preferences, dialogs, and all controls have correct accessibility roles, labels, and descriptions for complete VoiceOver navigation.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 for a fully accessible terminal experience</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

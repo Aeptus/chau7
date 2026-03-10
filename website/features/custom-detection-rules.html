@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Detection Rules — Chau7 Terminal</title>
+    <meta name="description" content="Add custom detection rules to Chau7 so it recognizes any AI CLI tool by process name pattern. Extend detection beyond the built-in agent list.">
+    <meta property="og:title" content="Custom Detection Rules — Chau7">
+    <meta property="og:description" content="Add custom detection rules to Chau7 so it recognizes any AI CLI tool by process name pattern. Extend detection beyond the built-in agent list.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="custom-detection-rules.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "AI Detection", "item": "../features.html#ai-detection" },
+            { "@type": "ListItem", "position": 4, "name": "Custom Detection Rules" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Do custom rules override built-in detection?","acceptedAnswer":{"@type":"Answer","text":"No. Custom rules run alongside built-in rules. If a process matches both, the built-in rule takes precedence to ensure consistent branding for well-known agents."}},{"@type":"Question","name":"Can I share custom detection rules with my team?","acceptedAnswer":{"@type":"Answer","text":"Custom rules are stored in Chau7&#x27;s settings and can be exported or version-controlled. Sharing a configuration file is the simplest way to distribute rules across a team."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#ai-detection">AI Detection</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Custom Detection Rules</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="ai-detection">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge badge-alt">AI DETECTION</div>
+                <h1 class="hero-title">Custom Detection Rules</h1>
+                <p class="hero-subtitle">Teach your terminal to recognize any AI tool.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How do I add a custom AI tool to my terminal detection?</li>
+                    <li class="question-item">Can I detect private or internal AI CLI tools in Chau7?</li>
+                    <li class="question-item">Custom process detection rules for terminal AI monitoring</li>
+                    <li class="question-item">Add new AI agent to Chau7 detection list</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 exposes a settings interface where you can define custom detection rules using process name patterns. Each rule maps a pattern to a display name and optional color, so your internal or niche AI tools get the same first-class treatment as built-in agents.</p>
+                <p>Patterns are matched against the process name and arguments in the tab's process tree. You can use substring matching to catch tools launched through various wrapper scripts or package managers. Custom rules are evaluated alongside built-in rules with no priority conflicts.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>The AI tooling landscape evolves rapidly. Teams build internal wrappers, use niche open-source agents, or run custom fine-tuned model CLIs that no terminal vendor can anticipate. Custom detection rules let you extend Chau7's awareness to any tool in your workflow without waiting for an update.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="auto-ai-cli-detection.html">
+                        <h4>Auto AI CLI Detection <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Detects Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they launch in any tab.</p>
+                    </a>
+                    <a class="catalog-card" href="ai-tab-branding.html">
+                        <h4>AI Tab Branding <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Tabs automatically adopt the brand color and logo of the active AI agent.</p>
+                    </a>
+                    <a class="catalog-card" href="ai-process-monitoring.html">
+                        <h4>AI Process Monitoring <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Track CPU, memory, and PID of AI agent processes per tab.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Do custom rules override built-in detection?</summary>
+                        <div class="faq-answer"><p>No. Custom rules run alongside built-in rules. If a process matches both, the built-in rule takes precedence to ensure consistent branding for well-known agents.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I share custom detection rules with my team?</summary>
+                        <div class="faq-answer"><p>Custom rules are stored in Chau7's settings and can be exported or version-controlled. Sharing a configuration file is the simplest way to distribute rules across a team.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 and define detection rules for every AI tool your team uses.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unix Socket Server — Chau7 Terminal</title>
+    <meta name="description" content="Chau7's MCP server uses a Unix domain socket for zero-network-exposure communication between AI agents and your terminal.">
+    <meta property="og:title" content="Unix Socket Server — Chau7">
+    <meta property="og:description" content="Chau7's MCP server uses a Unix domain socket for zero-network-exposure communication between AI agents and your terminal.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="unix-socket-server.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "MCP Server", "item": "../features.html#mcp" },
+            { "@type": "ListItem", "position": 4, "name": "Unix Socket Server" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Where is the socket file located?","acceptedAnswer":{"@type":"Answer","text":"The socket is created under your home directory in a predictable location that MCP clients can discover automatically. The exact path is configured during auto-registration so clients never need to search for it."}},{"@type":"Question","name":"What happens if the socket file is not cleaned up?","acceptedAnswer":{"@type":"Answer","text":"Chau7 detects stale socket files on launch and removes them before creating a new one. If the app crashes, the next launch will clean up automatically."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#mcp">MCP Server</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Unix Socket Server</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="mcp">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge badge-alt">MCP SERVER</div>
+                <h1 class="hero-title">Unix Socket Server</h1>
+                <p class="hero-subtitle">Local-only communication through a Unix domain socket keeps your terminal private and fast.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How does Chau7&#x27;s MCP server communicate with AI agents?</li>
+                    <li class="question-item">Is the MCP connection secure if it runs locally?</li>
+                    <li class="question-item">Does Chau7&#x27;s MCP server expose any network ports?</li>
+                    <li class="question-item">What transport does the MCP server use?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 creates a Unix domain socket at a well-known path under the user's home directory. When an AI client like Claude Code or Cursor needs to communicate with the terminal, it connects to this socket directly — no TCP, no HTTP, no port binding. The operating system enforces that only processes running as the same user can access the socket file, providing authentication without passwords or tokens.</p>
+                <p>Unix sockets have lower latency and higher throughput than TCP loopback connections because they skip the entire network stack. For MCP tool calls that happen dozens of times per agent session — listing tabs, reading output, checking status — this overhead reduction adds up. The socket is created on launch and cleaned up on exit, with no lingering listeners or zombie processes.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>A network-exposed MCP server would be a security liability — any process on your machine (or network, if bound to 0.0.0.0) could send commands to your terminal. Unix sockets eliminate this entire attack surface by restricting access to your user account through filesystem permissions, while also being faster than any network-based alternative.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="mcp-tools.html">
+                        <h4>20 MCP Tools <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Full terminal control via Model Context Protocol: tab lifecycle, command execution, output capture, telemetry.</p>
+                    </a>
+                    <a class="catalog-card" href="auto-registration.html">
+                        <h4>Auto-Registration <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Registers in Claude Code, Cursor, Windsurf, and Codex config files on every launch.</p>
+                    </a>
+                    <a class="catalog-card" href="mcp-resources.html">
+                        <h4>MCP Resources</h4>
+                        <p>4 resource endpoints (tab://list, session://list, run://latest, config://mcp) for read-only data access.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Where is the socket file located?</summary>
+                        <div class="faq-answer"><p>The socket is created under your home directory in a predictable location that MCP clients can discover automatically. The exact path is configured during auto-registration so clients never need to search for it.</p></div>
+                    </details>
+                    <details>
+                        <summary>What happens if the socket file is not cleaned up?</summary>
+                        <div class="faq-answer"><p>Chau7 detects stale socket files on launch and removes them before creating a new one. If the app crashes, the next launch will clean up automatically.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Secure by design — try Chau7's local MCP server</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

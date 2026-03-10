@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chau7 — Your AI deserves a terminal that notices it</title>
+    <meta name="description" content="Chau7 is the first terminal built for AI-assisted development. 20 MCP tools, auto AI detection, GPU-accelerated with Rust+Metal. Free and open source for macOS.">
+    <meta property="og:title" content="Chau7 — The AI-Native Terminal for macOS">
+    <meta property="og:description" content="20 MCP tools. Auto AI detection. GPU-accelerated. The first terminal built for AI-assisted development. Also named after a sock.">
+    <meta property="og:image" content="screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Chau7 — The AI-Native Terminal">
+    <meta name="twitter:description" content="20 MCP tools. Auto AI detection. GPU-accelerated. Free. Named after a sock.">
+    <meta name="twitter:image" content="screenshots/07-six-tabs-overview.png">
+    <link rel="canonical" href="index.html">
+    <link rel="stylesheet" href="style.css">
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "description": "AI-native terminal for macOS with 20 MCP tools, GPU-accelerated Rust+Metal rendering, and auto AI agent detection.",
+        "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "USD"
+        }
+    }
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav" data-ui="nav">
+        <div class="nav-inner">
+            <a href="index.html" class="nav-logo" data-ui="nav-logo">
+                <img src="logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="features.html" data-ui="nav-features">Features</a>
+                <a href="mcp.html" data-ui="nav-mcp">MCP</a>
+                <a href="performance.html" data-ui="nav-perf">Performance</a>
+                <a href="compare.html" data-ui="nav-compare">Compare</a>
+                <a href="pronunciation.html" data-ui="nav-pronunciation">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank" data-ui="nav-download">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- You're viewing the source of a terminal named after a sock. Shiny. -->
+    <main>
+        <!-- Hero — "I aim to misbehave." -->
+        <section class="hero" data-ui="hero">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <!-- The cartouche. Da Vinci sketch labels with tiny circles and a connecting line. Hover for secrets. -->
+                <div class="hero-badge" data-ui="hero-badge">
+                    <span class="hero-badge-item" data-ui="hero-badge-oss" title="No investor, no paywall, no catch. Well, the catch is it's named after a sock.">Free &amp; Open Source</span>
+                    <span class="hero-badge-item" data-ui="hero-badge-native" title="Swift + AppKit + Metal. Not Electron. We have standards. Low ones, but standards.">macOS Native</span>
+                    <span class="hero-badge-item" data-ui="hero-badge-sock" title="Chau + 7 = Chaussette = French for sock. We're not even sorry.">Named After a Sock</span>
+                </div>
+                <h1 class="hero-title" data-ui="hero-title">
+                    Finally, a terminal that<br><span class="hero-rotator" data-ui="hero-rotator" aria-label="notices your AI"></span>
+                </h1>
+                <p class="hero-subtitle" data-ui="hero-subtitle">
+                    Every terminal adapts old habits to AI. This one was built the other way around.<br>
+                    <span class="hero-subtitle-accent" data-ui="hero-subtitle-accent">Welcome to the shiny world of Vibe Engineering.</span>
+                </p>
+                <div class="hero-ctas" data-ui="hero-ctas">
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary" data-ui="hero-cta-download">Download for macOS</a>
+                    <a href="pronunciation.html" class="btn-outline" data-ui="hero-cta-sock">The sock thing &rarr;</a>
+                </div>
+                <div class="hero-stats" data-ui="hero-stats">
+                    <div class="stat" data-ui="hero-stat-context">
+                        <span class="stat-number">~40%</span>
+                        <span class="stat-label">Context Saved</span>
+                    </div>
+                    <div class="stat" data-ui="hero-stat-agents">
+                        <span class="stat-number">1 UI</span>
+                        <span class="stat-label">All Agents</span>
+                    </div>
+                    <div class="stat" data-ui="hero-stat-mcp">
+                        <span class="stat-number">20</span>
+                        <span class="stat-label">MCP Tools</span>
+                    </div>
+                    <div class="stat" data-ui="hero-stat-price">
+                        <span class="stat-number">$0</span>
+                        <span class="stat-label">Open Source</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <hr class="ink-rule" data-ui="rule-hero">
+
+        <!-- The Problem — "These aren't the droids you're looking for." We changed it to terminals. Lawyers, relax. -->
+        <section class="problem-section" aria-labelledby="problem-heading" data-ui="problem">
+            <div class="section-inner">
+                <div class="section-header reveal">
+                    <h2 id="problem-heading" data-ui="problem-title">These aren't the <span class="gradient-text">features</span> you're looking for.</h2>
+                    <p data-ui="problem-subtitle">Most terminals see a process. Chau7 sees your AI, its session, its cost, and hands it the controls.</p>
+                </div>
+                <!-- The manuscript is dead. Long live the flying parchment. -->
+                <div class="carousel reveal" data-ui="problem-carousel">
+                    <div class="carousel-viewport">
+                        <div class="carousel-sheet active" data-ui="problem-sheet-01">
+                            <div class="sheet-screenshot">
+                                <img src="screenshots/02-tab-bar-ai-logos.png" alt="Tab bar showing branded AI agent logos with auto-renamed tabs" loading="lazy" width="1200" height="750">
+                            </div>
+                            <p class="sheet-value">"I know what all my AI do."</p>
+                            <p class="sheet-desc">Tabs auto-rename. AI agents get branded colors. At a glance, you see everything.</p>
+                        </div>
+                        <div class="carousel-sheet" data-ui="problem-sheet-02">
+                            <div class="sheet-screenshot">
+                                <img src="screenshots/06-claude-session-active.png" alt="Claude session with CTO active, showing token savings" loading="lazy" width="1200" height="750">
+                            </div>
+                            <p class="sheet-value">"My context is automatically optimized."</p>
+                            <p class="sheet-desc">Context Token Optimization trims what your AI doesn't need. ~40% savings, zero config.</p>
+                        </div>
+                        <div class="carousel-sheet" data-ui="problem-sheet-03">
+                            <div class="sheet-screenshot">
+                                <img src="screenshots/03-mcp-tab-demo.png" alt="MCP tools controlling terminal tabs" loading="lazy" width="1200" height="750">
+                            </div>
+                            <p class="sheet-value">"My AI controls my terminal."</p>
+                            <p class="sheet-desc">20 MCP tools over Unix socket. Your AI opens tabs, runs commands, reads output. No plugins.</p>
+                        </div>
+                        <div class="carousel-sheet" data-ui="problem-sheet-04">
+                            <div class="sheet-screenshot">
+                                <img src="screenshots/01-main-window-ai-tabs.png" alt="Main window with AI cost tracking per tab" loading="lazy" width="1200" height="750">
+                            </div>
+                            <p class="sheet-value">"I see what my AI costs."</p>
+                            <p class="sheet-desc">Tokens, latency, and dollars per session. Know what you're spending before your invoice does.</p>
+                        </div>
+                    </div>
+                    <div class="carousel-dots" data-ui="problem-dots">
+                        <button class="dot active" data-slide="0" aria-label="Slide 1"></button>
+                        <button class="dot" data-slide="1" aria-label="Slide 2"></button>
+                        <button class="dot" data-slide="2" aria-label="Slide 3"></button>
+                        <button class="dot" data-slide="3" aria-label="Slide 4"></button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <hr class="ink-rule" data-ui="rule-problem">
+
+        <!-- Three Pillars — like the Three Laws of Robotics, but useful -->
+        <section class="pillars-section" aria-labelledby="pillars-heading" data-ui="pillars">
+            <div class="section-inner">
+                <h2 id="pillars-heading" class="sr-only">What makes Chau7 different</h2>
+                <div class="pillars-grid stagger-children">
+                    <a href="mcp.html" class="pillar-card" data-ui="pillars-card-mcp">
+                        <div class="pillar-number">01</div>
+                        <h3>MCP-First Terminal</h3>
+                        <p>Your AI can see and control every tab. 20 tools over Unix socket. Auto-registers in Claude Code, Cursor, Windsurf, and Codex. Your AI didn't even have to ask.</p>
+                        <span class="pillar-link">Explore MCP tools &rarr;</span>
+                    </a>
+                    <a href="features.html#ai-analytics" class="pillar-card" data-ui="pillars-card-cost">
+                        <div class="pillar-number">02</div>
+                        <h3>AI Cost Visibility</h3>
+                        <p>Know what your AI spends before your invoice does. TLS/WSS proxy captures tokens, latency, and cost per call. Per-tab Context Token Optimization keeps things lean.</p>
+                        <span class="pillar-link">See AI features &rarr;</span>
+                    </a>
+                    <a href="performance.html" class="pillar-card" data-ui="pillars-card-speed">
+                        <div class="pillar-number">03</div>
+                        <h3>Rust + Metal Speed</h3>
+                        <p>IOKit to IOSurface in under 10ms. SIMD parsing, lock-free buffers, GPU rendering. We didn't need to go this fast. We just couldn't stop.</p>
+                        <span class="pillar-link">View the pipeline &rarr;</span>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Hero Screenshot — "I'm a leaf on the wind. Watch how I soar." — Wash, before things went badly -->
+        <section class="showcase-section" aria-label="Application screenshot" data-ui="showcase">
+            <div class="section-inner">
+                <div class="hero-screenshot reveal">
+                    <div class="screenshot-frame elevated">
+                        <img src="screenshots/07-six-tabs-overview.png" alt="Chau7 terminal with 6 AI tabs running simultaneously" loading="lazy" width="1200" height="750" data-ui="showcase-img">
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <hr class="ink-rule" data-ui="rule-showcase">
+
+        <!-- AI Detection — "I sense a disturbance in the Force." Except it's just Claude spinning up. -->
+        <section class="ai-preview-section" aria-labelledby="ai-preview-heading" data-ui="ai">
+            <div class="section-inner">
+                <div class="section-header">
+                    <div class="section-badge badge-alt" data-ui="ai-badge">AI Integration</div>
+                    <h2 id="ai-preview-heading" data-ui="ai-title">Knows your <span class="gradient-text-alt">AI tools</span> by name.</h2>
+                    <p data-ui="ai-subtitle">The moment an AI CLI launches, Chau7 recognizes it. Branded tabs, colors, monitoring. No config. No plugins. It just… knows.</p>
+                </div>
+                <div class="ai-agents stagger-children">
+                    <div class="agent-card" style="--agent-color: #cc7832" data-ui="ai-agent-claude">
+                        <div class="agent-dot"></div>
+                        <span class="agent-name">Claude Code</span>
+                        <span class="agent-status detected">Detected</span>
+                    </div>
+                    <div class="agent-card" style="--agent-color: #34d399" data-ui="ai-agent-codex">
+                        <div class="agent-dot"></div>
+                        <span class="agent-name">Codex</span>
+                        <span class="agent-status detected">Detected</span>
+                    </div>
+                    <div class="agent-card" style="--agent-color: #60a5fa" data-ui="ai-agent-gemini">
+                        <div class="agent-dot"></div>
+                        <span class="agent-name">Gemini CLI</span>
+                        <span class="agent-status">Available</span>
+                    </div>
+                    <div class="agent-card" style="--agent-color: #8b5cf6" data-ui="ai-agent-chatgpt">
+                        <div class="agent-dot"></div>
+                        <span class="agent-name">ChatGPT</span>
+                        <span class="agent-status">Available</span>
+                    </div>
+                    <div class="agent-card" style="--agent-color: #f87171" data-ui="ai-agent-copilot">
+                        <div class="agent-dot"></div>
+                        <span class="agent-name">Copilot</span>
+                        <span class="agent-status">Available</span>
+                    </div>
+                    <div class="agent-card" style="--agent-color: #a78bfa" data-ui="ai-agent-aider">
+                        <div class="agent-dot"></div>
+                        <span class="agent-name">Aider</span>
+                        <span class="agent-status">Available</span>
+                    </div>
+                    <div class="agent-card" style="--agent-color: #22d3ee" data-ui="ai-agent-cursor">
+                        <div class="agent-dot"></div>
+                        <span class="agent-name">Cursor</span>
+                        <span class="agent-status">Available</span>
+                    </div>
+                    <div class="agent-card custom" style="--agent-color: #fbbf24" data-ui="ai-agent-custom">
+                        <div class="agent-dot"></div>
+                        <span class="agent-name">+ Custom Rules</span>
+                        <span class="agent-status">Configurable</span>
+                    </div>
+                </div>
+                <p class="section-cta-text"><a href="features.html#ai-detection" data-ui="ai-link">See all AI detection features &rarr;</a></p>
+            </div>
+        </section>
+
+        <hr class="ink-rule" data-ui="rule-ai">
+
+        <!-- Under the Hood — "The status is not quo." — Dr. Horrible, who would've loved SIMD parsing -->
+        <section class="proof-section" aria-labelledby="proof-heading" data-ui="proof">
+            <div class="section-inner">
+                <div class="proof-content reveal">
+                    <h2 id="proof-heading" data-ui="proof-title">Not Electron. Not a wrapper. <span class="gradient-text">Not sorry.</span></h2>
+                    <p data-ui="proof-body">
+                        A native macOS app. Swift frontend, Rust backend, Metal GPU.
+                        701 tests because breaking things should be intentional.
+                        We bypassed the macOS compositor for display.
+                        We parse escape sequences with SIMD instructions.
+                        We run a lock-free ring buffer between the PTY reader and the parser.
+                        We did all of this for a terminal named after a sock.
+                        It's fine. We're fine.
+                    </p>
+                    <a href="features.html" class="btn-outline" data-ui="proof-link">Browse all 185 features &rarr;</a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer CTA — Et cette fois c'est pas un bar… mais ça ferait un super nom de bar. -->
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="cta">
+            <div class="section-inner">
+                <div class="footer-cta-content reveal">
+                    <h2 data-ui="cta-title">Put on the sock.<br>Your AI will thank you.</h2>
+                    <p style="color: var(--text-muted); margin-top: 0.5rem; margin-bottom: 1.5rem; font-size: 1.1rem;" data-ui="cta-aside">(Probably.)</p>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg" data-ui="cta-download">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer — "And now for something completely different." — except it's just a footer. Sorry. -->
+    <footer class="footer" data-ui="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col" data-ui="footer-brand">
+                    <div class="footer-brand">
+                        <img src="logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col" data-ui="footer-nav-product">
+                    <h4>Product</h4>
+                    <a href="features.html">Features</a>
+                    <a href="mcp.html">MCP Tools</a>
+                    <a href="performance.html">Performance</a>
+                    <a href="compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col" data-ui="footer-nav-resources">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom" data-ui="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+    <!-- You made it to the bottom of the source. You are now an honorary sock. 🧦 -->
+</body>
+</html>

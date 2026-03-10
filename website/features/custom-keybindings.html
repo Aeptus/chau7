@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Keybindings — Chau7 Terminal</title>
+    <meta name="description" content="Remap every keyboard shortcut in Chau7. Includes Vim keybinding presets and conflict detection for muscle memory from any terminal.">
+    <meta property="og:title" content="Custom Keybindings — Chau7">
+    <meta property="og:description" content="Remap every keyboard shortcut in Chau7. Includes Vim keybinding presets and conflict detection for muscle memory from any terminal.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="custom-keybindings.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Customization", "item": "../features.html#customization" },
+            { "@type": "ListItem", "position": 4, "name": "Custom Keybindings" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Can I use Vim-style navigation between panes?","acceptedAnswer":{"@type":"Answer","text":"Yes. Enable the Vim keybinding preset to navigate splits with hjkl and manage tabs with Vim-style chords. You can further customize individual bindings."}},{"@type":"Question","name":"Will my keybindings sync across machines?","acceptedAnswer":{"@type":"Answer","text":"Keybindings export as JSON. You can store the file in your dotfiles repository and import it on any machine running Chau7."}},{"@type":"Question","name":"Does Chau7 detect shortcut conflicts?","acceptedAnswer":{"@type":"Answer","text":"Yes. The keybinding editor warns you immediately when a new combination conflicts with an existing action and lets you resolve it inline."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#customization">Customization</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Custom Keybindings</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="customization">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">CUSTOMIZATION</div>
+                <h1 class="hero-title">Custom Keybindings</h1>
+                <p class="hero-subtitle">Your shortcuts, your way</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How to remap terminal keyboard shortcuts macOS</li>
+                    <li class="question-item">Vim keybindings in terminal emulator</li>
+                    <li class="question-item">Terminal shortcut conflicts with tmux keybindings</li>
+                    <li class="question-item">Custom key bindings terminal split pane navigation</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Every keyboard shortcut in Chau7 is fully remappable through the keybindings preferences panel. This includes tab management, split pane navigation, font sizing, copy/paste, search, and all application-level actions. The editor shows the current binding for each action and lets you record a new key combination by pressing it directly.</p>
+                <p>Vim keybinding presets configure navigation-oriented shortcuts out of the box. Pressing Escape enters a navigation mode where hjkl moves between splits, and common Vim-style chords work for tab switching and window management. The preset is a starting point that you can further customize per action.</p>
+                <p>Conflict detection warns you immediately when a new binding overlaps with an existing one, showing which action currently holds that combination. You can resolve conflicts inline without hunting through a flat list. Keybindings export and import as JSON for sharing across machines or teams.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Developers build deep muscle memory around keyboard shortcuts, and switching terminals should not mean relearning every key combination. Full remapping with conflict detection means you can replicate your existing workflow exactly, whether that comes from iTerm2, Kitty, Alacritty, or a custom tmux configuration.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="fonts.html">
+                        <h4>100+ Fonts</h4>
+                        <p>Bundled monospace fonts plus system font support. Variable font weight and size configuration.</p>
+                    </a>
+                    <a class="catalog-card" href="themes.html">
+                        <h4>Themes</h4>
+                        <p>Built-in themes with full 256-color and true color customization. Import iTerm2 color schemes.</p>
+                    </a>
+                    <a class="catalog-card" href="cursor-styles.html">
+                        <h4>Cursor Styles</h4>
+                        <p>Block, beam, and underline cursors with configurable blink rate and color.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Can I use Vim-style navigation between panes?</summary>
+                        <div class="faq-answer"><p>Yes. Enable the Vim keybinding preset to navigate splits with hjkl and manage tabs with Vim-style chords. You can further customize individual bindings.</p></div>
+                    </details>
+                    <details>
+                        <summary>Will my keybindings sync across machines?</summary>
+                        <div class="faq-answer"><p>Keybindings export as JSON. You can store the file in your dotfiles repository and import it on any machine running Chau7.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7 detect shortcut conflicts?</summary>
+                        <div class="faq-answer"><p>Yes. The keybinding editor warns you immediately when a new combination conflicts with an existing action and lets you resolve it inline.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 and set up your perfect keyboard shortcuts</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

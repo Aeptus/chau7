@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Context-Aware Switching — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 auto-switches terminal profiles, colors, and settings when you SSH into different hosts, giving instant visual context.">
+    <meta property="og:title" content="Context-Aware Switching — Chau7">
+    <meta property="og:description" content="Chau7 auto-switches terminal profiles, colors, and settings when you SSH into different hosts, giving instant visual context.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="context-aware-switching.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "SSH & Remote", "item": "../features.html#ssh" },
+            { "@type": "ListItem", "position": 4, "name": "Context-Aware Switching" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Does it work with SSH connections I start manually?","acceptedAnswer":{"@type":"Answer","text":"Yes. Context detection monitors the process tree, so it works whether you connect through the SSH connection manager, type ssh manually, or use a script that initiates the connection. Any SSH session to a recognized host triggers the profile switch."}},{"@type":"Question","name":"Can I set different rules for different hosts?","acceptedAnswer":{"@type":"Answer","text":"Absolutely. Rules can match exact hostnames, wildcard patterns (*.prod.example.com), or SSH config host aliases. Each rule maps to a specific profile, and you can have as many rules as you need."}},{"@type":"Question","name":"What happens when I disconnect from SSH?","acceptedAnswer":{"@type":"Answer","text":"The tab reverts to its previous profile within a second of the SSH session ending. If you have nested SSH sessions (jumped from one server to another), the profile follows the innermost active connection."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#ssh">SSH & Remote</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Context-Aware Switching</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="ssh">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">SSH & REMOTE</div>
+                <h1 class="hero-title">Context-Aware Switching</h1>
+                <p class="hero-subtitle">Your terminal knows where you are. Colors and settings change when you SSH into a different host.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Can a terminal automatically change color when I SSH into production?</li>
+                    <li class="question-item">How do I visually distinguish terminal sessions on different servers?</li>
+                    <li class="question-item">Is there a terminal that detects SSH connections and switches profiles?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 monitors the process tree and terminal output of each tab to detect SSH connections. When a connection is established to a known host, the tab automatically switches to the profile associated with that host — changing the color scheme, font size, background opacity, and any other profile-specific settings. When the SSH session ends, the tab reverts to its original profile.</p>
+                <p>Context rules are configurable by hostname, hostname pattern, or SSH profile. Set all production servers to a red-tinted background, staging to yellow, and development to the default theme. The visual switch is instant and unmistakable, providing a constant reminder of which environment you are operating in.</p>
+                <p>Beyond visual changes, context switching can trigger other profile settings — different shell integrations, environment variables, or keybinding overrides. This means your production connections can disable dangerous-command shortcuts or enable additional confirmation steps automatically.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Running a destructive command on the wrong server is one of the most expensive mistakes in operations. Visual context — a red background for production, a yellow tint for staging — provides an instant, subconscious signal about which environment you are in. Context-aware switching applies these signals automatically, so you never forget to set them manually.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="ssh-connection-manager.html">
+                        <h4>SSH Connection Manager</h4>
+                        <p>Visual SSH profile manager with host, port, identity file, and jump host configuration.</p>
+                    </a>
+                    <a class="catalog-card" href="auto-import-ssh-config.html">
+                        <h4>Auto-Import SSH Config</h4>
+                        <p>Imports hosts from ~/.ssh/config automatically. Stays in sync with config file changes.</p>
+                    </a>
+                    <a class="catalog-card" href="jump-host-support.html">
+                        <h4>Jump Host Support</h4>
+                        <p>Multi-hop SSH connections through bastion/jump hosts with ProxyJump support.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Does it work with SSH connections I start manually?</summary>
+                        <div class="faq-answer"><p>Yes. Context detection monitors the process tree, so it works whether you connect through the SSH connection manager, type ssh manually, or use a script that initiates the connection. Any SSH session to a recognized host triggers the profile switch.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I set different rules for different hosts?</summary>
+                        <div class="faq-answer"><p>Absolutely. Rules can match exact hostnames, wildcard patterns (*.prod.example.com), or SSH config host aliases. Each rule maps to a specific profile, and you can have as many rules as you need.</p></div>
+                    </details>
+                    <details>
+                        <summary>What happens when I disconnect from SSH?</summary>
+                        <div class="faq-answer"><p>The tab reverts to its previous profile within a second of the SSH session ending. If you have nested SSH sessions (jumped from one server to another), the profile follows the innermost active connection.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Never mistake prod for staging — try Chau7</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Session Tracking — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 groups AI agent interactions into trackable sessions. View run counts, duration, and activity history for every AI session across your terminal tabs.">
+    <meta property="og:title" content="AI Session Tracking — Chau7">
+    <meta property="og:description" content="Chau7 groups AI agent interactions into trackable sessions. View run counts, duration, and activity history for every AI session across your terminal tabs.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="ai-session-tracking.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "AI Integration", "item": "../features.html#ai-integration" },
+            { "@type": "ListItem", "position": 4, "name": "AI Session Tracking" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"How do I view past sessions?","acceptedAnswer":{"@type":"Answer","text":"Use the MCP server&#x27;s session_list endpoint to list sessions with optional filters for repository path and active status. Each session includes its run count, start time, and associated tab information."}},{"@type":"Question","name":"Can I tag or annotate sessions?","acceptedAnswer":{"@type":"Answer","text":"You can tag individual runs within a session using the MCP server&#x27;s run_tag endpoint. Tags propagate to session-level queries, making it easy to categorize and search your session history."}},{"@type":"Question","name":"Are sessions preserved after restarting Chau7?","acceptedAnswer":{"@type":"Answer","text":"Yes. Session and run data are persisted to disk and survive application restarts. Your full session history is retained for future queries."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#ai-integration">AI Integration</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">AI Session Tracking</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="ai-integration">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge badge-alt">AI INTEGRATION</div>
+                <h1 class="hero-title">AI Session Tracking</h1>
+                <p class="hero-subtitle">Every AI session, tracked from start to finish.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How to track AI coding sessions in my terminal?</li>
+                    <li class="question-item">How long did my Claude Code session last?</li>
+                    <li class="question-item">Session history for AI coding agent interactions</li>
+                    <li class="question-item">Track AI agent runs and session duration in terminal</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 automatically groups AI agent activity into sessions. A session begins when an AI agent is detected in a tab and encompasses all runs, tool calls, and API interactions that occur until the agent exits. Each session is assigned a unique ID and tracks its start time, duration, run count, and associated tab.</p>
+                <p>Sessions are queryable through the MCP server. You can list all sessions, filter by repository path or active status, and drill into individual sessions to see their constituent runs and tool calls. This gives you a structured history of your AI-assisted development activity.</p>
+                <p>The session model is designed for multi-agent workflows. Each tab maintains its own session independently, so running Claude Code in three tabs produces three distinct, non-overlapping sessions with their own metrics.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Without session tracking, AI agent usage is ephemeral. You finish a coding session and have no record of how many runs it took, how long it lasted, or what tools were invoked. Session tracking gives you that history, making it possible to review productivity patterns, audit agent activity, and understand how your AI tools are being used over time.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="context-token-optimization.html">
+                        <h4>Context Token Optimization <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Monitor and optimize LLM API token usage in real-time, per tab or globally.</p>
+                    </a>
+                    <a class="catalog-card" href="llm-error-explanation.html">
+                        <h4>LLM Error Explanation</h4>
+                        <p>One-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoints.</p>
+                    </a>
+                    <a class="catalog-card" href="cto-per-tab-override.html">
+                        <h4>CTO Per-Tab Override</h4>
+                        <p>Enable or disable Context Token Optimization on individual tabs independent of global setting.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>How do I view past sessions?</summary>
+                        <div class="faq-answer"><p>Use the MCP server's session_list endpoint to list sessions with optional filters for repository path and active status. Each session includes its run count, start time, and associated tab information.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I tag or annotate sessions?</summary>
+                        <div class="faq-answer"><p>You can tag individual runs within a session using the MCP server's run_tag endpoint. Tags propagate to session-level queries, making it easy to categorize and search your session history.</p></div>
+                    </details>
+                    <details>
+                        <summary>Are sessions preserved after restarting Chau7?</summary>
+                        <div class="faq-answer"><p>Yes. Session and run data are persisted to disk and survive application restarts. Your full session history is retained for future queries.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 and track every AI session from first prompt to last.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

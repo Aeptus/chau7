@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detection Status Indicator — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 shows a real-time status indicator on each tab revealing whether the AI agent inside is actively running, idle, or has completed its task.">
+    <meta property="og:title" content="Detection Status Indicator — Chau7">
+    <meta property="og:description" content="Chau7 shows a real-time status indicator on each tab revealing whether the AI agent inside is actively running, idle, or has completed its task.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="detection-status-indicator.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "AI Detection", "item": "../features.html#ai-detection" },
+            { "@type": "ListItem", "position": 4, "name": "Detection Status Indicator" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"What states does the indicator show?","acceptedAnswer":{"@type":"Answer","text":"Three states: active (the agent process is running), idle (the process is alive but waiting), and completed (the process has exited). Each state has a distinct visual treatment."}},{"@type":"Question","name":"Does the indicator work with background AI processes?","acceptedAnswer":{"@type":"Answer","text":"Yes. As long as the AI process is a descendant of the tab&#x27;s shell process, the indicator tracks it regardless of whether it is in the foreground or background."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#ai-detection">AI Detection</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Detection Status Indicator</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="ai-detection">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge badge-alt">AI DETECTION</div>
+                <h1 class="hero-title">Detection Status Indicator</h1>
+                <p class="hero-subtitle">Active, idle, or done — see it on the tab.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How do I know when Claude Code is done in my terminal?</li>
+                    <li class="question-item">Is there a visual indicator for AI agent status in terminal?</li>
+                    <li class="question-item">Terminal tab status for running AI sessions</li>
+                    <li class="question-item">How to see if my AI coding agent is still working?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Each tab with a detected AI agent displays a small status badge that reflects the agent's current state. An active indicator appears while the agent process is running and consuming CPU. When the agent is waiting for input or idle, the indicator shifts to a resting state. Once the agent process exits, the indicator marks the session as completed.</p>
+                <p>The status is derived from process state monitoring rather than output parsing, so it works reliably across all agents regardless of their output format or verbosity settings.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>AI agents can run for minutes or hours on complex tasks. Checking whether an agent is still working means switching to its tab and scrolling through output. The detection status indicator lets you monitor progress from the tab bar without interrupting your current workflow.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="auto-ai-cli-detection.html">
+                        <h4>Auto AI CLI Detection <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Detects Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they launch in any tab.</p>
+                    </a>
+                    <a class="catalog-card" href="ai-tab-branding.html">
+                        <h4>AI Tab Branding <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Tabs automatically adopt the brand color and logo of the active AI agent.</p>
+                    </a>
+                    <a class="catalog-card" href="ai-process-monitoring.html">
+                        <h4>AI Process Monitoring <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Track CPU, memory, and PID of AI agent processes per tab.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>What states does the indicator show?</summary>
+                        <div class="faq-answer"><p>Three states: active (the agent process is running), idle (the process is alive but waiting), and completed (the process has exited). Each state has a distinct visual treatment.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does the indicator work with background AI processes?</summary>
+                        <div class="faq-answer"><p>Yes. As long as the AI process is a descendant of the tab's shell process, the indicator tracks it regardless of whether it is in the foreground or background.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 and always know the status of every AI agent at a glance.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

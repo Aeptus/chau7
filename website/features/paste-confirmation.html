@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paste Confirmation — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 shows a confirmation dialog before pasting multi-line content into the terminal, preventing accidental command execution from clipboard.">
+    <meta property="og:title" content="Paste Confirmation — Chau7">
+    <meta property="og:description" content="Chau7 shows a confirmation dialog before pasting multi-line content into the terminal, preventing accidental command execution from clipboard.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="paste-confirmation.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Clipboard", "item": "../features.html#clipboard" },
+            { "@type": "ListItem", "position": 4, "name": "Paste Confirmation" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Can I disable paste confirmation for single-line pastes?","acceptedAnswer":{"@type":"Answer","text":"Yes. By default, only multi-line pastes trigger confirmation. You can also configure a character-count threshold so that very long single-line pastes (like base64 blobs) are also checked."}},{"@type":"Question","name":"Does this replace bracketed paste mode?","acceptedAnswer":{"@type":"Answer","text":"It complements it. Chau7 still sends bracketed paste sequences for applications that support them, but the confirmation dialog provides a second layer of protection that works even when the application ignores or mishandles bracketed paste."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#clipboard">Clipboard</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Paste Confirmation</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="clipboard">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">CLIPBOARD</div>
+                <h1 class="hero-title">Paste Confirmation</h1>
+                <p class="hero-subtitle">See what you are pasting before it executes. Multi-line paste gets a safety check.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How do I prevent pasting multi-line commands that execute immediately?</li>
+                    <li class="question-item">What is bracketed paste mode and why does it not always work?</li>
+                    <li class="question-item">Is there a terminal that warns before pasting dangerous clipboard content?</li>
+                    <li class="question-item">How to stop accidental command execution from pasted text?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>When you paste text containing newline characters into a Chau7 terminal, a confirmation dialog appears showing the full content with syntax highlighting. Each line is displayed with a line number so you can review exactly what will be sent to the shell. You can edit the content inline, strip trailing newlines, or cancel the paste entirely.</p>
+                <p>This works independently of bracketed paste mode, which relies on the running application to handle paste sequences correctly — and many programs do not. Chau7's confirmation operates at the terminal emulator level, before bytes reach the shell, providing consistent protection regardless of what is running in the session.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Pasting from the clipboard is one of the most dangerous terminal actions. A single newline in copied text can execute commands immediately, and bracketed paste mode — the supposed safety mechanism — is inconsistently supported across shells and programs. Chau7 adds a reliable, visual confirmation step that catches the problem before it reaches the shell, not after.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="clipboard-history.html">
+                        <h4>Clipboard History</h4>
+                        <p>Searchable clipboard history with pinning. Persists across sessions.</p>
+                    </a>
+                    <a class="catalog-card" href="snippets.html">
+                        <h4>Snippets</h4>
+                        <p>Reusable code snippets with placeholder variables. Insert via command palette or keyboard shortcut.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Can I disable paste confirmation for single-line pastes?</summary>
+                        <div class="faq-answer"><p>Yes. By default, only multi-line pastes trigger confirmation. You can also configure a character-count threshold so that very long single-line pastes (like base64 blobs) are also checked.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does this replace bracketed paste mode?</summary>
+                        <div class="faq-answer"><p>It complements it. Chau7 still sends bracketed paste sequences for applications that support them, but the confirmation dialog provides a second layer of protection that works even when the application ignores or mishandles bracketed paste.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Paste safely — try Chau7</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

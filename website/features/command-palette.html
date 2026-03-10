@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Command Palette — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 brings the VS Code-style command palette to the terminal with Cmd+Shift+P, making every feature discoverable via fuzzy search.">
+    <meta property="og:title" content="Command Palette — Chau7">
+    <meta property="og:description" content="Chau7 brings the VS Code-style command palette to the terminal with Cmd+Shift+P, making every feature discoverable via fuzzy search.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="command-palette.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Search", "item": "../features.html#search" },
+            { "@type": "ListItem", "position": 4, "name": "Command Palette" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Can I assign custom keyboard shortcuts through the palette?","acceptedAnswer":{"@type":"Answer","text":"Yes. Right-click any command in the palette to assign or change its keyboard shortcut. The new binding takes effect immediately and persists across sessions."}},{"@type":"Question","name":"Does it search settings as well as commands?","acceptedAnswer":{"@type":"Answer","text":"Yes. The palette searches across commands, settings, SSH profiles, snippets, and recently used actions. Prefix your query with a category name to narrow results — for example, type &#x27;ssh&#x27; to see only SSH-related actions."}},{"@type":"Question","name":"Is the palette customizable?","acceptedAnswer":{"@type":"Answer","text":"You can pin frequently used commands so they appear at the top, hide commands you never use, and create command aliases for faster access. The palette adapts to your workflow over time through frecency ranking."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#search">Search</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Command Palette</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="search">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">SEARCH</div>
+                <h1 class="hero-title">Command Palette</h1>
+                <p class="hero-subtitle">Cmd+Shift+P opens every feature. No menus to memorize, no shortcuts to forget.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Is there a terminal with a command palette like VS Code?</li>
+                    <li class="question-item">How do I find terminal features without memorizing keyboard shortcuts?</li>
+                    <li class="question-item">Terminal command palette for macOS — does one exist?</li>
+                    <li class="question-item">Can I fuzzy-search terminal actions and settings?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Press Cmd+Shift+P to open the command palette. Start typing to fuzzy-search across every action Chau7 offers — splitting tabs, changing themes, connecting to SSH hosts, opening snippets, toggling settings, and more. Results rank by relevance and recency, so your most-used actions float to the top over time.</p>
+                <p>Each command in the palette shows its keyboard shortcut (if one exists), a brief description, and its category. This makes the palette a learning tool — use it to discover features you did not know existed and learn their shortcuts organically.</p>
+                <p>The palette is extensible. Custom commands from snippets, SSH profiles, and MCP tools all appear in the palette alongside built-in actions. If you can do it in Chau7, you can find it in the palette.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Terminal emulators accumulate features over time, but discoverability stalls at the menu bar. Most users never find half the features their terminal offers because there is no way to search for them. The command palette makes every action instantly accessible through a single shortcut, turning feature-rich into feature-usable.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="terminal-search.html">
+                        <h4>Terminal Search</h4>
+                        <p>Search within terminal output with regex support, case sensitivity, and match navigation.</p>
+                    </a>
+                    <a class="catalog-card" href="command-history-search.html">
+                        <h4>Command History Search</h4>
+                        <p>Fuzzy search through command history with frecency ranking.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Can I assign custom keyboard shortcuts through the palette?</summary>
+                        <div class="faq-answer"><p>Yes. Right-click any command in the palette to assign or change its keyboard shortcut. The new binding takes effect immediately and persists across sessions.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does it search settings as well as commands?</summary>
+                        <div class="faq-answer"><p>Yes. The palette searches across commands, settings, SSH profiles, snippets, and recently used actions. Prefix your query with a category name to narrow results — for example, type 'ssh' to see only SSH-related actions.</p></div>
+                    </details>
+                    <details>
+                        <summary>Is the palette customizable?</summary>
+                        <div class="faq-answer"><p>You can pin frequently used commands so they appear at the top, hide commands you never use, and create command aliases for faster access. The palette adapts to your workflow over time through frecency ranking.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Find any feature instantly — download Chau7</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

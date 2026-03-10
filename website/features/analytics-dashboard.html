@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics Dashboard — Chau7 Terminal</title>
+    <meta name="description" content="Chau7's Analytics Dashboard visualizes LLM token usage, API costs, and latency trends across all your AI agent sessions. Understand your AI spending at a glance.">
+    <meta property="og:title" content="Analytics Dashboard — Chau7">
+    <meta property="og:description" content="Chau7's Analytics Dashboard visualizes LLM token usage, API costs, and latency trends across all your AI agent sessions. Understand your AI spending at a glance.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="analytics-dashboard.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "API Analytics", "item": "../features.html#api-analytics" },
+            { "@type": "ListItem", "position": 4, "name": "Analytics Dashboard" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Can I export dashboard data?","acceptedAnswer":{"@type":"Answer","text":"The underlying data is accessible through the MCP server API, so you can query and export it in JSON format for use in spreadsheets, external dashboards, or cost management tools."}},{"@type":"Question","name":"Does the dashboard update in real time?","acceptedAnswer":{"@type":"Answer","text":"The dashboard reflects data from completed API calls. New data points appear as calls complete, so the view is near real-time during active sessions."}},{"@type":"Question","name":"Can I share the dashboard with my team?","acceptedAnswer":{"@type":"Answer","text":"The MCP server endpoints that power the dashboard can be queried by any tool or script with access. Sharing the data with teammates or feeding it into a shared monitoring system is straightforward."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#api-analytics">API Analytics</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Analytics Dashboard</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="api-analytics">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge badge-blue">API ANALYTICS</div>
+                <h1 class="hero-title">Analytics Dashboard</h1>
+                <p class="hero-subtitle">Your AI spending, visualized.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">LLM API cost monitor dashboard</li>
+                    <li class="question-item">Visual dashboard for AI agent token usage</li>
+                    <li class="question-item">How to view AI coding costs over time?</li>
+                    <li class="question-item">Analytics for terminal AI agent API usage</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>The Analytics Dashboard aggregates data from token counting, cost tracking, and latency tracking into a visual interface. It presents charts and summaries showing token usage trends, cost breakdowns by provider and model, and latency distributions over time. Data can be filtered by date range, provider, model, agent type, or repository.</p>
+                <p>The dashboard is accessible through the MCP server, which exposes the underlying data as queryable endpoints. This means you can build custom visualizations or integrate the data into existing monitoring tools if the built-in dashboard does not cover your use case.</p>
+                <p>Key metrics are highlighted at a glance: total spend over a period, most expensive sessions, token usage growth trends, and latency percentiles. The goal is to answer the question of where your AI budget goes without requiring you to dig through individual calls.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Individual per-call metrics are valuable for debugging, but understanding AI spending patterns requires an aggregate view. The Analytics Dashboard surfaces trends that are invisible at the individual call level: steadily growing context sizes, cost spikes tied to specific projects, or latency degradation that correlates with provider outages.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="tls-wss-proxy.html">
+                        <h4>TLS/WSS Proxy <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Transparent proxy captures API calls to OpenAI, Anthropic, and other LLM providers for analysis.</p>
+                    </a>
+                    <a class="catalog-card" href="token-counting.html">
+                        <h4>Token Counting</h4>
+                        <p>Track input and output tokens per API call with provider-specific tokenization.</p>
+                    </a>
+                    <a class="catalog-card" href="cost-tracking.html">
+                        <h4>Cost Tracking <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Calculate cost per API call based on provider pricing. View per-session and cumulative costs.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Can I export dashboard data?</summary>
+                        <div class="faq-answer"><p>The underlying data is accessible through the MCP server API, so you can query and export it in JSON format for use in spreadsheets, external dashboards, or cost management tools.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does the dashboard update in real time?</summary>
+                        <div class="faq-answer"><p>The dashboard reflects data from completed API calls. New data points appear as calls complete, so the view is near real-time during active sessions.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I share the dashboard with my team?</summary>
+                        <div class="faq-answer"><p>The MCP server endpoints that power the dashboard can be queried by any tool or script with access. Sharing the data with teammates or feeding it into a shared monitoring system is straightforward.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 and visualize your AI spending with the Analytics Dashboard.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

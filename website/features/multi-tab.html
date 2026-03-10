@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Tab — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 supports unlimited terminal tabs with drag-to-reorder, pinning, and customizable titles in a native macOS tab bar.">
+    <meta property="og:title" content="Multi-Tab — Chau7">
+    <meta property="og:description" content="Chau7 supports unlimited terminal tabs with drag-to-reorder, pinning, and customizable titles in a native macOS tab bar.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="multi-tab.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Tab Management", "item": "../features.html#tabs" },
+            { "@type": "ListItem", "position": 4, "name": "Multi-Tab" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Is there a limit to the number of tabs I can open?","acceptedAnswer":{"@type":"Answer","text":"There is no hard limit on user-created tabs. Each tab consumes memory for its scrollback buffer and shell process, so practical limits depend on your system resources. Inactive tabs are suspended to minimize resource usage."}},{"@type":"Question","name":"Can I set a default title for new tabs?","acceptedAnswer":{"@type":"Answer","text":"New tabs automatically show the running process name or working directory. You can override any tab&#x27;s title by right-clicking it or using the tab settings, and that custom title persists across tab switches."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#tabs">Tab Management</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Multi-Tab</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="tabs">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">TAB MANAGEMENT</div>
+                <h1 class="hero-title">Multi-Tab</h1>
+                <p class="hero-subtitle">Open as many tabs as you need with full drag-to-reorder, pinning, and custom titles.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">What terminal emulator has the best tab management?</li>
+                    <li class="question-item">How do I pin terminal tabs so they stay in place?</li>
+                    <li class="question-item">Can I rename terminal tabs to organize my workflow?</li>
+                    <li class="question-item">Which macOS terminal supports unlimited tabs with reordering?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7's tab bar is a custom SwiftUI implementation built on the <code>OverlayTabsModel</code> that manages tab lifecycle, ordering, and state. You can open unlimited tabs, each running its own independent shell session. Tabs can be reordered by dragging, pinned to prevent accidental closure, and given custom titles that override the auto-detected process name or working directory.</p>
+                <p>Each tab maintains its own terminal state, scrollback buffer, and process tree. Switching tabs is instant because the terminal state is kept in memory — there is no re-rendering or reconnection delay. The tab bar itself uses snap-based drag positioning for precise placement without animation drift.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Developers routinely work across multiple directories, servers, and tasks simultaneously. A terminal that makes tab management clunky or limited forces you into workarounds like tmux panes or multiple windows. Chau7's tab system is designed for the way developers actually work — many concurrent sessions, frequently reordered, each with a clear identity.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="split-panes.html">
+                        <h4>Split Panes</h4>
+                        <p>Horizontal and vertical splits within any tab. Resize with drag handles or keyboard shortcuts.</p>
+                    </a>
+                    <a class="catalog-card" href="tab-drag-drop.html">
+                        <h4>Tab Drag &amp; Drop</h4>
+                        <p>Drag tabs between windows or within the tab bar. Snap positioning with smooth animations.</p>
+                    </a>
+                    <a class="catalog-card" href="tab-profiles.html">
+                        <h4>Tab Profiles</h4>
+                        <p>Per-tab shell, working directory, and environment variable configuration.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Is there a limit to the number of tabs I can open?</summary>
+                        <div class="faq-answer"><p>There is no hard limit on user-created tabs. Each tab consumes memory for its scrollback buffer and shell process, so practical limits depend on your system resources. Inactive tabs are suspended to minimize resource usage.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I set a default title for new tabs?</summary>
+                        <div class="faq-answer"><p>New tabs automatically show the running process name or working directory. You can override any tab's title by right-clicking it or using the tab settings, and that custom title persists across tab switches.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Organize your terminal workflow — try Chau7's multi-tab</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

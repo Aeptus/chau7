@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Split Panes — Chau7 Terminal</title>
+    <meta name="description" content="Split any Chau7 tab into horizontal or vertical panes with resizable drag handles and keyboard shortcuts.">
+    <meta property="og:title" content="Split Panes — Chau7">
+    <meta property="og:description" content="Split any Chau7 tab into horizontal or vertical panes with resizable drag handles and keyboard shortcuts.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="split-panes.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Tab Management", "item": "../features.html#tabs" },
+            { "@type": "ListItem", "position": 4, "name": "Split Panes" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Can I split panes more than once in the same tab?","acceptedAnswer":{"@type":"Answer","text":"Yes. Splits can be nested to arbitrary depth. You can create complex multi-pane layouts within a single tab, similar to what tmux or iTerm2 offer but with native rendering performance."}},{"@type":"Question","name":"Do split panes share the same shell session?","acceptedAnswer":{"@type":"Answer","text":"No. Each pane runs an independent shell session. They can be in different directories, running different commands, with separate scrollback buffers and environment variables."}},{"@type":"Question","name":"How do I close a split pane?","acceptedAnswer":{"@type":"Answer","text":"Close a pane by exiting its shell (type exit or Ctrl+D) or using the keyboard shortcut for closing the active pane. The remaining panes automatically resize to fill the space."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#tabs">Tab Management</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Split Panes</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="tabs">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">TAB MANAGEMENT</div>
+                <h1 class="hero-title">Split Panes</h1>
+                <p class="hero-subtitle">Split any tab horizontally or vertically to see multiple terminals side by side.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How do I split a terminal tab into multiple panes?</li>
+                    <li class="question-item">Which terminal emulator supports split panes like tmux?</li>
+                    <li class="question-item">Can I have side-by-side terminals without using tmux?</li>
+                    <li class="question-item">How to split terminal horizontally and vertically on macOS?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Any tab in Chau7 can be split horizontally or vertically, creating independent terminal panes within the same tab. Each pane runs its own shell session with its own working directory, scrollback buffer, and process. Splits can be nested — split a pane vertically, then split one of the resulting panes horizontally — to create complex layouts without leaving the tab.</p>
+                <p>Pane borders double as drag handles for resizing. Grab the divider between two panes and drag to redistribute space. Keyboard shortcuts let you create splits, navigate between panes, and resize without touching the mouse. The focused pane is indicated visually so you always know where your keystrokes will land.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Split panes eliminate the need for tmux in the most common use case: watching a build in one pane while editing in another, or tailing logs alongside a running server. Unlike tmux, Chau7's splits are native — they support full GPU-accelerated rendering, mouse events, and the same rich terminal features as any other tab.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="multi-tab.html">
+                        <h4>Multi-Tab</h4>
+                        <p>Unlimited tabs with drag-to-reorder, tab pinning, and tab-specific titles.</p>
+                    </a>
+                    <a class="catalog-card" href="tab-drag-drop.html">
+                        <h4>Tab Drag &amp; Drop</h4>
+                        <p>Drag tabs between windows or within the tab bar. Snap positioning with smooth animations.</p>
+                    </a>
+                    <a class="catalog-card" href="tab-profiles.html">
+                        <h4>Tab Profiles</h4>
+                        <p>Per-tab shell, working directory, and environment variable configuration.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Can I split panes more than once in the same tab?</summary>
+                        <div class="faq-answer"><p>Yes. Splits can be nested to arbitrary depth. You can create complex multi-pane layouts within a single tab, similar to what tmux or iTerm2 offer but with native rendering performance.</p></div>
+                    </details>
+                    <details>
+                        <summary>Do split panes share the same shell session?</summary>
+                        <div class="faq-answer"><p>No. Each pane runs an independent shell session. They can be in different directories, running different commands, with separate scrollback buffers and environment variables.</p></div>
+                    </details>
+                    <details>
+                        <summary>How do I close a split pane?</summary>
+                        <div class="faq-answer"><p>Close a pane by exiting its shell (type exit or Ctrl+D) or using the keyboard shortcut for closing the active pane. The remaining panes automatically resize to fill the space.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Native split panes without tmux — try Chau7</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

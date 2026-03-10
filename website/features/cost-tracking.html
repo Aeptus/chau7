@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cost Tracking — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 calculates the dollar cost of every LLM API call based on current provider pricing. View costs per call, per session, or cumulatively to control AI spending.">
+    <meta property="og:title" content="Cost Tracking — Chau7">
+    <meta property="og:description" content="Chau7 calculates the dollar cost of every LLM API call based on current provider pricing. View costs per call, per session, or cumulatively to control AI spending.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="cost-tracking.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "API Analytics", "item": "../features.html#api-analytics" },
+            { "@type": "ListItem", "position": 4, "name": "Cost Tracking" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"How does Chau7 know the pricing for each model?","acceptedAnswer":{"@type":"Answer","text":"Chau7 ships with a built-in pricing table for major providers and models, including different rates for input and output tokens. The table is updated with each release to reflect current pricing."}},{"@type":"Question","name":"Can I set a cost alert or budget limit?","acceptedAnswer":{"@type":"Answer","text":"Budget alerts and spending limits are planned for a future release. Currently, you can monitor costs in real time and review cumulative spending through the MCP server and Analytics Dashboard."}},{"@type":"Question","name":"Does cost tracking work with self-hosted or custom models?","acceptedAnswer":{"@type":"Answer","text":"If the API response includes model name and token counts, Chau7 can calculate costs as long as the model&#x27;s pricing is configured. You can add custom model pricing through the settings."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#api-analytics">API Analytics</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Cost Tracking</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="api-analytics">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge badge-blue">API ANALYTICS</div>
+                <h1 class="hero-title">Cost Tracking</h1>
+                <p class="hero-subtitle">Know the dollar cost of every AI interaction.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How much does Claude Code cost per session?</li>
+                    <li class="question-item">LLM API cost monitor dashboard for terminal</li>
+                    <li class="question-item">Track AI coding agent spending in real time</li>
+                    <li class="question-item">How to see dollar cost of AI agent API calls?</li>
+                    <li class="question-item">Why is my AI coding bill so high?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Cost Tracking takes the token counts from each API call and multiplies them by the per-token pricing for the model used. It maintains an up-to-date pricing table for major providers and models, distinguishing between input and output token rates. The result is a dollar cost for every single API call your AI agent makes.</p>
+                <p>Costs roll up at multiple levels. You can see the cost of an individual API call, the total cost of a run (a single agent invocation), the cumulative cost of a session (all runs in a tab), or the global cost across all tabs and sessions. This hierarchical view lets you find expensive operations at any granularity.</p>
+                <p>For teams and heavy users, cost trends over time reveal whether spending is stable, growing, or spiking. Combined with the Analytics Dashboard, you get a clear picture of where your AI budget goes.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Developers report AI coding costs exceeding five thousand dollars per month with no breakdown of where the money goes. A single long-running Claude Code session can make hundreds of API calls, each with different token counts and model pricing. Cost Tracking turns that opaque bill into an itemized receipt so you can control spending.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="tls-wss-proxy.html">
+                        <h4>TLS/WSS Proxy <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Transparent proxy captures API calls to OpenAI, Anthropic, and other LLM providers for analysis.</p>
+                    </a>
+                    <a class="catalog-card" href="token-counting.html">
+                        <h4>Token Counting</h4>
+                        <p>Track input and output tokens per API call with provider-specific tokenization.</p>
+                    </a>
+                    <a class="catalog-card" href="latency-tracking.html">
+                        <h4>Latency Tracking</h4>
+                        <p>Measure time-to-first-token and total request duration for every API call.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>How does Chau7 know the pricing for each model?</summary>
+                        <div class="faq-answer"><p>Chau7 ships with a built-in pricing table for major providers and models, including different rates for input and output tokens. The table is updated with each release to reflect current pricing.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I set a cost alert or budget limit?</summary>
+                        <div class="faq-answer"><p>Budget alerts and spending limits are planned for a future release. Currently, you can monitor costs in real time and review cumulative spending through the MCP server and Analytics Dashboard.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does cost tracking work with self-hosted or custom models?</summary>
+                        <div class="faq-answer"><p>If the API response includes model name and token counts, Chau7 can calculate costs as long as the model's pricing is configured. You can add custom model pricing through the settings.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 and see exactly how much your AI agents cost.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

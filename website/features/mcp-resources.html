@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Resources — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 exposes 4 MCP resource endpoints for read-only access to tabs, sessions, runs, and server configuration.">
+    <meta property="og:title" content="MCP Resources — Chau7">
+    <meta property="og:description" content="Chau7 exposes 4 MCP resource endpoints for read-only access to tabs, sessions, runs, and server configuration.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="mcp-resources.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "MCP Server", "item": "../features.html#mcp" },
+            { "@type": "ListItem", "position": 4, "name": "MCP Resources" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Are resources faster than the equivalent tool calls?","acceptedAnswer":{"@type":"Answer","text":"Resources and tools have similar performance since both use the same Unix socket transport. The distinction is semantic: resources guarantee no side effects, which matters for agent planning and safety frameworks."}},{"@type":"Question","name":"Can I add custom resources?","acceptedAnswer":{"@type":"Answer","text":"The four built-in resources cover the primary use cases. Custom resource support is not currently available, but the tool endpoints provide equivalent data access for cases the resources do not cover."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#mcp">MCP Server</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">MCP Resources</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="mcp">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge badge-alt">MCP SERVER</div>
+                <h1 class="hero-title">MCP Resources</h1>
+                <p class="hero-subtitle">Read-only resource endpoints let agents query terminal state without executing any commands.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">What MCP resources does Chau7 expose?</li>
+                    <li class="question-item">How can AI agents read terminal state without running commands?</li>
+                    <li class="question-item">What is the difference between MCP tools and MCP resources?</li>
+                    <li class="question-item">Can AI agents list open tabs without side effects?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>MCP distinguishes between tools (actions that change state) and resources (read-only data endpoints). Chau7 exposes four resources: <code>tab://list</code> returns all open tabs with their status and metadata, <code>session://list</code> returns active AI sessions with run counts, <code>run://latest</code> returns the most recent telemetry run for a repository, and <code>config://mcp</code> returns the current MCP server configuration.</p>
+                <p>Resources are useful for agents that need to understand context before acting. An agent can read <code>tab://list</code> to see what tabs exist, check <code>session://list</code> to understand concurrent activity, and inspect <code>run://latest</code> to review what happened in the last interaction — all without any side effects or state changes.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Agents frequently need to inspect terminal state as part of planning — checking which tabs are open, what sessions are active, or what the last run produced. Resources provide this information through a clean, read-only interface that cannot accidentally modify anything, making them safe to call at any point in an agent's decision process.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="mcp-tools.html">
+                        <h4>20 MCP Tools <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Full terminal control via Model Context Protocol: tab lifecycle, command execution, output capture, telemetry.</p>
+                    </a>
+                    <a class="catalog-card" href="unix-socket-server.html">
+                        <h4>Unix Socket Server</h4>
+                        <p>MCP server runs over a local Unix socket — no network exposure, no authentication needed.</p>
+                    </a>
+                    <a class="catalog-card" href="auto-registration.html">
+                        <h4>Auto-Registration <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Registers in Claude Code, Cursor, Windsurf, and Codex config files on every launch.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Are resources faster than the equivalent tool calls?</summary>
+                        <div class="faq-answer"><p>Resources and tools have similar performance since both use the same Unix socket transport. The distinction is semantic: resources guarantee no side effects, which matters for agent planning and safety frameworks.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I add custom resources?</summary>
+                        <div class="faq-answer"><p>The four built-in resources cover the primary use cases. Custom resource support is not currently available, but the tool endpoints provide equivalent data access for cases the resources do not cover.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Safe, read-only terminal access — explore Chau7's MCP resources</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

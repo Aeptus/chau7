@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jump Host Support — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 supports multi-hop SSH through bastion and jump hosts with ProxyJump, simplifying access to private network servers.">
+    <meta property="og:title" content="Jump Host Support — Chau7">
+    <meta property="og:description" content="Chau7 supports multi-hop SSH through bastion and jump hosts with ProxyJump, simplifying access to private network servers.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="jump-host-support.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "SSH & Remote", "item": "../features.html#ssh" },
+            { "@type": "ListItem", "position": 4, "name": "Jump Host Support" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"How many hops does it support?","acceptedAnswer":{"@type":"Answer","text":"There is no hard limit. Chau7 supports arbitrary ProxyJump chains — bastion to bastion to target, or longer if your network requires it. Each hop can have independent authentication settings."}},{"@type":"Question","name":"Does it work with ProxyCommand as well as ProxyJump?","acceptedAnswer":{"@type":"Answer","text":"Yes. Both ProxyJump and ProxyCommand directives are supported. ProxyJump chains are visualized as hop diagrams; ProxyCommand entries are displayed with the full command for transparency."}},{"@type":"Question","name":"Can I test the connection without opening a full session?","acceptedAnswer":{"@type":"Answer","text":"Yes. The connection manager includes a test button that verifies reachability through each hop and reports which stage succeeded or failed, without opening a terminal session."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#ssh">SSH & Remote</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Jump Host Support</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="ssh">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">SSH & REMOTE</div>
+                <h1 class="hero-title">Jump Host Support</h1>
+                <p class="hero-subtitle">Reach servers behind bastion hosts without chaining SSH commands manually.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How do I SSH through a jump host or bastion in a terminal app?</li>
+                    <li class="question-item">Is there a terminal that supports ProxyJump for multi-hop SSH?</li>
+                    <li class="question-item">How to connect to private servers through a bastion host easily?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7's connection manager supports ProxyJump configuration natively. When creating or editing an SSH profile, specify one or more jump hosts in the connection chain. Chau7 constructs the correct multi-hop SSH command automatically, handling authentication at each hop — including different identity files and usernames for the bastion and the target host.</p>
+                <p>Jump host chains are visualized in the connection manager as a path diagram showing each hop, its authentication method, and connection status. When connecting, Chau7 displays progress through each hop so you can see exactly where a connection is failing if something goes wrong.</p>
+                <p>Profiles imported from ~/.ssh/config that use ProxyJump or ProxyCommand directives are parsed and displayed as jump host chains automatically. The visual representation makes it easy to understand complex network topologies that would otherwise be buried in config file syntax.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Production infrastructure increasingly sits behind bastion hosts and VPN gateways, requiring multi-hop SSH connections that are tedious to type and easy to misconfigure. Jump host support in the connection manager turns a three-part SSH command into a single-click connection with visual feedback at every hop, reducing both the friction and the error rate of reaching private network hosts.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="ssh-connection-manager.html">
+                        <h4>SSH Connection Manager</h4>
+                        <p>Visual SSH profile manager with host, port, identity file, and jump host configuration.</p>
+                    </a>
+                    <a class="catalog-card" href="auto-import-ssh-config.html">
+                        <h4>Auto-Import SSH Config</h4>
+                        <p>Imports hosts from ~/.ssh/config automatically. Stays in sync with config file changes.</p>
+                    </a>
+                    <a class="catalog-card" href="context-aware-switching.html">
+                        <h4>Context-Aware Switching</h4>
+                        <p>Tabs detect SSH connections and auto-switch profiles, colors, and settings based on remote host.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>How many hops does it support?</summary>
+                        <div class="faq-answer"><p>There is no hard limit. Chau7 supports arbitrary ProxyJump chains — bastion to bastion to target, or longer if your network requires it. Each hop can have independent authentication settings.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does it work with ProxyCommand as well as ProxyJump?</summary>
+                        <div class="faq-answer"><p>Yes. Both ProxyJump and ProxyCommand directives are supported. ProxyJump chains are visualized as hop diagrams; ProxyCommand entries are displayed with the full command for transparency.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I test the connection without opening a full session?</summary>
+                        <div class="faq-answer"><p>Yes. The connection manager includes a test button that verifies reachability through each hop and reports which stage succeeded or failed, without opening a terminal session.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Simplify multi-hop SSH — download Chau7</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

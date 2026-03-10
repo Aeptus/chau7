@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dropdown (Quake-style) — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 Quake-style dropdown terminal slides from the top of your screen with a hotkey. Instant terminal access on macOS like Guake and Yakuake.">
+    <meta property="og:title" content="Dropdown (Quake-style) — Chau7">
+    <meta property="og:description" content="Chau7 Quake-style dropdown terminal slides from the top of your screen with a hotkey. Instant terminal access on macOS like Guake and Yakuake.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="dropdown-quake-style.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Window Modes", "item": "../features.html#window" },
+            { "@type": "ListItem", "position": 4, "name": "Dropdown (Quake-style)" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"What is the default hotkey for the dropdown?","acceptedAnswer":{"@type":"Answer","text":"The default hotkey is Ctrl+` (backtick). You can remap it to any key combination in the keybindings preferences."}},{"@type":"Question","name":"Does the dropdown terminal keep my session alive?","acceptedAnswer":{"@type":"Answer","text":"Yes. The shell session persists across show and hide cycles. Running processes, working directory, and scrollback are all preserved."}},{"@type":"Question","name":"Can I adjust the dropdown height?","acceptedAnswer":{"@type":"Answer","text":"Yes. The dropdown height is configurable as a percentage of screen height, and you can also set a custom width and horizontal position."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#window">Window Modes</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Dropdown (Quake-style)</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="window">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">WINDOW MODES</div>
+                <h1 class="hero-title">Dropdown (Quake-style)</h1>
+                <p class="hero-subtitle">Hit a key, your terminal drops down</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Quake style terminal macOS dropdown</li>
+                    <li class="question-item">iTerm2 hotkey window alternative native macOS</li>
+                    <li class="question-item">Terminal slides down from top of screen Mac</li>
+                    <li class="question-item">Guake Yakuake equivalent for macOS</li>
+                    <li class="question-item">Instant terminal access global hotkey macOS</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7's dropdown mode replicates the Quake console experience on macOS. Press a configurable global hotkey (default Ctrl+`) and the terminal slides down from the top edge of your screen with a smooth animation. Press the hotkey again and it retracts. The terminal is instantly available from any application without reaching for the Dock or using Cmd+Tab.</p>
+                <p>The dropdown window spans the full width of your active monitor by default, but you can configure it to a specific width and horizontal position. Vertical height is adjustable as a percentage of screen height. The slide animation respects the macOS Reduced Motion preference, snapping instantly instead of animating when that setting is enabled.</p>
+                <p>The dropdown maintains its own session state independently from regular Chau7 windows. Your dropdown shell persists across show/hide cycles, so running processes, working directory, and scroll position are preserved. Focus returns to the previously active application when the dropdown retracts.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>The Quake-style dropdown is one of the most requested terminal features on macOS. Linux users have had Guake and Yakuake for years, but macOS options have been limited to iTerm2's hotkey window or third-party utilities. Chau7 provides a native, GPU-accelerated dropdown that feels integrated with the operating system rather than bolted on. The Kitty terminal developer explicitly declined to implement this feature, leaving a gap that Chau7 fills.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="overlay-mode.html">
+                        <h4>Overlay Mode</h4>
+                        <p>Floating terminal window above all other apps. Toggle with a global hotkey.</p>
+                    </a>
+                    <a class="catalog-card" href="fullscreen-mode.html">
+                        <h4>Fullscreen Mode</h4>
+                        <p>Native macOS fullscreen with menu bar hiding and Space integration.</p>
+                    </a>
+                    <a class="catalog-card" href="menu-bar-only.html">
+                        <h4>Menu Bar Only</h4>
+                        <p>Run Chau7 as a menu bar app with no Dock icon. Access via menu bar icon or hotkey.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>What is the default hotkey for the dropdown?</summary>
+                        <div class="faq-answer"><p>The default hotkey is Ctrl+` (backtick). You can remap it to any key combination in the keybindings preferences.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does the dropdown terminal keep my session alive?</summary>
+                        <div class="faq-answer"><p>Yes. The shell session persists across show and hide cycles. Running processes, working directory, and scrollback are all preserved.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I adjust the dropdown height?</summary>
+                        <div class="faq-answer"><p>Yes. The dropdown height is configurable as a percentage of screen height, and you can also set a custom width and horizontal position.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 and get instant terminal access with one keystroke</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Token Counting — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 counts input and output tokens for every LLM API call using provider-specific tokenization. Track token usage per call, per session, and across your entire workflow.">
+    <meta property="og:title" content="Token Counting — Chau7">
+    <meta property="og:description" content="Chau7 counts input and output tokens for every LLM API call using provider-specific tokenization. Track token usage per call, per session, and across your entire workflow.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="token-counting.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "API Analytics", "item": "../features.html#api-analytics" },
+            { "@type": "ListItem", "position": 4, "name": "Token Counting" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"How accurate are the token counts?","acceptedAnswer":{"@type":"Answer","text":"When the LLM provider includes token counts in the API response (OpenAI and Anthropic both do), the numbers are exact. For providers that do not report counts, Chau7 uses provider-matched tokenizers that are accurate to within a few percent."}},{"@type":"Question","name":"Can I see token counts for individual tool calls within a run?","acceptedAnswer":{"@type":"Answer","text":"Yes. Each API call is tracked individually with its own input and output token counts. You can drill into any run to see the per-call breakdown through the MCP server."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#api-analytics">API Analytics</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Token Counting</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="api-analytics">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge badge-blue">API ANALYTICS</div>
+                <h1 class="hero-title">Token Counting</h1>
+                <p class="hero-subtitle">Count every token in, every token out.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How many tokens does my AI coding agent use per request?</li>
+                    <li class="question-item">Track LLM API token usage per session</li>
+                    <li class="question-item">Provider-specific token counting for AI agents</li>
+                    <li class="question-item">How to measure input vs output tokens for Claude Code?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Token Counting extracts token usage data from every intercepted API call. For providers that include token counts in their response metadata (like OpenAI and Anthropic), Chau7 reads those values directly. For providers that do not report counts, Chau7 applies provider-appropriate tokenization to estimate usage accurately.</p>
+                <p>Counts are broken down into input tokens (the prompt and context sent to the model) and output tokens (the completion returned). This distinction is critical because most providers price input and output tokens differently, often by a factor of three to five.</p>
+                <p>All token data is associated with the originating tab, session, and run, so you can aggregate at any level: per call, per run, per session, or globally across all tabs.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Token counts are the fundamental unit of LLM costs. Without per-call token tracking, you are left guessing whether a session used ten thousand or ten million tokens. Token Counting gives you exact numbers so you can identify expensive operations, compare agent efficiency, and make informed decisions about model selection and prompt design.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="tls-wss-proxy.html">
+                        <h4>TLS/WSS Proxy <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Transparent proxy captures API calls to OpenAI, Anthropic, and other LLM providers for analysis.</p>
+                    </a>
+                    <a class="catalog-card" href="cost-tracking.html">
+                        <h4>Cost Tracking <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Calculate cost per API call based on provider pricing. View per-session and cumulative costs.</p>
+                    </a>
+                    <a class="catalog-card" href="latency-tracking.html">
+                        <h4>Latency Tracking</h4>
+                        <p>Measure time-to-first-token and total request duration for every API call.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>How accurate are the token counts?</summary>
+                        <div class="faq-answer"><p>When the LLM provider includes token counts in the API response (OpenAI and Anthropic both do), the numbers are exact. For providers that do not report counts, Chau7 uses provider-matched tokenizers that are accurate to within a few percent.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I see token counts for individual tool calls within a run?</summary>
+                        <div class="faq-answer"><p>Yes. Each API call is tracked individually with its own input and output token counts. You can drill into any run to see the per-call breakdown through the MCP server.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 and track every token your AI agents consume.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

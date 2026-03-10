@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Tab Indicator — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 shows a visual indicator on tabs created by AI agents through MCP, so you always know which tabs are yours.">
+    <meta property="og:title" content="MCP Tab Indicator — Chau7">
+    <meta property="og:description" content="Chau7 shows a visual indicator on tabs created by AI agents through MCP, so you always know which tabs are yours.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="mcp-tab-indicator.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "MCP Server", "item": "../features.html#mcp" },
+            { "@type": "ListItem", "position": 4, "name": "MCP Tab Indicator" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Can I remove the MCP indicator from a tab?","acceptedAnswer":{"@type":"Answer","text":"The indicator reflects the tab&#x27;s origin and cannot be manually toggled. If you want a clean tab without the indicator, create it yourself through the UI rather than through MCP."}},{"@type":"Question","name":"Does the indicator affect tab behavior?","acceptedAnswer":{"@type":"Answer","text":"No. MCP-created tabs function identically to user-created tabs. The indicator is purely visual — it does not restrict what you can do with the tab."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#mcp">MCP Server</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">MCP Tab Indicator</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="mcp">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge badge-alt">MCP SERVER</div>
+                <h1 class="hero-title">MCP Tab Indicator</h1>
+                <p class="hero-subtitle">Always know which tabs were created by you and which were created by an AI agent.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How can I tell which tabs were created by AI agents?</li>
+                    <li class="question-item">Do MCP-created tabs look different from regular tabs?</li>
+                    <li class="question-item">How do I track what my AI agent is doing in the terminal?</li>
+                    <li class="question-item">Can I distinguish automated terminal sessions from manual ones?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>When the MCP server creates a tab via <code>tab_create</code>, Chau7 tags that tab with an MCP origin marker. The tab bar renders a subtle visual indicator on these tabs — distinct enough to notice at a glance but unobtrusive enough not to clutter the interface. The indicator persists for the lifetime of the tab, even if the agent disconnects.</p>
+                <p>The indicator works alongside other tab metadata like the working directory and running process. Combined with the tab status tool, you get a complete picture: which agent created the tab, what command is running, and whether the process is idle or active.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>When an AI agent creates several tabs during a complex task, you need to know which tabs are part of the automated workflow and which are your own interactive sessions. Without clear visual separation, you risk accidentally closing an agent's working tab or mistaking an agent-created tab for one of your own.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="mcp-tools.html">
+                        <h4>20 MCP Tools <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Full terminal control via Model Context Protocol: tab lifecycle, command execution, output capture, telemetry.</p>
+                    </a>
+                    <a class="catalog-card" href="unix-socket-server.html">
+                        <h4>Unix Socket Server</h4>
+                        <p>MCP server runs over a local Unix socket — no network exposure, no authentication needed.</p>
+                    </a>
+                    <a class="catalog-card" href="auto-registration.html">
+                        <h4>Auto-Registration <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Registers in Claude Code, Cursor, Windsurf, and Codex config files on every launch.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Can I remove the MCP indicator from a tab?</summary>
+                        <div class="faq-answer"><p>The indicator reflects the tab's origin and cannot be manually toggled. If you want a clean tab without the indicator, create it yourself through the UI rather than through MCP.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does the indicator affect tab behavior?</summary>
+                        <div class="faq-answer"><p>No. MCP-created tabs function identically to user-created tabs. The indicator is purely visual — it does not restrict what you can do with the tab.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Keep track of your AI agent's tabs — try Chau7</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

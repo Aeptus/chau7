@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unicode & Emoji Support — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 renders full Unicode including CJK wide characters, right-to-left text, combining marks, and color emoji in the terminal.">
+    <meta property="og:title" content="Unicode & Emoji Support — Chau7">
+    <meta property="og:description" content="Chau7 renders full Unicode including CJK wide characters, right-to-left text, combining marks, and color emoji in the terminal.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="unicode-emoji-support.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Terminal Core", "item": "../features.html#terminal" },
+            { "@type": "ListItem", "position": 4, "name": "Unicode & Emoji Support" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Does Chau7 support Nerd Fonts and Powerline symbols?","acceptedAnswer":{"@type":"Answer","text":"Yes. Nerd Font symbols are Private Use Area code points that Chau7 renders at the correct single-cell width. Powerline-patched fonts work without any special configuration."}},{"@type":"Question","name":"How does Chau7 handle emoji that are wider than two cells?","acceptedAnswer":{"@type":"Answer","text":"No standard emoji exceeds two terminal cells. ZWJ sequences (like family emoji composed of multiple people) are rendered as a single glyph within two cells. If the font does not support a particular ZWJ sequence, Chau7 falls back to rendering the component emoji sequentially."}},{"@type":"Question","name":"Can I use a different font for CJK characters?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 supports per-script font fallback configuration. You can assign a dedicated CJK font (like Sarasa Mono or Noto Sans CJK) that will be used for CJK code points while your primary font handles Latin text."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#terminal">Terminal Core</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Unicode & Emoji Support</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="terminal">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">TERMINAL CORE</div>
+                <h1 class="hero-title">Unicode & Emoji Support</h1>
+                <p class="hero-subtitle">Every script, every emoji, every combining sequence. Unicode rendered correctly in every cell.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Terminal not displaying emoji correctly on macOS</li>
+                    <li class="question-item">CJK characters wrong width in terminal emulator</li>
+                    <li class="question-item">How to fix broken Unicode rendering in my terminal</li>
+                    <li class="question-item">Terminal emoji alignment issues with Powerline fonts</li>
+                    <li class="question-item">Combining characters not rendering in terminal</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 implements Unicode 15.1 character width calculation using the East Asian Width property and the emoji presentation selector rules. CJK ideographs, fullwidth forms, and emoji with presentation selectors are correctly assigned double-width cells. Ambiguous-width characters follow a configurable policy (single or double width) to match user locale expectations.</p>
+                <p>Combining characters and grapheme clusters are rendered correctly by grouping code points according to Unicode Extended Grapheme Cluster boundaries. A base character followed by any number of combining marks (accents, diacritics, enclosing marks) occupies a single terminal cell. Emoji sequences including skin tone modifiers, ZWJ sequences (family, profession), and flag sequences are rendered as a single glyph in one or two cells.</p>
+                <p>Text shaping is delegated to Core Text, which handles complex scripts (Arabic, Devanagari, Thai) that require contextual glyph selection and reordering. The shaped glyph output is cached in the Metal glyph atlas alongside monospace glyphs, so complex script rendering incurs no per-frame overhead after the initial shaping pass.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Modern developer workflows produce Unicode content constantly: file paths with international characters, log messages in multiple languages, emoji in commit messages and documentation, and prompt customization with Powerline and Nerd Font symbols. Incorrect width calculation breaks alignment in tools like ls, git log, and table formatters. Chau7 gets every character width right.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="vt100-xterm-emulation.html">
+                        <h4>Full VT100/xterm Emulation</h4>
+                        <p>Complete terminal emulation with 256-color, true color (24-bit), and all standard escape sequences.</p>
+                    </a>
+                    <a class="catalog-card" href="shell-integration.html">
+                        <h4>Shell Integration</h4>
+                        <p>Deep integration with zsh, bash, and fish for command detection, working directory tracking, and exit codes.</p>
+                    </a>
+                    <a class="catalog-card" href="scrollback-buffer.html">
+                        <h4>Scrollback Buffer</h4>
+                        <p>Configurable scrollback with efficient memory usage. Search within scrollback with regex support.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Does Chau7 support Nerd Fonts and Powerline symbols?</summary>
+                        <div class="faq-answer"><p>Yes. Nerd Font symbols are Private Use Area code points that Chau7 renders at the correct single-cell width. Powerline-patched fonts work without any special configuration.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7 handle emoji that are wider than two cells?</summary>
+                        <div class="faq-answer"><p>No standard emoji exceeds two terminal cells. ZWJ sequences (like family emoji composed of multiple people) are rendered as a single glyph within two cells. If the font does not support a particular ZWJ sequence, Chau7 falls back to rendering the component emoji sequentially.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I use a different font for CJK characters?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 supports per-script font fallback configuration. You can assign a dedicated CJK font (like Sarasa Mono or Noto Sans CJK) that will be used for CJK code points while your primary font handles Latin text.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Unicode done right in the terminal. Download Chau7.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

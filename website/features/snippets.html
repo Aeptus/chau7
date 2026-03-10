@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snippets — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 snippets let you save and reuse terminal commands with placeholder variables, insertable via command palette or keyboard shortcut.">
+    <meta property="og:title" content="Snippets — Chau7">
+    <meta property="og:description" content="Chau7 snippets let you save and reuse terminal commands with placeholder variables, insertable via command palette or keyboard shortcut.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="snippets.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Clipboard", "item": "../features.html#clipboard" },
+            { "@type": "ListItem", "position": 4, "name": "Snippets" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Can snippets have multiple placeholders?","acceptedAnswer":{"@type":"Answer","text":"Yes. A snippet can contain any number of ${placeholder} variables. When inserted, Chau7 presents a form with a field for each placeholder, pre-filled with default values if you defined them. Tab between fields to fill them in quickly."}},{"@type":"Question","name":"Do snippets sync across machines?","acceptedAnswer":{"@type":"Answer","text":"Snippets are stored locally by default. You can export them as JSON for manual sharing or place the snippet file in a synced directory like iCloud Drive or Dropbox for cross-machine access."}},{"@type":"Question","name":"Can I insert a snippet without the placeholder prompt?","acceptedAnswer":{"@type":"Answer","text":"Yes. If a snippet has no placeholders, it inserts directly. For snippets with placeholders, you can define default values so that pressing Enter without typing accepts the defaults for rapid insertion."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#clipboard">Clipboard</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Snippets</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="clipboard">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">CLIPBOARD</div>
+                <h1 class="hero-title">Snippets</h1>
+                <p class="hero-subtitle">Save commands once, reuse them forever. Placeholders fill in the details each time.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How do I save and reuse terminal commands with variables?</li>
+                    <li class="question-item">Is there a snippet manager for terminal commands?</li>
+                    <li class="question-item">Can I create command templates with placeholder values in a terminal?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Create snippets from any text — type a command, select it, and save it as a snippet with a name and optional description. Snippets support placeholder variables using a simple ${name} syntax. When you insert a snippet, Chau7 prompts you to fill in each placeholder before sending the command to the shell.</p>
+                <p>Insert snippets through the command palette (Cmd+Shift+P), a dedicated keyboard shortcut, or the snippet manager panel. Fuzzy search finds snippets by name, description, or content. Snippets are stored locally and can be organized into folders for different projects or workflows.</p>
+                <p>Snippets integrate with clipboard history — promote any clipboard entry to a snippet with one click. They also support multi-line commands, so complex pipelines, docker-compose configurations, or kubectl commands with multiple flags become single-action insertions.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Developers type the same complex commands hundreds of times — SSH tunnels, Docker builds with specific flags, database queries with varying parameters. Shell aliases work for simple cases but break down with variable arguments and multi-line commands. Snippets give you parameterized, searchable command templates that work across any shell without modifying your dotfiles.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="clipboard-history.html">
+                        <h4>Clipboard History</h4>
+                        <p>Searchable clipboard history with pinning. Persists across sessions.</p>
+                    </a>
+                    <a class="catalog-card" href="paste-confirmation.html">
+                        <h4>Paste Confirmation</h4>
+                        <p>Warns before pasting multi-line content or content containing newlines to prevent accidental command execution.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Can snippets have multiple placeholders?</summary>
+                        <div class="faq-answer"><p>Yes. A snippet can contain any number of ${placeholder} variables. When inserted, Chau7 presents a form with a field for each placeholder, pre-filled with default values if you defined them. Tab between fields to fill them in quickly.</p></div>
+                    </details>
+                    <details>
+                        <summary>Do snippets sync across machines?</summary>
+                        <div class="faq-answer"><p>Snippets are stored locally by default. You can export them as JSON for manual sharing or place the snippet file in a synced directory like iCloud Drive or Dropbox for cross-machine access.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I insert a snippet without the placeholder prompt?</summary>
+                        <div class="faq-answer"><p>Yes. If a snippet has no placeholders, it inserts directly. For snippets with placeholders, you can define default values so that pressing Enter without typing accepts the defaults for rapid insertion.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Stop retyping commands — download Chau7</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

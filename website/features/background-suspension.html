@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Background Suspension — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 suspends rendering for inactive tabs to save CPU and GPU, with instant resume when you switch back.">
+    <meta property="og:title" content="Background Suspension — Chau7">
+    <meta property="og:description" content="Chau7 suspends rendering for inactive tabs to save CPU and GPU, with instant resume when you switch back.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="background-suspension.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Tab Management", "item": "../features.html#tabs" },
+            { "@type": "ListItem", "position": 4, "name": "Background Suspension" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Do background processes keep running when a tab is suspended?","acceptedAnswer":{"@type":"Answer","text":"Yes. Only rendering is suspended. The shell process, all child processes, and all I/O continue normally. Output is buffered in the scrollback and rendered instantly when you switch to the tab."}},{"@type":"Question","name":"Is there any delay when switching to a suspended tab?","acceptedAnswer":{"@type":"Answer","text":"No perceptible delay. The terminal state is reconstructed from the scrollback buffer in a single frame, typically under 1 millisecond. It appears instant."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#tabs">Tab Management</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Background Suspension</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="tabs">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">TAB MANAGEMENT</div>
+                <h1 class="hero-title">Background Suspension</h1>
+                <p class="hero-subtitle">Inactive tabs stop rendering entirely, saving CPU and GPU cycles until you need them again.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Do background terminal tabs use CPU?</li>
+                    <li class="question-item">How to reduce terminal emulator resource usage?</li>
+                    <li class="question-item">Why does my terminal slow down with many tabs open?</li>
+                    <li class="question-item">Which terminal emulator is most efficient with many tabs?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>When you switch away from a tab, Chau7 suspends all rendering activity for that tab's terminal view. The shell process continues running — your builds, servers, and long-running tasks are unaffected — but the GPU render pipeline stops processing output for that pane. This means 30 background tabs consume the same GPU resources as zero background tabs.</p>
+                <p>When you switch back to a suspended tab, Chau7 replays the terminal state from the scrollback buffer in a single frame. There is no gradual catch-up or flickering — the terminal appears instantly with all output that accumulated while it was in the background. The resume is fast enough that you cannot perceive any delay between clicking the tab and seeing the current state.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Terminal emulators that render all tabs continuously waste significant GPU and CPU time on content you are not looking at. With 10 tabs open and a build producing thousands of lines per second in a background tab, that invisible rendering can consume real resources and drain your laptop battery. Background suspension eliminates this waste entirely.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="multi-tab.html">
+                        <h4>Multi-Tab</h4>
+                        <p>Unlimited tabs with drag-to-reorder, tab pinning, and tab-specific titles.</p>
+                    </a>
+                    <a class="catalog-card" href="split-panes.html">
+                        <h4>Split Panes</h4>
+                        <p>Horizontal and vertical splits within any tab. Resize with drag handles or keyboard shortcuts.</p>
+                    </a>
+                    <a class="catalog-card" href="tab-drag-drop.html">
+                        <h4>Tab Drag &amp; Drop</h4>
+                        <p>Drag tabs between windows or within the tab bar. Snap positioning with smooth animations.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Do background processes keep running when a tab is suspended?</summary>
+                        <div class="faq-answer"><p>Yes. Only rendering is suspended. The shell process, all child processes, and all I/O continue normally. Output is buffered in the scrollback and rendered instantly when you switch to the tab.</p></div>
+                    </details>
+                    <details>
+                        <summary>Is there any delay when switching to a suspended tab?</summary>
+                        <div class="faq-answer"><p>No perceptible delay. The terminal state is reconstructed from the scrollback buffer in a single frame, typically under 1 millisecond. It appears instant.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>30 tabs, zero waste — try Chau7's background suspension</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

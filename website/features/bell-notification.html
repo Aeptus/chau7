@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bell Notification — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 supports visual bell, audio bell, and Dock bounce notifications on the terminal bell character, configurable per profile.">
+    <meta property="og:title" content="Bell Notification — Chau7">
+    <meta property="og:description" content="Chau7 supports visual bell, audio bell, and Dock bounce notifications on the terminal bell character, configurable per profile.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="bell-notification.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Terminal Core", "item": "../features.html#terminal" },
+            { "@type": "ListItem", "position": 4, "name": "Bell Notification" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Can I use a custom sound for the terminal bell?","acceptedAnswer":{"@type":"Answer","text":"Chau7 uses the system alert sound by default. You can change the system alert sound in macOS System Settings &gt; Sound, which will also change the Chau7 bell sound."}},{"@type":"Question","name":"Does the Dock bounce work when Chau7 is in the foreground?","acceptedAnswer":{"@type":"Answer","text":"No. The Dock bounce is specifically for background notification, when Chau7 is not the frontmost application. When Chau7 is in the foreground, the visual bell and audio bell provide the notification."}},{"@type":"Question","name":"How do I trigger a test bell?","acceptedAnswer":{"@type":"Answer","text":"Run printf &#x27;\a&#x27; or echo -e &#x27;\007&#x27; in your terminal. If bell notifications are configured correctly, you will see and/or hear the notification immediately."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#terminal">Terminal Core</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Bell Notification</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="terminal">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">TERMINAL CORE</div>
+                <h1 class="hero-title">Bell Notification</h1>
+                <p class="hero-subtitle">Get notified when your terminal needs attention. Visual flash, audio bell, or Dock bounce, your choice.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How to enable visual bell in macOS terminal</li>
+                    <li class="question-item">Terminal bell not working in my terminal emulator</li>
+                    <li class="question-item">How to make terminal bounce Dock icon on bell</li>
+                    <li class="question-item">Disable terminal bell sound on macOS</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>When a program writes the BEL character (0x07) to the terminal, Chau7 triggers a configurable notification. Three notification modes are available: a visual bell that briefly flashes the terminal background, an audio bell that plays the system alert sound, and a Dock bounce that animates the Chau7 icon in the Dock to draw attention to a background terminal.</p>
+                <p>Bell behavior is configured per-profile, so you can have an audio bell in your main development profile but a silent visual bell in a monitoring profile that tails logs. Each mode can be independently enabled or disabled, and you can combine them (for example, visual flash plus Dock bounce but no sound).</p>
+                <p>A bell rate limiter prevents runaway programs from flooding the system with notifications. If more than 5 bell characters arrive within one second, Chau7 suppresses further notifications until the rate drops. This protects against scripts or programs that inadvertently trigger the bell in a tight loop.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>The terminal bell is the standard mechanism for programs to request user attention: a build finishing, a long-running command completing, or an error requiring input. Without proper bell support, these notifications are silently dropped and the user misses time-sensitive events. Chau7's configurable bell ensures you are always notified in the way that works best for your workflow.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="vt100-xterm-emulation.html">
+                        <h4>Full VT100/xterm Emulation</h4>
+                        <p>Complete terminal emulation with 256-color, true color (24-bit), and all standard escape sequences.</p>
+                    </a>
+                    <a class="catalog-card" href="unicode-emoji-support.html">
+                        <h4>Unicode &amp; Emoji Support</h4>
+                        <p>Full Unicode rendering including CJK, RTL, combining characters, and color emoji.</p>
+                    </a>
+                    <a class="catalog-card" href="shell-integration.html">
+                        <h4>Shell Integration</h4>
+                        <p>Deep integration with zsh, bash, and fish for command detection, working directory tracking, and exit codes.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Can I use a custom sound for the terminal bell?</summary>
+                        <div class="faq-answer"><p>Chau7 uses the system alert sound by default. You can change the system alert sound in macOS System Settings > Sound, which will also change the Chau7 bell sound.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does the Dock bounce work when Chau7 is in the foreground?</summary>
+                        <div class="faq-answer"><p>No. The Dock bounce is specifically for background notification, when Chau7 is not the frontmost application. When Chau7 is in the foreground, the visual bell and audio bell provide the notification.</p></div>
+                    </details>
+                    <details>
+                        <summary>How do I trigger a test bell?</summary>
+                        <div class="faq-answer"><p>Run printf '\a' or echo -e '\007' in your terminal. If bell notifications are configured correctly, you will see and/or hear the notification immediately.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Never miss a terminal notification. Download Chau7.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

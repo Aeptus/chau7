@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Padding & Margins — Chau7 Terminal</title>
+    <meta name="description" content="Adjust terminal content padding and window margins in Chau7 for a clean, spacious layout. Pixel-level control for precise terminal aesthetics.">
+    <meta property="og:title" content="Padding & Margins — Chau7">
+    <meta property="og:description" content="Adjust terminal content padding and window margins in Chau7 for a clean, spacious layout. Pixel-level control for precise terminal aesthetics.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="padding-margins.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Customization", "item": "../features.html#customization" },
+            { "@type": "ListItem", "position": 4, "name": "Padding & Margins" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Can I set different padding for each side?","acceptedAnswer":{"@type":"Answer","text":"Yes. Top, bottom, left, and right padding are independently configurable down to the pixel."}},{"@type":"Question","name":"Does padding affect the terminal grid size?","acceptedAnswer":{"@type":"Answer","text":"Yes. The terminal grid resizes to fit within the padded content area, so column and row counts adjust to maintain correct text layout."}},{"@type":"Question","name":"Can different profiles have different padding?","acceptedAnswer":{"@type":"Answer","text":"Yes. Padding values are stored per profile, allowing compact and spacious layouts to coexist."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#customization">Customization</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Padding & Margins</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="customization">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">CUSTOMIZATION</div>
+                <h1 class="hero-title">Padding & Margins</h1>
+                <p class="hero-subtitle">Pixel-perfect spacing for a clean terminal layout</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How to add padding to terminal content area</li>
+                    <li class="question-item">Terminal inner margin configuration macOS</li>
+                    <li class="question-item">Terminal text too close to window edge fix</li>
+                    <li class="question-item">Adjust terminal content inset spacing</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 lets you configure the padding between the terminal content area and the window edges with pixel-level precision. Set top, bottom, left, and right padding independently to create the exact spacing you want. This moves the terminal grid inward from the window frame, giving text room to breathe without wasting screen real estate.</p>
+                <p>Padding values are stored per profile, so a presentation profile can use generous spacing for readability while a tiling-oriented profile uses minimal padding to maximize content density. Changes apply immediately and the terminal grid resizes to fit the adjusted content area, maintaining correct column and row counts.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Small amounts of padding dramatically improve the visual quality of a terminal window. Text jammed against window edges creates visual tension that accumulates over long sessions. Configurable padding lets you strike the right balance between aesthetics and information density for your display and working style.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="fonts.html">
+                        <h4>100+ Fonts</h4>
+                        <p>Bundled monospace fonts plus system font support. Variable font weight and size configuration.</p>
+                    </a>
+                    <a class="catalog-card" href="themes.html">
+                        <h4>Themes</h4>
+                        <p>Built-in themes with full 256-color and true color customization. Import iTerm2 color schemes.</p>
+                    </a>
+                    <a class="catalog-card" href="custom-keybindings.html">
+                        <h4>Custom Keybindings</h4>
+                        <p>Fully remappable keyboard shortcuts with Vim keybinding presets available.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Can I set different padding for each side?</summary>
+                        <div class="faq-answer"><p>Yes. Top, bottom, left, and right padding are independently configurable down to the pixel.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does padding affect the terminal grid size?</summary>
+                        <div class="faq-answer"><p>Yes. The terminal grid resizes to fit within the padded content area, so column and row counts adjust to maintain correct text layout.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can different profiles have different padding?</summary>
+                        <div class="faq-answer"><p>Yes. Padding values are stored per profile, allowing compact and spacious layouts to coexist.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 and give your terminal room to breathe</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

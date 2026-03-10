@@ -1,0 +1,156 @@
+/* ── Feature Page Styles ──────────────────────────── */
+/* Loaded only by features/*.html pages              */
+
+/* ── Breadcrumb ──────────────────────────────────── */
+.breadcrumb {
+    max-width: var(--max-w);
+    margin: 0 auto;
+    padding: 5.5rem 2rem 0;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+.breadcrumb a { transition: color 0.2s; }
+.breadcrumb a:hover { color: var(--text); }
+.breadcrumb .breadcrumb-sep { margin: 0 0.4rem; opacity: 0.5; }
+.breadcrumb .breadcrumb-current { color: var(--text); font-weight: 500; }
+
+/* ── Feature Hero (smaller than landing heroes) ──── */
+.hero-feature {
+    padding: 3rem 2rem 3rem;
+    text-align: center;
+}
+.hero-feature .hero-content { max-width: 720px; }
+.hero-feature .hero-title {
+    font-size: clamp(2rem, 5vw, 3rem);
+    margin-bottom: 1rem;
+}
+.hero-feature .hero-subtitle {
+    font-size: 1.05rem;
+    margin-bottom: 0;
+}
+
+/* ── Category-specific hero glows ────────────────── */
+.hero-feature[data-category="ai-detection"] .hero-glow,
+.hero-feature[data-category="ai-integration"] .hero-glow {
+    background: radial-gradient(ellipse, rgba(52, 211, 153, 0.1) 0%, transparent 70%);
+}
+.hero-feature[data-category="api-analytics"] .hero-glow {
+    background: radial-gradient(ellipse, rgba(96, 165, 250, 0.1) 0%, transparent 70%);
+}
+.hero-feature[data-category="mcp"] .hero-glow {
+    background: radial-gradient(ellipse, rgba(52, 211, 153, 0.12) 0%, transparent 70%);
+}
+.hero-feature[data-category="rendering"] .hero-glow {
+    background: radial-gradient(ellipse, rgba(139, 92, 246, 0.1) 0%, transparent 70%);
+}
+.hero-feature[data-category="session"] .hero-glow,
+.hero-feature[data-category="tabs"] .hero-glow {
+    background: radial-gradient(ellipse, rgba(251, 191, 36, 0.08) 0%, transparent 70%);
+}
+.hero-feature[data-category="safety"] .hero-glow {
+    background: radial-gradient(ellipse, rgba(248, 113, 113, 0.08) 0%, transparent 70%);
+}
+
+/* ── Questions Section ───────────────────────────── */
+.questions-section {
+    padding: 3rem 0;
+}
+.questions-section h2 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    letter-spacing: -0.01em;
+}
+
+.question-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-width: 720px;
+}
+
+.question-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1rem 1.25rem;
+    font-size: 0.92rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+}
+.question-item::before {
+    content: '\1F50D';
+    flex-shrink: 0;
+    font-size: 0.85rem;
+}
+
+/* ── Feature Content ─────────────────────────────── */
+.feature-content {
+    padding: 0 0 3rem;
+}
+.feature-content h2 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    letter-spacing: -0.01em;
+}
+
+/* ── Why It Matters callout ──────────────────────── */
+.why-matters {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    padding: 1.5rem 2rem;
+    margin: 2rem 0;
+}
+.why-matters h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    color: var(--accent);
+}
+.why-matters p {
+    color: var(--text-muted);
+    font-size: 0.92rem;
+    line-height: 1.7;
+    margin-bottom: 0;
+}
+
+/* ── Related Features ────────────────────────────── */
+.related-features {
+    padding: 3rem 0;
+}
+.related-features h2 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+}
+.related-features-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+/* ── Feature page FAQ ────────────────────────────── */
+.feature-faq {
+    padding: 0 0 3rem;
+}
+.feature-faq h2 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+}
+
+/* ── Responsive ──────────────────────────────────── */
+@media (max-width: 900px) {
+    .related-features-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+    .breadcrumb { padding-top: 5rem; font-size: 0.75rem; }
+    .hero-feature { padding: 2rem 1.5rem 2rem; }
+}

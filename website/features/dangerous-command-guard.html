@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dangerous Command Guard — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 intercepts destructive terminal commands like rm -rf and dd with a confirmation dialog, preventing accidental data loss on macOS.">
+    <meta property="og:title" content="Dangerous Command Guard — Chau7">
+    <meta property="og:description" content="Chau7 intercepts destructive terminal commands like rm -rf and dd with a confirmation dialog, preventing accidental data loss on macOS.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="dangerous-command-guard.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "Safety", "item": "../features.html#safety" },
+            { "@type": "ListItem", "position": 4, "name": "Dangerous Command Guard" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Does the guard slow down normal commands?","acceptedAnswer":{"@type":"Answer","text":"No. Pattern matching runs in microseconds on every command submission. You will not notice any delay for safe commands. Only when a dangerous pattern is detected does the confirmation dialog appear."}},{"@type":"Question","name":"Can I disable the guard for specific directories?","acceptedAnswer":{"@type":"Answer","text":"Yes. You can whitelist directories, specific command patterns, or even disable the guard entirely per-tab if you are running automated scripts that need uninterrupted execution."}},{"@type":"Question","name":"Does it catch pasted commands with hidden characters?","acceptedAnswer":{"@type":"Answer","text":"Yes. The guard inspects the actual bytes being sent to the shell, not just visible text. Hidden Unicode control characters, zero-width spaces, and embedded newlines are all detected and flagged before execution."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#safety">Safety</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Dangerous Command Guard</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="safety">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">SAFETY</div>
+                <h1 class="hero-title">Dangerous Command Guard</h1>
+                <p class="hero-subtitle">A seatbelt for your shell. Dangerous commands pause for confirmation before they touch the disk.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How do I prevent accidental rm -rf in the terminal?</li>
+                    <li class="question-item">Is there a terminal guard for dangerous commands like dd or mkfs?</li>
+                    <li class="question-item">Terminal paste hidden characters attack — how to protect against ClickFix?</li>
+                    <li class="question-item">Can a terminal emulator block destructive commands before execution?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 maintains a curated ruleset of dangerous command patterns — rm with recursive or force flags, dd targeting block devices, mkfs, chmod 777 on root paths, and more. When a command matches, execution is paused and a confirmation dialog appears showing exactly what the command will do, which paths it affects, and the potential consequences.</p>
+                <p>The guard operates at the terminal input layer, not as a shell alias or wrapper. This means it works regardless of which shell you use (zsh, bash, fish) and catches commands pasted from the clipboard — including those containing hidden Unicode characters or embedded newlines used in ClickFix-style social engineering attacks that surged through 2025.</p>
+                <p>Rules are fully configurable. You can add your own patterns, whitelist trusted directories, or adjust severity levels. The guard distinguishes between high-risk operations (immediate data loss) and medium-risk ones (recoverable but disruptive), applying different confirmation requirements to each.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Every developer has a horror story about a misplaced rm -rf or a dd that targeted the wrong device. Traditional shell aliases are brittle and shell-specific. Chau7's guard works universally at the terminal layer, catching dangerous commands whether typed, pasted, or injected — providing a consistent safety net that adapts to modern clipboard-based attack vectors without slowing down your normal workflow.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="process-exit-confirmation.html">
+                        <h4>Process Exit Confirmation</h4>
+                        <p>Warns before closing tabs with running processes. Configurable per-process rules.</p>
+                    </a>
+                    <a class="catalog-card" href="mcp-approval-gate.html">
+                        <h4>MCP Approval Gate</h4>
+                        <p>Optional per-tool approval for MCP actions before they execute.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Does the guard slow down normal commands?</summary>
+                        <div class="faq-answer"><p>No. Pattern matching runs in microseconds on every command submission. You will not notice any delay for safe commands. Only when a dangerous pattern is detected does the confirmation dialog appear.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I disable the guard for specific directories?</summary>
+                        <div class="faq-answer"><p>Yes. You can whitelist directories, specific command patterns, or even disable the guard entirely per-tab if you are running automated scripts that need uninterrupted execution.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does it catch pasted commands with hidden characters?</summary>
+                        <div class="faq-answer"><p>Yes. The guard inspects the actual bytes being sent to the shell, not just visible text. Hidden Unicode control characters, zero-width spaces, and embedded newlines are all detected and flagged before execution.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Stop rm -rf accidents — download Chau7</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

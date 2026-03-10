@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auto AI CLI Detection — Chau7 Terminal</title>
+    <meta name="description" content="Chau7 automatically detects AI coding agents like Claude Code, Codex, Gemini CLI, Copilot, Aider, and Cursor running in your terminal. No configuration required.">
+    <meta property="og:title" content="Auto AI CLI Detection — Chau7">
+    <meta property="og:description" content="Chau7 automatically detects AI coding agents like Claude Code, Codex, Gemini CLI, Copilot, Aider, and Cursor running in your terminal. No configuration required.">
+    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="auto-ai-cli-detection.html">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="../feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" },
+            { "@type": "ListItem", "position": 3, "name": "AI Detection", "item": "../features.html#ai-detection" },
+            { "@type": "ListItem", "position": 4, "name": "Auto AI CLI Detection" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Which AI agents does Chau7 detect out of the box?","acceptedAnswer":{"@type":"Answer","text":"Chau7 ships with built-in detection for Claude Code, OpenAI Codex CLI, Gemini CLI, ChatGPT CLI, GitHub Copilot CLI, Aider, and Cursor terminal mode. The list grows with each release, and you can add custom patterns for any tool not yet included."}},{"@type":"Question","name":"Does detection require any configuration or shell integration?","acceptedAnswer":{"@type":"Answer","text":"No. Detection is fully automatic and works with any shell. Chau7 watches the process tree directly, so there are no shell aliases, hooks, or dotfile changes needed."}},{"@type":"Question","name":"Does AI detection slow down my terminal?","acceptedAnswer":{"@type":"Answer","text":"Not noticeably. Process tree checks are lightweight system calls that complete in microseconds. Chau7 polls on a debounced interval and caches results, so the overhead is negligible even with dozens of open tabs."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="../index.html" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="../features.html">Features</a>
+                <a href="../mcp.html">MCP</a>
+                <a href="../performance.html">Performance</a>
+                <a href="../compare.html">Compare</a>
+                <a href="../pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="../index.html">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="../features.html#ai-detection">AI Detection</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Auto AI CLI Detection</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="ai-detection">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge badge-alt">AI DETECTION</div>
+                <h1 class="hero-title">Auto AI CLI Detection</h1>
+                <p class="hero-subtitle">Your terminal finally knows what AI is running inside it.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Can my terminal detect AI coding agents?</li>
+                    <li class="question-item">How do I know which AI CLI tool is running in my terminal?</li>
+                    <li class="question-item">Is there a terminal that tracks Claude Code and Copilot sessions?</li>
+                    <li class="question-item">How to monitor AI agents running in terminal tabs?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 monitors the process tree of every terminal tab in real time. When a known AI agent process spawns, such as claude, codex, gemini, aider, or cursor, the tab is instantly flagged and tagged with the corresponding agent identity. Detection happens at the process level, not by parsing output, so it works regardless of shell or prompt configuration.</p>
+                <p>The detection engine maintains a built-in registry of known AI CLI process signatures and updates it with each release. It checks both direct child processes and deeper descendants in the process tree, catching agents launched via wrapper scripts, npx, pipx, or other indirection layers.</p>
+                <p>Once detected, the agent identity propagates to the tab bar UI, the MCP server, and the telemetry system. Downstream features like AI Tab Branding, session tracking, and cost analytics all key off this detection event as their trigger.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>No other terminal application identifies AI agents natively. Developers running Claude Code, Codex, or Gemini CLI have no way to distinguish those tabs from regular shell sessions. Chau7 closes that gap automatically, giving you instant awareness of which agents are active, which tabs they occupy, and how long they have been running.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="ai-tab-branding.html">
+                        <h4>AI Tab Branding <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Tabs automatically adopt the brand color and logo of the active AI agent.</p>
+                    </a>
+                    <a class="catalog-card" href="ai-process-monitoring.html">
+                        <h4>AI Process Monitoring <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Track CPU, memory, and PID of AI agent processes per tab.</p>
+                    </a>
+                    <a class="catalog-card" href="custom-detection-rules.html">
+                        <h4>Custom Detection Rules</h4>
+                        <p>Define custom process name patterns for AI tools not yet in the built-in list.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Which AI agents does Chau7 detect out of the box?</summary>
+                        <div class="faq-answer"><p>Chau7 ships with built-in detection for Claude Code, OpenAI Codex CLI, Gemini CLI, ChatGPT CLI, GitHub Copilot CLI, Aider, and Cursor terminal mode. The list grows with each release, and you can add custom patterns for any tool not yet included.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does detection require any configuration or shell integration?</summary>
+                        <div class="faq-answer"><p>No. Detection is fully automatic and works with any shell. Chau7 watches the process tree directly, so there are no shell aliases, hooks, or dotfile changes needed.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does AI detection slow down my terminal?</summary>
+                        <div class="faq-answer"><p>Not noticeably. Process tree checks are lightweight system calls that complete in microseconds. Chau7 polls on a debounced interval and caches results, so the overhead is negligible even with dozens of open tabs.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Download Chau7 and let your terminal detect every AI agent automatically.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="../features.html">Features</a>
+                    <a href="../mcp.html">MCP Tools</a>
+                    <a href="../performance.html">Performance</a>
+                    <a href="../compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>
