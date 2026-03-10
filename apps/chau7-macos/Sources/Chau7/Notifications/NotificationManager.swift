@@ -18,15 +18,15 @@ final class NotificationManager {
     private let nativeNotificationBaseCooldown: TimeInterval = 15
     private let nativeNotificationMaxCooldown: TimeInterval = 300
 
-    var tabTitleProvider: ((String) -> String?)?
+    var tabTitleProvider: ((TabTarget) -> String?)?
 
     /// Rate limiter — prevents notification spam from burst events
     let rateLimiter = NotificationRateLimiter()
     /// Audit trail of fired (and rate-limited) notifications
     let history = NotificationHistory()
 
-    /// Injectable check: returns true if the given tool's tab is currently selected.
-    var activeTabChecker: ((String) -> Bool)?
+    /// Injectable check: returns true if the given target's tab is currently selected.
+    var activeTabChecker: ((TabTarget) -> Bool)?
 
     // MARK: - Focus/DND State (push-based)
 
@@ -119,7 +119,7 @@ final class NotificationManager {
             groupActionBindings: ns.groupActionBindings,
             isFocusModeActive: isFocusModeActive,
             isAppActive: NSApp.isActive,
-            isToolTabActive: activeTabChecker?(event.tool) ?? false
+            isToolTabActive: activeTabChecker?(event.tabTarget) ?? false
         )
 
         let decision = NotificationPipeline.evaluate(input)
@@ -160,14 +160,14 @@ final class NotificationManager {
         if shouldUseNativeNotifications() {
             tryNativeNotification(for: event)
         } else {
-            let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tool))
+            let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tabTarget))
             sendAppleScriptNotification(title: title, body: event.notificationBody)
         }
     }
 
     private func tryNativeNotification(for event: AIEvent) {
         guard shouldUseNativeNotifications() else {
-            let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tool))
+            let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tabTarget))
             sendAppleScriptNotification(title: title, body: event.notificationBody)
             return
         }
@@ -196,15 +196,15 @@ final class NotificationManager {
         case .denied:
             logAuthorizationOnce(status: .denied, message: "Native notifications denied, using AppleScript fallback")
             useNativeNotifications = false
-            let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tool))
+            let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tabTarget))
             sendAppleScriptNotification(title: title, body: event.notificationBody)
         case .notDetermined:
             logAuthorizationOnce(status: .notDetermined, message: "Notification permission not determined, using AppleScript fallback")
-            let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tool))
+            let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tabTarget))
             sendAppleScriptNotification(title: title, body: event.notificationBody)
         @unknown default:
             Log.warn("Unknown notification authorization status, trying AppleScript")
-            let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tool))
+            let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tabTarget))
             sendAppleScriptNotification(title: title, body: event.notificationBody)
         }
     }
@@ -213,7 +213,7 @@ final class NotificationManager {
         Log.info("Scheduling notification: type=\(event.type) tool=\(event.tool)")
 
         let content = UNMutableNotificationContent()
-        content.title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tool))
+        content.title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tabTarget))
         content.body = event.notificationBody
         content.sound = .default
 
@@ -245,9 +245,9 @@ final class NotificationManager {
         } else {
             Log.warn("Native notification error: \(error.localizedDescription) (failure #\(nativeNotificationFailureCount), cooldown=\(cooldown)s)")
         }
-        let source = tabTitleProvider?(event.tool) ?? event.tool
+        let source = tabTitleProvider?(event.tabTarget) ?? event.tool
         Log.warn("Temporarily disabling native notifications for \(source) events for \(cooldown)s to allow retry.")
-        let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tool))
+        let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tabTarget))
         sendAppleScriptNotification(title: title, body: event.notificationBody)
     }
 

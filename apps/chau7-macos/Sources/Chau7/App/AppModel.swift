@@ -409,6 +409,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         startClaudeCodeMonitor()
         startAPICallObserver()
         startCleanupTimer()
+        RuntimeSessionManager.shared.startCleanupTimer()
         startAppEventEmitter()
     }
 
@@ -750,7 +751,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         Task { @MainActor in NotificationManager.shared.notify(for: event) }
     }
 
-    func recordEvent(source: AIEventSource, type: String, tool: String, message: String, notify: Bool, directory: String? = nil) {
+    func recordEvent(source: AIEventSource, type: String, tool: String, message: String, notify: Bool, directory: String? = nil, tabID: UUID? = nil) {
         // Sanitize message to remove escape sequences before logging/storing
         let sanitizedMessage = EscapeSequenceSanitizer.sanitizeForLogging(message)
         let event = AIEvent(
@@ -759,7 +760,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             tool: tool,
             message: sanitizedMessage,
             ts: DateFormatters.nowISO8601(),
-            directory: directory
+            directory: directory,
+            tabID: tabID
         )
         // Use trace level for high-frequency events, info for important ones
         let isHighFrequency = ["process_started", "process_ended"].contains(type)
@@ -972,6 +974,15 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                     provider: "claude", cwd: event.cwd, sessionID: event.sessionId
                 )
             }
+
+            // Feed events into the agent runtime session manager so runtime sessions
+            // can track Claude Code state transitions and journal events for orchestrators.
+            RuntimeSessionManager.shared.handleClaudeEvent(event)
+
+            // Keep menu bar / command center session snapshots in sync for every
+            // session state transition, especially `sessionEnd` which does not
+            // trigger the idle/response-complete callbacks below.
+            syncClaudeCodeSessions()
         }
 
         monitor.onSessionIdle = { [weak self] session in

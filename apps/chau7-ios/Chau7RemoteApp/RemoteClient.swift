@@ -65,10 +65,6 @@ final class RemoteClient {
         }
     }
 
-    deinit {
-        notificationTask?.cancel()
-    }
-
     // MARK: - Connection
 
     func connect() {

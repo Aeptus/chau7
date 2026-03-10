@@ -288,7 +288,7 @@ final class NotificationTriggerCatalogTests: XCTestCase {
 
     func testAiCodingGroupContainsAllSources() {
         let group = NotificationTriggerCatalog.aiCodingGroup
-        let expectedSources: [AIEventSource] = [.claudeCode, .codex, .cursor, .windsurf, .copilot, .aider, .cline, .continueAI]
+        let expectedSources: [AIEventSource] = [.claudeCode, .codex, .cursor, .windsurf, .copilot, .aider, .cline, .continueAI, .runtime]
         XCTAssertEqual(group.sources.count, expectedSources.count)
         for source in expectedSources {
             XCTAssertTrue(group.contains(source: source), "Group should contain \(source.rawValue)")

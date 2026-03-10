@@ -285,6 +285,113 @@ final class MCPSession {
                     ],
                     "required": ["tab_id", "override"]
                 ]
+            ],
+
+            // MARK: Runtime API Tools
+
+            [
+                "name": "runtime_session_create",
+                "description": "Start an agent session. Creates a tab, launches the backend (claude/codex/shell), and returns a session ID for subsequent operations.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "backend": ["type": "string", "description": "Backend to use: 'claude' (default), 'codex', or 'shell'"],
+                        "directory": ["type": "string", "description": "Working directory for the session"],
+                        "model": ["type": "string", "description": "Model override (e.g. 'opus', 'sonnet')"],
+                        "resume_session_id": ["type": "string", "description": "Resume an existing agent session by ID"],
+                        "env": ["type": "object", "description": "Extra environment variables"],
+                        "backend_args": ["type": "array", "items": ["type": "string"], "description": "Additional CLI arguments"],
+                        "initial_prompt": ["type": "string", "description": "Prompt to send immediately after backend starts"],
+                        "auto_approve": ["type": "boolean", "description": "Auto-approve safe tool use requests"],
+                        "attach_tab_id": ["type": "string", "description": "Attach to existing tab instead of creating new one"]
+                    ]
+                ]
+            ],
+            [
+                "name": "runtime_session_list",
+                "description": "List active runtime sessions.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "include_stopped": ["type": "boolean", "description": "Include recently stopped sessions"]
+                    ]
+                ]
+            ],
+            [
+                "name": "runtime_session_get",
+                "description": "Get detailed state of a runtime session.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "session_id": ["type": "string", "description": "Runtime session ID"]
+                    ],
+                    "required": ["session_id"]
+                ]
+            ],
+            [
+                "name": "runtime_session_stop",
+                "description": "Gracefully stop a runtime session.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "session_id": ["type": "string", "description": "Runtime session ID"],
+                        "close_tab": ["type": "boolean", "description": "Also close the tab"],
+                        "force": ["type": "boolean", "description": "Send Ctrl+C before stopping"]
+                    ],
+                    "required": ["session_id"]
+                ]
+            ],
+            [
+                "name": "runtime_turn_send",
+                "description": "Send a prompt to an agent session. Session must be in 'ready' state.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "session_id": ["type": "string", "description": "Runtime session ID"],
+                        "prompt": ["type": "string", "description": "The prompt to send to the agent"],
+                        "context": ["type": "string", "description": "Optional context prepended to the prompt"]
+                    ],
+                    "required": ["session_id", "prompt"]
+                ]
+            ],
+            [
+                "name": "runtime_turn_status",
+                "description": "Check the current turn state of a session.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "session_id": ["type": "string", "description": "Runtime session ID"],
+                        "turn_id": ["type": "string", "description": "Optional specific turn ID"]
+                    ],
+                    "required": ["session_id"]
+                ]
+            ],
+            [
+                "name": "runtime_events_poll",
+                "description": "Poll for new events from a session using a cursor. Returns events after the cursor position.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "session_id": ["type": "string", "description": "Runtime session ID"],
+                        "cursor": ["type": "integer", "description": "Cursor from previous poll (0 for first poll)"],
+                        "limit": ["type": "integer", "description": "Max events to return (default 50)"]
+                    ],
+                    "required": ["session_id"]
+                ]
+            ],
+            [
+                "name": "runtime_approval_respond",
+                "description": "Approve or deny a pending tool use request from the agent.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "session_id": ["type": "string", "description": "Runtime session ID"],
+                        "approval_id": ["type": "string", "description": "Approval request ID from approval_needed event"],
+                        "approved": ["type": "boolean", "description": "Whether to approve the tool use"],
+                        "reason": ["type": "string", "description": "Reason for decision"]
+                    ],
+                    "required": ["session_id", "approval_id", "approved"]
+                ]
             ]
         ]
     }
@@ -386,6 +493,10 @@ final class MCPSession {
                 return jsonError("tab_id and override are required")
             }
             return controlService.setCTO(tabID: tabID, override: override)
+
+        // Runtime API
+        case let name where name.hasPrefix("runtime_"):
+            return RuntimeControlService.shared.handleToolCall(name: name, arguments: arguments)
 
         default:
             return jsonError("Unknown tool: \(name)")

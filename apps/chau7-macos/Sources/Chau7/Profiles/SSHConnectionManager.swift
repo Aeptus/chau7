@@ -740,7 +740,7 @@ final class SSHConnectionWindowController {
 
     private init() {}
 
-    func showConnectionManager() {
+    @MainActor func showConnectionManager() {
         if let existing = window, existing.isVisible {
             existing.makeKeyAndOrderFront(nil)
             return
@@ -767,7 +767,7 @@ final class SSHConnectionWindowController {
         self.window = window
     }
 
-    private func connect(to connection: SSHConnection) {
+    @MainActor private func connect(to connection: SSHConnection) {
         guard let delegate = appDelegate else { return }
 
         // Create new tab and run SSH command

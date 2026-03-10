@@ -6,10 +6,10 @@ import Chau7Core
 /// Protocol for UI actions triggered by the notification system.
 /// Replaces 5 separate closure handlers with a single conformance point.
 @MainActor protocol NotificationActionDelegate: AnyObject {
-    func focusTab(forTool tool: String, directory: String?)
-    func styleTab(forTool tool: String, directory: String?, preset: String, config: [String: String])
-    func badgeTab(forTool tool: String, directory: String?, text: String, color: String)
-    func insertSnippet(id: String, forTool tool: String, directory: String?, autoExecute: Bool)
+    func focusTab(for target: TabTarget)
+    @discardableResult func styleTab(for target: TabTarget, preset: String, config: [String: String]) -> UUID?
+    func badgeTab(for target: TabTarget, text: String, color: String)
+    func insertSnippet(id: String, for target: TabTarget, autoExecute: Bool)
     func flashMenuBar(duration: Int, animate: Bool)
 }
 
@@ -29,9 +29,10 @@ final class NotificationActionExecutor {
 
     // MARK: - Tab Style Auto-Clear Tracking
 
-    /// Tracks pending auto-clear work items per tool to allow cancellation.
+    /// Tracks pending auto-clear work items per tab ID to allow cancellation.
+    /// Keyed by tab UUID (not tool name) so timers for different tabs running the same tool don't collide.
     /// All access must be on the main queue.
-    private var pendingStyleClears: [String: DispatchWorkItem] = [:]
+    private var pendingStyleClears: [UUID: DispatchWorkItem] = [:]
 
     /// Held to prevent the flash window from being deallocated during animation
     private var flashWindow: NSWindow?
@@ -227,7 +228,7 @@ final class NotificationActionExecutor {
             NSApp.activate(ignoringOtherApps: true)
 
             if focusTab {
-                self?.delegate?.focusTab(forTool: ctx.event.tool, directory: ctx.event.directory)
+                self?.delegate?.focusTab(for: ctx.event.tabTarget)
             }
         }
     }
@@ -247,32 +248,37 @@ final class NotificationActionExecutor {
         let badgeColor = ctx.configValue("badgeColor") ?? "red"
 
         DispatchQueue.main.async { [weak self] in
-            self?.delegate?.badgeTab(forTool: ctx.event.tool, directory: ctx.event.directory, text: badgeText, color: badgeColor)
+            self?.delegate?.badgeTab(for: ctx.event.tabTarget, text: badgeText, color: badgeColor)
         }
     }
 
     private func executeStyleTab(_ ctx: ActionContext) {
         let stylePreset = ctx.configValue("style") ?? "waiting"
         let config = ctx.config.config // Pass all config to handler
-        let tool = ctx.event.tool
+        let target = ctx.event.tabTarget
         let autoClearSeconds = ctx.configInt("autoClearSeconds", default: 0)
 
         // All pendingStyleClears access and delegate calls on main queue
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
 
-            // Cancel any pending auto-clear for this tool
-            pendingStyleClears[tool]?.cancel()
-            pendingStyleClears.removeValue(forKey: tool)
+            let resolvedTabID = delegate?.styleTab(for: target, preset: stylePreset, config: config)
 
-            delegate?.styleTab(forTool: tool, directory: ctx.event.directory, preset: stylePreset, config: config)
+            // Key timers by resolved tab ID so different tabs running the same tool don't collide
+            guard let resolvedTabID else { return }
+
+            // Cancel any pending auto-clear for this specific tab
+            pendingStyleClears[resolvedTabID]?.cancel()
+            pendingStyleClears.removeValue(forKey: resolvedTabID)
 
             if autoClearSeconds > 0 {
+                // Use resolved tab ID in the clear target so the timer hits the exact tab
+                let clearTarget = TabTarget(tool: target.tool, directory: target.directory, tabID: resolvedTabID)
                 let workItem = DispatchWorkItem { [weak self] in
-                    self?.pendingStyleClears.removeValue(forKey: tool)
-                    self?.delegate?.styleTab(forTool: tool, directory: ctx.event.directory, preset: "clear", config: [:])
+                    self?.pendingStyleClears.removeValue(forKey: resolvedTabID)
+                    self?.delegate?.styleTab(for: clearTarget, preset: "clear", config: [:])
                 }
-                pendingStyleClears[tool] = workItem
+                pendingStyleClears[resolvedTabID] = workItem
                 DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(autoClearSeconds), execute: workItem)
             }
         }
@@ -382,7 +388,7 @@ final class NotificationActionExecutor {
         let autoExecute = ctx.configBool("autoExecute", default: false)
 
         DispatchQueue.main.async { [weak self] in
-            self?.delegate?.insertSnippet(id: snippetId, forTool: ctx.event.tool, directory: ctx.event.directory, autoExecute: autoExecute)
+            self?.delegate?.insertSnippet(id: snippetId, for: ctx.event.tabTarget, autoExecute: autoExecute)
         }
     }
 
@@ -983,20 +989,21 @@ final class NotificationActionAdapter: NotificationActionDelegate {
         self.statusBar = statusBar
     }
 
-    func focusTab(forTool tool: String, directory: String?) {
-        overlayModel?.focusTabByTool(tool, directory: directory)
+    func focusTab(for target: TabTarget) {
+        overlayModel?.focusTab(for: target)
     }
 
-    func styleTab(forTool tool: String, directory: String?, preset: String, config: [String: String]) {
-        overlayModel?.applyNotificationStyle(forTool: tool, directory: directory, stylePreset: preset, config: config)
+    @discardableResult
+    func styleTab(for target: TabTarget, preset: String, config: [String: String]) -> UUID? {
+        overlayModel?.applyNotificationStyle(for: target, stylePreset: preset, config: config)
     }
 
-    func badgeTab(forTool tool: String, directory: String?, text: String, color: String) {
-        overlayModel?.setBadgeByTool(tool, directory: directory, text: text, color: color)
+    func badgeTab(for target: TabTarget, text: String, color: String) {
+        overlayModel?.setBadge(for: target, text: text, color: color)
     }
 
-    func insertSnippet(id: String, forTool tool: String, directory: String?, autoExecute: Bool) {
-        overlayModel?.insertSnippetById(id, forTool: tool, directory: directory, autoExecute: autoExecute)
+    func insertSnippet(id: String, for target: TabTarget, autoExecute: Bool) {
+        overlayModel?.insertSnippet(id: id, for: target, autoExecute: autoExecute)
     }
 
     func flashMenuBar(duration: Int, animate: Bool) {

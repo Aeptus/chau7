@@ -5,7 +5,6 @@ final class AITerminalLogSession {
     let toolName: String
     private let logPath: String
     private let queue = DispatchQueue(label: "com.chau7.ptylog.\(UUID().uuidString)")
-    private var handle: FileHandle?
     private var inputBuffer = Data()
     private var writeCount = 0
     private let maxBytes: Int = {
@@ -19,19 +18,16 @@ final class AITerminalLogSession {
     init(toolName: String, logPath: String) {
         self.toolName = toolName
         self.logPath = (logPath as NSString).expandingTildeInPath
-        openHandle()
     }
 
     func recordOutput(_ data: Data) {
         guard !data.isEmpty else { return }
         queue.async { [weak self] in
             guard let self else { return }
-            if handle == nil {
-                openHandle()
+            if appendLocked(data) {
+                writeCount += 1
             }
-            handle?.write(data)
-            writeCount += 1
-            if writeCount.isMultiple(of: 200) {
+            if writeCount > 0, writeCount.isMultiple(of: 200) {
                 trimLogIfNeeded()
             }
         }
@@ -52,19 +48,12 @@ final class AITerminalLogSession {
         queue.sync { [weak self] in
             guard let self else { return }
             flushInputLocked()
-            try? handle?.close()
-            handle = nil
         }
     }
 
-    private func openHandle() {
-        let url = URL(fileURLWithPath: logPath)
-        FileOperations.createDirectory(at: url.deletingLastPathComponent())
-        if !FileManager.default.fileExists(atPath: url.path) {
-            FileManager.default.createFile(atPath: url.path, contents: nil)
-        }
-        handle = try? FileHandle(forWritingTo: url)
-        _ = try? handle?.seekToEnd()
+    @discardableResult
+    private func appendLocked(_ data: Data) -> Bool {
+        FileOperations.appendData(data, to: URL(fileURLWithPath: logPath))
     }
 
     private func trimLogIfNeeded() {
@@ -78,19 +67,11 @@ final class AITerminalLogSession {
 
         let keepBytes = max / 2
         do {
-            let readHandle = try FileHandle(forReadingFrom: url)
-            defer { try? readHandle.close() }
-
-            let start = size > keepBytes ? size - keepBytes : 0
-            try readHandle.seek(toOffset: start)
-            let tail = try readHandle.readToEnd()
-
-            try? handle?.close()
-            handle = nil
-            // Atomic write avoids truncate-then-write race
-            try tail?.write(to: url, options: .atomic)
-            handle = try FileHandle(forWritingTo: url)
-            _ = try handle?.seekToEnd()
+            let data = try Data(contentsOf: url)
+            let start = data.count > keepBytes ? data.count - Int(keepBytes) : 0
+            let tail = data.subdata(in: start ..< data.count)
+            // Atomic write avoids truncate-then-write race.
+            try tail.write(to: url, options: .atomic)
         } catch {
             Log.error("AITerminalLogSession trim failed: \(error)")
         }
@@ -103,12 +84,9 @@ final class AITerminalLogSession {
         let sanitized = text.replacingOccurrences(of: "\n", with: " ")
             .replacingOccurrences(of: "\r", with: " ")
         guard !sanitized.isEmpty else { return }
-        if handle == nil {
-            openHandle()
-        }
         let line = "[INPUT] \(sanitized)\n"
         if let payload = line.data(using: .utf8) {
-            handle?.write(payload)
+            _ = appendLocked(payload)
         }
     }
 }
@@ -131,18 +109,12 @@ enum AIEventLogWriter {
 
         queue.async {
             let url = URL(fileURLWithPath: expanded)
-            FileOperations.createDirectory(at: url.deletingLastPathComponent())
-            if !FileManager.default.fileExists(atPath: url.path) {
-                FileManager.default.createFile(atPath: url.path, contents: nil)
-            }
-            guard let handle = try? FileHandle(forWritingTo: url) else {
-                Log.warn("Failed to open AI events log at \(expanded)")
+            var line = data
+            line.append(0x0A)
+            guard FileOperations.appendData(line, to: url) else {
+                Log.warn("Failed to append AI events log at \(expanded)")
                 return
             }
-            _ = try? handle.seekToEnd()
-            handle.write(data)
-            handle.write(Data([0x0A]))
-            try? handle.close()
         }
     }
 }

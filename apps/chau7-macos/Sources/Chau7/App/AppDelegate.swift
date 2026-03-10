@@ -12,7 +12,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private static let passwordAutofillSelector = NSSelectorFromString("_handleInsertFromPasswordsCommand:")
     var model: AppModel?
     var overlayModel: OverlayTabsModel?
@@ -117,7 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         attemptInitialSetupIfReady()
     }
 
-    private func attemptInitialSetupIfReady() {
+    @MainActor private func attemptInitialSetupIfReady() {
         guard didFinishLaunching else { return }
         guard !didPerformInitialSetup else { return }
         guard let model, let overlayModel else {

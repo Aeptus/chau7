@@ -275,7 +275,7 @@ final class KeybindingsManager: ObservableObject {
 
     /// Executes the action associated with an event
     /// Returns true if an action was executed, false otherwise
-    func handleEvent(_ event: NSEvent, delegate: AppDelegate?, overlayModel: OverlayTabsModel?) -> Bool {
+    @MainActor func handleEvent(_ event: NSEvent, delegate: AppDelegate?, overlayModel: OverlayTabsModel?) -> Bool {
         guard let action = actionForEvent(event) else { return false }
 
         executeAction(action, delegate: delegate, overlayModel: overlayModel)
@@ -283,7 +283,7 @@ final class KeybindingsManager: ObservableObject {
     }
 
     /// Executes a key action
-    func executeAction(_ action: KeyAction, delegate: AppDelegate?, overlayModel: OverlayTabsModel?) {
+    @MainActor func executeAction(_ action: KeyAction, delegate: AppDelegate?, overlayModel: OverlayTabsModel?) {
         switch action {
         // Tab management
         case .newTab:

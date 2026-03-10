@@ -87,6 +87,9 @@ struct RemoteSettingsView: View {
                             pasteboard.clearContents()
                             pasteboard.setString(info.pairingCode, forType: .string)
                         }
+                        Button(L("Regenerate", "Regenerate")) {
+                            remote.restartAgentIfRunning()
+                        }
                     }
                     .buttonStyle(.bordered)
                 }

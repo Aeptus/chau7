@@ -1,10 +1,32 @@
 import Foundation
+import Chau7Core
 
 /// Three-tier command permission result.
 enum MCPCommandVerdict {
     case allowed
     case blocked(command: String)
     case needsApproval(command: String)
+}
+
+/// The resolved set of MCP permissions to apply for a given command.
+/// Either from a matched profile or from global settings.
+struct ResolvedPermissions {
+    let mode: MCPPermissionMode
+    let allowedCommands: Set<String>
+    let blockedCommands: Set<String>
+    /// The profile that was matched, if any. Nil means global settings.
+    let matchedProfile: MCPProfile?
+
+    /// The profile ID to target when "Always Allow" persists a command.
+    var profileID: UUID? { matchedProfile?.id }
+
+    /// Display name for the approval dialog ("profile: MyProfile" or "global").
+    var sourceName: String {
+        if let profile = matchedProfile {
+            return "profile: \(profile.name)"
+        }
+        return "global"
+    }
 }
 
 /// Parses shell commands and checks them against the MCP permission rules.
@@ -15,41 +37,75 @@ enum MCPCommandVerdict {
 ///   3. Everything else — either route to user for approval or deny, depending on mode
 enum MCPCommandFilter {
 
-    /// Check a full shell command string. Splits on pipes, chains, and subshells,
-    /// then validates every sub-command against the permission lists.
-    static func check(_ command: String) -> MCPCommandVerdict {
+    // MARK: - Permission Resolution
+
+    /// Resolve which permissions apply for a given tab context.
+    /// Searches MCP profiles for the best match; falls back to global settings.
+    static func resolvePermissions(for context: MCPTabContext?) -> ResolvedPermissions {
         let settings = FeatureSettings.shared
-        let mode = settings.mcpPermissionMode
 
-        let allowed = Set(settings.mcpAllowedCommands.map { $0.lowercased() })
-        let blocked = Set(settings.mcpBlockedCommands.map { $0.lowercased() })
+        if let context = context {
+            if let profile = settings.mcpProfiles.bestMatch(for: context) {
+                return ResolvedPermissions(
+                    mode: profile.permissionMode,
+                    allowedCommands: Set(profile.allowedCommands.map { $0.lowercased() }),
+                    blockedCommands: Set(profile.blockedCommands.map { $0.lowercased() }),
+                    matchedProfile: profile
+                )
+            }
+        }
 
+        return ResolvedPermissions(
+            mode: settings.mcpPermissionMode,
+            allowedCommands: Set(settings.mcpAllowedCommands.map { $0.lowercased() }),
+            blockedCommands: Set(settings.mcpBlockedCommands.map { $0.lowercased() }),
+            matchedProfile: nil
+        )
+    }
+
+    // MARK: - Command Checking
+
+    /// Check a command using global settings (no profile context).
+    static func check(_ command: String) -> MCPCommandVerdict {
+        let permissions = resolvePermissions(for: nil)
+        return check(command, permissions: permissions).verdict
+    }
+
+    /// Check a command with tab context for profile-aware filtering.
+    /// Returns both the verdict and the resolved permissions (needed by enforceVerdict).
+    static func check(_ command: String, context: MCPTabContext?) -> (verdict: MCPCommandVerdict, permissions: ResolvedPermissions) {
+        let permissions = resolvePermissions(for: context)
+        return check(command, permissions: permissions)
+    }
+
+    /// Core check logic against a specific set of permissions.
+    private static func check(_ command: String, permissions: ResolvedPermissions) -> (verdict: MCPCommandVerdict, permissions: ResolvedPermissions) {
         let baseCommands = extractBaseCommands(command)
 
         for base in baseCommands {
             let normalized = normalizeCommand(base)
 
             // Check blocked first — blocked always wins
-            if blocked.contains(normalized) {
-                return .blocked(command: base)
+            if permissions.blockedCommands.contains(normalized) {
+                return (.blocked(command: base), permissions)
             }
 
             // Explicit allowlist entries always pass.
-            if allowed.contains(normalized) {
+            if permissions.allowedCommands.contains(normalized) {
                 continue
             }
 
-            switch mode {
+            switch permissions.mode {
             case .allowAll:
                 continue
             case .allowlist:
-                return .blocked(command: base)
+                return (.blocked(command: base), permissions)
             case .askUnlisted:
-                return .needsApproval(command: base)
+                return (.needsApproval(command: base), permissions)
             }
         }
 
-        return .allowed
+        return (.allowed, permissions)
     }
 
     /// Check raw terminal input (from tab_send_input). More conservative:
@@ -62,6 +118,15 @@ enum MCPCommandFilter {
         if !input.hasSuffix("\n"), !input.hasSuffix("\r") { return .allowed }
         // Treat as a command
         return check(trimmed)
+    }
+
+    /// Check raw terminal input with tab context for profile-aware filtering.
+    static func checkRawInput(_ input: String, context: MCPTabContext?) -> (verdict: MCPCommandVerdict, permissions: ResolvedPermissions) {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallbackPermissions = resolvePermissions(for: context)
+        if trimmed.count <= 2 { return (.allowed, fallbackPermissions) }
+        if !input.hasSuffix("\n"), !input.hasSuffix("\r") { return (.allowed, fallbackPermissions) }
+        return check(trimmed, context: context)
     }
 
     // MARK: - Parsing

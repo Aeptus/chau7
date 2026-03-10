@@ -9,6 +9,7 @@ import Chau7Core
 ///
 /// - Note: This is a singleton. Call `setup(model:)` from AppDelegate.applicationDidFinishLaunching
 ///   and `cleanup()` from applicationWillTerminate.
+@MainActor
 final class StatusBarController: NSObject {
     static let shared = StatusBarController()
 
@@ -18,6 +19,7 @@ final class StatusBarController: NSObject {
     private var localEventMonitor: Any?
     private weak var model: AppModel?
     private var badgeCancellable: AnyCancellable?
+    private var monitoringCancellable: AnyCancellable?
 
     /// Panel view model — lives as long as the controller so popover doesn't recreate state.
     private var panelViewModel: CommandCenterViewModel?
@@ -88,10 +90,16 @@ final class StatusBarController: NSObject {
         )
 
         // Reactive badge updates from session state changes
-        badgeCancellable = model.$claudeCodeSessions
+        badgeCancellable = panelViewModel.$badgeCounts
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] sessions in
-                self?.updateBadgeAndIcon(sessions: sessions)
+            .sink { [weak self] counts in
+                self?.updateBadgeAndIcon(counts: counts)
+            }
+
+        monitoringCancellable = model.$isMonitoring
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.updateIcon()
             }
     }
 
@@ -100,6 +108,8 @@ final class StatusBarController: NSObject {
         NotificationCenter.default.removeObserver(self)
         badgeCancellable?.cancel()
         badgeCancellable = nil
+        monitoringCancellable?.cancel()
+        monitoringCancellable = nil
 
         if let globalEventMonitor {
             NSEvent.removeMonitor(globalEventMonitor)
@@ -148,15 +158,15 @@ final class StatusBarController: NSObject {
 
     /// Update the status bar icon based on monitoring state.
     @objc func updateIcon() {
-        updateBadgeAndIcon(sessions: model?.claudeCodeSessions ?? [])
+        updateBadgeAndIcon(counts: panelViewModel?.badgeCounts ?? .empty)
     }
 
     /// Update icon and badge count based on session states.
     /// Three states: bell (off), bell.badge.fill (on, clear), bell.badge.fill + count (attention needed).
-    private func updateBadgeAndIcon(sessions: [ClaudeCodeMonitor.ClaudeSessionInfo]) {
+    private func updateBadgeAndIcon(counts: CommandCenterBadgeCounts) {
         guard let button = statusItem?.button else { return }
         let isMonitoring = model?.isMonitoring ?? false
-        let attentionCount = sessions.filter { $0.state == .waitingPermission || $0.state == .waitingInput }.count
+        let attentionCount = counts.attentionCount
 
         if !isMonitoring {
             button.image = NSImage(systemSymbolName: "bell", accessibilityDescription: L("app.name", "Chau7"))
@@ -196,11 +206,135 @@ final class StatusBarController: NSObject {
 
 // MARK: - Command Center View Model
 
+struct CommandCenterBadgeCounts: Equatable {
+    let liveCount: Int
+    let attentionCount: Int
+
+    static let empty = CommandCenterBadgeCounts(liveCount: 0, attentionCount: 0)
+}
+
+struct CommandCenterSessionSummary: Identifiable, Equatable {
+    enum State: Equatable {
+        case running
+        case waitingInput
+        case stuck
+    }
+
+    let id: String
+    let tabID: UUID
+    let paneID: UUID
+    let title: String
+    let appName: String
+    let directory: String?
+    let lastActivity: Date
+    let state: State
+
+    var tabTarget: TabTarget {
+        TabTarget(tool: appName, directory: directory, tabID: tabID)
+    }
+
+    var directoryName: String? {
+        guard let directory else { return nil }
+        let trimmed = directory.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let standardized = URL(fileURLWithPath: trimmed).standardized.path
+        let name = URL(fileURLWithPath: standardized).lastPathComponent
+        return name.isEmpty ? standardized : name
+    }
+
+    var contextLabel: String? {
+        if let directoryName,
+           directoryName.caseInsensitiveCompare(title) != .orderedSame {
+            return directoryName
+        }
+        return nil
+    }
+
+    var needsAttention: Bool {
+        state == .waitingInput
+    }
+
+    static func displayName(for session: TerminalSessionModel) -> String {
+        if let appName = session.aiDisplayAppName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !appName.isEmpty {
+            return appName
+        }
+        if let provider = session.effectiveAIProvider?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !provider.isEmpty {
+            return provider.capitalized
+        }
+        return L("statusBar.aiSession", "AI Session")
+    }
+
+    static func state(for status: CommandStatus) -> State? {
+        switch status {
+        case .running:
+            return .running
+        case .waitingForInput:
+            return .waitingInput
+        case .stuck:
+            return .stuck
+        case .idle, .exited:
+            return nil
+        }
+    }
+
+    @MainActor
+    static func collectLiveSessions(in overlayModel: OverlayTabsModel?) -> [CommandCenterSessionSummary] {
+        guard let overlayModel else { return [] }
+
+        return overlayModel.tabs
+            .flatMap { tab -> [CommandCenterSessionSummary] in
+                tab.splitController.terminalSessions.compactMap { paneID, session in
+                    guard session.aiDisplayAppName != nil ||
+                            session.effectiveAIProvider != nil ||
+                            session.effectiveAISessionId != nil else {
+                        return nil
+                    }
+                    guard let state = state(for: session.effectiveStatus) else {
+                        return nil
+                    }
+
+                    let appName = displayName(for: session)
+                    let trimmedCustomTitle = tab.customTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let title: String
+                    if let trimmedCustomTitle, !trimmedCustomTitle.isEmpty {
+                        title = trimmedCustomTitle
+                    } else {
+                        let displayTitle = tab.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                        if !displayTitle.isEmpty,
+                           displayTitle.caseInsensitiveCompare("Shell") != .orderedSame,
+                           displayTitle.caseInsensitiveCompare("Editor") != .orderedSame,
+                           displayTitle.caseInsensitiveCompare(appName) != .orderedSame {
+                            title = displayTitle
+                        } else {
+                            let directoryName = URL(fileURLWithPath: session.currentDirectory).lastPathComponent
+                            title = directoryName.isEmpty ? appName : directoryName
+                        }
+                    }
+
+                    let directory = session.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return CommandCenterSessionSummary(
+                        id: "\(tab.id.uuidString):\(paneID.uuidString)",
+                        tabID: tab.id,
+                        paneID: paneID,
+                        title: title,
+                        appName: appName,
+                        directory: directory.isEmpty ? nil : directory,
+                        lastActivity: max(session.lastOutputDate, tab.createdAt),
+                        state: state
+                    )
+                }
+            }
+            .sorted { $0.lastActivity > $1.lastActivity }
+    }
+}
+
 /// Shared state for the command center panel — survives popover open/close cycles.
 ///
-/// **Data sources** (all tool-agnostic — not Claude Code specific):
-/// - `model.claudeCodeSessions` → hero zone + live sessions (session state is Claude Code-specific today,
-///   but the panel layout works for any tool's sessions in the future)
+/// **Data sources** (all tool-agnostic):
+/// - open overlay tabs / terminal sessions → hero zone + live sessions
 /// - `model.recentEvents` (`[AIEvent]`) → unified timeline. This is the **tool-agnostic** event stream
 ///   fed by all monitors (file tailer, terminal sessions, API proxy, etc.). Do NOT use
 ///   `model.claudeCodeEvents` here — that stream is Claude Code hook-specific and would exclude events
@@ -208,31 +342,46 @@ final class StatusBarController: NSObject {
 /// - `NotificationHistory` → unified timeline (notification-fired events, also tool-agnostic via `AIEvent`)
 ///
 /// All derived state is computed from @Published properties, so SwiftUI re-evaluates automatically.
+@MainActor
 final class CommandCenterViewModel: ObservableObject {
     let model: AppModel
     let onClose: () -> Void
+    @Published private(set) var liveSessions: [CommandCenterSessionSummary] = []
+    @Published private(set) var attentionSessions: [CommandCenterSessionSummary] = []
+    @Published private(set) var badgeCounts: CommandCenterBadgeCounts = .empty
     @Published var showQuitConfirmation = false
+    private let sessionSource: () -> [CommandCenterSessionSummary]
+    private var refreshCancellable: AnyCancellable?
 
-    init(model: AppModel, onClose: @escaping () -> Void) {
+    init(
+        model: AppModel,
+        onClose: @escaping () -> Void,
+        sessionSource: (() -> [CommandCenterSessionSummary])? = nil,
+        autoRefresh: Bool = true
+    ) {
         self.model = model
         self.onClose = onClose
-    }
+        self.sessionSource = sessionSource ?? {
+            let overlayModel = (NSApp.delegate as? AppDelegate)?.overlayModel
+            return CommandCenterSessionSummary.collectLiveSessions(in: overlayModel)
+        }
+        refreshSessions()
 
-    /// Sessions needing user action (permission or input).
-    var attentionSessions: [ClaudeCodeMonitor.ClaudeSessionInfo] {
-        model.claudeCodeSessions.filter { $0.state == .waitingPermission || $0.state == .waitingInput }
+        if autoRefresh {
+            refreshCancellable = Timer.publish(every: 1.0, on: .main, in: .common)
+                .autoconnect()
+                .sink { [weak self] _ in
+                    self?.refreshSessions()
+                }
+        }
     }
 
     var attentionCount: Int {
-        attentionSessions.count
+        badgeCounts.attentionCount
     }
 
-    /// Active sessions excluding idle/closed, sorted by most recent activity, max 5.
-    var liveSessions: [ClaudeCodeMonitor.ClaudeSessionInfo] {
-        Array(model.claudeCodeSessions
-            .filter { $0.state != .idle && $0.state != .closed }
-            .sorted { $0.lastActivity > $1.lastActivity }
-            .prefix(5))
+    var totalLiveSessionCount: Int {
+        badgeCounts.liveCount
     }
 
     /// Merged feed of notification history + recent tool-agnostic events, deduplicated, max 8.
@@ -291,11 +440,25 @@ final class CommandCenterViewModel: ObservableObject {
             .prefix(8))
     }
 
-    func focusSession(_ session: ClaudeCodeMonitor.ClaudeSessionInfo) {
+    func refreshSessions() {
+        let sessions = sessionSource()
+        liveSessions = Array(sessions.prefix(5))
+        attentionSessions = sessions.filter(\.needsAttention)
+        badgeCounts = CommandCenterBadgeCounts(
+            liveCount: sessions.count,
+            attentionCount: attentionSessions.count
+        )
+    }
+
+    func tabTarget(for session: CommandCenterSessionSummary) -> TabTarget {
+        session.tabTarget
+    }
+
+    func focusSession(_ session: CommandCenterSessionSummary) {
         if let delegate = NSApp.delegate as? AppDelegate,
            let overlayModel = delegate.overlayModel {
             delegate.showOverlay()
-            overlayModel.focusTabByTool(session.projectName)
+            overlayModel.focusTab(for: tabTarget(for: session))
         }
         onClose()
     }
@@ -800,14 +963,12 @@ private struct HeroZoneView: View {
             ForEach(Array(viewModel.attentionSessions.prefix(3))) { session in
                 HStack(spacing: 8) {
                     Circle()
-                        .fill(session.state == .waitingPermission ? Color.yellow : Color.blue)
+                        .fill(Color.blue)
                         .frame(width: 6, height: 6)
-                    Text(session.projectName)
+                    Text(session.title)
                         .font(.system(size: 11, weight: .medium))
                         .lineLimit(1)
-                    Text(session.state == .waitingPermission
-                        ? L("statusBar.session.permission", "Permission")
-                        : L("statusBar.session.input", "Input"))
+                    Text(L("statusBar.session.input", "Input"))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -830,7 +991,7 @@ private struct HeroZoneView: View {
             Text(L("statusBar.allClear", "All clear"))
                 .font(.system(size: 13, weight: .medium))
 
-            let total = viewModel.model.claudeCodeSessions.count
+            let total = viewModel.totalLiveSessionCount
             if total > 0 {
                 Text(CommandCenterViewModel.sessionCount(total))
                     .font(.system(size: 11))
@@ -856,7 +1017,7 @@ private struct HeroZoneView: View {
 // MARK: - Live Session Card
 
 private struct LiveSessionCard: View {
-    let session: ClaudeCodeMonitor.ClaudeSessionInfo
+    let session: CommandCenterSessionSummary
     let onTap: () -> Void
 
     var body: some View {
@@ -876,7 +1037,7 @@ private struct LiveSessionCard: View {
                 .frame(width: 16, height: 16)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(session.projectName)
+                    Text(session.title)
                         .font(.system(size: 12, weight: .medium))
                         .lineLimit(1)
 
@@ -887,8 +1048,13 @@ private struct LiveSessionCard: View {
                         }
                         Text(stateDescription)
                             .font(.system(size: 10))
-                        if let tool = session.lastToolName, showTool {
-                            Text("(\(tool))")
+                        if showAppName {
+                            Text(session.appName)
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                        }
+                        if let contextLabel = session.contextLabel {
+                            Text("· \(contextLabel)")
                                 .font(.system(size: 9))
                                 .foregroundStyle(.tertiary)
                         }
@@ -920,7 +1086,7 @@ private struct LiveSessionCard: View {
             L(
                 "a11y.status.session",
                 "%@, %@, %@",
-                session.projectName,
+                session.title,
                 stateDescription,
                 timeAgo(session.lastActivity)
             )
@@ -929,53 +1095,46 @@ private struct LiveSessionCard: View {
     }
 
     private var needsAttention: Bool {
-        session.state == .waitingPermission || session.state == .waitingInput
+        session.needsAttention
     }
 
     private var isAnimated: Bool {
-        session.state == .responding || session.state == .waitingPermission
+        session.state == .running
     }
 
-    private var showTool: Bool {
-        session.state == .responding || session.state == .waitingPermission
+    private var showAppName: Bool {
+        session.appName.caseInsensitiveCompare(session.title) != .orderedSame
     }
 
     private var statusColor: Color {
         switch session.state {
-        case .active: return .green
-        case .responding: return .orange
-        case .waitingPermission: return .yellow
+        case .running: return .orange
         case .waitingInput: return .blue
-        case .idle: return .gray
-        case .closed: return .red
+        case .stuck: return .yellow
         }
     }
 
     private var stateColor: Color {
         switch session.state {
-        case .waitingPermission: return .yellow
         case .waitingInput: return .blue
-        default: return .secondary
+        case .stuck: return .yellow
+        case .running: return .secondary
         }
     }
 
     private var stateIcon: String? {
         switch session.state {
-        case .responding: return "gearshape.2"
-        case .waitingPermission: return "exclamationmark.triangle"
+        case .running: return "gearshape.2"
         case .waitingInput: return "bubble.left.and.exclamationmark.bubble.right"
-        default: return nil
+        case .stuck: return "exclamationmark.triangle"
         }
     }
 
     private var stateDescription: String {
         switch session.state {
-        case .active: return L("statusBar.session.starting", "Starting")
-        case .responding: return L("statusBar.session.working", "Working")
-        case .waitingPermission: return L("statusBar.session.needsPermission", "Needs permission")
+        case .running: return L("statusBar.session.working", "Working")
         case .waitingInput: return L("statusBar.session.waitingInput", "Waiting for input")
-        case .idle: return L("status.idle", "Idle")
-        case .closed: return L("statusBar.session.closed", "Closed")
+        case .stuck: return L("statusBar.session.stuck", "No recent output")
         }
     }
 

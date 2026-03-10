@@ -1,10 +1,13 @@
 import SwiftUI
+import Chau7Core
 
 struct MCPSettingsView: View {
     @ObservedObject private var settings = FeatureSettings.shared
 
     @State private var newAllowedCommand = ""
     @State private var newBlockedCommand = ""
+    @State private var editingProfile: MCPProfile?
+    @State private var isAddingProfile = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -81,6 +84,28 @@ struct MCPSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            // MARK: - MCP Profiles
+
+            SettingsSectionHeader("MCP Profiles", icon: "person.crop.rectangle.stack")
+
+            Text("Profiles override global permissions when their trigger matches the current tab context.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if !settings.mcpProfiles.isEmpty {
+                VStack(spacing: 4) {
+                    ForEach(settings.mcpProfiles) { profile in
+                        profileRow(profile)
+                    }
+                }
+            }
+
+            Button(action: { isAddingProfile = true }) {
+                Label("Add Profile", systemImage: "plus")
+            }
+            .buttonStyle(.plain)
+            .foregroundColor(.accentColor)
+
             // MARK: - Appearance
 
             SettingsSectionHeader(L("settings.mcp.appearance", "Appearance"), icon: "paintpalette")
@@ -91,7 +116,67 @@ struct MCPSettingsView: View {
                 isOn: $settings.mcpShowTabIndicator
             )
         }
+        .sheet(isPresented: $isAddingProfile) {
+            MCPProfileEditorView(profile: nil) { newProfile in
+                settings.mcpProfiles.append(newProfile)
+                isAddingProfile = false
+            } onCancel: {
+                isAddingProfile = false
+            }
+        }
+        .sheet(item: $editingProfile) { profile in
+            MCPProfileEditorView(profile: profile) { updated in
+                if let idx = settings.mcpProfiles.firstIndex(where: { $0.id == updated.id }) {
+                    settings.mcpProfiles[idx] = updated
+                }
+                editingProfile = nil
+            } onCancel: {
+                editingProfile = nil
+            }
+        }
     }
+
+    // MARK: - Profile Row
+
+    private func profileRow(_ profile: MCPProfile) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(profile.isEnabled ? Color.green : Color.secondary)
+                        .frame(width: 8, height: 8)
+                    Text(profile.name)
+                        .font(.subheadline.weight(.medium))
+                }
+                Text("\(profile.trigger.displaySummary) — \(profile.permissionMode.displayName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text("P\(profile.priority)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.tertiary)
+            Button(action: { editingProfile = profile }) {
+                Image(systemName: "pencil")
+                    .font(.caption)
+            }
+            .buttonStyle(.plain)
+            Button(action: {
+                settings.mcpProfiles.removeAll { $0.id == profile.id }
+            }) {
+                Image(systemName: "trash")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(Color.secondary.opacity(0.06))
+        .cornerRadius(6)
+    }
+
+    // MARK: - Command List Section
 
     private func commandListSection(
         title: String,
@@ -156,8 +241,205 @@ struct MCPSettingsView: View {
     }
 }
 
+// MARK: - Profile Editor
+
+private struct MCPProfileEditorView: View {
+    let profile: MCPProfile?
+    let onSave: (MCPProfile) -> Void
+    let onCancel: () -> Void
+
+    @State private var name: String = ""
+    @State private var isEnabled: Bool = true
+    @State private var permissionMode: MCPPermissionMode = .askUnlisted
+    @State private var priority: Int = 0
+    @State private var allowedCommands: [String] = []
+    @State private var blockedCommands: [String] = []
+    @State private var newAllowed: String = ""
+    @State private var newBlocked: String = ""
+
+    // Trigger state
+    @State private var triggerTypeIndex: Int = 0
+    @State private var triggerValue: String = ""
+    @State private var triggerEnvKey: String = ""
+
+    private let triggerTypes = ["Directory", "Git Repository", "SSH Host", "Process", "Environment Variable"]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(profile == nil ? "New MCP Profile" : "Edit MCP Profile")
+                .font(.headline)
+
+            TextField("Profile Name", text: $name)
+                .textFieldStyle(.roundedBorder)
+
+            Toggle("Enabled", isOn: $isEnabled)
+
+            Stepper("Priority: \(priority)", value: $priority, in: 0...100)
+
+            Divider()
+
+            // Trigger
+            Text("Trigger").font(.subheadline.weight(.medium))
+            Picker("Type", selection: $triggerTypeIndex) {
+                ForEach(0..<triggerTypes.count, id: \.self) { i in
+                    Text(triggerTypes[i]).tag(i)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if triggerTypeIndex == 4 {
+                HStack {
+                    TextField("Key", text: $triggerEnvKey)
+                        .textFieldStyle(.roundedBorder)
+                    Text("=")
+                    TextField("Value", text: $triggerValue)
+                        .textFieldStyle(.roundedBorder)
+                }
+            } else {
+                TextField(triggerPlaceholder, text: $triggerValue)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+            }
+
+            Divider()
+
+            // Permission mode
+            Text("Permission Mode").font(.subheadline.weight(.medium))
+            Picker("", selection: $permissionMode) {
+                ForEach(MCPPermissionMode.allCases, id: \.self) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            // Command lists
+            if permissionMode != .allowAll {
+                profileCommandList(title: "Allowed Commands", commands: $allowedCommands, newCommand: $newAllowed)
+            }
+            profileCommandList(title: "Blocked Commands", commands: $blockedCommands, newCommand: $newBlocked)
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button("Cancel") { onCancel() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Save") { save() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || triggerValue.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 460)
+        .onAppear {
+            if let p = profile {
+                name = p.name
+                isEnabled = p.isEnabled
+                permissionMode = p.permissionMode
+                priority = p.priority
+                allowedCommands = p.allowedCommands
+                blockedCommands = p.blockedCommands
+                loadTrigger(p.trigger)
+            }
+        }
+    }
+
+    private var triggerPlaceholder: String {
+        switch triggerTypeIndex {
+        case 0: return "~/projects/myapp"
+        case 1: return "my-repo"
+        case 2: return "prod-server.example.com"
+        case 3: return "node"
+        default: return ""
+        }
+    }
+
+    private func loadTrigger(_ trigger: ProfileSwitchTrigger) {
+        switch trigger {
+        case .directory(let path):
+            triggerTypeIndex = 0; triggerValue = path
+        case .gitRepository(let name):
+            triggerTypeIndex = 1; triggerValue = name
+        case .sshHost(let hostname):
+            triggerTypeIndex = 2; triggerValue = hostname
+        case .processRunning(let name):
+            triggerTypeIndex = 3; triggerValue = name
+        case .environmentVariable(let key, let value):
+            triggerTypeIndex = 4; triggerEnvKey = key; triggerValue = value
+        }
+    }
+
+    private func buildTrigger() -> ProfileSwitchTrigger {
+        let v = triggerValue.trimmingCharacters(in: .whitespaces)
+        switch triggerTypeIndex {
+        case 0: return .directory(path: v)
+        case 1: return .gitRepository(name: v)
+        case 2: return .sshHost(hostname: v)
+        case 3: return .processRunning(name: v)
+        case 4: return .environmentVariable(key: triggerEnvKey.trimmingCharacters(in: .whitespaces), value: v)
+        default: return .directory(path: v)
+        }
+    }
+
+    private func save() {
+        let result = MCPProfile(
+            id: profile?.id ?? UUID(),
+            name: name.trimmingCharacters(in: .whitespaces),
+            isEnabled: isEnabled,
+            trigger: buildTrigger(),
+            permissionMode: permissionMode,
+            allowedCommands: allowedCommands,
+            blockedCommands: blockedCommands,
+            priority: priority
+        )
+        onSave(result)
+    }
+
+    private func profileCommandList(title: String, commands: Binding<[String]>, newCommand: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption.weight(.medium))
+            if !commands.wrappedValue.isEmpty {
+                MCPCommandFlowLayout(spacing: 4) {
+                    ForEach(commands.wrappedValue, id: \.self) { cmd in
+                        HStack(spacing: 2) {
+                            Text(cmd).font(.system(.caption2, design: .monospaced))
+                            Button(action: { commands.wrappedValue.removeAll { $0 == cmd } }) {
+                                Image(systemName: "xmark.circle.fill").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.12))
+                        .cornerRadius(4)
+                    }
+                }
+            }
+            HStack(spacing: 4) {
+                TextField("command", text: newCommand)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.caption, design: .monospaced))
+                    .onSubmit { addCmd(to: commands, from: newCommand) }
+                Button("Add") { addCmd(to: commands, from: newCommand) }
+                    .font(.caption)
+                    .disabled(newCommand.wrappedValue.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+    }
+
+    private func addCmd(to list: Binding<[String]>, from text: Binding<String>) {
+        let trimmed = text.wrappedValue.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !trimmed.isEmpty, !list.wrappedValue.contains(trimmed) else {
+            text.wrappedValue = ""
+            return
+        }
+        list.wrappedValue.append(trimmed)
+        text.wrappedValue = ""
+    }
+}
+
 /// Simple flow layout for tag chips.
-private struct MCPCommandFlowLayout: Layout {
+struct MCPCommandFlowLayout: Layout {
     var spacing: CGFloat = 6
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {

@@ -459,19 +459,7 @@ enum DangerousCommandHighlightScope: String, CaseIterable, Codable {
     case allOutputs = "all_outputs"
 }
 
-enum MCPPermissionMode: String, CaseIterable, Codable {
-    case allowAll = "allow_all"
-    case allowlist
-    case askUnlisted = "ask_unlisted"
-
-    var displayName: String {
-        switch self {
-        case .allowAll: return "Allow All"
-        case .allowlist: return "Allowlist Only"
-        case .askUnlisted: return "Ask for Unlisted"
-        }
-    }
-}
+// MCPPermissionMode is defined in Chau7Core/MCPPermissionMode.swift
 
 // MARK: - Feature Settings (Centralized configuration for all features)
 
@@ -488,6 +476,7 @@ final class FeatureSettings: ObservableObject {
         var permissionMode: MCPPermissionMode
         var allowedCommands: [String]
         var blockedCommands: [String]
+        var profiles: [MCPProfile]
         var remoteEnabled: Bool
         var remoteRelayURL: String
     }
@@ -1741,6 +1730,29 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(mcpBlockedCommands, forKey: Keys.mcpBlockedCommands) }
     }
 
+    @Published var mcpProfiles: [MCPProfile] {
+        didSet {
+            if let data = try? JSONEncoder().encode(mcpProfiles) {
+                UserDefaults.standard.set(data, forKey: Keys.mcpProfiles)
+            }
+        }
+    }
+
+    /// Add a command to the allowed list of a specific profile, or to the global list.
+    func addToAllowedCommands(_ command: String, profileID: UUID? = nil) {
+        let normalized = command.lowercased()
+        if let profileID = profileID,
+           let index = mcpProfiles.firstIndex(where: { $0.id == profileID }) {
+            if !mcpProfiles[index].allowedCommands.contains(normalized) {
+                mcpProfiles[index].allowedCommands.append(normalized)
+            }
+        } else {
+            if !mcpAllowedCommands.contains(normalized) {
+                mcpAllowedCommands.append(normalized)
+            }
+        }
+    }
+
     // MARK: - Remote Control Settings
 
     @Published var isRemoteEnabled: Bool {
@@ -1982,6 +1994,7 @@ final class FeatureSettings: ObservableObject {
         static let mcpPermissionMode = "mcp.permissionMode"
         static let mcpAllowedCommands = "mcp.allowedCommands"
         static let mcpBlockedCommands = "mcp.blockedCommands"
+        static let mcpProfiles = "mcp.profiles"
         // Remote Control
         static let remoteEnabled = "remote.enabled"
         static let remoteRelayURL = "remote.relayURL"
@@ -2331,10 +2344,11 @@ final class FeatureSettings: ObservableObject {
             mcpRemote.requiresApproval,
             mcpRemote.showTabIndicator
         )
-        (mcpPermissionMode, mcpAllowedCommands, mcpBlockedCommands) = (
+        (mcpPermissionMode, mcpAllowedCommands, mcpBlockedCommands, mcpProfiles) = (
             mcpRemote.permissionMode,
             mcpRemote.allowedCommands,
-            mcpRemote.blockedCommands
+            mcpRemote.blockedCommands,
+            mcpRemote.profiles
         )
         (isRemoteEnabled, remoteRelayURL) = (mcpRemote.remoteEnabled, mcpRemote.remoteRelayURL)
 
@@ -2365,6 +2379,13 @@ final class FeatureSettings: ObservableObject {
         }
         let allowedCommands = defaults.stringArray(forKey: Keys.mcpAllowedCommands) ?? []
         let blockedCommands = defaults.stringArray(forKey: Keys.mcpBlockedCommands) ?? []
+        let profiles: [MCPProfile]
+        if let profileData = defaults.data(forKey: Keys.mcpProfiles),
+           let decoded = try? JSONDecoder().decode([MCPProfile].self, from: profileData) {
+            profiles = decoded
+        } else {
+            profiles = []
+        }
 
         // Remote Control (default: disabled)
         let remoteEnabled = defaults.object(forKey: Keys.remoteEnabled) as? Bool ?? false
@@ -2378,6 +2399,7 @@ final class FeatureSettings: ObservableObject {
             permissionMode: permissionMode,
             allowedCommands: allowedCommands,
             blockedCommands: blockedCommands,
+            profiles: profiles,
             remoteEnabled: remoteEnabled,
             remoteRelayURL: remoteRelayURL
         )
@@ -2641,6 +2663,7 @@ final class FeatureSettings: ObservableObject {
         var mcpPermissionMode: String?
         var mcpAllowedCommands: [String]?
         var mcpBlockedCommands: [String]?
+        var mcpProfiles: [MCPProfile]?
         var isRemoteEnabled: Bool?
         var remoteRelayURL: String?
         var isCTOEnabled = false
@@ -2737,6 +2760,7 @@ final class FeatureSettings: ObservableObject {
             mcpPermissionMode: mcpPermissionMode.rawValue,
             mcpAllowedCommands: mcpAllowedCommands,
             mcpBlockedCommands: mcpBlockedCommands,
+            mcpProfiles: mcpProfiles,
             isRemoteEnabled: isRemoteEnabled,
             remoteRelayURL: remoteRelayURL,
             isCTOEnabled: isCTOEnabled,
@@ -2886,6 +2910,7 @@ final class FeatureSettings: ObservableObject {
         if let v = imported.mcpPermissionMode, let mode = MCPPermissionMode(rawValue: v) { mcpPermissionMode = mode }
         if let v = imported.mcpAllowedCommands { mcpAllowedCommands = v }
         if let v = imported.mcpBlockedCommands { mcpBlockedCommands = v }
+        if let v = imported.mcpProfiles { mcpProfiles = v }
         if let remoteEnabled = imported.isRemoteEnabled {
             isRemoteEnabled = remoteEnabled
         }
@@ -3005,6 +3030,7 @@ final class FeatureSettings: ObservableObject {
         mcpPermissionMode = .allowAll
         mcpAllowedCommands = []
         mcpBlockedCommands = []
+        mcpProfiles = []
         isRemoteEnabled = false
         remoteRelayURL = "wss://relay.example.com/connect"
         isCTOEnabled = false
@@ -3262,6 +3288,7 @@ extension FeatureSettings {
             mcpPermissionMode: MCPPermissionMode.allowAll.rawValue,
             mcpAllowedCommands: [],
             mcpBlockedCommands: [],
+            mcpProfiles: [],
             isRemoteEnabled: false,
             remoteRelayURL: "wss://relay.example.com/connect",
             isCTOEnabled: false,

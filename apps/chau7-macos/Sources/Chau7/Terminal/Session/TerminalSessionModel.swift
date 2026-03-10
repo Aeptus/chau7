@@ -84,6 +84,13 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
     /// Unique identifier for this terminal tab, used for task lifecycle tracking
     let tabIdentifier: String = UUID().uuidString
+
+    /// The owning tab's UUID, set by OverlayTabsModel at tab creation time.
+    /// Propagated to ShellEventDetector so emitted events carry a deterministic tabID
+    /// for the fast-path in TabResolver.
+    var ownerTabID: UUID? {
+        didSet { shellEventDetector.ownerTabID = ownerTabID }
+    }
     @Published var status: CommandStatus = .idle
     @Published var isGitRepo = false
     @Published var gitBranch: String?
@@ -1467,7 +1474,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                 tool: notificationTabName,
                 message: message,
                 notify: true,
-                directory: currentDirectory
+                directory: currentDirectory,
+                tabID: ownerTabID
             )
         }
     }
@@ -2181,7 +2189,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             tool: notificationTabName,
             message: message,
             notify: shouldNotify,
-            directory: currentDirectory
+            directory: currentDirectory,
+            tabID: ownerTabID
         )
     }
 

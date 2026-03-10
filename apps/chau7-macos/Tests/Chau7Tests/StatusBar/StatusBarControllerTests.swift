@@ -132,5 +132,88 @@ final class StatusBarControllerTests: XCTestCase {
             "All stream selection cases should have unique IDs"
         )
     }
+
+    func testCommandCenterViewModelLiveSessionsUseAgnosticSourceAndLimitToFive() {
+        let model = AppModel()
+        let sessions = [
+            makeSummary(id: "6", state: .running, lastActivityOffset: 5),
+            makeSummary(id: "5", state: .waitingInput, lastActivityOffset: 10),
+            makeSummary(id: "4", state: .stuck, lastActivityOffset: 20),
+            makeSummary(id: "3", state: .running, lastActivityOffset: 30),
+            makeSummary(id: "2", state: .running, lastActivityOffset: 40),
+            makeSummary(id: "1", state: .running, lastActivityOffset: 50)
+        ]
+
+        let viewModel = CommandCenterViewModel(
+            model: model,
+            onClose: {},
+            sessionSource: { sessions },
+            autoRefresh: false
+        )
+
+        XCTAssertEqual(
+            viewModel.liveSessions.map(\.id),
+            ["6", "5", "4", "3", "2"],
+            "Live sessions should come from the AI-agnostic source, newest first, and cap at five"
+        )
+        XCTAssertEqual(viewModel.totalLiveSessionCount, 6)
+    }
+
+    func testCommandCenterViewModelAttentionSessionsOnlyIncludeWaitingInput() {
+        let model = AppModel()
+        let sessions = [
+            makeSummary(id: "input", state: .waitingInput, lastActivityOffset: 10),
+            makeSummary(id: "stuck", state: .stuck, lastActivityOffset: 20),
+            makeSummary(id: "running", state: .running, lastActivityOffset: 5)
+        ]
+
+        let viewModel = CommandCenterViewModel(
+            model: model,
+            onClose: {},
+            sessionSource: { sessions },
+            autoRefresh: false
+        )
+
+        XCTAssertEqual(
+            viewModel.attentionSessions.map(\.id),
+            ["input"],
+            "Attention sessions should only include live sessions currently waiting for user input"
+        )
+        XCTAssertEqual(viewModel.attentionCount, 1)
+    }
+
+    func testCommandCenterViewModelTabTargetUsesExactTabIDAndDirectory() {
+        let model = AppModel()
+        let session = makeSummary(id: "target", state: .running, lastActivityOffset: 5)
+        let viewModel = CommandCenterViewModel(
+            model: model,
+            onClose: {},
+            sessionSource: { [session] },
+            autoRefresh: false
+        )
+
+        let target = viewModel.tabTarget(for: session)
+
+        XCTAssertEqual(target.tool, "Codex")
+        XCTAssertEqual(target.directory, "/tmp/target")
+        XCTAssertEqual(target.tabID, UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
+    }
+
+    private func makeSummary(
+        id: String,
+        state: CommandCenterSessionSummary.State,
+        lastActivityOffset: TimeInterval
+    ) -> CommandCenterSessionSummary {
+        CommandCenterSessionSummary(
+            id: id,
+            tabID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+            paneID: UUID(uuidString: "00000000-0000-0000-0000-000000000002")!,
+            title: "Project \(id)",
+            appName: "Codex",
+            directory: "/tmp/\(id)",
+            lastActivity: Date().addingTimeInterval(-lastActivityOffset),
+            state: state
+        )
+    }
 }
 #endif

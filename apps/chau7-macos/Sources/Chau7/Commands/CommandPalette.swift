@@ -9,7 +9,7 @@ struct PaletteCommand: Identifiable {
     let shortcut: String?
     let category: CommandCategory
     let icon: String
-    let action: () -> Void
+    let action: @MainActor () -> Void
 
     enum CommandCategory: String, CaseIterable {
         case file = "File"

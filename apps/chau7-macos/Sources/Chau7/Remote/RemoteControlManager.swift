@@ -181,7 +181,7 @@ final class RemoteControlManager: ObservableObject {
         isAgentRunning = false
     }
 
-    private func restartAgentIfRunning() {
+    func restartAgentIfRunning() {
         guard isAgentRunning else { return }
         stopAgent()
         startAgent()

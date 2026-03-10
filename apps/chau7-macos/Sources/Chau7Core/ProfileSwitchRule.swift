@@ -170,7 +170,7 @@ extension ProfileSwitchRule {
 
     private static func expandTilde(_ path: String) -> String {
         guard path.hasPrefix("~/") else { return path }
-        return FileManager.default.homeDirectoryForCurrentUser.path + path.dropFirst(1)
+        return NSHomeDirectory() + path.dropFirst(1)
     }
 
     private static func matchesRepoName(directory: String, repoName: String) -> Bool {
