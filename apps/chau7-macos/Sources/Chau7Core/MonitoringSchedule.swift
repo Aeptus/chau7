@@ -109,6 +109,11 @@ public enum MonitoringSchedule {
 
     /// Generates a coalescing key for notification deduplication.
     /// Events with the same key within the coalescing window are merged (last wins).
+    /// Includes tabID so events from different tabs are never coalesced together.
+    ///
+    /// **Known limitation:** Events where `tabID` is nil (resolution failed) share a
+    /// single key per source/type/tool and will coalesce with each other. This is
+    /// acceptable — if we can't identify the tab, there's no way to distinguish them.
     public static func notificationCoalescingKey(for event: AIEvent) -> String {
         let normalizedTool = event.tool
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -116,6 +121,7 @@ public enum MonitoringSchedule {
         let normalizedType = event.type
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-        return "\(event.source.rawValue)|\(normalizedType)|\(normalizedTool)"
+        let tabSuffix = event.tabID.map { "|" + $0.uuidString } ?? ""
+        return "\(event.source.rawValue)|\(normalizedType)|\(normalizedTool)\(tabSuffix)"
     }
 }
