@@ -347,9 +347,101 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertEqual(state.currentApp, "Claude")
     }
 
+    // MARK: - Redetection Deadline Boundary
+
+    func testRedetectionExactlyAtDeadlineExpires() {
+        let t0 = Date(timeIntervalSince1970: 1000)
+        let deadline = t0.addingTimeInterval(1)
+        var state = AIDetectionState.makeRedetecting(lastTool: "Claude", deadline: deadline)
+        let chunk = "some output".data(using: .utf8)!
+
+        // Exactly at deadline (now >= deadline) — should expire
+        let result = state.prepareHaystack(chunk: chunk, now: deadline)
+        XCTAssertNil(result)
+        XCTAssertEqual(state.phase, .scanning)
+    }
+
+    func testRedetectionOneNanosecondBeforeDeadlineStillActive() {
+        let t0 = Date(timeIntervalSince1970: 1000)
+        let deadline = t0.addingTimeInterval(1)
+        var state = AIDetectionState.makeRedetecting(lastTool: "Claude", deadline: deadline)
+        let chunk = "some output".data(using: .utf8)!
+
+        // Just before deadline — should still be redetecting
+        let result = state.prepareHaystack(chunk: chunk, now: deadline.addingTimeInterval(-0.001))
+        XCTAssertNotNil(result)
+        XCTAssertEqual(state.phase, .redetecting)
+    }
+
+    // MARK: - Raw Multi-Byte Byte Split
+
+    func testPrepareHaystackRawByteSplitAcrossChunks() {
+        var state = AIDetectionState()
+        // "╭" is U+256D, encoded as E2 95 AD (3 bytes)
+        // Send the first 2 bytes as chunk1 (invalid UTF-8 on its own)
+        let chunk1 = Data([0xE2, 0x95])
+        // Send the remaining byte + valid text as chunk2
+        var chunk2 = Data([0xAD])
+        chunk2.append("─ claude code".data(using: .utf8)!)
+
+        // chunk1 is invalid UTF-8 (truncated multi-byte sequence)
+        let result1 = state.prepareHaystack(chunk: chunk1)
+        XCTAssertNotNil(result1, "Lossy fallback should handle invalid UTF-8")
+        XCTAssertEqual(state.utf8DecodeFailures, 1)
+
+        // chunk2 starts with 0xAD which is a continuation byte without a leader —
+        // also invalid on its own, but the rest should be readable via lossy decoding
+        let result2 = state.prepareHaystack(chunk: chunk2)
+        XCTAssertNotNil(result2)
+        // The pattern may be disrupted by replacement chars, but the system shouldn't crash
+        XCTAssertTrue(result2!.contains("claude code"))
+    }
+
     // MARK: - Helpers
 
     private func forceRedetecting(lastTool: String) -> AIDetectionState {
         AIDetectionState.makeRedetecting(lastTool: lastTool)
+    }
+}
+
+// MARK: - AIEvent Tests
+
+final class AIEventTests: XCTestCase {
+
+    func testResolvingTabIDFillsMissingID() {
+        let event = AIEvent(source: .claudeCode, type: "finished", tool: "Claude", message: "", ts: "now")
+        XCTAssertNil(event.tabID)
+
+        let tabID = UUID()
+        let resolved = event.resolvingTabID(tabID)
+        XCTAssertEqual(resolved.tabID, tabID)
+        XCTAssertEqual(resolved.id, event.id, "resolvingTabID should preserve the original event ID")
+        XCTAssertEqual(resolved.source, event.source)
+        XCTAssertEqual(resolved.type, event.type)
+    }
+
+    func testResolvingTabIDDoesNotOverrideExisting() {
+        let existingID = UUID()
+        let event = AIEvent(source: .claudeCode, type: "finished", tool: "Claude", message: "", ts: "now", tabID: existingID)
+
+        let newID = UUID()
+        let resolved = event.resolvingTabID(newID)
+        XCTAssertEqual(resolved.tabID, existingID, "Should not override an existing tabID")
+    }
+
+    func testResolvingTabIDWithNilIsNoOp() {
+        let event = AIEvent(source: .claudeCode, type: "finished", tool: "Claude", message: "", ts: "now")
+        let resolved = event.resolvingTabID(nil)
+        XCTAssertNil(resolved.tabID)
+        XCTAssertEqual(resolved.id, event.id)
+    }
+
+    func testTabTargetIncludesAllFields() {
+        let tabID = UUID()
+        let event = AIEvent(source: .claudeCode, type: "finished", tool: "Claude", message: "", ts: "now", directory: "/tmp/project", tabID: tabID)
+        let target = event.tabTarget
+        XCTAssertEqual(target.tool, "Claude")
+        XCTAssertEqual(target.directory, "/tmp/project")
+        XCTAssertEqual(target.tabID, tabID)
     }
 }
