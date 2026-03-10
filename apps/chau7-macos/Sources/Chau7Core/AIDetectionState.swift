@@ -43,23 +43,30 @@ public struct AIDetectionState: Sendable {
     /// Current phase of the detection lifecycle.
     public private(set) var phase: Phase = .scanning
 
+    /// Number of times UTF-8 decoding failed in `prepareHaystack`.
+    /// Callers can read this to log diagnostics (Chau7Core has no Log dependency).
+    public private(set) var utf8DecodeFailures = 0
+
     // MARK: - Internal State
 
     /// Timestamp when detection was last set (for cooldown calculation).
     private var detectedAt: Date?
-    /// Chunks processed since entering the redetecting phase.
-    private var chunksSinceClearing = 0
-    /// Sliding buffer for cross-chunk pattern matching.
-    private var slidingBuffer = Data()
+    /// Deadline for the re-detection retry window (time-based, not chunk-count).
+    private var redetectionDeadline: Date?
+    /// Sliding buffer tail for cross-chunk pattern matching (String, not Data,
+    /// to avoid splitting multi-byte UTF-8 characters at chunk boundaries).
+    private var slidingBufferTail = ""
 
     // MARK: - Constants
 
     /// Don't clear detection within this many seconds of the last detection event.
     private let cooldownSeconds: TimeInterval = 3.0
-    /// After clearing, re-check this many output chunks before giving up.
-    private let retryChunks = 30
-    /// Size of the sliding buffer tail kept across chunks.
-    private let bufferCapacity = 256
+    /// After entering `.redetecting`, keep scanning output for this many seconds
+    /// before giving up. Time-based (not chunk-count) so the window is deterministic
+    /// regardless of output granularity.
+    private let redetectionWindowSeconds: TimeInterval = 5.0
+    /// Maximum character count of the sliding buffer tail kept across chunks.
+    private let bufferTailCapacity = 256
 
     // MARK: - Init
 
@@ -70,38 +77,50 @@ public struct AIDetectionState: Sendable {
     /// Appends `chunk` to the internal sliding buffer and returns the lowercased
     /// combined string (up to 2 KB) for the caller to run pattern matching against.
     ///
-    /// When in `.detected` phase, resets the chunk counter (keeping detection alive)
-    /// and returns nil to skip expensive pattern matching.
+    /// When in `.detected` phase, returns nil to skip expensive pattern matching.
+    ///
+    /// The sliding buffer stores a `String` tail (not raw `Data`) to avoid splitting
+    /// multi-byte UTF-8 characters at chunk boundaries.
     ///
     /// Returns nil if UTF-8 decoding fails or matching should be skipped.
-    public mutating func prepareHaystack(chunk: Data) -> String? {
+    /// - Parameter now: Current time. Pass explicitly for testability; defaults to `Date()`.
+    public mutating func prepareHaystack(chunk: Data, now: Date = Date()) -> String? {
         if phase == .detected {
-            chunksSinceClearing = 0
             return nil
         }
 
         if phase == .redetecting {
-            chunksSinceClearing += 1
-            if chunksSinceClearing > retryChunks {
+            if let deadline = redetectionDeadline, now >= deadline {
                 // Retry window exhausted — give up re-detection
                 phase = .scanning
                 currentApp = nil
                 detectedAt = nil
+                redetectionDeadline = nil
                 return nil
             }
         }
 
-        // Build sliding buffer: previous tail + current chunk (up to 2 KB)
-        var combined = slidingBuffer
-        combined.append(chunk.prefix(2048))
-        let checkData = combined.suffix(2048)
+        // Decode chunk to String (UTF-8). On failure, try lossy replacement so
+        // a single bad byte doesn't silently disable detection for the chunk.
+        let chunkString: String
+        if let decoded = String(data: chunk.prefix(2048), encoding: .utf8) {
+            chunkString = decoded
+        } else {
+            utf8DecodeFailures += 1
+            // Lossy fallback: replace invalid sequences with U+FFFD
+            chunkString = String(decoding: chunk.prefix(2048), as: UTF8.self)
+        }
 
-        // Update buffer with tail of current chunk
-        let tailSize = min(chunk.count, bufferCapacity)
-        slidingBuffer = chunk.suffix(tailSize)
+        // Build haystack: previous tail + current chunk, capped at 2048 characters
+        let combined = slidingBufferTail + chunkString
+        let haystack = combined.count > 2048
+            ? String(combined.suffix(2048))
+            : combined
 
-        guard let rawString = String(data: checkData, encoding: .utf8) else { return nil }
-        return rawString.lowercased()
+        // Update tail with end of current chunk (character-safe, no UTF-8 splitting)
+        slidingBufferTail = String(chunkString.suffix(bufferTailCapacity))
+
+        return haystack.lowercased()
     }
 
     // MARK: - State Mutations
@@ -109,20 +128,21 @@ public struct AIDetectionState: Sendable {
     /// Called when pattern matching completes on prepared haystack.
     /// `appName` is the matched tool name, or nil if no match.
     /// Returns true if the state changed.
+    /// - Parameter now: Current time. Pass explicitly for testability; defaults to `Date()`.
     @discardableResult
-    public mutating func handleOutputMatch(appName: String?) -> Bool {
+    public mutating func handleOutputMatch(appName: String?, now: Date = Date()) -> Bool {
         guard let appName else { return false }
 
         switch phase {
         case .scanning:
-            return setDetected(appName)
+            return setDetected(appName, now: now)
         case .redetecting:
             // Only accept the same tool that was previously detected
             guard appName == lastDetectedApp else { return false }
-            return setDetected(appName)
+            return setDetected(appName, now: now)
         case .restored:
             // Live detection overrides restoration
-            return setDetected(appName)
+            return setDetected(appName, now: now)
         case .detected:
             // Already detected — shouldn't reach here (prepareHaystack returns nil)
             return false
@@ -132,17 +152,19 @@ public struct AIDetectionState: Sendable {
     /// Called when a command line is entered that matches a known AI tool.
     /// Always overrides current state (command-line detection is high-confidence).
     /// Returns true if the state changed.
+    /// - Parameter now: Current time. Pass explicitly for testability; defaults to `Date()`.
     @discardableResult
-    public mutating func handleCommand(appName: String?) -> Bool {
+    public mutating func handleCommand(appName: String?, now: Date = Date()) -> Bool {
         guard let appName else { return false }
-        return setDetected(appName)
+        return setDetected(appName, now: now)
     }
 
     /// Called when OSC 7 / shell prompt is detected (AI tool returned to prompt).
     /// Implements cooldown: no-ops if within `cooldownSeconds` of last detection.
     /// Returns true if the state changed (cleared or entered redetecting).
+    /// - Parameter now: Current time. Pass explicitly for testability; defaults to `Date()`.
     @discardableResult
-    public mutating func handlePromptReturn() -> Bool {
+    public mutating func handlePromptReturn(now: Date = Date()) -> Bool {
         guard phase == .detected || phase == .restored else { return false }
         guard currentApp != nil else { return false }
 
@@ -156,7 +178,7 @@ public struct AIDetectionState: Sendable {
 
         // Cooldown: don't clear too soon after detection
         if let detectedAt {
-            let elapsed = Date().timeIntervalSince(detectedAt)
+            let elapsed = now.timeIntervalSince(detectedAt)
             if elapsed < cooldownSeconds {
                 return false
             }
@@ -165,13 +187,13 @@ public struct AIDetectionState: Sendable {
         // Transition to redetecting (or scanning if no previous detection to lock to)
         if lastDetectedApp != nil {
             phase = .redetecting
+            redetectionDeadline = now.addingTimeInterval(redetectionWindowSeconds)
         } else {
             phase = .scanning
         }
         currentApp = nil
         detectedAt = nil
-        chunksSinceClearing = 0
-        slidingBuffer.removeAll(keepingCapacity: true)
+        slidingBufferTail = ""
         return true
     }
 
@@ -195,8 +217,8 @@ public struct AIDetectionState: Sendable {
         currentApp = nil
         phase = .scanning
         detectedAt = nil
-        chunksSinceClearing = 0
-        slidingBuffer.removeAll(keepingCapacity: true)
+        redetectionDeadline = nil
+        slidingBufferTail = ""
         return true
     }
 
@@ -204,25 +226,25 @@ public struct AIDetectionState: Sendable {
 
     /// Creates a state in `.redetecting` phase for unit testing.
     /// Internal so tests can access via `@testable import`.
-    static func makeRedetecting(lastTool: String) -> AIDetectionState {
+    static func makeRedetecting(lastTool: String, deadline: Date = Date().addingTimeInterval(5.0)) -> AIDetectionState {
         var state = AIDetectionState()
         state.currentApp = nil
         state.lastDetectedApp = lastTool
         state.phase = .redetecting
         state.detectedAt = nil
-        state.chunksSinceClearing = 0
+        state.redetectionDeadline = deadline
         return state
     }
 
     // MARK: - Private
 
-    private mutating func setDetected(_ appName: String) -> Bool {
+    private mutating func setDetected(_ appName: String, now: Date = Date()) -> Bool {
         currentApp = appName
         lastDetectedApp = appName
         phase = .detected
-        detectedAt = Date()
-        chunksSinceClearing = 0
-        slidingBuffer.removeAll(keepingCapacity: true)
+        detectedAt = now
+        redetectionDeadline = nil
+        slidingBufferTail = ""
         return true
     }
 }

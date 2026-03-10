@@ -135,7 +135,7 @@ public enum AIToolRegistry {
         // — Amazon Q —
         AIToolDefinition(
             displayName: "Amazon Q",
-            commandNames: ["amazon-q", "q"],
+            commandNames: ["amazon-q"],
             outputPatterns: ["amazon q developer", "amazon q cli", "codewhisperer"],
             resumeProviderKey: nil,
             resumeFormat: nil,
