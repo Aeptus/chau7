@@ -215,6 +215,28 @@ final class CommandDetectionTests: XCTestCase {
         XCTAssertNil(CommandDetection.detectAppFromOutput("move cursor to line 10"))
     }
 
+    // MARK: - Dev Server Output Detection
+
+    func testDetectDevServerFromOutputCaseInsensitive() {
+        // All patterns are lowercased internally; haystack should be lowercased too
+        XCTAssertEqual(CommandDetection.detectDevServerFromOutput("VITE v6.0.0  ready"), "Vite")
+        XCTAssertEqual(CommandDetection.detectDevServerFromOutput("Vite V6.0.0  ready"), "Vite")
+        XCTAssertEqual(CommandDetection.detectDevServerFromOutput("Ready Started Server On 0.0.0.0:3000"), "Next.js")
+        XCTAssertEqual(CommandDetection.detectDevServerFromOutput("WEBPACK COMPILED successfully"), "Webpack")
+    }
+
+    func testDevServerAngularDetection() {
+        // Angular should only match on "angular live development server", not generic "compiled successfully"
+        XCTAssertEqual(CommandDetection.detectDevServerFromOutput("Angular Live Development Server is listening"), "Angular")
+        // "compiled successfully!" is React (Create React App), not Angular
+        XCTAssertEqual(CommandDetection.detectDevServerFromOutput("Compiled successfully!"), "React")
+    }
+
+    func testDevServerNoFalsePositives() {
+        XCTAssertNil(CommandDetection.detectDevServerFromOutput("Hello, world!"))
+        XCTAssertNil(CommandDetection.detectDevServerFromOutput("git status"))
+    }
+
     // MARK: - Tokenization
 
     func testBasicTokenization() {
