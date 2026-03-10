@@ -47,7 +47,8 @@ final class CommandDetectionTests: XCTestCase {
 
     func testDetectAmazonQ() {
         XCTAssertEqual(CommandDetection.detectApp(from: "amazon-q"), "Amazon Q")
-        XCTAssertEqual(CommandDetection.detectApp(from: "q"), "Amazon Q")
+        // "q" alone is too generic (commonly aliased to exit/quit) — should not match
+        XCTAssertNil(CommandDetection.detectApp(from: "q"))
     }
 
     func testDetectGoose() {

@@ -86,59 +86,58 @@ public enum CommandDetection {
     public static let outputDetectionPatterns: [(pattern: String, appName: String)] =
         AIToolRegistry.outputPatternList
 
-    /// Output patterns that indicate a dev server is running
+    /// Output patterns that indicate a dev server is running.
+    /// All patterns are stored **lowercased** so the matcher can do a single
+    /// case-insensitive comparison by lowercasing the haystack once
+    /// (same approach as AI tool output detection).
     public static let devServerOutputPatterns: [(pattern: String, appName: String)] = [
         // Vite — the banner is "  VITE v6.x.x  ready in Nms"
-        ("VITE v", "Vite"),
         ("vite v", "Vite"),
         ("localhost:5173", "Vite"), // Vite default port
         ("localhost:5174", "Vite"), // Vite secondary port
         // Next.js
         ("ready started server on", "Next.js"),
-        ("▲ Next.js", "Next.js"),
-        ("Next.js", "Next.js"),
+        ("▲ next.js", "Next.js"),
+        ("next.js", "Next.js"),
         // Nuxt
-        ("Nuxt", "Nuxt"),
-        ("Nitro", "Nuxt"),
+        ("nuxt", "Nuxt"),
+        ("nitro", "Nuxt"),
         // Webpack
         ("webpack compiled", "Webpack"),
         ("｢wds｣", "Webpack"),
         ("｢wdm｣", "Webpack"),
         // Parcel
-        ("Server running at http://localhost:", "Parcel"),
-        ("✨ Built in", "Parcel"),
+        ("server running at http://localhost:", "Parcel"),
+        ("✨ built in", "Parcel"),
         // Angular
-        ("Angular Live Development Server", "Angular"),
-        ("Compiled successfully", "Angular"),
+        ("angular live development server", "Angular"),
         // React (Create React App)
-        ("Compiled successfully!", "React"),
-        ("Starting the development server", "React"),
+        ("compiled successfully!", "React"),
+        ("starting the development server", "React"),
         // Remix
-        ("Remix App Server", "Remix"),
+        ("remix app server", "Remix"),
         // Astro
         ("astro", "Astro"),
         ("🚀  astro", "Astro"),
         // SvelteKit
-        ("SvelteKit", "SvelteKit"),
+        ("sveltekit", "SvelteKit"),
         // Gatsby
         ("gatsby develop", "Gatsby"),
-        ("Gatsby develop", "Gatsby"),
         // Expo
-        ("Starting Metro Bundler", "Expo"),
-        ("Metro waiting on", "Expo"),
+        ("starting metro bundler", "Expo"),
+        ("metro waiting on", "Expo"),
         // Electron
-        ("Electron", "Electron"),
+        ("electron", "Electron"),
         // Nodemon
-        ("nodemon", "Nodemon"),
         ("[nodemon]", "Nodemon"),
+        ("nodemon", "Nodemon"),
         // Generic patterns (lower priority - checked last)
-        ("Listening on port", "Dev Server"),
         ("listening on port", "Dev Server"),
-        ("Server listening on", "Dev Server"),
-        ("Server running at", "Dev Server"),
-        ("Development server", "Dev Server"),
+        ("server listening on", "Dev Server"),
+        ("server running at", "Dev Server"),
+        ("development server", "Dev Server"),
         ("dev server running", "Dev Server"),
-        ("Local:", "Dev Server")
+        ("local:", "Dev Server")
     ]
 
     /// Shell wrapper commands that should be skipped
@@ -226,12 +225,15 @@ public enum CommandDetection {
         return nil
     }
 
-    /// Detects a dev server from terminal output
+    /// Detects a dev server from terminal output (case-insensitive).
+    /// Patterns in `devServerOutputPatterns` are already lowercased, so we only
+    /// need to lowercase the haystack once (same approach as `detectAppFromOutput`).
     /// - Parameter output: The terminal output string
     /// - Returns: The detected dev server name, or nil
     public static func detectDevServerFromOutput(_ output: String) -> String? {
+        let lowered = output.lowercased()
         for (pattern, appName) in devServerOutputPatterns {
-            if output.contains(pattern) {
+            if lowered.contains(pattern) {
                 return appName
             }
         }

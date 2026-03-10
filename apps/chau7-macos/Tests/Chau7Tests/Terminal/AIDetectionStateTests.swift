@@ -11,6 +11,7 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertNil(state.lastDetectedApp)
         XCTAssertEqual(state.phase, .scanning)
         XCTAssertFalse(state.isRestored)
+        XCTAssertEqual(state.utf8DecodeFailures, 0)
     }
 
     // MARK: - Command Detection
@@ -69,16 +70,28 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertFalse(state.isRestored)
     }
 
-    // MARK: - Prompt Return (Cooldown)
+    // MARK: - Prompt Return (Cooldown with Injectable Clock)
 
     func testPromptReturnWithinCooldownIsNoOp() {
         var state = AIDetectionState()
         state.handleCommand(appName: "Claude")
-        // Immediately after detection — within 3s cooldown
+        // Immediately after detection — within 3s cooldown (default now = Date())
         let changed = state.handlePromptReturn()
         XCTAssertFalse(changed)
         XCTAssertEqual(state.currentApp, "Claude")
         XCTAssertEqual(state.phase, .detected)
+    }
+
+    func testPromptReturnAfterCooldownTransitionsToRedetecting() {
+        var state = AIDetectionState()
+        state.handleCommand(appName: "Claude")
+        // 5 seconds later — past 3s cooldown
+        let now = Date().addingTimeInterval(5)
+        let changed = state.handlePromptReturn(now: now)
+        XCTAssertTrue(changed)
+        XCTAssertNil(state.currentApp)
+        XCTAssertEqual(state.phase, .redetecting)
+        XCTAssertEqual(state.lastDetectedApp, "Claude")
     }
 
     func testPromptReturnFromScanningIsNoOp() {
@@ -91,12 +104,7 @@ final class AIDetectionStateTests: XCTestCase {
     // MARK: - Re-detection
 
     func testRedetectionLockedToSameTool() {
-        var state = AIDetectionState()
-        state.handleCommand(appName: "Claude")
-        // Simulate cooldown expiry by using internal knowledge
-        // Force prompt return to work by setting detectedAt in the past
-        // We'll test this via the prepareHaystack + handleOutputMatch flow
-        state = forceRedetecting(state, lastTool: "Claude")
+        var state = forceRedetecting(lastTool: "Claude")
 
         // Same tool should re-detect
         let changed = state.handleOutputMatch(appName: "Claude")
@@ -106,8 +114,7 @@ final class AIDetectionStateTests: XCTestCase {
     }
 
     func testRedetectionRejectsDifferentTool() {
-        var state = AIDetectionState()
-        state = forceRedetecting(state, lastTool: "Claude")
+        var state = forceRedetecting(lastTool: "Claude")
 
         // Different tool should be rejected
         let changed = state.handleOutputMatch(appName: "Codex")
@@ -117,22 +124,28 @@ final class AIDetectionStateTests: XCTestCase {
     }
 
     func testRedetectionWindowExhaustion() {
-        var state = AIDetectionState()
-        state = forceRedetecting(state, lastTool: "Claude")
+        // Deadline is 1 second in the future
+        let t0 = Date(timeIntervalSince1970: 1000)
+        var state = AIDetectionState.makeRedetecting(
+            lastTool: "Claude",
+            deadline: t0.addingTimeInterval(1)
+        )
 
-        // Exhaust the retry window (30 chunks of no match)
+        // Within window — should still be redetecting
         let chunk = "some random output".data(using: .utf8)!
-        for _ in 0 ... 30 {
-            _ = state.prepareHaystack(chunk: chunk)
-        }
+        let result1 = state.prepareHaystack(chunk: chunk, now: t0.addingTimeInterval(0.5))
+        XCTAssertNotNil(result1)
+        XCTAssertEqual(state.phase, .redetecting)
 
+        // Past deadline — should transition to scanning
+        let result2 = state.prepareHaystack(chunk: chunk, now: t0.addingTimeInterval(2))
+        XCTAssertNil(result2)
         XCTAssertEqual(state.phase, .scanning)
         XCTAssertNil(state.currentApp)
     }
 
     func testCommandOverridesRedetection() {
-        var state = AIDetectionState()
-        state = forceRedetecting(state, lastTool: "Claude")
+        var state = forceRedetecting(lastTool: "Claude")
 
         // Command detection always wins, even for a different tool
         state.handleCommand(appName: "Codex")
@@ -233,6 +246,45 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertTrue(result!.contains("claude code") || result!.contains("clau") && result!.contains("de code"))
     }
 
+    // MARK: - UTF-8 Safety
+
+    func testPrepareHaystackHandlesInvalidUTF8() {
+        var state = AIDetectionState()
+        // Invalid UTF-8: 0xFF is never valid, 0xC0 is an overlong encoding start
+        var data = Data([0xFF, 0xC0])
+        // Append valid text after invalid bytes
+        data.append("claude code".data(using: .utf8)!)
+        let result = state.prepareHaystack(chunk: data)
+        // Should not return nil — lossy fallback replaces invalid bytes with U+FFFD
+        XCTAssertNotNil(result)
+        XCTAssertTrue(result!.contains("claude code"))
+        XCTAssertEqual(state.utf8DecodeFailures, 1)
+    }
+
+    func testPrepareHaystackMultiByteCharacterAcrossChunks() {
+        var state = AIDetectionState()
+        // "╭" is U+256D, encoded as 3 bytes: E2 95 AD
+        // Split it across two chunks to verify character-safe buffer tailing
+        let fullPattern = "╭─ claude"
+        let chunk1 = fullPattern.data(using: .utf8)!
+        let chunk2 = " code detected".data(using: .utf8)!
+        _ = state.prepareHaystack(chunk: chunk1)
+        let result = state.prepareHaystack(chunk: chunk2)
+        XCTAssertNotNil(result)
+        // The tail from chunk1 should include "╭─ claude" (character-safe)
+        XCTAssertTrue(result!.contains("╭─ claude"))
+        XCTAssertEqual(state.utf8DecodeFailures, 0)
+    }
+
+    func testUTF8DecodeFailureCountAccumulates() {
+        var state = AIDetectionState()
+        let invalidChunk = Data([0xFF, 0xFE, 0xFD])
+        _ = state.prepareHaystack(chunk: invalidChunk)
+        _ = state.prepareHaystack(chunk: invalidChunk)
+        _ = state.prepareHaystack(chunk: invalidChunk)
+        XCTAssertEqual(state.utf8DecodeFailures, 3)
+    }
+
     // MARK: - Full Lifecycle
 
     func testFullLifecycle() {
@@ -271,11 +323,33 @@ final class AIDetectionStateTests: XCTestCase {
         XCTAssertEqual(state.currentApp, "Aider")
     }
 
+    func testCooldownThenRedetectionWithInjectableClock() {
+        var state = AIDetectionState()
+        let t0 = Date(timeIntervalSince1970: 1000)
+
+        // Detect at t0 with injected clock
+        state.handleCommand(appName: "Claude", now: t0)
+
+        // Prompt return at t0+1s (within 3s cooldown) — no-op
+        XCTAssertFalse(state.handlePromptReturn(now: t0.addingTimeInterval(1)))
+        XCTAssertEqual(state.phase, .detected)
+
+        // Prompt return at t0+4s (past cooldown) — transitions to redetecting
+        XCTAssertTrue(state.handlePromptReturn(now: t0.addingTimeInterval(4)))
+        XCTAssertEqual(state.phase, .redetecting)
+
+        // Within redetection window — same tool re-detected
+        let chunk = "╭─ claude code".data(using: .utf8)!
+        let haystack = state.prepareHaystack(chunk: chunk, now: t0.addingTimeInterval(5))
+        XCTAssertNotNil(haystack)
+        XCTAssertTrue(state.handleOutputMatch(appName: "Claude"))
+        XCTAssertEqual(state.phase, .detected)
+        XCTAssertEqual(state.currentApp, "Claude")
+    }
+
     // MARK: - Helpers
 
-    /// Creates a state in the `.redetecting` phase with the given last tool.
-    /// Uses the internal factory on AIDetectionState (visible via @testable import).
-    private func forceRedetecting(_ state: AIDetectionState, lastTool: String) -> AIDetectionState {
+    private func forceRedetecting(lastTool: String) -> AIDetectionState {
         AIDetectionState.makeRedetecting(lastTool: lastTool)
     }
 }

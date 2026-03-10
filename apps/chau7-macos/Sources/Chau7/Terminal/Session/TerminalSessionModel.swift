@@ -1222,7 +1222,13 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private func maybeDetectAppFromOutput(_ data: Data) {
         // State machine handles phase checks, sliding buffer, and retry window.
         // Returns nil when scanning should be skipped (already detected, window exhausted, etc.)
-        guard let haystack = aiDetection.prepareHaystack(chunk: data) else { return }
+        let failuresBefore = aiDetection.utf8DecodeFailures
+        guard let haystack = aiDetection.prepareHaystack(chunk: data) else {
+            if aiDetection.utf8DecodeFailures > failuresBefore {
+                Log.trace("UTF-8 decode failure in AI detection sliding buffer (total: \(aiDetection.utf8DecodeFailures))")
+            }
+            return
+        }
 
         let token = FeatureProfiler.shared.begin(.aiDetect, bytes: data.count, metadata: "output-patterns")
         defer { FeatureProfiler.shared.end(token) }
