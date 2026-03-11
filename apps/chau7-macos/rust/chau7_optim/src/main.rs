@@ -281,6 +281,9 @@ enum Commands {
         /// Output format: text, json, csv
         #[arg(short, long, default_value = "text")]
         format: String,
+        /// Filter to a specific CTO session ID
+        #[arg(long)]
+        session_id: Option<String>,
     },
 
     /// Show or create configuration file
@@ -1163,6 +1166,7 @@ fn main() -> Result<()> {
             monthly,
             all,
             format,
+            session_id,
         } => {
             gain::run(
                 graph,
@@ -1175,6 +1179,7 @@ fn main() -> Result<()> {
                 all,
                 &format,
                 cli.verbose,
+                session_id.as_deref(),
             )?;
         }
 

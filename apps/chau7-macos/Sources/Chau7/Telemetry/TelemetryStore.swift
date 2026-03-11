@@ -108,6 +108,31 @@ final class TelemetryStore {
             applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
         );
 
+        CREATE TABLE IF NOT EXISTS remote_client_events (
+            event_id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            device_id TEXT,
+            device_name TEXT,
+            app_version TEXT NOT NULL,
+            session_id TEXT,
+            event_type TEXT NOT NULL,
+            status TEXT,
+            tab_id INTEGER,
+            tab_title TEXT,
+            message TEXT,
+            metadata TEXT,
+            timestamp TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_remote_client_events_time
+            ON remote_client_events(timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_remote_client_events_device
+            ON remote_client_events(device_id);
+        CREATE INDEX IF NOT EXISTS idx_remote_client_events_session
+            ON remote_client_events(session_id);
+        CREATE INDEX IF NOT EXISTS idx_remote_client_events_type
+            ON remote_client_events(event_type);
+
         INSERT OR IGNORE INTO schema_version (version) VALUES (1);
         """
 
@@ -319,6 +344,74 @@ final class TelemetryStore {
         }
     }
 
+    func insertRemoteClientEvent(_ event: RemoteClientTelemetryEvent) {
+        queue.async { [weak self] in
+            self?._insertRemoteClientEvent(event)
+        }
+    }
+
+    private func _insertRemoteClientEvent(_ event: RemoteClientTelemetryEvent) {
+        guard let db else { return }
+        let sql = """
+        INSERT OR IGNORE INTO remote_client_events
+        (event_id, source, device_id, device_name, app_version, session_id,
+         event_type, status, tab_id, tab_title, message, metadata, timestamp)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+
+        bindText(stmt, 1, event.id)
+        bindText(stmt, 2, event.source)
+        bindText(stmt, 3, event.deviceID)
+        bindText(stmt, 4, event.deviceName)
+        bindText(stmt, 5, event.appVersion)
+        bindText(stmt, 6, event.sessionID)
+        bindText(stmt, 7, event.eventType.rawValue)
+        bindText(stmt, 8, event.status)
+        if let tabID = event.tabID {
+            sqlite3_bind_int64(stmt, 9, Int64(tabID))
+        } else {
+            sqlite3_bind_null(stmt, 9)
+        }
+        bindText(stmt, 10, event.tabTitle)
+        bindText(stmt, 11, event.message)
+        bindText(stmt, 12, Self.encodeJSON(event.metadata))
+        bindText(stmt, 13, Self.isoString(from: event.timestamp))
+
+        if sqlite3_step(stmt) != SQLITE_DONE {
+            Log.warn("TelemetryStore: insert remote client event failed for \(event.id)")
+        }
+    }
+
+    func listRemoteClientEvents(limit: Int = 100) -> [RemoteClientTelemetryEvent] {
+        queue.sync { _listRemoteClientEvents(limit: limit) }
+    }
+
+    private func _listRemoteClientEvents(limit: Int) -> [RemoteClientTelemetryEvent] {
+        guard let db else { return [] }
+        let sql = """
+        SELECT * FROM remote_client_events
+        ORDER BY timestamp DESC
+        LIMIT ?
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_int64(stmt, 1, Int64(limit))
+
+        var events: [RemoteClientTelemetryEvent] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let event = parseRemoteClientEvent(stmt) {
+                events.append(event)
+            }
+        }
+        return events
+    }
+
     // MARK: - Read
 
     func getRun(_ runID: String) -> TelemetryRun? {
@@ -500,6 +593,82 @@ final class TelemetryStore {
         }
     }
 
+    // MARK: - Aggregation Queries
+
+    /// Token usage aggregated per tab, ordered by total tokens descending.
+    func tokenUsagePerTab(after: Date? = nil) -> [TabTokenConsumption] {
+        queue.sync {
+            guard let db else { return [] }
+            var sql = """
+            SELECT tab_id, COUNT(*), COALESCE(SUM(total_input_tokens),0),
+                   COALESCE(SUM(total_output_tokens),0), COALESCE(SUM(cost_usd),0)
+            FROM runs WHERE tab_id IS NOT NULL
+            """
+            if after != nil {
+                sql += " AND started_at >= ?"
+            }
+            sql += " GROUP BY tab_id ORDER BY COALESCE(SUM(total_input_tokens),0) + COALESCE(SUM(total_output_tokens),0) DESC"
+
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+
+            if let after {
+                bindText(stmt, 1, Self.isoString(from: after))
+            }
+
+            var results: [TabTokenConsumption] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let tabID = colText(stmt, 0) else { continue }
+                results.append(TabTokenConsumption(
+                    tabID: tabID,
+                    runCount: Int(sqlite3_column_int64(stmt, 1)),
+                    totalInputTokens: Int(sqlite3_column_int64(stmt, 2)),
+                    totalOutputTokens: Int(sqlite3_column_int64(stmt, 3)),
+                    totalCostUSD: sqlite3_column_double(stmt, 4)
+                ))
+            }
+            return results
+        }
+    }
+
+    /// Token usage aggregated per provider, ordered by cost descending.
+    func consumptionPerProvider(after: Date? = nil) -> [ProviderConsumptionStats] {
+        queue.sync {
+            guard let db else { return [] }
+            var sql = """
+            SELECT provider, COUNT(*), COALESCE(SUM(total_input_tokens),0),
+                   COALESCE(SUM(total_output_tokens),0), COALESCE(SUM(cost_usd),0)
+            FROM runs WHERE provider IS NOT NULL
+            """
+            if after != nil {
+                sql += " AND started_at >= ?"
+            }
+            sql += " GROUP BY provider ORDER BY COALESCE(SUM(cost_usd),0) DESC"
+
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+
+            if let after {
+                bindText(stmt, 1, Self.isoString(from: after))
+            }
+
+            var results: [ProviderConsumptionStats] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let provider = colText(stmt, 0) else { continue }
+                results.append(ProviderConsumptionStats(
+                    provider: provider,
+                    runCount: Int(sqlite3_column_int64(stmt, 1)),
+                    totalInputTokens: Int(sqlite3_column_int64(stmt, 2)),
+                    totalOutputTokens: Int(sqlite3_column_int64(stmt, 3)),
+                    totalCostUSD: sqlite3_column_double(stmt, 4)
+                ))
+            }
+            return results
+        }
+    }
+
     // MARK: - Row Parsing
 
     private func parseRun(_ stmt: OpaquePointer?) -> TelemetryRun? {
@@ -568,6 +737,35 @@ final class TelemetryStore {
             status: ToolCallStatus(rawValue: colByName(stmt, "status") ?? "") ?? .success,
             durationMs: intByName(stmt, "duration_ms"),
             callIndex: intByName(stmt, "call_index") ?? 0
+        )
+    }
+
+    private func parseRemoteClientEvent(_ stmt: OpaquePointer?) -> RemoteClientTelemetryEvent? {
+        guard let stmt,
+              let id = colByName(stmt, "event_id"),
+              let source = colByName(stmt, "source"),
+              let appVersion = colByName(stmt, "app_version"),
+              let rawEventType = colByName(stmt, "event_type"),
+              let eventType = RemoteClientTelemetryEventType(rawValue: rawEventType),
+              let timestampString = colByName(stmt, "timestamp"),
+              let timestamp = Self.isoDate(from: timestampString)
+        else { return nil }
+
+        let tabID = intByName(stmt, "tab_id").map(UInt32.init)
+        return RemoteClientTelemetryEvent(
+            id: id,
+            source: source,
+            deviceID: colByName(stmt, "device_id"),
+            deviceName: colByName(stmt, "device_name"),
+            appVersion: appVersion,
+            sessionID: colByName(stmt, "session_id"),
+            eventType: eventType,
+            status: colByName(stmt, "status"),
+            tabID: tabID,
+            tabTitle: colByName(stmt, "tab_title"),
+            message: colByName(stmt, "message"),
+            metadata: Self.decodeJSON(colByName(stmt, "metadata")) ?? [:],
+            timestamp: timestamp
         )
     }
 

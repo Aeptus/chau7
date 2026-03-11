@@ -427,6 +427,44 @@ public struct CTOGainStats: Codable, Equatable, Sendable {
     }
 }
 
+// MARK: - Per-Tab Token Consumption
+
+/// AI token usage aggregated per tab from the telemetry database.
+public struct TabTokenConsumption: Identifiable, Sendable {
+    public let tabID: String
+    public let runCount: Int
+    public let totalInputTokens: Int
+    public let totalOutputTokens: Int
+    public let totalCostUSD: Double
+    public var id: String { tabID }
+
+    public init(tabID: String, runCount: Int, totalInputTokens: Int, totalOutputTokens: Int, totalCostUSD: Double) {
+        self.tabID = tabID
+        self.runCount = runCount
+        self.totalInputTokens = totalInputTokens
+        self.totalOutputTokens = totalOutputTokens
+        self.totalCostUSD = totalCostUSD
+    }
+}
+
+/// AI token usage aggregated per provider from the telemetry database.
+public struct ProviderConsumptionStats: Identifiable, Sendable {
+    public let provider: String
+    public let runCount: Int
+    public let totalInputTokens: Int
+    public let totalOutputTokens: Int
+    public let totalCostUSD: Double
+    public var id: String { provider }
+
+    public init(provider: String, runCount: Int, totalInputTokens: Int, totalOutputTokens: Int, totalCostUSD: Double) {
+        self.provider = provider
+        self.runCount = runCount
+        self.totalInputTokens = totalInputTokens
+        self.totalOutputTokens = totalOutputTokens
+        self.totalCostUSD = totalCostUSD
+    }
+}
+
 // MARK: - Rewrite Map & Supported Commands
 
 /// Maps shell command names to their optimizer subcommand equivalents.

@@ -18,19 +18,26 @@ pub fn run(
     all: bool,
     format: &str,
     _verbose: u8,
+    session_id: Option<&str>,
 ) -> Result<()> {
     let tracker = Tracker::new().context("Failed to initialize tracking database")?;
 
     // Handle export formats
     match format {
-        "json" => return export_json(&tracker, daily, weekly, monthly, all),
-        "csv" => return export_csv(&tracker, daily, weekly, monthly, all),
+        "json" => return export_json(&tracker, daily, weekly, monthly, all, session_id),
+        "csv" => return export_csv(&tracker, daily, weekly, monthly, all, session_id),
         _ => {} // Continue with text format
     }
 
-    let summary = tracker
-        .get_summary()
-        .context("Failed to load token savings summary from database")?;
+    let summary = if let Some(sid) = session_id {
+        tracker
+            .get_summary_for_session(sid)
+            .context("Failed to load per-session token savings summary")?
+    } else {
+        tracker
+            .get_summary()
+            .context("Failed to load token savings summary from database")?
+    };
 
     if summary.total_commands == 0 {
         println!("No tracking data yet.");
@@ -408,10 +415,17 @@ fn export_json(
     weekly: bool,
     monthly: bool,
     all: bool,
+    session_id: Option<&str>,
 ) -> Result<()> {
-    let summary = tracker
-        .get_summary()
-        .context("Failed to load token savings summary from database")?;
+    let summary = if let Some(sid) = session_id {
+        tracker
+            .get_summary_for_session(sid)
+            .context("Failed to load per-session token savings summary")?
+    } else {
+        tracker
+            .get_summary()
+            .context("Failed to load token savings summary from database")?
+    };
 
     let export = ExportData {
         summary: ExportSummary {
@@ -452,7 +466,23 @@ fn export_csv(
     weekly: bool,
     monthly: bool,
     all: bool,
+    session_id: Option<&str>,
 ) -> Result<()> {
+    // Print summary header when session-filtered
+    if let Some(sid) = session_id {
+        let summary = tracker
+            .get_summary_for_session(sid)
+            .context("Failed to load per-session summary")?;
+        println!("# Summary (session: {sid})");
+        println!("total_commands,total_input,total_output,total_saved,avg_savings_pct,total_time_ms,avg_time_ms");
+        println!(
+            "{},{},{},{},{:.2},{},{}",
+            summary.total_commands, summary.total_input, summary.total_output,
+            summary.total_saved, summary.avg_savings_pct, summary.total_time_ms, summary.avg_time_ms
+        );
+        println!();
+    }
+
     if all || daily {
         let days = tracker.get_all_days()?;
         println!("# Daily Data");
