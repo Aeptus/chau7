@@ -25,8 +25,10 @@ const (
 	TypePong            = 0x31
 	TypePairingInfo     = 0x40
 	TypeSessionStatus   = 0x41
-	TypeRemoteTelemetry = 0x42
-	TypeError           = 0x7F
+	TypeRemoteTelemetry  = 0x42
+	TypeApprovalRequest  = 0x50
+	TypeApprovalResponse = 0x51
+	TypeError            = 0x7F
 )
 
 var (

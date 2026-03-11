@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>Typography | Chau7 Design System</title>
+    <meta name="description" content="Three font families, one golden-ratio scale. The typographic choices behind the Chau7 website.">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .type-hero {
+            text-align: center;
+            padding: var(--space-6xl) var(--space-2xl) var(--space-4xl);
+        }
+        .type-hero .hero-title {
+            font-size: clamp(var(--text-2xl), 6vw, var(--text-3xl));
+        }
+        .type-content {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 0 var(--space-2xl) var(--space-4xl);
+        }
+        .type-content h2 {
+            font-size: var(--text-xl);
+            font-weight: 700;
+            margin: var(--space-4xl) 0 var(--space-md);
+            letter-spacing: -0.01em;
+        }
+        .type-content p {
+            color: var(--text-muted);
+            font-size: var(--text-base);
+            line-height: var(--line-height);
+            margin-bottom: var(--space-xl);
+        }
+        .font-specimen {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: var(--space-3xl);
+            margin: var(--space-xl) 0 var(--space-3xl);
+        }
+        .font-specimen-label {
+            font-family: var(--mono);
+            font-size: var(--text-xs);
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: var(--space-md);
+        }
+        .font-specimen-sample {
+            font-size: var(--text-2xl);
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            line-height: 1.3;
+            margin-bottom: var(--space-md);
+        }
+        .font-specimen-sample.is-serif { font-family: var(--serif); }
+        .font-specimen-sample.is-sans { font-family: var(--sans); }
+        .font-specimen-sample.is-mono { font-family: var(--mono); }
+        .font-specimen-meta {
+            font-size: var(--text-sm);
+            color: var(--text-muted);
+        }
+        .font-specimen-meta code {
+            font-family: var(--mono);
+            background: rgba(160, 82, 45, 0.08);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: var(--text-xs);
+        }
+        .font-specimen-chars {
+            font-size: var(--text-lg);
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            margin-top: var(--space-md);
+            line-height: 1.8;
+            word-break: break-all;
+        }
+        .font-specimen-chars.is-serif { font-family: var(--serif); }
+        .font-specimen-chars.is-sans { font-family: var(--sans); }
+        .font-specimen-chars.is-mono { font-family: var(--mono); }
+        .type-role {
+            display: flex;
+            gap: var(--space-md);
+            align-items: baseline;
+            padding: var(--space-md) 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .type-role:last-child { border-bottom: none; }
+        .type-role-where {
+            font-family: var(--mono);
+            font-size: var(--text-xs);
+            color: var(--accent);
+            min-width: 120px;
+            flex-shrink: 0;
+        }
+        .type-role-what {
+            font-size: var(--text-sm);
+            color: var(--text-muted);
+        }
+        .type-callout {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--accent);
+            border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+            padding: var(--space-xl) var(--space-2xl);
+            margin: var(--space-2xl) 0;
+        }
+        .type-callout p {
+            margin-bottom: 0;
+            font-style: italic;
+        }
+        .scale-demo {
+            margin: var(--space-xl) 0 var(--space-3xl);
+        }
+        .scale-demo-row {
+            display: flex;
+            align-items: baseline;
+            gap: var(--space-xl);
+            padding: var(--space-sm) 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .scale-demo-row:last-child { border-bottom: none; }
+        .scale-demo-token {
+            font-family: var(--mono);
+            font-size: var(--text-xs);
+            color: var(--accent);
+            min-width: 100px;
+            flex-shrink: 0;
+        }
+        .scale-demo-text {
+            font-family: var(--serif);
+        }
+        @media (max-width: 600px) {
+            .type-role { flex-direction: column; gap: var(--space-3xs); }
+            .type-role-where { min-width: unset; }
+        }
+    </style>
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="index.html" class="nav-logo">
+                <img src="logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="features.html">Features</a>
+                <a href="mcp.html">MCP</a>
+                <a href="/the-tech">The Tech</a>
+                <a href="compare.html">Compare</a>
+                <a href="pronunciation.html">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <section class="type-hero hero">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <h1 class="hero-title">Three voices, <span class="gradient-text">one rhythm</span></h1>
+                <p class="hero-subtitle">A serif for authority. A system sans for clarity. A monospace for precision. All sized on the golden ratio.</p>
+            </div>
+        </section>
+
+        <div class="type-content">
+
+            <h2>Charter &mdash; the serif</h2>
+            <div class="font-specimen">
+                <div class="font-specimen-label">var(--serif)</div>
+                <div class="font-specimen-sample is-serif">Finally, a terminal that notices your AI</div>
+                <div class="font-specimen-meta">
+                    <code>'Charter', 'Georgia', 'Times New Roman', serif</code>
+                </div>
+                <div class="font-specimen-chars is-serif">AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz 0123456789</div>
+            </div>
+            <p>Charter was designed by Matthew Carter in 1987 for Bitstream, optimized for low-resolution output. That pragmatism aged beautifully: Charter renders crisply on every screen density, from Retina displays to 1080p monitors. Its generous x-height and open counters give it warmth without sacrificing legibility at small sizes.</p>
+            <p>We use it for all headings (h1&ndash;h3), hero text, and pull quotes. The serif strokes add visual weight that anchors each section, creating clear hierarchy against the lighter sans-serif body text.</p>
+            <p>Charter ships with macOS. No web fonts to download, no layout shift, no FOUT. The fallback stack (Georgia &rarr; Times New Roman) follows the same humanist serif lineage.</p>
+
+            <div class="font-specimen">
+                <div class="font-specimen-label">Where Charter appears</div>
+                <div class="type-role">
+                    <span class="type-role-where">Hero titles</span>
+                    <span class="type-role-what">The largest text on each page, sized at --text-3xl (4.236rem, &phi;&sup3;)</span>
+                </div>
+                <div class="type-role">
+                    <span class="type-role-where">Section headings</span>
+                    <span class="type-role-what">h2 elements, typically at --text-2xl or --text-xl</span>
+                </div>
+                <div class="type-role">
+                    <span class="type-role-where">Card headings</span>
+                    <span class="type-role-what">Pillar titles, feature names, at --text-lg (&phi;)</span>
+                </div>
+                <div class="type-role">
+                    <span class="type-role-where">Pull quotes</span>
+                    <span class="type-role-what">Testimonial-style callouts in the AI section</span>
+                </div>
+            </div>
+
+            <h2>System sans-serif &mdash; the workhorse</h2>
+            <div class="font-specimen">
+                <div class="font-specimen-label">var(--sans)</div>
+                <div class="font-specimen-sample is-sans">Every terminal adapts old habits to AI. This one was built the other way around.</div>
+                <div class="font-specimen-meta">
+                    <code>-apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif</code>
+                </div>
+                <div class="font-specimen-chars is-sans">AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz 0123456789</div>
+            </div>
+            <p>On macOS, <code>-apple-system</code> resolves to San Francisco, Apple&rsquo;s own typeface designed for UI clarity. On Windows it becomes Segoe UI; on older systems, Helvetica Neue. All are neutral grotesques optimized for screen reading.</p>
+            <p>We use the system sans for body text, navigation, buttons, labels, and descriptive paragraphs. Its neutrality lets the serif headings and mono code elements stand out. The system font stack also means zero network requests for typography &mdash; the fastest font is the one already on your device.</p>
+
+            <h2>Menlo &mdash; the monospace</h2>
+            <div class="font-specimen">
+                <div class="font-specimen-label">var(--mono)</div>
+                <div class="font-specimen-sample is-mono">~40% Context Saved &middot; $0 Open Source</div>
+                <div class="font-specimen-meta">
+                    <code>'Menlo', 'Cascadia Mono', 'Consolas', monospace</code>
+                </div>
+                <div class="font-specimen-chars is-mono">AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz 0123456789 ~!@#$%^&amp;*()-_=+[]{}</div>
+            </div>
+            <p>Menlo is Apple&rsquo;s default terminal font, derived from Bitstream Vera Sans Mono. For a terminal emulator&rsquo;s marketing site, using the actual terminal font is a nod to the product itself. It signals &ldquo;this is software for people who live in the terminal.&rdquo;</p>
+            <p>We use Menlo for statistics, numerical data, code snippets, token names, and technical labels. Its fixed-width characters align numbers cleanly in the hero stats and comparison tables.</p>
+
+            <h2>The &phi; type scale</h2>
+            <p>All three fonts share the same nine-stop size scale derived from the golden ratio. Here&rsquo;s how it looks with Charter:</p>
+
+            <div class="scale-demo">
+                <div class="scale-demo-row">
+                    <span class="scale-demo-token">--text-2xs</span>
+                    <span class="scale-demo-text" style="font-size: 0.65rem;">The quick brown fox (0.65rem)</span>
+                </div>
+                <div class="scale-demo-row">
+                    <span class="scale-demo-token">--text-xs</span>
+                    <span class="scale-demo-text" style="font-size: 0.786rem;">The quick brown fox (0.786rem)</span>
+                </div>
+                <div class="scale-demo-row">
+                    <span class="scale-demo-token">--text-sm</span>
+                    <span class="scale-demo-text" style="font-size: 0.875rem;">The quick brown fox (0.875rem)</span>
+                </div>
+                <div class="scale-demo-row">
+                    <span class="scale-demo-token">--text-base</span>
+                    <span class="scale-demo-text" style="font-size: 1rem;">The quick brown fox (1rem)</span>
+                </div>
+                <div class="scale-demo-row">
+                    <span class="scale-demo-token">--text-md</span>
+                    <span class="scale-demo-text" style="font-size: 1.272rem;">The quick brown fox (1.272rem)</span>
+                </div>
+                <div class="scale-demo-row">
+                    <span class="scale-demo-token">--text-lg</span>
+                    <span class="scale-demo-text" style="font-size: 1.618rem;">The quick brown fox (1.618rem)</span>
+                </div>
+                <div class="scale-demo-row">
+                    <span class="scale-demo-token">--text-xl</span>
+                    <span class="scale-demo-text" style="font-size: 2.058rem;">The quick brown fox (2.058rem)</span>
+                </div>
+                <div class="scale-demo-row">
+                    <span class="scale-demo-token">--text-2xl</span>
+                    <span class="scale-demo-text" style="font-size: 2.618rem;">The quick brown fox</span>
+                </div>
+                <div class="scale-demo-row">
+                    <span class="scale-demo-token">--text-3xl</span>
+                    <span class="scale-demo-text" style="font-size: 4.236rem;">The quick brown fox</span>
+                </div>
+            </div>
+
+            <div class="type-callout">
+                <p>&ldquo;Three system fonts, nine golden-ratio stops, zero web font requests. Typography that loads instantly and scales harmoniously.&rdquo;</p>
+            </div>
+
+            <p>Read more about the mathematical foundation: <a href="golden-ratio.html" style="color: var(--accent);">The Golden Ratio &rarr;</a></p>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="features.html">Features</a>
+                    <a href="mcp.html">MCP Tools</a>
+                    <a href="/the-tech">The Tech</a>
+                    <a href="compare.html">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="llms.txt">llms.txt</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Colophon</h4>
+                    <a href="golden-ratio.html">The Golden Ratio</a>
+                    <a href="typography.html">Typography</a>
+                    <a href="pronunciation.html">How to Say It</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Legal</h4>
+                    <a href="legal.html">Legal Notice</a>
+                    <a href="mentions-legales.html">Mentions L\&eacute;gales</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

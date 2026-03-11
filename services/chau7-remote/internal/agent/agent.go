@@ -145,17 +145,30 @@ func NewAgent(socketPath, relayBaseURL, macName, statePath string) (*Agent, erro
 }
 
 func (a *Agent) Run(ctx context.Context) error {
-	go a.ipcLoop(ctx)
-	go a.relayLoop(ctx)
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		a.ipcLoop(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		a.relayLoop(ctx)
+	}()
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
+			// Wait for goroutines to finish before returning
+			wg.Wait()
 			return nil
 		case <-ticker.C:
-			if time.Now().After(a.pairingExpires) {
+			a.pairingMu.Lock()
+			expired := time.Now().After(a.pairingExpires)
+			a.pairingMu.Unlock()
+			if expired {
 				a.refreshPairingCode()
 				a.sendPairingInfo()
 			}
@@ -191,19 +204,24 @@ func generateKeyPair() ([]byte, []byte, error) {
 }
 
 func (a *Agent) ipcLoop(ctx context.Context) {
+	backoff := time.Second
+	const maxBackoff = 30 * time.Second
 	for {
 		if ctx.Err() != nil {
 			return
 		}
 		conn, err := net.DialUnix("unix", nil, &net.UnixAddr{Name: a.socketPath, Net: "unix"})
 		if err != nil {
+			log.Printf("ipc connect: %v (retry in %v)", err, backoff)
 			select {
-			case <-time.After(1 * time.Second):
+			case <-time.After(backoff):
 			case <-ctx.Done():
 				return
 			}
+			backoff = min(backoff*2, maxBackoff)
 			continue
 		}
+		backoff = time.Second // Reset on successful connect
 		a.ipcMu.Lock()
 		a.ipcConn = conn
 		a.ipcMu.Unlock()
@@ -212,8 +230,9 @@ func (a *Agent) ipcLoop(ctx context.Context) {
 		a.ipcMu.Lock()
 		a.ipcConn = nil
 		a.ipcMu.Unlock()
+		log.Printf("ipc disconnected, reconnecting in %v", time.Second)
 		select {
-		case <-time.After(1 * time.Second):
+		case <-time.After(time.Second):
 		case <-ctx.Done():
 			return
 		}
@@ -221,6 +240,13 @@ func (a *Agent) ipcLoop(ctx context.Context) {
 }
 
 func (a *Agent) readIPC(ctx context.Context, conn *net.UnixConn) {
+	// When context is cancelled, unblock the blocking io.ReadFull by
+	// setting a past deadline on the connection.
+	go func() {
+		<-ctx.Done()
+		conn.SetReadDeadline(time.Now())
+	}()
+
 	reader := bufio.NewReader(conn)
 	for {
 		if ctx.Err() != nil {
@@ -228,6 +254,11 @@ func (a *Agent) readIPC(ctx context.Context, conn *net.UnixConn) {
 		}
 		frame, err := readIPCFrame(reader)
 		if err != nil {
+			if ctx.Err() != nil {
+				log.Printf("ipc read: shutting down")
+			} else {
+				log.Printf("ipc read: %v", err)
+			}
 			return
 		}
 		a.handleIPCFrame(frame)
@@ -235,6 +266,8 @@ func (a *Agent) readIPC(ctx context.Context, conn *net.UnixConn) {
 }
 
 func (a *Agent) relayLoop(ctx context.Context) {
+	backoff := 2 * time.Second
+	const maxBackoff = 60 * time.Second
 	for {
 		if ctx.Err() != nil {
 			return
@@ -242,13 +275,16 @@ func (a *Agent) relayLoop(ctx context.Context) {
 		url := a.relayConnectURL()
 		conn, _, err := websocket.Dial(ctx, url, nil)
 		if err != nil {
+			log.Printf("relay connect: %v (retry in %v)", err, backoff)
 			select {
-			case <-time.After(2 * time.Second):
+			case <-time.After(backoff):
 			case <-ctx.Done():
 				return
 			}
+			backoff = min(backoff*2, maxBackoff)
 			continue
 		}
+		backoff = 2 * time.Second // Reset on successful connect
 		a.wsMu.Lock()
 		a.wsConn = conn
 		a.wsMu.Unlock()
@@ -262,6 +298,7 @@ func (a *Agent) relayLoop(ctx context.Context) {
 		a.wsMu.Lock()
 		a.wsConn = nil
 		a.wsMu.Unlock()
+		log.Printf("relay disconnected, reconnecting in %v", 2*time.Second)
 		select {
 		case <-time.After(2 * time.Second):
 		case <-ctx.Done():
@@ -287,7 +324,8 @@ func (a *Agent) readRelay(ctx context.Context, conn *websocket.Conn) {
 
 func (a *Agent) handleIPCFrame(frame *protocol.Frame) {
 	switch frame.Type {
-	case protocol.TypeTabList, protocol.TypeOutput, protocol.TypeSnapshot:
+	case protocol.TypeTabList, protocol.TypeOutput, protocol.TypeSnapshot,
+		protocol.TypeApprovalRequest:
 		a.sendEncryptedToRelay(frame)
 	case protocol.TypePing:
 		a.sendEncryptedToRelay(&protocol.Frame{
@@ -297,6 +335,8 @@ func (a *Agent) handleIPCFrame(frame *protocol.Frame) {
 			Seq:     a.nextSeq(),
 			Payload: frame.Payload,
 		})
+	default:
+		log.Printf("ipc: unhandled frame type 0x%02x", frame.Type)
 	}
 }
 
@@ -321,9 +361,12 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		if !wasEncrypted {
 			return // Reject unencrypted session-ready frames
 		}
+		a.sessionMu.Lock()
 		a.sessionReady = true
+		a.sessionMu.Unlock()
 		a.sendSessionStatus("ready")
-	case protocol.TypeTabSwitch, protocol.TypeInput, protocol.TypeRemoteTelemetry:
+	case protocol.TypeTabSwitch, protocol.TypeInput, protocol.TypeRemoteTelemetry,
+		protocol.TypeApprovalResponse:
 		a.sendToIPC(frame)
 	case protocol.TypePing:
 		a.sendEncryptedToRelay(&protocol.Frame{
@@ -333,6 +376,8 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 			Seq:     a.nextSeq(),
 			Payload: frame.Payload,
 		})
+	default:
+		log.Printf("relay: unhandled frame type 0x%02x (encrypted=%v)", frame.Type, wasEncrypted)
 	}
 }
 
@@ -351,7 +396,11 @@ func (a *Agent) handlePairRequest(payload []byte) {
 	}
 	a.pairingMu.Unlock()
 
-	if request.PairingCode != a.pairingCode || time.Now().After(a.pairingExpires) {
+	a.pairingMu.Lock()
+	codeMatch := request.PairingCode == a.pairingCode && time.Now().Before(a.pairingExpires)
+	a.pairingMu.Unlock()
+
+	if !codeMatch {
 		a.pairingMu.Lock()
 		a.pairingAttempts++
 		if a.pairingAttempts >= 5 {
@@ -403,6 +452,7 @@ func (a *Agent) handleHello(payload []byte) {
 	}
 	nonce, err := base64.StdEncoding.DecodeString(hello.Nonce)
 	if err != nil {
+		log.Printf("hello: nonce decode: %v", err)
 		return
 	}
 	a.sessionMu.Lock()
@@ -493,6 +543,18 @@ func (a *Agent) establishSession() {
 		log.Printf("establish session: x25519: %v", err)
 		return
 	}
+	// Verify the shared secret is not all zeros (low-order point attack).
+	allZero := true
+	for _, b := range shared {
+		if b != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		log.Printf("establish session: all-zero shared secret (low-order iOS public key)")
+		return
+	}
 	crypto, err := newCryptoSession(shared, a.macNonce, a.iosNonce)
 	if err != nil {
 		log.Printf("establish session: crypto: %v", err)
@@ -557,35 +619,34 @@ func newCryptoSession(shared, nonceMac, nonceIOS []byte) (*cryptoSession, error)
 }
 
 func (a *Agent) decryptPayload(frame *protocol.Frame) ([]byte, error) {
+	// Hold sessionMu across the entire decrypt+update to eliminate TOCTOU
+	// race on maxReceivedSeq and prevent crypto from being nullified mid-decrypt.
 	a.sessionMu.Lock()
-	crypto := a.crypto
-	maxSeq := a.maxReceivedSeq
-	a.sessionMu.Unlock()
-	if crypto == nil {
+	defer a.sessionMu.Unlock()
+
+	if a.crypto == nil {
 		return nil, errors.New("missing session")
 	}
-	if frame.Seq <= maxSeq {
-		return nil, fmt.Errorf("replay detected: seq %d <= %d", frame.Seq, maxSeq)
+	if frame.Seq <= a.maxReceivedSeq {
+		return nil, fmt.Errorf("replay detected: seq %d <= %d", frame.Seq, a.maxReceivedSeq)
 	}
-	nonce := makeNonce(crypto.noncePrefix, frame.Seq)
+	nonce := makeNonce(a.crypto.noncePrefix, frame.Seq)
 	header := frame.HeaderBytes(uint32(len(frame.Payload)))
-	plaintext, err := crypto.aead.Open(nil, nonce, frame.Payload, header)
+	plaintext, err := a.crypto.aead.Open(nil, nonce, frame.Payload, header)
 	if err != nil {
 		return nil, err
 	}
-	a.sessionMu.Lock()
-	if frame.Seq > a.maxReceivedSeq {
-		a.maxReceivedSeq = frame.Seq
-	}
-	a.sessionMu.Unlock()
+	a.maxReceivedSeq = frame.Seq
 	return plaintext, nil
 }
 
 func (a *Agent) sendEncryptedToRelay(frame *protocol.Frame) {
+	// Hold sessionMu across the entire encrypt operation to prevent
+	// resetSession from nullifying crypto between the nil check and Seal.
 	a.sessionMu.Lock()
 	crypto := a.crypto
-	a.sessionMu.Unlock()
 	if crypto == nil {
+		a.sessionMu.Unlock()
 		return
 	}
 	nonce := makeNonce(crypto.noncePrefix, frame.Seq)
@@ -594,6 +655,7 @@ func (a *Agent) sendEncryptedToRelay(frame *protocol.Frame) {
 	header := frame.HeaderBytes(payloadLen)
 	ciphertext := crypto.aead.Seal(nil, nonce, frame.Payload, header)
 	frame.Payload = ciphertext
+	a.sessionMu.Unlock()
 	a.sendToRelay(frame)
 }
 
@@ -633,12 +695,17 @@ func (a *Agent) sendSessionStatus(status string) {
 }
 
 func (a *Agent) sendPairingInfo() {
+	a.pairingMu.Lock()
+	code := a.pairingCode
+	expires := a.pairingExpires
+	a.pairingMu.Unlock()
+
 	info := PairingInfoPayload{
 		RelayURL:    a.relayBaseURL,
 		DeviceID:    a.state.DeviceID,
 		MacPub:      a.state.MacPublicKey,
-		PairingCode: a.pairingCode,
-		ExpiresAt:   a.pairingExpires.UTC().Format(time.RFC3339),
+		PairingCode: code,
+		ExpiresAt:   expires.UTC().Format(time.RFC3339),
 	}
 	data, err := json.Marshal(info)
 	if err != nil {
@@ -691,8 +758,12 @@ func (a *Agent) relayConnectURL() string {
 }
 
 func (a *Agent) refreshPairingCode() {
-	a.pairingCode = newPairingCode()
-	a.pairingExpires = time.Now().Add(pairingTTL)
+	code := newPairingCode()
+	expires := time.Now().Add(pairingTTL)
+	a.pairingMu.Lock()
+	a.pairingCode = code
+	a.pairingExpires = expires
+	a.pairingMu.Unlock()
 }
 
 func newPairingCode() string {
@@ -720,6 +791,7 @@ func generateRelayToken(deviceID, role, secret string) string {
 func fingerprint(pubKey string) string {
 	data, err := base64.StdEncoding.DecodeString(pubKey)
 	if err != nil {
+		log.Printf("fingerprint: base64 decode: %v", err)
 		return ""
 	}
 	hash := sha256.Sum256(data)
@@ -747,12 +819,12 @@ func writeIPCFrame(conn *net.UnixConn, frame *protocol.Frame) error {
 	if len(payload) > maxFrameSize {
 		return errors.New("frame too large")
 	}
-	var lenBuf [4]byte
-	binary.LittleEndian.PutUint32(lenBuf[:], uint32(len(payload)))
-	if _, err := conn.Write(lenBuf[:]); err != nil {
-		return err
-	}
-	_, err := conn.Write(payload)
+	// Single atomic write: length prefix + payload in one buffer to prevent
+	// interleaving if another goroutine writes concurrently.
+	buf := make([]byte, 4+len(payload))
+	binary.LittleEndian.PutUint32(buf[:4], uint32(len(payload)))
+	copy(buf[4:], payload)
+	_, err := conn.Write(buf)
 	return err
 }
 

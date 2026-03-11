@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>Command History Search | Chau7 Terminal</title>
+    <meta name="description" content="Chau7 replaces Ctrl+R with a visual fuzzy search through command history, ranked by frecency for faster recall of past commands.">
+    <meta property="og:title" content="Command History Search | Chau7">
+    <meta property="og:description" content="Chau7 replaces Ctrl+R with a visual fuzzy search through command history, ranked by frecency for faster recall of past commands.">
+    <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="https://chau7.sh/features/command-history-search">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://chau7.sh/" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "https://chau7.sh/features" },
+            { "@type": "ListItem", "position": 3, "name": "Search", "item": "https://chau7.sh/features#search" },
+            { "@type": "ListItem", "position": 4, "name": "Command History Search" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Does it work with zsh, bash, and fish history?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 detects your active shell and reads from the appropriate history file: ~/.zsh_history, ~/.bash_history, or ~/.local/share/fish/fish_history. All standard history formats are supported."}},{"@type":"Question","name":"Can I delete entries from history search?","acceptedAnswer":{"@type":"Answer","text":"Yes. Highlight any entry and press a delete shortcut to remove it from both the search results and the underlying shell history file. Useful for removing commands that contained typos or sensitive information."}},{"@type":"Question","name":"Does frecency ranking replace my shell&#x27;s history order?","acceptedAnswer":{"@type":"Answer","text":"No. Frecency ranking only affects the display order in Chau7&#x27;s search interface. Your shell&#x27;s history file remains in chronological order, and native shell features like the up-arrow key continue to work as expected."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="/" class="nav-logo">
+                <img src="/logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="/features">Features</a>
+                <a href="/mcp">MCP</a>
+                <a href="/the-tech">The Tech</a>
+                <a href="/compare">Compare</a>
+                <a href="/pronunciation">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="/">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="/features">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="/features#search">Search</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Command History Search</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="search" data-ui="feat-hero">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">SEARCH</div>
+                <h1 class="hero-title">Command History Search</h1>
+                <p class="hero-subtitle">Better than Ctrl+R. Fuzzy search with frecency ranking. Find commands by what you remember, not exact text.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section" data-ui="feat-questions">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Is there a better alternative to Ctrl+R reverse search in the terminal?</li>
+                    <li class="question-item">How do I fuzzy search through terminal command history?</li>
+                    <li class="question-item">What is frecency ranking for command history?</li>
+                    <li class="question-item">Can I replace bash reverse search with something visual?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content" data-ui="feat-how">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 intercepts Ctrl+R and replaces the default reverse-search with a visual fuzzy-search interface. Your entire command history appears in a filterable list. Type to narrow results with fuzzy matching: characters do not need to be contiguous, so typing 'dkr ps' matches 'docker compose ps' and 'docker ps -a'. Results update in real time as you type.</p>
+                <p>Results are ranked by frecency: a combination of frequency and recency. Commands you use often and recently appear at the top, while old one-off commands sink to the bottom. This means the command you are looking for is almost always in the first few results, even with a vague query.</p>
+                <p>The history search reads from your shell's history file (zsh, bash, or fish) and supplements it with commands executed in the current session. Duplicate entries are collapsed, and failed commands can be optionally filtered out. Select a result with Enter to insert it at the cursor, or press Tab to insert it for editing before execution.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Ctrl+R is powerful but the default interface is terrible: a single line of text, exact substring matching, and you have to cycle through results one at a time. Chau7 provides a proper search UI with fuzzy matching and frecency ranking (frequent + recent commands score higher). Find any command by typing fragments of what you remember.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features" data-ui="feat-related">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="/features/command-palette">
+                        <h4>Command Palette</h4>
+                        <p>Cmd+Shift+P for fuzzy-searchable commands. Find any action across all features.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/terminal-search">
+                        <h4>Terminal Search</h4>
+                        <p>Search within terminal output with regex support, case sensitivity, and match navigation.</p>
+                    </a>
+                </div>
+                <div class="feature-random-row">
+                    <button type="button" class="btn-outline feature-random-btn">Discover a new feature at random</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq" data-ui="feat-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Does it work with zsh, bash, and fish history?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 detects your active shell and reads from the appropriate history file: ~/.zsh_history, ~/.bash_history, or ~/.local/share/fish/fish_history. All standard history formats are supported.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I delete entries from history search?</summary>
+                        <div class="faq-answer"><p>Yes. Highlight any entry and press a delete shortcut to remove it from both the search results and the underlying shell history file. Useful for removing commands that contained typos or sensitive information.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does frecency ranking replace my shell&#x27;s history order?</summary>
+                        <div class="faq-answer"><p>No. Frecency ranking only affects the display order in Chau7's search interface. Your shell's history file remains in chronological order, and native shell features like the up-arrow key continue to work as expected.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Upgrade your Ctrl+R. You deserve fuzzy search.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="/logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="/features">Features</a>
+                    <a href="/mcp">MCP Tools</a>
+                    <a href="/the-tech">The Tech</a>
+                    <a href="/compare">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="/llms.txt">llms.txt</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Colophon</h4>
+                    <a href="/golden-ratio.html">The Golden Ratio</a>
+                    <a href="/typography.html">Typography</a>
+                    <a href="/pronunciation">How to Say It</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Legal</h4>
+                    <a href="/legal">Legal Notice</a>
+                    <a href="/mentions-legales">Mentions L&eacute;gales</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        window.CHAU7_FEATURE_PAGES = ["/features/auto-ai-cli-detection", "/features/ai-tab-branding", "/features/ai-process-monitoring", "/features/custom-detection-rules", "/features/detection-status-indicator", "/features/multi-agent-awareness", "/features/context-token-optimization", "/features/llm-error-explanation", "/features/cto-per-tab-override", "/features/ai-session-tracking", "/features/tls-wss-proxy", "/features/token-counting", "/features/cost-tracking", "/features/latency-tracking", "/features/analytics-dashboard", "/features/mcp-tools", "/features/unix-socket-server", "/features/auto-registration", "/features/mcp-resources", "/features/tab-limits", "/features/mcp-tab-indicator", "/features/multi-tab", "/features/split-panes", "/features/tab-drag-drop", "/features/tab-profiles", "/features/background-suspension", "/features/tab-watchdog", "/features/session-recording", "/features/timeline-scrubber", "/features/session-restore", "/features/metal-rendering", "/features/iosurface-display", "/features/simd-parsing", "/features/iokit-hid-input", "/features/triple-buffering", "/features/lock-free-spsc-buffer", "/features/vt100-xterm-emulation", "/features/unicode-emoji-support", "/features/shell-integration", "/features/scrollback-buffer", "/features/hyperlinks", "/features/image-protocol", "/features/ligatures", "/features/bell-notification", "/features/dangerous-command-guard", "/features/process-exit-confirmation", "/features/mcp-approval-gate", "/features/clipboard-history", "/features/paste-confirmation", "/features/snippets", "/features/ssh-connection-manager", "/features/auto-import-ssh-config", "/features/jump-host-support", "/features/context-aware-switching", "/features/command-palette", "/features/terminal-search", "/features/command-history-search", "/features/fonts", "/features/themes", "/features/custom-keybindings", "/features/cursor-styles", "/features/transparency-blur", "/features/padding-margins", "/features/overlay-mode", "/features/dropdown-quake-style", "/features/fullscreen-mode", "/features/menu-bar-only", "/features/syntax-highlighting", "/features/bracket-matching", "/features/find-replace", "/features/line-numbers", "/features/voiceover-support", "/features/high-contrast-mode", "/features/reduced-motion", "/features/localization", "/features/json-rpc-api", "/features/shell-hooks"];
+    </script>
+    <script src="/script.js"></script>
+</body>
+</html>

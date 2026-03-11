@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>IOKit HID Input | Chau7 Terminal</title>
+    <meta name="description" content="Chau7 uses IOKit HID for raw keyboard input, bypassing the NSEvent queue for sub-millisecond key-to-screen latency.">
+    <meta property="og:title" content="IOKit HID Input | Chau7">
+    <meta property="og:description" content="Chau7 uses IOKit HID for raw keyboard input, bypassing the NSEvent queue for sub-millisecond key-to-screen latency.">
+    <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="https://chau7.sh/features/iokit-hid-input">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://chau7.sh/" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "https://chau7.sh/features" },
+            { "@type": "ListItem", "position": 3, "name": "GPU Rendering", "item": "https://chau7.sh/features#rendering" },
+            { "@type": "ListItem", "position": 4, "name": "IOKit HID Input" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Does IOKit HID input work with macOS accessibility features?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 falls back to NSEvent processing when accessibility keyboard features (Slow Keys, Sticky Keys) are enabled, since those features require WindowServer-level event transformation."}},{"@type":"Question","name":"Is IOKit HID input compatible with third-party keyboard remappers?","acceptedAnswer":{"@type":"Answer","text":"Remappers like Karabiner-Elements operate at the IOKit driver level, below Chau7&#x27;s HID client. Their key remappings are fully visible to Chau7&#x27;s HID callback, so all custom key bindings work as expected."}},{"@type":"Question","name":"Does this affect IME input for CJK languages?","acceptedAnswer":{"@type":"Answer","text":"IME input is handled through the standard NSTextInputClient protocol on the main thread. IOKit HID input handles only direct key events; when an IME is active, events are routed through the normal AppKit path to preserve correct composition behavior."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="/" class="nav-logo">
+                <img src="/logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="/features">Features</a>
+                <a href="/mcp">MCP</a>
+                <a href="/the-tech">The Tech</a>
+                <a href="/compare">Compare</a>
+                <a href="/pronunciation">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="/">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="/features">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="/features#rendering">GPU Rendering</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">IOKit HID Input</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="rendering" data-ui="feat-hero">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge badge-purple">GPU RENDERING</div>
+                <h1 class="hero-title">IOKit HID Input</h1>
+                <p class="hero-subtitle">Raw keyboard events from IOKit HID. Below AppKit, below NSEvent, below everything.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section" data-ui="feat-questions">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">How to reduce keyboard input latency on macOS terminal</li>
+                    <li class="question-item">Why does my terminal feel sluggish when typing fast?</li>
+                    <li class="question-item">NSEvent keyboard latency versus raw HID input on macOS</li>
+                    <li class="question-item">Lowest latency keyboard handling for macOS apps</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content" data-ui="feat-how">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>macOS keyboard events normally travel through the IOKit HID driver, into the WindowServer, through the NSEvent dispatch queue, and finally into the application's run loop. Each hop adds latency, and the NSEvent queue batches events per run loop iteration. Chau7 registers a direct IOKit HID client callback for keyboard events, receiving raw key-down and key-up reports before they enter the WindowServer event stream.</p>
+                <p>The HID callback translates USB HID usage codes to terminal escape sequences on a dedicated high-priority thread, bypassing the main thread run loop entirely. Dead key composition, modifier state, and keyboard layout mapping are handled in this path using IOKit's own key-mapping tables, preserving correct behavior for international keyboards and IME input.</p>
+                <p>The result is that key events arrive at the PTY within microseconds of the hardware interrupt, rather than the 2-8ms typical of NSEvent-based input handling. For fast typists and latency-sensitive workflows like Vim or interactive REPLs, this eliminates the perceptible lag between keypress and screen update.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Input latency is the most noticeable performance characteristic of a terminal. Even a few milliseconds of extra delay between keypress and screen update creates a subtle but persistent feeling that the application is not keeping up. Chau7 reads keyboard events from IOKit's HID subsystem directly, bypassing the entire NSEvent queue. The overhead is sub-millisecond.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features" data-ui="feat-related">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="/features/metal-rendering">
+                        <h4>Metal Rendering <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Hardware-accelerated rendering via Apple Metal API with glyph atlas and dirty region tracking.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/iosurface-display">
+                        <h4>IOSurface Display <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Direct GPU-to-display via IOSurface, bypassing the macOS window compositor for zero-copy display.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/simd-parsing">
+                        <h4>SIMD Parsing <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>16-32 byte SIMD-accelerated ANSI escape parsing in Rust for cache-line-speed throughput.</p>
+                    </a>
+                </div>
+                <div class="feature-random-row">
+                    <button type="button" class="btn-outline feature-random-btn">Discover a new feature at random</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq" data-ui="feat-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Does IOKit HID input work with macOS accessibility features?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 falls back to NSEvent processing when accessibility keyboard features (Slow Keys, Sticky Keys) are enabled, since those features require WindowServer-level event transformation.</p></div>
+                    </details>
+                    <details>
+                        <summary>Is IOKit HID input compatible with third-party keyboard remappers?</summary>
+                        <div class="faq-answer"><p>Remappers like Karabiner-Elements operate at the IOKit driver level, below Chau7's HID client. Their key remappings are fully visible to Chau7's HID callback, so all custom key bindings work as expected.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does this affect IME input for CJK languages?</summary>
+                        <div class="faq-answer"><p>IME input is handled through the standard NSTextInputClient protocol on the main thread. IOKit HID input handles only direct key events; when an IME is active, events are routed through the normal AppKit path to preserve correct composition behavior.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Sub-millisecond input latency. You will feel the difference.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="/logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="/features">Features</a>
+                    <a href="/mcp">MCP Tools</a>
+                    <a href="/the-tech">The Tech</a>
+                    <a href="/compare">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="/llms.txt">llms.txt</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Colophon</h4>
+                    <a href="/golden-ratio.html">The Golden Ratio</a>
+                    <a href="/typography.html">Typography</a>
+                    <a href="/pronunciation">How to Say It</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Legal</h4>
+                    <a href="/legal">Legal Notice</a>
+                    <a href="/mentions-legales">Mentions L&eacute;gales</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        window.CHAU7_FEATURE_PAGES = ["/features/auto-ai-cli-detection", "/features/ai-tab-branding", "/features/ai-process-monitoring", "/features/custom-detection-rules", "/features/detection-status-indicator", "/features/multi-agent-awareness", "/features/context-token-optimization", "/features/llm-error-explanation", "/features/cto-per-tab-override", "/features/ai-session-tracking", "/features/tls-wss-proxy", "/features/token-counting", "/features/cost-tracking", "/features/latency-tracking", "/features/analytics-dashboard", "/features/mcp-tools", "/features/unix-socket-server", "/features/auto-registration", "/features/mcp-resources", "/features/tab-limits", "/features/mcp-tab-indicator", "/features/multi-tab", "/features/split-panes", "/features/tab-drag-drop", "/features/tab-profiles", "/features/background-suspension", "/features/tab-watchdog", "/features/session-recording", "/features/timeline-scrubber", "/features/session-restore", "/features/metal-rendering", "/features/iosurface-display", "/features/simd-parsing", "/features/iokit-hid-input", "/features/triple-buffering", "/features/lock-free-spsc-buffer", "/features/vt100-xterm-emulation", "/features/unicode-emoji-support", "/features/shell-integration", "/features/scrollback-buffer", "/features/hyperlinks", "/features/image-protocol", "/features/ligatures", "/features/bell-notification", "/features/dangerous-command-guard", "/features/process-exit-confirmation", "/features/mcp-approval-gate", "/features/clipboard-history", "/features/paste-confirmation", "/features/snippets", "/features/ssh-connection-manager", "/features/auto-import-ssh-config", "/features/jump-host-support", "/features/context-aware-switching", "/features/command-palette", "/features/terminal-search", "/features/command-history-search", "/features/fonts", "/features/themes", "/features/custom-keybindings", "/features/cursor-styles", "/features/transparency-blur", "/features/padding-margins", "/features/overlay-mode", "/features/dropdown-quake-style", "/features/fullscreen-mode", "/features/menu-bar-only", "/features/syntax-highlighting", "/features/bracket-matching", "/features/find-replace", "/features/line-numbers", "/features/voiceover-support", "/features/high-contrast-mode", "/features/reduced-motion", "/features/localization", "/features/json-rpc-api", "/features/shell-hooks"];
+    </script>
+    <script src="/script.js"></script>
+</body>
+</html>

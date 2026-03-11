@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>Syntax Highlighting | Chau7 Terminal</title>
+    <meta name="description" content="Chau7's built-in editor provides syntax highlighting for 50+ languages. Edit config files and scripts without leaving your terminal.">
+    <meta property="og:title" content="Syntax Highlighting | Chau7">
+    <meta property="og:description" content="Chau7's built-in editor provides syntax highlighting for 50+ languages. Edit config files and scripts without leaving your terminal.">
+    <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="https://chau7.sh/features/syntax-highlighting">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://chau7.sh/" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "https://chau7.sh/features" },
+            { "@type": "ListItem", "position": 3, "name": "Built-in Editor", "item": "https://chau7.sh/features#editor" },
+            { "@type": "ListItem", "position": 4, "name": "Syntax Highlighting" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"What languages are supported for syntax highlighting?","acceptedAnswer":{"@type":"Answer","text":"Over 50 languages including Python, JavaScript, TypeScript, Rust, Go, Swift, Ruby, C, C++, Java, YAML, TOML, JSON, Markdown, Shell, Dockerfile, and more. Language detection is automatic from file extension or shebang."}},{"@type":"Question","name":"Do I need to learn Vim keybindings to use the editor?","acceptedAnswer":{"@type":"Answer","text":"No. The editor uses standard macOS keyboard shortcuts by default. Vim keybindings are available as an optional preset for developers who prefer modal editing."}},{"@type":"Question","name":"Does the editor use my terminal theme colors?","acceptedAnswer":{"@type":"Answer","text":"Yes. Syntax highlighting tokens are colored using your current terminal theme, so the editor integrates visually with the rest of your terminal."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="/" class="nav-logo">
+                <img src="/logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="/features">Features</a>
+                <a href="/mcp">MCP</a>
+                <a href="/the-tech">The Tech</a>
+                <a href="/compare">Compare</a>
+                <a href="/pronunciation">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="/">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="/features">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="/features#editor">Built-in Editor</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Syntax Highlighting</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="editor" data-ui="feat-hero">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">BUILT-IN EDITOR</div>
+                <h1 class="hero-title">Syntax Highlighting</h1>
+                <p class="hero-subtitle">Edit code in your terminal with real syntax colors. Not Vim-level complexity, not nano-level sadness.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section" data-ui="feat-questions">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Terminal text editor easier than vim</li>
+                    <li class="question-item">Edit config files in terminal with syntax highlighting</li>
+                    <li class="question-item">Simple terminal code editor macOS beginner friendly</li>
+                    <li class="question-item">Nano alternative with syntax highlighting built in</li>
+                    <li class="question-item">Quick file editing in terminal without learning vim</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content" data-ui="feat-how">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>Chau7 includes a built-in text editor with syntax highlighting for over 50 programming and configuration languages. Open any file and the editor detects the language from the file extension or shebang line and applies appropriate syntax coloring. Supported languages include Python, JavaScript, TypeScript, Rust, Go, Swift, Ruby, YAML, TOML, JSON, Markdown, Shell scripts, Dockerfiles, and many more.</p>
+                <p>The syntax engine uses Tree-sitter grammars for accurate, incremental parsing. This means highlighting stays correct even in complex nested structures and updates efficiently as you type rather than re-parsing the entire file. Theme colors from your terminal theme are applied to syntax tokens, so highlighting integrates visually with your chosen color scheme.</p>
+                <p>The editor is designed to be immediately usable without memorizing keybindings. Standard macOS shortcuts (Cmd+S to save, Cmd+Z to undo, Cmd+F to find) work as expected. For developers comfortable with modal editing, Vim keybindings are available as an option. The goal is a quick-edit experience that removes the barrier of learning Vim or Emacs for simple file edits.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Terminal text editors sit at two extremes: Vim (powerful, steep learning curve) and nano (simple, no syntax highlighting). Chau7's built-in editor provides syntax highlighting for common languages with zero learning curve. Open a file, see colors, edit, save. That's it.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features" data-ui="feat-related">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="/features/bracket-matching">
+                        <h4>Bracket Matching</h4>
+                        <p>Automatic bracket, brace, and parenthesis matching with jump-to-match.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/find-replace">
+                        <h4>Find &amp; Replace</h4>
+                        <p>In-editor find and replace with regex support and match highlighting.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/line-numbers">
+                        <h4>Line Numbers</h4>
+                        <p>Configurable line number gutter with relative line numbers option.</p>
+                    </a>
+                </div>
+                <div class="feature-random-row">
+                    <button type="button" class="btn-outline feature-random-btn">Discover a new feature at random</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq" data-ui="feat-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>What languages are supported for syntax highlighting?</summary>
+                        <div class="faq-answer"><p>Over 50 languages including Python, JavaScript, TypeScript, Rust, Go, Swift, Ruby, C, C++, Java, YAML, TOML, JSON, Markdown, Shell, Dockerfile, and more. Language detection is automatic from file extension or shebang.</p></div>
+                    </details>
+                    <details>
+                        <summary>Do I need to learn Vim keybindings to use the editor?</summary>
+                        <div class="faq-answer"><p>No. The editor uses standard macOS keyboard shortcuts by default. Vim keybindings are available as an optional preset for developers who prefer modal editing.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does the editor use my terminal theme colors?</summary>
+                        <div class="faq-answer"><p>Yes. Syntax highlighting tokens are colored using your current terminal theme, so the editor integrates visually with the rest of your terminal.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Edit files in your terminal. With colors. Like a civilized developer.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="/logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="/features">Features</a>
+                    <a href="/mcp">MCP Tools</a>
+                    <a href="/the-tech">The Tech</a>
+                    <a href="/compare">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="/llms.txt">llms.txt</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Colophon</h4>
+                    <a href="/golden-ratio.html">The Golden Ratio</a>
+                    <a href="/typography.html">Typography</a>
+                    <a href="/pronunciation">How to Say It</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Legal</h4>
+                    <a href="/legal">Legal Notice</a>
+                    <a href="/mentions-legales">Mentions L&eacute;gales</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        window.CHAU7_FEATURE_PAGES = ["/features/auto-ai-cli-detection", "/features/ai-tab-branding", "/features/ai-process-monitoring", "/features/custom-detection-rules", "/features/detection-status-indicator", "/features/multi-agent-awareness", "/features/context-token-optimization", "/features/llm-error-explanation", "/features/cto-per-tab-override", "/features/ai-session-tracking", "/features/tls-wss-proxy", "/features/token-counting", "/features/cost-tracking", "/features/latency-tracking", "/features/analytics-dashboard", "/features/mcp-tools", "/features/unix-socket-server", "/features/auto-registration", "/features/mcp-resources", "/features/tab-limits", "/features/mcp-tab-indicator", "/features/multi-tab", "/features/split-panes", "/features/tab-drag-drop", "/features/tab-profiles", "/features/background-suspension", "/features/tab-watchdog", "/features/session-recording", "/features/timeline-scrubber", "/features/session-restore", "/features/metal-rendering", "/features/iosurface-display", "/features/simd-parsing", "/features/iokit-hid-input", "/features/triple-buffering", "/features/lock-free-spsc-buffer", "/features/vt100-xterm-emulation", "/features/unicode-emoji-support", "/features/shell-integration", "/features/scrollback-buffer", "/features/hyperlinks", "/features/image-protocol", "/features/ligatures", "/features/bell-notification", "/features/dangerous-command-guard", "/features/process-exit-confirmation", "/features/mcp-approval-gate", "/features/clipboard-history", "/features/paste-confirmation", "/features/snippets", "/features/ssh-connection-manager", "/features/auto-import-ssh-config", "/features/jump-host-support", "/features/context-aware-switching", "/features/command-palette", "/features/terminal-search", "/features/command-history-search", "/features/fonts", "/features/themes", "/features/custom-keybindings", "/features/cursor-styles", "/features/transparency-blur", "/features/padding-margins", "/features/overlay-mode", "/features/dropdown-quake-style", "/features/fullscreen-mode", "/features/menu-bar-only", "/features/syntax-highlighting", "/features/bracket-matching", "/features/find-replace", "/features/line-numbers", "/features/voiceover-support", "/features/high-contrast-mode", "/features/reduced-motion", "/features/localization", "/features/json-rpc-api", "/features/shell-hooks"];
+    </script>
+    <script src="/script.js"></script>
+</body>
+</html>

@@ -275,6 +275,10 @@ struct TerminalView: View {
             get: { pendingProtectedSend != nil },
             set: { isPresented in
                 if !isPresented {
+                    // Restore input text when dismissed via swipe (not via Cancel/Submit)
+                    if let pending = pendingProtectedSend {
+                        inputText = pending.text
+                    }
                     pendingProtectedSend = nil
                 }
             }

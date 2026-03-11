@@ -42,6 +42,7 @@ final class RemoteClient {
     private var reconnectAttempt = 0
     private var reconnectTask: Task<Void, Never>?
     private var shouldReconnect = false
+    private var connectionGeneration: UInt64 = 0
     private var outputByTabID: [UInt32: String] = [:]
     private var strippedOutputByTabID: [UInt32: String] = [:]
     private var remoteSessionID: String?
@@ -124,6 +125,9 @@ final class RemoteClient {
         remoteSessionID = nil
         nonceIOS = nil
         nonceMac = nil
+        seqCounter = 1
+        reconnectAttempt = 0
+        connectionGeneration &+= 1
         tabs = []
         outputByTabID.removeAll()
         strippedOutputByTabID.removeAll()
@@ -180,9 +184,10 @@ final class RemoteClient {
     // MARK: - Receive Loop
 
     private func listen() {
+        let generation = connectionGeneration
         webSocket?.receive { [weak self] result in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.connectionGeneration == generation else { return }
                 switch result {
                 case .failure(let error):
                     log.error("WebSocket receive failed: \(error.localizedDescription)")
@@ -209,7 +214,13 @@ final class RemoteClient {
             emitTelemetry(type: .disconnected, status: "disconnected", message: reason)
         }
 
-        guard wasConnected, shouldReconnect, reconnectAttempt < Self.maxReconnectAttempts else { return }
+        guard shouldReconnect, reconnectAttempt < Self.maxReconnectAttempts else {
+            if reconnectAttempt >= Self.maxReconnectAttempts {
+                lastError = "Reconnect limit reached (\(Self.maxReconnectAttempts) attempts)"
+                status = "Connection failed"
+            }
+            return
+        }
         reconnectAttempt += 1
         let delay = pow(2.0, Double(reconnectAttempt))
         status = "Reconnecting (\(reconnectAttempt)/\(Self.maxReconnectAttempts))..."
@@ -273,23 +284,47 @@ final class RemoteClient {
         case .approvalRequest: handleApprovalRequest(payload)
         case .ping:            sendEncrypted(type: .pong, tabID: frame.tabID, payload: payload)
         case .error:           handleError(payload)
-        default:               break
+        default:
+            log.warning("Unhandled frame type: 0x\(String(frame.type, radix: 16))")
         }
     }
 
     // MARK: - Frame Handlers
 
     private func handleHello(_ data: Data) {
-        guard let msg = try? JSONDecoder().decode(HelloPayload.self, from: data),
-              let nonce = Data(base64Encoded: msg.nonce) else { return }
+        let msg: HelloPayload
+        do {
+            msg = try JSONDecoder().decode(HelloPayload.self, from: data)
+        } catch {
+            log.error("handleHello: decode failed: \(error.localizedDescription)")
+            return
+        }
+        guard let nonce = Data(base64Encoded: msg.nonce) else {
+            log.error("handleHello: invalid nonce base64")
+            return
+        }
         nonceMac = nonce
         establishSessionIfPossible()
     }
 
     private func handlePairAccept(_ data: Data) {
-        guard let msg = try? JSONDecoder().decode(PairAcceptPayload.self, from: data),
-              let keyData = Data(base64Encoded: msg.macPub) else { return }
-        macPublicKey = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: keyData)
+        let msg: PairAcceptPayload
+        do {
+            msg = try JSONDecoder().decode(PairAcceptPayload.self, from: data)
+        } catch {
+            log.error("handlePairAccept: decode failed: \(error.localizedDescription)")
+            return
+        }
+        guard let keyData = Data(base64Encoded: msg.macPub) else {
+            log.error("handlePairAccept: invalid macPub base64")
+            return
+        }
+        do {
+            macPublicKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: keyData)
+        } catch {
+            log.error("handlePairAccept: invalid public key: \(error.localizedDescription)")
+            return
+        }
         _ = KeychainStore.save(key: "mac_public_key", data: keyData)
         sendHello()
         establishSessionIfPossible()
@@ -321,7 +356,13 @@ final class RemoteClient {
     }
 
     private func handleTabList(_ data: Data) {
-        guard let msg = try? JSONDecoder().decode(TabListPayload.self, from: data) else { return }
+        let msg: TabListPayload
+        do {
+            msg = try JSONDecoder().decode(TabListPayload.self, from: data)
+        } catch {
+            log.error("handleTabList: decode failed: \(error.localizedDescription)")
+            return
+        }
         tabs = msg.tabs
         if let active = msg.tabs.first(where: { $0.isActive }) {
             activeTabID = active.tabID
@@ -351,7 +392,10 @@ final class RemoteClient {
 
     private func storeSnapshot(_ data: Data, tabID: UInt32) {
         let resolvedTabID = resolvedTabID(for: tabID)
-        let text = String(data: data, encoding: .utf8) ?? ""
+        guard let text = String(data: data, encoding: .utf8) else {
+            log.warning("Snapshot contains non-UTF-8 data (\(data.count) bytes)")
+            return
+        }
         outputByTabID[resolvedTabID] = trimOutput(text)
         strippedOutputByTabID[resolvedTabID] = ANSIStripper.strip(outputByTabID[resolvedTabID] ?? "")
         if resolvedTabID == activeTabID || activeTabID == 0 {
@@ -360,7 +404,13 @@ final class RemoteClient {
     }
 
     private func handleApprovalRequest(_ data: Data) {
-        guard let msg = try? JSONDecoder().decode(ApprovalRequestPayload.self, from: data) else { return }
+        let msg: ApprovalRequestPayload
+        do {
+            msg = try JSONDecoder().decode(ApprovalRequestPayload.self, from: data)
+        } catch {
+            log.error("handleApprovalRequest: decode failed: \(error.localizedDescription)")
+            return
+        }
         pendingApprovals.append(ApprovalRequest(
             requestID: msg.requestID, command: msg.command,
             flaggedCommand: msg.flaggedCommand, timestamp: Date()
@@ -391,10 +441,25 @@ final class RemoteClient {
 
     private func establishSessionIfPossible() {
         guard crypto == nil, let nonceIOS, let nonceMac else { return }
-        guard let macPub = macPublicKey ?? loadStoredMacKey(),
-              let shared = try? iosKey.sharedSecretFromKeyAgreement(with: macPub),
-              let session = RemoteCryptoSession.create(sharedSecret: shared, nonceMac: nonceMac, nonceIOS: nonceIOS)
-        else { return }
+        guard let macPub = macPublicKey ?? loadStoredMacKey() else {
+            log.error("Session establishment failed: no Mac public key available")
+            return
+        }
+
+        let shared: SharedSecret
+        do {
+            shared = try iosKey.sharedSecretFromKeyAgreement(with: macPub)
+        } catch {
+            log.error("Session establishment failed: key agreement: \(error.localizedDescription)")
+            lastError = "Key agreement failed"
+            return
+        }
+
+        guard let session = RemoteCryptoSession.create(sharedSecret: shared, nonceMac: nonceMac, nonceIOS: nonceIOS) else {
+            log.error("Session establishment failed: could not derive crypto session")
+            lastError = "Session derivation failed"
+            return
+        }
 
         crypto = session
         reconnectAttempt = 0

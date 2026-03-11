@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>Features | Chau7 Terminal</title>
+    <meta name="description" content="178 features across 17 categories. AI detection, MCP tools, GPU rendering, split panes, SSH management, session recording, command palette, and more. Browse the full Chau7 feature catalog.">
+    <meta property="og:title" content="Chau7 Features | 178 Features, Zero Bloat">
+    <meta property="og:description" content="Everything you need in a terminal, nothing you don't. Browse by category or search.">
+    <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="https://chau7.sh/features">
+    <link rel="stylesheet" href="../style.css">    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "ItemList",
+        "name": "Chau7 Feature Categories",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "AI Detection" },
+            { "@type": "ListItem", "position": 2, "name": "AI Integration" },
+            { "@type": "ListItem", "position": 3, "name": "API Analytics" },
+            { "@type": "ListItem", "position": 4, "name": "MCP Server" },
+            { "@type": "ListItem", "position": 5, "name": "Terminal Core" },
+            { "@type": "ListItem", "position": 6, "name": "GPU Rendering" },
+            { "@type": "ListItem", "position": 7, "name": "Tab Management" },
+            { "@type": "ListItem", "position": 8, "name": "Customization" },
+            { "@type": "ListItem", "position": 9, "name": "SSH & Remote" },
+            { "@type": "ListItem", "position": 10, "name": "Editor" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "What shells does Chau7 support?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 supports zsh, bash, fish, and any POSIX-compatible shell. It auto-detects your default shell from your system configuration." }
+            },
+            {
+                "@type": "Question",
+                "name": "Can I import my iTerm2 settings?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Chau7 includes a migration wizard that imports your iTerm2 profiles, keybindings, and color schemes. Launch it from Settings > Import." }
+            },
+            {
+                "@type": "Question",
+                "name": "Does Chau7 support Vim keybindings?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Chau7 includes Vim keybinding presets that can be enabled from Settings > Keys. Custom keybinding maps are also supported." }
+            }
+        ]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="/" class="nav-logo">
+                <img src="../logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="/features">Features</a>
+                <a href="/mcp">MCP</a>
+                <a href="/the-tech">The Tech</a>
+                <a href="/compare">Compare</a>
+                <a href="/pronunciation">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Hero -->
+        <section class="hero hero-features" data-ui="features-hero">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <h1 class="hero-title">
+                    178 features.<br><span class="gradient-text">One terminal named after a sock.</span>
+                </h1>
+                <p class="hero-subtitle">
+                    AI detection, MCP terminal control, SIMD parsing, GPU rendering, and everything else
+                    a developer actually needs. Pick a pillar or <a href="#catalog" class="hero-catalog-link">search the full catalog</a>.
+                </p>
+                <div class="pillar-nav" data-ui="features-pillar-nav">
+                    <a href="#cognitive-load" class="pillar-nav-card active" data-panel="0">
+                        <span class="pillar-nav-num">01</span>
+                        <span class="pillar-nav-title">Lower Cognitive Load</span>
+                        <span class="pillar-nav-hint">Detection, tabs, search</span>
+                    </a>
+                    <a href="#cost-context" class="pillar-nav-card" data-panel="1">
+                        <span class="pillar-nav-num">02</span>
+                        <span class="pillar-nav-title">Optimize Cost &amp; Context</span>
+                        <span class="pillar-nav-hint">Tokens, dollars, analytics</span>
+                    </a>
+                    <a href="#visibility-control" class="pillar-nav-card" data-panel="2">
+                        <span class="pillar-nav-num">03</span>
+                        <span class="pillar-nav-title">Visibility &amp; Control</span>
+                        <span class="pillar-nav-hint">MCP, safety, scripting</span>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- Pillar Carousel -->
+        <div class="pillar-carousel" data-ui="features-pillar-carousel">
+            <div class="pillar-track">
+                <div class="pillar-panel active" id="cognitive-load" data-ui="features-pillar-cognitive">
+                    <div class="pillar-panel-header">
+                        <div class="pillar-number">01</div>
+                        <h2>Lower Cognitive Load</h2>
+                        <p class="pillar-subtitle">Your terminal should tell you things, not make you figure them out. Detection, organization, and search that work so you don't have to.</p>
+                    </div>
+                    <div class="catalog-grid pillar-grid">
+                        <a class="catalog-card" href="/features/auto-ai-cli-detection">
+                            <h4>Auto AI CLI Detection <span class="differentiator-star" title="Differentiator">★</span></h4>
+                            <p>Detects Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they launch.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/ai-tab-branding">
+                            <h4>AI Tab Branding <span class="differentiator-star" title="Differentiator">★</span></h4>
+                            <p>Tabs adopt the brand color and logo of the active AI agent. Claude is orange. Codex is green.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/detection-status-indicator">
+                            <h4>Detection Status Indicator</h4>
+                            <p>Active, idle, or done: see it on the tab without switching to it.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/multi-tab">
+                            <h4>Multi-Tab</h4>
+                            <p>Unlimited tabs with drag-to-reorder, pinning, and custom titles.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/tab-drag-drop">
+                            <h4>Tab Drag &amp; Drop</h4>
+                            <p>Drag tabs anywhere. Snap-to-position with zero drift.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/session-restore">
+                            <h4>Session Restore</h4>
+                            <p>Quit and relaunch. Everything comes back exactly as you left it.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/terminal-search">
+                            <h4>Terminal Search</h4>
+                            <p>Regex search through terminal output with match-by-match navigation.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/command-palette">
+                            <h4>Command Palette</h4>
+                            <p>Cmd+Shift+P. Every feature, every action, one fuzzy search away.</p>
+                        </a>
+                    </div>
+                </div>
+                <div class="pillar-panel" id="cost-context" data-ui="features-pillar-cost">
+                    <div class="pillar-panel-header">
+                        <div class="pillar-number">02</div>
+                        <h2>Optimize Cost &amp; Context</h2>
+                        <p class="pillar-subtitle">Know what your AI agents spend, what tokens they burn, and where the money goes. Finally, numbers instead of vibes.</p>
+                    </div>
+                    <div class="catalog-grid pillar-grid">
+                        <a class="catalog-card" href="/features/context-token-optimization">
+                            <h4>Context Token Optimization <span class="differentiator-star" title="Differentiator">★</span></h4>
+                            <p>Strip terminal noise before AI reads it. Save ~40% on context tokens.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/cost-tracking">
+                            <h4>Cost Tracking <span class="differentiator-star" title="Differentiator">★</span></h4>
+                            <p>Dollars and cents per API call, per session, per month. No more surprises.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/token-counting">
+                            <h4>Token Counting</h4>
+                            <p>Input tokens, output tokens, per call. The numbers your provider charges but never shows.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/latency-tracking">
+                            <h4>Latency Tracking</h4>
+                            <p>Time-to-first-token and total duration for every API call.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/analytics-dashboard">
+                            <h4>Analytics Dashboard</h4>
+                            <p>Tokens, costs, and latency trends over time. Finally, a chart that matters.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/ai-session-tracking">
+                            <h4>AI Session Tracking</h4>
+                            <p>Every AI session tracked from first prompt to last. Run counts, duration, cost attribution.</p>
+                        </a>
+                    </div>
+                </div>
+                <div class="pillar-panel" id="visibility-control" data-ui="features-pillar-control">
+                    <div class="pillar-panel-header">
+                        <div class="pillar-number">03</div>
+                        <h2>Visibility &amp; Control</h2>
+                        <p class="pillar-subtitle">MCP tools, safety guardrails, and scripting APIs. Your AI agents get power. You keep oversight.</p>
+                    </div>
+                    <div class="catalog-grid pillar-grid">
+                        <a class="catalog-card" href="/features/mcp-tools">
+                            <h4>20 MCP Tools <span class="differentiator-star" title="Differentiator">★</span></h4>
+                            <p>Full terminal control via MCP. Tab lifecycle, command execution, output capture, telemetry.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/auto-registration">
+                            <h4>Auto-Registration <span class="differentiator-star" title="Differentiator">★</span></h4>
+                            <p>Launch Chau7. Done. Every AI client already knows how to talk to it.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/mcp-approval-gate">
+                            <h4>MCP Approval Gate</h4>
+                            <p>Review every MCP tool call before it runs. Trust, but verify.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/tab-limits">
+                            <h4>Tab Limits</h4>
+                            <p>Maximum MCP-created tabs. Prevents runaway agents from tab-bombing you.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/dangerous-command-guard">
+                            <h4>Dangerous Command Guard <span class="differentiator-star" title="Differentiator">★</span></h4>
+                            <p>rm -rf pauses for confirmation. Because undo doesn't exist in terminals.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/session-recording">
+                            <h4>Session Recording <span class="differentiator-star" title="Differentiator">★</span></h4>
+                            <p>Built-in session recording. Every keystroke, every output, millisecond timestamps.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/json-rpc-api">
+                            <h4>JSON-RPC API</h4>
+                            <p>Automate your terminal from any programming language. Not AppleScript.</p>
+                        </a>
+                        <a class="catalog-card" href="/features/mcp-tab-indicator">
+                            <h4>MCP Tab Indicator</h4>
+                            <p>Know which tabs are yours and which ones your AI conjured.</p>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter Bar + Feature Catalog -->
+        <section class="features-section" id="catalog" aria-labelledby="catalog-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="catalog-heading">The full catalog</h2>
+                    <p>All 178 features. Search or filter by category.</p>
+                </div>
+                <div class="catalog-random-row">
+                    <button type="button" class="btn-outline filter-random-btn">Discover a new feature at random</button>
+                </div>
+
+                <div class="filter-bar">
+                    <input type="search" class="filter-search" placeholder="Search features..." aria-label="Search features">
+                    <div class="filter-pills">
+                        <button class="filter-pill active" data-category="all">All</button>
+                        <button class="filter-pill" data-category="ai-detection">AI Detection</button>
+                        <button class="filter-pill" data-category="ai-integration">AI Integration</button>
+                        <button class="filter-pill" data-category="api-analytics">API Analytics</button>
+                        <button class="filter-pill" data-category="mcp">MCP Server</button>
+                        <button class="filter-pill" data-category="terminal">Terminal Core</button>
+                        <button class="filter-pill" data-category="rendering">GPU Rendering</button>
+                        <button class="filter-pill" data-category="tabs">Tab Management</button>
+                        <button class="filter-pill" data-category="customization">Customization</button>
+                        <button class="filter-pill" data-category="ssh">SSH &amp; Remote</button>
+                        <button class="filter-pill" data-category="editor">Editor</button>
+                        <button class="filter-pill" data-category="safety">Safety</button>
+                        <button class="filter-pill" data-category="accessibility">Accessibility</button>
+                        <button class="filter-pill" data-category="clipboard">Clipboard</button>
+                        <button class="filter-pill" data-category="session">Session</button>
+                        <button class="filter-pill" data-category="search">Search</button>
+                        <button class="filter-pill" data-category="scripting">Scripting</button>
+                        <button class="filter-pill" data-category="window">Window Modes</button>
+                    </div>
+                </div>
+
+                <div class="catalog-grid" id="feature-grid">
+                    <div class="no-results" id="no-results">No features match your search.</div>
+
+                    <!-- AI Detection -->
+                    <div class="catalog-category-header" data-category="ai-detection" id="ai-detection">AI Detection</div>
+                    <a class="catalog-card" href="/features/auto-ai-cli-detection" data-category="ai-detection">
+                        <h4>Auto AI CLI Detection <span class="differentiator-star" title="Differentiator">★</span></h4>
+                        <p>Detects Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they launch in any tab.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/ai-tab-branding" data-category="ai-detection">
+                        <h4>AI Tab Branding <span class="differentiator-star" title="Differentiator">★</span></h4>
+                        <p>Tabs automatically adopt the brand color and logo of the active AI agent.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/ai-process-monitoring" data-category="ai-detection">
+                        <h4>AI Process Monitoring <span class="differentiator-star" title="Differentiator">★</span></h4>
+                        <p>Track CPU, memory, and PID of AI agent processes per tab.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/custom-detection-rules" data-category="ai-detection">
+                        <h4>Custom Detection Rules</h4>
+                        <p>Define custom process name patterns for AI tools not yet in the built-in list.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/detection-status-indicator" data-category="ai-detection">
+                        <h4>Detection Status Indicator</h4>
+                        <p>Visual indicator in the tab bar showing whether an AI agent is active, idle, or completed.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/multi-agent-awareness" data-category="ai-detection">
+                        <h4>Multi-Agent Awareness</h4>
+                        <p>Handles multiple AI agents running in different tabs simultaneously with independent tracking.</p>
+                    </a>
+
+                    <!-- AI Integration -->
+                    <div class="catalog-category-header" data-category="ai-integration" id="ai-integration">AI Integration</div>
+                    <a class="catalog-card" href="/features/context-token-optimization" data-category="ai-integration">
+                        <h4>Context Token Optimization <span class="differentiator-star" title="Differentiator">★</span></h4>
+                        <p>Monitor and optimize LLM API token usage in real-time, per tab or globally.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/llm-error-explanation" data-category="ai-integration">
+                        <h4>LLM Error Explanation</h4>
+                        <p>One-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoints.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/cto-per-tab-override" data-category="ai-integration">
+                        <h4>CTO Per-Tab Override</h4>
+                        <p>Enable or disable Context Token Optimization on individual tabs independent of global setting.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/ai-session-tracking" data-category="ai-integration">
+                        <h4>AI Session Tracking</h4>
+                        <p>Group related AI interactions into sessions with run counts and duration tracking.</p>
+                    </a>
+
+                    <!-- API Analytics -->
+                    <div class="catalog-category-header" data-category="api-analytics" id="ai-analytics">API Analytics</div>
+                    <a class="catalog-card" href="/features/tls-wss-proxy" data-category="api-analytics">
+                        <h4>API Cost Proxy <span class="differentiator-star" title="Differentiator">★</span></h4>
+                        <p>Local proxy captures LLM API traffic to count tokens and estimate costs per call, per session.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/token-counting" data-category="api-analytics">
+                        <h4>Token Counting</h4>
+                        <p>Track input and output tokens per API call with provider-specific tokenization.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/cost-tracking" data-category="api-analytics">
+                        <h4>Cost Tracking <span class="differentiator-star" title="Differentiator">★</span></h4>
+                        <p>Calculate cost per API call based on provider pricing. View per-session and cumulative costs.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/latency-tracking" data-category="api-analytics">
+                        <h4>Latency Tracking</h4>
+                        <p>Measure time-to-first-token and total request duration for every API call.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/analytics-dashboard" data-category="api-analytics">
+                        <h4>Analytics Dashboard</h4>
+                        <p>Visual dashboard showing token usage, costs, and latency trends over time.</p>
+                    </a>
+
+                    <!-- MCP Server -->
+                    <div class="catalog-category-header" data-category="mcp">MCP Server</div>
+                    <a class="catalog-card" href="/features/mcp-tools" data-category="mcp">
+                        <h4>20 MCP Tools <span class="differentiator-star" title="Differentiator">★</span></h4>
+                        <p>Full terminal control via Model Context Protocol: tab lifecycle, command execution, output capture, telemetry.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/unix-socket-server" data-category="mcp">
+                        <h4>Unix Socket Server</h4>
+                        <p>MCP server runs over a local Unix socket: no network exposure, no authentication needed.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/auto-registration" data-category="mcp">
+                        <h4>Auto-Registration <span class="differentiator-star" title="Differentiator">★</span></h4>
+                        <p>Registers in Claude Code, Cursor, Windsurf, and Codex config files on every launch.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/mcp-resources" data-category="mcp">
+                        <h4>MCP Resources</h4>
+                        <p>4 resource endpoints (tab://list, session://list, run://latest, config://mcp) for read-only data access.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/tab-limits" data-category="mcp">
+                        <h4>Tab Limits</h4>
+                        <p>Configurable maximum MCP-created tabs to prevent runaway agent behavior.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/mcp-tab-indicator" data-category="mcp">
+                        <h4>MCP Tab Indicator</h4>
+                        <p>Visual indicator distinguishing MCP-created tabs from user-created tabs.</p>
+                    </a>
+
+                    <!-- Terminal Core -->
+                    <div class="catalog-category-header" data-category="terminal">Terminal Core</div>
+                    <a class="catalog-card" href="/features/vt100-xterm-emulation" data-category="terminal">
+                        <h4>Full VT100/xterm Emulation</h4>
+                        <p>Complete terminal emulation with 256-color, true color (24-bit), and all standard escape sequences.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/unicode-emoji-support" data-category="terminal">
+                        <h4>Unicode & Emoji Support</h4>
+                        <p>Full Unicode rendering including CJK, RTL, combining characters, and color emoji.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/shell-integration" data-category="terminal">
+                        <h4>Shell Integration</h4>
+                        <p>Deep integration with zsh, bash, and fish for command detection, working directory tracking, and exit codes.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/scrollback-buffer" data-category="terminal">
+                        <h4>Scrollback Buffer</h4>
+                        <p>Configurable scrollback with efficient memory usage. Search within scrollback with regex support.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/hyperlinks" data-category="terminal">
+                        <h4>Hyperlinks</h4>
+                        <p>Clickable URLs detected automatically. OSC 8 hyperlink protocol support for rich links.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/image-protocol" data-category="terminal">
+                        <h4>Image Protocol</h4>
+                        <p>Inline image display via iTerm2 image protocol and Sixel graphics.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/ligatures" data-category="terminal">
+                        <h4>Ligatures</h4>
+                        <p>Font ligature rendering for programming fonts like Fira Code, JetBrains Mono, and Cascadia Code.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/bell-notification" data-category="terminal">
+                        <h4>Bell Notification</h4>
+                        <p>Visual bell, sound bell, and Dock bounce on terminal bell character. Configurable per-profile.</p>
+                    </a>
+
+                    <!-- GPU Rendering -->
+                    <div class="catalog-category-header" data-category="rendering">GPU Rendering</div>
+                    <a class="catalog-card" href="/features/metal-rendering" data-category="rendering">
+                        <h4>Metal Rendering <span class="differentiator-star" title="Differentiator">★</span></h4>
+                        <p>Hardware-accelerated rendering via Apple Metal API with glyph atlas and dirty region tracking.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/simd-parsing" data-category="rendering">
+                        <h4>SIMD Parsing <span class="differentiator-star" title="Differentiator">★</span></h4>
+                        <p>16-32 byte SIMD-accelerated ANSI escape parsing in Rust for cache-line-speed throughput.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/triple-buffering" data-category="rendering">
+                        <h4>Triple Buffering</h4>
+                        <p>Atomic-swap triple buffer ensures no tearing and no render blocking between parser and GPU.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/lock-free-spsc-buffer" data-category="rendering">
+                        <h4>Lock-Free SPSC Buffer</h4>
+                        <p>Zero-contention PTY data pipeline between reader and parser threads.</p>
+                    </a>
+
+                    <!-- Tab Management -->
+                    <div class="catalog-category-header" data-category="tabs">Tab Management</div>
+                    <a class="catalog-card" href="/features/multi-tab" data-category="tabs">
+                        <h4>Multi-Tab</h4>
+                        <p>Unlimited tabs with drag-to-reorder, tab pinning, and tab-specific titles.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/split-panes" data-category="tabs">
+                        <h4>Split Panes</h4>
+                        <p>Horizontal and vertical splits within any tab. Resize with drag handles or keyboard shortcuts.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/tab-drag-drop" data-category="tabs">
+                        <h4>Tab Drag & Drop</h4>
+                        <p>Drag tabs between windows or within the tab bar. Snap positioning with smooth animations.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/tab-profiles" data-category="tabs">
+                        <h4>Tab Profiles</h4>
+                        <p>Per-tab shell, working directory, and environment variable configuration.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/background-suspension" data-category="tabs">
+                        <h4>Background Suspension</h4>
+                        <p>Inactive tabs consume no render cycles. Instant resume on tab switch.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/tab-watchdog" data-category="tabs">
+                        <h4>Tab Watchdog</h4>
+                        <p>Monitors tab health and auto-refreshes stale state. Resets after timeout rather than giving up.</p>
+                    </a>
+
+                    <!-- Customization -->
+                    <div class="catalog-category-header" data-category="customization">Customization</div>
+                    <a class="catalog-card" href="/features/fonts" data-category="customization">
+                        <h4>Font Selection</h4>
+                        <p>5 built-in system monospace fonts plus custom font support. Any installed monospace font works.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/themes" data-category="customization">
+                        <h4>Themes</h4>
+                        <p>Built-in themes with full 256-color and true color customization. Import iTerm2 color schemes.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/custom-keybindings" data-category="customization">
+                        <h4>Custom Keybindings</h4>
+                        <p>Fully remappable keyboard shortcuts with Vim keybinding presets available.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/cursor-styles" data-category="customization">
+                        <h4>Cursor Styles</h4>
+                        <p>Block, beam, and underline cursors with configurable blink rate and color.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/transparency-blur" data-category="customization">
+                        <h4>Window Opacity</h4>
+                        <p>Adjustable window transparency from 30% to 100%. See your desktop behind the terminal.</p>
+                    </a>
+
+                    <!-- SSH & Remote -->
+                    <div class="catalog-category-header" data-category="ssh">SSH &amp; Remote</div>
+                    <a class="catalog-card" href="/features/ssh-connection-manager" data-category="ssh">
+                        <h4>SSH Connection Manager</h4>
+                        <p>Visual SSH profile manager with host, port, identity file, and jump host configuration.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/auto-import-ssh-config" data-category="ssh">
+                        <h4>Auto-Import SSH Config</h4>
+                        <p>Imports hosts from ~/.ssh/config automatically. Stays in sync with config file changes.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/jump-host-support" data-category="ssh">
+                        <h4>Jump Host Support</h4>
+                        <p>Multi-hop SSH connections through bastion/jump hosts with ProxyJump support.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/context-aware-switching" data-category="ssh">
+                        <h4>Context-Aware Switching</h4>
+                        <p>Tabs detect SSH connections and auto-switch profiles, colors, and settings based on remote host.</p>
+                    </a>
+
+                    <!-- Editor -->
+                    <div class="catalog-category-header" data-category="editor">Built-in Editor</div>
+                    <a class="catalog-card" href="/features/syntax-highlighting" data-category="editor">
+                        <h4>Syntax Highlighting</h4>
+                        <p>Language-aware syntax highlighting for 50+ languages in the built-in editor.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/bracket-matching" data-category="editor">
+                        <h4>Bracket Matching</h4>
+                        <p>Automatic bracket, brace, and parenthesis matching with jump-to-match.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/find-replace" data-category="editor">
+                        <h4>Find & Replace</h4>
+                        <p>In-editor find and replace with regex support and match highlighting.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/line-numbers" data-category="editor">
+                        <h4>Line Numbers</h4>
+                        <p>Configurable line number gutter with relative line numbers option.</p>
+                    </a>
+
+                    <!-- Safety -->
+                    <div class="catalog-category-header" data-category="safety">Safety</div>
+                    <a class="catalog-card" href="/features/dangerous-command-guard" data-category="safety">
+                        <h4>Dangerous Command Guard <span class="differentiator-star" title="Differentiator">★</span></h4>
+                        <p>Intercepts rm -rf, dd, mkfs and other dangerous commands with a confirmation dialog before execution.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/process-exit-confirmation" data-category="safety">
+                        <h4>Process Exit Confirmation</h4>
+                        <p>Warns before closing tabs with running processes. Configurable per-process rules.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/mcp-approval-gate" data-category="safety">
+                        <h4>MCP Approval Gate</h4>
+                        <p>Optional per-tool approval for MCP actions before they execute.</p>
+                    </a>
+
+                    <!-- Accessibility -->
+                    <div class="catalog-category-header" data-category="accessibility">Accessibility</div>
+                    <a class="catalog-card" href="/features/localization" data-category="accessibility">
+                        <h4>Localization (4 Languages)</h4>
+                        <p>Full localization with RTL support. Runtime language switching without restart.</p>
+                    </a>
+
+                    <!-- Clipboard -->
+                    <div class="catalog-category-header" data-category="clipboard">Clipboard</div>
+                    <a class="catalog-card" href="/features/clipboard-history" data-category="clipboard">
+                        <h4>Clipboard History</h4>
+                        <p>Searchable clipboard history with pinning. Persists across sessions.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/paste-confirmation" data-category="clipboard">
+                        <h4>Paste Safety</h4>
+                        <p>Automatically escapes dangerous shell characters in pasted text to prevent accidental command execution.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/snippets" data-category="clipboard">
+                        <h4>Snippets</h4>
+                        <p>Reusable code snippets with placeholder variables. Insert via command palette or keyboard shortcut.</p>
+                    </a>
+
+                    <!-- Session -->
+                    <div class="catalog-category-header" data-category="session">Session</div>
+                    <a class="catalog-card" href="/features/session-recording" data-category="session">
+                        <h4>Session Recording <span class="differentiator-star" title="Differentiator">★</span></h4>
+                        <p>Record terminal sessions with precise timestamps for every output event.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/timeline-scrubber" data-category="session">
+                        <h4>Timeline Scrubber</h4>
+                        <p>Visual timeline for recorded sessions. Scrub to any point and replay terminal state.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/session-restore" data-category="session">
+                        <h4>Session Restore</h4>
+                        <p>Restore tabs, working directories, and terminal state after app restart.</p>
+                    </a>
+
+                    <!-- Search -->
+                    <div class="catalog-category-header" data-category="search">Search</div>
+                    <a class="catalog-card" href="/features/command-palette" data-category="search">
+                        <h4>Command Palette</h4>
+                        <p>Cmd+Shift+P for fuzzy-searchable commands. Find any action across all features.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/terminal-search" data-category="search">
+                        <h4>Terminal Search</h4>
+                        <p>Search within terminal output with regex support, case sensitivity, and match navigation.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/command-history-search" data-category="search">
+                        <h4>Command History Search</h4>
+                        <p>Fuzzy search through command history with frecency ranking.</p>
+                    </a>
+
+                    <!-- Scripting -->
+                    <div class="catalog-category-header" data-category="scripting">Scripting API</div>
+                    <a class="catalog-card" href="/features/json-rpc-api" data-category="scripting">
+                        <h4>JSON-RPC API</h4>
+                        <p>Unix socket JSON-RPC API for automating tabs, commands, history, snippets, and settings.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/shell-hooks" data-category="scripting">
+                        <h4>Shell Hooks</h4>
+                        <p>Pre/post command hooks for custom automation. Trigger actions on command entry or exit.</p>
+                    </a>
+
+                    <!-- Window Modes -->
+                    <div class="catalog-category-header" data-category="window">Window Modes</div>
+                    <a class="catalog-card" href="/features/overlay-mode" data-category="window">
+                        <h4>Overlay Mode</h4>
+                        <p>Floating terminal window above all other apps. Toggle with a global hotkey.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/fullscreen-mode" data-category="window">
+                        <h4>Fullscreen Mode</h4>
+                        <p>Native macOS fullscreen with menu bar hiding and Space integration.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/menu-bar-only" data-category="window">
+                        <h4>Menu Bar Only</h4>
+                        <p>Run Chau7 as a menu bar app with no Dock icon. Access via menu bar icon or hotkey.</p>
+                    </a>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="faq-section" aria-labelledby="faq-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="faq-heading">Frequently asked questions</h2>
+                </div>
+                <div class="faq-list">
+                    <details>
+                        <summary>What shells does Chau7 support?</summary>
+                        <div class="faq-answer">
+                            <p>Chau7 supports zsh, bash, fish, and any POSIX-compatible shell. It auto-detects your default shell from your system configuration.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Can I import my iTerm2 settings?</summary>
+                        <div class="faq-answer">
+                            <p>Yes. Chau7 includes a migration wizard that imports your iTerm2 profiles, keybindings, and color schemes. Launch it from Settings &gt; Import.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Does it support Vim keybindings?</summary>
+                        <div class="faq-answer">
+                            <p>Yes. Chau7 includes Vim keybinding presets that can be enabled from Settings &gt; Keys. Custom keybinding maps are also fully supported.</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>178 features. Free. Open source. Named after a sock.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Your terminal will never be the same. (In a good way.)</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="/features">Features</a>
+                    <a href="/mcp">MCP Tools</a>
+                    <a href="/the-tech">The Tech</a>
+                    <a href="/compare">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="../llms.txt">llms.txt</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Colophon</h4>
+                    <a href="../golden-ratio.html">The Golden Ratio</a>
+                    <a href="../typography.html">Typography</a>
+                    <a href="/pronunciation">How to Say It</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Legal</h4>
+                    <a href="../legal.html">Legal Notice</a>
+                    <a href="../mentions-legales.html">Mentions L\&eacute;gales</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="../script.js"></script>
+</body>
+</html>

@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>Session Restore | Chau7 Terminal</title>
+    <meta name="description" content="Chau7 restores your tabs, working directories, and terminal state automatically when you relaunch the app.">
+    <meta property="og:title" content="Session Restore | Chau7">
+    <meta property="og:description" content="Chau7 restores your tabs, working directories, and terminal state automatically when you relaunch the app.">
+    <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="https://chau7.sh/features/session-restore">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/feature-page.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://chau7.sh/" },
+            { "@type": "ListItem", "position": 2, "name": "Features", "item": "https://chau7.sh/features" },
+            { "@type": "ListItem", "position": 3, "name": "Session", "item": "https://chau7.sh/features#session" },
+            { "@type": "ListItem", "position": 4, "name": "Session Restore" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [{"@type":"Question","name":"Does session restore work after a crash?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 persists workspace state periodically, not just on clean exit. If the app crashes, the most recent state snapshot is used on the next launch. You may lose changes from the last few seconds before the crash, but the overall workspace is preserved."}},{"@type":"Question","name":"Are running processes restored?","acceptedAnswer":{"@type":"Answer","text":"Running processes cannot be automatically restarted because they may have side effects. Chau7 restores the tab in the correct working directory so you can restart the process with a single up-arrow and enter. The tab&#x27;s scrollback buffer from before the restart is not preserved, as the shell process is new."}},{"@type":"Question","name":"Can I disable session restore?","acceptedAnswer":{"@type":"Answer","text":"Yes. Session restore can be disabled in Chau7&#x27;s settings if you prefer to start with a clean workspace on every launch. You can also selectively exclude specific tabs from being restored."}}]
+    }]
+    </script>
+</head>
+<body>
+    <!-- Nav -->
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="/" class="nav-logo">
+                <img src="/logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="/features">Features</a>
+                <a href="/mcp">MCP</a>
+                <a href="/the-tech">The Tech</a>
+                <a href="/compare">Compare</a>
+                <a href="/pronunciation">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="/">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="/features">Features</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="/features#session">Session</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">Session Restore</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-feature" data-category="session" data-ui="feat-hero">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">SESSION</div>
+                <h1 class="hero-title">Session Restore</h1>
+                <p class="hero-subtitle">Quit Chau7. Relaunch. Everything is exactly where you left it. Tabs, directories, splits, all of it.</p>
+            </div>
+        </section>
+
+        <!-- Questions This Answers -->
+        <section class="questions-section" data-ui="feat-questions">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">Why doesn&#x27;t my terminal restore tabs after closing?</li>
+                    <li class="question-item">How to restore terminal session after restart?</li>
+                    <li class="question-item">Which terminal emulator saves and restores tabs automatically?</li>
+                    <li class="question-item">How to get my terminal tabs back after a crash?</li>
+                    <li class="question-item">Terminal doesn&#x27;t restore tabs after closing: how to fix?</li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="feature-content" data-ui="feat-how">
+            <div class="section-inner prose">
+                <h2>How it works</h2>
+                <p>When Chau7 quits: whether intentionally or due to a crash: it persists the current workspace state: every open tab, its position in the tab bar, its working directory, split pane layout, custom title, and terminal configuration. On the next launch, Chau7 reads this state and reconstructs your workspace, opening new shell sessions in the correct directories with the correct configuration.</p>
+                <p>The restore process handles edge cases that trip up simpler implementations. If a working directory was deleted while Chau7 was closed, the tab opens in your home directory with a notice. If a tab was running a long-lived process (like a dev server), the tab reopens in the same directory ready for you to restart it. Split pane layouts, tab ordering, and window positioning are all preserved.</p>
+                <p>Session restore works alongside macOS's built-in window restoration but goes deeper: macOS can reopen the window, but only Chau7 knows about your tabs, splits, and per-tab configuration. The two systems complement each other to provide a seamless restart experience.</p>
+
+                <div class="why-matters">
+                    <h3>Why it matters</h3>
+                    <p>Losing your terminal layout after a restart is one of the most common pain points across every terminal emulator forum. You had 12 tabs arranged just right, each in the correct directory, and now they are gone. Chau7 saves the full session state: tab order, working directories, split layout, and window positions. When you relaunch, it all comes back. Like it never left.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Related Features -->
+        <section class="related-features" data-ui="feat-related">
+            <div class="section-inner">
+                <h2>Related features</h2>
+                <div class="related-features-grid">
+                    <a class="catalog-card" href="/features/session-recording">
+                        <h4>Session Recording <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <p>Record terminal sessions with precise timestamps for every output event.</p>
+                    </a>
+                    <a class="catalog-card" href="/features/timeline-scrubber">
+                        <h4>Timeline Scrubber</h4>
+                        <p>Visual timeline for recorded sessions. Scrub to any point and replay terminal state.</p>
+                    </a>
+                </div>
+                <div class="feature-random-row">
+                    <button type="button" class="btn-outline feature-random-btn">Discover a new feature at random</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="feature-faq" data-ui="feat-faq">
+            <div class="section-inner">
+                <h2>Frequently asked questions</h2>
+                <div class="faq-list">
+                    <details>
+                        <summary>Does session restore work after a crash?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 persists workspace state periodically, not just on clean exit. If the app crashes, the most recent state snapshot is used on the next launch. You may lose changes from the last few seconds before the crash, but the overall workspace is preserved.</p></div>
+                    </details>
+                    <details>
+                        <summary>Are running processes restored?</summary>
+                        <div class="faq-answer"><p>Running processes cannot be automatically restarted because they may have side effects. Chau7 restores the tab in the correct working directory so you can restart the process with a single up-arrow and enter. The tab's scrollback buffer from before the restart is not preserved, as the shell process is new.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I disable session restore?</summary>
+                        <div class="faq-answer"><p>Yes. Session restore can be disabled in Chau7's settings if you prefer to start with a clean workspace on every launch. You can also selectively exclude specific tabs from being restored.</p></div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Download CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Close your terminal without anxiety. Everything comes back.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="/logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="/features">Features</a>
+                    <a href="/mcp">MCP Tools</a>
+                    <a href="/the-tech">The Tech</a>
+                    <a href="/compare">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
+                    <a href="/llms.txt">llms.txt</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Colophon</h4>
+                    <a href="/golden-ratio.html">The Golden Ratio</a>
+                    <a href="/typography.html">Typography</a>
+                    <a href="/pronunciation">How to Say It</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Legal</h4>
+                    <a href="/legal">Legal Notice</a>
+                    <a href="/mentions-legales">Mentions L&eacute;gales</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        window.CHAU7_FEATURE_PAGES = ["/features/auto-ai-cli-detection", "/features/ai-tab-branding", "/features/ai-process-monitoring", "/features/custom-detection-rules", "/features/detection-status-indicator", "/features/multi-agent-awareness", "/features/context-token-optimization", "/features/llm-error-explanation", "/features/cto-per-tab-override", "/features/ai-session-tracking", "/features/tls-wss-proxy", "/features/token-counting", "/features/cost-tracking", "/features/latency-tracking", "/features/analytics-dashboard", "/features/mcp-tools", "/features/unix-socket-server", "/features/auto-registration", "/features/mcp-resources", "/features/tab-limits", "/features/mcp-tab-indicator", "/features/multi-tab", "/features/split-panes", "/features/tab-drag-drop", "/features/tab-profiles", "/features/background-suspension", "/features/tab-watchdog", "/features/session-recording", "/features/timeline-scrubber", "/features/session-restore", "/features/metal-rendering", "/features/iosurface-display", "/features/simd-parsing", "/features/iokit-hid-input", "/features/triple-buffering", "/features/lock-free-spsc-buffer", "/features/vt100-xterm-emulation", "/features/unicode-emoji-support", "/features/shell-integration", "/features/scrollback-buffer", "/features/hyperlinks", "/features/image-protocol", "/features/ligatures", "/features/bell-notification", "/features/dangerous-command-guard", "/features/process-exit-confirmation", "/features/mcp-approval-gate", "/features/clipboard-history", "/features/paste-confirmation", "/features/snippets", "/features/ssh-connection-manager", "/features/auto-import-ssh-config", "/features/jump-host-support", "/features/context-aware-switching", "/features/command-palette", "/features/terminal-search", "/features/command-history-search", "/features/fonts", "/features/themes", "/features/custom-keybindings", "/features/cursor-styles", "/features/transparency-blur", "/features/padding-margins", "/features/overlay-mode", "/features/dropdown-quake-style", "/features/fullscreen-mode", "/features/menu-bar-only", "/features/syntax-highlighting", "/features/bracket-matching", "/features/find-replace", "/features/line-numbers", "/features/voiceover-support", "/features/high-contrast-mode", "/features/reduced-motion", "/features/localization", "/features/json-rpc-api", "/features/shell-hooks"];
+    </script>
+    <script src="/script.js"></script>
+</body>
+</html>

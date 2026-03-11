@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+PROJECT_NAME="chau7-website"
+DEPLOY_BRANCH="main"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+find_wrangler() {
+  if command -v wrangler >/dev/null 2>&1; then
+    echo "wrangler"
+    return
+  fi
+
+  if [[ -x "${ROOT_DIR}/node_modules/.bin/wrangler" ]]; then
+    echo "${ROOT_DIR}/node_modules/.bin/wrangler"
+    return
+  fi
+
+  echo "Wrangler CLI not found. Install it or add it to PATH." >&2
+  exit 1
+}
+
+WRANGLER_BIN="$(find_wrangler)"
+
+if [[ "$(git -C "${ROOT_DIR}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)" != "${DEPLOY_BRANCH}" ]]; then
+  echo "This script must be run from the ${DEPLOY_BRANCH} branch." >&2
+  exit 1
+fi
+
+echo "Checking Cloudflare auth..."
+"${WRANGLER_BIN}" whoami >/dev/null
+
+echo "Deploying ${PROJECT_NAME} to Cloudflare Pages branch ${DEPLOY_BRANCH}..."
+"${WRANGLER_BIN}" pages deploy "${ROOT_DIR}" --project-name "${PROJECT_NAME}" --branch "${DEPLOY_BRANCH}"

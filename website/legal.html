@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>Legal Notice &middot; Chau7</title>
+    <meta name="description" content="Legal notice for chau7.sh, published by Aeptus SAS, directed by Christophe Henner and hosted on Cloudflare Pages.">
+    <link rel="canonical" href="https://chau7.sh/legal">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .legal-page {
+            padding-bottom: var(--space-6xl);
+        }
+
+        .legal-hero {
+            padding-bottom: var(--space-3xl);
+        }
+
+        .legal-shell {
+            padding: 0 0 var(--space-4xl);
+        }
+
+        .legal-utility-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--space-md);
+            flex-wrap: wrap;
+            margin-bottom: var(--space-2xl);
+            color: var(--text-muted);
+            font-size: var(--text-sm);
+        }
+
+        .legal-utility-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            color: var(--text-muted);
+            transition: color 0.2s, transform 0.2s;
+        }
+
+        .legal-utility-link:hover {
+            color: var(--accent);
+            transform: translateX(2px);
+        }
+
+        .legal-version {
+            font-family: var(--mono);
+            font-size: var(--text-xs);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .legal-lead-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.9fr);
+            gap: var(--space-xl);
+            align-items: start;
+            margin-bottom: var(--space-3xl);
+        }
+
+        .legal-summary-card,
+        .legal-side-card,
+        .legal-info-card,
+        .legal-section-card {
+            background: none;
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
+        }
+
+        .legal-summary-card {
+            padding: 0;
+        }
+
+        .legal-kicker {
+            display: inline-block;
+            margin-bottom: var(--space-sm);
+            font-family: var(--mono);
+            font-size: var(--text-xs);
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--accent);
+        }
+
+        .legal-summary-card p,
+        .legal-side-card p,
+        .legal-section-card p,
+        .legal-info-card dd {
+            color: var(--text-muted);
+            font-size: var(--text-base);
+            line-height: 1.72;
+        }
+
+        .legal-summary-card p {
+            margin-bottom: var(--space-sm);
+        }
+
+        .legal-summary-card p:last-child,
+        .legal-side-card p:last-child,
+        .legal-section-card p:last-child {
+            margin-bottom: 0;
+        }
+
+        .legal-side-card {
+            padding: 0;
+        }
+
+        .legal-side-card h2,
+        .legal-info-card h2,
+        .legal-section-card h2 {
+            margin-bottom: var(--space-sm);
+            font-size: var(--text-lg);
+            line-height: 1.1;
+        }
+
+        .legal-info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: var(--space-xl);
+            margin-bottom: var(--space-3xl);
+        }
+
+        .legal-info-card {
+            padding: 0;
+        }
+
+        .legal-info-card dl {
+            display: grid;
+            gap: var(--space-sm);
+        }
+
+        .legal-info-card dt {
+            font-family: var(--mono);
+            font-size: var(--text-2xs);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-muted);
+        }
+
+        .legal-info-card dd {
+            margin: 0;
+            color: var(--text);
+            font-size: var(--text-sm);
+            font-weight: 500;
+            line-height: 1.55;
+        }
+
+        .legal-sections {
+            display: grid;
+            gap: var(--space-xl);
+        }
+
+        .legal-section-card {
+            padding: 0;
+        }
+
+        .legal-note {
+            display: block;
+            margin-top: var(--space-xs);
+            font-size: var(--text-sm);
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        .legal-closing {
+            margin-top: var(--space-3xl);
+            padding-top: var(--space-lg);
+            background: url("data:image/svg+xml,%3Csvg width='600' height='2' xmlns='http://www.w3.org/2000/svg'%3E%3Cline x1='0' y1='1' x2='600' y2='1' stroke='%23c4a87a' stroke-width='1.5' stroke-dasharray='800' stroke-linecap='round' opacity='0.55'/%3E%3C/svg%3E") repeat-x top center;
+            text-align: center;
+            font-family: var(--serif);
+            font-size: var(--text-sm);
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        .legal-info-card dl {
+            padding-top: var(--space-sm);
+        }
+
+        .legal-info-card dt {
+            margin-top: var(--space-md);
+        }
+
+        .legal-info-card dt:first-child {
+            margin-top: 0;
+        }
+
+        .legal-section-card + .legal-section-card,
+        .legal-info-card,
+        .legal-side-card {
+            padding-top: var(--space-lg);
+            background: url("data:image/svg+xml,%3Csvg width='600' height='2' xmlns='http://www.w3.org/2000/svg'%3E%3Cline x1='0' y1='1' x2='600' y2='1' stroke='%23c4a87a' stroke-width='1.5' stroke-dasharray='800' stroke-linecap='round' opacity='0.45'/%3E%3C/svg%3E") repeat-x top center;
+        }
+
+        @media (max-width: 900px) {
+            .legal-lead-grid,
+            .legal-info-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .legal-side-card,
+            .legal-info-card,
+            .legal-section-card {
+                padding-top: var(--space-md);
+            }
+        }
+    </style>
+</head>
+<body>
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="/" class="nav-logo">
+                <img src="logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="/features">Features</a>
+                <a href="/mcp">MCP</a>
+                <a href="/the-tech">The Tech</a>
+                <a href="/compare">Compare</a>
+                <a href="/pronunciation">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank" rel="noopener">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="legal-page">
+        <section class="legal-hero hero">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">Legal Notice</div>
+                <h1 class="hero-title">Legal <span class="gradient-text">Notice</span></h1>
+                <p class="hero-subtitle">Yes, even a terminal named after a sock comes with legal obligations.</p>
+            </div>
+        </section>
+
+        <section class="legal-shell">
+            <div class="section-inner">
+                <div class="legal-utility-bar">
+                    <a href="/" class="legal-utility-link">&larr; chau7.sh</a>
+                    <span class="legal-version">v2026.03.11</span>
+                    <a href="/mentions-legales" class="legal-utility-link">Version fran&ccedil;aise &rarr;</a>
+                </div>
+
+                <div class="legal-lead-grid">
+                    <section class="legal-summary-card" aria-label="Short version">
+                        <span class="legal-kicker">Short version</span>
+                        <p>Chau7 is presented on <strong>chau7.sh</strong>, a website published by <strong>Aeptus SAS</strong>, directed by <strong>Christophe Henner</strong>, and hosted on <strong>Cloudflare Pages</strong>.</p>
+                        <p>The site&apos;s editorial copy, visuals, screenshots, brand assets, and design remain protected. The Chau7 software and anything explicitly published as open source remain governed by their own license on GitHub.</p>
+                        <p>If there is a dispute about the site, French law applies. The rest of this page is the longer version, because legal pages rarely believe in brevity.</p>
+                    </section>
+
+                    <section class="legal-side-card">
+                        <h2>Scope</h2>
+                        <p>This page covers the public <strong>chau7.sh</strong> website, including product pages, comparison pages, feature pages, colophon pages, and links to GitHub and published releases as of today.</p>
+                        <p>This is a static marketing and documentation site. No user account area, no payment flow, no customer dashboard. Just a very opinionated site about a very opinionated terminal.</p>
+                    </section>
+                </div>
+
+                <div class="legal-info-grid">
+                    <section class="legal-info-card">
+                        <h2>Who publishes this website?</h2>
+                        <dl>
+                            <dt>Company name</dt>
+                            <dd>Aeptus SAS</dd>
+                            <dt>Legal form</dt>
+                            <dd>Soci&eacute;t&eacute; par actions simplifi&eacute;e (SAS)</dd>
+                            <dt>Share capital</dt>
+                            <dd>1,000.00&nbsp;&euro;</dd>
+                            <dt>Registered office</dt>
+                            <dd>6 rue des Bateliers, 92110 Clichy, France</dd>
+                            <dt>Trade register</dt>
+                            <dd>Nanterre B 993 672 344</dd>
+                            <dt>SIRET</dt>
+                            <dd>993 672 344 00013</dd>
+                            <dt>EU VAT number</dt>
+                            <dd>FR46 993 672 344</dd>
+                            <dt>Contact</dt>
+                            <dd><a href="mailto:contact@aeptus.com">contact@aeptus.com</a></dd>
+                        </dl>
+                    </section>
+
+                    <section class="legal-info-card">
+                        <h2>Who hosts the website?</h2>
+                        <dl>
+                            <dt>Infrastructure</dt>
+                            <dd>Cloudflare Pages</dd>
+                            <dt>Host</dt>
+                            <dd>Cloudflare, Inc.</dd>
+                            <dt>Address</dt>
+                            <dd>101 Townsend Street, San Francisco, CA 94107, United States</dd>
+                            <dt>Phone</dt>
+                            <dd>+1 (650) 319-8930</dd>
+                            <dt>Website</dt>
+                            <dd><a href="https://www.cloudflare.com" target="_blank" rel="noopener">cloudflare.com</a></dd>
+                        </dl>
+                    </section>
+                </div>
+
+                <div class="legal-sections">
+                    <section class="legal-section-card">
+                        <h2>Publication director</h2>
+                        <p>The publication director is <strong>Christophe Henner</strong>, President of Aeptus SAS. He is also the person who decided that naming a terminal Chau7 was worth committing to publicly, and the site history suggests that decision is holding up surprisingly well.</p>
+                    </section>
+
+                    <section class="legal-section-card">
+                        <h2>Nature of the website</h2>
+                        <p><strong>chau7.sh</strong> is a public marketing, comparison, and product-documentation website for the Chau7 terminal. It links in particular to the project&apos;s GitHub repository, release notes, feature pages, performance pages, and associated legal information.</p>
+                        <p>The site does not offer user-account creation, checkout flows, customer spaces, or direct messaging. It is a static showcase website published on Cloudflare infrastructure.</p>
+                    </section>
+
+                    <section class="legal-section-card">
+                        <h2>Intellectual property</h2>
+                        <p>The site&apos;s editorial copy, structure, visuals, graphics, Chau7 logo, screenshots, brand assets, and identity elements are, unless stated otherwise, the property of Aeptus SAS or used under an applicable right of use. They remain protected by copyright, trademark law, and, more broadly, by French and international intellectual-property rules.</p>
+                        <p>The Chau7 software itself, along with the portions of code and documentation explicitly published on the GitHub repository, remain governed by their applicable open-source license. This page does not replace that license: it governs the <strong>chau7.sh</strong> website and its editorial content.</p>
+                    </section>
+
+                    <section class="legal-section-card">
+                        <h2>Data, cookies, and technical logs</h2>
+                        <p>The site does not include user-registration forms or payment forms. In practice, usage is limited to reading static pages and following external links, mainly to GitHub and release downloads.</p>
+                        <p>Hosting, traffic security, caching, abuse prevention, and, where applicable, aggregated audience measurement may involve the processing of technical logs or connection data by Cloudflare services and the infrastructure required to operate the site.
+                            <span class="legal-note">If you have questions about these processes or about exercising your rights, you can write to <a href="mailto:contact@aeptus.com">contact@aeptus.com</a>.</span>
+                        </p>
+                    </section>
+
+                    <section class="legal-section-card">
+                        <h2>Liability</h2>
+                        <p>Aeptus SAS does its best to keep the site accurate, available, and up to date. Even so, the content published on <strong>chau7.sh</strong> is provided for informational purposes. We do not guarantee the absence of errors, continuous availability, or suitability for any particular use.</p>
+                        <p>As a result, Aeptus SAS cannot be held liable for direct or indirect damage resulting from access to the site, downtime, an external link, or the use of the information published on it. The internet remains the internet.</p>
+                    </section>
+
+                    <section class="legal-section-card">
+                        <h2>Applicable law</h2>
+                        <p>These legal notices are governed by French law. In the event of a dispute relating to the website or its content, only the competent French courts shall have jurisdiction, unless a mandatory rule states otherwise.</p>
+                    </section>
+                </div>
+
+                <p class="legal-closing">A terminal named after a sock, properly hosted and reasonably compliant.</p>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="/features">Features</a>
+                    <a href="/mcp">MCP Tools</a>
+                    <a href="/the-tech">The Tech</a>
+                    <a href="/compare">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank" rel="noopener">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank" rel="noopener">Releases</a>
+                    <a href="llms.txt">llms.txt</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Colophon</h4>
+                    <a href="golden-ratio.html">The Golden Ratio</a>
+                    <a href="typography.html">Typography</a>
+                    <a href="/pronunciation">How to Say It</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Legal</h4>
+                    <a href="/legal">Legal Notice</a>
+                    <a href="/mentions-legales">Mentions L&eacute;gales</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

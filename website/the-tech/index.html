@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>The Tech | Chau7 Terminal</title>
+    <meta name="description" content="The core technical choices behind Chau7: Rust parsing, dangerous-command detection, lock-free buffers, triple-buffered terminal state, and Metal rendering on macOS.">
+    <meta property="og:title" content="Chau7 The Tech | Why The Terminal Works The Way It Does">
+    <meta property="og:description" content="Rust where bytes matter, Metal where pixels matter, and guardrails where shell mistakes get expensive.">
+    <meta property="og:image" content="/screenshots/05-hero-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="https://chau7.sh/the-tech">
+    <link rel="stylesheet" href="/style.css">
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "Why use Rust in a terminal?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Rust is used where Chau7 parses PTY bytes, maintains terminal state, and evaluates command streams. That gives predictable performance for hot-path parsing while making memory and concurrency bugs dramatically less likely." }
+            },
+            {
+                "@type": "Question",
+                "name": "How can Chau7 flag dangerous commands before execution?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 inspects command text at the terminal input layer before the shell executes it. That lets it match destructive patterns such as rm -rf, suspicious pasted payloads, hidden Unicode characters, and multi-line trick commands regardless of shell aliases or prompt themes." }
+            },
+            {
+                "@type": "Question",
+                "name": "Why use Metal instead of OpenGL?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 is macOS-only, so Metal is the native graphics stack with the best long-term path for glyph rendering, dirty-region updates, and low-latency compositing on Apple hardware." }
+            }
+        ]
+    }]
+    </script>
+</head>
+<body class="page-tech">
+    <nav class="nav">
+        <div class="nav-inner">
+            <a href="/" class="nav-logo">
+                <img src="/logo.png" alt="Chau7" class="logo-icon">
+                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
+            </a>
+            <button class="nav-hamburger" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+            <div class="nav-links">
+                <a href="/features">Features</a>
+                <a href="/mcp">MCP</a>
+                <a href="/the-tech">The Tech</a>
+                <a href="/compare">Compare</a>
+                <a href="/pronunciation">How to say it</a>
+                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank" rel="noopener">Download</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <section class="hero hero-perf">
+            <div class="hero-content">
+                <div class="hero-badge badge-blue">The Tech</div>
+                <h1 class="hero-title">
+                    The guts of the terminal,<br><span class="gradient-text">without the hand-waving</span>.
+                </h1>
+                <p class="hero-subtitle">
+                    Rust where bytes turn into decisions, lock-free buffers where latency matters, and Metal where pixels need to move now, not eventually.
+                </p>
+            </div>
+        </section>
+
+        <section class="perf-section" aria-labelledby="numbers-heading">
+            <div class="section-inner">
+                <h2 id="numbers-heading" class="sr-only">Core technical choices</h2>
+                <div class="numbers-grid">
+                    <div class="number-card">
+                        <div class="number-value">Rust</div>
+                        <div class="number-label">Hot-path parsing and command inspection</div>
+                    </div>
+                    <div class="number-card">
+                        <div class="number-value">16-32B</div>
+                        <div class="number-label">SIMD parsing width</div>
+                    </div>
+                    <div class="number-card">
+                        <div class="number-value">0</div>
+                        <div class="number-label">Lock contention in the SPSC handoff</div>
+                    </div>
+                    <div class="number-card">
+                        <div class="number-value">Metal</div>
+                        <div class="number-label">Native macOS GPU rendering</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="mcp-section" aria-labelledby="stack-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="stack-heading">The <span class="gradient-text">technical stack</span></h2>
+                    <p>Not a buzzword tour. The actual decisions that make Chau7 responsive, inspectable, and hard to trick.</p>
+                </div>
+                <div class="perf-stack">
+                    <div class="perf-layer" style="--delay: 0">
+                        <div class="perf-label">Input</div>
+                        <div class="perf-tech">Terminal Intercept</div>
+                        <div class="perf-desc">Chau7 sees keystrokes, pasted payloads, and command submissions before the shell runs them. That is how dangerous-command confirmation, hidden-character detection, and shell-agnostic guardrails work at all.</div>
+                    </div>
+                    <div class="perf-layer" style="--delay: 1">
+                        <div class="perf-label">Parse</div>
+                        <div class="perf-tech">Rust + SIMD</div>
+                        <div class="perf-desc">ANSI streams and terminal bytes are parsed in Rust, using SIMD where bulk PTY output makes it worth it. Faster parsing is the obvious win. Deterministic behavior under heavy output is the more important one.</div>
+                    </div>
+                    <div class="perf-layer" style="--delay: 2">
+                        <div class="perf-label">Transfer</div>
+                        <div class="perf-tech">Lock-Free SPSC</div>
+                        <div class="perf-desc">The PTY reader and parser hand data across a single-producer single-consumer ring buffer. No mutex convoy, no unnecessary wakeups, no drama because one thread had opinions about another thread's timing.</div>
+                    </div>
+                    <div class="perf-layer" style="--delay: 3">
+                        <div class="perf-label">Render</div>
+                        <div class="perf-tech">Triple Buffer + Metal</div>
+                        <div class="perf-desc">Terminal state swaps atomically, the renderer only redraws dirty regions, and Metal does the compositing. Chau7 is macOS-only, so it uses the graphics stack macOS actually wants.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="perf-section" aria-labelledby="rust-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="rust-heading">Why <span class="gradient-text-alt">Rust</span> shows up in the hot path</h2>
+                    <p>Because terminals are mostly bytes, timing, and state transitions. That is exactly where “we&rsquo;ll be careful” stops being a strategy.</p>
+                </div>
+                <div class="ai-relevance">
+                    <h3>Rust is not there for branding</h3>
+                    <p>Chau7 uses Rust where raw PTY data becomes terminal state, where ANSI escape sequences need to be parsed quickly, and where command streams need to be inspected without introducing UI jank. Those are the places where correctness and throughput meet. It is also where memory mistakes, race conditions, and “this only breaks under heavy output” bugs become expensive.</p>
+                    <p>That matters for AI-heavy workflows because AI CLIs are not polite terminal citizens. They dump huge logs, redraw frequently, stream output in bursts, and sometimes paste command text you really want to inspect before it runs. Rust gives Chau7 a safer place to do that work while still staying close to the metal.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="perf-section" aria-labelledby="ownership-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="ownership-heading">Where Swift ends, where Rust begins, where Metal takes over</h2>
+                    <p>The split is deliberate. Native macOS UI where platform fit matters. Rust where parsing and safety matter. Metal where drawing speed matters.</p>
+                </div>
+                <div class="tech-ownership">
+                    <div class="tech-ownership-row">
+                        <div class="tech-ownership-label">Swift + AppKit</div>
+                        <div class="tech-ownership-copy">Windowing, tab management, native menus, settings, and the Mac-specific UX that should feel like a real macOS app instead of a wrapped web view.</div>
+                    </div>
+                    <div class="tech-ownership-row">
+                        <div class="tech-ownership-label">Rust core</div>
+                        <div class="tech-ownership-copy">PTY byte parsing, ANSI handling, command normalization, dangerous-command heuristics, and the state transitions that need to stay fast and predictable under agent-heavy workloads.</div>
+                    </div>
+                    <div class="tech-ownership-row">
+                        <div class="tech-ownership-label">Metal renderer</div>
+                        <div class="tech-ownership-copy">Glyph compositing, dirty-region redraws, and low-latency presentation on Apple GPUs without adding a cross-platform abstraction layer Chau7 does not need.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="perf-section" aria-labelledby="guard-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="guard-heading">Dangerous commands are a parsing problem before they become a disaster</h2>
+                    <p>If you want to flag `rm -rf`, suspicious `dd`, hidden Unicode junk, or pasted multi-line nonsense, you need to inspect the command stream before the shell gets clever.</p>
+                </div>
+                <div class="arch-diagram">
+                    <pre>
+  <span class="arch-highlight">Keyboard / Paste</span>
+      │
+      ▼
+  <span class="arch-green">Input Intercept Layer</span>  ───────  shell-agnostic
+      │
+      ▼
+  <span class="arch-green">Rust Command Analyzer</span>  ───────  tokenize, normalize, inspect
+      │
+      ├── <span class="arch-highlight">safe command</span> ───────────────▶ pass through
+      │
+      └── <span class="arch-highlight">dangerous pattern</span> ─────────▶ warn, confirm, or block</pre>
+                </div>
+                <div class="prose">
+                    <p>That analyzer is where Chau7 can reason about things shells normally leave to aliases, wrappers, or hope. It can normalize whitespace, spot recursive-destructive flags, detect hidden control characters, catch suspicious line breaks, and treat “this command looks dangerous” as a terminal concern instead of an afterthought in dotfiles.</p>
+                    <p>This is also why the dangerous-command guard belongs on a page about the core tech stack. It is not merely a UX feature. It exists because Chau7 is architected to parse and understand terminal input at the right layer.</p>
+                </div>
+                <ul class="tech-signal-list">
+                    <li><strong>Destructive recursion:</strong> patterns like <code>rm -rf</code>, recursive ownership changes, and commands aimed at the wrong root.</li>
+                    <li><strong>Device-level footguns:</strong> suspicious <code>dd</code>, disk formatting tools, and commands that can trash volumes faster than the prompt can apologize.</li>
+                    <li><strong>Pasted trickery:</strong> hidden Unicode, zero-width characters, line continuations, and multi-line payloads designed to look safer than they are.</li>
+                    <li><strong>Shell-agnostic normalization:</strong> inspect the submitted command stream before aliases, prompt themes, or shell-specific cleverness can hide intent.</li>
+                </ul>
+            </div>
+        </section>
+
+        <section class="perf-section" aria-labelledby="metal-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="metal-heading">Why Metal, why lock-free buffers, why the rest of the weirdness</h2>
+                    <p>Because terminals fail in very boring ways when their internals are generic.</p>
+                </div>
+                <div class="steps-grid">
+                    <div class="step-card">
+                        <div class="step-num">01</div>
+                        <h4>Native GPU path</h4>
+                        <p>Metal is the macOS-native rendering stack. Chau7 does not need cross-platform abstraction points here. It needs fast glyph compositing and predictable redraw behavior on Macs.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">02</div>
+                        <h4>No lock traffic in the handoff</h4>
+                        <p>The PTY reader and parser have one job each. The SPSC queue lets them do that without negotiating every packet like coworkers scheduling a meeting.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">03</div>
+                        <h4>Atomic state swaps</h4>
+                        <p>Triple buffering keeps rendering from reading half-written terminal state. No torn frames, no partial updates, no “close enough” approach to terminal correctness.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="perf-section" aria-labelledby="ai-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="ai-heading">Why this matters for <span class="gradient-text-alt">AI</span> terminals</h2>
+                </div>
+                <div class="ai-relevance">
+                    <h3>AI tools stress every weak layer</h3>
+                    <p>Claude Code, Codex, Aider, and friends generate long bursts of output, redraw continuously, paste commands, and trigger edge cases that ordinary shell use only hits once a month. A terminal that is “fine most of the time” feels terrible under that load.</p>
+                    <p>Chau7 is engineered around that reality. Parsing is fast enough to keep up, buffers are simple enough not to deadlock under pressure, rendering is native enough not to wobble, and command inspection happens early enough to catch destructive mistakes before they turn into stories you tell in a postmortem.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="faq-section" aria-labelledby="faq-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="faq-heading">Frequently asked questions</h2>
+                </div>
+                <div class="faq-list">
+                    <details>
+                        <summary>Why use Rust in a terminal?</summary>
+                        <div class="faq-answer">
+                            <p>Rust is used where Chau7 parses PTY bytes, maintains terminal state, and evaluates command streams. That gives predictable performance for hot-path parsing while making memory and concurrency bugs dramatically less likely.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>How can Chau7 flag dangerous commands before execution?</summary>
+                        <div class="faq-answer">
+                            <p>Chau7 inspects command text at the terminal input layer before the shell executes it. That lets it match destructive patterns such as <code>rm -rf</code>, suspicious pasted payloads, hidden Unicode characters, and multi-line trick commands regardless of shell aliases or prompt themes.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Why use Metal instead of OpenGL?</summary>
+                        <div class="faq-answer">
+                            <p>Chau7 is macOS-only, so Metal is the native graphics stack with the best long-term path for glyph rendering, dirty-region updates, and low-latency compositing on Apple hardware.</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Read the tech. Then let the sock parse your shell.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <div class="section-inner">
+            <div class="footer-grid">
+                <div class="footer-brand-col">
+                    <div class="footer-brand">
+                        <img src="/logo.png" alt="Chau7" class="logo-icon">
+                        <span class="logo-text">Chau7</span>
+                    </div>
+                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Product</h4>
+                    <a href="/features">Features</a>
+                    <a href="/mcp">MCP Tools</a>
+                    <a href="/the-tech">The Tech</a>
+                    <a href="/compare">Compare</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Resources</h4>
+                    <a href="https://github.com/nicmusic/chau7" target="_blank" rel="noopener">GitHub</a>
+                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank" rel="noopener">Releases</a>
+                    <a href="/llms.txt">llms.txt</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Colophon</h4>
+                    <a href="/golden-ratio.html">The Golden Ratio</a>
+                    <a href="/typography.html">Typography</a>
+                    <a href="/pronunciation">How to Say It</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Legal</h4>
+                    <a href="/legal">Legal Notice</a>
+                    <a href="/mentions-legales">Mentions L&eacute;gales</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+            </div>
+        </div>
+    </footer>
+
+    <script src="/script.js"></script>
+</body>
+</html>

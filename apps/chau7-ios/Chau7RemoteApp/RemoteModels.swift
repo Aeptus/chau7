@@ -175,9 +175,12 @@ struct RemoteErrorPayload: Codable {
 enum CryptoUtils {
     static func randomBytes(count: Int) -> Data {
         var data = Data(count: count)
-        _ = data.withUnsafeMutableBytes { buffer in
+        let status = data.withUnsafeMutableBytes { buffer -> OSStatus in
             guard let baseAddress = buffer.baseAddress else { return errSecParam }
             return SecRandomCopyBytes(kSecRandomDefault, count, baseAddress)
+        }
+        guard status == errSecSuccess else {
+            fatalError("SecRandomCopyBytes failed with status \(status) — cannot generate secure random bytes")
         }
         return data
     }
