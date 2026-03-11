@@ -122,10 +122,18 @@ final class RemoteControlManager: ObservableObject {
 
         let process = Process()
         process.executableURL = binaryPath
-        process.currentDirectoryURL = dataDirectory()
+        guard let dataDir = dataDirectory() else {
+            lastError = "Cannot start remote agent: data directory unavailable"
+            return
+        }
+        process.currentDirectoryURL = dataDir
 
         var env = ProcessInfo.processInfo.environment
-        env["CHAU7_REMOTE_SOCKET"] = ipcSocketPath().path
+        guard let socketPath = ipcSocketPath() else {
+            lastError = "Cannot start remote agent: socket path unavailable"
+            return
+        }
+        env["CHAU7_REMOTE_SOCKET"] = socketPath.path
         env["CHAU7_RELAY_URL"] = FeatureSettings.shared.remoteRelayURL
         env["CHAU7_MAC_NAME"] = Host.current().localizedName ?? "Mac"
         process.environment = env
@@ -177,10 +185,12 @@ final class RemoteControlManager: ObservableObject {
     func stopAgent() {
         guard let process else { return }
         process.terminationHandler = nil
-        cleanupPipes()
+        // Terminate process BEFORE closing pipes to avoid SIGPIPE
         terminateProcess(process, name: "remote agent")
+        cleanupPipes()
         self.process = nil
         isAgentRunning = false
+        pendingProtectedInputs.removeAll()
     }
 
     func restartAgentIfRunning() {
@@ -196,7 +206,9 @@ final class RemoteControlManager: ObservableObject {
         errorPipe = nil
     }
 
-    private func terminateProcess(_ process: Process, name: String) {
+    /// Terminates a process with escalating signals. Safe to call from any
+    /// isolation context — the spin-wait runs off the main actor.
+    nonisolated private func terminateProcess(_ process: Process, name: String) {
         guard process.isRunning else { return }
 
         process.terminate()
@@ -216,7 +228,7 @@ final class RemoteControlManager: ObservableObject {
         _ = waitForExit(of: process, timeout: 0.5)
     }
 
-    private func waitForExit(of process: Process, timeout: TimeInterval) -> Bool {
+    nonisolated private func waitForExit(of process: Process, timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while process.isRunning, Date() < deadline {
             usleep(50000)
@@ -256,7 +268,7 @@ final class RemoteControlManager: ObservableObject {
                 lastError = message
             }
         default:
-            break
+            logger.debug("Unhandled IPC frame type: 0x\(String(type.rawValue, radix: 16))")
         }
     }
 
@@ -312,6 +324,9 @@ final class RemoteControlManager: ObservableObject {
     }
 
     private func handleApprovalResponse(_ frame: RemoteFrame) {
+        // Purge expired pending approvals on each response
+        purgeExpiredProtectedInputs()
+
         do {
             let response = try JSONDecoder().decode(ApprovalResponsePayload.self, from: frame.payload)
             if let protectedInput = pendingProtectedInputs.removeValue(forKey: response.requestID) {
@@ -430,6 +445,16 @@ final class RemoteControlManager: ObservableObject {
         return overlayModel.tabs.first(where: { $0.id == uuid })?.session
     }
 
+    private static let maxPendingProtectedInputs = 20
+
+    private func purgeExpiredProtectedInputs() {
+        let expired = pendingProtectedInputs.filter { $0.value.isExpired }
+        for (key, input) in expired {
+            pendingProtectedInputs.removeValue(forKey: key)
+            logger.info("Remote: expired protected action for tab \(input.tabID) after \(ProtectedRemoteInput.ttl)s")
+        }
+    }
+
     private func queueProtectedRemoteInput(
         requestID: String,
         text: String,
@@ -437,6 +462,13 @@ final class RemoteControlManager: ObservableObject {
         sessionTitle: String,
         flaggedCommand: String
     ) {
+        purgeExpiredProtectedInputs()
+        if pendingProtectedInputs.count >= Self.maxPendingProtectedInputs {
+            logger.warning("Remote: pending protected inputs at capacity (\(Self.maxPendingProtectedInputs)), dropping oldest")
+            if let oldestKey = pendingProtectedInputs.min(by: { $0.value.createdAt < $1.value.createdAt })?.key {
+                pendingProtectedInputs.removeValue(forKey: oldestKey)
+            }
+        }
         pendingProtectedInputs[requestID] = ProtectedRemoteInput(
             tabID: tabID,
             text: text,
@@ -464,7 +496,7 @@ final class RemoteControlManager: ObservableObject {
         RemoteProtection.flaggedTerminationAction(for: input)
     }
 
-    private func dataDirectory() -> URL {
+    private func dataDirectory() -> URL? {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
         let dir = appSupport.appendingPathComponent("Chau7")
@@ -472,12 +504,14 @@ final class RemoteControlManager: ObservableObject {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         } catch {
             logger.error("Failed to create data directory: \(error.localizedDescription)")
+            lastError = "Failed to create data directory"
+            return nil
         }
         return dir
     }
 
-    private func ipcSocketPath() -> URL {
-        dataDirectory().appendingPathComponent("remote.sock")
+    private func ipcSocketPath() -> URL? {
+        dataDirectory()?.appendingPathComponent("remote.sock")
     }
 
     private func remoteBinaryPath() -> URL? {
@@ -486,8 +520,8 @@ final class RemoteControlManager: ObservableObject {
             return bundlePath
         }
 
-        let installedPath = installedRemoteBinaryPath()
-        if FileManager.default.isExecutableFile(atPath: installedPath.path) {
+        if let installedPath = installedRemoteBinaryPath(),
+           FileManager.default.isExecutableFile(atPath: installedPath.path) {
             return installedPath
         }
 
@@ -497,6 +531,7 @@ final class RemoteControlManager: ObservableObject {
         }
 
         if let sourceURL = remoteAgentSourceURL(),
+           let installedPath = installedRemoteBinaryPath(),
            buildRemoteAgent(from: sourceURL, outputURL: installedPath),
            FileManager.default.isExecutableFile(atPath: installedPath.path) {
             return installedPath
@@ -520,8 +555,8 @@ final class RemoteControlManager: ObservableObject {
         return nil
     }
 
-    private func installedRemoteBinaryPath() -> URL {
-        dataDirectory().appendingPathComponent("chau7-remote")
+    private func installedRemoteBinaryPath() -> URL? {
+        dataDirectory()?.appendingPathComponent("chau7-remote")
     }
 
     private func devRemoteBinaryPath() -> URL? {
@@ -694,4 +729,10 @@ private struct ProtectedRemoteInput {
     let tabID: UInt32
     let text: String
     let flaggedCommand: String
+    let createdAt: Date = Date()
+
+    /// Protected inputs expire after 2 minutes.
+    static let ttl: TimeInterval = 120
+
+    var isExpired: Bool { Date().timeIntervalSince(createdAt) > Self.ttl }
 }

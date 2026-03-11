@@ -40,6 +40,7 @@ final class RemoteIPCServer: ObservableObject {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         } catch {
             logger.error("Failed to create IPC socket directory: \(error.localizedDescription)")
+            return
         }
         unlink(path)
 
@@ -124,6 +125,8 @@ final class RemoteIPCServer: ObservableObject {
 
         queue.async { [weak self] in
             guard let self else { return }
+            // Re-validate fd hasn't been closed/recycled since we captured it
+            guard self.clientFD == fd else { return }
 
             var offset = 0
             while offset < data.count {
