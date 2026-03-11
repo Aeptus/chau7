@@ -221,10 +221,10 @@ struct OverlayTab: Identifiable, Equatable {
         splitController.appendSelectionToEditor(text)
     }
 
-    init(appModel: AppModel, splitController: SplitPaneController, id: UUID = UUID()) {
+    init(appModel: AppModel, splitController: SplitPaneController, id: UUID = UUID(), createdAt: Date = Date()) {
         self.id = id
         self.splitController = splitController
-        self.createdAt = Date()
+        self.createdAt = createdAt
     }
 
     /// Propagates this tab's UUID to the split controller and all current terminal
@@ -286,6 +286,7 @@ struct SavedTabState: Codable {
     let splitLayout: SavedSplitNode? // split tree including editor panes
     let focusedPaneID: String? // persisted focused pane ID
     let paneStates: [SavedTerminalPaneState]?
+    let createdAt: String? // ISO8601 encoded, nil for legacy saves
 
     static let userDefaultsKey = "com.chau7.savedTabState"
 }
@@ -539,6 +540,7 @@ final class OverlayTabsModel: ObservableObject {
         let selectedID = selectedTabID
         let maxLines = FeatureSettings.shared.restoredScrollbackLines
         var states: [SavedTabState] = []
+        var claimedSessionIds = Set<String>()
 
         for (i, tab) in tabs.enumerated() {
             let terminalSessions = tab.splitController.terminalSessions
@@ -552,12 +554,17 @@ final class OverlayTabsModel: ObservableObject {
                 let resumeMetadata = resolveResumeMetadata(
                     for: session,
                     directory: dir,
-                    outputHint: scrollback
+                    outputHint: scrollback,
+                    claimedSessionIds: claimedSessionIds
                 )
                 let resumeCommand = Self.buildAIResumeCommand(
                     provider: resumeMetadata?.provider,
                     sessionId: resumeMetadata?.sessionId
                 )
+
+                if let sessionId = resumeMetadata?.sessionId {
+                    claimedSessionIds.insert(sessionId)
+                }
 
                 paneStates.append(SavedTerminalPaneState(
                     paneID: paneID.uuidString,
@@ -590,7 +597,8 @@ final class OverlayTabsModel: ObservableObject {
                 aiSessionId: paneStates.first?.aiSessionId,
                 splitLayout: tab.splitController.exportLayout(),
                 focusedPaneID: tab.splitController.focusedTerminalSessionID()?.uuidString,
-                paneStates: paneStates.isEmpty ? nil : paneStates
+                paneStates: paneStates.isEmpty ? nil : paneStates,
+                createdAt: DateFormatters.iso8601.string(from: tab.createdAt)
             ))
         }
 
@@ -657,7 +665,8 @@ final class OverlayTabsModel: ObservableObject {
             aiSessionId: paneStates.first?.aiSessionId,
             splitLayout: tab.splitController.exportLayout(),
             focusedPaneID: tab.splitController.focusedTerminalSessionID()?.uuidString,
-            paneStates: paneStates.isEmpty ? nil : paneStates
+            paneStates: paneStates.isEmpty ? nil : paneStates,
+            createdAt: DateFormatters.iso8601.string(from: tab.createdAt)
         )
 
         closedTabStack.append(ClosedTabEntry(
@@ -677,7 +686,8 @@ final class OverlayTabsModel: ObservableObject {
     private func resolveResumeMetadata(
         for session: TerminalSessionModel,
         directory: String,
-        outputHint: String?
+        outputHint: String?,
+        claimedSessionIds: Set<String> = []
     ) -> (provider: String, sessionId: String)? {
         let referenceDate = Self.normalizedResumeReferenceDate(session.lastOutputDate)
         let detectedApp = Self.detectAIAppName(fromOutput: outputHint)
@@ -689,7 +699,8 @@ final class OverlayTabsModel: ObservableObject {
             outputHint: outputHint,
             explicitAIProvider: session.effectiveAIProvider,
             explicitAISessionId: session.effectiveAISessionId,
-            referenceDate: referenceDate
+            referenceDate: referenceDate,
+            claimedSessionIds: claimedSessionIds
         ) {
             return resolved
         }
@@ -714,16 +725,18 @@ final class OverlayTabsModel: ObservableObject {
             )
         }
 
+        let filteredCandidates = observedCandidates.filter { !claimedSessionIds.contains($0.sessionId) }
+
         guard let sessionId = CodexSessionResolver.bestMatchingSessionID(
             forDirectory: directory,
             referenceDate: referenceDate,
-            candidates: observedCandidates
+            candidates: filteredCandidates
         ) else {
             Log.info(
                 """
                 saveTabState: unresolved Codex resume metadata \
                 dir=\(directory) explicitSession=\(session.effectiveAISessionId ?? "nil") \
-                observedCandidates=\(observedCandidates.count)
+                observedCandidates=\(observedCandidates.count) filtered=\(filteredCandidates.count)
                 """
             )
             return nil
@@ -819,7 +832,8 @@ final class OverlayTabsModel: ObservableObject {
         outputHint: String? = nil,
         explicitAIProvider: String? = nil,
         explicitAISessionId: String? = nil,
-        referenceDate: Date? = nil
+        referenceDate: Date? = nil,
+        claimedSessionIds: Set<String> = []
     ) -> (provider: String, sessionId: String)? {
         let canonicalDirectory = normalizedSessionDirectory(directory)
         let explicitProvider = normalizedAIProvider(from: explicitAIProvider)
@@ -830,7 +844,8 @@ final class OverlayTabsModel: ObservableObject {
                 provider: explicitProvider,
                 sessionId: explicitSessionId,
                 directory: canonicalDirectory,
-                referenceDate: referenceDate
+                referenceDate: referenceDate,
+                claimedSessionIds: claimedSessionIds
             ) {
                 return resolved
             }
@@ -852,7 +867,8 @@ final class OverlayTabsModel: ObservableObject {
             if let sessionId = findAIResumeSessionId(
                 for: candidateProvider,
                 directory: canonicalDirectory,
-                referenceDate: referenceDate
+                referenceDate: referenceDate,
+                claimedSessionIds: claimedSessionIds
             ) {
                 return (provider: candidateProvider, sessionId: sessionId)
             }
@@ -899,9 +915,14 @@ final class OverlayTabsModel: ObservableObject {
         provider: String?,
         sessionId: String?,
         directory: String,
-        referenceDate: Date?
+        referenceDate: Date?,
+        claimedSessionIds: Set<String> = []
     ) -> (provider: String, sessionId: String)? {
         if let provider, let sessionId {
+            guard !claimedSessionIds.contains(sessionId) else {
+                Log.info("resolveAIResumeMetadata: explicit sessionId=\(sessionId) already claimed by another tab, skipping")
+                return nil
+            }
             Log.trace("resolveAIResumeMetadata: using explicit session metadata provider=\(provider), sessionId=\(sessionId)")
             return (provider: provider, sessionId: sessionId)
         }
@@ -911,7 +932,8 @@ final class OverlayTabsModel: ObservableObject {
               let foundSessionId = findAIResumeSessionId(
                   for: provider,
                   directory: directory,
-                  referenceDate: referenceDate
+                  referenceDate: referenceDate,
+                  claimedSessionIds: claimedSessionIds
               ) else {
             return nil
         }
@@ -921,21 +943,21 @@ final class OverlayTabsModel: ObservableObject {
     private static func findAIResumeSessionId(
         for provider: String,
         directory: String,
-        referenceDate: Date?
+        referenceDate: Date?,
+        claimedSessionIds: Set<String> = []
     ) -> String? {
         switch provider {
         case "claude":
-            // Claude sessions are looked up from monitor candidates and may
-            // require referenceDate disambiguation when multiple sessions share
-            // the same directory tree.
             return findClaudeSessionId(
                 forDirectory: directory,
-                referenceDate: referenceDate
+                referenceDate: referenceDate,
+                claimedSessionIds: claimedSessionIds
             ).flatMap { normalizeAISessionId($0) }
         case "codex":
             return findCodexSessionId(
                 forDirectory: directory,
-                referenceDate: referenceDate
+                referenceDate: referenceDate,
+                claimedSessionIds: claimedSessionIds
             ).flatMap { normalizeAISessionId($0) }
         default:
             return nil
@@ -956,7 +978,8 @@ final class OverlayTabsModel: ObservableObject {
 
     private static func findClaudeSessionId(
         forDirectory directory: String,
-        referenceDate: Date? = nil
+        referenceDate: Date? = nil,
+        claimedSessionIds: Set<String> = []
     ) -> String? {
         let canonicalDirectory = normalizedSessionDirectory(directory)
         guard !canonicalDirectory.isEmpty else { return nil }
@@ -967,6 +990,7 @@ final class OverlayTabsModel: ObservableObject {
                 guard let normalizedSessionId = normalizeAISessionId(candidate.sessionId) else {
                     return nil
                 }
+                guard !claimedSessionIds.contains(normalizedSessionId) else { return nil }
                 return (sessionId: normalizedSessionId, touchedAt: candidate.lastActivity)
             }
 
@@ -1014,7 +1038,8 @@ final class OverlayTabsModel: ObservableObject {
     /// blocking the main thread.
     private static func findCodexSessionId(
         forDirectory dir: String,
-        referenceDate: Date? = nil
+        referenceDate: Date? = nil,
+        claimedSessionIds: Set<String> = []
     ) -> String? {
         let fm = FileManager.default
         let sessionsDir = fm.homeDirectoryForCurrentUser
@@ -1057,7 +1082,8 @@ final class OverlayTabsModel: ObservableObject {
                 parsedLines += 1
                 // Parse session_meta to extract cwd and id
                 if let (sessionCwd, sessionId) = parseCodexSessionMeta(firstLine),
-                   Self.isSameSessionDirectory(dir, as: sessionCwd) {
+                   Self.isSameSessionDirectory(dir, as: sessionCwd),
+                   !claimedSessionIds.contains(sessionId) {
                     let touchedAt = (try? FileManager.default.attributesOfItem(atPath: filePath)[.modificationDate] as? Date) ?? Date.distantPast
                     matches.append((sessionId: sessionId, touchedAt: touchedAt))
                 }
@@ -1248,7 +1274,14 @@ final class OverlayTabsModel: ObservableObject {
             )
 
             let restoredTabID = Self.validatedUUID(from: state.tabID) ?? UUID()
-            var tab = OverlayTab(appModel: appModel, splitController: controller, id: restoredTabID)
+            let restoredCreatedAt: Date
+            if let iso = state.createdAt,
+               let parsed = DateFormatters.iso8601.date(from: iso) {
+                restoredCreatedAt = parsed
+            } else {
+                restoredCreatedAt = Date()
+            }
+            var tab = OverlayTab(appModel: appModel, splitController: controller, id: restoredTabID, createdAt: restoredCreatedAt)
             tab.customTitle = state.customTitle
             tab.color = TabColor(rawValue: state.color) ?? colors[i % colors.count]
             tab.stampOwnerTabID()
