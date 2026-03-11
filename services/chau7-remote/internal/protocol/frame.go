@@ -6,26 +6,27 @@ import (
 )
 
 const (
-	HeaderSize   = 20
+	HeaderSize    = 20
 	FlagEncrypted = 0x01
 )
 
 const (
-	TypeHello        = 0x01
-	TypePairRequest  = 0x02
-	TypePairAccept   = 0x03
-	TypePairReject   = 0x04
-	TypeSessionReady = 0x05
-	TypeTabList      = 0x10
-	TypeTabSwitch    = 0x11
-	TypeOutput       = 0x20
-	TypeInput        = 0x21
-	TypeSnapshot     = 0x22
-	TypePing         = 0x30
-	TypePong         = 0x31
-	TypePairingInfo  = 0x40
-	TypeSessionStatus = 0x41
-	TypeError        = 0x7F
+	TypeHello           = 0x01
+	TypePairRequest     = 0x02
+	TypePairAccept      = 0x03
+	TypePairReject      = 0x04
+	TypeSessionReady    = 0x05
+	TypeTabList         = 0x10
+	TypeTabSwitch       = 0x11
+	TypeOutput          = 0x20
+	TypeInput           = 0x21
+	TypeSnapshot        = 0x22
+	TypePing            = 0x30
+	TypePong            = 0x31
+	TypePairingInfo     = 0x40
+	TypeSessionStatus   = 0x41
+	TypeRemoteTelemetry = 0x42
+	TypeError           = 0x7F
 )
 
 var (

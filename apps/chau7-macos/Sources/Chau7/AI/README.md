@@ -2,11 +2,13 @@
 
 LLM-powered error explanation and AI agent detection for terminal sessions.
 
+> **Design principle — backend-agnostic AI support.** Chau7 strives to treat every AI coding tool identically. Logo/brand metadata is driven by `AIToolRegistry` (in Chau7Core) — the single source of truth for tool identity. LLM error explanation works with any configured provider. No subsystem should hardcode behavior for a specific AI tool.
+
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `AIAgentLogo.swift` | Defines known AI CLI agents (Claude, Gemini, etc.) with brand colors and logos |
+| `AIAgentLogo.swift` | Renders AI CLI agent logos and brand colors, driven by `AIToolRegistry` definitions |
 | `AITerminalLogSession.swift` | Records PTY output to a log file for AI tool sessions |
 | `ErrorExplainer.swift` | Sends terminal error output to an LLM provider and returns structured explanations |
 | `ErrorExplanationView.swift` | SwiftUI view displaying LLM-generated error explanations with suggested fixes |
@@ -20,5 +22,5 @@ LLM-powered error explanation and AI agent detection for terminal sessions.
 
 ## Dependencies
 
-- **Uses:** Logging, Settings (via `FeatureSettings`)
+- **Uses:** Logging, Settings (via `FeatureSettings`), Chau7Core (AIToolRegistry)
 - **Used by:** Overlay, Terminal, Settings/Views

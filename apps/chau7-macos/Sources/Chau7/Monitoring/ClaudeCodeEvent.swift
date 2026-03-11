@@ -8,15 +8,18 @@ import Foundation
 // Events from other monitored tools (Cursor, Codex, Copilot, Aider, etc.) do NOT
 // flow through these types.
 //
-// For tool-agnostic event handling, use `AIEvent` (in Chau7Core/AIEvent.swift) which
-// is fed by ALL monitors via `AppModel.recentEvents`. The notification system, command
-// center timeline, and any new UI should consume `AIEvent`, not `ClaudeCodeEvent`.
+// Chau7 strives to be fully backend-agnostic. For tool-agnostic event handling,
+// use `AIEvent` (in Chau7Core/AIEvent.swift) which is fed by ALL monitors via
+// `AppModel.recentEvents`. The notification system, tab routing (`TabResolver`),
+// command center timeline, and any new UI should consume `AIEvent`, not
+// `ClaudeCodeEvent`. Never hardcode tool-specific behavior in generic subsystems.
 //
 // `ClaudeCodeEvent` is consumed by:
 // - `AppModel.claudeCodeEvents` — Claude Code-specific raw event log
 // - `ClaudeCodeMonitor` — the monitor that produces these events
 //
 // It is NOT consumed by (and should not be added to):
+// - TabResolver (uses registered CWD resolvers, not specific monitors)
 // - Command center timeline (uses `AIEvent` via `model.recentEvents`)
 // - Notification pipeline (uses `AIEvent`)
 // - Any cross-tool UI

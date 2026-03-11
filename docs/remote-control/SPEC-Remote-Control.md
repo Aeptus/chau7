@@ -98,6 +98,8 @@ Type codes (u8):
 - `0x31 PONG` (encrypted, JSON)
 - `0x7F ERROR` (encrypted, JSON)
 - `0x40 PAIRING_INFO` (local IPC, JSON)
+- `0x41 SESSION_STATUS` (local IPC, JSON)
+- `0x42 REMOTE_TELEMETRY` (encrypted over relay, local IPC after relay client decrypts)
 
 JSON payloads are UTF-8.
 
@@ -187,6 +189,36 @@ Raw PTY bytes for last N KB. Sent by macOS on iOS connect.
   "expires_at": "ISO8601"
 }
 ```
+
+### SESSION_STATUS (JSON, local IPC)
+```
+{ "status": "connecting|ready|disconnected" }
+```
+
+### REMOTE_TELEMETRY (JSON)
+Structured client telemetry emitted by the iOS app and persisted by macOS for
+device-scoped debugging.
+
+```
+{
+  "id": "uuid",
+  "source": "ios",
+  "device_id": "uuid",
+  "device_name": "Christophe's iPhone",
+  "app_version": "1.1.0",
+  "session_id": "base64-8bytes",
+  "event_type": "connect_requested",
+  "status": "connecting",
+  "tab_id": 2,
+  "tab_title": "Shell",
+  "message": "optional detail",
+  "metadata": { "relay_host": "wss://..." },
+  "timestamp": 794770102.125
+}
+```
+
+`timestamp` uses Swift `Date` JSON encoding and is currently sent as a numeric
+Foundation reference timestamp.
 
 ## Local IPC (Swift <-> Go)
 Unix socket: `~/Library/Application Support/Chau7/remote.sock`

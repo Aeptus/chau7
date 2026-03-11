@@ -2,6 +2,8 @@
 
 Terminal session lifecycle, command block tracking, history navigation, and input detection.
 
+> **Design principle — backend-agnostic AI support.** Chau7 strives to treat every AI coding tool identically. Session-level AI detection (app name, provider) uses `AIToolRegistry` for tool identity. Tool-specific logic belongs in Monitoring, not here.
+
 ## Files
 
 | File | Purpose |

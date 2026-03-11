@@ -3,17 +3,22 @@ import Foundation
 // MARK: - Tool-Agnostic Event System
 
 //
+// Chau7 strives to be fully backend-agnostic: every AI coding tool — Claude,
+// Codex, Gemini, Copilot, Aider, etc. — flows through the same event pipeline.
+//
 // AIEvent is the canonical event type for ALL monitored tools and sources.
 // It is produced by every monitor (file tailer, terminal sessions, Claude Code hooks,
-// API proxy, etc.) and consumed by:
+// Codex session files, API proxy, etc.) and consumed by:
 //   - `AppModel.recentEvents` — the unified event stream for UI
 //   - `NotificationPipeline` / `NotificationManager` — the notification decision engine
+//   - `TabResolver` — tool-agnostic tab routing (derives aliases from AIToolRegistry)
 //   - `NotificationHistory` — audit trail of fired notifications
 //   - Command center timeline — the unified activity feed in the menu bar panel
 //
 // If you are building UI or logic that processes events, use AIEvent.
 // Do NOT use `ClaudeCodeEvent` (in Monitoring/ClaudeCodeEvent.swift) unless you
 // specifically need Claude Code hook-level detail — it excludes all other tools.
+// Never hardcode tool names in event consumers; use AIToolRegistry for lookups.
 
 /// Identifies which tool or subsystem produced an event.
 /// Extensible via RawRepresentable — new sources can be added without enum changes.

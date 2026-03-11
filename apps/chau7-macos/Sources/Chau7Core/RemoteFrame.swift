@@ -122,6 +122,7 @@ public enum RemoteFrameType: UInt8, CaseIterable, Sendable {
     case sessionReady = 0x05
     case pairingInfo = 0x40
     case sessionStatus = 0x41
+    case remoteTelemetry = 0x42
     case tabList = 0x10
     case tabSwitch = 0x11
     case output = 0x20

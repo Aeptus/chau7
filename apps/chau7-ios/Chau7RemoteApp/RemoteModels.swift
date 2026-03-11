@@ -1,4 +1,5 @@
 import CryptoKit
+import Chau7Core
 import Foundation
 import Security
 
@@ -122,13 +123,20 @@ struct ApprovalRequest: Identifiable {
     let timestamp: Date
 
     var id: String { requestID }
+    var isProtectedRemoteAction: Bool { flaggedCommand != command }
+    var title: String { isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval" }
+    var subtitle: String? { isProtectedRemoteAction ? flaggedCommand : nil }
 }
 
 struct ApprovalHistoryEntry: Identifiable {
     let id = UUID()
     let command: String
+    let flaggedCommand: String
     let approved: Bool
     let timestamp: Date
+
+    var isProtectedRemoteAction: Bool { flaggedCommand != command }
+    var title: String { isProtectedRemoteAction ? flaggedCommand : command }
 }
 
 struct ApprovalRequestPayload: Codable {

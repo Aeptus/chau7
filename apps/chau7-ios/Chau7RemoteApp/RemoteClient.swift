@@ -42,11 +42,16 @@ final class RemoteClient {
     private var reconnectAttempt = 0
     private var reconnectTask: Task<Void, Never>?
     private var shouldReconnect = false
+    private var outputByTabID: [UInt32: String] = [:]
+    private var strippedOutputByTabID: [UInt32: String] = [:]
+    private var remoteSessionID: String?
+    private var bufferedTelemetryEvents: [RemoteClientTelemetryEvent] = []
 
     private static let maxOutputBytes = 200_000
     private static let maxFrameBytes = 65_536
     private static let maxHistory = 50
     private static let maxReconnectAttempts = 5
+    private static let maxBufferedTelemetryEvents = 100
     static let appVersion = "1.1.0"
 
     // MARK: - Init
@@ -78,6 +83,7 @@ final class RemoteClient {
         lastError = nil
         shouldReconnect = true
         reconnectAttempt = 0
+        remoteSessionID = nil
 
         if let keyData = Data(base64Encoded: pairing.macPub) {
             macPublicKey = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: keyData)
@@ -95,6 +101,11 @@ final class RemoteClient {
         webSocket = task
         task.resume()
         status = "Connecting"
+        emitTelemetry(
+            type: .connectRequested,
+            status: "connecting",
+            metadata: ["relay_host": pairing.relayURL]
+        )
 
         sendHello()
         sendPairRequest()
@@ -110,9 +121,14 @@ final class RemoteClient {
         isConnected = false
         status = "Disconnected"
         crypto = nil
+        remoteSessionID = nil
         nonceIOS = nil
         nonceMac = nil
         tabs = []
+        outputByTabID.removeAll()
+        strippedOutputByTabID.removeAll()
+        outputText = ""
+        strippedOutputText = ""
         if !autoReconnect {
             lastError = nil
             pendingApprovals = []
@@ -130,6 +146,8 @@ final class RemoteClient {
 
     func switchTab(_ tabID: UInt32) {
         activeTabID = tabID
+        refreshVisibleOutput()
+        emitTelemetry(type: .tabSwitched, tabID: tabID, tabTitle: tabTitle(for: tabID))
         sendJSON(TabSwitchPayload(tabID: tabID), type: .tabSwitch)
     }
 
@@ -140,13 +158,22 @@ final class RemoteClient {
         let request = pendingApprovals.remove(at: idx)
 
         approvalHistory.append(ApprovalHistoryEntry(
-            command: request.command, approved: approved, timestamp: Date()
+            command: request.command,
+            flaggedCommand: request.flaggedCommand,
+            approved: approved,
+            timestamp: Date()
         ))
         if approvalHistory.count > Self.maxHistory {
             approvalHistory.removeFirst(approvalHistory.count - Self.maxHistory)
         }
 
         sendJSON(ApprovalResponsePayload(requestID: requestID, approved: approved), type: .approvalResponse)
+        emitTelemetry(
+            type: .approvalResponded,
+            status: approved ? "approved" : "denied",
+            message: request.flaggedCommand,
+            metadata: ["request_id": requestID]
+        )
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [requestID])
     }
 
@@ -159,7 +186,7 @@ final class RemoteClient {
                 switch result {
                 case .failure(let error):
                     log.error("WebSocket receive failed: \(error.localizedDescription)")
-                    self.handleDisconnect()
+                    self.handleDisconnect(reason: error.localizedDescription)
                 case .success(let msg):
                     switch msg {
                     case .data(let data): self.handleFrame(data)
@@ -172,16 +199,29 @@ final class RemoteClient {
         }
     }
 
-    private func handleDisconnect() {
+    private func handleDisconnect(reason: String? = nil) {
         let wasConnected = isConnected
         isConnected = false
         status = "Disconnected"
         crypto = nil
 
+        if wasConnected || reason != nil {
+            emitTelemetry(type: .disconnected, status: "disconnected", message: reason)
+        }
+
         guard wasConnected, shouldReconnect, reconnectAttempt < Self.maxReconnectAttempts else { return }
         reconnectAttempt += 1
         let delay = pow(2.0, Double(reconnectAttempt))
         status = "Reconnecting (\(reconnectAttempt)/\(Self.maxReconnectAttempts))..."
+        emitTelemetry(
+            type: .reconnectScheduled,
+            status: "scheduled",
+            message: reason,
+            metadata: [
+                "attempt": String(reconnectAttempt),
+                "delay_seconds": String(format: "%.0f", delay)
+            ]
+        )
 
         reconnectTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
@@ -195,6 +235,11 @@ final class RemoteClient {
     private func handleFrame(_ data: Data) {
         guard let frame = try? RemoteFrame.decode(from: data) else {
             log.warning("Failed to decode frame (\(data.count) bytes)")
+            emitTelemetry(
+                type: .frameDecodeFailed,
+                status: "decode_failed",
+                metadata: ["frame_bytes": String(data.count)]
+            )
             return
         }
 
@@ -202,6 +247,11 @@ final class RemoteClient {
         if frame.flags & RemoteFrame.flagEncrypted != 0 {
             guard let crypto, let decrypted = try? crypto.decrypt(frame: frame) else {
                 log.warning("Decryption failed for frame type=\(frame.type)")
+                emitTelemetry(
+                    type: .frameDecryptFailed,
+                    status: "decrypt_failed",
+                    metadata: ["frame_type": String(frame.type)]
+                )
                 return
             }
             payload = decrypted
@@ -218,10 +268,8 @@ final class RemoteClient {
             status = "Session ready"
             lastError = nil
         case .tabList:         handleTabList(payload)
-        case .output:          appendOutput(payload)
-        case .snapshot:
-            outputText = String(data: payload, encoding: .utf8) ?? ""
-            strippedOutputText = ANSIStripper.strip(outputText)
+        case .output:          appendOutput(payload, tabID: frame.tabID)
+        case .snapshot:        storeSnapshot(payload, tabID: frame.tabID)
         case .approvalRequest: handleApprovalRequest(payload)
         case .ping:            sendEncrypted(type: .pong, tabID: frame.tabID, payload: payload)
         case .error:           handleError(payload)
@@ -260,8 +308,14 @@ final class RemoteClient {
     private func handleError(_ data: Data) {
         if let msg = try? JSONDecoder().decode(RemoteErrorPayload.self, from: data) {
             lastError = "\(msg.code): \(msg.message)"
+            emitTelemetry(
+                type: .errorReceived,
+                status: msg.code,
+                message: msg.message
+            )
         } else if let text = String(data: data, encoding: .utf8), !text.isEmpty {
             lastError = text
+            emitTelemetry(type: .errorReceived, status: "error", message: text)
         }
         status = "Error"
     }
@@ -271,23 +325,38 @@ final class RemoteClient {
         tabs = msg.tabs
         if let active = msg.tabs.first(where: { $0.isActive }) {
             activeTabID = active.tabID
+        } else if let first = msg.tabs.first {
+            activeTabID = first.tabID
+        } else {
+            activeTabID = 0
+        }
+        let visibleTabIDs = Set(msg.tabs.map(\.tabID))
+        outputByTabID = outputByTabID.filter { visibleTabIDs.contains($0.key) }
+        strippedOutputByTabID = strippedOutputByTabID.filter { visibleTabIDs.contains($0.key) }
+        refreshVisibleOutput()
+    }
+
+    private func appendOutput(_ data: Data, tabID: UInt32) {
+        let capped = data.prefix(Self.maxFrameBytes)
+        guard let text = String(data: capped, encoding: .utf8) else { return }
+        let resolvedTabID = resolvedTabID(for: tabID)
+        var existing = outputByTabID[resolvedTabID] ?? ""
+        existing.append(text)
+        outputByTabID[resolvedTabID] = trimOutput(existing)
+        strippedOutputByTabID[resolvedTabID] = ANSIStripper.strip(outputByTabID[resolvedTabID] ?? "")
+        if resolvedTabID == activeTabID || activeTabID == 0 {
+            refreshVisibleOutput()
         }
     }
 
-    private func appendOutput(_ data: Data) {
-        let capped = data.prefix(Self.maxFrameBytes)
-        guard let text = String(data: capped, encoding: .utf8) else { return }
-        outputText.append(text)
-        if outputText.utf8.count > Self.maxOutputBytes {
-            let excess = outputText.utf8.count - Self.maxOutputBytes
-            let start = outputText.utf8.startIndex
-            let end = outputText.utf8.endIndex
-            if let idx = outputText.utf8.index(start, offsetBy: excess, limitedBy: end) {
-                let charIdx = outputText.index(after: String.Index(idx, within: outputText) ?? outputText.startIndex)
-                outputText = String(outputText[charIdx...])
-            }
+    private func storeSnapshot(_ data: Data, tabID: UInt32) {
+        let resolvedTabID = resolvedTabID(for: tabID)
+        let text = String(data: data, encoding: .utf8) ?? ""
+        outputByTabID[resolvedTabID] = trimOutput(text)
+        strippedOutputByTabID[resolvedTabID] = ANSIStripper.strip(outputByTabID[resolvedTabID] ?? "")
+        if resolvedTabID == activeTabID || activeTabID == 0 {
+            refreshVisibleOutput()
         }
-        strippedOutputText = ANSIStripper.strip(outputText)
     }
 
     private func handleApprovalRequest(_ data: Data) {
@@ -296,10 +365,17 @@ final class RemoteClient {
             requestID: msg.requestID, command: msg.command,
             flaggedCommand: msg.flaggedCommand, timestamp: Date()
         ))
+        emitTelemetry(
+            type: .approvalReceived,
+            status: "pending",
+            message: msg.flaggedCommand,
+            metadata: ["request_id": msg.requestID]
+        )
 
         let content = UNMutableNotificationContent()
-        content.title = "MCP Command Approval"
-        content.body = msg.command
+        let isProtectedRemoteAction = msg.flaggedCommand != msg.command
+        content.title = isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval"
+        content.body = isProtectedRemoteAction ? msg.flaggedCommand : msg.command
         content.sound = .default
         content.categoryIdentifier = "MCP_APPROVAL"
         content.userInfo = ["request_id": msg.requestID]
@@ -323,9 +399,12 @@ final class RemoteClient {
         crypto = session
         reconnectAttempt = 0
         isConnected = true
-        sendJSON(SessionReadyPayload(sessionID: CryptoUtils.randomBytes(count: 8).base64EncodedString()),
-                 type: .sessionReady, encrypt: true)
+        let sessionID = CryptoUtils.randomBytes(count: 8).base64EncodedString()
+        remoteSessionID = sessionID
+        sendJSON(SessionReadyPayload(sessionID: sessionID), type: .sessionReady, encrypt: true)
         status = "Encrypted"
+        emitTelemetry(type: .sessionEncrypted, status: "encrypted")
+        flushBufferedTelemetryEvents()
     }
 
     // MARK: - Outgoing
@@ -348,6 +427,7 @@ final class RemoteClient {
             iosPub: iosKey.publicKey.rawRepresentation.base64EncodedString(),
             iosName: UIDevice.current.name
         ), type: .pairRequest, encrypt: false)
+        emitTelemetry(type: .pairRequestSent, status: "pairing")
     }
 
     private func sendJSON<T: Encodable>(_ payload: T, type: RemoteFrameType, encrypt: Bool = true) {
@@ -374,7 +454,12 @@ final class RemoteClient {
 
     private func send(_ frame: RemoteFrame) {
         webSocket?.send(.data(frame.encode())) { error in
-            if let error { log.error("WebSocket send failed: \(error.localizedDescription)") }
+            if let error {
+                log.error("WebSocket send failed: \(error.localizedDescription)")
+                Task { @MainActor [weak self] in
+                    self?.emitTelemetry(type: .sendFailed, status: "send_failed", message: error.localizedDescription)
+                }
+            }
         }
     }
 
@@ -414,5 +499,105 @@ final class RemoteClient {
     private static func loadPairing() -> PairingInfo? {
         guard let data = KeychainStore.load(key: "pairing_payload") else { return nil }
         return try? JSONDecoder().decode(PairingInfo.self, from: data)
+    }
+
+    func flaggedProtectedAction(for input: String) -> String? {
+        RemoteProtection.flaggedTerminationAction(for: input)
+    }
+
+    func recordProtectedActionPrompt(text: String, flaggedAction: String) {
+        emitTelemetry(
+            type: .protectedActionPrompted,
+            status: "prompted",
+            message: flaggedAction,
+            tabID: activeTabID,
+            tabTitle: tabTitle(for: activeTabID),
+            metadata: ["input_bytes": String(text.utf8.count)]
+        )
+    }
+
+    func recordProtectedActionSubmission(text: String, flaggedAction: String) {
+        emitTelemetry(
+            type: .protectedActionSubmitted,
+            status: "submitted",
+            message: flaggedAction,
+            tabID: activeTabID,
+            tabTitle: tabTitle(for: activeTabID),
+            metadata: ["input_bytes": String(text.utf8.count)]
+        )
+    }
+
+    private func resolvedTabID(for tabID: UInt32) -> UInt32 {
+        tabID == 0 ? activeTabID : tabID
+    }
+
+    private func refreshVisibleOutput() {
+        outputText = outputByTabID[activeTabID] ?? ""
+        strippedOutputText = strippedOutputByTabID[activeTabID] ?? ""
+    }
+
+    private func trimOutput(_ input: String) -> String {
+        guard input.utf8.count > Self.maxOutputBytes else { return input }
+        let excess = input.utf8.count - Self.maxOutputBytes
+        let start = input.utf8.startIndex
+        let end = input.utf8.endIndex
+        guard let idx = input.utf8.index(start, offsetBy: excess, limitedBy: end) else {
+            return input
+        }
+        let charIdx = input.index(after: String.Index(idx, within: input) ?? input.startIndex)
+        return String(input[charIdx...])
+    }
+
+    private func emitTelemetry(
+        type: RemoteClientTelemetryEventType,
+        status: String? = nil,
+        message: String? = nil,
+        tabID: UInt32? = nil,
+        tabTitle: String? = nil,
+        metadata: [String: String] = [:]
+    ) {
+        var event = RemoteClientTelemetryEvent(
+            deviceID: pairingInfo?.deviceID,
+            deviceName: UIDevice.current.name,
+            appVersion: Self.appVersion,
+            sessionID: remoteSessionID,
+            eventType: type,
+            status: status,
+            tabID: tabID,
+            tabTitle: tabTitle,
+            message: message,
+            metadata: metadata
+        )
+        enqueueOrSendTelemetryEvent(&event)
+    }
+
+    private func enqueueOrSendTelemetryEvent(_ event: inout RemoteClientTelemetryEvent) {
+        guard crypto != nil else {
+            bufferedTelemetryEvents.append(event)
+            if bufferedTelemetryEvents.count > Self.maxBufferedTelemetryEvents {
+                bufferedTelemetryEvents.removeFirst(bufferedTelemetryEvents.count - Self.maxBufferedTelemetryEvents)
+            }
+            return
+        }
+
+        if event.sessionID == nil {
+            event.sessionID = remoteSessionID
+        }
+
+        guard let data = try? JSONEncoder().encode(event) else { return }
+        sendEncrypted(type: .remoteTelemetry, tabID: event.tabID ?? 0, payload: data)
+    }
+
+    private func flushBufferedTelemetryEvents() {
+        guard crypto != nil, !bufferedTelemetryEvents.isEmpty else { return }
+        var pendingEvents = bufferedTelemetryEvents
+        bufferedTelemetryEvents.removeAll(keepingCapacity: true)
+        for index in pendingEvents.indices {
+            enqueueOrSendTelemetryEvent(&pendingEvents[index])
+        }
+    }
+
+    private func tabTitle(for tabID: UInt32) -> String? {
+        tabs.first(where: { $0.tabID == tabID })?.title
     }
 }

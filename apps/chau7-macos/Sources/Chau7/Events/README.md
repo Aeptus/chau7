@@ -2,6 +2,8 @@
 
 App-level event emission for the notification system (scheduled, inactivity, memory).
 
+> **Design principle — backend-agnostic AI support.** Chau7 strives to treat every AI coding tool identically. Events flow through the generic `AIEvent` type and are routed by `TabResolver` without knowledge of specific AI backends.
+
 ## Files
 
 | File | Purpose |
