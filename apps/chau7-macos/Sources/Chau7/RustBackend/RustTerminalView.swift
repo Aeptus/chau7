@@ -4948,8 +4948,9 @@ final class RustTerminalView: NSView {
                 let isSingleClick = event.clickCount == 1
                 let noModifiers = !event.modifierFlags.contains(.shift) && !event.modifierFlags.contains(.command) && !event.modifierFlags.contains(.option)
                 let noActiveSelection = !hasSelection
+                let clickEnabled = FeatureSettings.shared.isClickToPositionEnabled
 
-                if isSingleClick, noModifiers, noActiveSelection, FeatureSettings.shared.isClickToPositionEnabled {
+                if isSingleClick, noModifiers, noActiveSelection, clickEnabled {
                     if handleClickToPosition(at: clickLocation) {
                         Log.trace("RustTerminalView[\(viewId)]: Click-to-position handled")
                         return event
