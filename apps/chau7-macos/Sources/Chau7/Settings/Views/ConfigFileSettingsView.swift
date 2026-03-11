@@ -107,6 +107,17 @@ struct ConfigFileSettingsView: View {
                 text: L("settings.configFile.repo.description", "Place a .chau7/config.toml in your repository root to override global settings for that project.")
             )
 
+            if let repoPath = watcher.repoConfigPath {
+                SettingsRow(L("settings.configFile.repo.path", "Path")) {
+                    Text((repoPath as NSString).abbreviatingWithTildeInPath)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+
             if watcher.repoConfig != nil {
                 HStack(spacing: 6) {
                     Image(systemName: "checkmark.circle.fill")
@@ -117,6 +128,35 @@ struct ConfigFileSettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            HStack(spacing: 12) {
+                Button {
+                    if let dir = watcher.repoConfigDirectory {
+                        watcher.createRepoConfig(directory: dir)
+                        watcher.loadRepoConfig(directory: dir)
+                    }
+                } label: {
+                    Label(
+                        L("settings.configFile.repo.create", "Create Per-Repo Config"),
+                        systemImage: "doc.badge.plus"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(watcher.repoConfigDirectory == nil)
+
+                Button {
+                    openRepoConfigInEditor()
+                } label: {
+                    Label(
+                        L("settings.configFile.openInEditor", "Open in Editor"),
+                        systemImage: "pencil"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(watcher.repoConfig == nil)
+            }
         }
     }
 
@@ -124,7 +164,11 @@ struct ConfigFileSettingsView: View {
 
     private func openConfigInEditor() {
         let path = NSHomeDirectory() + "/.chau7/config.toml"
-        let url = URL(fileURLWithPath: path)
-        NSWorkspace.shared.open(url)
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+    }
+
+    private func openRepoConfigInEditor() {
+        guard let path = watcher.repoConfigPath else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
     }
 }
