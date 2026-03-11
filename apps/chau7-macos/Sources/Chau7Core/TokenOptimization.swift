@@ -464,7 +464,8 @@ public let ctoRewriteMap: [String: String] = [
     "golangci-lint": "golangci-lint",
     "swift": "swift",
     "python": "python",
-    "python3": "python"
+    "python3": "python",
+    "sed": "read"       // sed -n 'range p' file → chau7-optim read
 ]
 
 /// Commands that are exec-only (no optimizer subcommand mapping).
@@ -473,7 +474,7 @@ public let execOnlyCommands: Set = ["head", "tail", "wc"]
 /// Commands that are commonly used as pipe filters (`cmd | grep pattern`).
 /// When stdin is piped (not a terminal), these wrappers skip the optimizer
 /// and exec the real binary directly — the output IS the data stream.
-public let pipeFilterCommands: Set = ["grep", "rg", "diff"]
+public let pipeFilterCommands: Set = ["grep", "rg", "diff", "sed"]
 
 /// All commands that have wrapper scripts (optimizer-routed + exec-only).
 public let supportedCommands: [String] = (Array(ctoRewriteMap.keys) + Array(execOnlyCommands)).sorted()

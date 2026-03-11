@@ -236,7 +236,8 @@ final class TokenOptimizationCoreTests: XCTestCase {
             "golangci-lint": "golangci-lint",
             "swift": "swift",
             "python": "python",
-            "python3": "python"
+            "python3": "python",
+            "sed": "read"
         ]
 
         XCTAssertEqual(
