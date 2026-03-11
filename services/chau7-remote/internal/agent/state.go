@@ -124,7 +124,8 @@ func LoadState(path string) (*State, error) {
 }
 
 func SaveState(path string, state *State) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	toSave := *state
@@ -143,7 +144,38 @@ func SaveState(path string, state *State) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0o600)
+	// Atomic write: write to temp file, fsync, then rename. Prevents
+	// partial/corrupt state files if the process crashes mid-write.
+	tmp, err := os.CreateTemp(dir, ".chau7-state-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp state file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		// Clean up temp file on any failure path
+		if tmpPath != "" {
+			os.Remove(tmpPath)
+		}
+	}()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("write temp state file: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("fsync temp state file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("close temp state file: %w", err)
+	}
+	if err := os.Chmod(tmpPath, 0o600); err != nil {
+		return fmt.Errorf("chmod temp state file: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("rename temp state file: %w", err)
+	}
+	tmpPath = "" // Prevent deferred cleanup after successful rename
+	return nil
 }
 
 func (s *State) MacPrivateKeyBytes() ([]byte, error) {
