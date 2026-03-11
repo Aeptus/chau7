@@ -98,7 +98,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: return L("settings.general", "General")
-        case .profilesBackup: return L("settings.profilesBackup", "Profiles & Backup")
+        case .profilesBackup: return L("settings.profilesBackup", "Sync & Backup")
         case .about: return L("settings.about", "About")
         case .fontColors: return L("settings.fontColors", "Font & Colors")
         case .display: return L("settings.display", "Display")
@@ -123,7 +123,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .general: return "gearshape"
-        case .profilesBackup: return "person.2.fill"
+        case .profilesBackup: return "arrow.triangle.2.circlepath"
         case .about: return "info.circle"
         case .fontColors: return "paintbrush"
         case .display: return "eye"
@@ -148,7 +148,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .general: return L("settings.general.description", "Startup, language, and config file")
-        case .profilesBackup: return L("settings.profilesBackup.description", "Profiles, auto-switch, iCloud sync, and backup")
+        case .profilesBackup: return L("settings.profilesBackup.description", "Profile auto-switch, iCloud sync, and settings backup")
         case .about: return L("settings.about.description", "Version information and links")
         case .fontColors: return L("settings.fontColors.description", "Font, color scheme, opacity, and theme")
         case .display: return L("settings.display.description", "Syntax highlighting, URLs, images, and layout")
@@ -234,17 +234,7 @@ extension FeatureSettings {
             description: L("settings.search.configFile.description", "Load settings from TOML config files")
         ),
 
-        // Profiles & Backup
-        SearchableSetting(
-            id: "profiles",
-            section: .profilesBackup,
-            title: L("settings.search.profiles.title", "Settings Profiles"),
-            keywords: localizedKeywords(
-                "settings.search.profiles.keywords",
-                "profile,work,personal,switch,preset"
-            ),
-            description: L("settings.search.profiles.description", "Create and switch between named setting profiles")
-        ),
+        // Sync & Backup
         SearchableSetting(
             id: "profileAutoSwitch",
             section: .profilesBackup,
