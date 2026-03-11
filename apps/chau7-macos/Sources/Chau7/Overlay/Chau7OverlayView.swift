@@ -484,8 +484,7 @@ private struct ToolbarTabBarView: View {
                     overlayModel.cancelPrewarm(id: tab.id)
                     overlayModel.tabHoverEnded(id: tab.id)
                 }
-            },
-            onToggleTokenOpt: { overlayModel.toggleTokenOpt(for: tab.id) }
+            }
         )
         // Explicit stable identity based on tab UUID
         .id(tab.id)
@@ -1152,7 +1151,6 @@ struct UnifiedTabButton: View {
     let onRename: () -> Void
     let onClose: () -> Void
     var onHover: ((Bool) -> Void)?
-    var onToggleTokenOpt: (() -> Void)?
 
     /// Pulse animation state
     @State private var isPulsing = false
@@ -1205,60 +1203,6 @@ struct UnifiedTabButton: View {
             && !tab.customTitle!.isEmpty
     }
 
-    /// Extracted to reduce type-checker complexity in body.
-    @ViewBuilder
-    private var ctoIndicator: some View {
-        if FeatureSettings.shared.showTabCTOIndicator,
-           FeatureSettings.shared.tokenOptimizationMode != .off {
-            let ctoToggleEnabled = FeatureSettings.shared.allowTabCTOToggle
-            if let overrideState = tab.optimizerOverrideState {
-                if ctoToggleEnabled {
-                    Button(action: { onToggleTokenOpt?() }) {
-                        ctoIcon(active: overrideState)
-                    }
-                    .buttonStyle(.plain)
-                    .help(overrideState
-                        ? L("cto.tab.active", "Token optimization active (click to toggle)")
-                        : L("cto.tab.inactive", "Token optimization inactive (click to toggle)"))
-                    .accessibilityLabel(overrideState
-                        ? L("cto.tab.a11y.active", "Token optimization on")
-                        : L("cto.tab.a11y.inactive", "Token optimization off"))
-                } else {
-                    ctoIcon(active: overrideState)
-                        .help(overrideState
-                            ? L("cto.tab.active.readonly", "Token optimization override active")
-                            : L("cto.tab.inactive.readonly", "Token optimization override inactive"))
-                }
-            } else if ctoToggleEnabled {
-                Button(action: { onToggleTokenOpt?() }) {
-                    Color.clear.frame(width: 14, height: 14)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(L("cto.tab.toggle", "Click to override token optimization for this tab"))
-                .accessibilityLabel(L("cto.tab.a11y.default", "Token optimization default"))
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func ctoIcon(active: Bool) -> some View {
-        if active {
-            Image(systemName: "wand.and.stars")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.yellow)
-        } else {
-            ZStack {
-                Image(systemName: "wand.and.stars")
-                Rectangle()
-                    .frame(width: 1.5, height: 14)
-                    .rotationEffect(.degrees(-45))
-            }
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.red)
-        }
-    }
-
     var body: some View {
         HStack(spacing: 8) {
             // Session-dependent content (icon, title, path, git) in an observing subview
@@ -1304,9 +1248,6 @@ struct UnifiedTabButton: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.orange)
                 }
-
-                // CTO: Token optimization indicator (exception-only badge)
-                ctoIndicator
 
                 // Git indicator — observed via TabSessionContent, keep fallback here
                 if FeatureSettings.shared.showTabGitIndicator, tab.displaySession?.isGitRepo ?? false {
