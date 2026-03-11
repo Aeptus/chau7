@@ -5,27 +5,27 @@
 .breadcrumb {
     max-width: var(--max-w);
     margin: 0 auto;
-    padding: 5.5rem 2rem 0;
-    font-size: 0.82rem;
+    padding: var(--space-6xl) var(--space-2xl) 0;
+    font-size: var(--text-sm);
     color: var(--text-muted);
 }
 .breadcrumb a { transition: color 0.2s; }
 .breadcrumb a:hover { color: var(--text); }
-.breadcrumb .breadcrumb-sep { margin: 0 0.4rem; opacity: 0.5; }
+.breadcrumb .breadcrumb-sep { margin: 0 var(--space-2xs); opacity: 0.5; }
 .breadcrumb .breadcrumb-current { color: var(--text); font-weight: 500; }
 
 /* ── Feature Hero (smaller than landing heroes) ──── */
 .hero-feature {
-    padding: 3rem 2rem 3rem;
+    padding: var(--space-4xl) var(--space-2xl) var(--space-4xl);
     text-align: center;
 }
 .hero-feature .hero-content { max-width: 720px; }
 .hero-feature .hero-title {
-    font-size: clamp(2rem, 5vw, 3rem);
-    margin-bottom: 1rem;
+    font-size: clamp(var(--text-xl), 5vw, var(--text-2xl));
+    margin-bottom: var(--space-md);
 }
 .hero-feature .hero-subtitle {
-    font-size: 1.05rem;
+    font-size: var(--text-md);
     margin-bottom: 0;
 }
 
@@ -53,12 +53,12 @@
 
 /* ── Questions Section ───────────────────────────── */
 .questions-section {
-    padding: 3rem 0;
+    padding: var(--space-4xl) 0;
 }
 .questions-section h2 {
-    font-size: 1.35rem;
+    font-size: var(--text-lg);
     font-weight: 700;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-xl);
     letter-spacing: -0.01em;
 }
 
@@ -66,7 +66,7 @@
     list-style: none;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-sm);
     max-width: 720px;
 }
 
@@ -74,28 +74,28 @@
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    padding: 1rem 1.25rem;
-    font-size: 0.92rem;
+    padding: var(--space-md) var(--space-lg);
+    font-size: var(--text-base);
     color: var(--text-muted);
     line-height: 1.5;
     display: flex;
     align-items: baseline;
-    gap: 0.75rem;
+    gap: var(--space-sm);
 }
 .question-item::before {
     content: '\1F50D';
     flex-shrink: 0;
-    font-size: 0.85rem;
+    font-size: var(--text-sm);
 }
 
 /* ── Feature Content ─────────────────────────────── */
 .feature-content {
-    padding: 0 0 3rem;
+    padding: 0 0 var(--space-4xl);
 }
 .feature-content h2 {
-    font-size: 1.35rem;
+    font-size: var(--text-lg);
     font-weight: 700;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-md);
     letter-spacing: -0.01em;
 }
 
@@ -105,45 +105,45 @@
     border: 1px solid var(--border);
     border-left: 3px solid var(--accent);
     border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-    padding: 1.5rem 2rem;
-    margin: 2rem 0;
+    padding: var(--space-xl) var(--space-2xl);
+    margin: var(--space-2xl) 0;
 }
 .why-matters h3 {
-    font-size: 1.05rem;
+    font-size: var(--text-md);
     font-weight: 700;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-xs);
     color: var(--accent);
 }
 .why-matters p {
     color: var(--text-muted);
-    font-size: 0.92rem;
+    font-size: var(--text-base);
     line-height: 1.7;
     margin-bottom: 0;
 }
 
 /* ── Related Features ────────────────────────────── */
 .related-features {
-    padding: 3rem 0;
+    padding: var(--space-4xl) 0;
 }
 .related-features h2 {
-    font-size: 1.35rem;
+    font-size: var(--text-lg);
     font-weight: 700;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-xl);
 }
 .related-features-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 1rem;
+    gap: var(--space-md);
 }
 
 /* ── Feature page FAQ ────────────────────────────── */
 .feature-faq {
-    padding: 0 0 3rem;
+    padding: 0 0 var(--space-4xl);
 }
 .feature-faq h2 {
-    font-size: 1.35rem;
+    font-size: var(--text-lg);
     font-weight: 700;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-xl);
 }
 
 /* ── Responsive ──────────────────────────────────── */
@@ -151,6 +151,6 @@
     .related-features-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 600px) {
-    .breadcrumb { padding-top: 5rem; font-size: 0.75rem; }
-    .hero-feature { padding: 2rem 1.5rem 2rem; }
+    .breadcrumb { padding-top: var(--space-6xl); font-size: var(--text-xs); }
+    .hero-feature { padding: var(--space-2xl) var(--space-xl) var(--space-2xl); }
 }

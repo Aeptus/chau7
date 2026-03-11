@@ -2,6 +2,8 @@
 
 Main overlay window, tab management model, fullscreen behavior, and titlebar styling.
 
+> **Design principle — backend-agnostic AI support.** Chau7 strives to treat every AI coding tool identically. Tab management and session display use `AIToolRegistry` for tool identity and `AIEvent` for the event pipeline — never hardcoding behavior for a specific AI backend.
+
 ## Files
 
 | File | Purpose |

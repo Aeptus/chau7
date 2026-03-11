@@ -1,7 +1,3 @@
-/features /features.html 200
-/mcp /mcp.html 200
-/performance /performance.html 200
-/compare /compare.html 200
-/pronunciation /pronunciation.html 200
-/features/:slug /features/:slug.html 200
 /index / 301
+/performance /the-tech 301
+/performance.html /the-tech 301

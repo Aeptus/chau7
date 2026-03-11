@@ -11,7 +11,7 @@ struct ApprovalsView: View {
                     ContentUnavailableView(
                         "No Approvals",
                         systemImage: "checkmark.shield",
-                        description: Text("Command approvals from MCP agents will appear here.")
+                        description: Text("Protected remote actions and command approvals will appear here.")
                     )
                 }
 
@@ -52,12 +52,18 @@ struct ApprovalRequestCard: View {
             HStack {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-                Text("Command Approval")
+                Text(request.title)
                     .font(.headline)
                 Spacer()
                 Text(request.timestamp, style: .relative)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
+            }
+
+            if let subtitle = request.subtitle {
+                Label(subtitle, systemImage: "lock.shield")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
 
             Text(request.command)
@@ -103,6 +109,9 @@ struct ApprovalHistoryRow: View {
                 .foregroundStyle(entry.approved ? .green : .red)
 
             VStack(alignment: .leading, spacing: 2) {
+                Text(entry.title)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Text(entry.command)
                     .font(.system(.caption, design: .monospaced))
                     .lineLimit(2)

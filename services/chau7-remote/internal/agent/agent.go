@@ -323,7 +323,7 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		}
 		a.sessionReady = true
 		a.sendSessionStatus("ready")
-	case protocol.TypeTabSwitch, protocol.TypeInput:
+	case protocol.TypeTabSwitch, protocol.TypeInput, protocol.TypeRemoteTelemetry:
 		a.sendToIPC(frame)
 	case protocol.TypePing:
 		a.sendEncryptedToRelay(&protocol.Frame{

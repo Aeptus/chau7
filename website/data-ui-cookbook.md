@@ -44,7 +44,7 @@ Every meaningful UI element gets a unique `data-ui` attribute. This makes collab
 | `nav-logo` | `<a>` | Logo link |
 | `nav-features` | `<a>` | Features link |
 | `nav-mcp` | `<a>` | MCP link |
-| `nav-perf` | `<a>` | Performance link |
+| `nav-perf` | `<a>` | The Tech link |
 | `nav-compare` | `<a>` | Compare link |
 | `nav-pronunciation` | `<a>` | Pronunciation link |
 | `nav-download` | `<a>` | Download CTA |

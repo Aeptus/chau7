@@ -4,13 +4,33 @@ import Chau7Core
 /// Stateless tab-routing logic extracted from OverlayTabsModel.
 /// Follows the `CodexSessionResolver` pattern — caseless enum with static methods.
 /// Not `@MainActor` — all inputs are passed as parameters so callers don't need
-/// to cross actor boundaries. The `ClaudeCodeMonitor.shared` access in the Claude
-/// fallback tier is fine because it's a thread-safe singleton.
+/// to cross actor boundaries. CWD resolvers accessed in the fallback tier are
+/// registered by tool monitors at startup via `registerCWDResolver`.
 enum TabResolver {
+
+    // MARK: - CWD Resolver Registry
+
+    /// Closure type: given a directory path, return the most recent session
+    /// activity date for that tool in that directory, or nil if none found.
+    typealias CWDResolver = (String) -> Date?
+
+    private static let resolverLock = NSLock()
+    private static var cwdResolvers: [String: CWDResolver] = [:]
+
+    /// Register a CWD-based session resolver for a tool's provider key.
+    /// Called by tool monitors during setup (e.g. in `start()` or a static
+    /// initializer).  TabResolver itself never references specific monitors.
+    static func registerCWDResolver(forProviderKey key: String, resolver: @escaping CWDResolver) {
+        resolverLock.lock()
+        defer { resolverLock.unlock() }
+        cwdResolvers[key] = resolver
+    }
+
+    // MARK: - Resolution
 
     /// Resolves which tab a notification event should target.
     /// When `target.tabID` is provided and found, returns the exact tab immediately (fast-path).
-    /// Otherwise falls through 5 match tiers: brand → title → deep scan → Claude cwd fallback.
+    /// Otherwise falls through 4 match tiers: brand → title → deep scan → cwd fallback.
     static func resolve(_ target: TabTarget, in tabs: [OverlayTab]) -> OverlayTab? {
         // Fast-path: exact tab ID match
         if let tabID = target.tabID, let exactTab = tabs.first(where: { $0.id == tabID }) {
@@ -47,17 +67,16 @@ enum TabResolver {
         }
         if !deepMatches.isEmpty { return disambiguate(deepMatches, directory: target.directory) }
 
-        // 4) Claude-specific fallback: correlate tabs by cwd against live
-        // Claude monitor sessions and pick the most recently active one.
-        if candidates.contains("claude") {
+        // 4) CWD fallback: correlate tabs by cwd against a registered session
+        // resolver for this tool and pick the most recently active one.
+        if let cwdResolver = registeredResolver(for: candidates) {
             let bestByCwd = tabs.compactMap { tab -> (tab: OverlayTab, lastActivity: Date)? in
                 var activities: [Date] = []
                 for pair in tab.splitController.terminalSessions {
                     let session = pair.1
                     let dir = session.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !dir.isEmpty else { continue }
-                    let sessionCandidates = ClaudeCodeMonitor.shared.sessionCandidates(forDirectory: dir)
-                    if let lastActivity = sessionCandidates.map({ $0.lastActivity }).max() {
+                    if let lastActivity = cwdResolver(dir) {
                         activities.append(lastActivity)
                     }
                 }
@@ -68,7 +87,7 @@ enum TabResolver {
             .max(by: { $0.lastActivity < $1.lastActivity })?.tab
 
             if let bestByCwd {
-                Log.info("TabResolver: resolved '\(target.tool)' via Claude cwd fallback to tab=\(bestByCwd.id)")
+                Log.info("TabResolver: resolved '\(target.tool)' via cwd fallback to tab=\(bestByCwd.id)")
                 return bestByCwd
             }
         }
@@ -92,7 +111,8 @@ enum TabResolver {
     }
 
     /// Builds a set of candidate strings to match against tab labels.
-    /// Includes common aliases (e.g. "claude" ↔ "claude code").
+    /// Derives all aliases from `AIToolRegistry` so adding a new tool is a
+    /// single edit to the registry — no changes needed here.
     static func toolMatchCandidates(for tool: String) -> [String] {
         guard let normalized = normalizedToolLabel(tool) else { return [] }
 
@@ -100,23 +120,47 @@ enum TabResolver {
         var seen = Set(candidates)
 
         func append(_ value: String) {
-            guard seen.insert(value).inserted else { return }
-            candidates.append(value)
+            let lowered = value.lowercased()
+            guard seen.insert(lowered).inserted else { return }
+            candidates.append(lowered)
         }
 
-        switch normalized {
-        case "claude":
-            append("claude code")
-        case "codex":
-            append("openai codex")
-        default:
-            break
+        // Find the matching tool definition and pull in all its known names
+        if let toolDef = AIToolRegistry.allTools.first(where: { def in
+            def.displayName.lowercased() == normalized
+            || def.commandNames.contains(normalized)
+            || def.resumeProviderKey == normalized
+        }) {
+            append(toolDef.displayName)
+            if let key = toolDef.resumeProviderKey { append(key) }
+            for cmd in toolDef.commandNames { append(cmd) }
+            // Include output patterns that double as display labels
+            for pattern in toolDef.outputPatterns { append(pattern) }
         }
 
         return candidates
     }
 
     // MARK: - Private
+
+    /// Looks up the registered CWD resolver for the tool matching the given
+    /// candidates.  Returns nil if no resolver is registered for this tool.
+    private static func registeredResolver(for candidates: [String]) -> CWDResolver? {
+        // Find the provider key for the tool
+        let providerKey: String? = candidates.lazy.compactMap { candidate in
+            AIToolRegistry.allTools.first { def in
+                def.displayName.lowercased() == candidate
+                || def.commandNames.contains(candidate)
+                || def.resumeProviderKey == candidate
+            }?.resumeProviderKey
+        }.first
+
+        guard let providerKey else { return nil }
+
+        resolverLock.lock()
+        defer { resolverLock.unlock() }
+        return cwdResolvers[providerKey]
+    }
 
     /// When a directory hint is available, narrow a set of matching tabs
     /// to the one whose session cwd best matches the event directory.

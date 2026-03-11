@@ -123,17 +123,25 @@ final class RemoteIPCServer: ObservableObject {
         let data = FrameParser.packForTransport(frame)
 
         queue.async { [weak self] in
-            data.withUnsafeBytes { rawBuffer in
-                let written = write(fd, rawBuffer.baseAddress, rawBuffer.count)
-                if written < 0 {
-                    let err = String(cString: strerror(errno))
-                    self?.logger.error("IPC write failed: \(err)")
-                    if errno == EPIPE {
-                        DispatchQueue.main.async {
-                            self?.onClientDisconnected?()
-                        }
-                    }
+            guard let self else { return }
+
+            var offset = 0
+            while offset < data.count {
+                let written = data.withUnsafeBytes { rawBuffer in
+                    let base = rawBuffer.baseAddress?.advanced(by: offset)
+                    return write(fd, base, rawBuffer.count - offset)
                 }
+
+                guard written > 0 else {
+                    let err = String(cString: strerror(errno))
+                    self.logger.error("IPC write failed: \(err)")
+                    Task { @MainActor [weak self] in
+                        self?.disconnectClient(notify: true)
+                    }
+                    return
+                }
+
+                offset += written
             }
         }
     }
@@ -184,10 +192,9 @@ final class RemoteIPCServer: ObservableObject {
         var readBuffer = [UInt8](repeating: 0, count: 4096)
         let bytesRead = read(clientFD, &readBuffer, readBuffer.count)
         if bytesRead <= 0 {
-            DispatchQueue.main.async { [weak self] in
-                self?.onClientDisconnected?()
+            Task { @MainActor [weak self] in
+                self?.disconnectClient(notify: true)
             }
-            clientSource?.cancel()
             return
         }
 
@@ -206,6 +213,25 @@ final class RemoteIPCServer: ObservableObject {
             DispatchQueue.main.async { [weak self] in
                 self?.onFrame?(frame)
             }
+        }
+    }
+
+    private func disconnectClient(notify: Bool) {
+        let hadClient = clientFD >= 0
+
+        if let source = clientSource {
+            clientSource = nil
+            source.cancel()
+        } else if clientFD >= 0 {
+            close(clientFD)
+            clientFD = -1
+        }
+
+        buffer.removeAll(keepingCapacity: true)
+
+        guard notify, hadClient else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.onClientDisconnected?()
         }
     }
 }

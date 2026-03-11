@@ -24,7 +24,7 @@
 - Telemetry & Analytics: run_get, run_list, run_tool_calls, run_transcript, run_tag, run_latest_for_repo, session_list, session_current
 - Resources: tab://list, session://list, run://latest, config://mcp
 
-## Performance Pipeline
+## Tech Stack
 - Input: IOKit HID (bypasses NSEvent for sub-10ms latency)
 - Parse: SIMD-accelerated Rust (16-32 byte width)
 - Buffer: Lock-free SPSC ring buffer (zero contention)
@@ -35,7 +35,7 @@
 ## Pages
 - [Home](index.html): Overview and download
 - [MCP Tools](mcp.html): 20 MCP tools, auto-registration, safety controls
-- [Performance](performance.html): Rust+Metal rendering pipeline
+- [The Tech](the-tech.html): Rust parsing, dangerous-command guardrails, and the Metal rendering pipeline
 - [Features](features.html): Full 185-feature catalog
 - [Compare](compare.html): vs iTerm2, Warp, Alacritty, Kitty, Apple Terminal, VSCode
 
@@ -84,9 +84,7 @@
 
 ### GPU Rendering
 - [Metal Rendering](features/metal-rendering.html): Hardware-accelerated rendering via Apple Metal API with glyph atlas and dirty region tracking. (differentiator)
-- [IOSurface Display](features/iosurface-display.html): Direct GPU-to-display via IOSurface, bypassing the macOS window compositor for zero-copy display. (differentiator)
 - [SIMD Parsing](features/simd-parsing.html): 16-32 byte SIMD-accelerated ANSI escape parsing in Rust for cache-line-speed throughput. (differentiator)
-- [IOKit HID Input](features/iokit-hid-input.html): Bypasses NSEvent queue for raw keyboard events with sub-millisecond overhead. (differentiator)
 - [Triple Buffering](features/triple-buffering.html): Atomic-swap triple buffer ensures no tearing and no render blocking between parser and GPU.
 - [Lock-Free SPSC Buffer](features/lock-free-spsc-buffer.html): Zero-contention PTY data pipeline between reader and parser threads.
 
@@ -107,7 +105,7 @@
 
 ### Clipboard
 - [Clipboard History](features/clipboard-history.html): Searchable clipboard history with pinning. Persists across sessions.
-- [Paste Confirmation](features/paste-confirmation.html): Warns before pasting multi-line content or content containing newlines to prevent accidental command execution.
+- [Paste Safety](features/paste-confirmation.html): Automatically escapes dangerous shell characters in pasted text to prevent accidental command execution.
 - [Snippets](features/snippets.html): Reusable code snippets with placeholder variables. Insert via command palette or keyboard shortcut.
 
 ### SSH & Remote
@@ -122,16 +120,14 @@
 - [Command History Search](features/command-history-search.html): Fuzzy search through command history with frecency ranking.
 
 ### Customization
-- [100+ Fonts](features/fonts.html): Bundled monospace fonts plus system font support. Variable font weight and size configuration.
+- [Font Selection](features/fonts.html): 5 built-in system monospace fonts plus custom font support. Any installed monospace font works.
 - [Themes](features/themes.html): Built-in themes with full 256-color and true color customization. Import iTerm2 color schemes.
 - [Custom Keybindings](features/custom-keybindings.html): Fully remappable keyboard shortcuts with Vim keybinding presets available.
 - [Cursor Styles](features/cursor-styles.html): Block, beam, and underline cursors with configurable blink rate and color.
-- [Transparency & Blur](features/transparency-blur.html): Window transparency with background blur. Per-profile opacity settings.
-- [Padding & Margins](features/padding-margins.html): Configurable content padding and window margins for precise layout control.
+- [Window Opacity](features/transparency-blur.html): Adjustable window transparency from 30% to 100%.
 
 ### Window Modes
 - [Overlay Mode](features/overlay-mode.html): Floating terminal window above all other apps. Toggle with a global hotkey.
-- [Dropdown (Quake-style)](features/dropdown-quake-style.html): Terminal slides down from the top of the screen with Ctrl+`. Like Quake console.
 - [Fullscreen Mode](features/fullscreen-mode.html): Native macOS fullscreen with menu bar hiding and Space integration.
 - [Menu Bar Only](features/menu-bar-only.html): Run Chau7 as a menu bar app with no Dock icon. Access via menu bar icon or hotkey.
 
@@ -142,9 +138,6 @@
 - [Line Numbers](features/line-numbers.html): Configurable line number gutter with relative line numbers option.
 
 ### Accessibility
-- [VoiceOver Support](features/voiceover-support.html): Full VoiceOver integration for screen reader users with terminal content announcement.
-- [High Contrast Mode](features/high-contrast-mode.html): Respects macOS High Contrast accessibility setting with enhanced border and text contrast.
-- [Reduced Motion](features/reduced-motion.html): Respects macOS Reduced Motion preference. Disables animations system-wide.
 - [Localization (4 Languages)](features/localization.html): Full localization with RTL support. Runtime language switching without restart.
 
 ### Scripting API

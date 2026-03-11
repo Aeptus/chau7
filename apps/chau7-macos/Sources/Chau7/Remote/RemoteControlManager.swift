@@ -26,6 +26,7 @@ final class RemoteControlManager: ObservableObject {
     private var tabIDBySessionIdentifier: [String: UInt32] = [:]
     private var nextTabID: UInt32 = 1
     private var seqCounter: UInt64 = 1
+    private var pendingProtectedInputs: [String: ProtectedRemoteInput] = [:]
 
     private let ipc = RemoteIPCServer.shared
 
@@ -76,6 +77,7 @@ final class RemoteControlManager: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.sendTabList()
+                self?.sendSnapshot(for: 0)
             }
             .store(in: &cancellables)
     }
@@ -243,6 +245,8 @@ final class RemoteControlManager: ObservableObject {
             handleTabSwitch(frame)
         case .input:
             handleInput(frame)
+        case .remoteTelemetry:
+            handleRemoteTelemetry(frame)
         case .approvalResponse:
             handleApprovalResponse(frame)
         case .ping:
@@ -271,6 +275,7 @@ final class RemoteControlManager: ObservableObject {
             let payload = try JSONDecoder().decode(RemoteTabSwitchPayload.self, from: frame.payload)
             if let uuid = uuidByTabID[payload.tabID] {
                 overlayModel.selectTab(id: uuid)
+                sendSnapshot(for: payload.tabID)
             }
         } catch {
             logger.warning("Failed to decode tab switch payload: \(error.localizedDescription)")
@@ -278,19 +283,23 @@ final class RemoteControlManager: ObservableObject {
     }
 
     private func handleInput(_ frame: RemoteFrame) {
-        guard let overlayModel else { return }
-        let session: TerminalSessionModel?
-        if frame.tabID == 0 {
-            session = overlayModel.selectedTab?.session
-        } else if let uuid = uuidByTabID[frame.tabID] {
-            session = overlayModel.tabs.first(where: { $0.id == uuid })?.session
-        } else {
-            session = nil
+        guard let (session, resolvedTabID) = resolveInputTarget(for: frame.tabID),
+              let text = String(data: frame.payload, encoding: .utf8) else {
+            return
         }
-        guard let session else { return }
-        if let text = String(data: frame.payload, encoding: .utf8) {
-            session.sendInput(text)
+
+        if let flaggedCommand = protectedRemoteActionLabel(for: text) {
+            queueProtectedRemoteInput(
+                requestID: UUID().uuidString,
+                text: text,
+                tabID: resolvedTabID,
+                sessionTitle: session.title,
+                flaggedCommand: flaggedCommand
+            )
+            return
         }
+
+        session.sendInput(text)
     }
 
     // MARK: - Approval Frames
@@ -305,10 +314,29 @@ final class RemoteControlManager: ObservableObject {
     private func handleApprovalResponse(_ frame: RemoteFrame) {
         do {
             let response = try JSONDecoder().decode(ApprovalResponsePayload.self, from: frame.payload)
+            if let protectedInput = pendingProtectedInputs.removeValue(forKey: response.requestID) {
+                if response.approved,
+                   let session = session(for: protectedInput.tabID) {
+                    session.sendInput(protectedInput.text)
+                    logger.info("Remote: protected action approved for tab \(protectedInput.tabID)")
+                } else {
+                    logger.info("Remote: protected action denied for tab \(protectedInput.tabID)")
+                }
+                return
+            }
             TerminalControlService.shared.resolveApproval(requestID: response.requestID, approved: response.approved)
             logger.info("Remote: approval response for \(response.requestID): \(response.approved ? "allowed" : "denied")")
         } catch {
             logger.warning("Failed to decode approval response: \(error.localizedDescription)")
+        }
+    }
+
+    private func handleRemoteTelemetry(_ frame: RemoteFrame) {
+        do {
+            let event = try JSONDecoder().decode(RemoteClientTelemetryEvent.self, from: frame.payload)
+            TelemetryStore.shared.insertRemoteClientEvent(event)
+        } catch {
+            logger.warning("Failed to decode remote telemetry event: \(error.localizedDescription)")
         }
     }
 
@@ -371,6 +399,69 @@ final class RemoteControlManager: ObservableObject {
     private func nextSeq() -> UInt64 {
         defer { seqCounter &+= 1 }
         return seqCounter
+    }
+
+    private func resolveInputTarget(for tabID: UInt32) -> (TerminalSessionModel, UInt32)? {
+        guard let overlayModel else { return nil }
+        if tabID == 0 {
+            guard let selectedTab = overlayModel.selectedTab?.session,
+                  let resolvedTabID = tabIDByUUID[overlayModel.selectedTabID] else {
+                return nil
+            }
+            return (selectedTab, resolvedTabID)
+        }
+
+        guard let uuid = uuidByTabID[tabID],
+              let session = overlayModel.tabs.first(where: { $0.id == uuid })?.session else {
+            return nil
+        }
+        return (session, tabID)
+    }
+
+    private func session(for tabID: UInt32) -> TerminalSessionModel? {
+        if tabID == 0 {
+            return overlayModel?.selectedTab?.session
+        }
+
+        guard let overlayModel,
+              let uuid = uuidByTabID[tabID] else {
+            return nil
+        }
+        return overlayModel.tabs.first(where: { $0.id == uuid })?.session
+    }
+
+    private func queueProtectedRemoteInput(
+        requestID: String,
+        text: String,
+        tabID: UInt32,
+        sessionTitle: String,
+        flaggedCommand: String
+    ) {
+        pendingProtectedInputs[requestID] = ProtectedRemoteInput(
+            tabID: tabID,
+            text: text,
+            flaggedCommand: flaggedCommand
+        )
+
+        let payload = ApprovalRequestPayload(
+            requestID: requestID,
+            command: text.trimmingCharacters(in: .whitespacesAndNewlines),
+            flaggedCommand: flaggedCommand,
+            timestamp: ISO8601DateFormatter().string(from: Date())
+        )
+
+        guard let data = try? JSONEncoder().encode(payload) else {
+            pendingProtectedInputs.removeValue(forKey: requestID)
+            logger.error("Remote: failed to encode protected action approval payload")
+            return
+        }
+
+        sendApprovalRequest(requestID: requestID, payload: data)
+        logger.warning("Remote: queued protected action approval for tab \(tabID) (\(sessionTitle))")
+    }
+
+    private func protectedRemoteActionLabel(for input: String) -> String? {
+        RemoteProtection.flaggedTerminationAction(for: input)
     }
 
     private func dataDirectory() -> URL {
@@ -597,4 +688,10 @@ struct RemoteTabSwitchPayload: Codable, Equatable {
 
 struct RemoteSessionStatus: Codable, Equatable {
     let status: String
+}
+
+private struct ProtectedRemoteInput {
+    let tabID: UInt32
+    let text: String
+    let flaggedCommand: String
 }

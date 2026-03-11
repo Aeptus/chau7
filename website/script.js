@@ -208,8 +208,10 @@
         const filterBar = document.querySelector('.filter-bar');
         if (!filterBar) return;
 
+        const featureSection = filterBar.closest('.features-section') || document;
         const searchInput = filterBar.querySelector('.filter-search');
         const pills = filterBar.querySelectorAll('.filter-pill');
+        const randomButton = featureSection.querySelector('.filter-random-btn');
         const grid = document.getElementById('feature-grid');
         const cards = grid.querySelectorAll('.catalog-card');
         const headers = grid.querySelectorAll('.catalog-category-header');
@@ -246,6 +248,10 @@
             if (noResults) {
                 noResults.style.display = visibleCount === 0 ? 'block' : 'none';
             }
+
+            if (randomButton) {
+                randomButton.disabled = visibleCount === 0;
+            }
         }
 
         pills.forEach(pill => {
@@ -260,6 +266,50 @@
         if (searchInput) {
             searchInput.addEventListener('input', filterCards);
         }
+
+        if (randomButton) {
+            randomButton.addEventListener('click', () => {
+                const visibleCards = Array.from(cards).filter(card => card.style.display !== 'none');
+                if (visibleCards.length === 0) return;
+
+                const randomCard = visibleCards[Math.floor(Math.random() * visibleCards.length)];
+                const href = randomCard.getAttribute('href');
+                if (href) {
+                    window.location.href = href;
+                }
+            });
+        }
+
+        filterCards();
+    }
+
+    /* ── Random feature jump (feature pages) ─────── */
+    function initFeaturePageRandom() {
+        const buttons = document.querySelectorAll('.feature-random-btn');
+        if (buttons.length === 0) return;
+
+        const featurePages = Array.isArray(window.CHAU7_FEATURE_PAGES)
+            ? window.CHAU7_FEATURE_PAGES
+            : [];
+
+        function normalizeFeaturePath(path) {
+            return String(path || '')
+                .replace(/index\.html$/, '')
+                .replace(/\.html$/, '')
+                .replace(/\/+$/, '');
+        }
+
+        const currentPath = normalizeFeaturePath(window.location.pathname);
+        const candidates = featurePages.filter(path => normalizeFeaturePath(path) !== currentPath);
+
+        buttons.forEach(button => {
+            button.disabled = candidates.length === 0;
+            button.addEventListener('click', () => {
+                if (candidates.length === 0) return;
+                const next = candidates[Math.floor(Math.random() * candidates.length)];
+                window.location.href = next;
+            });
+        });
     }
 
     /* ── Comparison table scroll hint ────────────── */
@@ -467,8 +517,9 @@
         initSmoothLinks();
         initActiveNav();
         initMobileNav();
-        initFeatureFilter();
-        initTableScrollHint();
+    initFeatureFilter();
+    initFeaturePageRandom();
+    initTableScrollHint();
         initHeroRotator();
         initCarousel();
         initPillarCarousel();

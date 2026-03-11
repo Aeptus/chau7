@@ -13,16 +13,18 @@ TEMPLATE = """\
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
     <title>{title} | Chau7 Terminal</title>
     <meta name="description" content="{meta_desc}">
     <meta property="og:title" content="{title} | Chau7">
     <meta property="og:description" content="{meta_desc}">
-    <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
+    <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
-    <link rel="canonical" href="{slug}.html">
-    <link rel="stylesheet" href="../style.css">
-    <link rel="stylesheet" href="../feature-page.css">
+    <link rel="canonical" href="https://chau7.sh/features/{slug}">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/feature-page.css">
     <script type="application/ld+json">
     [{{
         "@context": "https://schema.org",
@@ -36,9 +38,9 @@ TEMPLATE = """\
         "@context": "https://schema.org",
         "@type": "BreadcrumbList",
         "itemListElement": [
-            {{ "@type": "ListItem", "position": 1, "name": "Home", "item": "../index.html" }},
-            {{ "@type": "ListItem", "position": 2, "name": "Features", "item": "../features.html" }},
-            {{ "@type": "ListItem", "position": 3, "name": "{category_name}", "item": "../features.html#{category_id}" }},
+            {{ "@type": "ListItem", "position": 1, "name": "Home", "item": "https://chau7.sh/" }},
+            {{ "@type": "ListItem", "position": 2, "name": "Features", "item": "https://chau7.sh/features" }},
+            {{ "@type": "ListItem", "position": 3, "name": "{category_name}", "item": "https://chau7.sh/features#{category_id}" }},
             {{ "@type": "ListItem", "position": 4, "name": "{title}" }}
         ]
     }},
@@ -53,19 +55,19 @@ TEMPLATE = """\
     <!-- Nav -->
     <nav class="nav">
         <div class="nav-inner">
-            <a href="../index.html" class="nav-logo">
-                <img src="../logo.png" alt="Chau7" class="logo-icon">
+            <a href="/" class="nav-logo">
+                <img src="/logo.png" alt="Chau7" class="logo-icon">
                 <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
             </a>
             <button class="nav-hamburger" aria-label="Toggle menu">
                 <span></span><span></span><span></span>
             </button>
             <div class="nav-links">
-                <a href="../features.html">Features</a>
-                <a href="../mcp.html">MCP</a>
-                <a href="../performance.html">Performance</a>
-                <a href="../compare.html">Compare</a>
-                <a href="../pronunciation.html">How to say it</a>
+                <a href="/features">Features</a>
+                <a href="/mcp">MCP</a>
+                <a href="/the-tech">The Tech</a>
+                <a href="/compare">Compare</a>
+                <a href="/pronunciation">How to say it</a>
                 <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
             </div>
         </div>
@@ -74,11 +76,11 @@ TEMPLATE = """\
     <main>
         <!-- Breadcrumb -->
         <div class="breadcrumb">
-            <a href="../index.html">Home</a>
+            <a href="/">Home</a>
             <span class="breadcrumb-sep">/</span>
-            <a href="../features.html">Features</a>
+            <a href="/features">Features</a>
             <span class="breadcrumb-sep">/</span>
-            <a href="../features.html#{category_id}">{category_name}</a>
+            <a href="/features#{category_id}">{category_name}</a>
             <span class="breadcrumb-sep">/</span>
             <span class="breadcrumb-current">{title}</span>
         </div>
@@ -123,6 +125,9 @@ TEMPLATE = """\
                 <div class="related-features-grid">
 {related_html}
                 </div>
+                <div class="feature-random-row">
+                    <button type="button" class="btn-outline feature-random-btn">Discover a new feature at random</button>
+                </div>
             </div>
         </section>
 
@@ -154,23 +159,34 @@ TEMPLATE = """\
             <div class="footer-grid">
                 <div class="footer-brand-col">
                     <div class="footer-brand">
-                        <img src="../logo.png" alt="Chau7" class="logo-icon">
+                        <img src="/logo.png" alt="Chau7" class="logo-icon">
                         <span class="logo-text">Chau7</span>
                     </div>
                     <p class="footer-tagline">The AI-native terminal for macOS.</p>
                 </div>
                 <div class="footer-nav-col">
                     <h4>Product</h4>
-                    <a href="../features.html">Features</a>
-                    <a href="../mcp.html">MCP Tools</a>
-                    <a href="../performance.html">Performance</a>
-                    <a href="../compare.html">Compare</a>
+                    <a href="/features">Features</a>
+                    <a href="/mcp">MCP Tools</a>
+                    <a href="/the-tech">The Tech</a>
+                    <a href="/compare">Compare</a>
                 </div>
                 <div class="footer-nav-col">
                     <h4>Resources</h4>
                     <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
                     <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
-                    <a href="../llms.txt">llms.txt</a>
+                    <a href="/llms.txt">llms.txt</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Colophon</h4>
+                    <a href="/golden-ratio.html">The Golden Ratio</a>
+                    <a href="/typography.html">Typography</a>
+                    <a href="/pronunciation">How to Say It</a>
+                </div>
+                <div class="footer-nav-col">
+                    <h4>Legal</h4>
+                    <a href="/legal">Legal Notice</a>
+                    <a href="/mentions-legales">Mentions L&eacute;gales</a>
                 </div>
             </div>
             <div class="footer-bottom">
@@ -179,7 +195,10 @@ TEMPLATE = """\
         </div>
     </footer>
 
-    <script src="../script.js"></script>
+    <script>
+        window.CHAU7_FEATURE_PAGES = {feature_urls_json};
+    </script>
+    <script src="/script.js"></script>
 </body>
 </html>"""
 
@@ -208,7 +227,7 @@ def gen_related(features, current_slug):
         if len(out) >= 3:
             break
         star = ' <span class="differentiator-star" title="Differentiator">&#9733;</span>' if f.get("star") else ""
-        out.append(f"""                    <a class="catalog-card" href="{f['slug']}.html">
+        out.append(f"""                    <a class="catalog-card" href="/features/{f['slug']}">
                         <h4>{h.escape(f['title'])}{star}</h4>
                         <p>{h.escape(f['short_desc'])}</p>
                     </a>""")
@@ -249,9 +268,16 @@ def generate_page(feat, category_features):
         faq_html=gen_faq_html(feat["faqs"]),
         faq_schema=gen_faq_schema(feat["faqs"]),
         cta=feat.get("cta", f"Try {feat['title']} in Chau7"),
+        feature_urls_json=json.dumps([f'/features/{f["slug"]}' for f in ALL_FEATURES]),
     )
-    path = os.path.join(OUTDIR, f"{feat['slug']}.html")
-    with open(path, "w") as f:
+    flat_path = os.path.join(OUTDIR, f"{feat['slug']}.html")
+    with open(flat_path, "w") as f:
+        f.write(page)
+
+    clean_dir = os.path.join(OUTDIR, feat["slug"])
+    os.makedirs(clean_dir, exist_ok=True)
+    clean_path = os.path.join(clean_dir, "index.html")
+    with open(clean_path, "w") as f:
         f.write(page)
 
 
@@ -261,6 +287,11 @@ with open(DATA_FILE) as f:
     data = json.load(f)
 
 count = 0
+ALL_FEATURES = []
+for cat in data["categories"]:
+    for feat in cat["features"]:
+        ALL_FEATURES.append(feat)
+
 for cat in data["categories"]:
     for feat in cat["features"]:
         feat["category_name"] = cat["name"]
