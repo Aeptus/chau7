@@ -85,21 +85,14 @@ struct TabsSettingsView: View {
             .disabled(settings.customTitleOnly)
 
             SettingsToggle(
-                label: L("settings.tabs.showCTOIndicator", "Token Optimization Indicator"),
-                help: L("settings.tabs.showCTOIndicator.help", "Show the bolt icon for CTO token optimization status"),
-                isOn: $settings.showTabCTOIndicator
-            )
-            .disabled(settings.customTitleOnly)
-
-            SettingsToggle(
-                label: L("settings.tabs.allowCTOToggle", "Allow CTO Toggle from Tab Icon"),
+                label: L("settings.tabs.allowCTOToggle", "Allow CTO Toggle in Hover Card"),
                 help: L(
                     "settings.tabs.allowCTOToggle.help",
-                    "Allow clicking the CTO tab icon to toggle per-tab override. Disable to prevent accidental toggles while keeping override icons visible."
+                    "Show a toggle button in the tab hover card to control per-tab token optimization override."
                 ),
                 isOn: $settings.allowTabCTOToggle
             )
-            .disabled(settings.customTitleOnly || !settings.showTabCTOIndicator)
+            .disabled(settings.customTitleOnly)
 
             SettingsToggle(
                 label: L("settings.tabs.showBroadcastIndicator", "Broadcast Indicator"),

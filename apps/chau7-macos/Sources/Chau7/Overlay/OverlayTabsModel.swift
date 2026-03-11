@@ -1683,6 +1683,7 @@ final class OverlayTabsModel: ObservableObject {
         MainActor.assumeIsolated {
             updateCurrentCandidate(from: ProxyIPCServer.shared.pendingCandidates)
             updateCurrentTask(from: ProxyIPCServer.shared.activeTasks)
+            ConfigFileWatcher.shared.updateActiveDirectory(selectedTab?.session?.currentDirectory)
         }
 
         // 6. Mark terminal as ready after a brief delay (allows snapshot to display first)

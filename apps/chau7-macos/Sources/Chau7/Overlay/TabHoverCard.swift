@@ -38,7 +38,8 @@ struct TabHoverCard: View {
                         } else {
                             overlayModel.hoverCardMouseExited()
                         }
-                    }
+                    },
+                    onToggleCTO: { overlayModel.toggleTokenOpt(for: tab.id) }
                 )
                 .frame(width: cardWidth)
                 .fixedSize(horizontal: false, vertical: true)
@@ -58,6 +59,7 @@ private struct TabHoverCardContent: View {
     let isSuspended: Bool
     let isBroadcastIncluded: Bool
     let onHoverChanged: (Bool) -> Void
+    let onToggleCTO: () -> Void
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
@@ -346,6 +348,7 @@ private struct TabHoverCardContent: View {
         if mode != .off {
             let isActive = tab.isTokenOptActive
             let hasOverride = tab.optimizerOverrideState != nil
+            let canToggle = FeatureSettings.shared.allowTabCTOToggle
             HStack(spacing: 8) {
                 Image(systemName: "wand.and.stars")
                     .font(.system(size: 11))
@@ -366,6 +369,16 @@ private struct TabHoverCardContent: View {
                     Text(isActive ? "Active" : "Off")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundStyle(isActive ? .green : .secondary)
+                }
+
+                if canToggle {
+                    Button(action: onToggleCTO) {
+                        Image(systemName: "arrow.left.arrow.right")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help(L("cto.hovercard.toggle", "Toggle token optimization for this tab"))
                 }
             }
         }
