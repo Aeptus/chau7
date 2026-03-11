@@ -366,37 +366,41 @@ struct SettingsRootView: View {
     }
 
     var body: some View {
-        NavigationSplitView {
-            VStack(spacing: 0) {
-                // Search Bar
-                SettingsSearchBar(searchQuery: $searchQuery)
+        VStack(spacing: 0) {
+            ProfileSelectorBar(overlayModel: overlayModel)
 
-                // Section List — grouped when browsing, flat when searching
-                List(selection: $selection) {
-                    if isSearching {
-                        ForEach(filteredSections) { section in
-                            sidebarRow(for: section)
-                        }
-                    } else {
-                        ForEach(SettingsSectionGroup.allCases) { group in
-                            Section(header: Text(group.title)) {
-                                ForEach(group.sections, id: \.self) { section in
-                                    sidebarRow(for: section)
+            NavigationSplitView {
+                VStack(spacing: 0) {
+                    // Search Bar
+                    SettingsSearchBar(searchQuery: $searchQuery)
+
+                    // Section List — grouped when browsing, flat when searching
+                    List(selection: $selection) {
+                        if isSearching {
+                            ForEach(filteredSections) { section in
+                                sidebarRow(for: section)
+                            }
+                        } else {
+                            ForEach(SettingsSectionGroup.allCases) { group in
+                                Section(header: Text(group.title)) {
+                                    ForEach(group.sections, id: \.self) { section in
+                                        sidebarRow(for: section)
+                                    }
                                 }
                             }
                         }
                     }
+                    .listStyle(.sidebar)
                 }
-                .listStyle(.sidebar)
+                .frame(minWidth: 220)
+            } detail: {
+                SettingsDetailView(
+                    selection: selection,
+                    model: model,
+                    overlayModel: overlayModel,
+                    searchQuery: searchQuery
+                )
             }
-            .frame(minWidth: 220)
-        } detail: {
-            SettingsDetailView(
-                selection: selection,
-                model: model,
-                overlayModel: overlayModel,
-                searchQuery: searchQuery
-            )
         }
         .frame(minWidth: 860, minHeight: 650)
         .localized()
