@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reduced Motion — Chau7 Terminal</title>
+    <title>Reduced Motion | Chau7 Terminal</title>
     <meta name="description" content="Chau7 respects macOS Reduced Motion preference. All animations are replaced with instant transitions for users sensitive to motion.">
-    <meta property="og:title" content="Reduced Motion — Chau7">
+    <meta property="og:title" content="Reduced Motion | Chau7">
     <meta property="og:description" content="Chau7 respects macOS Reduced Motion preference. All animations are replaced with instant transitions for users sensitive to motion.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="accessibility">
+        <section class="hero hero-feature" data-category="accessibility" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">ACCESSIBILITY</div>
                 <h1 class="hero-title">Reduced Motion</h1>
-                <p class="hero-subtitle">Instant transitions, zero unnecessary motion</p>
+                <p class="hero-subtitle">Respects macOS Reduce Motion. Instant transitions, zero unnecessary animation.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -96,7 +96,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Chau7 checks the macOS Reduce Motion accessibility preference and disables all non-essential animations when it is enabled. Tab transitions, dropdown slide animations, window resize effects, and UI state changes all switch to instant transitions. This includes the Quake-style dropdown, which snaps into position rather than sliding, and tab switching, which cuts rather than crossfading.</p>
@@ -104,13 +104,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Motion sensitivity and vestibular disorders affect a meaningful number of developers. Animations that feel polished to one person can cause discomfort or disorientation for another. Respecting the system reduced motion preference means Chau7 works correctly for everyone without requiring users to hunt for per-app animation toggles.</p>
+                    <p>Motion sensitivity affects a meaningful number of developers. Animations that feel polished to one person can trigger discomfort in another. Chau7 respects the macOS Reduce Motion preference and replaces all animations with instant transitions. Every feature works the same, just without the motion.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -131,7 +131,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -152,11 +152,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Download Chau7 for a terminal that respects your motion preferences</h2>
+                    <h2>All the features, none of the unnecessary motion.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

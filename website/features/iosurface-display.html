@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IOSurface Display — Chau7 Terminal</title>
+    <title>IOSurface Display | Chau7 Terminal</title>
     <meta name="description" content="Chau7 renders directly to an IOSurface for zero-copy GPU-to-display output, eliminating compositor overhead on macOS.">
-    <meta property="og:title" content="IOSurface Display — Chau7">
+    <meta property="og:title" content="IOSurface Display | Chau7">
     <meta property="og:description" content="Chau7 renders directly to an IOSurface for zero-copy GPU-to-display output, eliminating compositor overhead on macOS.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="rendering">
+        <section class="hero hero-feature" data-category="rendering" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-purple">GPU RENDERING</div>
                 <h1 class="hero-title">IOSurface Display</h1>
-                <p class="hero-subtitle">Zero-copy from GPU to display. No compositor detour, no extra blit, no wasted frame.</p>
+                <p class="hero-subtitle">GPU to display. No compositor. No extra copy. No wasted frame.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,7 +97,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Standard macOS applications render into a backing store that the WindowServer compositor then blits into the final display framebuffer. This introduces an extra copy and at least one frame of latency. Chau7 bypasses this by rendering directly into an IOSurface, a cross-process GPU memory object that can be handed to the display subsystem without an intermediate copy.</p>
@@ -106,13 +106,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>The macOS compositor adds a full frame of latency and a GPU-to-GPU copy for every window on screen. For a terminal emulator that updates many times per second, this overhead is measurable. IOSurface display removes it entirely, giving Chau7 the lowest possible display latency on macOS without resorting to fullscreen exclusive mode.</p>
+                    <p>The macOS compositor adds a full frame of latency and a GPU-to-GPU copy for every window. For a terminal where you notice every millisecond of input lag, that is unacceptable overhead. IOSurface lets Chau7 send rendered frames directly from GPU memory to the display, bypassing the compositor entirely. Zero extra copies. Zero extra latency.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -133,7 +133,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -150,11 +150,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Experience zero-copy display performance. Download Chau7.</h2>
+                    <h2>Skip the compositor entirely. Your frames deserve better.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

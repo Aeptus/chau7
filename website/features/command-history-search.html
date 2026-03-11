@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Command History Search — Chau7 Terminal</title>
+    <title>Command History Search | Chau7 Terminal</title>
     <meta name="description" content="Chau7 replaces Ctrl+R with a visual fuzzy search through command history, ranked by frecency for faster recall of past commands.">
-    <meta property="og:title" content="Command History Search — Chau7">
+    <meta property="og:title" content="Command History Search | Chau7">
     <meta property="og:description" content="Chau7 replaces Ctrl+R with a visual fuzzy search through command history, ranked by frecency for faster recall of past commands.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -35,7 +35,7 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does it work with zsh, bash, and fish history?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 detects your active shell and reads from the appropriate history file — ~/.zsh_history, ~/.bash_history, or ~/.local/share/fish/fish_history. All standard history formats are supported."}},{"@type":"Question","name":"Can I delete entries from history search?","acceptedAnswer":{"@type":"Answer","text":"Yes. Highlight any entry and press a delete shortcut to remove it from both the search results and the underlying shell history file. Useful for removing commands that contained typos or sensitive information."}},{"@type":"Question","name":"Does frecency ranking replace my shell&#x27;s history order?","acceptedAnswer":{"@type":"Answer","text":"No. Frecency ranking only affects the display order in Chau7&#x27;s search interface. Your shell&#x27;s history file remains in chronological order, and native shell features like the up-arrow key continue to work as expected."}}]
+        "mainEntity": [{"@type":"Question","name":"Does it work with zsh, bash, and fish history?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 detects your active shell and reads from the appropriate history file: ~/.zsh_history, ~/.bash_history, or ~/.local/share/fish/fish_history. All standard history formats are supported."}},{"@type":"Question","name":"Can I delete entries from history search?","acceptedAnswer":{"@type":"Answer","text":"Yes. Highlight any entry and press a delete shortcut to remove it from both the search results and the underlying shell history file. Useful for removing commands that contained typos or sensitive information."}},{"@type":"Question","name":"Does frecency ranking replace my shell&#x27;s history order?","acceptedAnswer":{"@type":"Answer","text":"No. Frecency ranking only affects the display order in Chau7&#x27;s search interface. Your shell&#x27;s history file remains in chronological order, and native shell features like the up-arrow key continue to work as expected."}}]
     }]
     </script>
 </head>
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="search">
+        <section class="hero hero-feature" data-category="search" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SEARCH</div>
                 <h1 class="hero-title">Command History Search</h1>
-                <p class="hero-subtitle">Better than Ctrl+R. Fuzzy-search your command history with frecency ranking.</p>
+                <p class="hero-subtitle">Better than Ctrl+R. Fuzzy search with frecency ranking. Find commands by what you remember, not exact text.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,22 +97,22 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
-                <p>Chau7 intercepts Ctrl+R and replaces the default reverse-search with a visual fuzzy-search interface. Your entire command history appears in a filterable list. Type to narrow results with fuzzy matching — characters do not need to be contiguous, so typing 'dkr ps' matches 'docker compose ps' and 'docker ps -a'. Results update in real time as you type.</p>
-                <p>Results are ranked by frecency — a combination of frequency and recency. Commands you use often and recently appear at the top, while old one-off commands sink to the bottom. This means the command you are looking for is almost always in the first few results, even with a vague query.</p>
+                <p>Chau7 intercepts Ctrl+R and replaces the default reverse-search with a visual fuzzy-search interface. Your entire command history appears in a filterable list. Type to narrow results with fuzzy matching: characters do not need to be contiguous, so typing 'dkr ps' matches 'docker compose ps' and 'docker ps -a'. Results update in real time as you type.</p>
+                <p>Results are ranked by frecency: a combination of frequency and recency. Commands you use often and recently appear at the top, while old one-off commands sink to the bottom. This means the command you are looking for is almost always in the first few results, even with a vague query.</p>
                 <p>The history search reads from your shell's history file (zsh, bash, or fish) and supplements it with commands executed in the current session. Duplicate entries are collapsed, and failed commands can be optionally filtered out. Select a result with Enter to insert it at the cursor, or press Tab to insert it for editing before execution.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Ctrl+R is one of the most powerful shell features that most developers underuse because the default interface is terrible — a single-line, sequential search through thousands of entries with no visual feedback. Replacing it with a fuzzy, frecency-ranked visual search turns command recall from a frustration into an instant lookup, providing the same leap in efficiency that fzf brought to shell users who discovered it.</p>
+                    <p>Ctrl+R is powerful but the default interface is terrible: a single line of text, exact substring matching, and you have to cycle through results one at a time. Chau7 provides a proper search UI with fuzzy matching and frecency ranking (frequent + recent commands score higher). Find any command by typing fragments of what you remember.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -129,13 +129,13 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
                         <summary>Does it work with zsh, bash, and fish history?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7 detects your active shell and reads from the appropriate history file — ~/.zsh_history, ~/.bash_history, or ~/.local/share/fish/fish_history. All standard history formats are supported.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7 detects your active shell and reads from the appropriate history file: ~/.zsh_history, ~/.bash_history, or ~/.local/share/fish/fish_history. All standard history formats are supported.</p></div>
                     </details>
                     <details>
                         <summary>Can I delete entries from history search?</summary>
@@ -150,11 +150,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Upgrade your Ctrl+R — download Chau7</h2>
+                    <h2>Upgrade your Ctrl+R. You deserve fuzzy search.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

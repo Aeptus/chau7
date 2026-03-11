@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MCP Resources — Chau7 Terminal</title>
+    <title>MCP Resources | Chau7 Terminal</title>
     <meta name="description" content="Chau7 exposes 4 MCP resource endpoints for read-only access to tabs, sessions, runs, and server configuration.">
-    <meta property="og:title" content="MCP Resources — Chau7">
+    <meta property="og:title" content="MCP Resources | Chau7">
     <meta property="og:description" content="Chau7 exposes 4 MCP resource endpoints for read-only access to tabs, sessions, runs, and server configuration.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="mcp">
+        <section class="hero hero-feature" data-category="mcp" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-alt">MCP SERVER</div>
                 <h1 class="hero-title">MCP Resources</h1>
-                <p class="hero-subtitle">Read-only resource endpoints let agents query terminal state without executing any commands.</p>
+                <p class="hero-subtitle">Read-only endpoints for agents that need to look before they leap.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,21 +97,21 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>MCP distinguishes between tools (actions that change state) and resources (read-only data endpoints). Chau7 exposes four resources: <code>tab://list</code> returns all open tabs with their status and metadata, <code>session://list</code> returns active AI sessions with run counts, <code>run://latest</code> returns the most recent telemetry run for a repository, and <code>config://mcp</code> returns the current MCP server configuration.</p>
-                <p>Resources are useful for agents that need to understand context before acting. An agent can read <code>tab://list</code> to see what tabs exist, check <code>session://list</code> to understand concurrent activity, and inspect <code>run://latest</code> to review what happened in the last interaction — all without any side effects or state changes.</p>
+                <p>Resources are useful for agents that need to understand context before acting. An agent can read <code>tab://list</code> to see what tabs exist, check <code>session://list</code> to understand concurrent activity, and inspect <code>run://latest</code> to review what happened in the last interaction: all without any side effects or state changes.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Agents frequently need to inspect terminal state as part of planning — checking which tabs are open, what sessions are active, or what the last run produced. Resources provide this information through a clean, read-only interface that cannot accidentally modify anything, making them safe to call at any point in an agent's decision process.</p>
+                    <p>Agents frequently need to inspect terminal state before acting: which tabs are open, what sessions are running, what the latest telemetry shows. MCP resources provide that context through read-only endpoints that cannot modify state. An agent planning a multi-step workflow can check current tab count, review active sessions, and read the latest run data before deciding what to do next.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -121,7 +121,7 @@
                     </a>
                     <a class="catalog-card" href="unix-socket-server.html">
                         <h4>Unix Socket Server</h4>
-                        <p>MCP server runs over a local Unix socket — no network exposure, no authentication needed.</p>
+                        <p>MCP server runs over a local Unix socket: no network exposure, no authentication needed.</p>
                     </a>
                     <a class="catalog-card" href="auto-registration.html">
                         <h4>Auto-Registration <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
@@ -132,7 +132,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -149,11 +149,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Safe, read-only terminal access — explore Chau7's MCP resources</h2>
+                    <h2>Let your AI agent read terminal state. Safely. Without executing anything.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

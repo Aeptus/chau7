@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Triple Buffering — Chau7 Terminal</title>
+    <title>Triple Buffering | Chau7 Terminal</title>
     <meta name="description" content="Chau7 uses atomic-swap triple buffering to prevent tearing and render stalls between the terminal parser and GPU renderer.">
-    <meta property="og:title" content="Triple Buffering — Chau7">
+    <meta property="og:title" content="Triple Buffering | Chau7">
     <meta property="og:description" content="Chau7 uses atomic-swap triple buffering to prevent tearing and render stalls between the terminal parser and GPU renderer.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="rendering">
+        <section class="hero hero-feature" data-category="rendering" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-purple">GPU RENDERING</div>
                 <h1 class="hero-title">Triple Buffering</h1>
-                <p class="hero-subtitle">Three buffers, atomic swaps, zero tearing. The parser and GPU never wait on each other.</p>
+                <p class="hero-subtitle">Three buffers, atomic swaps. The parser and GPU never block each other. Zero tearing.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,7 +97,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Chau7 maintains three screen buffers: one being written by the parser, one being read by the Metal renderer, and one completed buffer waiting to be displayed. The parser writes new terminal state into the write buffer at PTY speed without any locks or synchronization. When a frame is complete, an atomic pointer swap makes the write buffer available to the renderer and gives the parser a fresh buffer to fill.</p>
@@ -106,13 +106,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Without triple buffering, a terminal must either lock the screen buffer (causing the parser to stall while the GPU reads) or accept tearing (the GPU reading a partially-updated buffer). Both degrade the experience during heavy output. Triple buffering eliminates both problems, keeping the parser at full throughput and the display tear-free at all times.</p>
+                    <p>Without triple buffering, a terminal must either lock the screen buffer (causing the parser to stall while the GPU reads) or accept tearing artifacts. Chau7 maintains three buffers and rotates them with atomic swaps: the parser always has a buffer to write, the GPU always has a buffer to read, and they never contend. Smooth output at any speed.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -133,7 +133,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -150,11 +150,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Tear-free rendering at any speed. Download Chau7.</h2>
+                    <h2>Tear-free rendering at any output speed. Not a compromise. Good engineering.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Command Palette — Chau7 Terminal</title>
+    <title>Command Palette | Chau7 Terminal</title>
     <meta name="description" content="Chau7 brings the VS Code-style command palette to the terminal with Cmd+Shift+P, making every feature discoverable via fuzzy search.">
-    <meta property="og:title" content="Command Palette — Chau7">
+    <meta property="og:title" content="Command Palette | Chau7">
     <meta property="og:description" content="Chau7 brings the VS Code-style command palette to the terminal with Cmd+Shift+P, making every feature discoverable via fuzzy search.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -35,7 +35,7 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Can I assign custom keyboard shortcuts through the palette?","acceptedAnswer":{"@type":"Answer","text":"Yes. Right-click any command in the palette to assign or change its keyboard shortcut. The new binding takes effect immediately and persists across sessions."}},{"@type":"Question","name":"Does it search settings as well as commands?","acceptedAnswer":{"@type":"Answer","text":"Yes. The palette searches across commands, settings, SSH profiles, snippets, and recently used actions. Prefix your query with a category name to narrow results — for example, type &#x27;ssh&#x27; to see only SSH-related actions."}},{"@type":"Question","name":"Is the palette customizable?","acceptedAnswer":{"@type":"Answer","text":"You can pin frequently used commands so they appear at the top, hide commands you never use, and create command aliases for faster access. The palette adapts to your workflow over time through frecency ranking."}}]
+        "mainEntity": [{"@type":"Question","name":"Can I assign custom keyboard shortcuts through the palette?","acceptedAnswer":{"@type":"Answer","text":"Yes. Right-click any command in the palette to assign or change its keyboard shortcut. The new binding takes effect immediately and persists across sessions."}},{"@type":"Question","name":"Does it search settings as well as commands?","acceptedAnswer":{"@type":"Answer","text":"Yes. The palette searches across commands, settings, SSH profiles, snippets, and recently used actions. Prefix your query with a category name to narrow results: for example, type &#x27;ssh&#x27; to see only SSH-related actions."}},{"@type":"Question","name":"Is the palette customizable?","acceptedAnswer":{"@type":"Answer","text":"You can pin frequently used commands so they appear at the top, hide commands you never use, and create command aliases for faster access. The palette adapts to your workflow over time through frecency ranking."}}]
     }]
     </script>
 </head>
@@ -74,45 +74,45 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="search">
+        <section class="hero hero-feature" data-category="search" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SEARCH</div>
                 <h1 class="hero-title">Command Palette</h1>
-                <p class="hero-subtitle">Cmd+Shift+P opens every feature. No menus to memorize, no shortcuts to forget.</p>
+                <p class="hero-subtitle">Cmd+Shift+P. Every feature, every action, every setting. One fuzzy search away.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
                     <li class="question-item">Is there a terminal with a command palette like VS Code?</li>
                     <li class="question-item">How do I find terminal features without memorizing keyboard shortcuts?</li>
-                    <li class="question-item">Terminal command palette for macOS — does one exist?</li>
+                    <li class="question-item">Terminal command palette for macOS: does one exist?</li>
                     <li class="question-item">Can I fuzzy-search terminal actions and settings?</li>
                 </ul>
             </div>
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
-                <p>Press Cmd+Shift+P to open the command palette. Start typing to fuzzy-search across every action Chau7 offers — splitting tabs, changing themes, connecting to SSH hosts, opening snippets, toggling settings, and more. Results rank by relevance and recency, so your most-used actions float to the top over time.</p>
-                <p>Each command in the palette shows its keyboard shortcut (if one exists), a brief description, and its category. This makes the palette a learning tool — use it to discover features you did not know existed and learn their shortcuts organically.</p>
+                <p>Press Cmd+Shift+P to open the command palette. Start typing to fuzzy-search across every action Chau7 offers: splitting tabs, changing themes, connecting to SSH hosts, opening snippets, toggling settings, and more. Results rank by relevance and recency, so your most-used actions float to the top over time.</p>
+                <p>Each command in the palette shows its keyboard shortcut (if one exists), a brief description, and its category. This makes the palette a learning tool: use it to discover features you did not know existed and learn their shortcuts organically.</p>
                 <p>The palette is extensible. Custom commands from snippets, SSH profiles, and MCP tools all appear in the palette alongside built-in actions. If you can do it in Chau7, you can find it in the palette.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Terminal emulators accumulate features over time, but discoverability stalls at the menu bar. Most users never find half the features their terminal offers because there is no way to search for them. The command palette makes every action instantly accessible through a single shortcut, turning feature-rich into feature-usable.</p>
+                    <p>Terminal emulators accumulate features over time, but discoverability stalls at the menu bar. Most users never find half the features available to them. The command palette makes everything searchable: settings, actions, features, and configuration options. If it exists in Chau7, you can find it with Cmd+Shift+P.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -129,7 +129,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -139,7 +139,7 @@
                     </details>
                     <details>
                         <summary>Does it search settings as well as commands?</summary>
-                        <div class="faq-answer"><p>Yes. The palette searches across commands, settings, SSH profiles, snippets, and recently used actions. Prefix your query with a category name to narrow results — for example, type 'ssh' to see only SSH-related actions.</p></div>
+                        <div class="faq-answer"><p>Yes. The palette searches across commands, settings, SSH profiles, snippets, and recently used actions. Prefix your query with a category name to narrow results: for example, type 'ssh' to see only SSH-related actions.</p></div>
                     </details>
                     <details>
                         <summary>Is the palette customizable?</summary>
@@ -150,11 +150,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Find any feature instantly — download Chau7</h2>
+                    <h2>Discover features you didn't know existed. All of them.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

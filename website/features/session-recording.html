@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Session Recording — Chau7 Terminal</title>
-    <meta name="description" content="Chau7 records terminal sessions with precise timestamps for every output event — built-in, no external tools required.">
-    <meta property="og:title" content="Session Recording — Chau7">
-    <meta property="og:description" content="Chau7 records terminal sessions with precise timestamps for every output event — built-in, no external tools required.">
+    <title>Session Recording | Chau7 Terminal</title>
+    <meta name="description" content="Chau7 records terminal sessions with precise timestamps for every output event: built-in, no external tools required.">
+    <meta property="og:title" content="Session Recording | Chau7">
+    <meta property="og:description" content="Chau7 records terminal sessions with precise timestamps for every output event: built-in, no external tools required.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -35,7 +35,7 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"How much storage do session recordings use?","acceptedAnswer":{"@type":"Answer","text":"Recordings capture raw terminal bytes, not pixels, so they are extremely compact. A typical hour-long session produces a few megabytes. Idle time (no output) adds almost no storage because only output events are recorded."}},{"@type":"Question","name":"Can I export recordings to share with others?","acceptedAnswer":{"@type":"Answer","text":"Recordings can be replayed in Chau7&#x27;s timeline scrubber. The recording format captures the full terminal protocol, preserving colors, formatting, and cursor positioning exactly as they appeared."}},{"@type":"Question","name":"Does recording affect terminal performance?","acceptedAnswer":{"@type":"Answer","text":"No measurable impact. Recording adds a timestamp and write to a buffer for each output event — operations that take microseconds. The terminal remains fully responsive during recording."}}]
+        "mainEntity": [{"@type":"Question","name":"How much storage do session recordings use?","acceptedAnswer":{"@type":"Answer","text":"Recordings capture raw terminal bytes, not pixels, so they are extremely compact. A typical hour-long session produces a few megabytes. Idle time (no output) adds almost no storage because only output events are recorded."}},{"@type":"Question","name":"Can I export recordings to share with others?","acceptedAnswer":{"@type":"Answer","text":"Recordings can be replayed in Chau7&#x27;s timeline scrubber. The recording format captures the full terminal protocol, preserving colors, formatting, and cursor positioning exactly as they appeared."}},{"@type":"Question","name":"Does recording affect terminal performance?","acceptedAnswer":{"@type":"Answer","text":"No measurable impact. Recording adds a timestamp and write to a buffer for each output event: operations that take microseconds. The terminal remains fully responsive during recording."}}]
     }]
     </script>
 </head>
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="session">
+        <section class="hero hero-feature" data-category="session" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SESSION</div>
                 <h1 class="hero-title">Session Recording</h1>
-                <p class="hero-subtitle">Record every terminal session with millisecond-precise timestamps, built directly into the terminal.</p>
+                <p class="hero-subtitle">Built-in session recording. Every keystroke, every output, millisecond timestamps. No extra tools.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -98,22 +98,22 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
-                <p>Chau7 captures every byte of terminal output along with a millisecond-precision timestamp as it arrives from the shell process. This creates a complete, time-accurate record of the session — not a screen recording or a text dump, but a faithful reproduction of every escape sequence, color change, cursor movement, and character that appeared in the terminal.</p>
+                <p>Chau7 captures every byte of terminal output along with a millisecond-precision timestamp as it arrives from the shell process. This creates a complete, time-accurate record of the session: not a screen recording or a text dump, but a faithful reproduction of every escape sequence, color change, cursor movement, and character that appeared in the terminal.</p>
                 <p>Recordings are stored efficiently as timestamped event streams. Because they capture the raw terminal protocol rather than rendered pixels, a multi-hour session typically compresses to a few megabytes. The recordings can be replayed in Chau7's timeline scrubber at original speed, fast-forwarded through idle periods, or scrubbed to any point to inspect the terminal state at that exact moment.</p>
-                <p>Recording is integrated directly into the terminal — there is no separate tool to install, no wrapper script to remember, and no compatibility issues with your shell or the programs you run. Every session can be recorded, and recordings start and stop without interrupting your workflow.</p>
+                <p>Recording is integrated directly into the terminal: there is no separate tool to install, no wrapper script to remember, and no compatibility issues with your shell or the programs you run. Every session can be recorded, and recordings start and stop without interrupting your workflow.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Terminal session recording has been a third-party bolt-on for decades. Tools like asciinema, script, and screen recordings each have tradeoffs: external dependencies, missing escape sequences, lossy compression, or no timestamp precision. Built-in recording eliminates all of these compromises and makes it trivial to capture any session for demos, debugging, documentation, or audit trails.</p>
+                    <p>Terminal session recording has been a third-party bolt-on for decades. Tools like asciinema and script work, but they require setup, generate separate files, and live outside the terminal's awareness. Chau7 records sessions as a native feature with millisecond-precise timestamps, integrated with the telemetry system, and accessible through the MCP server. The recording happens on its own.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -130,7 +130,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -144,18 +144,19 @@
                     </details>
                     <details>
                         <summary>Does recording affect terminal performance?</summary>
-                        <div class="faq-answer"><p>No measurable impact. Recording adds a timestamp and write to a buffer for each output event — operations that take microseconds. The terminal remains fully responsive during recording.</p></div>
+                        <div class="faq-answer"><p>No measurable impact. Recording adds a timestamp and write to a buffer for each output event: operations that take microseconds. The terminal remains fully responsive during recording.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Built-in session recording — stop installing extra tools, try Chau7</h2>
+                    <h2>Record your terminal sessions natively. asciinema is great, but built-in is better.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

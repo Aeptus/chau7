@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MCP Approval Gate — Chau7 Terminal</title>
+    <title>MCP Approval Gate | Chau7 Terminal</title>
     <meta name="description" content="Chau7's MCP Approval Gate lets you review and approve AI tool calls before execution, keeping you in control of automated actions.">
-    <meta property="og:title" content="MCP Approval Gate — Chau7">
+    <meta property="og:title" content="MCP Approval Gate | Chau7">
     <meta property="og:description" content="Chau7's MCP Approval Gate lets you review and approve AI tool calls before execution, keeping you in control of automated actions.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -35,7 +35,7 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does the approval gate slow down AI workflows?","acceptedAnswer":{"@type":"Answer","text":"Only for the actions you choose to gate. Read-only operations and pre-approved tools execute instantly. The gate only pauses execution for tools that match your approval rules, so trusted workflows run at full speed."}},{"@type":"Question","name":"Can I approve tools once and remember the decision?","acceptedAnswer":{"@type":"Answer","text":"Yes. When approving a tool call, you can choose to remember the decision for that tool, that tool from a specific agent, or that exact tool-and-parameter combination. Remembered approvals persist across sessions."}},{"@type":"Question","name":"Does this work with all MCP-connected agents?","acceptedAnswer":{"@type":"Answer","text":"Yes. The approval gate operates at the MCP protocol layer inside Chau7, so it works with any agent that connects through MCP — Claude, custom agents, or any future MCP-compatible assistant."}}]
+        "mainEntity": [{"@type":"Question","name":"Does the approval gate slow down AI workflows?","acceptedAnswer":{"@type":"Answer","text":"Only for the actions you choose to gate. Read-only operations and pre-approved tools execute instantly. The gate only pauses execution for tools that match your approval rules, so trusted workflows run at full speed."}},{"@type":"Question","name":"Can I approve tools once and remember the decision?","acceptedAnswer":{"@type":"Answer","text":"Yes. When approving a tool call, you can choose to remember the decision for that tool, that tool from a specific agent, or that exact tool-and-parameter combination. Remembered approvals persist across sessions."}},{"@type":"Question","name":"Does this work with all MCP-connected agents?","acceptedAnswer":{"@type":"Answer","text":"Yes. The approval gate operates at the MCP protocol layer inside Chau7, so it works with any agent that connects through MCP: Claude, custom agents, or any future MCP-compatible assistant."}}]
     }]
     </script>
 </head>
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="safety">
+        <section class="hero hero-feature" data-category="safety" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SAFETY</div>
                 <h1 class="hero-title">MCP Approval Gate</h1>
-                <p class="hero-subtitle">Stay in the loop. Review every MCP tool call before it runs.</p>
+                <p class="hero-subtitle">Your AI agent wants to run a command. You get to say yes or no first.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,21 +97,21 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
-                <p>When an AI agent connected via MCP requests a tool action — executing a command, writing a file, or modifying terminal state — Chau7 can intercept the request and present it for your approval. The approval dialog shows the tool name, all parameters, and the originating agent, letting you accept, reject, or modify the request before it reaches the shell.</p>
+                <p>When an AI agent connected via MCP requests a tool action: executing a command, writing a file, or modifying terminal state: Chau7 can intercept the request and present it for your approval. The approval dialog shows the tool name, all parameters, and the originating agent, letting you accept, reject, or modify the request before it reaches the shell.</p>
                 <p>Approval rules are configurable per-tool and per-agent. You can auto-approve safe read-only operations like listing files, require approval for write operations, and permanently block specific tools. Rules persist across sessions, so you build up a trust profile over time without repeated prompts for tools you have already vetted.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>MCP gives AI agents powerful capabilities inside your terminal, but power without oversight is a liability. The approval gate keeps you in control without abandoning automation — you decide which actions need human review and which can proceed automatically, creating a trust boundary that matches your actual risk tolerance rather than a binary on/off switch.</p>
+                    <p>MCP gives AI agents powerful capabilities inside your terminal, but power without oversight is a liability. The approval gate lets you review every MCP tool call before it executes. Enable it globally, per-tool, or not at all. It is the difference between 'my AI can do anything' and 'my AI can do anything I approve.'</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -128,7 +128,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -142,18 +142,19 @@
                     </details>
                     <details>
                         <summary>Does this work with all MCP-connected agents?</summary>
-                        <div class="faq-answer"><p>Yes. The approval gate operates at the MCP protocol layer inside Chau7, so it works with any agent that connects through MCP — Claude, custom agents, or any future MCP-compatible assistant.</p></div>
+                        <div class="faq-answer"><p>Yes. The approval gate operates at the MCP protocol layer inside Chau7, so it works with any agent that connects through MCP: Claude, custom agents, or any future MCP-compatible assistant.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Control your AI tools — download Chau7</h2>
+                    <h2>Trust, but verify. MCP actions with an approval step.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tab Watchdog — Chau7 Terminal</title>
+    <title>Tab Watchdog | Chau7 Terminal</title>
     <meta name="description" content="Chau7's tab watchdog monitors terminal health and auto-refreshes stale tabs, resetting after timeout instead of giving up.">
-    <meta property="og:title" content="Tab Watchdog — Chau7">
+    <meta property="og:title" content="Tab Watchdog | Chau7">
     <meta property="og:description" content="Chau7's tab watchdog monitors terminal health and auto-refreshes stale tabs, resetting after timeout instead of giving up.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -35,7 +35,7 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Can I configure the watchdog timeout?","acceptedAnswer":{"@type":"Answer","text":"The watchdog uses sensible defaults that work for most workflows. The retry interval and timeout thresholds are tuned to balance responsiveness with avoiding unnecessary refreshes."}},{"@type":"Question","name":"Does the watchdog affect terminal performance?","acceptedAnswer":{"@type":"Answer","text":"No. The health checks are extremely lightweight — they inspect process status and internal state flags without touching the render pipeline or scrollback buffer. The overhead is negligible even with dozens of tabs open."}},{"@type":"Question","name":"What triggers a watchdog refresh?","acceptedAnswer":{"@type":"Answer","text":"Common triggers include a shell process that exited unexpectedly, a terminal view that stopped receiving updates despite an active process, or internal state inconsistencies between the backend and frontend. Manual user activity is never interrupted by the watchdog."}}]
+        "mainEntity": [{"@type":"Question","name":"Can I configure the watchdog timeout?","acceptedAnswer":{"@type":"Answer","text":"The watchdog uses sensible defaults that work for most workflows. The retry interval and timeout thresholds are tuned to balance responsiveness with avoiding unnecessary refreshes."}},{"@type":"Question","name":"Does the watchdog affect terminal performance?","acceptedAnswer":{"@type":"Answer","text":"No. The health checks are extremely lightweight: they inspect process status and internal state flags without touching the render pipeline or scrollback buffer. The overhead is negligible even with dozens of tabs open."}},{"@type":"Question","name":"What triggers a watchdog refresh?","acceptedAnswer":{"@type":"Answer","text":"Common triggers include a shell process that exited unexpectedly, a terminal view that stopped receiving updates despite an active process, or internal state inconsistencies between the backend and frontend. Manual user activity is never interrupted by the watchdog."}}]
     }]
     </script>
 </head>
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="tabs">
+        <section class="hero hero-feature" data-category="tabs" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">TAB MANAGEMENT</div>
                 <h1 class="hero-title">Tab Watchdog</h1>
-                <p class="hero-subtitle">A background watchdog monitors every tab and recovers stale state automatically.</p>
+                <p class="hero-subtitle">A background watchdog that notices when tabs go stale and fixes them before you do.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,21 +97,21 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
-                <p>Chau7 runs a lightweight watchdog that periodically checks the health of every open tab. It monitors process state, output activity, and internal consistency. When a tab enters a stale state — for example, the shell process exited unexpectedly or the terminal view fell out of sync with the backend — the watchdog triggers an automatic refresh that restores the tab to a working state.</p>
+                <p>Chau7 runs a lightweight watchdog that periodically checks the health of every open tab. It monitors process state, output activity, and internal consistency. When a tab enters a stale state: for example, the shell process exited unexpectedly or the terminal view fell out of sync with the backend: the watchdog triggers an automatic refresh that restores the tab to a working state.</p>
                 <p>The watchdog uses a reset-after-timeout strategy rather than a give-up-after-failure approach. If a refresh does not resolve the issue immediately, the watchdog backs off and tries again after a configurable interval. This means transient issues (like a brief system overload) are recovered automatically, while persistent problems get retried rather than silently abandoned.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Stale or frozen terminal tabs are a quiet productivity killer. You switch to a tab expecting to see output, find it is stuck, lose time diagnosing whether the process died or the view is just lagging, and often end up closing and recreating the tab. The watchdog catches these problems before you notice them and fixes them in the background.</p>
+                    <p>Stale or frozen terminal tabs are a quiet productivity killer. You switch to a tab expecting to see output, find it stuck, and waste time restarting the session. Chau7's watchdog monitors every tab for signs of staleness and resets state automatically. It resets after timeout rather than giving up permanently, because terminals are supposed to be resilient.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -132,7 +132,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -142,7 +142,7 @@
                     </details>
                     <details>
                         <summary>Does the watchdog affect terminal performance?</summary>
-                        <div class="faq-answer"><p>No. The health checks are extremely lightweight — they inspect process status and internal state flags without touching the render pipeline or scrollback buffer. The overhead is negligible even with dozens of tabs open.</p></div>
+                        <div class="faq-answer"><p>No. The health checks are extremely lightweight: they inspect process status and internal state flags without touching the render pipeline or scrollback buffer. The overhead is negligible even with dozens of tabs open.</p></div>
                     </details>
                     <details>
                         <summary>What triggers a watchdog refresh?</summary>
@@ -153,11 +153,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Tabs that heal themselves — try Chau7's watchdog</h2>
+                    <h2>Tabs that heal themselves. Like Wolverine, but for your terminal.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

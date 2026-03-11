@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Token Counting — Chau7 Terminal</title>
+    <title>Token Counting | Chau7 Terminal</title>
     <meta name="description" content="Chau7 counts input and output tokens for every LLM API call using provider-specific tokenization. Track token usage per call, per session, and across your entire workflow.">
-    <meta property="og:title" content="Token Counting — Chau7">
+    <meta property="og:title" content="Token Counting | Chau7">
     <meta property="og:description" content="Chau7 counts input and output tokens for every LLM API call using provider-specific tokenization. Track token usage per call, per session, and across your entire workflow.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="api-analytics">
+        <section class="hero hero-feature" data-category="api-analytics" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-blue">API ANALYTICS</div>
                 <h1 class="hero-title">Token Counting</h1>
-                <p class="hero-subtitle">Count every token in, every token out.</p>
+                <p class="hero-subtitle">Input tokens, output tokens, per call. The numbers your provider charges you but never shows you.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,7 +97,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Token Counting extracts token usage data from every intercepted API call. For providers that include token counts in their response metadata (like OpenAI and Anthropic), Chau7 reads those values directly. For providers that do not report counts, Chau7 applies provider-appropriate tokenization to estimate usage accurately.</p>
@@ -106,13 +106,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Token counts are the fundamental unit of LLM costs. Without per-call token tracking, you are left guessing whether a session used ten thousand or ten million tokens. Token Counting gives you exact numbers so you can identify expensive operations, compare agent efficiency, and make informed decisions about model selection and prompt design.</p>
+                    <p>Token counts are the fundamental unit of LLM costs, and without per-call tracking you are guessing. Was that session expensive because of one massive prompt or fifty small ones? Chau7 counts input and output tokens for every API call using provider-specific tokenization, so you can pinpoint exactly where the tokens go.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -133,7 +133,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -150,11 +150,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Download Chau7 and track every token your AI agents consume.</h2>
+                    <h2>Count every token. Know exactly what you're paying for.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

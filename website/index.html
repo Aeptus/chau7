@@ -155,29 +155,30 @@
             <div class="section-inner">
                 <h2 id="pillars-heading" class="sr-only">What makes Chau7 different</h2>
                 <div class="pillars-grid stagger-children">
-                    <a href="mcp.html" class="pillar-card" data-ui="pillars-card-mcp">
+                    <a href="features.html" class="pillar-card" data-ui="pillars-card-cognitive">
                         <div class="pillar-number">01</div>
-                        <h3>MCP-First Terminal</h3>
-                        <p>Your AI can see and control every tab. 20 tools over Unix socket. Auto-registers in Claude Code, Cursor, Windsurf, and Codex. Your AI didn't even have to ask.</p>
-                        <span class="pillar-link">Explore MCP tools &rarr;</span>
+                        <h3>Lower Cognitive Load</h3>
+                        <p>Tabs auto-identify what's running and rename themselves. You can rename them too. AI agents get branded colors. Seven CLIs recognized at a glance. You stop juggling context. Chau7 holds it for you.</p>
+                        <span class="pillar-link">Browse features &rarr;</span>
                     </a>
                     <a href="features.html#ai-analytics" class="pillar-card" data-ui="pillars-card-cost">
                         <div class="pillar-number">02</div>
-                        <h3>AI Cost Visibility</h3>
-                        <p>Know what your AI spends before your invoice does. TLS/WSS proxy captures tokens, latency, and cost per call. Per-tab Context Token Optimization keeps things lean.</p>
+                        <h3>Optimize Cost &amp; Context</h3>
+                        <p>Context Token Optimization cuts ~40% of what your AI sends. Cost tracking shows spend per session, per model, per call. Less waste, more signal.</p>
                         <span class="pillar-link">See AI features &rarr;</span>
                     </a>
-                    <a href="performance.html" class="pillar-card" data-ui="pillars-card-speed">
+                    <a href="mcp.html" class="pillar-card" data-ui="pillars-card-control">
                         <div class="pillar-number">03</div>
-                        <h3>Rust + Metal Speed</h3>
-                        <p>IOKit to IOSurface in under 10ms. SIMD parsing, lock-free buffers, GPU rendering. We didn't need to go this fast. We just couldn't stop.</p>
-                        <span class="pillar-link">View the pipeline &rarr;</span>
+                        <h3>Visibility &amp; Control</h3>
+                        <p>20 MCP tools let your AI drive the terminal… and you see every move. Session telemetry, approval gates, tab limits. You don't just monitor your AI. You master it.</p>
+                        <span class="pillar-link">Explore MCP tools &rarr;</span>
                     </a>
                 </div>
             </div>
         </section>
 
-        <!-- Hero Screenshot — "I'm a leaf on the wind. Watch how I soar." — Wash, before things went badly -->
+        <!-- Hero Screenshot + AI Detection — parallax pair: screenshot sticks, AI section rises over it -->
+        <div class="showcase-ai-pair">
         <section class="showcase-section" aria-label="Application screenshot" data-ui="showcase">
             <div class="section-inner">
                 <div class="hero-screenshot reveal">
@@ -188,63 +189,43 @@
             </div>
         </section>
 
-        <hr class="ink-rule" data-ui="rule-showcase">
-
-        <!-- AI Detection — "I sense a disturbance in the Force." Except it's just Claude spinning up. -->
         <section class="ai-preview-section" aria-labelledby="ai-preview-heading" data-ui="ai">
             <div class="section-inner">
                 <div class="section-header">
                     <div class="section-badge badge-alt" data-ui="ai-badge">AI Integration</div>
-                    <h2 id="ai-preview-heading" data-ui="ai-title">Knows your <span class="gradient-text-alt">AI tools</span> by name.</h2>
-                    <p data-ui="ai-subtitle">The moment an AI CLI launches, Chau7 recognizes it. Branded tabs, colors, monitoring. No config. No plugins. It just… knows.</p>
+                    <h2 id="ai-preview-heading" data-ui="ai-title">Less noise for you. <span class="gradient-text-alt">Fewer tokens</span> for them.</h2>
+                    <p data-ui="ai-subtitle">The terminal sits between you and your AI. Chau7 optimizes both sides: you manage less, they waste less.</p>
                 </div>
-                <div class="ai-agents stagger-children">
-                    <div class="agent-card" style="--agent-color: #cc7832" data-ui="ai-agent-claude">
-                        <div class="agent-dot"></div>
-                        <span class="agent-name">Claude Code</span>
-                        <span class="agent-status detected">Detected</span>
+                <dl class="ai-value-stack stagger-children" data-ui="ai-value-stack">
+                    <div class="ai-value-row" data-ui="ai-value-1">
+                        <dt>You stop juggling.</dt>
+                        <dd>Identity, status, and cost live on every tab. Eight agents, one glance. You manage more AI without it costing more attention.</dd>
                     </div>
-                    <div class="agent-card" style="--agent-color: #34d399" data-ui="ai-agent-codex">
-                        <div class="agent-dot"></div>
-                        <span class="agent-name">Codex</span>
-                        <span class="agent-status detected">Detected</span>
+                    <div class="ai-value-row" data-ui="ai-value-2">
+                        <dt>They run leaner.</dt>
+                        <dd>Context Token Optimization cuts ~40% of tokens per session. Cleaner context in, better output out, lower bill at the end.</dd>
                     </div>
-                    <div class="agent-card" style="--agent-color: #60a5fa" data-ui="ai-agent-gemini">
-                        <div class="agent-dot"></div>
-                        <span class="agent-name">Gemini CLI</span>
-                        <span class="agent-status">Available</span>
+                    <div class="ai-value-row" data-ui="ai-value-3">
+                        <dt>It adds up.</dt>
+                        <dd>Leaner agents cost less to run. Clear oversight means fewer interruptions. More agents, same effort.</dd>
                     </div>
-                    <div class="agent-card" style="--agent-color: #8b5cf6" data-ui="ai-agent-chatgpt">
-                        <div class="agent-dot"></div>
-                        <span class="agent-name">ChatGPT</span>
-                        <span class="agent-status">Available</span>
-                    </div>
-                    <div class="agent-card" style="--agent-color: #f87171" data-ui="ai-agent-copilot">
-                        <div class="agent-dot"></div>
-                        <span class="agent-name">Copilot</span>
-                        <span class="agent-status">Available</span>
-                    </div>
-                    <div class="agent-card" style="--agent-color: #a78bfa" data-ui="ai-agent-aider">
-                        <div class="agent-dot"></div>
-                        <span class="agent-name">Aider</span>
-                        <span class="agent-status">Available</span>
-                    </div>
-                    <div class="agent-card" style="--agent-color: #22d3ee" data-ui="ai-agent-cursor">
-                        <div class="agent-dot"></div>
-                        <span class="agent-name">Cursor</span>
-                        <span class="agent-status">Available</span>
-                    </div>
-                    <div class="agent-card custom" style="--agent-color: #fbbf24" data-ui="ai-agent-custom">
-                        <div class="agent-dot"></div>
-                        <span class="agent-name">+ Custom Rules</span>
-                        <span class="agent-status">Configurable</span>
-                    </div>
+                </dl>
+                <div class="agent-proof" data-ui="ai-agents-proof">
+                    <span class="agent-proof-label">Works with</span>
+                    <span class="agent-proof-list">
+                        <span style="--agent-color: #cc7832; --i: 0"><span class="agent-dot"></span>Claude Code</span>
+                        <span style="--agent-color: #34d399; --i: 1"><span class="agent-dot"></span>Codex</span>
+                        <span style="--agent-color: #60a5fa; --i: 2"><span class="agent-dot"></span>Gemini CLI</span>
+                        <span style="--agent-color: #8b5cf6; --i: 3"><span class="agent-dot"></span>ChatGPT</span>
+                        <span style="--agent-color: #f87171; --i: 4"><span class="agent-dot"></span>Copilot</span>
+                        <span style="--agent-color: #a78bfa; --i: 5"><span class="agent-dot"></span>Aider</span>
+                        <span style="--agent-color: #22d3ee; --i: 6"><span class="agent-dot"></span>Cursor</span>
+                    </span>
                 </div>
-                <p class="section-cta-text"><a href="features.html#ai-detection" data-ui="ai-link">See all AI detection features &rarr;</a></p>
+                <p class="section-cta-text"><a href="features.html#ai-detection" data-ui="ai-link">See all AI features &rarr;</a></p>
             </div>
         </section>
-
-        <hr class="ink-rule" data-ui="rule-ai">
+        </div><!-- /.showcase-ai-pair -->
 
         <!-- Under the Hood — "The status is not quo." — Dr. Horrible, who would've loved SIMD parsing -->
         <section class="proof-section" aria-labelledby="proof-heading" data-ui="proof">
@@ -258,7 +239,7 @@
                         We parse escape sequences with SIMD instructions.
                         We run a lock-free ring buffer between the PTY reader and the parser.
                         We did all of this for a terminal named after a sock.
-                        It's fine. We're fine.
+                        It's fine. We're fine. Mostly.
                     </p>
                     <a href="features.html" class="btn-outline" data-ui="proof-link">Browse all 185 features &rarr;</a>
                 </div>

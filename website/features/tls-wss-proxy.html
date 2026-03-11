@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TLS/WSS Proxy — Chau7 Terminal</title>
+    <title>TLS/WSS Proxy | Chau7 Terminal</title>
     <meta name="description" content="Chau7's transparent TLS/WSS proxy intercepts LLM API calls to OpenAI, Anthropic, and other providers. Enables token counting, cost tracking, and latency analysis.">
-    <meta property="og:title" content="TLS/WSS Proxy — Chau7">
+    <meta property="og:title" content="TLS/WSS Proxy | Chau7">
     <meta property="og:description" content="Chau7's transparent TLS/WSS proxy intercepts LLM API calls to OpenAI, Anthropic, and other providers. Enables token counting, cost tracking, and latency analysis.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="api-analytics">
+        <section class="hero hero-feature" data-category="api-analytics" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-blue">API ANALYTICS</div>
                 <h1 class="hero-title">TLS/WSS Proxy</h1>
-                <p class="hero-subtitle">See every API call your AI agent makes.</p>
+                <p class="hero-subtitle">A transparent proxy that captures every API call your AI agent makes. You'll finally know what's happening on the wire.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -98,7 +98,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Chau7 runs a local TLS/WSS proxy that transparently intercepts HTTPS and WebSocket traffic between AI agents and LLM API endpoints. The proxy uses a locally generated certificate authority to decrypt, inspect, and re-encrypt traffic to known LLM provider domains. This happens entirely on your machine with no data sent to external servers.</p>
@@ -107,13 +107,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>AI coding agents make dozens or hundreds of API calls per session, and the developer has zero visibility into that traffic. You cannot optimize what you cannot see. The TLS/WSS proxy makes every API call observable, turning a black box into a transparent pipeline that you can monitor, analyze, and optimize.</p>
+                    <p>AI coding agents make dozens or hundreds of API calls per session, and the developer sees none of that traffic. Chau7 runs a transparent TLS proxy on localhost that intercepts calls to OpenAI, Anthropic, and other providers without modifying the agent's behavior. For the first time, you can see every request, every response, every token count, and every dollar spent.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -134,7 +134,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -155,11 +155,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Download Chau7 and see every API call your AI agents make.</h2>
+                    <h2>See the API traffic your AI generates. It's more than you think.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

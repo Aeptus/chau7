@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VoiceOver Support — Chau7 Terminal</title>
+    <title>VoiceOver Support | Chau7 Terminal</title>
     <meta name="description" content="Chau7 provides full macOS VoiceOver support for blind and low-vision developers. Terminal output is announced with semantic navigation of content.">
-    <meta property="og:title" content="VoiceOver Support — Chau7">
+    <meta property="og:title" content="VoiceOver Support | Chau7">
     <meta property="og:description" content="Chau7 provides full macOS VoiceOver support for blind and low-vision developers. Terminal output is announced with semantic navigation of content.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="accessibility">
+        <section class="hero hero-feature" data-category="accessibility" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">ACCESSIBILITY</div>
                 <h1 class="hero-title">VoiceOver Support</h1>
-                <p class="hero-subtitle">A terminal that works with your screen reader</p>
+                <p class="hero-subtitle">Full VoiceOver integration. Because accessible terminals shouldn't be an afterthought.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -98,7 +98,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Chau7 implements full NSAccessibility protocol support, exposing terminal content to VoiceOver as navigable text elements. New terminal output is announced automatically so screen reader users hear command results as they appear. The accessibility tree is structured semantically: the prompt, command, and output regions are distinct elements that VoiceOver can navigate independently.</p>
@@ -107,13 +107,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Terminal.app's VoiceOver support has long been inadequate for professional use, and most third-party terminals treat accessibility as an afterthought. Blind and low-vision developers deserve a terminal that integrates properly with macOS screen reading. Chau7 treats VoiceOver support as a first-class feature, not an afterthought, because terminal access is a prerequisite for developer productivity.</p>
+                    <p>Terminal.app's VoiceOver support has long been inadequate, and most third-party terminals treat accessibility as an afterthought. Chau7 provides full VoiceOver integration with terminal content announcement, cursor tracking, and proper accessibility labels throughout the UI. Accessible by design, not by patch.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -134,7 +134,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -155,11 +155,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Download Chau7 for a fully accessible terminal experience</h2>
+                    <h2>A terminal that works with your screen reader. Not against it.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

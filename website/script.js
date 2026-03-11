@@ -28,6 +28,7 @@
         '.related-features-grid .catalog-card',
         '.persona-card',
         '.persona-features .catalog-card',
+        '.agent-proof',
         '.proof-content',
         '.footer-cta-content',
     ];
@@ -148,6 +149,8 @@
     /* ── Smooth scroll for anchor links ──────────── */
     function initSmoothLinks() {
         document.querySelectorAll('a[href^="#"]').forEach(link => {
+            // Pillar nav cards handle their own scroll via initPillarCarousel
+            if (link.classList.contains('pillar-nav-card')) return;
             link.addEventListener('click', e => {
                 const target = document.querySelector(link.getAttribute('href'));
                 if (!target) return;
@@ -403,6 +406,51 @@
         resetTimer();
     }
 
+    /* ── Pillar carousel ──────────────────────────── */
+    function initPillarCarousel() {
+        const carousel = document.querySelector('.pillar-carousel');
+        if (!carousel) return;
+
+        const panels = carousel.querySelectorAll('.pillar-panel');
+        const navCards = document.querySelectorAll('.pillar-nav-card[data-panel]');
+        if (panels.length === 0) return;
+
+        // Click nav cards → scroll carousel horizontally (not the page)
+        navCards.forEach(card => {
+            card.addEventListener('click', (e) => {
+                e.preventDefault();
+                const idx = parseInt(card.dataset.panel, 10);
+                if (isNaN(idx) || !panels[idx]) return;
+
+                const panel = panels[idx];
+                const scrollLeft = panel.offsetLeft - (carousel.offsetWidth - panel.offsetWidth) / 2;
+                carousel.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+            });
+        });
+
+        // IntersectionObserver: track which panel is most visible
+        const io = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                const panel = entry.target;
+                if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
+                    // This panel is centered — activate it
+                    panels.forEach(p => p.classList.remove('active'));
+                    panel.classList.add('active');
+
+                    // Sync nav cards
+                    const idx = [...panels].indexOf(panel);
+                    navCards.forEach(c => c.classList.remove('active'));
+                    if (navCards[idx]) navCards[idx].classList.add('active');
+                }
+            });
+        }, {
+            root: carousel,
+            threshold: 0.5
+        });
+
+        panels.forEach(p => io.observe(p));
+    }
+
     /* ── Init ────────────────────────────────────── */
     document.addEventListener('DOMContentLoaded', () => {
         addRevealClass();
@@ -423,5 +471,6 @@
         initTableScrollHint();
         initHeroRotator();
         initCarousel();
+        initPillarCarousel();
     });
 })();

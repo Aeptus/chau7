@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Timeline Scrubber — Chau7 Terminal</title>
+    <title>Timeline Scrubber | Chau7 Terminal</title>
     <meta name="description" content="Chau7's timeline scrubber lets you visually navigate recorded terminal sessions and replay terminal state at any point.">
-    <meta property="og:title" content="Timeline Scrubber — Chau7">
+    <meta property="og:title" content="Timeline Scrubber | Chau7">
     <meta property="og:description" content="Chau7's timeline scrubber lets you visually navigate recorded terminal sessions and replay terminal state at any point.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="session">
+        <section class="hero hero-feature" data-category="session" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SESSION</div>
                 <h1 class="hero-title">Timeline Scrubber</h1>
-                <p class="hero-subtitle">Scrub through recorded sessions with a visual timeline and see the terminal state at any moment.</p>
+                <p class="hero-subtitle">Scrub through recordings like a video. Jump to any moment. See exactly what happened.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,21 +97,21 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>The timeline scrubber presents a visual representation of a recorded session's activity over time. Dense output periods appear as peaks in the timeline, while idle periods are visible as gaps. You can click anywhere on the timeline to jump to that moment, or drag the playhead to scrub through the session and watch the terminal state change in real time.</p>
-                <p>Playback supports variable speed: normal speed for realistic replay, fast-forward to skip idle sections, and frame-by-frame stepping for detailed inspection. At any point during playback or scrubbing, the terminal view shows the exact state that existed at that timestamp — every character, color, and cursor position is reconstructed from the recording data.</p>
+                <p>Playback supports variable speed: normal speed for realistic replay, fast-forward to skip idle sections, and frame-by-frame stepping for detailed inspection. At any point during playback or scrubbing, the terminal view shows the exact state that existed at that timestamp: every character, color, and cursor position is reconstructed from the recording data.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Raw terminal recordings are useless without a way to navigate them. Scrolling through a text dump or watching a real-time replay of a 2-hour session wastes time. The timeline scrubber turns recordings into a random-access medium — jump to the moment your build failed, scrub back to see what command caused the error, and step forward through the output line by line.</p>
+                    <p>Raw terminal recordings are useless without navigation. Scrolling through a text dump to find the moment a build failed is like searching a VHS tape by holding fast-forward. The timeline scrubber gives you a visual timeline with click-to-seek, so you can jump to the exact second an error occurred.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -128,7 +128,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -145,11 +145,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Navigate terminal history visually — try Chau7's timeline scrubber</h2>
+                    <h2>Navigate terminal recordings visually. Like a DVR for your shell.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SIMD Parsing — Chau7 Terminal</title>
+    <title>SIMD Parsing | Chau7 Terminal</title>
     <meta name="description" content="Chau7 parses ANSI escape sequences using 16-32 byte SIMD instructions in Rust, achieving cache-line-speed terminal throughput.">
-    <meta property="og:title" content="SIMD Parsing — Chau7">
+    <meta property="og:title" content="SIMD Parsing | Chau7">
     <meta property="og:description" content="Chau7 parses ANSI escape sequences using 16-32 byte SIMD instructions in Rust, achieving cache-line-speed terminal throughput.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="rendering">
+        <section class="hero hero-feature" data-category="rendering" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-purple">GPU RENDERING</div>
                 <h1 class="hero-title">SIMD Parsing</h1>
-                <p class="hero-subtitle">Parse 16 to 32 bytes per cycle. ANSI escapes at cache-line speed, written in Rust.</p>
+                <p class="hero-subtitle">SIMD-accelerated Rust parser. 16-32 bytes per cycle. Your ANSI escape sequences never had it so good.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -98,7 +98,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Terminal emulators must parse every byte of output from the PTY, scanning for ANSI escape sequences (CSI, OSC, DCS, and more) that control cursor movement, colors, and screen manipulation. Traditional parsers examine one byte at a time through a state machine. Chau7's parser, written in Rust, uses ARM NEON and x86 SSE/AVX SIMD intrinsics to scan 16 to 32 bytes simultaneously.</p>
@@ -107,13 +107,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Parsing is the first stage of the terminal pipeline and sets the throughput ceiling for everything downstream. A slow parser causes backpressure on the PTY, which in turn stalls the child process. SIMD parsing ensures the parser is never the bottleneck, letting programs like find, grep, and compiler output stream at full speed without artificial slowdowns.</p>
+                    <p>Parsing is the first stage of the terminal pipeline and sets the throughput ceiling for everything downstream. Traditional byte-by-byte parsers create a bottleneck that no amount of GPU rendering can compensate for. Chau7's parser processes 16-32 bytes per SIMD instruction using Rust intrinsics, handling entire cache lines in a single cycle. The specific SIMD width adapts to your hardware.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -134,7 +134,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -155,11 +155,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Terminal parsing at cache-line speed. Download Chau7.</h2>
+                    <h2>Parsing at cache-line speed. Written in Rust, because of course it is.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

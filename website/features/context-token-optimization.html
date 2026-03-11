@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Context Token Optimization — Chau7 Terminal</title>
+    <title>Context Token Optimization | Chau7 Terminal</title>
     <meta name="description" content="Chau7 monitors LLM API token usage in real time and helps you optimize context windows. Track input and output tokens per tab, per session, or globally.">
-    <meta property="og:title" content="Context Token Optimization — Chau7">
+    <meta property="og:title" content="Context Token Optimization | Chau7">
     <meta property="og:description" content="Chau7 monitors LLM API token usage in real time and helps you optimize context windows. Track input and output tokens per tab, per session, or globally.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="ai-integration">
+        <section class="hero hero-feature" data-category="ai-integration" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-alt">AI INTEGRATION</div>
                 <h1 class="hero-title">Context Token Optimization</h1>
-                <p class="hero-subtitle">Stop burning tokens you cannot see.</p>
+                <p class="hero-subtitle">Stop burning tokens on terminal noise your AI doesn't need to see.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -98,7 +98,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Context Token Optimization (CTO) intercepts and analyzes the API traffic between your AI agent and its LLM provider. It counts input and output tokens using provider-specific tokenization, then surfaces those numbers in real time on a per-tab and global basis. You see exactly how many tokens each prompt and response consumes as they happen.</p>
@@ -107,13 +107,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Developers using AI coding agents report spending thousands of dollars per month with zero visibility into where those tokens go. A single Claude Code session can consume millions of tokens across dozens of API calls, and without per-call tracking the bill is a black box. CTO makes every token visible so you can find and eliminate waste.</p>
+                    <p>Every character in your terminal scrollback costs tokens when an AI agent reads it. ANSI escape codes, prompt decorations, progress bars, blank lines: none of it helps the model reason about your code, but all of it costs money. CTO mode rewrites terminal output to strip the noise before the AI reads it. Developers report 30-50% context reduction on typical sessions. That is real money across a team.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -134,7 +134,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -155,11 +155,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Download Chau7 and see exactly where every token goes.</h2>
+                    <h2>Save ~40% on context tokens. Your wallet will thank you.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

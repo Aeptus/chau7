@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Terminal Search — Chau7 Terminal</title>
+    <title>Terminal Search | Chau7 Terminal</title>
     <meta name="description" content="Chau7 provides in-terminal search with regex, case sensitivity toggles, and match-by-match navigation through scrollback output.">
-    <meta property="og:title" content="Terminal Search — Chau7">
+    <meta property="og:title" content="Terminal Search | Chau7">
     <meta property="og:description" content="Chau7 provides in-terminal search with regex, case sensitivity toggles, and match-by-match navigation through scrollback output.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="search">
+        <section class="hero hero-feature" data-category="search" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SEARCH</div>
                 <h1 class="hero-title">Terminal Search</h1>
-                <p class="hero-subtitle">Find anything in your terminal output. Regex, case-sensitive, and match-by-match navigation.</p>
+                <p class="hero-subtitle">Regex search through your terminal output. Case-sensitive. Match-by-match navigation. Actually useful.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -96,22 +96,22 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Press Cmd+F to open the search bar. Type a query to highlight all matches in the terminal scrollback buffer. Navigate between matches with Enter (next) and Shift+Enter (previous), or click the arrow buttons. The current match is highlighted distinctly from other matches, and a counter shows your position in the result set.</p>
-                <p>Toggle regex mode to search with full regular expression patterns — find IP addresses, error codes, timestamps, or any structured pattern in your output. Case sensitivity is togglable independently, and whole-word matching is available for precise searches.</p>
-                <p>Search operates over the entire scrollback buffer, not just the visible viewport. For terminals with large scrollback (tens of thousands of lines), search is incremental — results appear as you type, with matches nearest to your current scroll position shown first.</p>
+                <p>Toggle regex mode to search with full regular expression patterns: find IP addresses, error codes, timestamps, or any structured pattern in your output. Case sensitivity is togglable independently, and whole-word matching is available for precise searches.</p>
+                <p>Search operates over the entire scrollback buffer, not just the visible viewport. For terminals with large scrollback (tens of thousands of lines), search is incremental: results appear as you type, with matches nearest to your current scroll position shown first.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Terminal output is ephemeral by nature — it scrolls past and is gone. When you need to find an error message from five minutes ago, a specific log line, or a URL buried in build output, piping everything through grep after the fact is not an option. Built-in search with regex and match navigation turns your scrollback buffer into a searchable document.</p>
+                    <p>Terminal output scrolls past and is gone. When you need to find a specific error, a particular log line, or a URL from earlier output, you need search that actually works. Chau7 provides regex search with case sensitivity toggle and match-by-match navigation. It searches the scrollback buffer, so content that scrolled off screen is still findable.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -128,7 +128,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -145,11 +145,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Search your terminal output — try Chau7</h2>
+                    <h2>Find that error message from five minutes ago. It's still there.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

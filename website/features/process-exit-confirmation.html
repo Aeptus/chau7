@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Process Exit Confirmation — Chau7 Terminal</title>
+    <title>Process Exit Confirmation | Chau7 Terminal</title>
     <meta name="description" content="Chau7 warns before closing terminal tabs with running processes, preventing accidental kills of SSH sessions, builds, and servers.">
-    <meta property="og:title" content="Process Exit Confirmation — Chau7">
+    <meta property="og:title" content="Process Exit Confirmation | Chau7">
     <meta property="og:description" content="Chau7 warns before closing terminal tabs with running processes, preventing accidental kills of SSH sessions, builds, and servers.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -35,7 +35,7 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does this work when quitting the entire app?","acceptedAnswer":{"@type":"Answer","text":"Yes. When you press Cmd+Q, Chau7 checks all open tabs for running processes and presents a single dialog listing every active process across all tabs, letting you cancel the quit or proceed."}},{"@type":"Question","name":"Can I set rules for specific processes?","acceptedAnswer":{"@type":"Answer","text":"Absolutely. The settings panel lets you define rules by process name — always warn for ssh and docker, never warn for zsh or bash, or prompt for everything. Rules can be scoped globally or to specific profiles."}}]
+        "mainEntity": [{"@type":"Question","name":"Does this work when quitting the entire app?","acceptedAnswer":{"@type":"Answer","text":"Yes. When you press Cmd+Q, Chau7 checks all open tabs for running processes and presents a single dialog listing every active process across all tabs, letting you cancel the quit or proceed."}},{"@type":"Question","name":"Can I set rules for specific processes?","acceptedAnswer":{"@type":"Answer","text":"Absolutely. The settings panel lets you define rules by process name: always warn for ssh and docker, never warn for zsh or bash, or prompt for everything. Rules can be scoped globally or to specific profiles."}}]
     }]
     </script>
 </head>
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="safety">
+        <section class="hero hero-feature" data-category="safety" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SAFETY</div>
                 <h1 class="hero-title">Process Exit Confirmation</h1>
-                <p class="hero-subtitle">Never accidentally kill a running build, server, or SSH session by closing a tab.</p>
+                <p class="hero-subtitle">Close a tab with a running process? Not without a warning first.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -96,21 +96,21 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
-                <p>When you close a tab or quit Chau7, it inspects the process tree of every active terminal session. If any foreground or background processes are still running — SSH connections, development servers, compilers, database clients — a confirmation dialog lists them by name and PID, giving you the chance to cancel.</p>
+                <p>When you close a tab or quit Chau7, it inspects the process tree of every active terminal session. If any foreground or background processes are still running: SSH connections, development servers, compilers, database clients: a confirmation dialog lists them by name and PID, giving you the chance to cancel.</p>
                 <p>You can configure per-process rules to fine-tune the behavior. Mark processes like node or python as always-warn, whitelist shells like zsh or bash as safe-to-close, or set specific processes to never warn. Rules apply globally or per-profile, so your production SSH connections can require confirmation while local shell tabs close instantly.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Losing a running process to an accidental Cmd+W is one of the most common terminal frustrations. A half-finished database migration, a long compilation, or an active SSH tunnel — all gone in a keystroke. Process exit confirmation adds a lightweight safety check that costs nothing in normal usage but saves hours of recovery when you reach for the wrong shortcut.</p>
+                    <p>Losing a running process to an accidental Cmd+W is one of the most common terminal frustrations. A half-finished database migration, a running dev server, an SSH session to production: gone in a keystroke. Chau7 warns before closing any tab with active processes, with configurable per-process rules so you can silence warnings for processes you don't care about.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -127,7 +127,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -137,18 +137,19 @@
                     </details>
                     <details>
                         <summary>Can I set rules for specific processes?</summary>
-                        <div class="faq-answer"><p>Absolutely. The settings panel lets you define rules by process name — always warn for ssh and docker, never warn for zsh or bash, or prompt for everything. Rules can be scoped globally or to specific profiles.</p></div>
+                        <div class="faq-answer"><p>Absolutely. The settings panel lets you define rules by process name: always warn for ssh and docker, never warn for zsh or bash, or prompt for everything. Rules can be scoped globally or to specific profiles.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Protect your running processes — try Chau7</h2>
+                    <h2>Protect your running processes from accidental Cmd+W.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

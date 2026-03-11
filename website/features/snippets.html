@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Snippets — Chau7 Terminal</title>
+    <title>Snippets | Chau7 Terminal</title>
     <meta name="description" content="Chau7 snippets let you save and reuse terminal commands with placeholder variables, insertable via command palette or keyboard shortcut.">
-    <meta property="og:title" content="Snippets — Chau7">
+    <meta property="og:title" content="Snippets | Chau7">
     <meta property="og:description" content="Chau7 snippets let you save and reuse terminal commands with placeholder variables, insertable via command palette or keyboard shortcut.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="clipboard">
+        <section class="hero hero-feature" data-category="clipboard" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">CLIPBOARD</div>
                 <h1 class="hero-title">Snippets</h1>
-                <p class="hero-subtitle">Save commands once, reuse them forever. Placeholders fill in the details each time.</p>
+                <p class="hero-subtitle">Save a command once, reuse it forever. Placeholders fill in the details. Goodbye, repetitive typing.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -96,22 +96,22 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
-                <p>Create snippets from any text — type a command, select it, and save it as a snippet with a name and optional description. Snippets support placeholder variables using a simple ${name} syntax. When you insert a snippet, Chau7 prompts you to fill in each placeholder before sending the command to the shell.</p>
+                <p>Create snippets from any text: type a command, select it, and save it as a snippet with a name and optional description. Snippets support placeholder variables using a simple ${name} syntax. When you insert a snippet, Chau7 prompts you to fill in each placeholder before sending the command to the shell.</p>
                 <p>Insert snippets through the command palette (Cmd+Shift+P), a dedicated keyboard shortcut, or the snippet manager panel. Fuzzy search finds snippets by name, description, or content. Snippets are stored locally and can be organized into folders for different projects or workflows.</p>
-                <p>Snippets integrate with clipboard history — promote any clipboard entry to a snippet with one click. They also support multi-line commands, so complex pipelines, docker-compose configurations, or kubectl commands with multiple flags become single-action insertions.</p>
+                <p>Snippets integrate with clipboard history: promote any clipboard entry to a snippet with one click. They also support multi-line commands, so complex pipelines, docker-compose configurations, or kubectl commands with multiple flags become single-action insertions.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Developers type the same complex commands hundreds of times — SSH tunnels, Docker builds with specific flags, database queries with varying parameters. Shell aliases work for simple cases but break down with variable arguments and multi-line commands. Snippets give you parameterized, searchable command templates that work across any shell without modifying your dotfiles.</p>
+                    <p>Developers type the same complex commands hundreds of times: SSH tunnels with specific port mappings, Docker builds with eight flags, database queries with connection strings. Snippets let you save these once with placeholder tokens that prompt for values when invoked. It is aliases with parameters and a search interface.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -128,7 +128,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -149,11 +149,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Stop retyping commands — download Chau7</h2>
+                    <h2>Stop retyping that Docker command. You know the one.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Shell Integration — Chau7 Terminal</title>
+    <title>Shell Integration | Chau7 Terminal</title>
     <meta name="description" content="Chau7 integrates with zsh, bash, and fish shells for automatic command detection, directory tracking, and exit code reporting.">
-    <meta property="og:title" content="Shell Integration — Chau7">
+    <meta property="og:title" content="Shell Integration | Chau7">
     <meta property="og:description" content="Chau7 integrates with zsh, bash, and fish shells for automatic command detection, directory tracking, and exit code reporting.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="terminal">
+        <section class="hero hero-feature" data-category="terminal" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">TERMINAL CORE</div>
                 <h1 class="hero-title">Shell Integration</h1>
-                <p class="hero-subtitle">Your shell talks to Chau7. Command boundaries, working directories, and exit codes reported automatically.</p>
+                <p class="hero-subtitle">Your shell talks to Chau7. Command boundaries, directories, exit codes. Automatically.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,7 +97,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Chau7 installs lightweight shell hooks into zsh, bash, and fish that emit invisible escape sequences (OSC 133 and OSC 7) at key points in the command lifecycle. A precmd/preexec pair marks the boundary between the prompt, the command input, and the command output. OSC 7 reports the current working directory after every directory change.</p>
@@ -106,13 +106,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Without shell integration, a terminal emulator sees only a stream of characters with no understanding of where one command ends and another begins. Shell integration gives Chau7 the semantic context to offer features that treat commands as first-class objects rather than interleaved text, dramatically improving navigation and interaction in long terminal sessions.</p>
+                    <p>Without shell integration, a terminal sees only a stream of characters with no structure. It cannot tell where one command ends and another begins, what the current directory is, or whether the last command succeeded. Chau7's shell integration hooks into zsh, bash, and fish to report all of this automatically, enabling features like per-command timing, directory-aware tab titles, and command-level navigation.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -133,7 +133,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -154,11 +154,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Smarter shell interaction, automatic. Download Chau7.</h2>
+                    <h2>Smarter terminal, zero configuration. Your shell already knows what to say.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

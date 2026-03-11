@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Detection Status Indicator — Chau7 Terminal</title>
+    <title>Detection Status Indicator | Chau7 Terminal</title>
     <meta name="description" content="Chau7 shows a real-time status indicator on each tab revealing whether the AI agent inside is actively running, idle, or has completed its task.">
-    <meta property="og:title" content="Detection Status Indicator — Chau7">
+    <meta property="og:title" content="Detection Status Indicator | Chau7">
     <meta property="og:description" content="Chau7 shows a real-time status indicator on each tab revealing whether the AI agent inside is actively running, idle, or has completed its task.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="ai-detection">
+        <section class="hero hero-feature" data-category="ai-detection" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-alt">AI DETECTION</div>
                 <h1 class="hero-title">Detection Status Indicator</h1>
-                <p class="hero-subtitle">Active, idle, or done — see it on the tab.</p>
+                <p class="hero-subtitle">Active, idle, or done: see it on the tab without switching to it.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,7 +97,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Each tab with a detected AI agent displays a small status badge that reflects the agent's current state. An active indicator appears while the agent process is running and consuming CPU. When the agent is waiting for input or idle, the indicator shifts to a resting state. Once the agent process exits, the indicator marks the session as completed.</p>
@@ -105,13 +105,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>AI agents can run for minutes or hours on complex tasks. Checking whether an agent is still working means switching to its tab and scrolling through output. The detection status indicator lets you monitor progress from the tab bar without interrupting your current workflow.</p>
+                    <p>AI agents can run for minutes or hours. The current workflow for checking progress: switch tab, scroll, squint, switch back. The Chau7 workflow: glance at the tab bar. A small status badge tells you whether each agent is actively working, waiting for input, or finished. It saves exactly one context switch per check, which adds up to dozens per day.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -132,7 +132,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -149,11 +149,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Download Chau7 and always know the status of every AI agent at a glance.</h2>
+                    <h2>Monitor your AI agents from the tab bar. Like a civilized person.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CTO Per-Tab Override — Chau7 Terminal</title>
+    <title>CTO Per-Tab Override | Chau7 Terminal</title>
     <meta name="description" content="Override Chau7's global Context Token Optimization setting on a per-tab basis. Enable CTO only where you need it or disable it for specific sessions.">
-    <meta property="og:title" content="CTO Per-Tab Override — Chau7">
+    <meta property="og:title" content="CTO Per-Tab Override | Chau7">
     <meta property="og:description" content="Override Chau7's global Context Token Optimization setting on a per-tab basis. Enable CTO only where you need it or disable it for specific sessions.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="ai-integration">
+        <section class="hero hero-feature" data-category="ai-integration" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-alt">AI INTEGRATION</div>
                 <h1 class="hero-title">CTO Per-Tab Override</h1>
-                <p class="hero-subtitle">Fine-grained token optimization, tab by tab.</p>
+                <p class="hero-subtitle">Token optimization where you want it, full output where you don't. Tab by tab.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,7 +97,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>CTO Per-Tab Override gives you three modes for each tab: default (follows the global CTO setting), force on (always active regardless of global setting), and force off (always inactive regardless of global setting). You set the override through the MCP server or the tab context menu.</p>
@@ -105,13 +105,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Global on/off is too coarse for multi-tab workflows. When you are profiling one agent's token usage while letting another run unmonitored, per-tab control lets you apply CTO precisely where it adds value without creating overhead or noise in tabs where you do not need it.</p>
+                    <p>Global on/off is too coarse for multi-tab workflows. You want CTO active on the tab where Claude Code is burning through tokens, but disabled on the tab where you are debugging output formatting. Per-tab override gives you that control without affecting other sessions.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -132,7 +132,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -149,11 +149,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Download Chau7 and control token optimization at the tab level.</h2>
+                    <h2>Fine-tune token optimization per tab. Because one size never fits all.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

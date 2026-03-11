@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Analytics Dashboard — Chau7 Terminal</title>
+    <title>Analytics Dashboard | Chau7 Terminal</title>
     <meta name="description" content="Chau7's Analytics Dashboard visualizes LLM token usage, API costs, and latency trends across all your AI agent sessions. Understand your AI spending at a glance.">
-    <meta property="og:title" content="Analytics Dashboard — Chau7">
+    <meta property="og:title" content="Analytics Dashboard | Chau7">
     <meta property="og:description" content="Chau7's Analytics Dashboard visualizes LLM token usage, API costs, and latency trends across all your AI agent sessions. Understand your AI spending at a glance.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="api-analytics">
+        <section class="hero hero-feature" data-category="api-analytics" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-blue">API ANALYTICS</div>
                 <h1 class="hero-title">Analytics Dashboard</h1>
-                <p class="hero-subtitle">Your AI spending, visualized.</p>
+                <p class="hero-subtitle">Tokens, costs, latency. All in one dashboard. Finally, a chart that matters.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,7 +97,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>The Analytics Dashboard aggregates data from token counting, cost tracking, and latency tracking into a visual interface. It presents charts and summaries showing token usage trends, cost breakdowns by provider and model, and latency distributions over time. Data can be filtered by date range, provider, model, agent type, or repository.</p>
@@ -106,13 +106,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Individual per-call metrics are valuable for debugging, but understanding AI spending patterns requires an aggregate view. The Analytics Dashboard surfaces trends that are invisible at the individual call level: steadily growing context sizes, cost spikes tied to specific projects, or latency degradation that correlates with provider outages.</p>
+                    <p>Individual per-call metrics are valuable for debugging, but understanding AI spending patterns requires an aggregate view. The Analytics Dashboard shows token usage, costs, and latency trends over time with daily/weekly/monthly grouping. It queries the same telemetry data that the MCP server exposes, so what you see in the dashboard matches what your automations report.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -133,7 +133,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -154,11 +154,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Download Chau7 and visualize your AI spending with the Analytics Dashboard.</h2>
+                    <h2>Visualize your AI spending. It's probably more interesting than your Jira board.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

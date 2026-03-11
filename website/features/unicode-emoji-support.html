@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Unicode & Emoji Support — Chau7 Terminal</title>
+    <title>Unicode & Emoji Support | Chau7 Terminal</title>
     <meta name="description" content="Chau7 renders full Unicode including CJK wide characters, right-to-left text, combining marks, and color emoji in the terminal.">
-    <meta property="og:title" content="Unicode & Emoji Support — Chau7">
+    <meta property="og:title" content="Unicode & Emoji Support | Chau7">
     <meta property="og:description" content="Chau7 renders full Unicode including CJK wide characters, right-to-left text, combining marks, and color emoji in the terminal.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="terminal">
+        <section class="hero hero-feature" data-category="terminal" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">TERMINAL CORE</div>
                 <h1 class="hero-title">Unicode & Emoji Support</h1>
-                <p class="hero-subtitle">Every script, every emoji, every combining sequence. Unicode rendered correctly in every cell.</p>
+                <p class="hero-subtitle">CJK, RTL, combining characters, color emoji. Unicode rendered correctly, not approximately.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -98,7 +98,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Chau7 implements Unicode 15.1 character width calculation using the East Asian Width property and the emoji presentation selector rules. CJK ideographs, fullwidth forms, and emoji with presentation selectors are correctly assigned double-width cells. Ambiguous-width characters follow a configurable policy (single or double width) to match user locale expectations.</p>
@@ -107,13 +107,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Modern developer workflows produce Unicode content constantly: file paths with international characters, log messages in multiple languages, emoji in commit messages and documentation, and prompt customization with Powerline and Nerd Font symbols. Incorrect width calculation breaks alignment in tools like ls, git log, and table formatters. Chau7 gets every character width right.</p>
+                    <p>Modern developer workflows produce Unicode content constantly: international file paths, multilingual log messages, emoji in commit messages, and mathematical symbols in documentation. Chau7 handles Unicode at the grapheme-cluster level, correctly measuring and rendering everything from Chinese characters to ZWJ emoji sequences.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -134,7 +134,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -155,11 +155,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Unicode done right in the terminal. Download Chau7.</h2>
+                    <h2>A terminal that speaks every language. Including emoji.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

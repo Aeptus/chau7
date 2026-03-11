@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Context-Aware Switching — Chau7 Terminal</title>
+    <title>Context-Aware Switching | Chau7 Terminal</title>
     <meta name="description" content="Chau7 auto-switches terminal profiles, colors, and settings when you SSH into different hosts, giving instant visual context.">
-    <meta property="og:title" content="Context-Aware Switching — Chau7">
+    <meta property="og:title" content="Context-Aware Switching | Chau7">
     <meta property="og:description" content="Chau7 auto-switches terminal profiles, colors, and settings when you SSH into different hosts, giving instant visual context.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="ssh">
+        <section class="hero hero-feature" data-category="ssh" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SSH & REMOTE</div>
                 <h1 class="hero-title">Context-Aware Switching</h1>
-                <p class="hero-subtitle">Your terminal knows where you are. Colors and settings change when you SSH into a different host.</p>
+                <p class="hero-subtitle">SSH into production and your terminal turns red. Because visual context prevents disasters.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -96,22 +96,22 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
-                <p>Chau7 monitors the process tree and terminal output of each tab to detect SSH connections. When a connection is established to a known host, the tab automatically switches to the profile associated with that host — changing the color scheme, font size, background opacity, and any other profile-specific settings. When the SSH session ends, the tab reverts to its original profile.</p>
+                <p>Chau7 monitors the process tree and terminal output of each tab to detect SSH connections. When a connection is established to a known host, the tab automatically switches to the profile associated with that host: changing the color scheme, font size, background opacity, and any other profile-specific settings. When the SSH session ends, the tab reverts to its original profile.</p>
                 <p>Context rules are configurable by hostname, hostname pattern, or SSH profile. Set all production servers to a red-tinted background, staging to yellow, and development to the default theme. The visual switch is instant and unmistakable, providing a constant reminder of which environment you are operating in.</p>
-                <p>Beyond visual changes, context switching can trigger other profile settings — different shell integrations, environment variables, or keybinding overrides. This means your production connections can disable dangerous-command shortcuts or enable additional confirmation steps automatically.</p>
+                <p>Beyond visual changes, context switching can trigger other profile settings: different shell integrations, environment variables, or keybinding overrides. This means your production connections can disable dangerous-command shortcuts or enable additional confirmation steps automatically.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Running a destructive command on the wrong server is one of the most expensive mistakes in operations. Visual context — a red background for production, a yellow tint for staging — provides an instant, subconscious signal about which environment you are in. Context-aware switching applies these signals automatically, so you never forget to set them manually.</p>
+                    <p>Running a destructive command on the wrong server is one of the most expensive mistakes in operations. Chau7 changes terminal colors, title, and settings when you SSH into different environments. Production is visually distinct from staging, which is distinct from development. The visual cue fires before your brain has to think about which server you are on.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -132,7 +132,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -153,11 +153,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Never mistake prod for staging — try Chau7</h2>
+                    <h2>Never mistake prod for staging again. Colors don't lie.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

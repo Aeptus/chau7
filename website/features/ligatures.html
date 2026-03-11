@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ligatures — Chau7 Terminal</title>
+    <title>Ligatures | Chau7 Terminal</title>
     <meta name="description" content="Chau7 renders font ligatures for programming fonts like Fira Code and JetBrains Mono, turning operators into clean symbols.">
-    <meta property="og:title" content="Ligatures — Chau7">
+    <meta property="og:title" content="Ligatures | Chau7">
     <meta property="og:description" content="Chau7 renders font ligatures for programming fonts like Fira Code and JetBrains Mono, turning operators into clean symbols.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="terminal">
+        <section class="hero hero-feature" data-category="terminal" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">TERMINAL CORE</div>
                 <h1 class="hero-title">Ligatures</h1>
-                <p class="hero-subtitle">Programming ligatures rendered correctly. Arrow operators, equality checks, and pipes as clean typographic symbols.</p>
+                <p class="hero-subtitle">Programming ligatures that actually render. => becomes a real arrow. != becomes a real inequality.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,7 +97,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Programming fonts like Fira Code, JetBrains Mono, Cascadia Code, and Iosevka include OpenType ligature tables that replace multi-character sequences (like ->, ==, !=, |>) with single typographic glyphs. Chau7 detects these ligature substitutions by running Core Text layout on each visible line and checking for glyph replacements that span multiple character cells.</p>
@@ -106,13 +106,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Programming ligatures improve code readability by rendering compound operators as distinct visual symbols. An arrow operator (->) becomes a single arrow glyph, and an inequality (!=) becomes a crossed-equals sign. Many developers choose their terminal specifically based on ligature support, and Chau7 renders them correctly without the alignment bugs that plague other GPU-accelerated terminals.</p>
+                    <p>Programming ligatures improve code readability by rendering compound operators as distinct visual symbols. But most terminals cannot render them because their text engines treat each character independently. Chau7's Metal-based renderer handles ligature substitution correctly, so your Fira Code or JetBrains Mono investment actually pays off in the terminal too.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -133,7 +133,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -150,11 +150,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Beautiful code in your terminal. Download Chau7.</h2>
+                    <h2>Pretty operators in your terminal. Your font worked hard on those ligatures.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

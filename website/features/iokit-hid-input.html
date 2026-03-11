@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IOKit HID Input — Chau7 Terminal</title>
+    <title>IOKit HID Input | Chau7 Terminal</title>
     <meta name="description" content="Chau7 uses IOKit HID for raw keyboard input, bypassing the NSEvent queue for sub-millisecond key-to-screen latency.">
-    <meta property="og:title" content="IOKit HID Input — Chau7">
+    <meta property="og:title" content="IOKit HID Input | Chau7">
     <meta property="og:description" content="Chau7 uses IOKit HID for raw keyboard input, bypassing the NSEvent queue for sub-millisecond key-to-screen latency.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="rendering">
+        <section class="hero hero-feature" data-category="rendering" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-purple">GPU RENDERING</div>
                 <h1 class="hero-title">IOKit HID Input</h1>
-                <p class="hero-subtitle">Raw keyboard events from IOKit HID. No NSEvent queue, no AppKit delay, sub-millisecond overhead.</p>
+                <p class="hero-subtitle">Raw keyboard events from IOKit HID. Below AppKit, below NSEvent, below everything.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,7 +97,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>macOS keyboard events normally travel through the IOKit HID driver, into the WindowServer, through the NSEvent dispatch queue, and finally into the application's run loop. Each hop adds latency, and the NSEvent queue batches events per run loop iteration. Chau7 registers a direct IOKit HID client callback for keyboard events, receiving raw key-down and key-up reports before they enter the WindowServer event stream.</p>
@@ -106,13 +106,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Input latency is one of the most noticeable performance characteristics of a terminal. Even a few milliseconds of extra delay between a keypress and the corresponding character appearing on screen creates a feeling of sluggishness. IOKit HID input removes the entire AppKit event queue from the critical path, making Chau7 feel instantaneous at any typing speed.</p>
+                    <p>Input latency is the most noticeable performance characteristic of a terminal. Even a few milliseconds of extra delay between keypress and screen update creates a subtle but persistent feeling that the application is not keeping up. Chau7 reads keyboard events from IOKit's HID subsystem directly, bypassing the entire NSEvent queue. The overhead is sub-millisecond.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -133,7 +133,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -154,11 +154,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Feel the difference sub-millisecond input makes. Download Chau7.</h2>
+                    <h2>Sub-millisecond input latency. You will feel the difference.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

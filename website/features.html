@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Features — Chau7 Terminal</title>
+    <title>Features | Chau7 Terminal</title>
     <meta name="description" content="185 features across 30 categories. AI detection, MCP tools, GPU rendering, split panes, SSH management, session recording, command palette, and more. Browse the full Chau7 feature catalog.">
-    <meta property="og:title" content="Chau7 Features — 185 Features, Zero Bloat">
+    <meta property="og:title" content="Chau7 Features | 185 Features, Zero Bloat">
     <meta property="og:description" content="Everything you need in a terminal, nothing you don't. Browse by category or search.">
     <meta property="og:image" content="screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -84,225 +84,164 @@
 
     <main>
         <!-- Hero -->
-        <section class="hero hero-features">
+        <section class="hero hero-features" data-ui="features-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <h1 class="hero-title">
-                    185 features.<br><span class="gradient-text">Zero bloat.</span>
+                    185 features.<br><span class="gradient-text">One terminal named after a sock.</span>
                 </h1>
                 <p class="hero-subtitle">
-                    Everything you need in a terminal, nothing you don't.
-                    Browse by category or search.
+                    AI detection, MCP terminal control, SIMD parsing, GPU rendering, and everything else
+                    a developer actually needs. Pick a pillar or <a href="#catalog" class="hero-catalog-link">search the full catalog</a>.
                 </p>
-            </div>
-        </section>
-
-        <!-- Persona Selector -->
-        <section class="persona-section" aria-labelledby="persona-heading">
-            <div class="section-inner">
-                <div class="section-header">
-                    <h2 id="persona-heading">What type of user are you?</h2>
-                    <p>Find the features that matter to you.</p>
-                </div>
-
-                <div class="persona-selector">
-                    <a class="persona-card" href="#persona-orchestrator" style="--persona-color: #3d5a1e">
-                        <span class="persona-num">01</span>
-                        <h3 class="persona-name">The Orchestrator</h3>
-                        <p class="persona-desc">You run AI agents. You need to see what they see, control what they do, and know what they cost.</p>
-                        <span class="persona-link">Explore &rarr;</span>
+                <div class="pillar-nav" data-ui="features-pillar-nav">
+                    <a href="#cognitive-load" class="pillar-nav-card active" data-panel="0">
+                        <span class="pillar-nav-num">01</span>
+                        <span class="pillar-nav-title">Lower Cognitive Load</span>
+                        <span class="pillar-nav-hint">Detection, tabs, search</span>
                     </a>
-                    <a class="persona-card" href="#persona-speedrunner" style="--persona-color: #644682">
-                        <span class="persona-num">02</span>
-                        <h3 class="persona-name">The Speedrunner</h3>
-                        <p class="persona-desc">Latency is your enemy. You want every frame rendered on the GPU and every keystroke instant.</p>
-                        <span class="persona-link">Explore &rarr;</span>
+                    <a href="#cost-context" class="pillar-nav-card" data-panel="1">
+                        <span class="pillar-nav-num">02</span>
+                        <span class="pillar-nav-title">Optimize Cost &amp; Context</span>
+                        <span class="pillar-nav-hint">Tokens, dollars, analytics</span>
                     </a>
-                    <a class="persona-card" href="#persona-multitasker" style="--persona-color: #a0522d">
-                        <span class="persona-num">03</span>
-                        <h3 class="persona-name">The Multitasker</h3>
-                        <p class="persona-desc">You have 20 tabs, 4 splits, and an SSH session to prod. You need everything, organized.</p>
-                        <span class="persona-link">Explore &rarr;</span>
-                    </a>
-                    <a class="persona-card" href="#persona-guardian" style="--persona-color: #8c3c3c">
-                        <span class="persona-num">04</span>
-                        <h3 class="persona-name">The Guardian</h3>
-                        <p class="persona-desc">You guard against accidents, attacks, and accessibility gaps. Safety is a feature.</p>
-                        <span class="persona-link">Explore &rarr;</span>
+                    <a href="#visibility-control" class="pillar-nav-card" data-panel="2">
+                        <span class="pillar-nav-num">03</span>
+                        <span class="pillar-nav-title">Visibility &amp; Control</span>
+                        <span class="pillar-nav-hint">MCP, safety, scripting</span>
                     </a>
                 </div>
             </div>
         </section>
 
-        <!-- Persona Feature Grids -->
-        <section class="persona-features" id="persona-orchestrator" data-persona="orchestrator" aria-labelledby="orchestrator-heading">
-            <div class="section-inner">
-                <span class="section-badge badge-orchestrator">Orchestrator</span>
-                <h2 id="orchestrator-heading">The Orchestrator</h2>
-                <p class="persona-subtitle">See what your AI agents see, control what they do, and know what they cost.</p>
-                <div class="catalog-grid persona-grid">
-                    <a class="catalog-card" href="features/auto-ai-cli-detection.html">
-                        <h4>Auto AI CLI Detection <span class="differentiator-star" title="Differentiator">★</span></h4>
-                        <p>Detects Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they launch in any tab.</p>
-                    </a>
-                    <a class="catalog-card" href="features/ai-tab-branding.html">
-                        <h4>AI Tab Branding <span class="differentiator-star" title="Differentiator">★</span></h4>
-                        <p>Tabs automatically adopt the brand color and logo of the active AI agent.</p>
-                    </a>
-                    <a class="catalog-card" href="features/mcp-tools.html">
-                        <h4>20 MCP Tools <span class="differentiator-star" title="Differentiator">★</span></h4>
-                        <p>Full terminal control via Model Context Protocol: tab lifecycle, command execution, output capture, telemetry.</p>
-                    </a>
-                    <a class="catalog-card" href="features/auto-registration.html">
-                        <h4>Auto-Registration <span class="differentiator-star" title="Differentiator">★</span></h4>
-                        <p>Registers in Claude Code, Cursor, Windsurf, and Codex config files on every launch.</p>
-                    </a>
-                    <a class="catalog-card" href="features/context-token-optimization.html">
-                        <h4>Context Token Optimization <span class="differentiator-star" title="Differentiator">★</span></h4>
-                        <p>Monitor and optimize LLM API token usage in real-time, per tab or globally.</p>
-                    </a>
-                    <a class="catalog-card" href="features/cost-tracking.html">
-                        <h4>Cost Tracking <span class="differentiator-star" title="Differentiator">★</span></h4>
-                        <p>Calculate cost per API call based on provider pricing. View per-session and cumulative costs.</p>
-                    </a>
-                    <a class="catalog-card" href="features/ai-session-tracking.html">
-                        <h4>AI Session Tracking</h4>
-                        <p>Group related AI interactions into sessions with run counts and duration tracking.</p>
-                    </a>
-                    <a class="catalog-card" href="features/analytics-dashboard.html">
-                        <h4>Analytics Dashboard</h4>
-                        <p>Visual dashboard showing token usage, costs, and latency trends over time.</p>
-                    </a>
+        <!-- Pillar Carousel -->
+        <div class="pillar-carousel" data-ui="features-pillar-carousel">
+            <div class="pillar-track">
+                <div class="pillar-panel active" id="cognitive-load" data-ui="features-pillar-cognitive">
+                    <div class="pillar-panel-header">
+                        <div class="pillar-number">01</div>
+                        <h2>Lower Cognitive Load</h2>
+                        <p class="pillar-subtitle">Your terminal should tell you things, not make you figure them out. Detection, organization, and search that work so you don't have to.</p>
+                    </div>
+                    <div class="catalog-grid pillar-grid">
+                        <a class="catalog-card" href="features/auto-ai-cli-detection.html">
+                            <h4>Auto AI CLI Detection <span class="differentiator-star" title="Differentiator">★</span></h4>
+                            <p>Detects Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they launch.</p>
+                        </a>
+                        <a class="catalog-card" href="features/ai-tab-branding.html">
+                            <h4>AI Tab Branding <span class="differentiator-star" title="Differentiator">★</span></h4>
+                            <p>Tabs adopt the brand color and logo of the active AI agent. Claude is orange. Codex is green.</p>
+                        </a>
+                        <a class="catalog-card" href="features/detection-status-indicator.html">
+                            <h4>Detection Status Indicator</h4>
+                            <p>Active, idle, or done: see it on the tab without switching to it.</p>
+                        </a>
+                        <a class="catalog-card" href="features/multi-tab.html">
+                            <h4>Multi-Tab</h4>
+                            <p>Unlimited tabs with drag-to-reorder, pinning, and custom titles.</p>
+                        </a>
+                        <a class="catalog-card" href="features/tab-drag-drop.html">
+                            <h4>Tab Drag &amp; Drop</h4>
+                            <p>Drag tabs anywhere. Snap-to-position with zero drift.</p>
+                        </a>
+                        <a class="catalog-card" href="features/session-restore.html">
+                            <h4>Session Restore</h4>
+                            <p>Quit and relaunch. Everything comes back exactly as you left it.</p>
+                        </a>
+                        <a class="catalog-card" href="features/terminal-search.html">
+                            <h4>Terminal Search</h4>
+                            <p>Regex search through terminal output with match-by-match navigation.</p>
+                        </a>
+                        <a class="catalog-card" href="features/command-palette.html">
+                            <h4>Command Palette</h4>
+                            <p>Cmd+Shift+P. Every feature, every action, one fuzzy search away.</p>
+                        </a>
+                    </div>
                 </div>
-                <p class="section-cta-text"><a href="#catalog">See all features &rarr;</a></p>
-            </div>
-        </section>
-
-        <section class="persona-features" id="persona-speedrunner" data-persona="speedrunner" aria-labelledby="speedrunner-heading">
-            <div class="section-inner">
-                <span class="section-badge badge-speedrunner">Speedrunner</span>
-                <h2 id="speedrunner-heading">The Speedrunner</h2>
-                <p class="persona-subtitle">Every frame rendered on the GPU, every keystroke instant.</p>
-                <div class="catalog-grid persona-grid">
-                    <a class="catalog-card" href="features/metal-rendering.html">
-                        <h4>Metal Rendering <span class="differentiator-star" title="Differentiator">★</span></h4>
-                        <p>Hardware-accelerated rendering via Apple Metal API with glyph atlas and dirty region tracking.</p>
-                    </a>
-                    <a class="catalog-card" href="features/iosurface-display.html">
-                        <h4>IOSurface Display <span class="differentiator-star" title="Differentiator">★</span></h4>
-                        <p>Direct GPU-to-display via IOSurface, bypassing the macOS window compositor for zero-copy display.</p>
-                    </a>
-                    <a class="catalog-card" href="features/simd-parsing.html">
-                        <h4>SIMD Parsing <span class="differentiator-star" title="Differentiator">★</span></h4>
-                        <p>16-32 byte SIMD-accelerated ANSI escape parsing in Rust for cache-line-speed throughput.</p>
-                    </a>
-                    <a class="catalog-card" href="features/iokit-hid-input.html">
-                        <h4>IOKit HID Input <span class="differentiator-star" title="Differentiator">★</span></h4>
-                        <p>Bypasses NSEvent queue for raw keyboard events with sub-millisecond overhead.</p>
-                    </a>
-                    <a class="catalog-card" href="features/triple-buffering.html">
-                        <h4>Triple Buffering</h4>
-                        <p>Atomic-swap triple buffer ensures no tearing and no render blocking between parser and GPU.</p>
-                    </a>
-                    <a class="catalog-card" href="features/lock-free-spsc-buffer.html">
-                        <h4>Lock-Free SPSC Buffer</h4>
-                        <p>Zero-contention PTY data pipeline between reader and parser threads.</p>
-                    </a>
-                    <a class="catalog-card" href="features/background-suspension.html">
-                        <h4>Background Suspension</h4>
-                        <p>Inactive tabs consume no render cycles. Instant resume on tab switch.</p>
-                    </a>
+                <div class="pillar-panel" id="cost-context" data-ui="features-pillar-cost">
+                    <div class="pillar-panel-header">
+                        <div class="pillar-number">02</div>
+                        <h2>Optimize Cost &amp; Context</h2>
+                        <p class="pillar-subtitle">Know what your AI agents spend, what tokens they burn, and where the money goes. Finally, numbers instead of vibes.</p>
+                    </div>
+                    <div class="catalog-grid pillar-grid">
+                        <a class="catalog-card" href="features/context-token-optimization.html">
+                            <h4>Context Token Optimization <span class="differentiator-star" title="Differentiator">★</span></h4>
+                            <p>Strip terminal noise before AI reads it. Save ~40% on context tokens.</p>
+                        </a>
+                        <a class="catalog-card" href="features/cost-tracking.html">
+                            <h4>Cost Tracking <span class="differentiator-star" title="Differentiator">★</span></h4>
+                            <p>Dollars and cents per API call, per session, per month. No more surprises.</p>
+                        </a>
+                        <a class="catalog-card" href="features/token-counting.html">
+                            <h4>Token Counting</h4>
+                            <p>Input tokens, output tokens, per call. The numbers your provider charges but never shows.</p>
+                        </a>
+                        <a class="catalog-card" href="features/latency-tracking.html">
+                            <h4>Latency Tracking</h4>
+                            <p>Time-to-first-token and total duration for every API call.</p>
+                        </a>
+                        <a class="catalog-card" href="features/analytics-dashboard.html">
+                            <h4>Analytics Dashboard</h4>
+                            <p>Tokens, costs, and latency trends over time. Finally, a chart that matters.</p>
+                        </a>
+                        <a class="catalog-card" href="features/ai-session-tracking.html">
+                            <h4>AI Session Tracking</h4>
+                            <p>Every AI session tracked from first prompt to last. Run counts, duration, cost attribution.</p>
+                        </a>
+                    </div>
                 </div>
-                <p class="section-cta-text"><a href="#catalog">See all features &rarr;</a></p>
-            </div>
-        </section>
-
-        <section class="persona-features" id="persona-multitasker" data-persona="multitasker" aria-labelledby="multitasker-heading">
-            <div class="section-inner">
-                <span class="section-badge badge-multitasker">Multitasker</span>
-                <h2 id="multitasker-heading">The Multitasker</h2>
-                <p class="persona-subtitle">20 tabs, 4 splits, an SSH session to prod — everything, organized.</p>
-                <div class="catalog-grid persona-grid">
-                    <a class="catalog-card" href="features/multi-tab.html">
-                        <h4>Multi-Tab</h4>
-                        <p>Unlimited tabs with drag-to-reorder, tab pinning, and tab-specific titles.</p>
-                    </a>
-                    <a class="catalog-card" href="features/split-panes.html">
-                        <h4>Split Panes</h4>
-                        <p>Horizontal and vertical splits within any tab. Resize with drag handles or keyboard shortcuts.</p>
-                    </a>
-                    <a class="catalog-card" href="features/tab-drag-drop.html">
-                        <h4>Tab Drag &amp; Drop</h4>
-                        <p>Drag tabs between windows or within the tab bar. Snap positioning with smooth animations.</p>
-                    </a>
-                    <a class="catalog-card" href="features/session-restore.html">
-                        <h4>Session Restore</h4>
-                        <p>Restore tabs, working directories, and terminal state after app restart.</p>
-                    </a>
-                    <a class="catalog-card" href="features/session-recording.html">
-                        <h4>Session Recording <span class="differentiator-star" title="Differentiator">★</span></h4>
-                        <p>Record terminal sessions with precise timestamps for every output event.</p>
-                    </a>
-                    <a class="catalog-card" href="features/command-palette.html">
-                        <h4>Command Palette</h4>
-                        <p>Cmd+Shift+P for fuzzy-searchable commands. Find any action across all features.</p>
-                    </a>
-                    <a class="catalog-card" href="features/terminal-search.html">
-                        <h4>Terminal Search</h4>
-                        <p>Search within terminal output with regex support, case sensitivity, and match navigation.</p>
-                    </a>
-                    <a class="catalog-card" href="features/ssh-connection-manager.html">
-                        <h4>SSH Connection Manager</h4>
-                        <p>Visual SSH profile manager with host, port, identity file, and jump host configuration.</p>
-                    </a>
+                <div class="pillar-panel" id="visibility-control" data-ui="features-pillar-control">
+                    <div class="pillar-panel-header">
+                        <div class="pillar-number">03</div>
+                        <h2>Visibility &amp; Control</h2>
+                        <p class="pillar-subtitle">MCP tools, safety guardrails, and scripting APIs. Your AI agents get power. You keep oversight.</p>
+                    </div>
+                    <div class="catalog-grid pillar-grid">
+                        <a class="catalog-card" href="features/mcp-tools.html">
+                            <h4>20 MCP Tools <span class="differentiator-star" title="Differentiator">★</span></h4>
+                            <p>Full terminal control via MCP. Tab lifecycle, command execution, output capture, telemetry.</p>
+                        </a>
+                        <a class="catalog-card" href="features/auto-registration.html">
+                            <h4>Auto-Registration <span class="differentiator-star" title="Differentiator">★</span></h4>
+                            <p>Launch Chau7. Done. Every AI client already knows how to talk to it.</p>
+                        </a>
+                        <a class="catalog-card" href="features/mcp-approval-gate.html">
+                            <h4>MCP Approval Gate</h4>
+                            <p>Review every MCP tool call before it runs. Trust, but verify.</p>
+                        </a>
+                        <a class="catalog-card" href="features/tab-limits.html">
+                            <h4>Tab Limits</h4>
+                            <p>Maximum MCP-created tabs. Prevents runaway agents from tab-bombing you.</p>
+                        </a>
+                        <a class="catalog-card" href="features/dangerous-command-guard.html">
+                            <h4>Dangerous Command Guard <span class="differentiator-star" title="Differentiator">★</span></h4>
+                            <p>rm -rf pauses for confirmation. Because undo doesn't exist in terminals.</p>
+                        </a>
+                        <a class="catalog-card" href="features/session-recording.html">
+                            <h4>Session Recording <span class="differentiator-star" title="Differentiator">★</span></h4>
+                            <p>Built-in session recording. Every keystroke, every output, millisecond timestamps.</p>
+                        </a>
+                        <a class="catalog-card" href="features/json-rpc-api.html">
+                            <h4>JSON-RPC API</h4>
+                            <p>Automate your terminal from any programming language. Not AppleScript.</p>
+                        </a>
+                        <a class="catalog-card" href="features/mcp-tab-indicator.html">
+                            <h4>MCP Tab Indicator</h4>
+                            <p>Know which tabs are yours and which ones your AI conjured.</p>
+                        </a>
+                    </div>
                 </div>
-                <p class="section-cta-text"><a href="#catalog">See all features &rarr;</a></p>
             </div>
-        </section>
-
-        <section class="persona-features" id="persona-guardian" data-persona="guardian" aria-labelledby="guardian-heading">
-            <div class="section-inner">
-                <span class="section-badge badge-guardian">Guardian</span>
-                <h2 id="guardian-heading">The Guardian</h2>
-                <p class="persona-subtitle">Guard against accidents, attacks, and accessibility gaps.</p>
-                <div class="catalog-grid persona-grid">
-                    <a class="catalog-card" href="features/dangerous-command-guard.html">
-                        <h4>Dangerous Command Guard <span class="differentiator-star" title="Differentiator">★</span></h4>
-                        <p>Intercepts rm -rf, dd, mkfs and other dangerous commands with a confirmation dialog before execution.</p>
-                    </a>
-                    <a class="catalog-card" href="features/paste-confirmation.html">
-                        <h4>Paste Confirmation</h4>
-                        <p>Warns before pasting multi-line content or content containing newlines to prevent accidental command execution.</p>
-                    </a>
-                    <a class="catalog-card" href="features/mcp-approval-gate.html">
-                        <h4>MCP Approval Gate</h4>
-                        <p>Optional per-tool approval for MCP actions before they execute.</p>
-                    </a>
-                    <a class="catalog-card" href="features/process-exit-confirmation.html">
-                        <h4>Process Exit Confirmation</h4>
-                        <p>Warns before closing tabs with running processes. Configurable per-process rules.</p>
-                    </a>
-                    <a class="catalog-card" href="features/voiceover-support.html">
-                        <h4>VoiceOver Support</h4>
-                        <p>Full VoiceOver integration for screen reader users with terminal content announcement.</p>
-                    </a>
-                    <a class="catalog-card" href="features/high-contrast-mode.html">
-                        <h4>High Contrast Mode</h4>
-                        <p>Respects macOS High Contrast accessibility setting with enhanced border and text contrast.</p>
-                    </a>
-                    <a class="catalog-card" href="features/reduced-motion.html">
-                        <h4>Reduced Motion</h4>
-                        <p>Respects macOS Reduced Motion preference. Disables animations system-wide.</p>
-                    </a>
-                </div>
-                <p class="section-cta-text"><a href="#catalog">See all features &rarr;</a></p>
-            </div>
-        </section>
+        </div>
 
         <!-- Filter Bar + Feature Catalog -->
         <section class="features-section" id="catalog" aria-labelledby="catalog-heading">
             <div class="section-inner">
-                <h2 id="catalog-heading" class="sr-only">Feature catalog</h2>
+                <div class="section-header">
+                    <h2 id="catalog-heading">The full catalog</h2>
+                    <p>All 185 features. Search or filter by category.</p>
+                </div>
 
                 <div class="filter-bar">
                     <input type="search" class="filter-search" placeholder="Search features..." aria-label="Search features">
@@ -408,7 +347,7 @@
                     </a>
                     <a class="catalog-card" href="features/unix-socket-server.html" data-category="mcp">
                         <h4>Unix Socket Server</h4>
-                        <p>MCP server runs over a local Unix socket — no network exposure, no authentication needed.</p>
+                        <p>MCP server runs over a local Unix socket: no network exposure, no authentication needed.</p>
                     </a>
                     <a class="catalog-card" href="features/auto-registration.html" data-category="mcp">
                         <h4>Auto-Registration <span class="differentiator-star" title="Differentiator">★</span></h4>
@@ -726,8 +665,9 @@
         <section class="footer-cta-section" aria-label="Download call to action">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>185 features. Try them all.</h2>
+                    <h2>185 features. Free. Open source. Named after a sock.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Your terminal will never be the same. (In a good way.)</p>
                 </div>
             </div>
         </section>

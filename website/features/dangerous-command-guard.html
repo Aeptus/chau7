@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dangerous Command Guard — Chau7 Terminal</title>
+    <title>Dangerous Command Guard | Chau7 Terminal</title>
     <meta name="description" content="Chau7 intercepts destructive terminal commands like rm -rf and dd with a confirmation dialog, preventing accidental data loss on macOS.">
-    <meta property="og:title" content="Dangerous Command Guard — Chau7">
+    <meta property="og:title" content="Dangerous Command Guard | Chau7">
     <meta property="og:description" content="Chau7 intercepts destructive terminal commands like rm -rf and dd with a confirmation dialog, preventing accidental data loss on macOS.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,45 +74,45 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="safety">
+        <section class="hero hero-feature" data-category="safety" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SAFETY</div>
                 <h1 class="hero-title">Dangerous Command Guard</h1>
-                <p class="hero-subtitle">A seatbelt for your shell. Dangerous commands pause for confirmation before they touch the disk.</p>
+                <p class="hero-subtitle">A seatbelt for your shell. rm -rf pauses for confirmation. Because undo doesn't exist in terminals.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
                     <li class="question-item">How do I prevent accidental rm -rf in the terminal?</li>
                     <li class="question-item">Is there a terminal guard for dangerous commands like dd or mkfs?</li>
-                    <li class="question-item">Terminal paste hidden characters attack — how to protect against ClickFix?</li>
+                    <li class="question-item">Terminal paste hidden characters attack: how to protect against ClickFix?</li>
                     <li class="question-item">Can a terminal emulator block destructive commands before execution?</li>
                 </ul>
             </div>
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
-                <p>Chau7 maintains a curated ruleset of dangerous command patterns — rm with recursive or force flags, dd targeting block devices, mkfs, chmod 777 on root paths, and more. When a command matches, execution is paused and a confirmation dialog appears showing exactly what the command will do, which paths it affects, and the potential consequences.</p>
-                <p>The guard operates at the terminal input layer, not as a shell alias or wrapper. This means it works regardless of which shell you use (zsh, bash, fish) and catches commands pasted from the clipboard — including those containing hidden Unicode characters or embedded newlines used in ClickFix-style social engineering attacks that surged through 2025.</p>
+                <p>Chau7 maintains a curated ruleset of dangerous command patterns: rm with recursive or force flags, dd targeting block devices, mkfs, chmod 777 on root paths, and more. When a command matches, execution is paused and a confirmation dialog appears showing exactly what the command will do, which paths it affects, and the potential consequences.</p>
+                <p>The guard operates at the terminal input layer, not as a shell alias or wrapper. This means it works regardless of which shell you use (zsh, bash, fish) and catches commands pasted from the clipboard: including those containing hidden Unicode characters or embedded newlines used in ClickFix-style social engineering attacks that surged through 2025.</p>
                 <p>Rules are fully configurable. You can add your own patterns, whitelist trusted directories, or adjust severity levels. The guard distinguishes between high-risk operations (immediate data loss) and medium-risk ones (recoverable but disruptive), applying different confirmation requirements to each.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Every developer has a horror story about a misplaced rm -rf or a dd that targeted the wrong device. Traditional shell aliases are brittle and shell-specific. Chau7's guard works universally at the terminal layer, catching dangerous commands whether typed, pasted, or injected — providing a consistent safety net that adapts to modern clipboard-based attack vectors without slowing down your normal workflow.</p>
+                    <p>Every developer has a horror story about a misplaced rm -rf or a dd that targeted the wrong device. Shell aliases and confirmation functions are fragile and easy to bypass. Chau7's dangerous command guard intercepts known destructive commands at the terminal level, before the shell sees them, and presents a confirmation dialog. It is a seatbelt, not a cage: experienced drivers still wear them.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -129,7 +129,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -150,11 +150,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Stop rm -rf accidents — download Chau7</h2>
+                    <h2>Protect yourself from rm -rf. Or from Tuesday-morning-before-coffee you.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

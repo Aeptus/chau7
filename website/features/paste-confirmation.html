@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Paste Confirmation — Chau7 Terminal</title>
+    <title>Paste Confirmation | Chau7 Terminal</title>
     <meta name="description" content="Chau7 shows a confirmation dialog before pasting multi-line content into the terminal, preventing accidental command execution from clipboard.">
-    <meta property="og:title" content="Paste Confirmation — Chau7">
+    <meta property="og:title" content="Paste Confirmation | Chau7">
     <meta property="og:description" content="Chau7 shows a confirmation dialog before pasting multi-line content into the terminal, preventing accidental command execution from clipboard.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="clipboard">
+        <section class="hero hero-feature" data-category="clipboard" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">CLIPBOARD</div>
                 <h1 class="hero-title">Paste Confirmation</h1>
-                <p class="hero-subtitle">See what you are pasting before it executes. Multi-line paste gets a safety check.</p>
+                <p class="hero-subtitle">See exactly what you're about to paste before it executes. Multi-line paste gets a safety check.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,21 +97,21 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>When you paste text containing newline characters into a Chau7 terminal, a confirmation dialog appears showing the full content with syntax highlighting. Each line is displayed with a line number so you can review exactly what will be sent to the shell. You can edit the content inline, strip trailing newlines, or cancel the paste entirely.</p>
-                <p>This works independently of bracketed paste mode, which relies on the running application to handle paste sequences correctly — and many programs do not. Chau7's confirmation operates at the terminal emulator level, before bytes reach the shell, providing consistent protection regardless of what is running in the session.</p>
+                <p>This works independently of bracketed paste mode, which relies on the running application to handle paste sequences correctly: and many programs do not. Chau7's confirmation operates at the terminal emulator level, before bytes reach the shell, providing consistent protection regardless of what is running in the session.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Pasting from the clipboard is one of the most dangerous terminal actions. A single newline in copied text can execute commands immediately, and bracketed paste mode — the supposed safety mechanism — is inconsistently supported across shells and programs. Chau7 adds a reliable, visual confirmation step that catches the problem before it reaches the shell, not after.</p>
+                    <p>Pasting from the clipboard is one of the most dangerous terminal actions. A single newline in copied text can execute commands before you see them. ClickFix attacks exploit this by embedding hidden commands in seemingly innocent clipboard content. Chau7 shows a preview of multi-line pastes and warns about content containing newlines or control characters before anything executes.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -128,7 +128,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -145,11 +145,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Paste safely — try Chau7</h2>
+                    <h2>Paste with confidence. Or at least with a preview.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

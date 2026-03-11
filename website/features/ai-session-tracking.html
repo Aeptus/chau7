@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Session Tracking — Chau7 Terminal</title>
+    <title>AI Session Tracking | Chau7 Terminal</title>
     <meta name="description" content="Chau7 groups AI agent interactions into trackable sessions. View run counts, duration, and activity history for every AI session across your terminal tabs.">
-    <meta property="og:title" content="AI Session Tracking — Chau7">
+    <meta property="og:title" content="AI Session Tracking | Chau7">
     <meta property="og:description" content="Chau7 groups AI agent interactions into trackable sessions. View run counts, duration, and activity history for every AI session across your terminal tabs.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="ai-integration">
+        <section class="hero hero-feature" data-category="ai-integration" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-alt">AI INTEGRATION</div>
                 <h1 class="hero-title">AI Session Tracking</h1>
-                <p class="hero-subtitle">Every AI session, tracked from start to finish.</p>
+                <p class="hero-subtitle">Every AI session, tracked from first prompt to last. Because 'I think it was Tuesday' is not auditing.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,7 +97,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Chau7 automatically groups AI agent activity into sessions. A session begins when an AI agent is detected in a tab and encompasses all runs, tool calls, and API interactions that occur until the agent exits. Each session is assigned a unique ID and tracks its start time, duration, run count, and associated tab.</p>
@@ -106,13 +106,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Without session tracking, AI agent usage is ephemeral. You finish a coding session and have no record of how many runs it took, how long it lasted, or what tools were invoked. Session tracking gives you that history, making it possible to review productivity patterns, audit agent activity, and understand how your AI tools are being used over time.</p>
+                    <p>Without session tracking, AI agent usage is ephemeral. You finish a coding session and have no record of how many runs it took, how long each one lasted, or what the cumulative cost was. Chau7 groups related AI interactions into sessions with run counts, duration, and cost attribution so you can answer 'how much did that feature cost to build with AI?'</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -133,7 +133,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -154,11 +154,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Download Chau7 and track every AI session from first prompt to last.</h2>
+                    <h2>Stop losing your AI session history. It was right there this whole time.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bell Notification — Chau7 Terminal</title>
+    <title>Bell Notification | Chau7 Terminal</title>
     <meta name="description" content="Chau7 supports visual bell, audio bell, and Dock bounce notifications on the terminal bell character, configurable per profile.">
-    <meta property="og:title" content="Bell Notification — Chau7">
+    <meta property="og:title" content="Bell Notification | Chau7">
     <meta property="og:description" content="Chau7 supports visual bell, audio bell, and Dock bounce notifications on the terminal bell character, configurable per profile.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="terminal">
+        <section class="hero hero-feature" data-category="terminal" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">TERMINAL CORE</div>
                 <h1 class="hero-title">Bell Notification</h1>
-                <p class="hero-subtitle">Get notified when your terminal needs attention. Visual flash, audio bell, or Dock bounce, your choice.</p>
+                <p class="hero-subtitle">Your build finished. Your long command completed. Chau7 lets you know, however you prefer.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,7 +97,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>When a program writes the BEL character (0x07) to the terminal, Chau7 triggers a configurable notification. Three notification modes are available: a visual bell that briefly flashes the terminal background, an audio bell that plays the system alert sound, and a Dock bounce that animates the Chau7 icon in the Dock to draw attention to a background terminal.</p>
@@ -106,13 +106,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>The terminal bell is the standard mechanism for programs to request user attention: a build finishing, a long-running command completing, or an error requiring input. Without proper bell support, these notifications are silently dropped and the user misses time-sensitive events. Chau7's configurable bell ensures you are always notified in the way that works best for your workflow.</p>
+                    <p>The terminal bell is the standard mechanism for programs to request attention: a build finishing, a long-running command completing, a test suite reporting results. Chau7 supports visual flash, audio bell, and macOS notification center integration so you never miss an event even when the terminal is in the background.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -133,7 +133,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -154,11 +154,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Never miss a terminal notification. Download Chau7.</h2>
+                    <h2>Get notified when your terminal needs attention. Like a polite butler.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hyperlinks — Chau7 Terminal</title>
+    <title>Hyperlinks | Chau7 Terminal</title>
     <meta name="description" content="Chau7 auto-detects clickable URLs and supports the OSC 8 hyperlink protocol for rich terminal links with custom text.">
-    <meta property="og:title" content="Hyperlinks — Chau7">
+    <meta property="og:title" content="Hyperlinks | Chau7">
     <meta property="og:description" content="Chau7 auto-detects clickable URLs and supports the OSC 8 hyperlink protocol for rich terminal links with custom text.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="terminal">
+        <section class="hero hero-feature" data-category="terminal" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">TERMINAL CORE</div>
                 <h1 class="hero-title">Hyperlinks</h1>
-                <p class="hero-subtitle">URLs become clickable links. OSC 8 support gives CLI tools the power of rich hyperlinks.</p>
+                <p class="hero-subtitle">URLs in your terminal are actually clickable. OSC 8 hyperlinks make CLI output interactive.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,7 +97,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Chau7 runs a URL detection regex over terminal output in real time, identifying http://, https://, file://, and other common URL schemes. Detected URLs are rendered with a subtle underline and become clickable: Cmd+click opens the URL in the default browser, and a hover tooltip shows the full URL for truncated or wrapped links.</p>
@@ -106,13 +106,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Modern CLI tools increasingly output URLs: links to documentation, CI build results, pull request pages, and file paths. Without clickable links, users must manually select, copy, and paste every URL. Hyperlink support turns the terminal from a text-only surface into a navigable interface where output links are immediately actionable.</p>
+                    <p>Modern CLI tools output URLs constantly: links to documentation, CI builds, pull requests, file paths. In most terminals, you have to manually copy-paste them into a browser. Chau7 supports OSC 8 hyperlinks, making URLs clickable. It also detects plain URLs in terminal output and makes those clickable too.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -133,7 +133,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -150,11 +150,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Clickable links in your terminal. Download Chau7.</h2>
+                    <h2>Click links in your terminal. Groundbreaking, we know.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

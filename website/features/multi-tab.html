@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multi-Tab — Chau7 Terminal</title>
+    <title>Multi-Tab | Chau7 Terminal</title>
     <meta name="description" content="Chau7 supports unlimited terminal tabs with drag-to-reorder, pinning, and customizable titles in a native macOS tab bar.">
-    <meta property="og:title" content="Multi-Tab — Chau7">
+    <meta property="og:title" content="Multi-Tab | Chau7">
     <meta property="og:description" content="Chau7 supports unlimited terminal tabs with drag-to-reorder, pinning, and customizable titles in a native macOS tab bar.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="tabs">
+        <section class="hero hero-feature" data-category="tabs" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">TAB MANAGEMENT</div>
                 <h1 class="hero-title">Multi-Tab</h1>
-                <p class="hero-subtitle">Open as many tabs as you need with full drag-to-reorder, pinning, and custom titles.</p>
+                <p class="hero-subtitle">Unlimited tabs. Drag to reorder, pin the important ones, title them whatever you want.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,21 +97,21 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Chau7's tab bar is a custom SwiftUI implementation built on the <code>OverlayTabsModel</code> that manages tab lifecycle, ordering, and state. You can open unlimited tabs, each running its own independent shell session. Tabs can be reordered by dragging, pinned to prevent accidental closure, and given custom titles that override the auto-detected process name or working directory.</p>
-                <p>Each tab maintains its own terminal state, scrollback buffer, and process tree. Switching tabs is instant because the terminal state is kept in memory — there is no re-rendering or reconnection delay. The tab bar itself uses snap-based drag positioning for precise placement without animation drift.</p>
+                <p>Each tab maintains its own terminal state, scrollback buffer, and process tree. Switching tabs is instant because the terminal state is kept in memory: there is no re-rendering or reconnection delay. The tab bar itself uses snap-based drag positioning for precise placement without animation drift.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Developers routinely work across multiple directories, servers, and tasks simultaneously. A terminal that makes tab management clunky or limited forces you into workarounds like tmux panes or multiple windows. Chau7's tab system is designed for the way developers actually work — many concurrent sessions, frequently reordered, each with a clear identity.</p>
+                    <p>Developers routinely work across multiple directories, servers, and tasks simultaneously. A terminal that makes tab management feel heavy or limited forces you into workarounds like tmux just to have more than a few sessions. Chau7's tab system is designed for the 20-tab workflow: drag to reorder, pin persistent tabs, set custom titles, and let background suspension keep everything responsive.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -132,7 +132,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -149,11 +149,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Organize your terminal workflow — try Chau7's multi-tab</h2>
+                    <h2>Finally, tabs that work the way you think they should.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

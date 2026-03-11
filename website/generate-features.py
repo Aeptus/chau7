@@ -13,9 +13,9 @@ TEMPLATE = """\
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{title} — Chau7 Terminal</title>
+    <title>{title} | Chau7 Terminal</title>
     <meta name="description" content="{meta_desc}">
-    <meta property="og:title" content="{title} — Chau7">
+    <meta property="og:title" content="{title} | Chau7">
     <meta property="og:description" content="{meta_desc}">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -84,7 +84,7 @@ TEMPLATE = """\
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="{category_id}">
+        <section class="hero hero-feature" data-category="{category_id}" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge{badge_class}">{category_upper}</div>
@@ -94,7 +94,7 @@ TEMPLATE = """\
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -104,7 +104,7 @@ TEMPLATE = """\
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
 {how_it_works_html}
@@ -117,7 +117,7 @@ TEMPLATE = """\
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -127,7 +127,7 @@ TEMPLATE = """\
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -137,11 +137,12 @@ TEMPLATE = """\
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>{cta}</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

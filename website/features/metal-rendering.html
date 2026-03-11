@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Metal Rendering — Chau7 Terminal</title>
+    <title>Metal Rendering | Chau7 Terminal</title>
     <meta name="description" content="Chau7 uses Apple Metal for GPU-accelerated terminal rendering with glyph atlas caching and dirty region tracking for maximum frame rates.">
-    <meta property="og:title" content="Metal Rendering — Chau7">
+    <meta property="og:title" content="Metal Rendering | Chau7">
     <meta property="og:description" content="Chau7 uses Apple Metal for GPU-accelerated terminal rendering with glyph atlas caching and dirty region tracking for maximum frame rates.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="rendering">
+        <section class="hero hero-feature" data-category="rendering" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-purple">GPU RENDERING</div>
                 <h1 class="hero-title">Metal Rendering</h1>
-                <p class="hero-subtitle">Every frame rendered on the GPU, every glyph cached in a texture atlas, every update clipped to the dirty region.</p>
+                <p class="hero-subtitle">Apple Metal GPU rendering. Glyph atlas. Dirty region tracking. Your terminal has never been this fast.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -98,7 +98,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Chau7 renders the entire terminal grid on the GPU using Apple's Metal API. Each visible character is looked up in a glyph atlas, a single GPU texture that caches pre-rasterized glyphs at the current font size and DPI. When a glyph is encountered for the first time it is rasterized by Core Text and uploaded to the atlas. Subsequent frames reference the cached texture coordinates, avoiding per-frame CPU rasterization entirely.</p>
@@ -107,13 +107,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>CPU-based terminal renderers redraw the entire screen on every update, which causes visible stutter when programs flood the terminal with output. Metal rendering keeps Chau7 at a locked frame rate even during heavy output, eliminating the freezes and dropped frames that plague non-GPU terminals during builds, log tailing, and large file concatenation.</p>
+                    <p>CPU-based terminal renderers redraw the entire screen on every update, which causes visible stutter when programs flood output. Chau7 renders with Apple Metal: a hardware-accelerated glyph atlas caches pre-rasterized characters, and dirty region tracking ensures only changed cells get redrawn. The result is smooth rendering even during massive output bursts. This is not marketing fluff. It is a measurably different experience.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -134,7 +134,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -155,11 +155,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>See GPU-accelerated rendering in action. Download Chau7.</h2>
+                    <h2>GPU-rendered terminal. Because your Mac has a GPU and it's bored.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

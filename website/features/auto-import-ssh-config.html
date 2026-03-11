@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Auto-Import SSH Config — Chau7 Terminal</title>
+    <title>Auto-Import SSH Config | Chau7 Terminal</title>
     <meta name="description" content="Chau7 automatically imports and syncs SSH hosts from your ~/.ssh/config file, keeping your connection manager always up to date.">
-    <meta property="og:title" content="Auto-Import SSH Config — Chau7">
+    <meta property="og:title" content="Auto-Import SSH Config | Chau7">
     <meta property="og:description" content="Chau7 automatically imports and syncs SSH hosts from your ~/.ssh/config file, keeping your connection manager always up to date.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="ssh">
+        <section class="hero hero-feature" data-category="ssh" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SSH & REMOTE</div>
                 <h1 class="hero-title">Auto-Import SSH Config</h1>
-                <p class="hero-subtitle">Your SSH config is already full of hosts. Chau7 reads it so you do not have to re-enter them.</p>
+                <p class="hero-subtitle">Your ~/.ssh/config already has dozens of hosts. Chau7 reads it. No re-entry required.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -96,21 +96,21 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>On first launch, Chau7 scans your ~/.ssh/config file and imports every Host entry into the connection manager. Each entry's hostname, user, port, identity file, and ProxyJump settings are parsed and converted into Chau7 profiles automatically. Wildcard hosts and Match blocks are recognized and handled correctly.</p>
-                <p>Chau7 watches the config file for changes using macOS file system events. When you edit ~/.ssh/config — adding a new host, changing a port, updating an identity file — the connection manager updates within seconds. Changes flow one way by default (config to Chau7), so your SSH config remains the source of truth.</p>
+                <p>Chau7 watches the config file for changes using macOS file system events. When you edit ~/.ssh/config: adding a new host, changing a port, updating an identity file: the connection manager updates within seconds. Changes flow one way by default (config to Chau7), so your SSH config remains the source of truth.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Most developers already have a carefully maintained ~/.ssh/config with dozens of hosts. Manually re-entering all of that into a connection manager is tedious and error-prone. Auto-import eliminates the setup step entirely and keeps the connection manager current as your infrastructure evolves, so the visual interface always reflects reality.</p>
+                    <p>Most developers have a carefully maintained ~/.ssh/config with dozens of hosts, jump configurations, and identity file paths. Re-entering all of that into a new tool is a non-starter. Chau7 reads your SSH config file directly and imports every host with its full configuration. Migration takes seconds.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -131,7 +131,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -148,11 +148,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Import your SSH hosts instantly — try Chau7</h2>
+                    <h2>Import your SSH config in one click. Because you already did the hard part.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

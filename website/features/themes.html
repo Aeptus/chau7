@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Themes — Chau7 Terminal</title>
+    <title>Themes | Chau7 Terminal</title>
     <meta name="description" content="Chau7 includes built-in terminal themes with 256-color and true color support. Import iTerm2 color schemes or create your own custom palette.">
-    <meta property="og:title" content="Themes — Chau7">
+    <meta property="og:title" content="Themes | Chau7">
     <meta property="og:description" content="Chau7 includes built-in terminal themes with 256-color and true color support. Import iTerm2 color schemes or create your own custom palette.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="customization">
+        <section class="hero hero-feature" data-category="customization" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">CUSTOMIZATION</div>
                 <h1 class="hero-title">Themes</h1>
-                <p class="hero-subtitle">Beautiful color schemes without the configuration headache</p>
+                <p class="hero-subtitle">Beautiful color schemes without the YAML configuration headache.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -98,22 +98,22 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Chau7 ships with a curated collection of built-in themes covering popular palettes like Catppuccin, Dracula, Gruvbox, Nord, Solarized, Tokyo Night, and more. Each theme defines the full 16 ANSI colors, background, foreground, cursor, and selection colors. Switching themes applies instantly with a live preview so you can browse without committing.</p>
                 <p>Full 256-color and 24-bit true color rendering means themes look exactly as designed. Applications that emit RGB escape sequences get accurate color reproduction rather than being quantized down to the nearest ANSI color. The theme editor lets you modify any color in the palette with a native macOS color picker and see changes in real time.</p>
-                <p>iTerm2 color scheme import is supported directly. Drop an .itermcolors file onto the preferences window or use the import button, and Chau7 converts it to a native theme automatically. This gives you access to the entire iTerm2 color scheme ecosystem without manual hex value transcription.</p>
+                <p>iTerm2 color scheme import is supported directly. Drop an .itermcolors file onto the preferences window or use the import button, and Chau7 converts it to a native theme automatically. This gives you access to the entire iTerm2 color scheme library without manual hex value transcription.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>A well-chosen color scheme reduces eye strain and makes syntax-highlighted output easier to scan. Chau7 removes the fragmentation of theme discovery by bundling popular schemes and supporting direct iTerm2 import, so you spend time coding instead of copying hex values between blog posts and config files.</p>
+                    <p>A well-chosen color scheme reduces eye strain and makes syntax-highlighted output easier to scan. Chau7 ships with curated themes that preview in real time, so you can browse and select without editing configuration files or restarting your terminal.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -134,7 +134,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -155,11 +155,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Download Chau7 and find your perfect color scheme instantly</h2>
+                    <h2>Find a color scheme you actually like. It'll take about ten seconds.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lock-Free SPSC Buffer — Chau7 Terminal</title>
+    <title>Lock-Free SPSC Buffer | Chau7 Terminal</title>
     <meta name="description" content="Chau7 uses a lock-free single-producer single-consumer ring buffer for zero-contention PTY data transfer between threads.">
-    <meta property="og:title" content="Lock-Free SPSC Buffer — Chau7">
+    <meta property="og:title" content="Lock-Free SPSC Buffer | Chau7">
     <meta property="og:description" content="Chau7 uses a lock-free single-producer single-consumer ring buffer for zero-contention PTY data transfer between threads.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="rendering">
+        <section class="hero hero-feature" data-category="rendering" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-purple">GPU RENDERING</div>
                 <h1 class="hero-title">Lock-Free SPSC Buffer</h1>
-                <p class="hero-subtitle">One thread reads from the PTY, one thread parses. A lock-free ring buffer connects them with zero contention.</p>
+                <p class="hero-subtitle">One reader thread, one parser thread, one lock-free ring buffer. Zero contention.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,7 +97,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>The PTY reader thread and the ANSI parser thread communicate through a lock-free single-producer single-consumer (SPSC) ring buffer. The reader writes raw bytes from the PTY file descriptor into the ring buffer. The parser reads bytes out of the ring buffer and processes escape sequences. No mutex, spinlock, or kernel synchronization primitive is used at any point in this path.</p>
@@ -106,13 +106,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>The PTY-to-parser pipeline is the hottest data path in a terminal emulator. Every byte of program output flows through it. Any contention or blocking in this path directly reduces throughput and increases latency. A lock-free SPSC buffer ensures this pipeline runs at memory-bandwidth speed with zero syscall overhead, keeping the terminal responsive even during sustained multi-gigabyte output.</p>
+                    <p>The PTY-to-parser pipeline is the hottest data path in a terminal emulator. Every byte of program output flows through it. A mutex on this path would create contention between the PTY reader and the parser, adding latency on every I/O cycle. Chau7 uses a single-producer single-consumer ring buffer with no locks, no kernel transitions, and no contention. The reader and parser proceed independently.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -133,7 +133,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -154,11 +154,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Zero-contention terminal performance. Download Chau7.</h2>
+                    <h2>Lock-free data pipeline. Because mutexes are so last decade.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

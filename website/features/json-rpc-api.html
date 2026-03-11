@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JSON-RPC API — Chau7 Terminal</title>
+    <title>JSON-RPC API | Chau7 Terminal</title>
     <meta name="description" content="Chau7 exposes a Unix socket JSON-RPC API for terminal automation. Script tab management, commands, history, and settings from any language.">
-    <meta property="og:title" content="JSON-RPC API — Chau7">
+    <meta property="og:title" content="JSON-RPC API | Chau7">
     <meta property="og:description" content="Chau7 exposes a Unix socket JSON-RPC API for terminal automation. Script tab management, commands, history, and settings from any language.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="scripting">
+        <section class="hero hero-feature" data-category="scripting" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SCRIPTING API</div>
                 <h1 class="hero-title">JSON-RPC API</h1>
-                <p class="hero-subtitle">Automate your terminal from any programming language</p>
+                <p class="hero-subtitle">A real API for your terminal. JSON-RPC over stdin/stdout. Automate anything.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -98,7 +98,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Chau7 exposes a JSON-RPC 2.0 API over a Unix domain socket, allowing any programming language that can open a socket to automate the terminal. The socket path follows a predictable convention in the user's runtime directory, and the API uses standard JSON-RPC request/response framing with full error codes and result types. No SDK or library installation is required: a simple socat or netcat command can interact with the API for quick scripting.</p>
@@ -107,13 +107,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Most terminal emulators provide no automation API at all, forcing developers to use AppleScript, osascript hacks, or fragile keystroke simulation. iTerm2's Python API was a breakthrough but requires Python and a complex setup process. Chau7's Unix socket JSON-RPC API works with any language, requires no dependencies, and follows a standard protocol that developers already know. This makes terminal automation accessible to shell scripts, Python, Node.js, Rust, Go, or any tool that can write to a socket.</p>
+                    <p>Most terminal emulators provide no automation API, forcing developers to use AppleScript, osascript hacks, or fragile keybinding simulation. Chau7 exposes a JSON-RPC API that lets any programming language create tabs, run commands, read output, and manage sessions programmatically. If you can send JSON, you can control Chau7.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -126,7 +126,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -147,11 +147,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Download Chau7 and automate your terminal with a real API</h2>
+                    <h2>Script your terminal with a proper API. Not AppleScript. Never AppleScript.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

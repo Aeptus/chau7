@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Background Suspension — Chau7 Terminal</title>
+    <title>Background Suspension | Chau7 Terminal</title>
     <meta name="description" content="Chau7 suspends rendering for inactive tabs to save CPU and GPU, with instant resume when you switch back.">
-    <meta property="og:title" content="Background Suspension — Chau7">
+    <meta property="og:title" content="Background Suspension | Chau7">
     <meta property="og:description" content="Chau7 suspends rendering for inactive tabs to save CPU and GPU, with instant resume when you switch back.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="tabs">
+        <section class="hero hero-feature" data-category="tabs" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">TAB MANAGEMENT</div>
                 <h1 class="hero-title">Background Suspension</h1>
-                <p class="hero-subtitle">Inactive tabs stop rendering entirely, saving CPU and GPU cycles until you need them again.</p>
+                <p class="hero-subtitle">30 tabs open, only one rendering. Inactive tabs use zero GPU cycles.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,21 +97,21 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
-                <p>When you switch away from a tab, Chau7 suspends all rendering activity for that tab's terminal view. The shell process continues running — your builds, servers, and long-running tasks are unaffected — but the GPU render pipeline stops processing output for that pane. This means 30 background tabs consume the same GPU resources as zero background tabs.</p>
-                <p>When you switch back to a suspended tab, Chau7 replays the terminal state from the scrollback buffer in a single frame. There is no gradual catch-up or flickering — the terminal appears instantly with all output that accumulated while it was in the background. The resume is fast enough that you cannot perceive any delay between clicking the tab and seeing the current state.</p>
+                <p>When you switch away from a tab, Chau7 suspends all rendering activity for that tab's terminal view. The shell process continues running: your builds, servers, and long-running tasks are unaffected: but the GPU render pipeline stops processing output for that pane. This means 30 background tabs consume the same GPU resources as zero background tabs.</p>
+                <p>When you switch back to a suspended tab, Chau7 replays the terminal state from the scrollback buffer in a single frame. There is no gradual catch-up or flickering: the terminal appears instantly with all output that accumulated while it was in the background. The resume is fast enough that you cannot perceive any delay between clicking the tab and seeing the current state.</p>
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>Terminal emulators that render all tabs continuously waste significant GPU and CPU time on content you are not looking at. With 10 tabs open and a build producing thousands of lines per second in a background tab, that invisible rendering can consume real resources and drain your laptop battery. Background suspension eliminates this waste entirely.</p>
+                    <p>Terminal emulators that render all tabs continuously waste significant GPU and CPU time on content you are not looking at. Chau7 fully suspends inactive tabs: no render cycles, no timer fires, no wasted work. When you switch back, the tab resumes instantly because the state never left memory. It is the reason Chau7 stays fast at 30 tabs.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -132,7 +132,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -149,11 +149,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>30 tabs, zero waste — try Chau7's background suspension</h2>
+                    <h2>Open as many tabs as you want. Chau7 only renders the one you're looking at.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>

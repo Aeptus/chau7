@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Process Monitoring — Chau7 Terminal</title>
+    <title>AI Process Monitoring | Chau7 Terminal</title>
     <meta name="description" content="Monitor CPU usage, memory consumption, and process IDs of AI coding agents running in each Chau7 terminal tab. Keep resource-heavy agents in check.">
-    <meta property="og:title" content="AI Process Monitoring — Chau7">
+    <meta property="og:title" content="AI Process Monitoring | Chau7">
     <meta property="og:description" content="Monitor CPU usage, memory consumption, and process IDs of AI coding agents running in each Chau7 terminal tab. Keep resource-heavy agents in check.">
     <meta property="og:image" content="../screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
@@ -74,17 +74,17 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="ai-detection">
+        <section class="hero hero-feature" data-category="ai-detection" data-ui="feat-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-alt">AI DETECTION</div>
                 <h1 class="hero-title">AI Process Monitoring</h1>
-                <p class="hero-subtitle">Know exactly what your AI agents are consuming.</p>
+                <p class="hero-subtitle">CPU, memory, PID. Per tab, per agent. No more guessing which AI ate your RAM.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section">
+        <section class="questions-section" data-ui="feat-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
@@ -97,7 +97,7 @@
         </section>
 
         <!-- How It Works -->
-        <section class="feature-content">
+        <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How it works</h2>
                 <p>Chau7 ties process-level metrics directly to the AI agent detected in each tab. Once an agent is identified, Chau7 tracks its PID along with CPU and resident memory usage. These metrics are sampled periodically and surfaced in the tab status panel accessible via the MCP server or the UI.</p>
@@ -106,13 +106,13 @@
 
                 <div class="why-matters">
                     <h3>Why it matters</h3>
-                    <p>AI coding agents can be resource-intensive, especially during long-running sessions with heavy tool use. Activity Monitor shows a wall of processes with no context about which tab or agent owns them. Chau7 gives you per-tab, per-agent resource visibility so you can identify and manage runaway sessions before they slow down your machine.</p>
+                    <p>AI coding agents are quietly hungry. They consume CPU during tool calls, gobble memory during long sessions, and Activity Monitor shows you a wall of node and python processes with no indication of which tab or agent owns them. Chau7 gives you per-tab, per-agent resource visibility so you can spot the runaway session before your fans hit jet-engine mode.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features">
+        <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -133,7 +133,7 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq">
+        <section class="feature-faq" data-ui="feat-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
@@ -150,11 +150,12 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Download Chau7 and monitor every AI agent's resource footprint per tab.</h2>
+                    <h2>Find out which AI is hogging your machine. (It's probably Claude.)</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                    <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>
             </div>
         </section>
