@@ -17,6 +17,7 @@ final class ConfigFileWatcher: ObservableObject {
 
     @Published var globalConfig: Chau7ConfigFile?
     @Published var repoConfig: Chau7ConfigFile?
+    @Published var repoConfigDirectory: String?
     @Published var lastLoadTime: Date?
     @Published var lastError: String?
 
@@ -62,6 +63,41 @@ final class ConfigFileWatcher: ObservableObject {
         }
         repoConfig = ConfigFileParser.parse(content)
         Log.info("ConfigFileWatcher: loaded repo config from \(repoPath)")
+    }
+
+    /// Updates the active directory for per-repo config resolution.
+    /// Called on tab switches to keep the repo config state current.
+    func updateActiveDirectory(_ directory: String?) {
+        guard let directory, !directory.isEmpty else {
+            repoConfigDirectory = nil
+            repoConfig = nil
+            return
+        }
+        repoConfigDirectory = directory
+        loadRepoConfig(directory: directory)
+    }
+
+    /// Path to the per-repo config file for the active directory.
+    var repoConfigPath: String? {
+        guard let dir = repoConfigDirectory else { return nil }
+        return (dir as NSString).appendingPathComponent(".chau7/config.toml")
+    }
+
+    /// Creates a per-repo config file at {directory}/.chau7/config.toml
+    func createRepoConfig(directory: String) {
+        let configDir = (directory as NSString).appendingPathComponent(".chau7")
+        try? FileManager.default.createDirectory(atPath: configDir, withIntermediateDirectories: true)
+
+        let defaultConfig = Chau7ConfigFile(
+            general: .init(shell: nil, startupCommand: nil, defaultDirectory: nil),
+            appearance: .init(fontFamily: nil, fontSize: nil, cursorStyle: nil),
+            terminal: .init(scrollbackLines: nil, bellEnabled: nil)
+        )
+
+        let content = ConfigFileParser.serialize(defaultConfig)
+        let path = (configDir as NSString).appendingPathComponent("config.toml")
+        try? content.write(toFile: path, atomically: true, encoding: .utf8)
+        Log.info("ConfigFileWatcher: created repo config at \(path)")
     }
 
     // MARK: - Apply
