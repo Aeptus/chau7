@@ -17,31 +17,41 @@ struct SettingsWindowView: View {
 
 // MARK: - Menu Bar Panel View
 
-enum StreamSelection: String, CaseIterable, Identifiable {
-    case codexHistory
-    case claudeHistory
-    case codexTerminal
-    case claudeTerminal
+enum StreamSelection: Hashable, Identifiable {
+    case history(providerKey: String)
+    case terminal(providerKey: String)
     case verbose
 
     var id: String {
-        rawValue
+        switch self {
+        case .history(let k): return "history-\(k)"
+        case .terminal(let k): return "terminal-\(k)"
+        case .verbose: return "verbose"
+        }
     }
 
     var title: String {
         switch self {
-        case .codexHistory: return "Codex"
-        case .claudeHistory: return "Claude"
-        case .codexTerminal: return "Codex TTY"
-        case .claudeTerminal: return "Claude TTY"
+        case .history(let k):
+            return AIToolRegistry.allTools.first { $0.resumeProviderKey == k }?.displayName ?? k.capitalized
+        case .terminal(let k):
+            let name = AIToolRegistry.allTools.first { $0.resumeProviderKey == k }?.displayName ?? k.capitalized
+            return "\(name) TTY"
         case .verbose: return "Verbose"
         }
+    }
+
+    /// Default selections for the picker (backward-compat with known tools)
+    static var defaultSelections: [StreamSelection] {
+        [.history(providerKey: "codex"), .history(providerKey: "claude"),
+         .terminal(providerKey: "codex"), .terminal(providerKey: "claude"),
+         .verbose]
     }
 }
 
 struct MenuBarPanelView: View {
     @ObservedObject var model: AppModel
-    @State private var streamSelection: StreamSelection = .codexHistory
+    @State private var streamSelection: StreamSelection = .history(providerKey: "codex")
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -167,7 +177,7 @@ struct MenuBarPanelView: View {
                 .foregroundStyle(.secondary)
 
             Picker(L("Stream", "Stream"), selection: $streamSelection) {
-                ForEach(StreamSelection.allCases) { selection in
+                ForEach(StreamSelection.defaultSelections) { selection in
                     Text(selection.title).tag(selection)
                 }
             }
@@ -231,14 +241,10 @@ struct StreamView: View {
 
     var body: some View {
         switch selection {
-        case .codexHistory:
-            historyList(entries: model.codexHistoryEntries)
-        case .claudeHistory:
-            historyList(entries: model.claudeHistoryEntries)
-        case .codexTerminal:
-            terminalLogView(lines: model.codexTerminalLines)
-        case .claudeTerminal:
-            terminalLogView(lines: model.claudeTerminalLines)
+        case .history(let key):
+            historyList(entries: model.toolHistoryEntries[key] ?? [])
+        case .terminal(let key):
+            terminalLogView(lines: model.toolTerminalLines[key] ?? [])
         case .verbose:
             logList(lines: model.logLines)
         }

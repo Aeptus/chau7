@@ -2,6 +2,14 @@ import Foundation
 import Chau7Core
 
 enum CodexSessionResolver {
+    /// Register CWD resolver with TabResolver so Codex events route
+    /// through the same generic cwd fallback tier as every other tool.
+    static func registerWithTabResolver() {
+        TabResolver.registerCWDResolver(forProviderKey: "codex") { dir in
+            sessionCandidates(forDirectory: dir).map(\.lastActivity).max()
+        }
+    }
+
     struct Candidate: Equatable {
         let sessionId: String
         let cwd: String
@@ -67,6 +75,42 @@ enum CodexSessionResolver {
         }
 
         return nil
+    }
+
+    /// Returns Codex sessions whose cwd matches the given directory, sorted
+    /// by most recently modified first.  Mirrors `ClaudeCodeMonitor.sessionCandidates(forDirectory:)`.
+    static func sessionCandidates(forDirectory directory: String) -> [(sessionId: String, lastActivity: Date)] {
+        let fm = FileManager.default
+        let sessionsDir = fm.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/sessions")
+
+        let dayDirs = prioritizedDayDirectories(
+            in: sessionsDir,
+            referenceDate: Date(),
+            fileManager: fm
+        )
+
+        var results: [(sessionId: String, lastActivity: Date)] = []
+        var seenSessionIds = Set<String>()
+
+        for dayDir in dayDirs.prefix(3) {
+            guard let files = try? fm.contentsOfDirectory(atPath: dayDir.path) else { continue }
+            for file in files.filter({ $0.hasSuffix(".jsonl") }).sorted().reversed() {
+                let fileURL = dayDir.appendingPathComponent(file)
+                guard let firstLine = readFirstLine(at: fileURL.path),
+                      let metadata = parseSessionMeta(firstLine) else { continue }
+
+                guard seenSessionIds.insert(metadata.sessionId).inserted else { continue }
+                guard isSameSessionDirectory(directory, as: metadata.cwd) else { continue }
+
+                let touchedAt = (
+                    try? fm.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date
+                ) ?? Date.distantPast
+                results.append((sessionId: metadata.sessionId, lastActivity: touchedAt))
+            }
+        }
+
+        return results.sorted { $0.lastActivity > $1.lastActivity }
     }
 
     static func bestMatchingSessionID(

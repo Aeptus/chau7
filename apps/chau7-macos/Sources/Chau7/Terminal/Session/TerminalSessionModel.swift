@@ -218,15 +218,10 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         guard let normalized = AIResumeParser.normalizeProviderName(provider ?? "") else {
             return nil
         }
-
-        switch normalized {
-        case "claude":
-            return "Claude"
-        case "codex":
-            return "Codex"
-        default:
-            return normalized.capitalized
+        if let tool = AIToolRegistry.allTools.first(where: { $0.resumeProviderKey == normalized }) {
+            return tool.displayName
         }
+        return normalized.capitalized
     }
 
     static func resolveEffectiveStatus(
@@ -937,19 +932,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
     private func terminalLogPath(for toolName: String) -> String {
         let trimmed = toolName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let appModel, trimmed.caseInsensitiveCompare("Codex") == .orderedSame {
-            let path = appModel.codexTerminalPath.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !path.isEmpty {
-                return path
-            }
+        if let appModel, let path = appModel.terminalLogPath(forToolName: trimmed), !path.isEmpty {
+            return path
         }
-        if let appModel, trimmed.caseInsensitiveCompare("Claude") == .orderedSame {
-            let path = appModel.claudeTerminalPath.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !path.isEmpty {
-                return path
-            }
-        }
-
         let home = FileManager.default.homeDirectoryForCurrentUser
         let logDir = home.appendingPathComponent("Library/Logs/Chau7").path
         let slug = sanitizeToolName(trimmed)

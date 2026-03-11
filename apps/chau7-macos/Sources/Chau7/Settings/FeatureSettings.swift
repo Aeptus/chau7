@@ -1278,21 +1278,16 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(isAutoTabThemeEnabled, forKey: Keys.autoTabTheme) }
     }
 
-    /// AI model to tab color mapping
-    static let aiModelColors: [String: TabColor] = [
-        "claude": .purple,
-        "claude-code": .purple,
-        "claude-cli": .purple,
-        "codex": .green,
-        "openai": .green,
-        "gpt": .green,
-        "gemini": .blue,
-        "bard": .blue,
-        "copilot": .orange,
-        "cursor": .teal,
-        "aider": .pink,
-        "continue": .yellow
-    ]
+    /// AI model to tab color mapping — generated from AIToolRegistry.
+    static let aiModelColors: [String: TabColor] = {
+        var map: [String: TabColor] = [:]
+        for (key, colorName) in AIToolRegistry.tabColorMap {
+            if let color = TabColor(rawValue: colorName) {
+                map[key] = color
+            }
+        }
+        return map
+    }()
 
     // MARK: - F18: Copy-on-Select
 
