@@ -6,14 +6,20 @@ use std::path::Path;
 
 /// Slice raw content to keep only lines `[start_line..]` (1-based).
 /// Returns the sliced string and the 1-based offset of the first included line.
+/// Preserves the original trailing newline if present.
 fn apply_start_line(content: &str, start_line: Option<usize>) -> (String, usize) {
     match start_line {
         Some(start) if start > 1 => {
-            let sliced: String = content
+            let mut sliced: String = content
                 .lines()
                 .skip(start - 1)
                 .collect::<Vec<_>>()
                 .join("\n");
+            // Preserve trailing newline to match original content convention.
+            // .lines() strips it, so restore if the source had one.
+            if content.ends_with('\n') && !sliced.is_empty() {
+                sliced.push('\n');
+            }
             (sliced, start)
         }
         _ => (content.to_string(), 1),
@@ -40,6 +46,17 @@ pub fn run(
 
     // Slice to start_line before filtering — discards lines the caller doesn't want.
     let (sliced, line_offset) = apply_start_line(&content, start_line);
+
+    // Start line beyond EOF — no content in range, match sed behavior (no output).
+    if sliced.is_empty() {
+        timer.track(
+            &format!("cat {}", file.display()),
+            "rtk read",
+            &sliced,
+            "",
+        );
+        return Ok(());
+    }
 
     // Detect language from extension
     let lang = file
@@ -114,6 +131,12 @@ pub fn run_stdin(
 
     // Slice to start_line before filtering
     let (sliced, line_offset) = apply_start_line(&content, start_line);
+
+    // Start line beyond EOF — no content in range, match sed behavior (no output).
+    if sliced.is_empty() {
+        timer.track("cat - (stdin)", "rtk read -", &sliced, "");
+        return Ok(());
+    }
 
     // No file extension, so use Unknown language
     let lang = Language::Unknown;
@@ -290,6 +313,42 @@ fn main() {{
             FilterLevel::None,
             Some(3),
             Some(5),
+            false,
+            0,
+        )?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_apply_start_line_preserves_trailing_newline() {
+        let content = "line1\nline2\nline3\n";
+        let (result, offset) = apply_start_line(content, Some(2));
+        assert_eq!(result, "line2\nline3\n");
+        assert_eq!(offset, 2);
+    }
+
+    #[test]
+    fn test_apply_start_line_no_trailing_newline() {
+        // Content without trailing newline — sliced result should also lack it
+        let content = "line1\nline2\nline3";
+        let (result, offset) = apply_start_line(content, Some(2));
+        assert_eq!(result, "line2\nline3");
+        assert_eq!(offset, 2);
+    }
+
+    #[test]
+    fn test_read_with_start_line_beyond_eof() -> Result<()> {
+        let mut file = NamedTempFile::with_suffix(".txt")?;
+        for i in 1..=5 {
+            writeln!(file, "Line {}", i)?;
+        }
+
+        // Start line beyond EOF — should succeed with no output (not panic)
+        run(
+            file.path(),
+            FilterLevel::None,
+            None,
+            Some(100),
             false,
             0,
         )?;

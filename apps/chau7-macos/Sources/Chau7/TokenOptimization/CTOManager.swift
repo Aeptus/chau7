@@ -521,8 +521,6 @@ final class CTOManager {
                         fi
                     fi
                     ;;
-                    esac
-                    ;;
             esac
         fi
 
