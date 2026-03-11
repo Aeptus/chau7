@@ -255,6 +255,16 @@ impl Tracker {
             [],
         );
 
+        // Migration: add session_id column for per-tab CTO tracking
+        let _ = conn.execute(
+            "ALTER TABLE commands ADD COLUMN session_id TEXT DEFAULT ''",
+            [],
+        );
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_session_id ON commands(session_id)",
+            [],
+        )?;
+
         Ok(Self { conn })
     }
 
@@ -295,9 +305,11 @@ impl Tracker {
             0.0
         };
 
+        let session_id = std::env::var("CHAU7_CTO_SESSION").unwrap_or_default();
+
         self.conn.execute(
-            "INSERT INTO commands (timestamp, original_cmd, rtk_cmd, input_tokens, output_tokens, saved_tokens, savings_pct, exec_time_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO commands (timestamp, original_cmd, rtk_cmd, input_tokens, output_tokens, saved_tokens, savings_pct, exec_time_ms, session_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 Utc::now().to_rfc3339(),
                 original_cmd,
@@ -306,7 +318,8 @@ impl Tracker {
                 output_tokens as i64,
                 saved as i64,
                 pct,
-                exec_time_ms as i64
+                exec_time_ms as i64,
+                session_id
             ],
         )?;
 
@@ -396,6 +409,62 @@ impl Tracker {
             avg_time_ms,
             by_command,
             by_day,
+        })
+    }
+
+    /// Get summary statistics filtered to a specific session ID.
+    pub fn get_summary_for_session(&self, session_id: &str) -> Result<GainSummary> {
+        let mut total_commands = 0usize;
+        let mut total_input = 0usize;
+        let mut total_output = 0usize;
+        let mut total_saved = 0usize;
+        let mut total_time_ms = 0u64;
+
+        let mut stmt = self.conn.prepare(
+            "SELECT input_tokens, output_tokens, saved_tokens, exec_time_ms FROM commands WHERE session_id = ?1",
+        )?;
+
+        let rows = stmt.query_map(params![session_id], |row| {
+            Ok((
+                row.get::<_, i64>(0)? as usize,
+                row.get::<_, i64>(1)? as usize,
+                row.get::<_, i64>(2)? as usize,
+                row.get::<_, i64>(3)? as u64,
+            ))
+        })?;
+
+        for row in rows {
+            let (input, output, saved, time_ms) = row?;
+            total_commands += 1;
+            total_input += input;
+            total_output += output;
+            total_saved += saved;
+            total_time_ms += time_ms;
+        }
+
+        let avg_savings_pct = if total_input > 0 {
+            (total_saved as f64 / total_input as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        let avg_time_ms = if total_commands > 0 {
+            total_time_ms / total_commands as u64
+        } else {
+            0
+        };
+
+        // Per-session queries don't need by_command/by_day breakdowns
+        Ok(GainSummary {
+            total_commands,
+            total_input,
+            total_output,
+            total_saved,
+            avg_savings_pct,
+            total_time_ms,
+            avg_time_ms,
+            by_command: vec![],
+            by_day: vec![],
         })
     }
 

@@ -659,6 +659,48 @@ final class CTOManager {
         }
     }
 
+    /// Fetches token savings for a specific CTO session (tab) via `chau7-optim gain --session-id`.
+    func fetchGainStatsForSession(_ sessionID: String) async -> CTOGainStats? {
+        guard isOptimizerInstalled else { return nil }
+
+        let optimPath = optimizerPath
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                let process = Process()
+                process.executableURL = optimPath
+                process.arguments = ["gain", "--session-id", sessionID, "--format", "json"]
+
+                let pipe = Pipe()
+                process.standardOutput = pipe
+                process.standardError = FileHandle.nullDevice
+
+                do {
+                    try process.run()
+                } catch {
+                    Log.error("CTOManager: failed to run chau7-optim gain --session-id: \(error)")
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
+
+                guard process.terminationStatus == 0, !data.isEmpty else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                do {
+                    let response = try JSONDecoder().decode(DailyGainResponse.self, from: data)
+                    continuation.resume(returning: response.summary)
+                } catch {
+                    Log.error("CTOManager: failed to decode session gain output: \(error)")
+                    continuation.resume(returning: nil)
+                }
+            }
+        }
+    }
+
     /// Aggregates daily gain entries from a given cutoff date into a single `CTOGainStats`.
     static func aggregateDailyStats(_ daily: [DailyGainEntry], since cutoff: Date) -> CTOGainStats {
         let cal = Calendar.current

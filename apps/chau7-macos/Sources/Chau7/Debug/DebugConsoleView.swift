@@ -25,6 +25,9 @@ struct DebugConsoleView: View {
     @State private var ctoCommandLog: [CTOManager.CommandLogEntry] = []
     @State private var ctoShowAdvanced = false
     @State private var ctoTimePeriod: CTOTimePeriod = .session
+    @State private var aiPerTabStats: [TabTokenConsumption] = []
+    @State private var providerStats: [ProviderConsumptionStats] = []
+    @State private var ctoPerSessionGain: [String: CTOGainStats] = [:]
     // Category & level filtering
     @State private var enabledCategories: Set<LogCategory> = Set(LogCategory.allCases)
     @State private var enabledLevels: Set = ["INFO", "WARN", "ERROR", "TRACE", "DEBUG"]
@@ -308,6 +311,9 @@ struct DebugConsoleView: View {
                 // Per-tab breakdown
                 ctoPerTabSection
 
+                // Provider consumption
+                providerConsumptionSection
+
                 // Recent commands log
                 ctoRecentCommandsSection
 
@@ -439,12 +445,19 @@ struct DebugConsoleView: View {
         return "\(count)"
     }
 
+    private func formatCost(_ cost: Double) -> String {
+        if cost >= 1.0 { return String(format: "$%.2f", cost) }
+        if cost >= 0.01 { return String(format: "$%.3f", cost) }
+        if cost > 0 { return String(format: "$%.4f", cost) }
+        return "--"
+    }
+
     // MARK: - CTO Per-Tab Breakdown
 
     private var ctoPerTabSection: some View {
         GroupBox("Per-Tab Stats") {
             let log = ctoFilteredLog
-            if log.isEmpty {
+            if log.isEmpty && aiPerTabStats.isEmpty {
                 Text("No command data yet")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -455,17 +468,25 @@ struct DebugConsoleView: View {
                     // Header row
                     HStack(spacing: 0) {
                         Text("Tab")
-                            .frame(width: 110, alignment: .leading)
+                            .frame(width: 90, alignment: .leading)
                         Text("Cmds")
-                            .frame(width: 50, alignment: .trailing)
+                            .frame(width: 40, alignment: .trailing)
                         Text("Opt")
-                            .frame(width: 50, alignment: .trailing)
+                            .frame(width: 40, alignment: .trailing)
                         Text("Fall")
-                            .frame(width: 50, alignment: .trailing)
+                            .frame(width: 40, alignment: .trailing)
                         Text("Skip")
-                            .frame(width: 50, alignment: .trailing)
+                            .frame(width: 40, alignment: .trailing)
                         Text("Rate")
+                            .frame(width: 45, alignment: .trailing)
+                        Text("In Tok")
+                            .frame(width: 55, alignment: .trailing)
+                        Text("Out Tok")
+                            .frame(width: 55, alignment: .trailing)
+                        Text("Cost")
                             .frame(width: 50, alignment: .trailing)
+                        Text("CTO Saved")
+                            .frame(width: 65, alignment: .trailing)
                         Spacer()
                     }
                     .font(.system(size: 9, weight: .semibold))
@@ -474,31 +495,138 @@ struct DebugConsoleView: View {
 
                     Divider()
 
-                    ForEach(ctoPerTabStats(from: log), id: \.sessionID) { tabStat in
+                    let tabStats = ctoPerTabStats(from: log)
+                    let allSessionIDs = Set(tabStats.map(\.sessionID)).union(aiPerTabStats.map(\.tabID))
+
+                    ForEach(Array(allSessionIDs).sorted(by: { a, b in
+                        // Sort by total AI tokens (input+output), then by CTO command count as tiebreaker
+                        let aTokens = aiPerTabStats.first { $0.tabID == a }.map { $0.totalInputTokens + $0.totalOutputTokens } ?? 0
+                        let bTokens = aiPerTabStats.first { $0.tabID == b }.map { $0.totalInputTokens + $0.totalOutputTokens } ?? 0
+                        if aTokens != bTokens { return aTokens > bTokens }
+                        let aCmds = tabStats.first { $0.sessionID == a }?.total ?? 0
+                        let bCmds = tabStats.first { $0.sessionID == b }?.total ?? 0
+                        return aCmds > bCmds
+                    }), id: \.self) { sessionID in
+                        let tabStat = tabStats.first { $0.sessionID == sessionID }
+                        let aiStat = aiPerTabStats.first { $0.tabID == sessionID }
+                        let ctoSaved = ctoPerSessionGain[sessionID]
+
                         HStack(spacing: 0) {
-                            Text(ctoTabLabel(for: tabStat.sessionID))
-                                .frame(width: 110, alignment: .leading)
+                            Text(ctoTabLabel(for: sessionID))
+                                .frame(width: 90, alignment: .leading)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                            Text("\(tabStat.total)")
-                                .frame(width: 50, alignment: .trailing)
-                            Text("\(tabStat.optimized)")
+                            Text("\(tabStat?.total ?? 0)")
+                                .frame(width: 40, alignment: .trailing)
+                            Text("\(tabStat?.optimized ?? 0)")
                                 .foregroundStyle(.green)
-                                .frame(width: 50, alignment: .trailing)
-                            Text("\(tabStat.fallthrough)")
+                                .frame(width: 40, alignment: .trailing)
+                            Text("\(tabStat?.fallthrough ?? 0)")
                                 .foregroundStyle(.orange)
-                                .frame(width: 50, alignment: .trailing)
-                            Text("\(tabStat.skipped)")
+                                .frame(width: 40, alignment: .trailing)
+                            Text("\(tabStat?.skipped ?? 0)")
                                 .foregroundStyle(.secondary)
+                                .frame(width: 40, alignment: .trailing)
+                            Text(tabStat.map { String(format: "%.0f%%", $0.rate) } ?? "--")
+                                .foregroundStyle(tabStat.map { $0.rate >= 80 ? Color.green : $0.rate >= 50 ? .orange : .red } ?? .secondary)
+                                .frame(width: 45, alignment: .trailing)
+                            Text(aiStat.map { formatTokenCount($0.totalInputTokens) } ?? "--")
+                                .frame(width: 55, alignment: .trailing)
+                            Text(aiStat.map { formatTokenCount($0.totalOutputTokens) } ?? "--")
+                                .frame(width: 55, alignment: .trailing)
+                            Text(aiStat.map { formatCost($0.totalCostUSD) } ?? "--")
                                 .frame(width: 50, alignment: .trailing)
-                            Text(String(format: "%.0f%%", tabStat.rate))
-                                .foregroundStyle(tabStat.rate >= 80 ? .green : tabStat.rate >= 50 ? .orange : .red)
-                                .frame(width: 50, alignment: .trailing)
+                            Text(ctoSaved.map { formatTokenCount($0.savedTokens) } ?? "--")
+                                .foregroundStyle(.green)
+                                .frame(width: 65, alignment: .trailing)
                             Spacer()
                         }
                         .font(.system(size: 10, design: .monospaced))
                         .padding(.vertical, 2)
                     }
+                }
+            }
+        }
+    }
+
+    // MARK: - Provider Consumption
+
+    private var providerConsumptionSection: some View {
+        GroupBox("Provider Consumption") {
+            if providerStats.isEmpty {
+                Text("No AI run data yet")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 0) {
+                        Text("Provider")
+                            .frame(width: 120, alignment: .leading)
+                        Text("Runs")
+                            .frame(width: 50, alignment: .trailing)
+                        Text("Input")
+                            .frame(width: 70, alignment: .trailing)
+                        Text("Output")
+                            .frame(width: 70, alignment: .trailing)
+                        Text("Total")
+                            .frame(width: 70, alignment: .trailing)
+                        Text("Cost")
+                            .frame(width: 65, alignment: .trailing)
+                        Spacer()
+                    }
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 4)
+
+                    Divider()
+
+                    ForEach(providerStats) { stat in
+                        HStack(spacing: 0) {
+                            Text(stat.provider)
+                                .frame(width: 120, alignment: .leading)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Text("\(stat.runCount)")
+                                .frame(width: 50, alignment: .trailing)
+                            Text(formatTokenCount(stat.totalInputTokens))
+                                .frame(width: 70, alignment: .trailing)
+                            Text(formatTokenCount(stat.totalOutputTokens))
+                                .frame(width: 70, alignment: .trailing)
+                            Text(formatTokenCount(stat.totalInputTokens + stat.totalOutputTokens))
+                                .frame(width: 70, alignment: .trailing)
+                            Text(formatCost(stat.totalCostUSD))
+                                .frame(width: 65, alignment: .trailing)
+                            Spacer()
+                        }
+                        .font(.system(size: 10, design: .monospaced))
+                        .padding(.vertical, 2)
+                    }
+
+                    // Totals row
+                    Divider()
+                    let totalRuns = providerStats.reduce(0) { $0 + $1.runCount }
+                    let totalIn = providerStats.reduce(0) { $0 + $1.totalInputTokens }
+                    let totalOut = providerStats.reduce(0) { $0 + $1.totalOutputTokens }
+                    let totalCost = providerStats.reduce(0.0) { $0 + $1.totalCostUSD }
+                    HStack(spacing: 0) {
+                        Text("Total")
+                            .frame(width: 120, alignment: .leading)
+                        Text("\(totalRuns)")
+                            .frame(width: 50, alignment: .trailing)
+                        Text(formatTokenCount(totalIn))
+                            .frame(width: 70, alignment: .trailing)
+                        Text(formatTokenCount(totalOut))
+                            .frame(width: 70, alignment: .trailing)
+                        Text(formatTokenCount(totalIn + totalOut))
+                            .frame(width: 70, alignment: .trailing)
+                        Text(formatCost(totalCost))
+                            .frame(width: 65, alignment: .trailing)
+                        Spacer()
+                    }
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .padding(.vertical, 2)
                 }
             }
         }
@@ -1389,11 +1517,37 @@ struct DebugConsoleView: View {
     private func refreshCTOData() {
         ctoRuntimeSnapshot = CTORuntimeMonitor.shared.snapshot()
         ctoCommandLog = CTOManager.shared.readCommandLog()
+
+        // Load telemetry aggregations
+        let tabStats = TelemetryStore.shared.tokenUsagePerTab()
+        let provStats = TelemetryStore.shared.consumptionPerProvider()
+        aiPerTabStats = tabStats
+        providerStats = provStats
+
         Task {
             let response = await CTOManager.shared.fetchDailyGainStats()
             await MainActor.run {
                 ctoGainStats = response?.summary
                 ctoDailyGainEntries = response?.daily ?? []
+            }
+
+            // Fetch per-session CTO gain stats concurrently
+            let sessionIDs = Array(Set(ctoCommandLog.map(\.sessionID)).union(tabStats.map(\.tabID))).filter { !$0.isEmpty }
+            let gainMap = await withTaskGroup(of: (String, CTOGainStats?).self) { group -> [String: CTOGainStats] in
+                for sid in sessionIDs {
+                    group.addTask {
+                        let stats = await CTOManager.shared.fetchGainStatsForSession(sid)
+                        return (sid, stats)
+                    }
+                }
+                var map: [String: CTOGainStats] = [:]
+                for await (sid, stats) in group {
+                    if let stats { map[sid] = stats }
+                }
+                return map
+            }
+            await MainActor.run {
+                ctoPerSessionGain = gainMap
             }
         }
     }
