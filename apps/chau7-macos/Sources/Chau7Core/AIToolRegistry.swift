@@ -2,9 +2,10 @@ import Foundation
 
 /// Metadata for a single AI coding tool (Claude, Codex, Gemini, etc.).
 ///
-/// This is the single source of truth for tool identity in Chau7. Every subsystem
-/// that needs to know about AI tools — detection, logos, persistence, resume —
-/// reads from this definition rather than maintaining its own hardcoded table.
+/// Chau7 strives to be fully backend-agnostic.  This is the single source of
+/// truth for tool identity.  Every subsystem — detection, tab routing, logos,
+/// persistence, resume — reads from this definition rather than maintaining
+/// its own hardcoded table.  Never reference specific tool names in generic code.
 public struct AIToolDefinition: Sendable {
     /// Canonical display name shown in UI, e.g. "Claude"
     public let displayName: String
@@ -21,6 +22,13 @@ public struct AIToolDefinition: Sendable {
     /// PNG asset name in the app bundle, without extension (e.g. "claude-logo").
     /// Nil means no bundled logo exists for this tool.
     public let logoAssetName: String?
+    /// Tab color name for auto-theming (maps to `TabColor.rawValue` in the app layer).
+    /// Nil means no auto-color assignment for this tool.
+    public let tabColorName: String?
+    /// Raw value for `AIEventSource` when this tool emits history/notification events.
+    /// Must match the `rawValue` of the corresponding `AIEventSource` static constant.
+    /// Nil means this tool has no dedicated event source (falls back to `.historyMonitor`).
+    public let eventSourceRawValue: String?
 
     /// How to construct a resume command for this tool.
     public enum ResumeFormat: Sendable {
@@ -42,11 +50,11 @@ public struct AIToolDefinition: Sendable {
 
 /// Central registry of all known AI coding tools.
 ///
-/// Consolidates tool metadata that was previously scattered across
-/// `CommandDetection.appNameMap`, `CommandDetection.outputDetectionPatterns`,
-/// `AIResumeParser.normalizeProviderName`, and `AIAgent` (logo rendering).
-///
-/// Adding a new AI tool is now a single edit to `allTools`.
+/// Chau7 strives to be fully backend-agnostic: every subsystem — detection,
+/// tab routing, notifications, resume, UI — reads from this registry rather
+/// than hardcoding tool names.  Adding a new AI tool is a single edit to
+/// `allTools`; no changes are needed in `TabResolver`, notification pipeline,
+/// or any other downstream code.
 public enum AIToolRegistry {
 
     // MARK: - Tool Definitions
@@ -62,7 +70,9 @@ public enum AIToolRegistry {
             ],
             resumeProviderKey: "claude",
             resumeFormat: .dashFlag(command: "claude", flag: "--resume"),
-            logoAssetName: "claude-logo"
+            logoAssetName: "claude-logo",
+            tabColorName: "purple",
+            eventSourceRawValue: "claude_code"
         ),
         // — Codex (OpenAI) —
         AIToolDefinition(
@@ -73,7 +83,9 @@ public enum AIToolRegistry {
             ],
             resumeProviderKey: "codex",
             resumeFormat: .subcommand(command: "codex", subcommand: "resume"),
-            logoAssetName: "codex-logo"
+            logoAssetName: "codex-logo",
+            tabColorName: "green",
+            eventSourceRawValue: "codex"
         ),
         // — Gemini (Google) —
         AIToolDefinition(
@@ -85,7 +97,9 @@ public enum AIToolRegistry {
             ],
             resumeProviderKey: nil,
             resumeFormat: nil,
-            logoAssetName: "gemini-logo"
+            logoAssetName: "gemini-logo",
+            tabColorName: "blue",
+            eventSourceRawValue: nil
         ),
         // — ChatGPT (OpenAI) —
         AIToolDefinition(
@@ -94,7 +108,9 @@ public enum AIToolRegistry {
             outputPatterns: ["chatgpt", "openai.com/", "openai.com"],
             resumeProviderKey: nil,
             resumeFormat: nil,
-            logoAssetName: "chatgpt-logo"
+            logoAssetName: "chatgpt-logo",
+            tabColorName: "green",
+            eventSourceRawValue: nil
         ),
         // — Copilot (GitHub) —
         AIToolDefinition(
@@ -103,7 +119,9 @@ public enum AIToolRegistry {
             outputPatterns: ["github copilot", "copilot cli", "gh copilot"],
             resumeProviderKey: nil,
             resumeFormat: nil,
-            logoAssetName: "copilot-logo"
+            logoAssetName: "copilot-logo",
+            tabColorName: "orange",
+            eventSourceRawValue: "copilot"
         ),
         // — Aider —
         AIToolDefinition(
@@ -112,7 +130,9 @@ public enum AIToolRegistry {
             outputPatterns: ["aider v", "aider is running", "aider.chat"],
             resumeProviderKey: nil,
             resumeFormat: nil,
-            logoAssetName: "aider-logo"
+            logoAssetName: "aider-logo",
+            tabColorName: "pink",
+            eventSourceRawValue: "aider"
         ),
         // — Cursor —
         AIToolDefinition(
@@ -121,7 +141,9 @@ public enum AIToolRegistry {
             outputPatterns: ["cursor.sh", "cursor ide", "cursor cli", "cursor.com"],
             resumeProviderKey: nil,
             resumeFormat: nil,
-            logoAssetName: "cursor-logo"
+            logoAssetName: "cursor-logo",
+            tabColorName: "teal",
+            eventSourceRawValue: "cursor"
         ),
         // — Cody (Sourcegraph) —
         AIToolDefinition(
@@ -130,7 +152,9 @@ public enum AIToolRegistry {
             outputPatterns: ["sourcegraph cody", "cody cli", "cody.dev"],
             resumeProviderKey: nil,
             resumeFormat: nil,
-            logoAssetName: nil
+            logoAssetName: nil,
+            tabColorName: nil,
+            eventSourceRawValue: nil
         ),
         // — Amazon Q —
         AIToolDefinition(
@@ -139,7 +163,9 @@ public enum AIToolRegistry {
             outputPatterns: ["amazon q developer", "amazon q cli", "codewhisperer"],
             resumeProviderKey: nil,
             resumeFormat: nil,
-            logoAssetName: nil
+            logoAssetName: nil,
+            tabColorName: nil,
+            eventSourceRawValue: nil
         ),
         // — Devin —
         AIToolDefinition(
@@ -148,7 +174,9 @@ public enum AIToolRegistry {
             outputPatterns: ["devin cli", "devin.ai"],
             resumeProviderKey: nil,
             resumeFormat: nil,
-            logoAssetName: nil
+            logoAssetName: nil,
+            tabColorName: nil,
+            eventSourceRawValue: nil
         ),
         // — Continue.dev —
         AIToolDefinition(
@@ -157,7 +185,9 @@ public enum AIToolRegistry {
             outputPatterns: ["continue.dev"],
             resumeProviderKey: nil,
             resumeFormat: nil,
-            logoAssetName: nil
+            logoAssetName: nil,
+            tabColorName: "yellow",
+            eventSourceRawValue: "continue_ai"
         ),
         // — Goose (Block) —
         AIToolDefinition(
@@ -166,7 +196,9 @@ public enum AIToolRegistry {
             outputPatterns: ["goose v", "goose.ai", "block goose"],
             resumeProviderKey: nil,
             resumeFormat: nil,
-            logoAssetName: nil
+            logoAssetName: nil,
+            tabColorName: nil,
+            eventSourceRawValue: nil
         ),
         // — Mentat —
         AIToolDefinition(
@@ -175,7 +207,9 @@ public enum AIToolRegistry {
             outputPatterns: ["mentat v", "mentat.ai"],
             resumeProviderKey: nil,
             resumeFormat: nil,
-            logoAssetName: nil
+            logoAssetName: nil,
+            tabColorName: nil,
+            eventSourceRawValue: nil
         ),
         // — Amp —
         AIToolDefinition(
@@ -184,7 +218,9 @@ public enum AIToolRegistry {
             outputPatterns: ["amp.dev", "amp cli"],
             resumeProviderKey: nil,
             resumeFormat: nil,
-            logoAssetName: nil
+            logoAssetName: nil,
+            tabColorName: nil,
+            eventSourceRawValue: nil
         )
     ]
 
@@ -205,6 +241,19 @@ public enum AIToolRegistry {
     public static let outputPatternList: [(pattern: String, appName: String)] = allTools.flatMap { tool in
         tool.outputPatterns.map { (pattern: $0, appName: tool.displayName) }
     }
+
+    /// All name variants → tab color name, for auto-theming.
+    /// Keys include display name (lowercased), command names, and provider keys.
+    public static let tabColorMap: [String: String] = {
+        var map: [String: String] = [:]
+        for tool in allTools {
+            guard let colorName = tool.tabColorName else { continue }
+            map[tool.displayName.lowercased()] = colorName
+            for cmd in tool.commandNames { map[cmd] = colorName }
+            if let key = tool.resumeProviderKey { map[key] = colorName }
+        }
+        return map
+    }()
 
     // MARK: - Queries
 
@@ -231,5 +280,18 @@ public enum AIToolRegistry {
     /// Returns the logo asset name for a given app name, or nil if no logo exists.
     public static func logoAssetName(forAppName appName: String) -> String? {
         tool(named: appName)?.logoAssetName
+    }
+
+    /// Returns the `AIEventSource` raw value for a tool name, checking display name,
+    /// command names, and provider key. Returns nil if no registered tool matches.
+    public static func eventSourceRawValue(for name: String) -> String? {
+        let lowered = name.lowercased()
+        for tool in allTools {
+            guard let source = tool.eventSourceRawValue else { continue }
+            if tool.displayName.lowercased() == lowered { return source }
+            if tool.commandNames.contains(lowered) { return source }
+            if let key = tool.resumeProviderKey, key == lowered { return source }
+        }
+        return nil
     }
 }

@@ -786,14 +786,11 @@ final class OverlayTabsModel: ObservableObject {
             return nil
         }
 
-        switch provider {
-        case "claude":
-            return "claude --resume \(sessionId)"
-        case "codex":
-            return "codex resume \(sessionId)"
-        default:
+        guard let tool = AIToolRegistry.allTools.first(where: { $0.resumeProviderKey == provider }),
+              let format = tool.resumeFormat else {
             return nil
         }
+        return format.buildCommand(sessionId: sessionId)
     }
 
     private static func resolveAIResumeMetadataFromSavedState(
@@ -940,28 +937,30 @@ final class OverlayTabsModel: ObservableObject {
         return (provider: provider, sessionId: foundSessionId)
     }
 
+    // MARK: - Session Finder Registry
+
+    private static var sessionFinderLock = NSLock()
+    private static var sessionFinders: [String: (String, Date?, Set<String>) -> String?] = [:]
+
+    static func registerSessionFinder(
+        forProviderKey key: String,
+        finder: @escaping (String, Date?, Set<String>) -> String?
+    ) {
+        sessionFinderLock.lock()
+        defer { sessionFinderLock.unlock() }
+        sessionFinders[key] = finder
+    }
+
     private static func findAIResumeSessionId(
         for provider: String,
         directory: String,
         referenceDate: Date?,
         claimedSessionIds: Set<String> = []
     ) -> String? {
-        switch provider {
-        case "claude":
-            return findClaudeSessionId(
-                forDirectory: directory,
-                referenceDate: referenceDate,
-                claimedSessionIds: claimedSessionIds
-            ).flatMap { normalizeAISessionId($0) }
-        case "codex":
-            return findCodexSessionId(
-                forDirectory: directory,
-                referenceDate: referenceDate,
-                claimedSessionIds: claimedSessionIds
-            ).flatMap { normalizeAISessionId($0) }
-        default:
-            return nil
-        }
+        sessionFinderLock.lock()
+        let finder = sessionFinders[provider]
+        sessionFinderLock.unlock()
+        return finder?(directory, referenceDate, claimedSessionIds)
     }
 
     private static func normalizedAIProvider(from value: String?) -> String? {
@@ -969,14 +968,14 @@ final class OverlayTabsModel: ObservableObject {
         return AIResumeParser.normalizeProviderName(value)
     }
 
-    private static func normalizeAISessionId(_ sessionId: String?) -> String? {
+    static func normalizeAISessionId(_ sessionId: String?) -> String? {
         guard let sessionId else { return nil }
         let trimmed = sessionId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard AIResumeParser.isValidSessionId(trimmed) else { return nil }
         return trimmed
     }
 
-    private static func findClaudeSessionId(
+    static func findClaudeSessionId(
         forDirectory directory: String,
         referenceDate: Date? = nil,
         claimedSessionIds: Set<String> = []
@@ -1036,7 +1035,7 @@ final class OverlayTabsModel: ObservableObject {
     /// Scans ~/.codex/sessions/ day directories for session files whose
     /// cwd matches the given directory. Caps total file reads to avoid
     /// blocking the main thread.
-    private static func findCodexSessionId(
+    static func findCodexSessionId(
         forDirectory dir: String,
         referenceDate: Date? = nil,
         claimedSessionIds: Set<String> = []

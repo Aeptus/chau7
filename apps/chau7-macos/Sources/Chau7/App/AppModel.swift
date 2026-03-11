@@ -215,11 +215,15 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     @Published var notificationWarning: String?
     @Published var logFilePath = ""
     @Published var logLines: [String] = []
-    @Published var codexHistoryEntries: [HistoryEntry] = []
-    @Published var claudeHistoryEntries: [HistoryEntry] = []
-    @Published var codexTerminalLines: [String] = []
-    @Published var claudeTerminalLines: [String] = []
+    @Published var toolHistoryEntries: [String: [HistoryEntry]] = [:]
+    @Published var toolTerminalLines: [String: [String]] = [:]
     @Published var sessionStatuses: [SessionStatus] = []
+
+    // Backward-compat computed accessors for MainPanelView / LogsSettingsView
+    var codexHistoryEntries: [HistoryEntry] { toolHistoryEntries["codex"] ?? [] }
+    var claudeHistoryEntries: [HistoryEntry] { toolHistoryEntries["claude"] ?? [] }
+    var codexTerminalLines: [String] { toolTerminalLines["codex"] ?? [] }
+    var claudeTerminalLines: [String] { toolTerminalLines["claude"] ?? [] }
 
     func latestSessionStatus(toolName: String, sessionId: String) -> SessionStatus? {
         let trimmedTool = toolName.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -232,6 +236,21 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                     $0.tool.caseInsensitiveCompare(trimmedTool) == .orderedSame
             }
             .max(by: { $0.lastSeen < $1.lastSeen })
+    }
+
+    /// Returns the configured terminal log path for a given tool name, or nil if none.
+    func terminalLogPath(forToolName toolName: String) -> String? {
+        let key = AIToolRegistry.resumeProviderKey(for: toolName) ?? toolName.lowercased()
+        switch key {
+        case "codex":
+            let path = codexTerminalPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            return path.isEmpty ? nil : path
+        case "claude":
+            let path = claudeTerminalPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            return path.isEmpty ? nil : path
+        default:
+            return nil
+        }
     }
 
     /// Tool-agnostic event stream from ALL monitors (file tailer, terminal, API proxy, hooks, etc.).
@@ -488,17 +507,12 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             guard let self else { return }
 
             // Clean old history entries (timestamp is TimeInterval since 1970)
-            let codexBefore = codexHistoryEntries.count
-            codexHistoryEntries.removeAll { entry in
-                entry.timestamp < cutoffInterval
+            var totalHistoryRemoved = 0
+            for key in toolHistoryEntries.keys {
+                let before = toolHistoryEntries[key]?.count ?? 0
+                toolHistoryEntries[key]?.removeAll { $0.timestamp < cutoffInterval }
+                totalHistoryRemoved += before - (toolHistoryEntries[key]?.count ?? 0)
             }
-            let codexRemoved = codexBefore - codexHistoryEntries.count
-
-            let claudeBefore = claudeHistoryEntries.count
-            claudeHistoryEntries.removeAll { entry in
-                entry.timestamp < cutoffInterval
-            }
-            let claudeRemoved = claudeBefore - claudeHistoryEntries.count
 
             // Clean old session statuses (stale sessions older than 7 days)
             let sessionsBefore = sessionStatuses.count
@@ -515,9 +529,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             }
             let eventsRemoved = eventsBefore - recentEvents.count
 
-            let totalRemoved = codexRemoved + claudeRemoved + sessionsRemoved + eventsRemoved
+            let totalRemoved = totalHistoryRemoved + sessionsRemoved + eventsRemoved
             if totalRemoved > 0 {
-                Log.info("Cleanup removed \(totalRemoved) old entries (codex=\(codexRemoved) claude=\(claudeRemoved) sessions=\(sessionsRemoved) events=\(eventsRemoved)).")
+                Log.info("Cleanup removed \(totalRemoved) old entries (history=\(totalHistoryRemoved) sessions=\(sessionsRemoved) events=\(eventsRemoved)).")
             }
         }
     }
@@ -797,15 +811,13 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     }
 
     func clearHistory() {
-        codexHistoryEntries.removeAll()
-        claudeHistoryEntries.removeAll()
+        toolHistoryEntries.removeAll()
         sessionStatuses.removeAll()
         Log.trace("Cleared history streams.")
     }
 
     func clearTerminalLogs() {
-        codexTerminalLines.removeAll()
-        claudeTerminalLines.removeAll()
+        toolTerminalLines.removeAll()
         Log.trace("Cleared terminal streams.")
     }
 
@@ -955,10 +967,16 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             // events appear in the command center timeline alongside events from
             // other tools (Cursor, Codex, etc.). Without this, only the notification
             // system sees Claude Code events — the timeline would be empty.
+            //
+            // Use "Claude" as the tool name — NOT event.toolName (which is an
+            // internal Claude tool like "Write", "Bash", "Read"). TabResolver
+            // matches the tool field against tab branding to resolve which tab
+            // the event belongs to. Internal tool names are unmatchable, causing
+            // the onlyWhenTabInactive guard to misfire and tab styling to fail.
             let aiEvent = AIEvent(
                 source: .claudeCode,
                 type: event.type.rawValue,
-                tool: event.toolName.isEmpty ? "Claude Code" : event.toolName,
+                tool: "Claude",
                 message: event.message,
                 ts: DateFormatters.iso8601.string(from: event.timestamp),
                 directory: event.cwd.isEmpty ? nil : event.cwd
@@ -1001,6 +1019,19 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
         // Start monitoring
         monitor.start()
+        CodexSessionResolver.registerWithTabResolver()
+
+        // Register session finders so OverlayTabsModel resolves sessions via the registry
+        OverlayTabsModel.registerSessionFinder(forProviderKey: "claude") { directory, referenceDate, claimedSessionIds in
+            OverlayTabsModel.findClaudeSessionId(
+                forDirectory: directory, referenceDate: referenceDate, claimedSessionIds: claimedSessionIds
+            )
+        }
+        OverlayTabsModel.registerSessionFinder(forProviderKey: "codex") { directory, referenceDate, claimedSessionIds in
+            OverlayTabsModel.findCodexSessionId(
+                forDirectory: directory, referenceDate: referenceDate, claimedSessionIds: claimedSessionIds
+            )
+        }
 
         // Initial sync
         syncClaudeCodeSessions()
@@ -1039,7 +1070,10 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         let sanitizedSummary = EscapeSequenceSanitizer.sanitizeForLogging(entry.summary)
         Log.info("History entry: tool=\(toolName) session=\(entry.sessionId) summary=\"\(sanitizedSummary)\"")
 
-        if toolName == "Codex" {
+        let providerKey = AIToolRegistry.resumeProviderKey(for: toolName) ?? toolName.lowercased()
+
+        // Codex-specific telemetry bridge (intentional — CodexSessionResolver manages its own session cache)
+        if providerKey == "codex" {
             let referenceDate = Date(timeIntervalSince1970: entry.timestamp)
             if let metadata = CodexSessionResolver.metadata(
                 forSessionID: entry.sessionId,
@@ -1057,32 +1091,26 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            if toolName == "Codex" {
-                codexHistoryEntries.append(entry)
-                codexHistoryEntries.trimToLast(maxHistoryEntries)
-            } else {
-                claudeHistoryEntries.append(entry)
-                claudeHistoryEntries.trimToLast(maxHistoryEntries)
-            }
-
-            // Note: History entries are user prompts written to the conversation log.
-            // They do NOT indicate task completion. The "finished" event should come from
-            // idle detection (when Claude stops outputting) or explicit completion signals.
-            // Emitting "finished" here was causing the red border to appear on prompt send.
+            var entries = toolHistoryEntries[providerKey] ?? []
+            entries.append(entry)
+            entries.trimToLast(maxHistoryEntries)
+            toolHistoryEntries[providerKey] = entries
         }
     }
 
-    /// Map tool name to AIEventSource for proper trigger matching
+    /// Map tool name to AIEventSource for proper trigger matching.
+    /// Uses `eventSourceRawValue` from AIToolRegistry to ensure exact rawValue match
+    /// with the static constants on `AIEventSource`.
     private func aiEventSource(for toolName: String) -> AIEventSource {
-        switch toolName.lowercased() {
-        case "codex": return .codex
-        case "claude", "claude code": return .claudeCode
-        case "cursor": return .cursor
+        let lowered = toolName.lowercased()
+        // Try AIToolRegistry first (covers all registered tools with event sources)
+        if let rawValue = AIToolRegistry.eventSourceRawValue(for: lowered) {
+            return AIEventSource(rawValue: rawValue)
+        }
+        // Legacy fallback for sources not in the tool registry
+        switch lowered {
         case "windsurf": return .windsurf
-        case "copilot": return .copilot
-        case "aider": return .aider
         case "cline": return .cline
-        case "continue": return .continueAI
         default: return .historyMonitor
         }
     }
@@ -1157,15 +1185,13 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             return
         }
 
+        let providerKey = AIToolRegistry.resumeProviderKey(for: toolName) ?? toolName.lowercased()
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            if toolName == "Codex" {
-                codexTerminalLines.append(trimmedNewlines)
-                codexTerminalLines.trimToLast(maxTerminalLines)
-            } else {
-                claudeTerminalLines.append(trimmedNewlines)
-                claudeTerminalLines.trimToLast(maxTerminalLines)
-            }
+            var lines = toolTerminalLines[providerKey] ?? []
+            lines.append(trimmedNewlines)
+            lines.trimToLast(maxTerminalLines)
+            toolTerminalLines[providerKey] = lines
         }
     }
 

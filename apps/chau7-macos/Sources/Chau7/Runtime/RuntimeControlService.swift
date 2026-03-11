@@ -11,6 +11,21 @@ final class RuntimeControlService {
     private let controlService = TerminalControlService.shared
     private let sessionManager = RuntimeSessionManager.shared
 
+    // MARK: - Backend Registry
+
+    private static let backendsLock = NSLock()
+    private static var backends: [String: () -> any AgentBackend] = [
+        "claude": { ClaudeCodeBackend() },
+        "codex":  { CodexBackend() },
+        "shell":  { GenericShellBackend() }
+    ]
+
+    static func registerBackend(name: String, factory: @escaping () -> any AgentBackend) {
+        backendsLock.lock()
+        defer { backendsLock.unlock() }
+        backends[name] = factory
+    }
+
     private init() {}
 
     // MARK: - Tool Dispatch
@@ -51,18 +66,16 @@ final class RuntimeControlService {
         let autoApprove = args["auto_approve"] as? Bool ?? false
         let attachTabID = args["attach_tab_id"] as? String
 
-        // Resolve backend
-        let backend: any AgentBackend
-        switch backendName {
-        case "claude":
-            backend = ClaudeCodeBackend()
-        case "codex":
-            backend = CodexBackend()
-        case "shell":
-            backend = GenericShellBackend()
-        default:
-            return jsonError("Unknown backend: \(backendName). Valid: claude, codex, shell")
+        // Resolve backend via registry
+        Self.backendsLock.lock()
+        let factory = Self.backends[backendName]
+        let validKeys = Self.backends.keys.sorted()
+        Self.backendsLock.unlock()
+
+        guard let factory else {
+            return jsonError("Unknown backend: \(backendName). Valid: \(validKeys.joined(separator: ", "))")
         }
+        let backend = factory()
 
         let config = SessionConfig(
             directory: directory,

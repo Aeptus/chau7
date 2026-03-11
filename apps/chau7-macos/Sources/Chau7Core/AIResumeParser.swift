@@ -26,19 +26,20 @@ public enum AIResumeParser {
         let normalizedTokens = tokens.map { CommandDetection.normalizeToken($0).lowercased() }
 
         guard let first = normalizedTokens.first else { return nil }
-        switch first {
-        case "claude":
-            if normalizedTokens[1] == "--resume",
-               isValidSessionId(normalizedTokens[2]) {
-                return ResumeMetadata(provider: "claude", sessionId: normalizedTokens[2])
+        for tool in AIToolRegistry.allTools {
+            guard let format = tool.resumeFormat,
+                  let providerKey = tool.resumeProviderKey,
+                  tool.commandNames.contains(first) else { continue }
+            switch format {
+            case .dashFlag(_, let flag):
+                if normalizedTokens[1] == flag, isValidSessionId(normalizedTokens[2]) {
+                    return ResumeMetadata(provider: providerKey, sessionId: normalizedTokens[2])
+                }
+            case .subcommand(_, let sub):
+                if normalizedTokens[1] == sub, isValidSessionId(normalizedTokens[2]) {
+                    return ResumeMetadata(provider: providerKey, sessionId: normalizedTokens[2])
+                }
             }
-        case "codex":
-            if normalizedTokens[1] == "resume",
-               isValidSessionId(normalizedTokens[2]) {
-                return ResumeMetadata(provider: "codex", sessionId: normalizedTokens[2])
-            }
-        default:
-            break
         }
         return nil
     }

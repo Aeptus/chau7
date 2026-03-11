@@ -76,6 +76,11 @@ final class ClaudeCodeMonitor: ObservableObject {
     func start() {
         guard !isMonitoring else { return }
 
+        // Register CWD resolver so TabResolver can route events generically
+        TabResolver.registerCWDResolver(forProviderKey: "claude") { [weak self] dir in
+            self?.sessionCandidates(forDirectory: dir).map(\.lastActivity).max()
+        }
+
         // Ensure events file exists
         let fm = FileManager.default
         let dir = (eventsFilePath as NSString).deletingLastPathComponent
