@@ -1154,6 +1154,7 @@
 "notifications.source.terminalSession" = "Session terminal";
 "notifications.source.historyMonitor" = "Surveillance de l'historique";
 "notifications.source.claudeCode" = "Claude Code";
+"notifications.source.runtime" = "Agent d'exécution";
 "notifications.source.app" = "Application";
 
 "notifications.trigger.eventsLog.finished.label" = "Tâche terminée";
@@ -1175,10 +1176,16 @@
 "notifications.trigger.eventsLog.other.label" = "Autres événements";
 "notifications.trigger.eventsLog.other.description" = "Tout autre type d'événement IA non listé ci-dessus.";
 
-"notifications.trigger.terminalSession.finished.label" = "Commande inactive";
-"notifications.trigger.terminalSession.finished.description" = "La commande du terminal n'a produit aucune sortie pendant le délai d'inactivité.";
+"notifications.trigger.terminalSession.finished.label" = "Outil IA terminé";
+"notifications.trigger.terminalSession.finished.description" = "Un outil IA a terminé dans le terminal.";
+"notifications.trigger.terminalSession.permission.label" = "Permission requise";
+"notifications.trigger.terminalSession.permission.description" = "Un outil IA dans le terminal attend une permission pour continuer.";
+"notifications.trigger.terminalSession.idle.label" = "Commande inactive";
+"notifications.trigger.terminalSession.idle.description" = "La commande du terminal n'a produit aucune sortie pendant le délai d'inactivité.";
 "notifications.trigger.terminalSession.failed.label" = "Shell terminé";
 "notifications.trigger.terminalSession.failed.description" = "Le shell du terminal s'est terminé.";
+"notifications.trigger.terminalSession.info.label" = "Outil IA démarré";
+"notifications.trigger.terminalSession.info.description" = "Un outil IA a démarré dans le terminal.";
 
 "notifications.trigger.historyMonitor.idle.label" = "Historique inactif";
 "notifications.trigger.historyMonitor.idle.description" = "Aucune nouvelle entrée d'historique pendant le délai d'inactivité.";
