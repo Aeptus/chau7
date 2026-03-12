@@ -1156,6 +1156,7 @@
 "notifications.source.terminalSession" = "Terminal Session";
 "notifications.source.historyMonitor" = "History Monitor";
 "notifications.source.claudeCode" = "Claude Code";
+"notifications.source.runtime" = "Runtime Agent";
 "notifications.source.app" = "App";
 
 "notifications.trigger.eventsLog.finished.label" = "Task finished";
@@ -1177,10 +1178,16 @@
 "notifications.trigger.eventsLog.other.label" = "Other events";
 "notifications.trigger.eventsLog.other.description" = "Any other AI event types not listed above.";
 
-"notifications.trigger.terminalSession.finished.label" = "Command idle";
-"notifications.trigger.terminalSession.finished.description" = "Terminal command produced no output for the idle timeout.";
+"notifications.trigger.terminalSession.finished.label" = "AI tool finished";
+"notifications.trigger.terminalSession.finished.description" = "An AI tool finished in the terminal.";
+"notifications.trigger.terminalSession.permission.label" = "AI tool needs permission";
+"notifications.trigger.terminalSession.permission.description" = "An AI tool in the terminal needs permission to continue.";
+"notifications.trigger.terminalSession.idle.label" = "Command idle";
+"notifications.trigger.terminalSession.idle.description" = "Terminal command produced no output for the idle timeout.";
 "notifications.trigger.terminalSession.failed.label" = "Shell exited";
 "notifications.trigger.terminalSession.failed.description" = "Terminal shell process exited.";
+"notifications.trigger.terminalSession.info.label" = "AI tool started";
+"notifications.trigger.terminalSession.info.description" = "An AI tool started in the terminal.";
 
 "notifications.trigger.historyMonitor.idle.label" = "History idle";
 "notifications.trigger.historyMonitor.idle.description" = "No new history entries for the idle timeout.";

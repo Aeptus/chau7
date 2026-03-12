@@ -1135,6 +1135,7 @@
 "notifications.source.terminalSession" = "جلسة الطرفية";
 "notifications.source.historyMonitor" = "مراقبة السجل";
 "notifications.source.claudeCode" = "Claude Code";
+"notifications.source.runtime" = "وكيل التشغيل";
 "notifications.source.app" = "التطبيق";
 
 "notifications.trigger.eventsLog.finished.label" = "اكتملت المهمة";
@@ -1156,10 +1157,16 @@
 "notifications.trigger.eventsLog.other.label" = "أحداث أخرى";
 "notifications.trigger.eventsLog.other.description" = "أي أنواع أخرى من أحداث الذكاء الاصطناعي غير المدرجة أعلاه.";
 
-"notifications.trigger.terminalSession.finished.label" = "الأمر خامل";
-"notifications.trigger.terminalSession.finished.description" = "لم تصدر عن أمر الطرفية أي مخرجات خلال مهلة الخمول.";
+"notifications.trigger.terminalSession.finished.label" = "أداة الذكاء الاصطناعي انتهت";
+"notifications.trigger.terminalSession.finished.description" = "أداة ذكاء اصطناعي انتهت في الطرفية.";
+"notifications.trigger.terminalSession.permission.label" = "مطلوب إذن";
+"notifications.trigger.terminalSession.permission.description" = "أداة ذكاء اصطناعي في الطرفية تحتاج إذنًا للمتابعة.";
+"notifications.trigger.terminalSession.idle.label" = "الأمر خامل";
+"notifications.trigger.terminalSession.idle.description" = "لم تصدر عن أمر الطرفية أي مخرجات خلال مهلة الخمول.";
 "notifications.trigger.terminalSession.failed.label" = "انتهت عملية الصدفة";
 "notifications.trigger.terminalSession.failed.description" = "انتهت عملية الصدفة في الطرفية.";
+"notifications.trigger.terminalSession.info.label" = "بدأت أداة الذكاء الاصطناعي";
+"notifications.trigger.terminalSession.info.description" = "بدأت أداة ذكاء اصطناعي في الطرفية.";
 
 "notifications.trigger.historyMonitor.idle.label" = "السجل خامل";
 "notifications.trigger.historyMonitor.idle.description" = "لا توجد إدخالات سجل جديدة خلال مهلة الخمول.";

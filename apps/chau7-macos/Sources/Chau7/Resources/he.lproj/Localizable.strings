@@ -1135,6 +1135,7 @@
 "notifications.source.terminalSession" = "סשן טרמינל";
 "notifications.source.historyMonitor" = "ניטור היסטוריה";
 "notifications.source.claudeCode" = "Claude Code";
+"notifications.source.runtime" = "סוכן ריצה";
 "notifications.source.app" = "יישום";
 
 "notifications.trigger.eventsLog.finished.label" = "המשימה הושלמה";
@@ -1156,10 +1157,16 @@
 "notifications.trigger.eventsLog.other.label" = "אירועים אחרים";
 "notifications.trigger.eventsLog.other.description" = "כל סוגי אירועי AI אחרים שאינם ברשימה לעיל.";
 
-"notifications.trigger.terminalSession.finished.label" = "הפקודה בהמתנה";
-"notifications.trigger.terminalSession.finished.description" = "פקודת הטרמינל לא הפיקה פלט במשך זמן ההמתנה.";
+"notifications.trigger.terminalSession.finished.label" = "כלי AI סיים";
+"notifications.trigger.terminalSession.finished.description" = "כלי AI סיים בטרמינל.";
+"notifications.trigger.terminalSession.permission.label" = "נדרשת הרשאה";
+"notifications.trigger.terminalSession.permission.description" = "כלי AI בטרמינל זקוק להרשאה להמשיך.";
+"notifications.trigger.terminalSession.idle.label" = "הפקודה בהמתנה";
+"notifications.trigger.terminalSession.idle.description" = "פקודת הטרמינל לא הפיקה פלט במשך זמן ההמתנה.";
 "notifications.trigger.terminalSession.failed.label" = "ה־Shell הסתיים";
 "notifications.trigger.terminalSession.failed.description" = "תהליך ה־Shell של הטרמינל הסתיים.";
+"notifications.trigger.terminalSession.info.label" = "כלי AI התחיל";
+"notifications.trigger.terminalSession.info.description" = "כלי AI התחיל בטרמינל.";
 
 "notifications.trigger.historyMonitor.idle.label" = "היסטוריה בהמתנה";
 "notifications.trigger.historyMonitor.idle.description" = "אין רשומות היסטוריה חדשות במשך זמן ההמתנה.";
