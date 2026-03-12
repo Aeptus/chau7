@@ -10,9 +10,26 @@
 
 import Foundation
 
+// Ignore SIGPIPE so broken stdout pipe returns EPIPE instead of killing us.
+signal(SIGPIPE, SIG_IGN)
+
+func writeStdout(_ data: Data) -> Bool {
+    data.withUnsafeBytes { buf in
+        var remaining = buf.count
+        var offset = 0
+        while remaining > 0 {
+            let n = Foundation.write(STDOUT_FILENO, buf.baseAddress! + offset, remaining)
+            if n <= 0 { return false }
+            offset += n
+            remaining -= n
+        }
+        return true
+    }
+}
+
 func writeError(_ message: String) {
     let json = "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32000,\"message\":\"\(message)\"}}\n"
-    FileHandle.standardOutput.write(Data(json.utf8))
+    _ = writeStdout(Data(json.utf8))
 }
 
 let socketPath = NSHomeDirectory() + "/.chau7/mcp.sock"
@@ -62,7 +79,7 @@ var buffer = [UInt8](repeating: 0, count: 65536)
 while true {
     let n = recv(sockFD, &buffer, buffer.count, 0)
     if n <= 0 { break }
-    FileHandle.standardOutput.write(Data(bytes: buffer, count: n))
+    if !writeStdout(Data(bytes: buffer, count: n)) { break }
 }
 
 close(sockFD)
