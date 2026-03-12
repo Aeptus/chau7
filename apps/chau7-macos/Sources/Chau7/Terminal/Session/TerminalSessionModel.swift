@@ -119,6 +119,12 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     }
 
     var effectiveAIProvider: String? {
+        // lastDetectedAppName is set by live command + output detection and
+        // survives process exit — it's the most authoritative signal for which
+        // CLI tool was running (e.g. "Codex"), independent of the LLM backend.
+        if let provider = AIResumeParser.normalizeProviderName(lastDetectedAppName ?? "") {
+            return provider
+        }
         if let provider = AIResumeParser.normalizeProviderName(lastAIProvider ?? "") {
             return provider
         }
@@ -198,6 +204,23 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
     private(set) var lastAIProvider: String?
     private(set) var lastAISessionId: String?
+    /// The last app name set by live detection (command or output).
+    /// Unlike `activeAppName`, this is NOT cleared on process exit,
+    /// so it survives across save/restore boundaries.
+    private(set) var lastDetectedAppName: String?
+
+    /// Update the last detected app name and clear stale session metadata
+    /// when the provider changes. For example, if `lastAIProvider` is "claude"
+    /// (from a wrong restore) but output detection identifies "Codex",
+    /// the Claude session ID in `lastAISessionId` is invalid for Codex.
+    private func updateLastDetectedApp(_ app: String) {
+        lastDetectedAppName = app
+        if let newProvider = AIResumeParser.normalizeProviderName(app),
+           let oldProvider = AIResumeParser.normalizeProviderName(lastAIProvider ?? ""),
+           newProvider != oldProvider {
+            lastAISessionId = nil
+        }
+    }
 
     private var hasBackgroundRenderingAIContext: Bool {
         aiDisplayAppName != nil || effectiveAIProvider != nil || effectiveAISessionId != nil
@@ -1254,6 +1277,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
         // State changed → sync @Published property and fire side effects
         activeAppName = app
+        updateLastDetectedApp(app)
         startAILoggingIfNeeded(toolName: app, commandLine: nil)
 
         TelemetryRecorder.shared.runStarted(
@@ -1479,6 +1503,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         if let match = CommandDetection.detectApp(from: commandLine) {
             aiDetection.handleCommand(appName: match)
             activeAppName = match
+            updateLastDetectedApp(match)
             Log.info("AI detected: \(match) from command '\(commandLine.prefix(50))'")
             startAILoggingIfNeeded(toolName: match, commandLine: commandLine)
             return
@@ -1500,6 +1525,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                 let displayName = name.isEmpty ? "Custom AI" : name
                 aiDetection.handleCommand(appName: displayName)
                 activeAppName = displayName
+                updateLastDetectedApp(displayName)
                 startAILoggingIfNeeded(toolName: displayName, commandLine: commandLine)
                 return
             }
@@ -1546,6 +1572,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             aiDetection.handleRestore(appName: name)
         }
         activeAppName = restoredDisplayName
+        lastDetectedAppName = restoredDisplayName
         lastAIProvider = normalizedProvider
 
         if let sessionId {

@@ -81,8 +81,10 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
     public let ts: String
     public let directory: String?
     public let tabID: UUID?
+    /// AI session ID (e.g. Claude session ID) for tab disambiguation.
+    public let sessionID: String?
 
-    public init(source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String, directory: String? = nil, tabID: UUID? = nil) {
+    public init(source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String, directory: String? = nil, tabID: UUID? = nil, sessionID: String? = nil) {
         self.id = UUID()
         self.source = source
         self.type = type
@@ -91,9 +93,10 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         self.ts = ts
         self.directory = directory
         self.tabID = tabID
+        self.sessionID = sessionID
     }
 
-    public init(id: UUID, source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String, directory: String? = nil, tabID: UUID? = nil) {
+    public init(id: UUID, source: AIEventSource = .unknown, type: String, tool: String, message: String, ts: String, directory: String? = nil, tabID: UUID? = nil, sessionID: String? = nil) {
         self.id = id
         self.source = source
         self.type = type
@@ -102,18 +105,20 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
         self.ts = ts
         self.directory = directory
         self.tabID = tabID
+        self.sessionID = sessionID
     }
 
     /// Returns a copy with `tabID` filled in, if it was previously nil.
     public func resolvingTabID(_ tabID: UUID?) -> AIEvent {
         guard let tabID, self.tabID == nil else { return self }
         return AIEvent(id: id, source: source, type: type, tool: tool,
-                       message: message, ts: ts, directory: directory, tabID: tabID)
+                       message: message, ts: ts, directory: directory, tabID: tabID,
+                       sessionID: sessionID)
     }
 
     /// Returns the routing target for tab resolution from this event's fields.
     public var tabTarget: TabTarget {
-        TabTarget(tool: tool, directory: directory, tabID: tabID)
+        TabTarget(tool: tool, directory: directory, tabID: tabID, sessionID: sessionID)
     }
 
     /// Returns the notification title for this event.

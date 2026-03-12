@@ -300,7 +300,8 @@ final class ClaudeCodeMonitor: ObservableObject {
             tool: "Claude",
             message: "Response complete in \(event.projectName)",
             ts: DateFormatters.nowISO8601(),
-            directory: event.cwd
+            directory: event.cwd,
+            sessionID: event.sessionId
         )
         Task { @MainActor in NotificationManager.shared.notify(for: aiEvent) }
     }
@@ -313,7 +314,8 @@ final class ClaudeCodeMonitor: ObservableObject {
             tool: "Claude",
             message: "Needs permission for \(toolDesc) in \(event.projectName)",
             ts: DateFormatters.nowISO8601(),
-            directory: event.cwd
+            directory: event.cwd,
+            sessionID: event.sessionId
         )
         Task { @MainActor in NotificationManager.shared.notify(for: aiEvent) }
     }
@@ -342,7 +344,8 @@ final class ClaudeCodeMonitor: ObservableObject {
             tool: "Claude",
             message: "Waiting for input in \(session.projectName) (\(Int(idleFor))s idle)",
             ts: DateFormatters.nowISO8601(),
-            directory: session.cwd
+            directory: session.cwd,
+            sessionID: session.id
         )
         Task { @MainActor in NotificationManager.shared.notify(for: aiEvent) }
     }
