@@ -264,6 +264,11 @@ final class CTOManager {
             fi
             \(pipeBlock)
 
+            # Command exclusion: skip optimizer if this command is in the exclusion list.
+            case " $CHAU7_CTO_EXCLUDE " in *" \(command) "*)
+                exec "\(path)" "$@"
+            ;; esac
+
             # CTO is active — try optimizer, fall through to real binary on failure.
             \(optimizerBlock)
             exec "\(path)" "$@"
@@ -301,6 +306,11 @@ final class CTOManager {
             exec "$_CTO_REAL_BIN" "$@"
         fi
         \(pipeBlock)
+
+        # Command exclusion: skip optimizer if this command is in the exclusion list.
+        case " $CHAU7_CTO_EXCLUDE " in *" \(command) "*)
+            exec "$_CTO_REAL_BIN" "$@"
+        ;; esac
 
         \(optimizerBlock)
         exec "$_CTO_REAL_BIN" "$@"
@@ -356,6 +366,11 @@ final class CTOManager {
         \(realBinSetup)\(realBinFallback)
 
         # CTO is active below this point.
+
+        # Command exclusion: skip optimizer if cat is in the exclusion list.
+        case " $CHAU7_CTO_EXCLUDE " in *" cat "*)
+            exec "$_CTO_REAL_BIN" "$@"
+        ;; esac
 
         # Cat with no args may read from stdin (e.g. pipes); avoid read-optimizer path.
         if [ "$#" -eq 0 ]; then
@@ -479,6 +494,12 @@ final class CTOManager {
         \(realBinSetup)
 
         # CTO is active below this point.
+
+        # Command exclusion: skip optimizer if sed is in the exclusion list.
+        case " $CHAU7_CTO_EXCLUDE " in *" sed "*)
+            exec \(realBinRef) "$@"
+        ;; esac
+
         # Detect: sed -n '<start>,<end>p' <file>  OR  sed -n '<line>p' <file>
         if [ "$1" = "-n" ] && [ $# -eq 3 ]; then
             _RANGE="$2"
@@ -497,8 +518,8 @@ final class CTOManager {
                             ;;
                     esac
                     # Validate both _START and _END are positive integers
-                    case "$_START" in ''|*[!0-9]*) _START="" ;; esac
-                    case "$_END" in ''|*[!0-9]*) _END="" ;; esac
+                    case "$_START" in ''|0|*[!0-9]*) _START="" ;; esac
+                    case "$_END" in ''|0|*[!0-9]*) _END="" ;; esac
                     if [ -n "$_START" ] && [ -n "$_END" ] && [ -f "$_FILE" ]; then
                         _COUNT=$(( _END - _START + 1 ))
                         if [ $_COUNT -gt 0 ]; then
