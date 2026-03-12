@@ -145,6 +145,28 @@ public enum AIToolRegistry {
             tabColorName: "teal",
             eventSourceRawValue: "cursor"
         ),
+        // — Windsurf (Codeium) —
+        AIToolDefinition(
+            displayName: "Windsurf",
+            commandNames: ["windsurf", "windsurf-cli"],
+            outputPatterns: ["windsurf", "codeium", "windsurf.ai"],
+            resumeProviderKey: nil,
+            resumeFormat: nil,
+            logoAssetName: nil,
+            tabColorName: "teal",
+            eventSourceRawValue: "windsurf"
+        ),
+        // — Cline —
+        AIToolDefinition(
+            displayName: "Cline",
+            commandNames: ["cline"],
+            outputPatterns: ["cline", "cline.bot"],
+            resumeProviderKey: nil,
+            resumeFormat: nil,
+            logoAssetName: nil,
+            tabColorName: nil,
+            eventSourceRawValue: "cline"
+        ),
         // — Cody (Sourcegraph) —
         AIToolDefinition(
             displayName: "Cody",
