@@ -599,9 +599,12 @@ final class TelemetryStore {
     func tokenUsagePerTab(after: Date? = nil) -> [TabTokenConsumption] {
         queue.sync {
             guard let db else { return [] }
+            // MAX(provider) picks the lexicographically last provider per tab —
+            // close enough to "most recent" for label display.
             var sql = """
             SELECT tab_id, COUNT(*), COALESCE(SUM(total_input_tokens),0),
-                   COALESCE(SUM(total_output_tokens),0), COALESCE(SUM(cost_usd),0)
+                   COALESCE(SUM(total_output_tokens),0), COALESCE(SUM(cost_usd),0),
+                   MAX(provider)
             FROM runs WHERE tab_id IS NOT NULL
             """
             if after != nil {
@@ -625,7 +628,8 @@ final class TelemetryStore {
                     runCount: Int(sqlite3_column_int64(stmt, 1)),
                     totalInputTokens: Int(sqlite3_column_int64(stmt, 2)),
                     totalOutputTokens: Int(sqlite3_column_int64(stmt, 3)),
-                    totalCostUSD: sqlite3_column_double(stmt, 4)
+                    totalCostUSD: sqlite3_column_double(stmt, 4),
+                    lastProvider: colText(stmt, 5)
                 ))
             }
             return results
