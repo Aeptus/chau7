@@ -524,6 +524,7 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     deinit {
+        Log.warn("OverlayTabsModel deinit — tabs=\(tabs.count) pid=\(ProcessInfo.processInfo.processIdentifier)")
         stopTabBarWatchdog()
         autoSaveTimer?.cancel()
         autoSaveTimer = nil
