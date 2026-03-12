@@ -272,6 +272,12 @@ public enum NotificationTriggerCatalog {
             labelFallback: "Continue",
             sortOrder: 27
         ),
+        NotificationTriggerSourceInfo(
+            id: .runtime,
+            labelKey: "notifications.source.runtime",
+            labelFallback: "Runtime Agent",
+            sortOrder: 28
+        ),
         // App source
         NotificationTriggerSourceInfo(
             id: .app,
@@ -443,6 +449,26 @@ public enum NotificationTriggerCatalog {
     private static let terminalSessionTriggers: [NotificationTrigger] = [
         NotificationTrigger(
             source: .terminalSession,
+            type: "finished",
+            labelKey: "notifications.trigger.terminalSession.finished.label",
+            labelFallback: "AI tool finished",
+            descriptionKey: "notifications.trigger.terminalSession.finished.description",
+            descriptionFallback: "An AI tool finished in the terminal.",
+            defaultEnabled: true,
+            displayContexts: [.settings, .activity]
+        ),
+        NotificationTrigger(
+            source: .terminalSession,
+            type: "permission",
+            labelKey: "notifications.trigger.terminalSession.permission.label",
+            labelFallback: "AI tool needs permission",
+            descriptionKey: "notifications.trigger.terminalSession.permission.description",
+            descriptionFallback: "An AI tool in the terminal needs permission to continue.",
+            defaultEnabled: true,
+            displayContexts: [.settings, .activity]
+        ),
+        NotificationTrigger(
+            source: .terminalSession,
             type: "idle",
             labelKey: "notifications.trigger.terminalSession.idle.label",
             labelFallback: "Command idle",
@@ -459,6 +485,16 @@ public enum NotificationTriggerCatalog {
             descriptionKey: "notifications.trigger.terminalSession.failed.description",
             descriptionFallback: "Terminal shell process exited.",
             defaultEnabled: true,
+            displayContexts: [.settings, .activity]
+        ),
+        NotificationTrigger(
+            source: .terminalSession,
+            type: "info",
+            labelKey: "notifications.trigger.terminalSession.info.label",
+            labelFallback: "AI tool started",
+            descriptionKey: "notifications.trigger.terminalSession.info.description",
+            descriptionFallback: "An AI tool started in the terminal.",
+            defaultEnabled: false,
             displayContexts: [.settings, .activity]
         )
     ]

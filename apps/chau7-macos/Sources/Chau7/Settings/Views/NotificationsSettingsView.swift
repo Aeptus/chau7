@@ -189,7 +189,7 @@ private enum TriggerCategory: String, CaseIterable, Identifiable {
         case .shell:
             return [.shell]
         case .aiApps:
-            return [.claudeCode, .codex, .cursor, .windsurf, .copilot, .aider, .cline, .continueAI]
+            return [.claudeCode, .codex, .cursor, .windsurf, .copilot, .aider, .cline, .continueAI, .runtime]
         case .app:
             return [.app, .apiProxy, .unknown]
         }
