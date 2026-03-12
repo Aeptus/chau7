@@ -407,6 +407,10 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         Log.info("Log file=\(logFilePath)")
     }
 
+    deinit {
+        Log.warn("AppModel deinit — possible SwiftUI scene recreation (pid=\(ProcessInfo.processInfo.processIdentifier))")
+    }
+
     func bootstrap() {
         Log.info("Bootstrapping app model.")
         // Only use UNUserNotificationCenter if running as a proper app bundle

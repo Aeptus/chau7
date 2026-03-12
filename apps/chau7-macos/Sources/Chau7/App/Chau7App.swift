@@ -7,7 +7,14 @@ struct Chau7App: App {
     @StateObject private var overlayModel: OverlayTabsModel
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
+    private static var initCount = 0
+
     init() {
+        Self.initCount += 1
+        if Self.initCount > 1 {
+            Log.warn("Chau7App.init() called \(Self.initCount) times — SwiftUI is recreating the App struct (pid=\(ProcessInfo.processInfo.processIdentifier))")
+        }
+
         // Pre-initialize shell integration BEFORE creating any tabs
         TerminalSessionModel.preInitialize()
 
