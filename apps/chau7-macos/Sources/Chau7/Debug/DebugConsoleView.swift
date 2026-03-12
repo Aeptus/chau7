@@ -88,6 +88,9 @@ struct DebugConsoleView: View {
                 refreshCTOData()
             }
         }
+        .onChange(of: ctoTimePeriod) { _ in
+            refreshCTOData()
+        }
     }
 
     // MARK: - Header
@@ -665,6 +668,10 @@ struct DebugConsoleView: View {
             if let title = tab.customTitle { return title }
             let index = overlayModel.tabs.firstIndex(where: { $0.id == tab.id }).map { $0 + 1 } ?? 0
             return "Tab \(index)"
+        }
+        // Closed tab — show provider from telemetry if available
+        if let provider = aiPerTabStats.first(where: { $0.tabID == sessionID })?.lastProvider {
+            return "\(provider.capitalized) \(String(sessionID.prefix(4)))"
         }
         return String(sessionID.prefix(8))
     }
@@ -1518,9 +1525,10 @@ struct DebugConsoleView: View {
         ctoRuntimeSnapshot = CTORuntimeMonitor.shared.snapshot()
         ctoCommandLog = CTOManager.shared.readCommandLog()
 
-        // Load telemetry aggregations
-        let tabStats = TelemetryStore.shared.tokenUsagePerTab()
-        let provStats = TelemetryStore.shared.consumptionPerProvider()
+        // Load telemetry aggregations, filtered by the same time period as CTO data
+        let cutoff: Date? = ctoTimePeriod == .all ? nil : ctoTimePeriodCutoff
+        let tabStats = TelemetryStore.shared.tokenUsagePerTab(after: cutoff)
+        let provStats = TelemetryStore.shared.consumptionPerProvider(after: cutoff)
         aiPerTabStats = tabStats
         providerStats = provStats
 
