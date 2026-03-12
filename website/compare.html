@@ -13,7 +13,9 @@
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
     <link rel="canonical" href="compare.html">
-    <link rel="stylesheet" href="style.css">    <script type="application/ld+json">
+    <link rel="stylesheet" href="style.css">
+    <script src="/components.js"></script>
+    <script type="application/ld+json">
     [{
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
@@ -60,28 +62,9 @@
     </script>
 </head>
 <body>
-    <!-- Nav -->
-    <nav class="nav">
-        <div class="nav-inner">
-            <a href="index.html" class="nav-logo">
-                <img src="logo.png" alt="Chau7" class="logo-icon">
-                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
-            </a>
-            <button class="nav-hamburger" aria-label="Toggle menu">
-                <span></span><span></span><span></span>
-            </button>
-            <div class="nav-links">
-                <a href="features.html">Features</a>
-                <a href="mcp.html">MCP</a>
-                <a href="/the-tech">The Tech</a>
-                <a href="compare.html">Compare</a>
-                <a href="pronunciation.html">How to say it</a>
-                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
-            </div>
-        </div>
-    </nav>
+    <site-nav></site-nav>
 
-    <main>
+<main>
         <!-- Hero -->
         <section class="hero hero-compare">
             <div class="hero-glow"></div>
@@ -333,48 +316,9 @@
         </section>
     </main>
 
-    <!-- Footer -->
-    <footer class="footer">
-        <div class="section-inner">
-            <div class="footer-grid">
-                <div class="footer-brand-col">
-                    <div class="footer-brand">
-                        <img src="logo.png" alt="Chau7" class="logo-icon">
-                        <span class="logo-text">Chau7</span>
-                    </div>
-                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
-                </div>
-                <div class="footer-nav-col">
-                    <h4>Product</h4>
-                    <a href="features.html">Features</a>
-                    <a href="mcp.html">MCP Tools</a>
-                    <a href="/the-tech">The Tech</a>
-                    <a href="compare.html">Compare</a>
-                </div>
-                <div class="footer-nav-col">
-                    <h4>Resources</h4>
-                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
-                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
-                    <a href="llms.txt">llms.txt</a>
-                </div>
-                <div class="footer-nav-col">
-                    <h4>Colophon</h4>
-                    <a href="golden-ratio.html">The Golden Ratio</a>
-                    <a href="typography.html">Typography</a>
-                    <a href="pronunciation.html">How to Say It</a>
-                </div>
-                <div class="footer-nav-col">
-                    <h4>Legal</h4>
-                    <a href="legal.html">Legal Notice</a>
-                    <a href="mentions-legales.html">Mentions L\&eacute;gales</a>
-                </div>
-            </div>
-            <div class="footer-bottom">
-                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
-            </div>
-        </div>
-    </footer>
 
-    <script src="script.js"></script>
+    <site-footer></site-footer>
+
+<script src="/script.js"></script>
 </body>
 </html>

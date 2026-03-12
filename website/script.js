@@ -162,23 +162,21 @@
 
     /* ── Active nav link ─────────────────────────── */
     function initActiveNav() {
-        const path = window.location.pathname;
-        const filename = path.substring(path.lastIndexOf('/') + 1) || 'index.html';
+        let p = window.location.pathname
+            .replace(/\/index\.html$/, '')
+            .replace(/\.html$/, '')
+            .replace(/\/$/, '') || '/';
 
         document.querySelectorAll('.nav-links a').forEach(link => {
             const href = link.getAttribute('href');
             if (!href || href.startsWith('http')) return;
-            if (href === filename || (filename === '' && href === 'index.html')) {
-                link.classList.add('active');
-            }
+            if (href === p) link.classList.add('active');
         });
 
         // Highlight "Features" for sub-pages under /features/
-        if (path.includes('/features/')) {
-            document.querySelectorAll('.nav-links a').forEach(link => {
-                if (link.getAttribute('href')?.includes('features.html')) {
-                    link.classList.add('active');
-                }
+        if (p.startsWith('/features/')) {
+            document.querySelectorAll('.nav-links a[href="/features"]').forEach(link => {
+                link.classList.add('active');
             });
         }
     }

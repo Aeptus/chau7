@@ -22,6 +22,9 @@
 /script.js
   Cache-Control: public, max-age=3600
 
+/components.js
+  Cache-Control: public, max-age=3600
+
 /screenshots/*
   Cache-Control: public, max-age=86400
 

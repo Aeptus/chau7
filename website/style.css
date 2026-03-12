@@ -1,5 +1,6 @@
 /* ── Reset & Base ─────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+site-nav, site-footer { display: contents; }
 
 :root {
     --bg:         #f5ead0;          /* parchment base */
@@ -54,7 +55,7 @@
     --grid-phi: 1fr 1.618fr;
 }
 
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; overflow-x: clip; }
 
 body {
     font-family: var(--sans);
@@ -689,17 +690,44 @@ h1, h2, h3 { font-family: var(--serif); }
 
 /* ── Footer CTA (index) ────────────────────────── */
 .footer-cta-section {
-    padding: var(--space-6xl) 0;
+    padding: var(--space-7xl) 0 var(--space-6xl);
     text-align: center;
     background: var(--bg-card);
+    max-width: var(--max-w);
+    margin: 0 auto;
+    border-radius: 0 0 var(--space-xl) var(--space-xl);
 }
 
 .footer-cta-content h2 {
     font-size: clamp(var(--text-xl), 3.5vw, var(--text-2xl));
     font-weight: 800;
     letter-spacing: -0.02em;
+    line-height: 1.272;              /* √φ — tight heading rhythm */
+    margin-bottom: var(--space-xs);
+}
+
+.cta-aside {
+    color: var(--text-muted);
+    font-size: var(--text-md);
     margin-bottom: var(--space-2xl);
 }
+
+.cta-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: stretch;
+    gap: var(--space-lg);             /* √φ rhythm between buttons */
+}
+
+.cta-buttons .btn-primary,
+.cta-buttons .btn-outline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-outline.btn-lg { padding: var(--space-md) var(--space-3xl); font-size: var(--text-md); }
 
 /* ── Dual Nature ─────────────────────────────────── */
 .dual-nature { padding: var(--space-6xl) 0; }
@@ -2731,6 +2759,13 @@ a.catalog-card:hover::after { opacity: 1; }
     .nav-links a { padding: 0.75rem 0; border-bottom: 1px solid var(--border); }
     .nav-links a:last-child { border-bottom: none; }
     .nav-cta-download { text-align: center; margin-top: var(--space-xs); }
+
+    .cta-buttons { flex-direction: column; align-items: stretch; }
+    .cta-buttons .btn-primary,
+    .cta-buttons .btn-outline {
+        font-size: var(--text-base);
+        padding: var(--space-sm) var(--space-2xl);
+    }
 
     .features-grid { grid-template-columns: 1fr; }
     .ai-value-row {

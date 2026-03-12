@@ -15,6 +15,7 @@
     <link rel="canonical" href="https://chau7.sh/features/tab-profiles">
     <link rel="stylesheet" href="/style.css">
     <link rel="stylesheet" href="/feature-page.css">
+    <script src="/components.js"></script>
     <script type="application/ld+json">
     [{
         "@context": "https://schema.org",
@@ -42,28 +43,9 @@
     </script>
 </head>
 <body>
-    <!-- Nav -->
-    <nav class="nav">
-        <div class="nav-inner">
-            <a href="/" class="nav-logo">
-                <img src="/logo.png" alt="Chau7" class="logo-icon">
-                <span class="logo-text">Chau7</span><span class="logo-beta">Beta</span>
-            </a>
-            <button class="nav-hamburger" aria-label="Toggle menu">
-                <span></span><span></span><span></span>
-            </button>
-            <div class="nav-links">
-                <a href="/features">Features</a>
-                <a href="/mcp">MCP</a>
-                <a href="/the-tech">The Tech</a>
-                <a href="/compare">Compare</a>
-                <a href="/pronunciation">How to say it</a>
-                <a href="https://github.com/nicmusic/chau7" class="nav-cta-download" target="_blank">Download</a>
-            </div>
-        </div>
-    </nav>
+    <site-nav></site-nav>
 
-    <main>
+<main>
         <!-- Breadcrumb -->
         <div class="breadcrumb">
             <a href="/">Home</a>
@@ -169,49 +151,10 @@
         </section>
     </main>
 
-    <!-- Footer -->
-    <footer class="footer">
-        <div class="section-inner">
-            <div class="footer-grid">
-                <div class="footer-brand-col">
-                    <div class="footer-brand">
-                        <img src="/logo.png" alt="Chau7" class="logo-icon">
-                        <span class="logo-text">Chau7</span>
-                    </div>
-                    <p class="footer-tagline">The AI-native terminal for macOS.</p>
-                </div>
-                <div class="footer-nav-col">
-                    <h4>Product</h4>
-                    <a href="/features">Features</a>
-                    <a href="/mcp">MCP Tools</a>
-                    <a href="/the-tech">The Tech</a>
-                    <a href="/compare">Compare</a>
-                </div>
-                <div class="footer-nav-col">
-                    <h4>Resources</h4>
-                    <a href="https://github.com/nicmusic/chau7" target="_blank">GitHub</a>
-                    <a href="https://github.com/nicmusic/chau7/releases" target="_blank">Releases</a>
-                    <a href="/llms.txt">llms.txt</a>
-                </div>
-                <div class="footer-nav-col">
-                    <h4>Colophon</h4>
-                    <a href="/golden-ratio.html">The Golden Ratio</a>
-                    <a href="/typography.html">Typography</a>
-                    <a href="/pronunciation">How to Say It</a>
-                </div>
-                <div class="footer-nav-col">
-                    <h4>Legal</h4>
-                    <a href="/legal">Legal Notice</a>
-                    <a href="/mentions-legales">Mentions L&eacute;gales</a>
-                </div>
-            </div>
-            <div class="footer-bottom">
-                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
-            </div>
-        </div>
-    </footer>
 
-    <script>
+    <site-footer></site-footer>
+
+<script>
         window.CHAU7_FEATURE_PAGES = ["/features/auto-ai-cli-detection", "/features/ai-tab-branding", "/features/ai-process-monitoring", "/features/custom-detection-rules", "/features/detection-status-indicator", "/features/multi-agent-awareness", "/features/context-token-optimization", "/features/llm-error-explanation", "/features/cto-per-tab-override", "/features/ai-session-tracking", "/features/tls-wss-proxy", "/features/token-counting", "/features/cost-tracking", "/features/latency-tracking", "/features/analytics-dashboard", "/features/mcp-tools", "/features/unix-socket-server", "/features/auto-registration", "/features/mcp-resources", "/features/tab-limits", "/features/mcp-tab-indicator", "/features/multi-tab", "/features/split-panes", "/features/tab-drag-drop", "/features/tab-profiles", "/features/background-suspension", "/features/tab-watchdog", "/features/session-recording", "/features/timeline-scrubber", "/features/session-restore", "/features/metal-rendering", "/features/iosurface-display", "/features/simd-parsing", "/features/iokit-hid-input", "/features/triple-buffering", "/features/lock-free-spsc-buffer", "/features/vt100-xterm-emulation", "/features/unicode-emoji-support", "/features/shell-integration", "/features/scrollback-buffer", "/features/hyperlinks", "/features/image-protocol", "/features/ligatures", "/features/bell-notification", "/features/dangerous-command-guard", "/features/process-exit-confirmation", "/features/mcp-approval-gate", "/features/clipboard-history", "/features/paste-confirmation", "/features/snippets", "/features/ssh-connection-manager", "/features/auto-import-ssh-config", "/features/jump-host-support", "/features/context-aware-switching", "/features/command-palette", "/features/terminal-search", "/features/command-history-search", "/features/fonts", "/features/themes", "/features/custom-keybindings", "/features/cursor-styles", "/features/transparency-blur", "/features/padding-margins", "/features/overlay-mode", "/features/dropdown-quake-style", "/features/fullscreen-mode", "/features/menu-bar-only", "/features/syntax-highlighting", "/features/bracket-matching", "/features/find-replace", "/features/line-numbers", "/features/voiceover-support", "/features/high-contrast-mode", "/features/reduced-motion", "/features/localization", "/features/json-rpc-api", "/features/shell-hooks"];
     </script>
     <script src="/script.js"></script>

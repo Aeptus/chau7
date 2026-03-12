@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>Privacy Policy &middot; Chau7</title>
+    <meta name="description" content="Privacy policy for chau7.sh. Zero cookies, zero trackers, zero forms. Published by Aeptus SAS and hosted on Cloudflare Pages.">
+    <link rel="canonical" href="https://chau7.sh/privacy">
+    <link rel="stylesheet" href="style.css">
+    <script src="/components.js"></script>
+    <style>
+        .legal-page {
+            padding-bottom: var(--space-6xl);
+        }
+
+        .legal-hero {
+            padding-bottom: var(--space-3xl);
+        }
+
+        .legal-shell {
+            padding: 0 0 var(--space-4xl);
+        }
+
+        .legal-utility-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--space-md);
+            flex-wrap: wrap;
+            margin-bottom: var(--space-2xl);
+            color: var(--text-muted);
+            font-size: var(--text-sm);
+        }
+
+        .legal-utility-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            color: var(--text-muted);
+            transition: color 0.2s, transform 0.2s;
+        }
+
+        .legal-utility-link:hover {
+            color: var(--accent);
+            transform: translateX(2px);
+        }
+
+        .legal-version {
+            font-family: var(--mono);
+            font-size: var(--text-xs);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .legal-lead-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.9fr);
+            gap: var(--space-xl);
+            align-items: start;
+            margin-bottom: var(--space-3xl);
+        }
+
+        .legal-summary-card,
+        .legal-side-card,
+        .legal-info-card,
+        .legal-section-card {
+            background: none;
+            border: none;
+            border-radius: 0;
+            box-shadow: none;
+        }
+
+        .legal-summary-card {
+            padding: 0;
+        }
+
+        .legal-kicker {
+            display: inline-block;
+            margin-bottom: var(--space-sm);
+            font-family: var(--mono);
+            font-size: var(--text-xs);
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--accent);
+        }
+
+        .legal-summary-card p,
+        .legal-side-card p,
+        .legal-section-card p,
+        .legal-info-card dd {
+            color: var(--text-muted);
+            font-size: var(--text-base);
+            line-height: 1.72;
+        }
+
+        .legal-summary-card p {
+            margin-bottom: var(--space-sm);
+        }
+
+        .legal-summary-card p:last-child,
+        .legal-side-card p:last-child,
+        .legal-section-card p:last-child {
+            margin-bottom: 0;
+        }
+
+        .legal-side-card {
+            padding: 0;
+        }
+
+        .legal-side-card h2,
+        .legal-info-card h2,
+        .legal-section-card h2 {
+            margin-bottom: var(--space-sm);
+            font-size: var(--text-lg);
+            line-height: 1.1;
+        }
+
+        .legal-info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: var(--space-xl);
+            margin-bottom: var(--space-3xl);
+        }
+
+        .legal-info-card {
+            padding: 0;
+        }
+
+        .legal-info-card dl {
+            display: grid;
+            gap: var(--space-sm);
+        }
+
+        .legal-info-card dt {
+            font-family: var(--mono);
+            font-size: var(--text-2xs);
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-muted);
+        }
+
+        .legal-info-card dd {
+            margin: 0;
+            color: var(--text);
+            font-size: var(--text-sm);
+            font-weight: 500;
+            line-height: 1.55;
+        }
+
+        .legal-sections {
+            display: grid;
+            gap: var(--space-xl);
+        }
+
+        .legal-section-card {
+            padding: 0;
+        }
+
+        .legal-note {
+            display: block;
+            margin-top: var(--space-xs);
+            font-size: var(--text-sm);
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        .legal-closing {
+            margin-top: var(--space-3xl);
+            padding-top: var(--space-lg);
+            background: url("data:image/svg+xml,%3Csvg width='600' height='2' xmlns='http://www.w3.org/2000/svg'%3E%3Cline x1='0' y1='1' x2='600' y2='1' stroke='%23c4a87a' stroke-width='1.5' stroke-dasharray='800' stroke-linecap='round' opacity='0.55'/%3E%3C/svg%3E") repeat-x top center;
+            text-align: center;
+            font-family: var(--serif);
+            font-size: var(--text-sm);
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        .legal-info-card dl {
+            padding-top: var(--space-sm);
+        }
+
+        .legal-info-card dt {
+            margin-top: var(--space-md);
+        }
+
+        .legal-info-card dt:first-child {
+            margin-top: 0;
+        }
+
+        .legal-section-card + .legal-section-card,
+        .legal-info-card,
+        .legal-side-card {
+            padding-top: var(--space-lg);
+            background: url("data:image/svg+xml,%3Csvg width='600' height='2' xmlns='http://www.w3.org/2000/svg'%3E%3Cline x1='0' y1='1' x2='600' y2='1' stroke='%23c4a87a' stroke-width='1.5' stroke-dasharray='800' stroke-linecap='round' opacity='0.45'/%3E%3C/svg%3E") repeat-x top center;
+        }
+
+        /* ── Privacy-specific ──────────────────────── */
+
+        .privacy-highlight {
+            background: rgba(91, 122, 58, 0.08);
+            border-left: 4px solid var(--accent-alt, #5b7a3a);
+            padding: var(--space-md) var(--space-lg);
+            margin: var(--space-md) 0 var(--space-lg);
+            font-size: var(--text-base);
+            line-height: 1.72;
+            color: var(--text-muted);
+        }
+
+        .privacy-highlight code {
+            font-family: var(--mono);
+            font-size: var(--text-sm);
+            background: rgba(91, 122, 58, 0.1);
+            padding: 1px 5px;
+        }
+
+        .privacy-data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: var(--space-md) 0 var(--space-lg);
+            font-size: var(--text-sm);
+        }
+
+        .privacy-data-table thead th {
+            font-family: var(--mono);
+            font-size: var(--text-2xs);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--text-muted);
+            padding: var(--space-sm) var(--space-md);
+            text-align: left;
+            border-bottom: 2px solid var(--accent);
+        }
+
+        .privacy-data-table tbody td {
+            padding: var(--space-sm) var(--space-md);
+            border-bottom: 1px solid rgba(196, 168, 122, 0.3);
+            vertical-align: top;
+            line-height: 1.55;
+            color: var(--text-muted);
+        }
+
+        .privacy-data-table tbody tr:last-child td {
+            border-bottom: 2px solid var(--accent);
+        }
+
+        .privacy-rights-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: var(--space-md);
+            margin: var(--space-md) 0 var(--space-lg);
+        }
+
+        .privacy-right-item {
+            display: flex;
+            gap: var(--space-sm);
+            align-items: flex-start;
+        }
+
+        .privacy-right-item .r-icon {
+            flex-shrink: 0;
+            font-size: var(--text-lg);
+            margin-top: 1px;
+        }
+
+        .privacy-right-item .r-text strong {
+            display: block;
+            font-size: var(--text-sm);
+            margin-bottom: 2px;
+            color: var(--text);
+        }
+
+        .privacy-right-item .r-text span {
+            font-size: var(--text-sm);
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+
+        @media (max-width: 900px) {
+            .legal-lead-grid,
+            .legal-info-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .legal-side-card,
+            .legal-info-card,
+            .legal-section-card {
+                padding-top: var(--space-md);
+            }
+
+            .privacy-rights-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <site-nav></site-nav>
+
+<main class="legal-page">
+        <section class="legal-hero hero">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="section-badge">Privacy</div>
+                <h1 class="hero-title">Privacy <span class="gradient-text">Policy</span></h1>
+                <p class="hero-subtitle">We don&apos;t know what you type in your terminal. We don&apos;t want to know.</p>
+            </div>
+        </section>
+
+        <section class="legal-shell">
+            <div class="section-inner">
+                <div class="legal-utility-bar">
+                    <a href="/" class="legal-utility-link">&larr; chau7.sh</a>
+                    <span class="legal-version">v2026.03.11</span>
+                    <a href="/politique-de-confidentialite" class="legal-utility-link">Version fran&ccedil;aise &rarr;</a>
+                </div>
+
+                <div class="legal-lead-grid">
+                    <section class="legal-summary-card" aria-label="Short version">
+                        <span class="legal-kicker">Short version</span>
+                        <p><strong>Zero cookies. Zero trackers. Zero forms.</strong> The only data in transit are Cloudflare&apos;s technical logs (your IP address, to prevent attacks), retained for 72&nbsp;hours at most. You have rights. You can exercise them. That&apos;s it.</p>
+                    </section>
+
+                    <section class="legal-side-card">
+                        <h2>Scope</h2>
+                        <p>This policy covers the public <strong>chau7.sh</strong> website, a static showcase site with no user accounts, no payments, and no forms. Just pages to read and links to GitHub.</p>
+                    </section>
+                </div>
+
+                <div class="legal-info-grid">
+                    <section class="legal-info-card">
+                        <h2>Who is the data controller?</h2>
+                        <dl>
+                            <dt>Data controller</dt>
+                            <dd>Aeptus SAS</dd>
+                            <dt>Represented by</dt>
+                            <dd>Christophe Henner, President</dd>
+                            <dt>Registered office</dt>
+                            <dd>6 rue des Bateliers, 92110 Clichy, France</dd>
+                            <dt>Privacy contact</dt>
+                            <dd><a href="mailto:privacy@aeptus.com">privacy@aeptus.com</a></dd>
+                        </dl>
+                    </section>
+
+                    <section class="legal-info-card">
+                        <h2>Where does the data go?</h2>
+                        <dl>
+                            <dt>Sub-processor</dt>
+                            <dd>Cloudflare, Inc.</dd>
+                            <dt>Location</dt>
+                            <dd>Globally distributed servers, headquartered in San Francisco</dd>
+                            <dt>Safeguards for transfers outside the EU</dt>
+                            <dd>EU-US Data Privacy Framework certification + Standard Contractual Clauses (SCCs)</dd>
+                        </dl>
+                    </section>
+                </div>
+
+                <div class="legal-sections">
+                    <section class="legal-section-card">
+                        <h2>What we collect (and what we don&apos;t)</h2>
+                        <div class="privacy-highlight">
+                            The chau7.sh website sets <strong>no cookies</strong>, uses <strong>no tracking tools</strong>, and collects <strong>no data through forms</strong>. No Google Analytics. No Facebook pixel. No &ldquo;subscribe to our newsletter&rdquo; popup. Nothing.
+                        </div>
+                        <p>That said, when you visit any website, some technical data is automatically exchanged. Here is what Cloudflare (our host) processes on our behalf:</p>
+                        <table class="privacy-data-table">
+                            <thead>
+                                <tr>
+                                    <th>Data</th>
+                                    <th>Purpose</th>
+                                    <th>Retention</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>IP address</td>
+                                    <td>Protection against attacks (DDoS, bots)</td>
+                                    <td>72h max</td>
+                                </tr>
+                                <tr>
+                                    <td>HTTP headers</td>
+                                    <td>Delivering pages correctly</td>
+                                    <td>72h max</td>
+                                </tr>
+                                <tr>
+                                    <td>Timestamp</td>
+                                    <td>Security logging</td>
+                                    <td>72h max</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <p>Legal basis: legitimate interest (Article 6(1)(f) GDPR). Protecting a website against attacks is legitimate. No consent is required for that.</p>
+                    </section>
+
+                    <section class="legal-section-card">
+                        <h2>What about cookies?</h2>
+                        <p>We don&apos;t use any. Cloudflare may set a strictly necessary technical cookie (<code>__cf_bm</code>) for bot detection. This cookie is exempt from consent under Article 82 of the French Data Protection Act (<em>loi Informatique et Libert&eacute;s</em>).</p>
+                        <p>No banner. No popup. No giant &ldquo;Accept All&rdquo; next to a microscopic &ldquo;Decline&rdquo;. You&apos;re welcome.</p>
+                    </section>
+
+                    <section class="legal-section-card">
+                        <h2>Personal data and third parties</h2>
+                        <p>No personal data is shared with anyone else. Not sold, not traded, not whispered to an algorithm.</p>
+                    </section>
+
+                    <section class="legal-section-card">
+                        <h2>Your rights</h2>
+                        <p>The GDPR gives you superpowers. Here they are:</p>
+                        <div class="privacy-rights-grid">
+                            <div class="privacy-right-item">
+                                <div class="r-icon">&#x1f50d;</div>
+                                <div class="r-text">
+                                    <strong>Access</strong>
+                                    <span>Know what data we hold about you (Art.&nbsp;15)</span>
+                                </div>
+                            </div>
+                            <div class="privacy-right-item">
+                                <div class="r-icon">&#x270f;&#xfe0f;</div>
+                                <div class="r-text">
+                                    <strong>Rectification</strong>
+                                    <span>Correct inaccurate data (Art.&nbsp;16)</span>
+                                </div>
+                            </div>
+                            <div class="privacy-right-item">
+                                <div class="r-icon">&#x1f5d1;&#xfe0f;</div>
+                                <div class="r-text">
+                                    <strong>Erasure</strong>
+                                    <span>Request deletion (Art.&nbsp;17)</span>
+                                </div>
+                            </div>
+                            <div class="privacy-right-item">
+                                <div class="r-icon">&#x23f8;&#xfe0f;</div>
+                                <div class="r-text">
+                                    <strong>Restriction</strong>
+                                    <span>Freeze processing (Art.&nbsp;18)</span>
+                                </div>
+                            </div>
+                            <div class="privacy-right-item">
+                                <div class="r-icon">&#x1f4e6;</div>
+                                <div class="r-text">
+                                    <strong>Portability</strong>
+                                    <span>Get your data back (Art.&nbsp;20)</span>
+                                </div>
+                            </div>
+                            <div class="privacy-right-item">
+                                <div class="r-icon">&#x1f6d1;</div>
+                                <div class="r-text">
+                                    <strong>Objection</strong>
+                                    <span>Say no to processing (Art.&nbsp;21)</span>
+                                </div>
+                            </div>
+                        </div>
+                        <p>To exercise any of these rights: <a href="mailto:privacy@aeptus.com">privacy@aeptus.com</a>. We&apos;ll respond within 30&nbsp;days.</p>
+                    </section>
+
+                    <section class="legal-section-card">
+                        <h2>What if we don&apos;t respond?</h2>
+                        <p>You can file a complaint with the CNIL. That&apos;s what they&apos;re there for, and they&apos;re good at it.</p>
+                        <span class="legal-note">CNIL &mdash; Commission Nationale de l&apos;Informatique et des Libert&eacute;s, 3 place de Fontenoy, TSA 80715, 75334 Paris Cedex 07 &mdash; <a href="https://www.cnil.fr" rel="noopener">cnil.fr</a></span>
+                    </section>
+
+                    <section class="legal-section-card">
+                        <h2>Changes</h2>
+                        <p>This policy may be updated. The date at the top of the page is authoritative. If anything significant changes, we&apos;ll flag it on the site.</p>
+                    </section>
+                </div>
+
+                <p class="legal-closing">Your privacy is worth more than a sock. Even a GPU-accelerated one.</p>
+            </div>
+        </section>
+    </main>
+    <site-footer></site-footer>
+
+<script src="/script.js"></script>
+</body>
+</html>
