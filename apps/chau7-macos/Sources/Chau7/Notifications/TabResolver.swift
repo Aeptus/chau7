@@ -47,11 +47,11 @@ enum TabResolver {
 
         // 1) Fast exact match on focused session branding
         let brandMatches = tabs.filter { matchesCandidate($0.displaySession?.aiDisplayAppName) }
-        if !brandMatches.isEmpty { return disambiguate(brandMatches, directory: target.directory) }
+        if !brandMatches.isEmpty { return disambiguate(brandMatches, target: target) }
 
         // 2) Match on tab chrome title
         let titleMatches = tabs.filter { matchesCandidate($0.displayTitle) }
-        if !titleMatches.isEmpty { return disambiguate(titleMatches, directory: target.directory) }
+        if !titleMatches.isEmpty { return disambiguate(titleMatches, target: target) }
 
         // 3) Deep scan every terminal session in each tab
         let deepMatches = tabs.filter { tab in
@@ -65,7 +65,7 @@ enum TabResolver {
                 return false
             }
         }
-        if !deepMatches.isEmpty { return disambiguate(deepMatches, directory: target.directory) }
+        if !deepMatches.isEmpty { return disambiguate(deepMatches, target: target) }
 
         // 4) CWD fallback: correlate tabs by cwd against a registered session
         // resolver for this tool and pick the most recently active one.
@@ -162,19 +162,32 @@ enum TabResolver {
         return cwdResolvers[providerKey]
     }
 
-    /// When a directory hint is available, narrow a set of matching tabs
-    /// to the one whose session cwd best matches the event directory.
+    /// When a session ID or directory hint is available, narrow a set of matching
+    /// tabs to the one whose session best matches the event.
     /// Falls back to most recently created tab for deterministic ordering.
     ///
-    /// Directory matching is bidirectional: matches if the tab cwd is inside the
-    /// event directory OR the event directory is inside the tab cwd. This handles
-    /// both "tool started at project root, tab cd'd into src/" and "tool reports
-    /// a subdirectory, tab is at project root."
-    private static func disambiguate(_ matches: [OverlayTab], directory: String?) -> OverlayTab? {
+    /// Resolution order:
+    /// 1. Session ID — exact match against `TerminalSessionModel.effectiveAISessionId`
+    /// 2. Directory — bidirectional prefix match (tab cwd inside event dir or vice versa)
+    /// 3. Most recently created tab (deterministic fallback)
+    private static func disambiguate(_ matches: [OverlayTab], target: TabTarget) -> OverlayTab? {
         guard matches.count > 1 else { return matches.first }
 
-        // Try directory-based disambiguation when a hint is available
-        if let dir = directory?.trimmingCharacters(in: .whitespacesAndNewlines),
+        // 1) Session ID disambiguation: exact match on AI session identity
+        if let sessionID = target.sessionID?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !sessionID.isEmpty {
+            if let sessionMatch = matches.first(where: { tab in
+                tab.splitController.terminalSessions.contains { _, session in
+                    session.effectiveAISessionId == sessionID
+                }
+            }) {
+                Log.info("TabResolver: disambiguated via sessionID=\(sessionID.prefix(8)) → tab=\(sessionMatch.id)")
+                return sessionMatch
+            }
+        }
+
+        // 2) Try directory-based disambiguation when a hint is available
+        if let dir = target.directory?.trimmingCharacters(in: .whitespacesAndNewlines),
            !dir.isEmpty {
             let normalized = URL(fileURLWithPath: dir).standardized.path
             if let dirMatch = matches.first(where: { tab in
@@ -189,7 +202,7 @@ enum TabResolver {
             }
         }
 
-        // Deterministic fallback: most recently created tab
+        // 3) Deterministic fallback: most recently created tab
         Log.info("TabResolver: \(matches.count) ambiguous matches, using most recent tab")
         return matches.sorted(by: { $0.createdAt > $1.createdAt }).first
     }
