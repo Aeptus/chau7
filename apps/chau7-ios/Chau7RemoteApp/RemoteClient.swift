@@ -41,7 +41,10 @@ final class RemoteClient {
     private var notificationTask: Task<Void, Never>?
     private var reconnectAttempt = 0
     private var reconnectTask: Task<Void, Never>?
+    private var handshakeRetryTask: Task<Void, Never>?
+    private var handshakeTimeoutTask: Task<Void, Never>?
     private var shouldReconnect = false
+    private var hasReceivedPairAccept = false
     private var connectionGeneration: UInt64 = 0
     private var outputByTabID: [UInt32: String] = [:]
     private var strippedOutputByTabID: [UInt32: String] = [:]
@@ -53,6 +56,8 @@ final class RemoteClient {
     private static let maxHistory = 50
     private static let maxReconnectAttempts = 5
     private static let maxBufferedTelemetryEvents = 100
+    private static let handshakeRetryIntervalSeconds = 1.0
+    private static let handshakeTimeoutSeconds = 12.0
     static let appVersion = "1.1.0"
 
     // MARK: - Init
@@ -85,6 +90,7 @@ final class RemoteClient {
         shouldReconnect = true
         reconnectAttempt = 0
         remoteSessionID = nil
+        hasReceivedPairAccept = false
 
         if let keyData = Data(base64Encoded: pairing.macPub) {
             macPublicKey = try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: keyData)
@@ -108,21 +114,22 @@ final class RemoteClient {
             metadata: ["relay_host": pairing.relayURL]
         )
 
-        sendHello()
-        sendPairRequest()
         listen()
+        scheduleHandshake(for: connectionGeneration)
     }
 
     func disconnect(autoReconnect: Bool = false) {
         shouldReconnect = false
         reconnectTask?.cancel()
         reconnectTask = nil
+        cancelHandshakeTasks()
         webSocket?.cancel(with: .goingAway, reason: nil)
         webSocket = nil
         isConnected = false
         status = "Disconnected"
         crypto = nil
         remoteSessionID = nil
+        hasReceivedPairAccept = false
         nonceIOS = nil
         nonceMac = nil
         seqCounter = 1
@@ -131,6 +138,7 @@ final class RemoteClient {
         tabs = []
         outputByTabID.removeAll()
         strippedOutputByTabID.removeAll()
+        bufferedTelemetryEvents.removeAll(keepingCapacity: true)
         outputText = ""
         strippedOutputText = ""
         if !autoReconnect {
@@ -206,6 +214,7 @@ final class RemoteClient {
 
     private func handleDisconnect(reason: String? = nil) {
         let wasConnected = isConnected
+        cancelHandshakeTasks()
         isConnected = false
         status = "Disconnected"
         crypto = nil
@@ -239,6 +248,63 @@ final class RemoteClient {
             guard !Task.isCancelled, let self, let pairing = self.pairingInfo else { return }
             self.connect(pairing: pairing)
         }
+    }
+
+    private func scheduleHandshake(for generation: UInt64) {
+        cancelHandshakeTasks()
+
+        handshakeRetryTask = Task { [weak self] in
+            var attempt = 0
+            while !Task.isCancelled {
+                guard let self,
+                      self.connectionGeneration == generation,
+                      self.webSocket != nil,
+                      !self.isConnected else { return }
+
+                if attempt > 0, self.status == "Connecting" {
+                    self.status = "Waiting for your Mac..."
+                }
+
+                self.sendHello()
+                if !self.hasReceivedPairAccept {
+                    self.sendPairRequest(recordTelemetry: attempt == 0)
+                }
+
+                attempt += 1
+                try? await Task.sleep(for: .seconds(Self.handshakeRetryIntervalSeconds))
+            }
+        }
+
+        handshakeTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.handshakeTimeoutSeconds))
+            guard let self,
+                  self.connectionGeneration == generation,
+                  self.webSocket != nil,
+                  !self.isConnected else { return }
+
+            self.shouldReconnect = false
+            self.cancelHandshakeTasks()
+            let socket = self.webSocket
+            self.webSocket = nil
+            self.connectionGeneration &+= 1
+            self.isConnected = false
+            self.crypto = nil
+            socket?.cancel(with: .goingAway, reason: nil)
+            self.status = "Connection timed out"
+            self.lastError = "No response from your Mac. Make sure Chau7 is open, Remote is enabled, and the pairing payload is still current."
+            self.emitTelemetry(
+                type: .errorReceived,
+                status: "timeout",
+                message: self.lastError
+            )
+        }
+    }
+
+    private func cancelHandshakeTasks() {
+        handshakeRetryTask?.cancel()
+        handshakeRetryTask = nil
+        handshakeTimeoutTask?.cancel()
+        handshakeTimeoutTask = nil
     }
 
     // MARK: - Frame Dispatch
@@ -278,6 +344,7 @@ final class RemoteClient {
             isConnected = true
             status = "Session ready"
             lastError = nil
+            cancelHandshakeTasks()
         case .tabList:         handleTabList(payload)
         case .output:          appendOutput(payload, tabID: frame.tabID)
         case .snapshot:        storeSnapshot(payload, tabID: frame.tabID)
@@ -325,6 +392,7 @@ final class RemoteClient {
             log.error("handlePairAccept: invalid public key: \(error.localizedDescription)")
             return
         }
+        hasReceivedPairAccept = true
         _ = KeychainStore.save(key: "mac_public_key", data: keyData)
         sendHello()
         establishSessionIfPossible()
@@ -464,6 +532,7 @@ final class RemoteClient {
         crypto = session
         reconnectAttempt = 0
         isConnected = true
+        cancelHandshakeTasks()
         let sessionID = CryptoUtils.randomBytes(count: 8).base64EncodedString()
         remoteSessionID = sessionID
         sendJSON(SessionReadyPayload(sessionID: sessionID), type: .sessionReady, encrypt: true)
@@ -485,14 +554,16 @@ final class RemoteClient {
         ), type: .hello, encrypt: false)
     }
 
-    private func sendPairRequest() {
+    private func sendPairRequest(recordTelemetry: Bool = true) {
         guard let pairing = pairingInfo else { return }
         sendJSON(PairRequestPayload(
             deviceID: pairing.deviceID, pairingCode: pairing.pairingCode,
             iosPub: iosKey.publicKey.rawRepresentation.base64EncodedString(),
             iosName: UIDevice.current.name
         ), type: .pairRequest, encrypt: false)
-        emitTelemetry(type: .pairRequestSent, status: "pairing")
+        if recordTelemetry {
+            emitTelemetry(type: .pairRequestSent, status: "pairing")
+        }
     }
 
     private func sendJSON<T: Encodable>(_ payload: T, type: RemoteFrameType, encrypt: Bool = true) {
