@@ -1103,28 +1103,10 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     /// with the static constants on `AIEventSource`.
     private func aiEventSource(for toolName: String) -> AIEventSource {
         let lowered = toolName.lowercased()
-        // Try AIToolRegistry first (covers all registered tools with event sources)
         if let rawValue = AIToolRegistry.eventSourceRawValue(for: lowered) {
             return AIEventSource(rawValue: rawValue)
         }
-        // Legacy fallback for sources not in the tool registry
-        switch lowered {
-        case "windsurf": return .windsurf
-        case "cline": return .cline
-        default: return .historyMonitor
-        }
-    }
-
-    /// Emit an event for an AI tool that can trigger notifications
-    private func emitAIToolEvent(toolName: String, type: String, message: String) {
-        let source = aiEventSource(for: toolName)
-        recordEvent(
-            source: source,
-            type: type,
-            tool: toolName,
-            message: message,
-            notify: true
-        )
+        return .historyMonitor
     }
 
     private func updateSessionStatus(
