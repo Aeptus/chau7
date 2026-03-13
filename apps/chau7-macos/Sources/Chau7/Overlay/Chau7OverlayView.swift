@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Chau7Core
 
 // MARK: - Overlay Colors
 
@@ -577,37 +578,13 @@ private struct ToolbarTabBarView: View {
         // Dragged tab follows the cursor directly (no model mutation)
         dragOffset = translation
 
-        // Compute which slot the dragged tab visually occupies by walking
-        // from home index and accumulating neighbor widths as thresholds.
-        var newSlot = dragHomeIndex
-
-        if translation > 0 {
-            // Dragging right: check each neighbor past home
-            var cumulative: CGFloat = 0
-            for i in (dragHomeIndex + 1) ..< snapshot.count {
-                let neighborWidth = tabWidths[snapshot[i].id] ?? 100
-                cumulative += neighborWidth + tabSpacing
-                if translation > cumulative * 0.5 {
-                    newSlot = i
-                } else {
-                    break
-                }
-            }
-        } else if translation < 0 {
-            // Dragging left: check each neighbor before home
-            var cumulative: CGFloat = 0
-            for i in stride(from: dragHomeIndex - 1, through: 0, by: -1) {
-                let neighborWidth = tabWidths[snapshot[i].id] ?? 100
-                cumulative += neighborWidth + tabSpacing
-                if -translation > cumulative * 0.5 {
-                    newSlot = i
-                } else {
-                    break
-                }
-            }
-        }
-
-        dragCurrentSlot = newSlot
+        let widths = snapshot.map { tabWidths[$0.id] ?? 100 }
+        dragCurrentSlot = TabDragLayout.destinationIndex(
+            for: translation,
+            homeIndex: dragHomeIndex,
+            tabWidths: widths,
+            spacing: tabSpacing
+        )
     }
 
     private func handleTabDragEnd(tab: OverlayTab, translation: CGFloat) {

@@ -177,7 +177,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 ### Tabs
 
 - Unlimited tabs per window — `Cmd+T` to create, `Cmd+1–9` to jump.
-- Tab renaming (`Cmd+Shift+R`), 12+ colors, reordering via drag or shortcuts.
+- Tab renaming (`Cmd+Shift+R`), 12+ colors, reordering via drag or shortcuts with center-crossing snap thresholds.
 - AI agent logos, git branch indicator, directory path, last command badge.
 - Broadcast input to all tabs with per-tab exclusion and visual indicator.
 - Background rendering suspension for inactive tabs (configurable delay).
