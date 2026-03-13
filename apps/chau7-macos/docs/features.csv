@@ -81,7 +81,7 @@ API Analytics,Provider Filtering,Include or exclude specific API providers from 
 Tab Management,Multi-Tab Interface,"Unlimited tabs per window — Cmd+T to create, Cmd+1–9 to jump",Shipped,No
 Tab Management,Tab Renaming,Custom tab names via Cmd+Shift+R,Shipped,No
 Tab Management,Tab Colors,"12+ colors: blue, teal, green, red, orange, pink, purple, yellow, gray, and more",Shipped,No
-Tab Management,Tab Reordering,Drag tabs or Cmd+Opt+Shift+[/] to move left/right — snap-based drag keeps tab under cursor,Shipped,No
+Tab Management,Tab Reordering,Drag tabs or Cmd+Opt+Shift+[/] to move left/right — center-crossing snap thresholds keep sibling motion aligned with the grabbed tab,Shipped,No
 Tab Management,Git Branch Indicator,Current git branch displayed in the tab — no need to type git branch,Shipped,No
 Tab Management,Directory Path Display,Working directory visible in the tab title,Shipped,No
 Tab Management,Last Command Badge,Tab shows last command name with duration and exit status,Shipped,No
