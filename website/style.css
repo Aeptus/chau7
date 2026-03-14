@@ -1,5 +1,7 @@
 /* ── Reset & Base ─────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* Custom elements default to display:inline — contents makes them invisible
+   to layout so inner <nav>/<footer> behave as direct children of <body>. */
 site-nav, site-footer { display: contents; }
 
 :root {

@@ -291,6 +291,13 @@ struct SavedTabState: Codable {
     static let userDefaultsKey = "com.chau7.savedTabState"
 }
 
+enum TabStateSaveReason: String {
+    case autosave
+    case termination
+    case manual
+    case restoreSource = "restore-source"
+}
+
 /// In-memory record of a closed tab, enabling "Reopen Closed Tab" (Cmd+Shift+T).
 /// Wraps the existing `SavedTabState` with positional + temporal metadata.
 /// Not persisted to disk — the stack resets on app quit, matching browser behavior.
@@ -411,6 +418,10 @@ final class OverlayTabsModel: ObservableObject {
     private var isDiagnosticsLoggingEnabled = false
     /// Periodic auto-save timer so tab state survives crashes (SIGABRT etc.)
     private var autoSaveTimer: DispatchSourceTimer?
+    /// Last archived snapshot fingerprint to avoid writing duplicate archive files.
+    private var lastArchivedTabStateFingerprint: Int?
+    /// Minimum time between archived snapshots unless we're terminating.
+    private var lastArchivedTabStateAt: Date = .distantPast
     /// CTO notification observer tokens (stored for cleanup in deinit)
     private var ctoModeObserver: NSObjectProtocol?
     private var ctoFlagObserver: NSObjectProtocol?
@@ -472,7 +483,7 @@ final class OverlayTabsModel: ObservableObject {
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(deadline: .now() + 30, repeating: 30)
         timer.setEventHandler { [weak self] in
-            self?.saveTabState()
+            self?.saveTabState(reason: .autosave)
         }
         timer.resume()
         self.autoSaveTimer = timer
@@ -537,7 +548,7 @@ final class OverlayTabsModel: ObservableObject {
 
     /// Saves current tab state to UserDefaults. Call from applicationWillTerminate
     /// and periodically during normal operation.
-    func saveTabState() {
+    func saveTabState(reason: TabStateSaveReason = .manual) {
         let selectedID = selectedTabID
         let maxLines = FeatureSettings.shared.restoredScrollbackLines
         var states: [SavedTabState] = []
@@ -607,7 +618,8 @@ final class OverlayTabsModel: ObservableObject {
         do {
             let data = try JSONEncoder().encode(states)
             UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
-            Log.trace("Saved \(states.count) tab state(s) with split layout")
+            persistTabStateBackups(data: data, reason: reason)
+            Log.trace("Saved \(states.count) tab state(s) with split layout [\(reason.rawValue)]")
         } catch {
             Log.warn("Failed to save tab state: \(error)")
         }
@@ -1242,12 +1254,20 @@ final class OverlayTabsModel: ObservableObject {
     /// or if decoding fails.
     private static func restoreSavedTabs(appModel: AppModel) -> RestorableTabsPayload? {
         guard let data = UserDefaults.standard.data(forKey: SavedTabState.userDefaultsKey) else {
-            return nil
+            return restoreSavedTabsFromBackups(appModel: appModel)
         }
+        archiveImportedTabStateIfNeeded(data)
         // Clear saved state immediately so a crash during restoration
         // doesn't cause an infinite crash loop
         UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
 
+        if let payload = decodeRestorableTabs(from: data, appModel: appModel) {
+            return payload
+        }
+        return restoreSavedTabsFromBackups(appModel: appModel)
+    }
+
+    private static func decodeRestorableTabs(from data: Data, appModel: AppModel) -> RestorableTabsPayload? {
         guard let states = try? JSONDecoder().decode([SavedTabState].self, from: data),
               !states.isEmpty else {
             return nil
@@ -1332,6 +1352,119 @@ final class OverlayTabsModel: ObservableObject {
             selectedID: finalSelectedID,
             rawStates: persistedStates
         )
+    }
+
+    private static func restoreSavedTabsFromBackups(appModel: AppModel) -> RestorableTabsPayload? {
+        for url in tabStateRestoreCandidateURLs() {
+            guard let data = try? Data(contentsOf: url) else { continue }
+            guard let payload = decodeRestorableTabs(from: data, appModel: appModel) else { continue }
+            Log.info("Restored \(payload.tabs.count) tab(s) from backup file \(url.lastPathComponent)")
+            return payload
+        }
+        return nil
+    }
+
+    private func persistTabStateBackups(data: Data, reason: TabStateSaveReason) {
+        do {
+            try Self.writeLatestTabStateBackup(data)
+            if shouldArchiveTabStateBackup(data: data, reason: reason) {
+                try Self.writeArchivedTabStateBackup(data, reason: reason)
+                lastArchivedTabStateFingerprint = data.hashValue
+                lastArchivedTabStateAt = Date()
+            }
+        } catch {
+            Log.warn("Failed to persist tab state backup [\(reason.rawValue)]: \(error)")
+        }
+    }
+
+    private func shouldArchiveTabStateBackup(data: Data, reason: TabStateSaveReason) -> Bool {
+        if reason == .termination || reason == .restoreSource {
+            return true
+        }
+        let fingerprint = data.hashValue
+        guard lastArchivedTabStateFingerprint != fingerprint else { return false }
+        return Date().timeIntervalSince(lastArchivedTabStateAt) >= 300
+    }
+
+    private static func archiveImportedTabStateIfNeeded(_ data: Data) {
+        do {
+            try writeLatestTabStateBackup(data)
+            try writeArchivedTabStateBackup(data, reason: .restoreSource)
+        } catch {
+            Log.warn("Failed to archive imported tab state: \(error)")
+        }
+    }
+
+    private static func tabStateBackupRootURL() -> URL? {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+        return base
+            .appendingPathComponent("Chau7", isDirectory: true)
+            .appendingPathComponent("TabStateBackups", isDirectory: true)
+    }
+
+    private static func ensureTabStateBackupDirectories() throws -> (root: URL, archive: URL) {
+        guard let root = tabStateBackupRootURL() else {
+            throw NSError(domain: "Chau7.TabStateBackup", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not resolve tab state backup directory"])
+        }
+        let archive = root.appendingPathComponent("archive", isDirectory: true)
+        try FileManager.default.createDirectory(at: archive, withIntermediateDirectories: true)
+        return (root, archive)
+    }
+
+    private static func writeLatestTabStateBackup(_ data: Data) throws {
+        let urls = try ensureTabStateBackupDirectories()
+        let latest = urls.root.appendingPathComponent("latest.json")
+        try data.write(to: latest, options: .atomic)
+    }
+
+    private static func writeArchivedTabStateBackup(_ data: Data, reason: TabStateSaveReason) throws {
+        let urls = try ensureTabStateBackupDirectories()
+        let millis = Int64(Date().timeIntervalSince1970 * 1000)
+        let name = String(format: "%013lld-%@.json", millis, reason.rawValue)
+        let archiveURL = urls.archive.appendingPathComponent(name)
+        try data.write(to: archiveURL, options: .atomic)
+        try pruneArchivedTabStateBackups(in: urls.archive)
+    }
+
+    private static func pruneArchivedTabStateBackups(in archiveURL: URL) throws {
+        let fileManager = FileManager.default
+        let contents = try fileManager.contentsOfDirectory(
+            at: archiveURL,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        )
+        let jsonFiles = contents.filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent > $1.lastPathComponent }
+        let cutoff = Date().addingTimeInterval(-30 * 24 * 60 * 60)
+
+        for url in jsonFiles.dropFirst(120) {
+            try? fileManager.removeItem(at: url)
+        }
+
+        for url in jsonFiles.prefix(120) {
+            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+            if let modifiedAt = values?.contentModificationDate, modifiedAt < cutoff {
+                try? fileManager.removeItem(at: url)
+            }
+        }
+    }
+
+    private static func tabStateRestoreCandidateURLs() -> [URL] {
+        guard let root = tabStateBackupRootURL() else { return [] }
+        let latest = root.appendingPathComponent("latest.json")
+        let archive = root.appendingPathComponent("archive", isDirectory: true)
+        let archiveFiles = (try? FileManager.default.contentsOfDirectory(
+            at: archive,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ))?
+            .filter { $0.pathExtension == "json" }
+            .sorted { $0.lastPathComponent > $1.lastPathComponent } ?? []
+
+        if FileManager.default.fileExists(atPath: latest.path) {
+            return archiveFiles + [latest]
+        }
+        return archiveFiles
     }
 
     private static func validatedUUID(from raw: String?) -> UUID? {
@@ -1581,6 +1714,18 @@ final class OverlayTabsModel: ObservableObject {
 
             if !reResolvedSession.canPrefillInput() {
                 let hasView = reResolvedSession.existingRustTerminalView != nil
+
+                // No view means this tab is outside the nearby rendering range.
+                // Delegate to the session's pending prefill mechanism which will
+                // deliver the command when the view is eventually created via
+                // attachRustTerminal → flushPendingPrefillInputIfReady.
+                if !hasView {
+                    reResolvedSession.prefillInput(command)
+                    latestRestoreResumeTokenByPaneID.removeValue(forKey: paneID)
+                    Log.info("restoreTabState: no view for tab=\(targetTabID) pane=\(paneID), queued session-level prefill")
+                    return
+                }
+
                 let nextDelay = min(delay + Self.resumeCommandRetryDelaySeconds, Self.resumeCommandMaxRetryDelay)
                 Log.warn(
                     """

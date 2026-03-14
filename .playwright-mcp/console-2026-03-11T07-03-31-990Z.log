@@ -1,0 +1,4 @@
+[     582ms] [WARNING] VIDEOJS: WARN: A plugin named "qualityLevels" already exists. You may want to avoid re-registering plugins! @ https://assets.awwwards.com/dist/js/9653.5c80bbb9.js:1
+[     623ms] [ERROR] Attestation check for Attribution Reporting on https://www.facebook.com failed. @ https://www.awwwards.com/inspiration/colourful-text-animation-mana-yerba-mate:0
+[    1007ms] [ERROR] Not signed in with the identity provider. @ https://www.awwwards.com/inspiration/colourful-text-animation-mana-yerba-mate:0
+[    3394ms] [ERROR] [GSI_LOGGER]: FedCM get() rejects with NetworkError: Error retrieving a token. @ https://accounts.google.com/gsi/client:81

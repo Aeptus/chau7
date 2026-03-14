@@ -1500,7 +1500,11 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     }
 
     private func updateActiveAppName(from commandLine: String) {
-        if let match = CommandDetection.detectApp(from: commandLine) {
+        if let match = CommandDetection.detectLaunchableApp(
+            from: commandLine,
+            currentDirectory: currentDirectory,
+            searchPath: launchPATHValue()
+        ) {
             aiDetection.handleCommand(appName: match)
             activeAppName = match
             updateLastDetectedApp(match)
@@ -1628,7 +1632,11 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     }
 
     private func noteAIInputTimingIfNeeded(for commandLine: String) {
-        let detectedApp = CommandDetection.detectApp(from: commandLine)
+        let detectedApp = CommandDetection.detectLaunchableApp(
+            from: commandLine,
+            currentDirectory: currentDirectory,
+            searchPath: launchPATHValue()
+        )
         guard hasBackgroundRenderingAIContext || detectedApp != nil else {
             clearPendingAITiming()
             return
@@ -2220,12 +2228,16 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         let shellPID = existingRustTerminalView?.shellPid ?? 0
         guard shellPID > 0 else { return }
 
+        // AI tools (Claude Code, Codex) need longer to flush buffers and clean up
+        // WebSocket connections on exit. Plain shells exit in <100ms.
+        let graceDelay: TimeInterval = activeAppName != nil ? 3.0 : 1.0
+
         forcedTerminationWorkItem?.cancel()
         let work = DispatchWorkItem { [weak self] in
             self?.forceTerminateShellProcessGroupIfNeeded(expectedPID: shellPID)
         }
         forcedTerminationWorkItem = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + graceDelay, execute: work)
     }
 
     private func forceTerminateShellProcessGroupIfNeeded(expectedPID: pid_t) {
@@ -2241,11 +2253,12 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         Log.warn("Force-terminating shell process group for session '\(title)' (pid=\(currentPID))")
         sendTerminationSignal(SIGTERM, toShellPID: currentPID)
 
+        let escalationDelay: TimeInterval = activeAppName != nil ? 2.0 : 0.5
         let hardKill = DispatchWorkItem { [weak self] in
             self?.forceKillShellProcessGroupIfNeeded(expectedPID: expectedPID)
         }
         forcedTerminationWorkItem = hardKill
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: hardKill)
+        DispatchQueue.main.asyncAfter(deadline: .now() + escalationDelay, execute: hardKill)
     }
 
     private func forceKillShellProcessGroupIfNeeded(expectedPID: pid_t) {
@@ -2569,11 +2582,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
     private static let defaultLsColors = "exfxcxdxbxegedabagacad"
 
-    func buildEnvironment() -> [String] {
-        var dict: [String: String] = [:]
-        dict["TERM"] = "xterm-256color"
-        dict["COLORTERM"] = "truecolor"
-
+    private func launchPATHValue() -> String {
         let current = ProcessInfo.processInfo.environment
         let ctoEnabled = FeatureSettings.shared.tokenOptimizationMode != .off
 
@@ -2583,10 +2592,20 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         let basePath = inherited.contains("/usr/bin") ? inherited : macOSDefault
 
         if ctoEnabled {
-            dict["PATH"] = CTOManager.shared.prependedPATH(original: basePath)
-        } else {
-            dict["PATH"] = basePath
+            return CTOManager.shared.prependedPATH(original: basePath)
         }
+        return basePath
+    }
+
+    func buildEnvironment() -> [String] {
+        var dict: [String: String] = [:]
+        dict["TERM"] = "xterm-256color"
+        dict["COLORTERM"] = "truecolor"
+
+        let current = ProcessInfo.processInfo.environment
+        let ctoEnabled = FeatureSettings.shared.tokenOptimizationMode != .off
+
+        dict["PATH"] = launchPATHValue()
         if let home = current["HOME"] {
             dict["HOME"] = home
         }

@@ -21,6 +21,9 @@ func main() {
 		log.Fatalf("remote agent init failed: %v", err)
 	}
 
+	// Ignore SIGPIPE so broken IPC/relay writes return errors instead of killing the process.
+	signal.Ignore(syscall.SIGPIPE)
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

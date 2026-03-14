@@ -13,16 +13,27 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
+type PairedDevice struct {
+	ID                   string `json:"id"`
+	Name                 string `json:"name,omitempty"`
+	IOSPublicKey         string `json:"ios_public_key"`
+	PublicKeyFingerprint string `json:"public_key_fingerprint"`
+	PairedAt             string `json:"paired_at,omitempty"`
+	LastConnectedAt      string `json:"last_connected_at,omitempty"`
+}
+
 type State struct {
-	DeviceID      string `json:"device_id"`
-	MacPrivateKey string `json:"mac_private_key"`
-	MacPublicKey  string `json:"mac_public_key"`
-	IOSPublicKey  string `json:"ios_public_key,omitempty"`
-	IOSName       string `json:"ios_name,omitempty"`
-	KeyEncrypted  bool   `json:"key_encrypted,omitempty"`
-	RelaySecret   string `json:"relay_secret,omitempty"`
+	DeviceID      string         `json:"device_id"`
+	MacPrivateKey string         `json:"mac_private_key"`
+	MacPublicKey  string         `json:"mac_public_key"`
+	IOSPublicKey  string         `json:"ios_public_key,omitempty"`
+	IOSName       string         `json:"ios_name,omitempty"`
+	PairedDevices []PairedDevice `json:"paired_devices,omitempty"`
+	KeyEncrypted  bool           `json:"key_encrypted,omitempty"`
+	RelaySecret   string         `json:"relay_secret,omitempty"`
 }
 
 func machineUUID() (string, error) {
@@ -99,6 +110,7 @@ func LoadState(path string) (*State, error) {
 	if err := json.Unmarshal(data, &state); err != nil {
 		return nil, err
 	}
+	state.migrateLegacyPairedDevice()
 	if state.KeyEncrypted && state.MacPrivateKey != "" {
 		uuid, err := machineUUID()
 		if err != nil {
@@ -199,6 +211,80 @@ func (s *State) IOSPublicKeyBytes() ([]byte, error) {
 	return base64.StdEncoding.DecodeString(s.IOSPublicKey)
 }
 
+func (s *State) HasPairedDevices() bool {
+	return len(s.PairedDevices) > 0 || s.IOSPublicKey != ""
+}
+
+func (s *State) FindPairedDeviceByPublicKey(pubKey string) *PairedDevice {
+	for i := range s.PairedDevices {
+		if s.PairedDevices[i].IOSPublicKey == pubKey {
+			return &s.PairedDevices[i]
+		}
+	}
+	return nil
+}
+
+func (s *State) FindPairedDeviceByFingerprint(fp string) *PairedDevice {
+	for i := range s.PairedDevices {
+		if s.PairedDevices[i].PublicKeyFingerprint == fp {
+			return &s.PairedDevices[i]
+		}
+	}
+	return nil
+}
+
+func (s *State) UpsertPairedDevice(name, pubKey string, now time.Time) (*PairedDevice, error) {
+	rawKey, err := base64.StdEncoding.DecodeString(pubKey)
+	if err != nil {
+		return nil, err
+	}
+	fp := fingerprintBytes(rawKey)
+	timestamp := now.UTC().Format(time.RFC3339)
+
+	if device := s.FindPairedDeviceByPublicKey(pubKey); device != nil {
+		device.Name = name
+		device.PublicKeyFingerprint = fp
+		if device.PairedAt == "" {
+			device.PairedAt = timestamp
+		}
+		s.syncLegacyDevice(*device)
+		return device, nil
+	}
+
+	device := PairedDevice{
+		ID:                   fp,
+		Name:                 name,
+		IOSPublicKey:         pubKey,
+		PublicKeyFingerprint: fp,
+		PairedAt:             timestamp,
+	}
+	s.PairedDevices = append(s.PairedDevices, device)
+	s.syncLegacyDevice(device)
+	return &s.PairedDevices[len(s.PairedDevices)-1], nil
+}
+
+func (s *State) MarkPairedDeviceConnected(deviceID string, now time.Time) *PairedDevice {
+	for i := range s.PairedDevices {
+		if s.PairedDevices[i].ID == deviceID {
+			s.PairedDevices[i].LastConnectedAt = now.UTC().Format(time.RFC3339)
+			s.syncLegacyDevice(s.PairedDevices[i])
+			return &s.PairedDevices[i]
+		}
+	}
+	return nil
+}
+
+func (s *State) RemovePairedDevice(id string) bool {
+	for i := range s.PairedDevices {
+		if s.PairedDevices[i].ID == id {
+			s.PairedDevices = append(s.PairedDevices[:i], s.PairedDevices[i+1:]...)
+			s.syncLegacyFromFirstPairedDevice()
+			return true
+		}
+	}
+	return false
+}
+
 func (s *State) EnsureDeviceID() error {
 	if s.DeviceID != "" {
 		return nil
@@ -226,4 +312,39 @@ func newUUID() (string, error) {
 		b[8:10],
 		b[10:16],
 	), nil
+}
+
+func (s *State) migrateLegacyPairedDevice() {
+	if len(s.PairedDevices) > 0 || s.IOSPublicKey == "" {
+		return
+	}
+	rawKey, err := base64.StdEncoding.DecodeString(s.IOSPublicKey)
+	if err != nil || len(rawKey) == 0 {
+		return
+	}
+	s.PairedDevices = append(s.PairedDevices, PairedDevice{
+		ID:                   fingerprintBytes(rawKey),
+		Name:                 s.IOSName,
+		IOSPublicKey:         s.IOSPublicKey,
+		PublicKeyFingerprint: fingerprintBytes(rawKey),
+	})
+}
+
+func (s *State) syncLegacyDevice(device PairedDevice) {
+	s.IOSPublicKey = device.IOSPublicKey
+	s.IOSName = device.Name
+}
+
+func (s *State) syncLegacyFromFirstPairedDevice() {
+	if len(s.PairedDevices) == 0 {
+		s.IOSPublicKey = ""
+		s.IOSName = ""
+		return
+	}
+	s.syncLegacyDevice(s.PairedDevices[0])
+}
+
+func fingerprintBytes(rawKey []byte) string {
+	sum := sha256.Sum256(rawKey)
+	return base64.StdEncoding.EncodeToString(sum[:8])
 }

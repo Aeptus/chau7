@@ -17,8 +17,6 @@ final class FileTailer<T> {
     private var readHandle: FileHandle?
     private var parseErrorCount = 0
     private let maxParseErrorLogs = 10
-    private var lastOverflowWarningAt: Date?
-    private let overflowWarningCooldown: TimeInterval = 30
 
     // MARK: - Memory Protection
 
@@ -108,28 +106,14 @@ final class FileTailer<T> {
             Log.trace("FileTailer read \(data.count) bytes. path=\(fileURL.path)")
             let chunk = String(decoding: data, as: UTF8.self)
 
-            buffer.append(chunk)
+            // Process-then-discard: prepend any trailing fragment from the previous
+            // tick, split into lines, parse all complete lines immediately, and only
+            // keep the incomplete trailing fragment. The buffer never grows beyond
+            // one partial line.
+            let working = buffer.isEmpty ? chunk : buffer + chunk
+            buffer = ""
 
-            // Memory protection: circular buffer - keep recent content, drop oldest
-            // When buffer exceeds max, find a newline boundary and trim from there
-            if buffer.count > maxBufferSize {
-                let targetSize = maxBufferSize / 2
-                let dropStart = buffer.count - targetSize
-
-                // Find the first newline after the drop point to maintain line integrity
-                if let newlineIndex = buffer.index(buffer.startIndex, offsetBy: dropStart, limitedBy: buffer.endIndex),
-                   let trimIndex = buffer[newlineIndex...].firstIndex(of: "\n") {
-                    let dropCount = buffer.distance(from: buffer.startIndex, to: buffer.index(after: trimIndex))
-                    buffer.removeFirst(dropCount)
-                    logOverflowIfNeeded()
-                } else {
-                    // No newline found, just drop from the start
-                    let dropCount = buffer.count - targetSize
-                    buffer.removeFirst(dropCount)
-                    logOverflowIfNeeded()
-                }
-            }
-            let normalized = buffer.replacingOccurrences(of: "\r", with: "\n")
+            let normalized = working.replacingOccurrences(of: "\r", with: "\n")
             let parts = normalized.components(separatedBy: "\n")
             guard !parts.isEmpty else { return }
 
@@ -148,6 +132,13 @@ final class FileTailer<T> {
             }
 
             buffer = parts.last ?? ""
+
+            // Safety net: if a single line somehow exceeds maxBufferSize (e.g. binary
+            // data written to the tailed file), discard it to prevent OOM.
+            if buffer.count > maxBufferSize {
+                Log.trace("FileTailer trailing fragment exceeded \(maxBufferSize) bytes, discarding. path=\(fileURL.path)")
+                buffer = ""
+            }
         } catch {
             Log.trace("FileTailer error: \(error.localizedDescription)")
             // Handle became invalid (file deleted/replaced), reopen on next tick
@@ -160,16 +151,6 @@ final class FileTailer<T> {
         try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? UInt64
     }
 
-    private func logOverflowIfNeeded() {
-        let now = Date()
-        if let lastOverflowWarningAt,
-           now.timeIntervalSince(lastOverflowWarningAt) < overflowWarningCooldown {
-            Log.trace("FileTailer overflow trimmed without warning. path=\(fileURL.path)")
-            return
-        }
-        lastOverflowWarningAt = now
-        Log.warn("FileTailer buffer exceeded \(maxBufferSize) bytes, kept recent \(buffer.count) chars. path=\(fileURL.path)")
-    }
 
     private func prefillLastLines(count: Int) {
         guard count > 0 else { return }

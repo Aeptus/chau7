@@ -1,6 +1,5 @@
 import Foundation
 import AppKit
-import UserNotifications
 import Chau7Core
 
 /// Protocol for UI actions triggered by the notification system.
@@ -173,25 +172,11 @@ final class NotificationActionExecutor {
     // MARK: - Basic Actions
 
     private func executeShowNotification(_ ctx: ActionContext) {
-        let title = ctx.interpolate(ctx.configValue("customTitle"))
-        let body = ctx.interpolate(ctx.configValue("customBody"))
-
-        let content = UNMutableNotificationContent()
-        content.title = title.isEmpty ? ctx.event.notificationTitle(toolOverride: nil) : title
-        content.body = body.isEmpty ? ctx.event.notificationBody : body
-        content.sound = .default
-
-        let request = UNNotificationRequest(
-            identifier: UUID().uuidString,
-            content: content,
-            trigger: nil
-        )
-
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                Log.error("Action showNotification failed: \(error.localizedDescription)")
-            }
-        }
+        let customTitle = ctx.interpolate(ctx.configValue("customTitle"))
+        let customBody = ctx.interpolate(ctx.configValue("customBody"))
+        let title = customTitle.isEmpty ? ctx.event.notificationTitle(toolOverride: nil) : customTitle
+        let body = customBody.isEmpty ? ctx.event.notificationBody : customBody
+        NotificationManager.shared.dispatchActionNotification(title: title, body: body, for: ctx.event)
     }
 
     private func executePlaySound(_ ctx: ActionContext) {

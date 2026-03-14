@@ -1,6 +1,13 @@
 /* ── Shared components ── Light DOM custom elements ── */
 /* Renders into this.innerHTML so existing style.css / script.js selectors work unchanged. */
 /* Note: All markup is hardcoded (no user input), so innerHTML is safe here — no XSS risk. */
+/*
+ * IMPORTANT: Custom elements default to display:inline, which breaks block
+ * layout for <nav> and <footer> children (margin collapse, flow, grid).
+ * The fix lives in style.css:
+ *     site-nav, site-footer { display: contents; }
+ * Do NOT remove that rule. Without it the footer spacing breaks silently.
+ */
 
 class SiteNav extends HTMLElement {
     connectedCallback() {

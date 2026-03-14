@@ -209,19 +209,29 @@ final class NotificationManager {
 
     // MARK: - Notification Dispatch
 
+    /// Used by the executor's .showNotification action — routes through the full
+    /// authorization check + AppleScript fallback chain so custom-action notifications
+    /// get the same reliability as default notifications.
+    func dispatchActionNotification(title: String, body: String, for event: AIEvent) {
+        dispatchNotification(title: title, body: body, for: event)
+    }
+
     private func showDefaultNotification(for event: AIEvent) {
+        let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tabTarget))
+        dispatchNotification(title: title, body: event.notificationBody, for: event)
+    }
+
+    private func dispatchNotification(title: String, body: String, for event: AIEvent) {
         if shouldUseNativeNotifications() {
-            tryNativeNotification(for: event)
+            tryNativeNotification(title: title, body: body, for: event)
         } else {
-            let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tabTarget))
-            sendAppleScriptNotification(title: title, body: event.notificationBody)
+            sendAppleScriptNotification(title: title, body: body)
         }
     }
 
-    private func tryNativeNotification(for event: AIEvent) {
+    private func tryNativeNotification(title: String, body: String, for event: AIEvent) {
         guard shouldUseNativeNotifications() else {
-            let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tabTarget))
-            sendAppleScriptNotification(title: title, body: event.notificationBody)
+            sendAppleScriptNotification(title: title, body: body)
             return
         }
 
@@ -232,42 +242,39 @@ final class NotificationManager {
                     guard let self else { return }
                     self.cachedAuthorizationStatus = settings.authorizationStatus
                     self.hasCachedAuthorization = true
-                    self.handleAuthorizationResult(settings.authorizationStatus, for: event)
+                    self.handleAuthorizationResult(settings.authorizationStatus, title: title, body: body, for: event)
                 }
             }
             return
         }
 
-        handleAuthorizationResult(cachedAuthorizationStatus, for: event)
+        handleAuthorizationResult(cachedAuthorizationStatus, title: title, body: body, for: event)
     }
 
-    private func handleAuthorizationResult(_ status: UNAuthorizationStatus, for event: AIEvent) {
+    private func handleAuthorizationResult(_ status: UNAuthorizationStatus, title: String, body: String, for event: AIEvent) {
         switch status {
         case .authorized, .provisional, .ephemeral:
             resetNativeNotificationState()
-            scheduleNativeNotification(for: event)
+            scheduleNativeNotification(title: title, body: body, for: event)
         case .denied:
             logAuthorizationOnce(status: .denied, message: "Native notifications denied, using AppleScript fallback")
             useNativeNotifications = false
-            let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tabTarget))
-            sendAppleScriptNotification(title: title, body: event.notificationBody)
+            sendAppleScriptNotification(title: title, body: body)
         case .notDetermined:
             logAuthorizationOnce(status: .notDetermined, message: "Notification permission not determined, using AppleScript fallback")
-            let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tabTarget))
-            sendAppleScriptNotification(title: title, body: event.notificationBody)
+            sendAppleScriptNotification(title: title, body: body)
         @unknown default:
             Log.warn("Unknown notification authorization status, trying AppleScript")
-            let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tabTarget))
-            sendAppleScriptNotification(title: title, body: event.notificationBody)
+            sendAppleScriptNotification(title: title, body: body)
         }
     }
 
-    private func scheduleNativeNotification(for event: AIEvent) {
+    private func scheduleNativeNotification(title: String, body: String, for event: AIEvent) {
         Log.info("Scheduling notification: type=\(event.type) tool=\(event.tool)")
 
         let content = UNMutableNotificationContent()
-        content.title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tabTarget))
-        content.body = event.notificationBody
+        content.title = title
+        content.body = body
         content.sound = .default
 
         let request = UNNotificationRequest(
@@ -283,12 +290,12 @@ final class NotificationManager {
                 return
             }
             DispatchQueue.main.async {
-                self?.handleNativeNotificationError(error, for: event)
+                self?.handleNativeNotificationError(error, title: title, body: body)
             }
         }
     }
 
-    private func handleNativeNotificationError(_ error: Error, for event: AIEvent) {
+    private func handleNativeNotificationError(_ error: Error, title: String, body: String) {
         nativeNotificationFailureCount += 1
         nativeNotificationErrorCooldownUntil = Date().addingTimeInterval(nextNativeCooldown())
         let cooldown = Int(nativeNotificationErrorCooldownUntil!.timeIntervalSinceNow.rounded(.up))
@@ -298,10 +305,8 @@ final class NotificationManager {
         } else {
             Log.warn("Native notification error: \(error.localizedDescription) (failure #\(nativeNotificationFailureCount), cooldown=\(cooldown)s)")
         }
-        let source = tabTitleProvider?(event.tabTarget) ?? event.tool
-        Log.warn("Temporarily disabling native notifications for \(source) events for \(cooldown)s to allow retry.")
-        let title = event.notificationTitle(toolOverride: tabTitleProvider?(event.tabTarget))
-        sendAppleScriptNotification(title: title, body: event.notificationBody)
+        Log.warn("Temporarily disabling native notifications for \(cooldown)s, falling back to AppleScript.")
+        sendAppleScriptNotification(title: title, body: body)
     }
 
     private func shouldUseNativeNotifications() -> Bool {

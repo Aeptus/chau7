@@ -3,6 +3,27 @@ import XCTest
 
 final class CommandDetectionTests: XCTestCase {
 
+    private func withExecutable(
+        named name: String,
+        in directory: URL? = nil,
+        body: (String, String) throws -> Void
+    ) throws {
+        let fm = FileManager.default
+        let root = directory ?? fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: root, withIntermediateDirectories: true, attributes: nil)
+        defer { try? fm.removeItem(at: root) }
+
+        let executableURL = root.appendingPathComponent(name)
+        let created = fm.createFile(
+            atPath: executableURL.path,
+            contents: Data("#!/bin/sh\nexit 0\n".utf8)
+        )
+        XCTAssertTrue(created)
+        try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executableURL.path)
+
+        try body(root.path, executableURL.path)
+    }
+
     // MARK: - Basic Detection
 
     func testDetectClaude() {
@@ -154,6 +175,47 @@ final class CommandDetectionTests: XCTestCase {
 
     func testDetectPnpmClaude() {
         XCTAssertEqual(CommandDetection.detectApp(from: "pnpm claude"), "Claude")
+    }
+
+    func testDetectLaunchableAppRequiresExecutable() throws {
+        try withExecutable(named: "gemini") { directory, _ in
+            XCTAssertEqual(
+                CommandDetection.detectLaunchableApp(
+                    from: "gemini",
+                    currentDirectory: directory,
+                    searchPath: directory
+                ),
+                "Gemini"
+            )
+        }
+    }
+
+    func testDetectLaunchableAppRejectsMissingExecutable() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        XCTAssertEqual(
+            CommandDetection.detectApp(from: "gemini"),
+            "Gemini"
+        )
+        XCTAssertNil(
+            CommandDetection.detectLaunchableApp(
+                from: "gemini",
+                currentDirectory: directory.path,
+                searchPath: directory.path
+            )
+        )
+    }
+
+    func testDetectLaunchableAppWithWrapperCommand() throws {
+        try withExecutable(named: "gh") { directory, _ in
+            XCTAssertEqual(
+                CommandDetection.detectLaunchableApp(
+                    from: "gh copilot suggest",
+                    currentDirectory: directory,
+                    searchPath: directory
+                ),
+                "Copilot"
+            )
+        }
     }
 
     // MARK: - Output Detection

@@ -3,6 +3,7 @@ import Combine
 import os.log
 import Chau7Core
 import Darwin
+import CryptoKit
 
 @MainActor
 final class RemoteControlManager: ObservableObject {
@@ -13,6 +14,7 @@ final class RemoteControlManager: ObservableObject {
     @Published private(set) var sessionStatus: String?
     @Published private(set) var pairingInfo: RemotePairingInfo?
     @Published private(set) var lastError: String?
+    @Published private(set) var pairedDevices: [RemotePairedDevice] = []
 
     private var process: Process?
     private var outputPipe: Pipe?
@@ -27,6 +29,7 @@ final class RemoteControlManager: ObservableObject {
     private var nextTabID: UInt32 = 1
     private var seqCounter: UInt64 = 1
     private var pendingProtectedInputs: [String: ProtectedRemoteInput] = [:]
+    private var connectedPairedDeviceID: String?
 
     private let ipc = RemoteIPCServer.shared
 
@@ -44,8 +47,11 @@ final class RemoteControlManager: ObservableObject {
         ipc.onClientDisconnected = { [weak self] in
             self?.isIPCConnected = false
             self?.sessionStatus = nil
+            self?.connectedPairedDeviceID = nil
+            self?.refreshPairedDevices()
         }
         ipc.start()
+        refreshPairedDevices()
 
         FeatureSettings.shared.$isRemoteEnabled
             .receive(on: RunLoop.main)
@@ -175,6 +181,7 @@ final class RemoteControlManager: ObservableObject {
             isAgentRunning = true
             lastError = nil
             logger.info("Remote agent started")
+            refreshPairedDevices()
         } catch {
             let errorMessage = "Failed to start remote agent: \(error.localizedDescription)"
             logger.error("\(errorMessage)")
@@ -246,10 +253,13 @@ final class RemoteControlManager: ObservableObject {
             handlePairingInfo(frame)
         case .sessionReady:
             isIPCConnected = true
+            sendInitialState()
         case .sessionStatus:
             do {
                 let status = try JSONDecoder().decode(RemoteSessionStatus.self, from: frame.payload)
                 sessionStatus = status.status
+                connectedPairedDeviceID = status.pairedDeviceID
+                refreshPairedDevices()
             } catch {
                 logger.warning("Failed to decode session status: \(error.localizedDescription)")
             }
@@ -276,6 +286,7 @@ final class RemoteControlManager: ObservableObject {
         do {
             let info = try JSONDecoder().decode(RemotePairingInfo.self, from: frame.payload)
             pairingInfo = info
+            refreshPairedDevices()
         } catch {
             logger.warning("Failed to decode pairing info: \(error.localizedDescription)")
         }
@@ -514,6 +525,65 @@ final class RemoteControlManager: ObservableObject {
         dataDirectory()?.appendingPathComponent("remote.sock")
     }
 
+    private func stateFileURL() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".chau7")
+            .appendingPathComponent("remote")
+            .appendingPathComponent("state.json")
+    }
+
+    func revokePairedDevice(id: String) {
+        do {
+            guard var state = try loadAgentState() else { return }
+            state.removePairedDevice(id: id)
+            try saveAgentState(state)
+            if connectedPairedDeviceID == id {
+                connectedPairedDeviceID = nil
+                sessionStatus = "disconnected"
+            }
+            refreshPairedDevices()
+            restartAgentIfRunning()
+        } catch {
+            logger.error("Failed to revoke paired device: \(error.localizedDescription)")
+            lastError = "Failed to revoke paired device"
+        }
+    }
+
+    private func refreshPairedDevices() {
+        do {
+            guard let state = try loadAgentState() else {
+                pairedDevices = []
+                return
+            }
+            pairedDevices = state.pairedDevices.map { device in
+                RemotePairedDevice(
+                    id: device.id,
+                    name: device.name.isEmpty ? "Unnamed iPhone" : device.name,
+                    fingerprint: device.publicKeyFingerprint.isEmpty ? device.id : device.publicKeyFingerprint,
+                    pairedAt: device.pairedAt,
+                    lastConnectedAt: device.lastConnectedAt,
+                    isConnected: sessionStatus == "ready" && connectedPairedDeviceID == device.id
+                )
+            }
+        } catch {
+            logger.warning("Failed to refresh paired devices: \(error.localizedDescription)")
+        }
+    }
+
+    private func loadAgentState() throws -> RemoteAgentStateSnapshot? {
+        let url = stateFileURL()
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let data = try Data(contentsOf: url)
+        return try JSONDecoder().decode(RemoteAgentStateSnapshot.self, from: data)
+    }
+
+    private func saveAgentState(_ state: RemoteAgentStateSnapshot) throws {
+        let url = stateFileURL()
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let data = try JSONEncoder().encode(state)
+        try data.write(to: url, options: .atomic)
+    }
+
     private func remoteBinaryPath() -> URL? {
         if let bundlePath = bundledRemoteBinaryPath(),
            FileManager.default.isExecutableFile(atPath: bundlePath.path) {
@@ -723,6 +793,109 @@ struct RemoteTabSwitchPayload: Codable, Equatable {
 
 struct RemoteSessionStatus: Codable, Equatable {
     let status: String
+    let pairedDeviceID: String?
+    let pairedDeviceName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case pairedDeviceID = "paired_device_id"
+        case pairedDeviceName = "paired_device_name"
+    }
+}
+
+struct RemotePairedDevice: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let fingerprint: String
+    let pairedAt: String?
+    let lastConnectedAt: String?
+    let isConnected: Bool
+}
+
+private struct RemoteAgentStateSnapshot: Codable {
+    let deviceID: String?
+    let macPrivateKey: String?
+    let macPublicKey: String?
+    var pairedDevices: [RemoteAgentPairedDeviceSnapshot]
+    let iosPublicKey: String?
+    let iosName: String?
+    let keyEncrypted: Bool?
+    let relaySecret: String?
+
+    enum CodingKeys: String, CodingKey {
+        case deviceID = "device_id"
+        case macPrivateKey = "mac_private_key"
+        case macPublicKey = "mac_public_key"
+        case pairedDevices = "paired_devices"
+        case iosPublicKey = "ios_public_key"
+        case iosName = "ios_name"
+        case keyEncrypted = "key_encrypted"
+        case relaySecret = "relay_secret"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        deviceID = try container.decodeIfPresent(String.self, forKey: .deviceID)
+        macPrivateKey = try container.decodeIfPresent(String.self, forKey: .macPrivateKey)
+        macPublicKey = try container.decodeIfPresent(String.self, forKey: .macPublicKey)
+        pairedDevices = try container.decodeIfPresent([RemoteAgentPairedDeviceSnapshot].self, forKey: .pairedDevices) ?? []
+        iosPublicKey = try container.decodeIfPresent(String.self, forKey: .iosPublicKey)
+        iosName = try container.decodeIfPresent(String.self, forKey: .iosName)
+        keyEncrypted = try container.decodeIfPresent(Bool.self, forKey: .keyEncrypted)
+        relaySecret = try container.decodeIfPresent(String.self, forKey: .relaySecret)
+        if pairedDevices.isEmpty,
+           let iosPublicKey,
+           let rawKey = Data(base64Encoded: iosPublicKey) {
+            pairedDevices = [
+                RemoteAgentPairedDeviceSnapshot(
+                    id: Self.fingerprint(for: rawKey),
+                    name: iosName ?? "",
+                    iosPublicKey: iosPublicKey,
+                    publicKeyFingerprint: Self.fingerprint(for: rawKey),
+                    pairedAt: nil,
+                    lastConnectedAt: nil
+                )
+            ]
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(deviceID, forKey: .deviceID)
+        try container.encodeIfPresent(macPrivateKey, forKey: .macPrivateKey)
+        try container.encodeIfPresent(macPublicKey, forKey: .macPublicKey)
+        try container.encode(pairedDevices, forKey: .pairedDevices)
+        try container.encodeIfPresent(pairedDevices.first?.iosPublicKey, forKey: .iosPublicKey)
+        try container.encodeIfPresent(pairedDevices.first?.name, forKey: .iosName)
+        try container.encodeIfPresent(keyEncrypted, forKey: .keyEncrypted)
+        try container.encodeIfPresent(relaySecret, forKey: .relaySecret)
+    }
+
+    mutating func removePairedDevice(id: String) {
+        pairedDevices.removeAll { $0.id == id }
+    }
+
+    private static func fingerprint(for rawKey: Data) -> String {
+        Data(SHA256.hash(data: rawKey).prefix(8)).base64EncodedString()
+    }
+}
+
+private struct RemoteAgentPairedDeviceSnapshot: Codable, Equatable {
+    let id: String
+    let name: String
+    let iosPublicKey: String
+    let publicKeyFingerprint: String
+    let pairedAt: String?
+    let lastConnectedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case iosPublicKey = "ios_public_key"
+        case publicKeyFingerprint = "public_key_fingerprint"
+        case pairedAt = "paired_at"
+        case lastConnectedAt = "last_connected_at"
+    }
 }
 
 private struct ProtectedRemoteInput {

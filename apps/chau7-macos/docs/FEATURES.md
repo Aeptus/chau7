@@ -151,6 +151,19 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | `session_list` | List AI sessions with run counts — filter by repo_path, active_only |
 | `session_current` | Get currently active AI sessions across all tabs |
 
+### Runtime API (8 tools)
+
+| Tool | Description |
+| --- | --- |
+| `runtime_session_create` | Start or attach an agent session in Chau7 and return a runtime session ID |
+| `runtime_session_list` | List runtime sessions, with optional inclusion of recently stopped sessions |
+| `runtime_session_get` | Get detailed state for one runtime session |
+| `runtime_session_stop` | Stop a runtime session and optionally close its tab |
+| `runtime_turn_send` | Send a formatted prompt to a runtime session, including adopted sessions discovered from existing tabs |
+| `runtime_turn_status` | Get the current turn state for a runtime session |
+| `runtime_events_poll` | Poll the runtime event stream using a cursor |
+| `runtime_approval_respond` | Approve or deny a pending runtime tool-use request |
+
 ### Resources (4 endpoints)
 
 | URI | Description |
