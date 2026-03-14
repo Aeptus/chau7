@@ -52,7 +52,7 @@ enum PathClickHandler {
         var fullPath = path
         if !fullPath.hasPrefix("/") {
             if fullPath.hasPrefix("~") {
-                fullPath = FileManager.default.homeDirectoryForCurrentUser.path + String(fullPath.dropFirst())
+                fullPath = RuntimeIsolation.expandTilde(in: fullPath)
             } else {
                 fullPath = URL(fileURLWithPath: workingDir).appendingPathComponent(fullPath).path
             }

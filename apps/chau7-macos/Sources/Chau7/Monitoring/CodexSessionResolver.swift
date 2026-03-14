@@ -34,8 +34,7 @@ enum CodexSessionResolver {
         cacheLock.unlock()
 
         let fm = FileManager.default
-        let sessionsDir = fm.homeDirectoryForCurrentUser
-            .appendingPathComponent(".codex/sessions")
+        let sessionsDir = RuntimeIsolation.urlInHome(".codex/sessions", fileManager: fm)
 
         let candidateDirs = prioritizedDayDirectories(
             in: sessionsDir,
@@ -81,8 +80,7 @@ enum CodexSessionResolver {
     /// by most recently modified first.  Mirrors `ClaudeCodeMonitor.sessionCandidates(forDirectory:)`.
     static func sessionCandidates(forDirectory directory: String) -> [(sessionId: String, lastActivity: Date)] {
         let fm = FileManager.default
-        let sessionsDir = fm.homeDirectoryForCurrentUser
-            .appendingPathComponent(".codex/sessions")
+        let sessionsDir = RuntimeIsolation.urlInHome(".codex/sessions", fileManager: fm)
 
         let dayDirs = prioritizedDayDirectories(
             in: sessionsDir,
@@ -264,7 +262,7 @@ enum CodexSessionResolver {
     private static func normalizedSessionDirectory(_ directory: String) -> String {
         let trimmed = directory.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
-        let expanded = NSString(string: trimmed).expandingTildeInPath
+        let expanded = RuntimeIsolation.expandTilde(in: trimmed)
         return URL(fileURLWithPath: expanded).standardized.path
     }
 

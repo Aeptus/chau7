@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import SwiftUI
+import Chau7Core
 
 private final class OverlayBlurView: NSVisualEffectView {
     weak var hostedView: NSView?
@@ -521,7 +522,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         alert.addButton(withTitle: L("button.cancel", "Cancel"))
 
         let textField = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
-        textField.stringValue = FileManager.default.homeDirectoryForCurrentUser.path
+        textField.stringValue = RuntimeIsolation.homePath()
         alert.accessoryView = textField
 
         if alert.runModal() == .alertFirstButtonReturn {

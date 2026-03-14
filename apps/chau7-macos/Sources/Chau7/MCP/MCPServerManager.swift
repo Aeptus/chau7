@@ -16,7 +16,7 @@ final class MCPServerManager {
     private var acceptSource: DispatchSourceRead?
 
     private init() {
-        self.socketPath = NSHomeDirectory() + "/.chau7/mcp.sock"
+        self.socketPath = RuntimeIsolation.pathInHome(".chau7/mcp.sock")
     }
 
     // MARK: - Bridge Installation
@@ -31,7 +31,7 @@ final class MCPServerManager {
         }
 
         let fm = FileManager.default
-        let binDir = URL(fileURLWithPath: NSHomeDirectory() + "/.chau7/bin")
+        let binDir = RuntimeIsolation.urlInHome(".chau7/bin")
         let dest = binDir.appendingPathComponent(bridgeName)
 
         do {
@@ -55,7 +55,7 @@ final class MCPServerManager {
     /// Each tool has its own config format and location; we only touch the chau7
     /// entry and leave everything else intact.
     private func registerMCPWithAllTools(bridgePath: String) {
-        let home = NSHomeDirectory()
+        let home = RuntimeIsolation.homePath()
         let command = bridgePath
 
         // Claude Code: ~/.claude.json (global) — project .mcp.json is committed separately

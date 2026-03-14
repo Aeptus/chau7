@@ -1,3 +1,0 @@
-[    1067ms] [ERROR] Framing 'https://shop.app/' violates the following Content Security Policy directive: "frame-ancestors https://the-a-boire.myshopify.com https://manayerbamate.com https://www.manayerbamate.com https://the-a-boire.account.myshopify.com https://shopify.com". The request has been blocked.
- @ :0
-[    4942ms] [WARNING] In a sandboxed environment, addEventListener may not behave as expected. @ https://manayerbamate.com/cdn/wpm/sdf8d3400wef50681bp68ad6cf7m44c53f1am.js:0

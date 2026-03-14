@@ -39,8 +39,7 @@ final class CTOManager {
     private let dataDir: URL
 
     private init() {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let base = home.appendingPathComponent(".chau7", isDirectory: true)
+        let base = RuntimeIsolation.chau7Directory()
         self.wrapperBinDir = base.appendingPathComponent("cto_bin", isDirectory: true)
         self.binDir = base.appendingPathComponent("bin", isDirectory: true)
         self.dataDir = base.appendingPathComponent("cto_data", isDirectory: true)
@@ -89,7 +88,7 @@ final class CTOManager {
 
     /// Moves `~/.chau7/<old>` to `~/.chau7/<new>` if old exists and new does not.
     private func migrateDirectoryIfNeeded(fm: FileManager, from oldName: String, to newName: String) {
-        let base = fm.homeDirectoryForCurrentUser.appendingPathComponent(".chau7", isDirectory: true)
+        let base = RuntimeIsolation.chau7Directory(fileManager: fm)
         let oldDir = base.appendingPathComponent(oldName, isDirectory: true)
         let newDir = base.appendingPathComponent(newName, isDirectory: true)
         guard fm.fileExists(atPath: oldDir.path), !fm.fileExists(atPath: newDir.path) else { return }

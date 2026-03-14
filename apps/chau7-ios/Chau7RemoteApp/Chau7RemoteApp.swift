@@ -7,10 +7,19 @@ private let log = Logger(subsystem: "ch7", category: "App")
 @main
 struct Chau7RemoteApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @State private var client = RemoteClient()
 
     var body: some Scene {
         WindowGroup {
-            RemoteRootView()
+            RemoteRootView(client: client)
+                .onOpenURL { url in
+                    client.handle(url: url)
+                }
+                .onAppear {
+                    if client.pairingInfo != nil, !client.isConnected {
+                        client.connect()
+                    }
+                }
         }
     }
 }
@@ -83,7 +92,7 @@ extension Notification.Name {
 // MARK: - Root View
 
 struct RemoteRootView: View {
-    @State private var client = RemoteClient()
+    var client: RemoteClient
     @State private var selectedTab = Tab.terminal
     @State private var isPairingPresented = false
 

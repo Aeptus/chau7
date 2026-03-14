@@ -2,7 +2,7 @@
 
 The AI-native terminal for macOS. GPU-accelerated, MCP-enabled, built for developers who ship with AI.
 
-> See also: [features.csv](features.csv) for the machine-readable feature inventory (185 features, 30 categories).
+> See also: [features.csv](features.csv) for the machine-readable feature inventory (197 features, 30 categories).
 
 ## Table of Contents
 
@@ -263,6 +263,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Command idle detection with configurable threshold.
 - Auto tab styling on events with auto-clear timeout.
 - Rate limiting and per-trigger enable/disable.
+- Isolated test mode disables notification-center integration to keep side effects out of the test app.
 
 ## Appearance & Theming
 
@@ -308,6 +309,14 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Cloudflare Workers relay — no port forwarding required.
 - Tmux integration — map tmux windows/panes to Chau7 tabs.
 - Session recording with timestamps and timeline scrubber.
+- Remote activity projection — macOS reduces AI event streams into one authoritative activity state for remote clients.
+- iPhone Live Activity / Dynamic Island support via the Chau7 Remote app for running, waiting-input, completed, and failed states.
+
+### Isolated Testing
+
+- Isolated test app builder creates a separate `Chau7 Test.app` with its own bundle ID and embedded home root.
+- Chau7-owned state is redirected: `UserDefaults`, `~/Library/Application Support`, `~/Library/Logs`, `~/.chau7`, and keychain service names.
+- Safe for side-by-side manual testing of Chau7 itself without touching the main app's local storage.
 
 ## Scripting & Debugging
 

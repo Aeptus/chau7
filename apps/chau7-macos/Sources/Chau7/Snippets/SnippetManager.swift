@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Chau7Core
 
 enum SnippetSource: String, Codable, CaseIterable, Identifiable {
     case global // Stored as "global" for backwards compatibility
@@ -665,7 +666,7 @@ final class SnippetManager: ObservableObject {
     private func replaceTokens(in input: String, currentDirectory: String) -> String {
         var text = input
         text = text.replacingOccurrences(of: "${cwd}", with: currentDirectory)
-        text = text.replacingOccurrences(of: "${home}", with: FileManager.default.homeDirectoryForCurrentUser.path)
+        text = text.replacingOccurrences(of: "${home}", with: RuntimeIsolation.homePath())
 
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
@@ -1184,9 +1185,7 @@ final class SnippetManager: ObservableObject {
     // MARK: - URL resolution
 
     private func supportDirectory() -> URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser
-        return base.appendingPathComponent("Chau7", isDirectory: true)
+        RuntimeIsolation.appSupportDirectory(named: "Chau7")
     }
 
     /// Returns the directory URL for global snippets.

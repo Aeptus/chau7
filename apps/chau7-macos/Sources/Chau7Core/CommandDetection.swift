@@ -590,7 +590,7 @@ public enum CommandDetection {
     }
 
     private static func resolveCommandPath(_ token: String, currentDirectory: String) -> String? {
-        let expanded = NSString(string: token).expandingTildeInPath
+        let expanded = RuntimeIsolation.expandTilde(in: token)
         if expanded.hasPrefix("/") {
             return URL(fileURLWithPath: expanded).standardized.path
         }
@@ -604,7 +604,7 @@ public enum CommandDetection {
     }
 
     private static func resolveDirectoryPath(_ path: String, currentDirectory: String) -> String {
-        let expanded = NSString(string: path).expandingTildeInPath
+        let expanded = RuntimeIsolation.expandTilde(in: path)
         if expanded.hasPrefix("/") {
             return URL(fileURLWithPath: expanded, isDirectory: true).standardized.path
         }
@@ -620,7 +620,7 @@ public enum CommandDetection {
     private static func standardizedDirectoryPath(_ path: String) -> String {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
-        let expanded = NSString(string: trimmed).expandingTildeInPath
+        let expanded = RuntimeIsolation.expandTilde(in: trimmed)
         return URL(fileURLWithPath: expanded, isDirectory: true).standardized.path
     }
 

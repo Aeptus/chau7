@@ -63,8 +63,7 @@ final class PersistentHistoryStore {
     // MARK: - Database Setup
 
     private var dbPath: String {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let dir = support.appendingPathComponent("Chau7")
+        let dir = RuntimeIsolation.appSupportDirectory(named: "Chau7")
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         } catch {

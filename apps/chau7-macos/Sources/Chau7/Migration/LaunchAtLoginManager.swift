@@ -1,16 +1,18 @@
 import Foundation
 import Darwin
+import Chau7Core
 
 enum LaunchAtLoginManager {
     private static let label = Bundle.main.bundleIdentifier ?? "com.chau7"
 
     private static var agentURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
+        RuntimeIsolation.homeDirectory()
             .appendingPathComponent("Library/LaunchAgents")
             .appendingPathComponent("\(label).plist")
     }
 
     static func isEnabled() -> Bool {
+        guard !RuntimeIsolation.isIsolatedTestMode() else { return false }
         if isJobLoaded() {
             return true
         }
@@ -18,6 +20,10 @@ enum LaunchAtLoginManager {
     }
 
     static func setEnabled(_ enabled: Bool) {
+        guard !RuntimeIsolation.isIsolatedTestMode() else {
+            Log.info("LaunchAtLogin: ignored in isolated test mode.")
+            return
+        }
         if enabled {
             install()
         } else {

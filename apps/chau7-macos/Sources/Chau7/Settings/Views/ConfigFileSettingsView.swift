@@ -1,4 +1,5 @@
 import SwiftUI
+import Chau7Core
 
 /// Settings view for config file support (.chau7.toml).
 /// Provides controls for enabling/disabling config file loading,
@@ -163,7 +164,7 @@ struct ConfigFileSettingsView: View {
     // MARK: - Helpers
 
     private func openConfigInEditor() {
-        let path = NSHomeDirectory() + "/.chau7/config.toml"
+        let path = RuntimeIsolation.pathInHome(".chau7/config.toml")
         NSWorkspace.shared.open(URL(fileURLWithPath: path))
     }
 

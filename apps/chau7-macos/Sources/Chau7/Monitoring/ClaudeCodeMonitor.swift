@@ -67,8 +67,7 @@ final class ClaudeCodeMonitor: ObservableObject {
     // MARK: - Init
 
     private init() {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        self.eventsFilePath = home.appendingPathComponent(".chau7/claude-events.jsonl").path
+        self.eventsFilePath = RuntimeIsolation.pathInHome(".chau7/claude-events.jsonl")
     }
 
     // MARK: - Lifecycle
@@ -401,7 +400,7 @@ final class ClaudeCodeMonitor: ObservableObject {
     private static func normalizedPath(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let expanded = NSString(string: trimmed).expandingTildeInPath
+        let expanded = RuntimeIsolation.expandTilde(in: trimmed)
         return URL(fileURLWithPath: expanded).standardized.path
     }
 

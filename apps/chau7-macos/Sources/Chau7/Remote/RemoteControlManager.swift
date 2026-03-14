@@ -15,6 +15,7 @@ final class RemoteControlManager: ObservableObject {
     @Published private(set) var pairingInfo: RemotePairingInfo?
     @Published private(set) var lastError: String?
     @Published private(set) var pairedDevices: [RemotePairedDevice] = []
+    @Published private(set) var remoteActivity: RemoteActivityState?
 
     private var process: Process?
     private var outputPipe: Pipe?
@@ -29,7 +30,10 @@ final class RemoteControlManager: ObservableObject {
     private var nextTabID: UInt32 = 1
     private var seqCounter: UInt64 = 1
     private var pendingProtectedInputs: [String: ProtectedRemoteInput] = [:]
+    private var approvalContexts: [String: PendingRemoteApprovalContext] = [:]
     private var connectedPairedDeviceID: String?
+    private var sessionStateCancellables: [String: AnyCancellable] = [:]
+    private var activityRefreshWorkItem: DispatchWorkItem?
 
     private let ipc = RemoteIPCServer.shared
 
@@ -48,6 +52,7 @@ final class RemoteControlManager: ObservableObject {
             self?.isIPCConnected = false
             self?.sessionStatus = nil
             self?.connectedPairedDeviceID = nil
+            self?.remoteActivity = nil
             self?.refreshPairedDevices()
         }
         ipc.start()
@@ -76,6 +81,8 @@ final class RemoteControlManager: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.sendTabList()
+                self?.rebuildSessionStateSubscriptions()
+                self?.scheduleRemoteActivityRefresh()
             }
             .store(in: &cancellables)
 
@@ -84,8 +91,11 @@ final class RemoteControlManager: ObservableObject {
             .sink { [weak self] _ in
                 self?.sendTabList()
                 self?.sendSnapshot(for: 0)
+                self?.scheduleRemoteActivityRefresh()
             }
             .store(in: &cancellables)
+
+        rebuildSessionStateSubscriptions()
     }
 
     func recordOutput(_ data: Data, sessionIdentifier: String) {
@@ -330,7 +340,9 @@ final class RemoteControlManager: ObservableObject {
     /// Send a command approval request to the iOS app.
     func sendApprovalRequest(requestID: String, payload: Data) {
         guard isIPCConnected else { return }
+        registerApprovalContext(requestID: requestID, payload: payload)
         sendFrame(type: .approvalRequest, tabID: 0, payload: payload)
+        sendRemoteActivity()
         logger.info("Remote: sent approval request \(requestID)")
     }
 
@@ -340,6 +352,7 @@ final class RemoteControlManager: ObservableObject {
 
         do {
             let response = try JSONDecoder().decode(ApprovalResponsePayload.self, from: frame.payload)
+            approvalContexts.removeValue(forKey: response.requestID)
             if let protectedInput = pendingProtectedInputs.removeValue(forKey: response.requestID) {
                 if response.approved,
                    let session = session(for: protectedInput.tabID) {
@@ -348,9 +361,11 @@ final class RemoteControlManager: ObservableObject {
                 } else {
                     logger.info("Remote: protected action denied for tab \(protectedInput.tabID)")
                 }
+                sendRemoteActivity()
                 return
             }
             TerminalControlService.shared.resolveApproval(requestID: response.requestID, approved: response.approved)
+            sendRemoteActivity()
             logger.info("Remote: approval response for \(response.requestID): \(response.approved ? "allowed" : "denied")")
         } catch {
             logger.warning("Failed to decode approval response: \(error.localizedDescription)")
@@ -369,6 +384,205 @@ final class RemoteControlManager: ObservableObject {
     private func sendInitialState() {
         sendTabList()
         sendSnapshot(for: 0)
+        sendRemoteActivity(force: true)
+    }
+
+    private func rebuildSessionStateSubscriptions() {
+        guard let overlayModel else {
+            sessionStateCancellables.removeAll()
+            return
+        }
+
+        let sessions = overlayModel.tabs.compactMap(\.session)
+        let validIDs = Set(sessions.map(\.tabIdentifier))
+
+        for staleID in sessionStateCancellables.keys where !validIDs.contains(staleID) {
+            sessionStateCancellables.removeValue(forKey: staleID)
+        }
+
+        for session in sessions where sessionStateCancellables[session.tabIdentifier] == nil {
+            sessionStateCancellables[session.tabIdentifier] = session.objectWillChange
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in
+                    self?.scheduleRemoteActivityRefresh()
+                }
+        }
+    }
+
+    private func scheduleRemoteActivityRefresh() {
+        activityRefreshWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.sendRemoteActivity()
+        }
+        activityRefreshWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
+    }
+
+    private func sendRemoteActivity(force: Bool = false) {
+        let nextActivity = currentRemoteActivity()
+        guard force || nextActivity != remoteActivity else { return }
+
+        remoteActivity = nextActivity
+        guard isIPCConnected else { return }
+
+        if let nextActivity,
+           let payload = try? JSONEncoder().encode(nextActivity) {
+            sendFrame(type: .activityState, tabID: nextActivity.tabID, payload: payload)
+        } else {
+            sendFrame(type: .activityCleared, tabID: 0, payload: Data())
+        }
+    }
+
+    private func currentRemoteActivity(now: Date = Date()) -> RemoteActivityState? {
+        guard let overlayModel else { return nil }
+
+        let approvalsByTabID = Dictionary(grouping: approvalContexts.values, by: \.tabID)
+        let candidates = overlayModel.tabs.compactMap { tab -> RemoteActivityCandidate? in
+            guard let tabID = tabIDByUUID[tab.id] else {
+                return nil
+            }
+
+            let approval = approvalsByTabID[tabID]?.max { $0.requestedAt < $1.requestedAt }
+            let activityID = "tab-\(tabID)"
+
+            if let approval {
+                return RemoteActivityCandidate(
+                    activityID: activityID,
+                    tabID: tabID,
+                    tabTitle: approval.tabTitle,
+                    toolName: approval.toolName,
+                    projectName: approval.projectName,
+                    sessionID: approval.sessionID,
+                    status: .waitingInput,
+                    detail: approval.approval.displayCommand,
+                    isSelected: tab.id == overlayModel.selectedTabID,
+                    updatedAt: approval.requestedAt,
+                    startedAt: approval.requestedAt,
+                    approval: approval.approval
+                )
+            }
+
+            guard let session = tab.session else { return nil }
+
+            let toolName = activityToolName(for: session, tab: tab)
+            let projectName = activityProjectName(for: session)
+            let startedAt = tab.lastCommand?.startTime
+            let updatedAt = activityUpdatedAt(for: session, tab: tab, approval: nil)
+
+            guard session.aiDisplayAppName != nil ||
+                    session.effectiveAIProvider != nil ||
+                    session.effectiveAISessionId != nil else {
+                return nil
+            }
+
+            let resolvedStatus: RemoteActivityStatus?
+            let detail: String?
+
+            switch session.effectiveStatus {
+            case .waitingForInput:
+                resolvedStatus = .waitingInput
+                detail = session.effectiveIsAtPrompt ? "Waiting at prompt" : nil
+            case .running:
+                resolvedStatus = .running
+                detail = nil
+            case .stuck:
+                resolvedStatus = .running
+                detail = "No output for a while"
+            case .idle, .exited:
+                if let outcome = recentCompletionStatus(for: tab, now: now) {
+                    resolvedStatus = outcome.status
+                    detail = outcome.detail
+                } else {
+                    resolvedStatus = nil
+                    detail = nil
+                }
+            }
+
+            guard let resolvedStatus else { return nil }
+
+            return RemoteActivityCandidate(
+                activityID: activityID,
+                tabID: tabID,
+                tabTitle: activityTabTitle(for: tab),
+                toolName: toolName,
+                projectName: projectName,
+                sessionID: session.effectiveAISessionId,
+                status: resolvedStatus,
+                detail: detail,
+                isSelected: tab.id == overlayModel.selectedTabID,
+                updatedAt: updatedAt,
+                startedAt: startedAt
+            )
+        }
+
+        return RemoteActivityProjection.project(from: candidates)
+    }
+
+    private func activityTabTitle(for tab: OverlayTab) -> String {
+        let trimmedCustom = tab.customTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmedCustom.isEmpty {
+            return trimmedCustom
+        }
+        return tab.displayTitle
+    }
+
+    private func activityToolName(for session: TerminalSessionModel, tab: OverlayTab) -> String {
+        let activeName = session.aiDisplayAppName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !activeName.isEmpty {
+            return activeName
+        }
+        let provider = session.effectiveAIProvider?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !provider.isEmpty {
+            return provider.capitalized
+        }
+        return activityTabTitle(for: tab)
+    }
+
+    private func activityProjectName(for session: TerminalSessionModel) -> String? {
+        let trimmed = session.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let lastPathComponent = URL(fileURLWithPath: trimmed).lastPathComponent
+        return lastPathComponent.isEmpty ? trimmed : lastPathComponent
+    }
+
+    private func activityUpdatedAt(
+        for session: TerminalSessionModel,
+        tab: OverlayTab,
+        approval: PendingRemoteApprovalContext?
+    ) -> Date {
+        [
+            approval?.requestedAt,
+            tab.lastCommand?.endTime,
+            tab.lastCommand?.startTime,
+            session.lastOutputDate
+        ]
+        .compactMap { $0 }
+        .max() ?? Date()
+    }
+
+    private func recentCompletionStatus(
+        for tab: OverlayTab,
+        now: Date
+    ) -> (status: RemoteActivityStatus, detail: String?)? {
+        guard let lastCommand = tab.lastCommand,
+              let endTime = lastCommand.endTime,
+              now.timeIntervalSince(endTime) <= 20 else {
+            return nil
+        }
+
+        let trimmedCommand = lastCommand.command.trimmingCharacters(in: .whitespacesAndNewlines)
+        let exitCode = lastCommand.exitCode ?? 0
+        if exitCode == 0 {
+            return (
+                .completed,
+                trimmedCommand.isEmpty ? nil : trimmedCommand
+            )
+        }
+
+        if trimmedCommand.isEmpty {
+            return (.failed, "Exit \(exitCode)")
+        }
+        return (.failed, "Exit \(exitCode): \(trimmedCommand)")
     }
 
     private func sendTabList() {
@@ -405,6 +619,7 @@ final class RemoteControlManager: ObservableObject {
         do {
             let payload = try JSONEncoder().encode(RemoteTabListPayload(tabs: tabPayloads))
             sendFrame(type: .tabList, tabID: 0, payload: payload)
+            sendRemoteActivity()
         } catch {
             logger.warning("Failed to encode tab list: \(error.localizedDescription)")
         }
@@ -462,8 +677,52 @@ final class RemoteControlManager: ObservableObject {
         let expired = pendingProtectedInputs.filter { $0.value.isExpired }
         for (key, input) in expired {
             pendingProtectedInputs.removeValue(forKey: key)
+            approvalContexts.removeValue(forKey: key)
             logger.info("Remote: expired protected action for tab \(input.tabID) after \(ProtectedRemoteInput.ttl)s")
         }
+    }
+
+    private func registerApprovalContext(requestID: String, payload: Data) {
+        guard let approval = try? JSONDecoder().decode(ApprovalRequestPayload.self, from: payload) else {
+            return
+        }
+
+        if let protectedInput = pendingProtectedInputs[requestID],
+           let session = session(for: protectedInput.tabID),
+           let uuid = uuidByTabID[protectedInput.tabID],
+           let tab = overlayModel?.tabs.first(where: { $0.id == uuid }) {
+            approvalContexts[requestID] = PendingRemoteApprovalContext(
+                requestID: approval.requestID,
+                tabID: protectedInput.tabID,
+                tabTitle: activityTabTitle(for: tab),
+                toolName: activityToolName(for: session, tab: tab),
+                projectName: activityProjectName(for: session),
+                sessionID: session.effectiveAISessionId,
+                command: approval.command,
+                flaggedCommand: approval.flaggedCommand,
+                requestedAt: Self.parseApprovalDate(approval.timestamp)
+            )
+            return
+        }
+
+        guard let overlayModel,
+              let tab = overlayModel.selectedTab,
+              let session = tab.session,
+              let tabID = tabIDByUUID[tab.id] else {
+            return
+        }
+
+        approvalContexts[requestID] = PendingRemoteApprovalContext(
+            requestID: approval.requestID,
+            tabID: tabID,
+            tabTitle: activityTabTitle(for: tab),
+            toolName: activityToolName(for: session, tab: tab),
+            projectName: activityProjectName(for: session),
+            sessionID: session.effectiveAISessionId,
+            command: approval.command,
+            flaggedCommand: approval.flaggedCommand,
+            requestedAt: Self.parseApprovalDate(approval.timestamp)
+        )
     }
 
     private func queueProtectedRemoteInput(
@@ -507,10 +766,12 @@ final class RemoteControlManager: ObservableObject {
         RemoteProtection.flaggedTerminationAction(for: input)
     }
 
+    private static func parseApprovalDate(_ timestamp: String) -> Date {
+        ISO8601DateFormatter().date(from: timestamp) ?? Date()
+    }
+
     private func dataDirectory() -> URL? {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        let dir = appSupport.appendingPathComponent("Chau7")
+        let dir = RuntimeIsolation.appSupportDirectory(named: "Chau7")
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         } catch {
@@ -526,8 +787,7 @@ final class RemoteControlManager: ObservableObject {
     }
 
     private func stateFileURL() -> URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".chau7")
+        RuntimeIsolation.chau7Directory()
             .appendingPathComponent("remote")
             .appendingPathComponent("state.json")
     }
@@ -895,6 +1155,26 @@ private struct RemoteAgentPairedDeviceSnapshot: Codable, Equatable {
         case publicKeyFingerprint = "public_key_fingerprint"
         case pairedAt = "paired_at"
         case lastConnectedAt = "last_connected_at"
+    }
+}
+
+private struct PendingRemoteApprovalContext {
+    let requestID: String
+    let tabID: UInt32
+    let tabTitle: String
+    let toolName: String
+    let projectName: String?
+    let sessionID: String?
+    let command: String
+    let flaggedCommand: String
+    let requestedAt: Date
+
+    var approval: RemoteActivityApproval {
+        RemoteActivityApproval(
+            requestID: requestID,
+            command: command,
+            flaggedCommand: flaggedCommand
+        )
     }
 }
 

@@ -22,6 +22,7 @@ final class RemoteClient {
     var lastError: String?
     var pendingApprovals: [ApprovalRequest] = []
     var approvalHistory: [ApprovalHistoryEntry] = []
+    private(set) var liveActivityState: RemoteActivityState?
 
     // MARK: - Pairing (persisted in Keychain)
 
@@ -50,6 +51,7 @@ final class RemoteClient {
     private var strippedOutputByTabID: [UInt32: String] = [:]
     private var remoteSessionID: String?
     private var bufferedTelemetryEvents: [RemoteClientTelemetryEvent] = []
+    private var pendingURLActions: [RemoteActivityURLAction] = []
 
     private static let maxOutputBytes = 200_000
     private static let maxFrameBytes = 65_536
@@ -140,11 +142,16 @@ final class RemoteClient {
         outputByTabID.removeAll()
         strippedOutputByTabID.removeAll()
         bufferedTelemetryEvents.removeAll(keepingCapacity: true)
+        liveActivityState = nil
         outputText = ""
         strippedOutputText = ""
+        if #available(iOS 16.1, *) {
+            RemoteLiveActivityManager.shared.update(with: nil)
+        }
         if !autoReconnect {
             lastError = nil
             pendingApprovals = []
+            pendingURLActions.removeAll()
         }
     }
 
@@ -188,6 +195,16 @@ final class RemoteClient {
             metadata: ["request_id": requestID]
         )
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [requestID])
+    }
+
+    func handle(url: URL) {
+        guard let action = RemoteActivityURLAction(url: url) else { return }
+        if !performURLAction(action) {
+            pendingURLActions.append(action)
+            if webSocket == nil, pairingInfo != nil {
+                connect()
+            }
+        }
     }
 
     // MARK: - Receive Loop
@@ -348,7 +365,10 @@ final class RemoteClient {
             status = "Session ready"
             lastError = nil
             cancelHandshakeTasks()
+            flushPendingURLActions()
         case .tabList:         handleTabList(payload)
+        case .activityState:   handleActivityState(payload)
+        case .activityCleared: clearActivityState()
         case .output:          appendOutput(payload, tabID: frame.tabID)
         case .snapshot:        storeSnapshot(payload, tabID: frame.tabID)
         case .approvalRequest: handleApprovalRequest(payload)
@@ -447,6 +467,26 @@ final class RemoteClient {
         outputByTabID = outputByTabID.filter { visibleTabIDs.contains($0.key) }
         strippedOutputByTabID = strippedOutputByTabID.filter { visibleTabIDs.contains($0.key) }
         refreshVisibleOutput()
+        flushPendingURLActions()
+    }
+
+    private func handleActivityState(_ data: Data) {
+        do {
+            let state = try JSONDecoder().decode(RemoteActivityState.self, from: data)
+            liveActivityState = state
+            if #available(iOS 16.1, *) {
+                RemoteLiveActivityManager.shared.update(with: state)
+            }
+        } catch {
+            log.error("handleActivityState: decode failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func clearActivityState() {
+        liveActivityState = nil
+        if #available(iOS 16.1, *) {
+            RemoteLiveActivityManager.shared.update(with: nil)
+        }
     }
 
     private func appendOutput(_ data: Data, tabID: UInt32) {
@@ -606,6 +646,50 @@ final class RemoteClient {
     private func nextSeq() -> UInt64 {
         defer { seqCounter &+= 1 }
         return seqCounter
+    }
+
+    private func performURLAction(_ action: RemoteActivityURLAction) -> Bool {
+        guard crypto != nil else { return false }
+
+        switch action {
+        case .open(let tabID):
+            if let tabID {
+                guard tabs.contains(where: { $0.tabID == tabID }) else { return false }
+                switchTab(tabID)
+            }
+            return true
+        case .switchTab(let tabID):
+            guard tabs.contains(where: { $0.tabID == tabID }) else { return false }
+            switchTab(tabID)
+            return true
+        case .approve(let requestID, let tabID):
+            if let tabID {
+                guard tabs.contains(where: { $0.tabID == tabID }) else { return false }
+                switchTab(tabID)
+            }
+            guard pendingApprovals.contains(where: { $0.requestID == requestID }) else { return false }
+            respondToApproval(requestID: requestID, approved: true)
+            return true
+        case .deny(let requestID, let tabID):
+            if let tabID {
+                guard tabs.contains(where: { $0.tabID == tabID }) else { return false }
+                switchTab(tabID)
+            }
+            guard pendingApprovals.contains(where: { $0.requestID == requestID }) else { return false }
+            respondToApproval(requestID: requestID, approved: false)
+            return true
+        }
+    }
+
+    private func flushPendingURLActions() {
+        guard crypto != nil, !pendingURLActions.isEmpty else { return }
+
+        let queued = pendingURLActions
+        pendingURLActions.removeAll(keepingCapacity: true)
+
+        for action in queued where !performURLAction(action) {
+            pendingURLActions.append(action)
+        }
     }
 
     // MARK: - Key Management

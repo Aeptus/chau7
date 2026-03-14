@@ -1,5 +1,6 @@
 import Foundation
 import os.log
+import Chau7Core
 
 /// ProxyIPCServer listens on a Unix socket for real-time API call notifications from the proxy.
 /// When the proxy completes forwarding an API call, it sends a JSON message to this server,
@@ -34,10 +35,8 @@ public final class ProxyIPCServer: ObservableObject {
 
     /// Socket path
     private var socketPath: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        return appSupport
-            .appendingPathComponent("Chau7/Proxy")
+        RuntimeIsolation.appSupportDirectory(named: "Chau7")
+            .appendingPathComponent("Proxy", isDirectory: true)
             .appendingPathComponent("proxy.sock")
     }
 
@@ -57,13 +56,12 @@ public final class ProxyIPCServer: ObservableObject {
             close(socketFD)
         }
         // Compute socket path inline to avoid actor isolation issue
-        if let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
-            let path = appSupport
-                .appendingPathComponent("Chau7/Proxy")
+        unlink(
+            RuntimeIsolation.appSupportDirectory(named: "Chau7")
+                .appendingPathComponent("Proxy", isDirectory: true)
                 .appendingPathComponent("proxy.sock")
                 .path
-            unlink(path)
-        }
+        )
     }
 
     // MARK: - Public Interface

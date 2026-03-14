@@ -34,8 +34,8 @@ enum CTOFlagManager {
 
     /// Base directory for CTO flag files.
     private static let flagDirectory: URL = {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return home.appendingPathComponent(".chau7/cto_active", isDirectory: true)
+        RuntimeIsolation.chau7Directory()
+            .appendingPathComponent("cto_active", isDirectory: true)
     }()
 
     // MARK: - Flag File CRUD

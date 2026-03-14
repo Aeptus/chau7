@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Chau7Core
 
 // MARK: - Debug Context
 
@@ -296,8 +297,8 @@ struct StateSnapshot: Codable {
         formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
         let filename = "chau7-snapshot-\(formatter.string(from: timestamp)).json"
 
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".chau7/snapshots")
+        let dir = RuntimeIsolation.chau7Directory()
+            .appendingPathComponent("snapshots", isDirectory: true)
 
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -360,8 +361,8 @@ final class BugReporter {
         formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
         let filename = "chau7-bug-report-\(formatter.string(from: Date())).md"
 
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".chau7/reports")
+        let dir = RuntimeIsolation.chau7Directory()
+            .appendingPathComponent("reports", isDirectory: true)
 
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -468,8 +469,8 @@ final class BugReporter {
 
     /// Opens Finder at the reports directory
     func openReportsFolder() {
-        let dir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".chau7/reports")
+        let dir = RuntimeIsolation.chau7Directory()
+            .appendingPathComponent("reports", isDirectory: true)
         NSWorkspace.shared.open(dir)
     }
 }

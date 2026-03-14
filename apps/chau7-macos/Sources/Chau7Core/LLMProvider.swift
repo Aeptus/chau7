@@ -94,7 +94,9 @@ public struct LLMProviderConfig: Codable, Equatable, Sendable {
 
     /// Keychain service identifier for this provider's API key
     public var keychainService: String {
-        "com.chau7.llm.\(provider.rawValue).apikey"
+        RuntimeIsolation.keychainServiceName(
+            base: "com.chau7.llm.\(provider.rawValue).apikey"
+        )
     }
 
     /// Validates that the configuration has the minimum required fields

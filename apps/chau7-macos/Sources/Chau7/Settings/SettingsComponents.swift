@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Chau7Core
 
 // MARK: - Settings Layout Constants
 
@@ -306,7 +307,7 @@ struct SettingsDirectoryField: View {
 
     private func currentDirectoryURL() -> URL? {
         guard !text.isEmpty else { return nil }
-        let expanded = (text as NSString).expandingTildeInPath
+        let expanded = RuntimeIsolation.expandTilde(in: text)
         var isDirectory: ObjCBool = false
         if FileManager.default.fileExists(atPath: expanded, isDirectory: &isDirectory), isDirectory.boolValue {
             return URL(fileURLWithPath: expanded)
@@ -315,7 +316,7 @@ struct SettingsDirectoryField: View {
     }
 
     private func compactPath(_ path: String) -> String {
-        let home = NSHomeDirectory()
+        let home = RuntimeIsolation.homePath()
         if path == home {
             return "~"
         }

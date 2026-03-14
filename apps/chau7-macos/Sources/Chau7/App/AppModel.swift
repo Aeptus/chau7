@@ -326,13 +326,14 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     override init() {
         Log.configure()
         let defaults = UserDefaults.standard
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        let home = RuntimeIsolation.homeDirectory()
 
         // Default paths
         let defaultLogPath = home.appendingPathComponent(".ai-events.log").path
         let defaultCodexHistoryPath = home.appendingPathComponent(".codex/history.jsonl").path
         let defaultClaudeHistoryPath = home.appendingPathComponent(".claude/history.jsonl").path
-        let defaultTerminalLogDir = home.appendingPathComponent("Library/Logs/Chau7").path
+        let defaultTerminalLogDir = RuntimeIsolation.logsDirectory()
+            .appendingPathComponent("Chau7", isDirectory: true).path
         let defaultCodexTerminalPath = "\(defaultTerminalLogDir)/codex-pty.log"
         let defaultClaudeTerminalPath = "\(defaultTerminalLogDir)/claude-pty.log"
 
@@ -413,13 +414,20 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
     func bootstrap() {
         Log.info("Bootstrapping app model.")
+        if RuntimeIsolation.isIsolatedTestMode() {
+            setNotificationState(
+                .unavailableNotBundled,
+                warning: "Notifications are disabled in isolated test mode."
+            )
+            Log.info("Isolated test mode - notifications disabled.")
+        }
         // Only use UNUserNotificationCenter if running as a proper app bundle
         // This allows running from command line for testing
-        if Bundle.main.bundleIdentifier != nil {
+        if Bundle.main.bundleIdentifier != nil, !RuntimeIsolation.isIsolatedTestMode() {
             UNUserNotificationCenter.current().delegate = self
             requestNotificationPermission()
             refreshNotificationStatus()
-        } else {
+        } else if Bundle.main.bundleIdentifier == nil {
             setNotificationState(
                 .unavailableNotBundled,
                 warning: L("settings.notifications.permission.warning.notBundled", "Notifications require the app bundle. Build and launch Chau7.app.")
@@ -612,6 +620,14 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             Log.warn("Not running as bundle - cannot refresh notification status.")
             return
         }
+        guard !RuntimeIsolation.isIsolatedTestMode() else {
+            setNotificationState(
+                .unavailableNotBundled,
+                warning: "Notifications are disabled in isolated test mode."
+            )
+            Log.info("Isolated test mode - skipping notification status refresh.")
+            return
+        }
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { [weak self] settings in
             let permissionState = NotificationPermissionState.from(settings.authorizationStatus)
@@ -647,6 +663,14 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 warning: L("settings.notifications.permission.warning.notBundled", "Notifications require the app bundle. Build and launch Chau7.app.")
             )
             Log.warn("Not running as bundle - skipping permission request.")
+            return
+        }
+        guard !RuntimeIsolation.isIsolatedTestMode() else {
+            setNotificationState(
+                .unavailableNotBundled,
+                warning: "Notifications are disabled in isolated test mode."
+            )
+            Log.info("Isolated test mode - skipping permission request.")
             return
         }
 
