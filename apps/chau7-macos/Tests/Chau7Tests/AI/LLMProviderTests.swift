@@ -83,6 +83,24 @@ final class LLMProviderConfigTests: XCTestCase {
         XCTAssertEqual(config.keychainService, "com.chau7.llm.anthropic.apikey")
     }
 
+    func testKeychainServiceUsesIsolationPrefixWhenConfigured() {
+        let env = ["CHAU7_KEYCHAIN_SERVICE_PREFIX": "com.chau7.isolated"]
+        let service = RuntimeIsolation.keychainServiceName(
+            base: "com.chau7.llm.anthropic.apikey",
+            environment: env
+        )
+        XCTAssertEqual(service, "com.chau7.isolated.com.chau7.llm.anthropic.apikey")
+    }
+
+    func testKeychainServiceIgnoresBlankIsolationPrefix() {
+        let env = ["CHAU7_KEYCHAIN_SERVICE_PREFIX": "  "]
+        let service = RuntimeIsolation.keychainServiceName(
+            base: "com.chau7.llm.anthropic.apikey",
+            environment: env
+        )
+        XCTAssertEqual(service, "com.chau7.llm.anthropic.apikey")
+    }
+
     func testIsValidWithAPIKey() {
         let config = LLMProviderConfig(provider: .openai, apiKey: "sk-test")
         XCTAssertTrue(config.isValid)

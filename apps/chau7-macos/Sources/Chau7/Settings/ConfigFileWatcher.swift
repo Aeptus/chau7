@@ -25,7 +25,7 @@ final class ConfigFileWatcher: ObservableObject {
     private var fileDescriptor: Int32 = -1
 
     private var globalConfigPath: String {
-        NSHomeDirectory() + "/.chau7/config.toml"
+        RuntimeIsolation.pathInHome(".chau7/config.toml")
     }
 
     private init() {

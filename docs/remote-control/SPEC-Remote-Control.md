@@ -100,6 +100,8 @@ Type codes (u8):
 - `0x40 PAIRING_INFO` (local IPC, JSON)
 - `0x41 SESSION_STATUS` (local IPC, JSON)
 - `0x42 REMOTE_TELEMETRY` (encrypted over relay, local IPC after relay client decrypts)
+- `0x12 ACTIVITY_STATE` (encrypted, JSON)
+- `0x13 ACTIVITY_CLEARED` (encrypted, JSON)
 
 JSON payloads are UTF-8.
 
@@ -158,6 +160,45 @@ Tab IDs are session-scoped `u32` assigned by macOS.
 ### TAB_SWITCH (JSON)
 ```
 { "tab_id": 2 }
+```
+
+### ACTIVITY_STATE (JSON)
+Distilled remote AI task state selected by macOS for Live Activity rendering on iOS.
+
+```
+{
+  "activity_id": "tab-2-session-abc123",
+  "tab_id": 2,
+  "tab_title": "Claude",
+  "tool_name": "Claude",
+  "project_name": "chau7-macos",
+  "session_id": "abc123",
+  "status": "running|waiting_input|completed|failed|idle",
+  "headline": "Claude is editing files",
+  "detail": "Needs approval to continue",
+  "started_at": "ISO8601",
+  "updated_at": "ISO8601",
+  "priority": 100,
+  "is_action_required": true,
+  "approval": {
+    "request_id": "uuid",
+    "title": "Approve command",
+    "message": "Run swift test?",
+    "allow_label": "Approve",
+    "deny_label": "Deny"
+  }
+}
+```
+
+Rules:
+- macOS computes this from internal AI events and exports only the single highest-priority activity.
+- `waiting_input` wins over running work.
+- `completed` and `failed` are transient terminal states for short-lived Live Activity end states.
+- iOS must treat this payload as authoritative and must not re-run AI state inference.
+
+### ACTIVITY_CLEARED (JSON)
+```
+{ "reason": "idle|disconnect|selection_changed|activity_ended" }
 ```
 
 ### OUTPUT (bytes)

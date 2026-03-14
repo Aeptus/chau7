@@ -1642,7 +1642,7 @@ final class FeatureSettings: ObservableObject {
         didSet {
             let trimmed = defaultStartDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
             let normalized = trimmed.isEmpty
-                ? FileManager.default.homeDirectoryForCurrentUser.path
+                ? RuntimeIsolation.homePath()
                 : trimmed
             if defaultStartDirectory != normalized {
                 defaultStartDirectory = normalized
@@ -2014,7 +2014,7 @@ final class FeatureSettings: ObservableObject {
 
     private init() {
         let defaults = UserDefaults.standard
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = RuntimeIsolation.homePath()
 
         // One-time migration: RTK → CTO UserDefaults keys
         if !defaults.bool(forKey: "cto.migrated.v1") {
@@ -2922,7 +2922,7 @@ final class FeatureSettings: ObservableObject {
     // MARK: - Reset to Defaults (NEW)
 
     func resetAllToDefaults() {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = RuntimeIsolation.homePath()
 
         // Font
         fontFamily = "SF Mono"
@@ -3061,7 +3061,7 @@ final class FeatureSettings: ObservableObject {
         dangerousOutputHighlightIdleDelayMs = 500
         dangerousOutputHighlightMaxIntervalMs = 2000
         dangerousOutputHighlightLowPowerEnabled = false
-        defaultStartDirectory = FileManager.default.homeDirectoryForCurrentUser.path
+        defaultStartDirectory = RuntimeIsolation.homePath()
         shellType = .system
         customShellPath = ""
         startupCommand = ""
@@ -3099,11 +3099,15 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - iCloud Sync (NEW)
 
-    private let iCloudKey = "com.chau7.settings"
+    private var iCloudKey: String {
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.chau7"
+        return "\(bundleID).settings"
+    }
     private var iCloudSyncWorkItem: DispatchWorkItem?
     private let iCloudSyncDebounceInterval: TimeInterval = 2.0 // 2 seconds debounce
 
     func syncToiCloud() {
+        guard !RuntimeIsolation.isIsolatedTestMode() else { return }
         guard iCloudSyncEnabled else { return }
 
         // Cancel previous pending sync
@@ -3124,6 +3128,7 @@ final class FeatureSettings: ObservableObject {
 
     /// Force immediate sync without debouncing (e.g., on app quit)
     func forceSyncToiCloud() {
+        guard !RuntimeIsolation.isIsolatedTestMode() else { return }
         guard iCloudSyncEnabled else { return }
         iCloudSyncWorkItem?.cancel()
         guard let data = exportSettings() else { return }
@@ -3133,6 +3138,7 @@ final class FeatureSettings: ObservableObject {
     }
 
     func syncFromiCloud() {
+        guard !RuntimeIsolation.isIsolatedTestMode() else { return }
         guard iCloudSyncEnabled else { return }
         guard let data = NSUbiquitousKeyValueStore.default.data(forKey: iCloudKey) else {
             Log.info("No iCloud settings found")
@@ -3146,6 +3152,7 @@ final class FeatureSettings: ObservableObject {
     }
 
     func setupiCloudSync() {
+        guard !RuntimeIsolation.isIsolatedTestMode() else { return }
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(iCloudSettingsChanged),
@@ -3156,6 +3163,7 @@ final class FeatureSettings: ObservableObject {
     }
 
     @objc private func iCloudSettingsChanged(_ notification: Notification) {
+        guard !RuntimeIsolation.isIsolatedTestMode() else { return }
         guard iCloudSyncEnabled else { return }
         DispatchQueue.main.async { [weak self] in
             self?.syncFromiCloud()
@@ -3204,7 +3212,7 @@ extension FeatureSettings {
     private static let activeProfileKey = "settings.activeProfile"
 
     static var defaultExportableSettings: ExportableSettings {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = RuntimeIsolation.homePath()
         return ExportableSettings(
             fontFamily: "SF Mono",
             fontSize: 11,

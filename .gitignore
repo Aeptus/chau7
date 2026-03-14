@@ -3,7 +3,15 @@
 build/
 .claude/
 .swiftpm/
+/.playwright-mcp/
+/*.png
+/*.jpg
+/*.jpeg
+*.xcuserstate
+**/xcuserdata/
 apps/chau7-macos/rust/target/
 apps/chau7-macos/rust/chau7_parse/target/
 apps/chau7-macos/rust/chau7_terminal/target/
 apps/chau7-macos/Libraries/
+services/chau7-relay/node_modules/
+services/chau7-remote/chau7-remote

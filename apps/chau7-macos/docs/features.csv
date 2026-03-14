@@ -141,6 +141,7 @@ Notifications,Command Idle Detection,Notify when a command has been idle beyond 
 Notifications,Auto Tab Styling,Tabs change color on events — auto-clear after configurable timeout,Shipped,No
 Notifications,Rate Limiting,Prevent notification spam with configurable thresholds,Shipped,No
 Notifications,Per-Trigger Control,Enable/disable and customize actions for each event type individually,Shipped,No
+Notifications,Isolated Notification Suppression,Isolated test mode disables notification-center integration to avoid side effects and startup crashes,Shipped,Yes
 SSH & Profiles,SSH Connection Manager,"Save hosts, ports, identity files, jump hosts (ProxyJump) — all in one place",Shipped,No
 SSH & Profiles,Auto-Import from ~/.ssh/config,Watches SSH config and imports new hosts automatically,Shipped,No
 SSH & Profiles,Profile Auto-Switching,"Settings change automatically based on directory, SSH host, or environment variables",Shipped,Yes
@@ -149,6 +150,8 @@ Remote & Collaboration,Remote Terminal Viewing,Share a read-only view of your te
 Remote & Collaboration,Viewer Approval Flow,Approve or deny viewer connections — you control access,Experimental,No
 Remote & Collaboration,Cloudflare Relay,Cloudflare Workers relay — no port forwarding required,Experimental,Yes
 Remote & Collaboration,Tmux Integration,Map tmux windows and panes to Chau7 tabs seamlessly,Experimental,Yes
+Remote & Collaboration,Remote Activity Projection,macOS reduces AI event streams into one remote activity state for clients,Shipped,Yes
+Remote & Collaboration,iPhone Live Activity Support,Chau7 Remote renders the current AI task in a native Live Activity and Dynamic Island,Shipped,Yes
 Remote & Collaboration,Session Recording,Record terminal sessions with timestamps for replay,Shipped,No
 Remote & Collaboration,Timeline Scrubber,Scrub through recorded sessions like a video,Shipped,No
 Appearance,Full Color Schemes,"16 ANSI colors + background, foreground, cursor, selection — fully customizable",Shipped,No
@@ -165,6 +168,7 @@ Settings,Per-Folder Config,.chau7/config.toml in any repo — project-specific s
 Settings,Config File Watcher,Auto-reload on config changes — no restart needed,Shipped,No
 Settings,iCloud Sync,Optional iCloud sync of settings across devices,Shipped,No
 Settings,100+ Feature Flags,Fine-grained toggle control over every behavior,Shipped,No
+Settings,Isolated Test App Build,Build a separate Chau7 Test.app with isolated storage and keychain namespaces,Shipped,Yes
 Migration,Terminal.app Import,Auto-detect and import existing Terminal.app profiles,Shipped,No
 Migration,iTerm2 Import,Import iTerm2 profiles and color schemes,Shipped,No
 Migration,Guided First-Run Setup,Walk through initial configuration on first launch,Shipped,No

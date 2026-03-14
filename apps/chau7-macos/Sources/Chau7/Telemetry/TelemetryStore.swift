@@ -11,9 +11,10 @@ final class TelemetryStore {
     private let queue = DispatchQueue(label: "com.chau7.telemetry.store")
 
     private static var dbPath: String {
-        let dir = NSHomeDirectory() + "/.chau7/telemetry"
-        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        return dir + "/runs.db"
+        let dir = RuntimeIsolation.chau7Directory()
+            .appendingPathComponent("telemetry", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("runs.db").path
     }
 
     private init() {

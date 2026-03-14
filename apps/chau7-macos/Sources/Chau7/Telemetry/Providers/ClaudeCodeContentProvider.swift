@@ -157,8 +157,7 @@ final class ClaudeCodeContentProvider: RunContentProvider {
     /// Claude Code hashes project paths for directory names.
     /// Format: ~/.claude/projects/<hashed-path>/<session-id>/
     private func resolveProjectDir(cwd: String) -> URL? {
-        let claudeProjects = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent(".claude/projects")
+        let claudeProjects = RuntimeIsolation.urlInHome(".claude/projects")
 
         // Claude uses the path with / replaced by - and leading -
         // e.g., /Users/chris/Downloads/Chau7 -> -Users-chris-Downloads-Chau7

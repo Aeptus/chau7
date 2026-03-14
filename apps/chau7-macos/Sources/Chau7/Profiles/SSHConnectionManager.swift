@@ -54,7 +54,7 @@ struct SSHConnection: Identifiable, Codable, Equatable, Hashable {
         }
 
         if !identityFile.isEmpty {
-            let expanded = (identityFile as NSString).expandingTildeInPath
+            let expanded = RuntimeIsolation.expandTilde(in: identityFile)
             // Use proper shell escaping for identity file path
             parts.append("-i \(ShellEscaping.escapePath(expanded))")
         }
@@ -157,7 +157,7 @@ final class SSHConnectionManager: ObservableObject {
 
     /// Import from ~/.ssh/config
     func importFromSSHConfig() -> Int {
-        let configPath = (("~/.ssh/config" as NSString).expandingTildeInPath)
+        let configPath = RuntimeIsolation.expandTilde(in: "~/.ssh/config")
         guard let content = FileOperations.readString(from: configPath) else {
             return 0
         }

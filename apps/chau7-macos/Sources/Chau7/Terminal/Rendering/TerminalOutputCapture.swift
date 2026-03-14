@@ -1,4 +1,5 @@
 import Foundation
+import Chau7Core
 
 // MARK: - Terminal Output Capture
 
@@ -39,8 +40,8 @@ final class TerminalOutputCapture {
         let enabled = raw == "1" || raw?.lowercased() == "true"
         self.isEnabled = enabled
 
-        let defaultDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/Chau7").path
+        let defaultDir = RuntimeIsolation.logsDirectory()
+            .appendingPathComponent("Chau7", isDirectory: true).path
         let defaultPath = "\(defaultDir)/pty-capture.log"
         self.logPath = env["CHAU7_PTY_DUMP_PATH"] ?? defaultPath
 

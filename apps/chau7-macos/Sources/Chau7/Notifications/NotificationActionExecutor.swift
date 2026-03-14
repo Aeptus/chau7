@@ -289,7 +289,7 @@ final class NotificationActionExecutor {
         process.environment = ProcessInfo.processInfo.environment.merging(ctx.environmentVariables()) { _, new in new }
 
         if let dir = workingDir, !dir.isEmpty {
-            process.currentDirectoryURL = URL(fileURLWithPath: (dir as NSString).expandingTildeInPath)
+            process.currentDirectoryURL = URL(fileURLWithPath: RuntimeIsolation.expandTilde(in: dir))
         }
 
         let pipe = Pipe()
@@ -545,7 +545,7 @@ final class NotificationActionExecutor {
         let services = ctx.configValue("services") ?? ""
         let dockerComposePath = ctx.configValue("dockerComposePath") ?? "/usr/local/bin/docker-compose"
 
-        let expandedPath = (composePath as NSString).expandingTildeInPath
+        let expandedPath = RuntimeIsolation.expandTilde(in: composePath)
         let serviceArgs = services.isEmpty ? [] : services.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
 
         var args = ["-f", expandedPath]
@@ -624,7 +624,7 @@ final class NotificationActionExecutor {
 
         let format = ctx.configValue("format") ?? "text"
         let template = ctx.configValue("template")
-        let expandedPath = (filePath as NSString).expandingTildeInPath
+        let expandedPath = RuntimeIsolation.expandTilde(in: filePath)
 
         let line: String
         switch format {
@@ -709,7 +709,7 @@ final class NotificationActionExecutor {
 
         let workingDir: String?
         if let path = repoPath, !path.isEmpty {
-            workingDir = (path as NSString).expandingTildeInPath
+            workingDir = RuntimeIsolation.expandTilde(in: path)
         } else {
             workingDir = nil
         }
@@ -868,7 +868,7 @@ final class NotificationActionExecutor {
         switch service {
         case "file":
             let filePath = ctx.configValue("filePath") ?? "~/time-log.csv"
-            let expandedPath = (filePath as NSString).expandingTildeInPath
+            let expandedPath = RuntimeIsolation.expandTilde(in: filePath)
             let entry = "\(ctx.event.ts),\"\(description.replacingOccurrences(of: "\"", with: "\"\""))\""
 
             do {

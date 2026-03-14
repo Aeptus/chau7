@@ -1,4 +1,5 @@
 import SwiftUI
+import Chau7Core
 
 /// Settings view for API Analytics proxy configuration
 struct ProxySettingsView: View {
@@ -215,11 +216,8 @@ struct ProxySettingsView: View {
     }
 
     private func openDatabaseFolder() {
-        guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            Log.error("Could not locate Application Support directory")
-            return
-        }
-        let path = appSupport.appendingPathComponent("Chau7/proxy")
+        let path = RuntimeIsolation.appSupportDirectory(named: "Chau7")
+            .appendingPathComponent("proxy", isDirectory: true)
 
         // Create directory if it doesn't exist
         try? FileManager.default.createDirectory(at: path, withIntermediateDirectories: true)
@@ -228,11 +226,9 @@ struct ProxySettingsView: View {
     }
 
     private func clearAnalyticsData() {
-        guard let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            Log.error("Could not locate Application Support directory")
-            return
-        }
-        let dbPath = appSupport.appendingPathComponent("Chau7/proxy/analytics.db")
+        let dbPath = RuntimeIsolation.appSupportDirectory(named: "Chau7")
+            .appendingPathComponent("proxy", isDirectory: true)
+            .appendingPathComponent("analytics.db")
 
         do {
             if FileManager.default.fileExists(atPath: dbPath.path) {

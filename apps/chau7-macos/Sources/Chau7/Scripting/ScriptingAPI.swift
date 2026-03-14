@@ -40,8 +40,8 @@ final class ScriptingAPI: ObservableObject {
     private var startTime: Date?
 
     private var socketPath: String {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return support.appendingPathComponent("Chau7/scripting.sock").path
+        RuntimeIsolation.appSupportDirectory(named: "Chau7")
+            .appendingPathComponent("scripting.sock").path
     }
 
     private init() {

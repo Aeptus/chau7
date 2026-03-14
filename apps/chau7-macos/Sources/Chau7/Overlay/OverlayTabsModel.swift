@@ -1029,7 +1029,7 @@ final class OverlayTabsModel: ObservableObject {
     private static func normalizedSessionDirectory(_ directory: String) -> String {
         let trimmed = directory.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
-        let expanded = NSString(string: trimmed).expandingTildeInPath
+        let expanded = RuntimeIsolation.expandTilde(in: trimmed)
         return URL(fileURLWithPath: expanded).standardized.path
     }
 
@@ -1054,8 +1054,7 @@ final class OverlayTabsModel: ObservableObject {
         claimedSessionIds: Set<String> = []
     ) -> String? {
         let fm = FileManager.default
-        let sessionsDir = fm.homeDirectoryForCurrentUser
-            .appendingPathComponent(".codex/sessions")
+        let sessionsDir = RuntimeIsolation.urlInHome(".codex/sessions", fileManager: fm)
 
         // Filter helper: only include entries that look like date components (digits only)
         let isDateComponent = { (name: String) -> Bool in
@@ -1396,10 +1395,7 @@ final class OverlayTabsModel: ObservableObject {
     }
 
     private static func tabStateBackupRootURL() -> URL? {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        return base
-            .appendingPathComponent("Chau7", isDirectory: true)
+        RuntimeIsolation.appSupportDirectory(named: "Chau7")
             .appendingPathComponent("TabStateBackups", isDirectory: true)
     }
 

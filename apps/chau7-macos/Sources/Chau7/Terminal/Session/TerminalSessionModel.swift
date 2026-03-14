@@ -949,8 +949,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         if !trimmed.isEmpty {
             return trimmed
         }
-        return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".ai-events.log").path
+        return RuntimeIsolation.pathInHome(".ai-events.log")
     }
 
     private func terminalLogPath(for toolName: String) -> String {
@@ -958,8 +957,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         if let appModel, let path = appModel.terminalLogPath(forToolName: trimmed), !path.isEmpty {
             return path
         }
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        let logDir = home.appendingPathComponent("Library/Logs/Chau7").path
+        let logDir = RuntimeIsolation.logsDirectory()
+            .appendingPathComponent("Chau7", isDirectory: true).path
         let slug = sanitizeToolName(trimmed)
         return "\(logDir)/\(slug)-pty.log"
     }
@@ -1421,14 +1420,13 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
         var target: String
         if targetRaw.isEmpty {
-            target = FileManager.default.homeDirectoryForCurrentUser.path
+            target = RuntimeIsolation.homePath()
         } else {
             target = targetRaw
         }
 
         if target.hasPrefix("~") {
-            let home = FileManager.default.homeDirectoryForCurrentUser.path
-            target = home + target.dropFirst()
+            target = RuntimeIsolation.expandTilde(in: target)
         }
 
         let resolved: String
@@ -1952,7 +1950,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     /// Call this at app launch to create shell integration files for all supported shells
     /// This runs shell integration at startup (not as a command) so it won't be in history
     static func preInitialize() {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = RuntimeIsolation.homePath()
 
         // Create .zshrc for zsh
         let zshrc = """
@@ -2498,11 +2496,11 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     // MARK: - Shell helpers
 
     static func resolveStartDirectory(_ rawValue: String) -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = RuntimeIsolation.homePath()
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return home }
 
-        let expanded = (trimmed as NSString).expandingTildeInPath
+        let expanded = RuntimeIsolation.expandTilde(in: trimmed)
         let resolved: String
         if expanded.hasPrefix("/") {
             resolved = expanded
@@ -3188,7 +3186,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     }
 
     func displayPath() -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = RuntimeIsolation.homePath()
         if currentDirectory == home {
             return "~"
         }

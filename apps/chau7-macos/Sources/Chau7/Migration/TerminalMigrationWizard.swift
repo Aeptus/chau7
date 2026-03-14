@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Chau7Core
 
 /// Imports profiles from Terminal.app and iTerm2 into Chau7.
 /// Reads Terminal.app preferences from ~/Library/Preferences/com.apple.Terminal.plist
@@ -37,7 +38,7 @@ final class TerminalMigrationWizard: ObservableObject {
     // MARK: - Terminal.app Import
 
     private func scanTerminalApp() -> [ImportableProfile] {
-        let plistPath = NSHomeDirectory() + "/Library/Preferences/com.apple.Terminal.plist"
+        let plistPath = RuntimeIsolation.pathInHome("Library/Preferences/com.apple.Terminal.plist")
         guard let plist = NSDictionary(contentsOfFile: plistPath) as? [String: Any] else {
             Log.info("TerminalMigrationWizard: no Terminal.app plist found")
             return []
@@ -92,7 +93,7 @@ final class TerminalMigrationWizard: ObservableObject {
     // MARK: - iTerm2 Import
 
     private func scanITerm2() -> [ImportableProfile] {
-        let plistPath = NSHomeDirectory() + "/Library/Preferences/com.googlecode.iterm2.plist"
+        let plistPath = RuntimeIsolation.pathInHome("Library/Preferences/com.googlecode.iterm2.plist")
         guard let plist = NSDictionary(contentsOfFile: plistPath) as? [String: Any],
               let bookmarks = plist["New Bookmarks"] as? [[String: Any]] else {
             Log.info("TerminalMigrationWizard: no iTerm2 plist found")

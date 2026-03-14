@@ -21,8 +21,8 @@ final class SessionRecorder: ObservableObject {
     private var totalBytes = 0
 
     private var recordingsDir: URL {
-        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return support.appendingPathComponent("Chau7/recordings")
+        RuntimeIsolation.appSupportDirectory(named: "Chau7")
+            .appendingPathComponent("recordings", isDirectory: true)
     }
 
     init() {

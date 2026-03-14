@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Chau7Core
 
 // MARK: - iTerm2 Image Protocol Handler
 
@@ -335,7 +336,7 @@ enum ImgcatScript {
 
     /// Install the imgcat script to ~/bin or /usr/local/bin
     static func install(to directory: String = "~/bin") -> Bool {
-        let expandedPath = (directory as NSString).expandingTildeInPath
+        let expandedPath = RuntimeIsolation.expandTilde(in: directory)
         let scriptPath = (expandedPath as NSString).appendingPathComponent("imgcat")
 
         do {

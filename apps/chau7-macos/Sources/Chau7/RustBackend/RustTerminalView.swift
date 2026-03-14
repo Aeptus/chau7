@@ -3,6 +3,7 @@ import Carbon
 import Darwin
 import QuartzCore
 import CoreText
+import Chau7Core
 
 // MARK: - CVDisplayLink Weak Reference Box
 
@@ -1920,7 +1921,7 @@ final class RustTerminalView: NSView {
     var onShellStartupSlow: (() -> Void)?
 
     /// Current working directory
-    var currentDirectory: String = FileManager.default.homeDirectoryForCurrentUser.path
+    var currentDirectory: String = RuntimeIsolation.homePath()
 
     /// Command history navigation
     var tabIdentifier = ""

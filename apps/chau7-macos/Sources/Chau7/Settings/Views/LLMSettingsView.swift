@@ -92,7 +92,7 @@ struct LLMSettingsView: View {
     // MARK: - Load/Save
 
     private func loadProviderSettings() {
-        let service = "com.chau7.llm.\(selectedProvider.rawValue).apikey"
+        let service = LLMProviderConfig(provider: selectedProvider).keychainService
         apiKeyInput = KeychainHelper.load(service: service, account: "apikey") ?? ""
         endpointInput = selectedProvider.defaultEndpoint
         modelInput = selectedProvider.defaultModel
@@ -100,7 +100,7 @@ struct LLMSettingsView: View {
     }
 
     private func saveAPIKey() {
-        let service = "com.chau7.llm.\(selectedProvider.rawValue).apikey"
+        let service = LLMProviderConfig(provider: selectedProvider).keychainService
         KeychainHelper.save(service: service, account: "apikey", value: apiKeyInput)
     }
 

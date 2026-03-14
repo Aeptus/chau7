@@ -1,6 +1,7 @@
 import Foundation
 import os.log
 import Darwin
+import Chau7Core
 
 /// ProxyManager handles the lifecycle of the chau7-proxy Go binary.
 /// It starts the proxy when API analytics is enabled and stops it when disabled.
@@ -69,9 +70,8 @@ public final class ProxyManager: ObservableObject {
 
     /// Directory for proxy data (database, socket)
     private var dataDirectory: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        let chau7Dir = appSupport.appendingPathComponent("Chau7/Proxy")
+        let chau7Dir = RuntimeIsolation.appSupportDirectory(named: "Chau7")
+            .appendingPathComponent("Proxy", isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: chau7Dir, withIntermediateDirectories: true)
         } catch {

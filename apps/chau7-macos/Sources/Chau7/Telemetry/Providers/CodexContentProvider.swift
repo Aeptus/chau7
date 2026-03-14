@@ -156,7 +156,7 @@ final class CodexContentProvider: RunContentProvider {
     // MARK: - SQLite Fallback
 
     private func extractFromSQLite(runID: String, sessionID: String) -> ExtractedRunContent? {
-        let dbPath = NSHomeDirectory() + "/.codex/state_5.sqlite"
+        let dbPath = RuntimeIsolation.pathInHome(".codex/state_5.sqlite")
         guard FileManager.default.fileExists(atPath: dbPath) else { return nil }
 
         var db: OpaquePointer?
@@ -207,8 +207,7 @@ final class CodexContentProvider: RunContentProvider {
 
     /// Codex rollout files: ~/.codex/sessions/<year>/<month>/<day>/rollout-<ts>-<id>.jsonl
     private func findRolloutFile(sessionID: String, startedAt: Date) -> URL? {
-        let sessionsDir = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent(".codex/sessions")
+        let sessionsDir = RuntimeIsolation.urlInHome(".codex/sessions")
 
         let cal = Calendar.current
         let year = String(format: "%04d", cal.component(.year, from: startedAt))

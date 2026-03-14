@@ -15,7 +15,7 @@ final class SharedSSHProfileManager: ObservableObject {
     private var fileDescriptor: Int32 = -1
 
     private var sshConfigPath: String {
-        NSHomeDirectory() + "/.ssh/config"
+        RuntimeIsolation.pathInHome(".ssh/config")
     }
 
     private init() {

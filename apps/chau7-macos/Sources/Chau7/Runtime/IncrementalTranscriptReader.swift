@@ -104,8 +104,7 @@ final class IncrementalTranscriptReader {
     // MARK: - Path Resolution (mirrors ClaudeCodeContentProvider)
 
     private static func resolveProjectDir(cwd: String) -> URL? {
-        let claudeProjects = URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent(".claude/projects")
+        let claudeProjects = RuntimeIsolation.urlInHome(".claude/projects")
 
         guard let entries = try? FileManager.default.contentsOfDirectory(
             at: claudeProjects, includingPropertiesForKeys: nil

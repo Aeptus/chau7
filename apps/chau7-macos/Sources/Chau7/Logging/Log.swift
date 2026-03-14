@@ -1,5 +1,6 @@
 import Foundation
 import Darwin
+import Chau7Core
 
 enum Log {
     static var sink: ((String) -> Void)?
@@ -49,8 +50,8 @@ enum Log {
         isConfigured = true
 
         let envPath = EnvVars.get(EnvVars.logFile, legacy: EnvVars.legacyLogFile)
-        let defaultPath = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Logs/Chau7.log").path
+        let defaultPath = RuntimeIsolation.logsDirectory()
+            .appendingPathComponent("Chau7.log").path
         let path = envPath ?? defaultPath
         filePathValue = path
 

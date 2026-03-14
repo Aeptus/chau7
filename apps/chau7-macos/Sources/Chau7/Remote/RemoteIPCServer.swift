@@ -22,10 +22,7 @@ final class RemoteIPCServer: ObservableObject {
     private let maxFrameSize = 5 * 1024 * 1024
 
     private var socketPath: URL {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        return appSupport
-            .appendingPathComponent("Chau7")
+        RuntimeIsolation.appSupportDirectory(named: "Chau7")
             .appendingPathComponent("remote.sock")
     }
 

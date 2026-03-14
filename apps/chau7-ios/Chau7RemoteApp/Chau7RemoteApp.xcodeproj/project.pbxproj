@@ -11,19 +11,56 @@
 		4A94D77431F2A00100A1B001 /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D77331F2A00100A1B001 /* TerminalView.swift */; };
 		4A94D77631F2A00100A1B001 /* ApprovalsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D77531F2A00100A1B001 /* ApprovalsView.swift */; };
 		4A94D77831F2A00100A1B001 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D77731F2A00100A1B001 /* SettingsView.swift */; };
+		4A94D78031F2A00100A1B001 /* RemoteActivityURLAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D77931F2A00100A1B001 /* RemoteActivityURLAction.swift */; };
+		4A94D78231F2A00100A1B001 /* RemoteActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D78131F2A00100A1B001 /* RemoteActivityAttributes.swift */; };
+		4A94D78431F2A00100A1B001 /* RemoteLiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D78331F2A00100A1B001 /* RemoteLiveActivityManager.swift */; };
+		4A94D78631F2A00100A1B001 /* Chau7RemoteWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D78531F2A00100A1B001 /* Chau7RemoteWidget.swift */; };
+		4A94D78731F2A00100A1B001 /* RemoteActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D78131F2A00100A1B001 /* RemoteActivityAttributes.swift */; };
+		4A94D78E31F2A00100A1B001 /* Chau7RemoteWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 4A94D78931F2A00100A1B001 /* Chau7RemoteWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		84B3034D2F3107BB00A7D19E /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B303492F3107BB00A7D19E /* KeychainStore.swift */; };
 		84B3034E2F3107BB00A7D19E /* RemoteCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B3034C2F3107BB00A7D19E /* RemoteCrypto.swift */; };
 		84B3034F2F3107BB00A7D19E /* PairingSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B3034A2F3107BB00A7D19E /* PairingSheetView.swift */; };
 		84B303502F3107BB00A7D19E /* Chau7RemoteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B303482F3107BB00A7D19E /* Chau7RemoteApp.swift */; };
 		84B303512F3107BB00A7D19E /* RemoteClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B3034B2F3107BB00A7D19E /* RemoteClient.swift */; };
 		D82AA425310A4B9696EE10FB /* Chau7Core in Frameworks */ = {isa = PBXBuildFile; productRef = A34D4B59796146F1BDF72F8E /* Chau7Core */; };
+		F1A4000131F2A00100A1B001 /* Chau7Core in Frameworks */ = {isa = PBXBuildFile; productRef = F1A4000031F2A00100A1B001 /* Chau7Core */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		F1A4000631F2A00100A1B001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 84B303322F31076300A7D19E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F1A4000531F2A00100A1B001;
+			remoteInfo = Chau7RemoteWidget;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		F1A4000731F2A00100A1B001 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				4A94D78E31F2A00100A1B001 /* Chau7RemoteWidget.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		4A94D77131F2A00100A1B001 /* RemoteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteModels.swift; sourceTree = "<group>"; };
 		4A94D77331F2A00100A1B001 /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
 		4A94D77531F2A00100A1B001 /* ApprovalsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalsView.swift; sourceTree = "<group>"; };
 		4A94D77731F2A00100A1B001 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		4A94D77931F2A00100A1B001 /* RemoteActivityURLAction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteActivityURLAction.swift; sourceTree = "<group>"; };
+		4A94D78131F2A00100A1B001 /* RemoteActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteActivityAttributes.swift; sourceTree = "<group>"; };
+		4A94D78331F2A00100A1B001 /* RemoteLiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteLiveActivityManager.swift; sourceTree = "<group>"; };
+		4A94D78531F2A00100A1B001 /* Chau7RemoteWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chau7RemoteWidget.swift; sourceTree = "<group>"; };
+		4A94D78831F2A00100A1B001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		4A94D78931F2A00100A1B001 /* Chau7RemoteWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = Chau7RemoteWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		84B3033A2F31076300A7D19E /* Chau7RemoteApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Chau7RemoteApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		84B303482F3107BB00A7D19E /* Chau7RemoteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chau7RemoteApp.swift; sourceTree = "<group>"; };
 		84B303492F3107BB00A7D19E /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
@@ -49,6 +86,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F1A4000931F2A00100A1B001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F1A4000131F2A00100A1B001 /* Chau7Core in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -64,7 +109,11 @@
 				4A94D77331F2A00100A1B001 /* TerminalView.swift */,
 				4A94D77531F2A00100A1B001 /* ApprovalsView.swift */,
 				4A94D77731F2A00100A1B001 /* SettingsView.swift */,
+				4A94D77931F2A00100A1B001 /* RemoteActivityURLAction.swift */,
+				4A94D78131F2A00100A1B001 /* RemoteActivityAttributes.swift */,
+				4A94D78331F2A00100A1B001 /* RemoteLiveActivityManager.swift */,
 				84B3033C2F31076300A7D19E /* Chau7RemoteApp */,
+				F1A4000831F2A00100A1B001 /* Chau7RemoteWidget */,
 				84B3033B2F31076300A7D19E /* Products */,
 			);
 			sourceTree = "<group>";
@@ -73,8 +122,18 @@
 			isa = PBXGroup;
 			children = (
 				84B3033A2F31076300A7D19E /* Chau7RemoteApp.app */,
+				4A94D78931F2A00100A1B001 /* Chau7RemoteWidget.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		F1A4000831F2A00100A1B001 /* Chau7RemoteWidget */ = {
+			isa = PBXGroup;
+			children = (
+				4A94D78531F2A00100A1B001 /* Chau7RemoteWidget.swift */,
+				4A94D78831F2A00100A1B001 /* Info.plist */,
+			);
+			path = ../Chau7RemoteWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -87,10 +146,12 @@
 				84B303362F31076300A7D19E /* Sources */,
 				84B303372F31076300A7D19E /* Frameworks */,
 				84B303382F31076300A7D19E /* Resources */,
+				F1A4000731F2A00100A1B001 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				F1A4000C31F2A00100A1B001 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				84B3033C2F31076300A7D19E /* Chau7RemoteApp */,
@@ -103,6 +164,26 @@
 			productReference = 84B3033A2F31076300A7D19E /* Chau7RemoteApp.app */;
 			productType = "com.apple.product-type.application";
 		};
+		F1A4000531F2A00100A1B001 /* Chau7RemoteWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F1A4001131F2A00100A1B001 /* Build configuration list for PBXNativeTarget "Chau7RemoteWidget" */;
+			buildPhases = (
+				F1A4000A31F2A00100A1B001 /* Sources */,
+				F1A4000931F2A00100A1B001 /* Frameworks */,
+				F1A4000B31F2A00100A1B001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Chau7RemoteWidget;
+			packageProductDependencies = (
+				F1A4000031F2A00100A1B001 /* Chau7Core */,
+			);
+			productName = Chau7RemoteWidget;
+			productReference = 4A94D78931F2A00100A1B001 /* Chau7RemoteWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -114,6 +195,9 @@
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					84B303392F31076300A7D19E = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					F1A4000531F2A00100A1B001 = {
 						CreatedOnToolsVersion = 26.2;
 					};
 				};
@@ -136,12 +220,20 @@
 			projectRoot = "";
 			targets = (
 				84B303392F31076300A7D19E /* Chau7RemoteApp */,
+				F1A4000531F2A00100A1B001 /* Chau7RemoteWidget */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		84B303382F31076300A7D19E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F1A4000B31F2A00100A1B001 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -156,6 +248,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				4A94D77631F2A00100A1B001 /* ApprovalsView.swift in Sources */,
+				4A94D78231F2A00100A1B001 /* RemoteActivityAttributes.swift in Sources */,
+				4A94D78431F2A00100A1B001 /* RemoteLiveActivityManager.swift in Sources */,
+				4A94D78031F2A00100A1B001 /* RemoteActivityURLAction.swift in Sources */,
 				4A94D77231F2A00100A1B001 /* RemoteModels.swift in Sources */,
 				4A94D77831F2A00100A1B001 /* SettingsView.swift in Sources */,
 				4A94D77431F2A00100A1B001 /* TerminalView.swift in Sources */,
@@ -167,7 +262,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F1A4000A31F2A00100A1B001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4A94D78731F2A00100A1B001 /* RemoteActivityAttributes.swift in Sources */,
+				4A94D78631F2A00100A1B001 /* Chau7RemoteWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		F1A4000C31F2A00100A1B001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F1A4000531F2A00100A1B001 /* Chau7RemoteWidget */;
+			targetProxy = F1A4000631F2A00100A1B001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		84B303432F31076400A7D19E /* Debug */ = {
@@ -300,7 +412,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = N69N8XYVF6;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -332,7 +445,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = N69N8XYVF6;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -345,6 +459,62 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.chau7.remote.Chau7RemoteApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		F1A4000D31F2A00100A1B001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = N69N8XYVF6;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ../Chau7RemoteWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.chau7.remote.Chau7RemoteApp.Chau7RemoteWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		F1A4000E31F2A00100A1B001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = N69N8XYVF6;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = ../Chau7RemoteWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.chau7.remote.Chau7RemoteApp.Chau7RemoteWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -376,6 +546,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		F1A4001131F2A00100A1B001 /* Build configuration list for PBXNativeTarget "Chau7RemoteWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F1A4000D31F2A00100A1B001 /* Debug */,
+				F1A4000E31F2A00100A1B001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -387,6 +566,11 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		A34D4B59796146F1BDF72F8E /* Chau7Core */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "../../chau7-macos" */;
+			productName = Chau7Core;
+		};
+		F1A4000031F2A00100A1B001 /* Chau7Core */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 5C2E7B15EB3E402A85885103 /* XCLocalSwiftPackageReference "../../chau7-macos" */;
 			productName = Chau7Core;

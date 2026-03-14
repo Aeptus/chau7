@@ -17,7 +17,7 @@ final class AITerminalLogSession {
 
     init(toolName: String, logPath: String) {
         self.toolName = toolName
-        self.logPath = (logPath as NSString).expandingTildeInPath
+        self.logPath = RuntimeIsolation.expandTilde(in: logPath)
     }
 
     func recordOutput(_ data: Data) {
@@ -97,7 +97,7 @@ enum AIEventLogWriter {
     static func appendEvent(type: String, tool: String, message: String, source: AIEventSource, logPath: String) {
         let trimmed = logPath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let expanded = (trimmed as NSString).expandingTildeInPath
+        let expanded = RuntimeIsolation.expandTilde(in: trimmed)
         let payload: [String: Any] = [
             "source": source.rawValue,
             "type": type,

@@ -3,31 +3,21 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleDisplayName</key>
-    <string>Chau7 Remote</string>
+    <string>Chau7 Remote Widget</string>
     <key>CFBundleIdentifier</key>
     <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
     <key>CFBundleName</key>
-    <string>Chau7RemoteApp</string>
+    <string>Chau7RemoteWidget</string>
     <key>CFBundlePackageType</key>
-    <string>APPL</string>
-    <key>CFBundleURLTypes</key>
-    <array>
-        <dict>
-            <key>CFBundleURLName</key>
-            <string>com.chau7.remote.activity</string>
-            <key>CFBundleURLSchemes</key>
-            <array>
-                <string>chau7remote</string>
-            </array>
-        </dict>
-    </array>
+    <string>XPC!</string>
     <key>CFBundleShortVersionString</key>
     <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
     <string>$(CURRENT_PROJECT_VERSION)</string>
-    <key>NSSupportsLiveActivities</key>
-    <true/>
-    <key>UILaunchScreen</key>
-    <dict/>
+    <key>NSExtension</key>
+    <dict>
+        <key>NSExtensionPointIdentifier</key>
+        <string>com.apple.widgetkit-extension</string>
+    </dict>
 </dict>
 </plist>

@@ -6,6 +6,7 @@ import Chau7Core
 @MainActor
 final class NotificationManager {
     static let shared = NotificationManager()
+    private let isIsolatedTestMode = RuntimeIsolation.isIsolatedTestMode()
 
     /// Tracks whether UNUserNotificationCenter is available and authorized
     private var useNativeNotifications = true
@@ -46,6 +47,10 @@ final class NotificationManager {
     private var pendingNotificationFlushWorkItem: DispatchWorkItem?
 
     private init() {
+        guard !isIsolatedTestMode else {
+            useNativeNotifications = false
+            return
+        }
         startFocusRefreshTimer()
     }
 
@@ -71,6 +76,10 @@ final class NotificationManager {
 
     /// Notify for an event. Safe to call from any thread.
     nonisolated func notify(for event: AIEvent) {
+        guard !RuntimeIsolation.isIsolatedTestMode() else {
+            Log.info("Skipping notification in isolated test mode: type=\(event.type) tool=\(event.tool)")
+            return
+        }
         guard Bundle.main.bundleIdentifier != nil else {
             Log.info("Skipping notification (not running as bundle): type=\(event.type) tool=\(event.tool)")
             return
@@ -222,6 +231,10 @@ final class NotificationManager {
     }
 
     private func dispatchNotification(title: String, body: String, for event: AIEvent) {
+        guard !isIsolatedTestMode else {
+            Log.info("Skipping notification dispatch in isolated test mode: \(title)")
+            return
+        }
         if shouldUseNativeNotifications() {
             tryNativeNotification(title: title, body: body, for: event)
         } else {
@@ -389,6 +402,10 @@ final class NotificationManager {
     }
 
     private func refreshFocusState() {
+        guard !isIsolatedTestMode else {
+            isFocusModeActive = false
+            return
+        }
         let screenLocked = isScreenLocked()
 
         UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in

@@ -1,9 +1,10 @@
 import Foundation
 import AppKit
+import Chau7Core
 
 enum ProtectedPathPolicy {
     private static let protectedRoots: [String] = {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = RuntimeIsolation.homePath()
         return [
             "\(home)/Downloads",
             "\(home)/Desktop",
@@ -36,7 +37,7 @@ enum ProtectedPathPolicy {
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
         panel.canCreateDirectories = false
-        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+        panel.directoryURL = RuntimeIsolation.homeDirectory()
 
         guard panel.runModal() == .OK else {
             Log.info("ProtectedPathPolicy: grant dialog canceled")
