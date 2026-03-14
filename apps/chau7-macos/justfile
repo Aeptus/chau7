@@ -53,6 +53,23 @@ rust-build:
 rust-test:
     cd {{rust_dir}} && cargo test
 
+# Hot-swap binary into running app and re-sign to preserve TCC permissions
+deploy: build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    APP="${CHAU7_APP_PATH:-/Applications/Chau7.app}"
+    if [[ ! -d "$APP" ]]; then
+      echo "❌ $APP not found — run Scripts/install-launchpad-app.sh first"
+      exit 1
+    fi
+    BUNDLE_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Contents/Info.plist")
+    cp .build/debug/Chau7 "$APP/Contents/MacOS/Chau7"
+    codesign --force --deep --sign - \
+      -i "$BUNDLE_ID" \
+      -r "=designated => identifier \"$BUNDLE_ID\"" \
+      "$APP"
+    echo "✅ Hot-swapped and re-signed ($BUNDLE_ID)"
+
 # Clean everything
 clean:
     {{swift}} package clean

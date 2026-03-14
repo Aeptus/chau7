@@ -183,10 +183,6 @@ final class RuntimeControlService {
             return jsonError("Session not found: \(sessionID)")
         }
 
-        if session.adopted {
-            return jsonError("Cannot send turns to adopted sessions. Use runtime_session_create instead.")
-        }
-
         return sendTurnInternal(session: session, prompt: prompt, context: context)
     }
 

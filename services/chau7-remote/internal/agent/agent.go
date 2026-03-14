@@ -53,24 +53,29 @@ type Agent struct {
 	wsMu   sync.Mutex
 	wsConn *websocket.Conn
 
-	sessionMu      sync.Mutex
-	crypto         *cryptoSession
-	macNonce       []byte
-	iosNonce       []byte
-	sessionReady   bool
-	sendSeq        uint64
-	maxReceivedSeq uint64
+	stateMu sync.Mutex // protects a.state reads/writes
+
+	sessionMu       sync.Mutex
+	crypto          *cryptoSession
+	macNonce        []byte
+	iosNonce        []byte
+	currentIOSPub   string
+	currentPeerID   string
+	currentPeerName string
+	sessionReady    bool
+	sendSeq         uint64
+	maxReceivedSeq  uint64
 
 	pairingMu         sync.Mutex
-	pairingAttempts    int
+	pairingAttempts   int
 	pairingLockoutEnd time.Time
 }
 
 type HelloPayload struct {
-	DeviceID  string `json:"device_id"`
-	Role      string `json:"role"`
-	Nonce     string `json:"nonce"`
-	PubKeyFP  string `json:"pub_key_fp"`
+	DeviceID   string `json:"device_id"`
+	Role       string `json:"role"`
+	Nonce      string `json:"nonce"`
+	PubKeyFP   string `json:"pub_key_fp"`
 	AppVersion string `json:"app_version"`
 }
 
@@ -93,6 +98,12 @@ type PairRejectPayload struct {
 
 type SessionReadyPayload struct {
 	SessionID string `json:"session_id"`
+}
+
+type SessionStatusPayload struct {
+	Status           string `json:"status"`
+	PairedDeviceID   string `json:"paired_device_id,omitempty"`
+	PairedDeviceName string `json:"paired_device_name,omitempty"`
 }
 
 type TabSwitchPayload struct {
@@ -289,7 +300,10 @@ func (a *Agent) relayLoop(ctx context.Context) {
 		a.wsConn = conn
 		a.wsMu.Unlock()
 		a.resetSession()
-		if a.state.IOSPublicKey != "" {
+		a.stateMu.Lock()
+		hasPaired := a.state.HasPairedDevices()
+		a.stateMu.Unlock()
+		if hasPaired {
 			if err := a.sendHello(); err != nil {
 				log.Printf("send hello: %v", err)
 			}
@@ -298,6 +312,8 @@ func (a *Agent) relayLoop(ctx context.Context) {
 		a.wsMu.Lock()
 		a.wsConn = nil
 		a.wsMu.Unlock()
+		a.resetSession()
+		a.sendSessionStatus("disconnected")
 		log.Printf("relay disconnected, reconnecting in %v", 2*time.Second)
 		select {
 		case <-time.After(2 * time.Second):
@@ -396,11 +412,7 @@ func (a *Agent) handlePairRequest(payload []byte) {
 	}
 	a.pairingMu.Unlock()
 
-	a.pairingMu.Lock()
-	codeMatch := request.PairingCode == a.pairingCode && time.Now().Before(a.pairingExpires)
-	a.pairingMu.Unlock()
-
-	if !codeMatch {
+	if !a.isPairRequestAuthorized(request, time.Now()) {
 		a.pairingMu.Lock()
 		a.pairingAttempts++
 		if a.pairingAttempts >= 5 {
@@ -413,15 +425,29 @@ func (a *Agent) handlePairRequest(payload []byte) {
 		return
 	}
 
+	if _, err := validatedIOSPublicKey(request.IOSPub); err != nil {
+		log.Printf("pair request: invalid ios public key: %v", err)
+		a.sendPairReject("invalid_ios_pub")
+		return
+	}
+
 	a.pairingMu.Lock()
 	a.pairingAttempts = 0
 	a.pairingMu.Unlock()
 
-	a.state.IOSPublicKey = request.IOSPub
-	a.state.IOSName = request.IOSName
+	a.stateMu.Lock()
+	device, err := a.state.UpsertPairedDevice(request.IOSName, request.IOSPub, time.Now())
+	if err != nil {
+		a.stateMu.Unlock()
+		log.Printf("pair request: upsert paired device: %v", err)
+		a.sendPairReject("invalid_ios_pub")
+		return
+	}
+	a.setCurrentPeer(device)
 	if err := SaveState(a.statePath, a.state); err != nil {
 		log.Printf("pair request: save state: %v", err)
 	}
+	a.stateMu.Unlock()
 
 	accept := PairAcceptPayload{
 		DeviceID: a.state.DeviceID,
@@ -444,6 +470,44 @@ func (a *Agent) handlePairRequest(payload []byte) {
 	}
 }
 
+func (a *Agent) isPairRequestAuthorized(request PairRequestPayload, now time.Time) bool {
+	a.pairingMu.Lock()
+	codeMatch := request.PairingCode == a.pairingCode && now.Before(a.pairingExpires)
+	a.pairingMu.Unlock()
+	if codeMatch {
+		return true
+	}
+	a.stateMu.Lock()
+	found := a.state.FindPairedDeviceByPublicKey(request.IOSPub) != nil
+	a.stateMu.Unlock()
+	return found
+}
+
+func (a *Agent) setCurrentPeer(device *PairedDevice) {
+	if device == nil {
+		return
+	}
+	a.sessionMu.Lock()
+	a.currentIOSPub = device.IOSPublicKey
+	a.currentPeerID = device.ID
+	a.currentPeerName = device.Name
+	a.sessionMu.Unlock()
+}
+
+func validatedIOSPublicKey(pubKey string) ([]byte, error) {
+	if pubKey == "" {
+		return nil, errors.New("missing ios public key")
+	}
+	rawKey, err := base64.StdEncoding.DecodeString(pubKey)
+	if err != nil {
+		return nil, err
+	}
+	if len(rawKey) != 32 || isLowOrderPoint(rawKey) {
+		return nil, fmt.Errorf("invalid ios public key (len=%d)", len(rawKey))
+	}
+	return rawKey, nil
+}
+
 func (a *Agent) handleHello(payload []byte) {
 	var hello HelloPayload
 	if err := json.Unmarshal(payload, &hello); err != nil {
@@ -454,6 +518,14 @@ func (a *Agent) handleHello(payload []byte) {
 	if err != nil {
 		log.Printf("hello: nonce decode: %v", err)
 		return
+	}
+	if hello.Role == "ios" {
+		a.stateMu.Lock()
+		device := a.state.FindPairedDeviceByFingerprint(hello.PubKeyFP)
+		a.stateMu.Unlock()
+		if device != nil {
+			a.setCurrentPeer(device)
+		}
 	}
 	a.sessionMu.Lock()
 	a.iosNonce = nonce
@@ -468,10 +540,10 @@ func (a *Agent) sendHello() error {
 	}
 	fp := fingerprint(a.state.MacPublicKey)
 	payload := HelloPayload{
-		DeviceID:  a.state.DeviceID,
-		Role:      "mac",
-		Nonce:     base64.StdEncoding.EncodeToString(macNonce),
-		PubKeyFP:  fp,
+		DeviceID:   a.state.DeviceID,
+		Role:       "mac",
+		Nonce:      base64.StdEncoding.EncodeToString(macNonce),
+		PubKeyFP:   fp,
 		AppVersion: "0.1.0",
 	}
 	data, err := json.Marshal(payload)
@@ -494,7 +566,7 @@ func (a *Agent) sendHello() error {
 
 func isLowOrderPoint(key []byte) bool {
 	lowOrder := [][]byte{
-		make([]byte, 32),                                               // all zeros
+		make([]byte, 32), // all zeros
 		{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, // identity
 	}
 	for _, lo := range lowOrder {
@@ -516,30 +588,29 @@ func isLowOrderPoint(key []byte) bool {
 
 func (a *Agent) establishSession() {
 	a.sessionMu.Lock()
-	defer a.sessionMu.Unlock()
-
 	if a.crypto != nil {
+		a.sessionMu.Unlock()
 		return
 	}
 	if len(a.macNonce) == 0 || len(a.iosNonce) == 0 {
+		a.sessionMu.Unlock()
 		return
 	}
-	iosPub, err := a.state.IOSPublicKeyBytes()
+	iosPub, err := validatedIOSPublicKey(a.currentIOSPub)
 	if err != nil {
+		a.sessionMu.Unlock()
 		log.Printf("establish session: ios public key: %v", err)
-		return
-	}
-	if len(iosPub) != 32 || isLowOrderPoint(iosPub) {
-		log.Printf("establish session: invalid iOS public key (len=%d)", len(iosPub))
 		return
 	}
 	macPriv, err := a.state.MacPrivateKeyBytes()
 	if err != nil {
+		a.sessionMu.Unlock()
 		log.Printf("establish session: mac private key: %v", err)
 		return
 	}
 	shared, err := curve25519.X25519(macPriv, iosPub)
 	if err != nil {
+		a.sessionMu.Unlock()
 		log.Printf("establish session: x25519: %v", err)
 		return
 	}
@@ -552,16 +623,30 @@ func (a *Agent) establishSession() {
 		}
 	}
 	if allZero {
+		a.sessionMu.Unlock()
 		log.Printf("establish session: all-zero shared secret (low-order iOS public key)")
 		return
 	}
 	crypto, err := newCryptoSession(shared, a.macNonce, a.iosNonce)
 	if err != nil {
+		a.sessionMu.Unlock()
 		log.Printf("establish session: crypto: %v", err)
 		return
 	}
 	a.crypto = crypto
 	a.sessionReady = true
+	peerID := a.currentPeerID
+	a.sessionMu.Unlock()
+	if peerID != "" {
+		a.stateMu.Lock()
+		if device := a.state.MarkPairedDeviceConnected(peerID, time.Now()); device != nil {
+			if err := SaveState(a.statePath, a.state); err != nil {
+				log.Printf("establish session: save state: %v", err)
+			}
+			a.setCurrentPeer(device)
+		}
+		a.stateMu.Unlock()
+	}
 
 	sessionID := make([]byte, 8)
 	if _, err := rand.Read(sessionID); err != nil {
@@ -591,6 +676,9 @@ func (a *Agent) resetSession() {
 	a.crypto = nil
 	a.macNonce = nil
 	a.iosNonce = nil
+	a.currentIOSPub = ""
+	a.currentPeerID = ""
+	a.currentPeerName = ""
 	a.sessionReady = false
 	a.maxReceivedSeq = 0
 }
@@ -681,7 +769,15 @@ func (a *Agent) sendPairReject(reason string) {
 }
 
 func (a *Agent) sendSessionStatus(status string) {
-	payload, err := json.Marshal(map[string]string{"status": status})
+	a.sessionMu.Lock()
+	pairedDeviceID := a.currentPeerID
+	pairedDeviceName := a.currentPeerName
+	a.sessionMu.Unlock()
+	payload, err := json.Marshal(SessionStatusPayload{
+		Status:           status,
+		PairedDeviceID:   pairedDeviceID,
+		PairedDeviceName: pairedDeviceName,
+	})
 	if err != nil {
 		log.Printf("session status: marshal: %v", err)
 		return
@@ -794,8 +890,7 @@ func fingerprint(pubKey string) string {
 		log.Printf("fingerprint: base64 decode: %v", err)
 		return ""
 	}
-	hash := sha256.Sum256(data)
-	return base64.StdEncoding.EncodeToString(hash[:8])
+	return fingerprintBytes(data)
 }
 
 func readIPCFrame(reader *bufio.Reader) (*protocol.Frame, error) {

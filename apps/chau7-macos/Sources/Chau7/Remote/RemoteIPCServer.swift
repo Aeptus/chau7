@@ -2,7 +2,6 @@ import Foundation
 import os.log
 import Chau7Core
 
-@MainActor
 final class RemoteIPCServer: ObservableObject {
     static let shared = RemoteIPCServer()
 
@@ -16,6 +15,7 @@ final class RemoteIPCServer: ObservableObject {
     private var clientFD: Int32 = -1
     private var listeningSource: DispatchSourceRead?
     private var clientSource: DispatchSourceRead?
+    private var isListeningState = false
     private let queue = DispatchQueue(label: "com.chau7.remote.ipc", qos: .utility)
     private let logger = Logger(subsystem: "com.chau7.remote", category: "IPCServer")
     private var buffer = Data()
@@ -32,99 +32,107 @@ final class RemoteIPCServer: ObservableObject {
     private init() {}
 
     func start() {
-        guard !isListening else { return }
+        queue.sync {
+            guard !isListeningState else { return }
 
-        let path = socketPath.path
-        let dir = socketPath.deletingLastPathComponent()
-        do {
-            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        } catch {
-            logger.error("Failed to create IPC socket directory: \(error.localizedDescription)")
-            return
-        }
-        unlink(path)
-
-        socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard socketFD >= 0 else {
-            logger.error("Failed to create socket: \(String(cString: strerror(errno)))")
-            return
-        }
-
-        var addr = sockaddr_un()
-        addr.sun_family = sa_family_t(AF_UNIX)
-        let maxPathLength = MemoryLayout.size(ofValue: addr.sun_path) - 1
-        withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
-            let buffer = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: CChar.self)
-            _ = path.withCString { cPath in
-                strncpy(buffer, cPath, maxPathLength)
+            let path = socketPath.path
+            let dir = socketPath.deletingLastPathComponent()
+            do {
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            } catch {
+                logger.error("Failed to create IPC socket directory: \(error.localizedDescription)")
+                return
             }
-        }
+            unlink(path)
 
-        let bindResult = withUnsafePointer(to: &addr) { addrPtr in
-            addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
-                bind(socketFD, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+            socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
+            guard socketFD >= 0 else {
+                logger.error("Failed to create socket: \(String(cString: strerror(errno)))")
+                return
             }
-        }
 
-        guard bindResult >= 0 else {
-            logger.error("Failed to bind socket: \(String(cString: strerror(errno)))")
-            close(socketFD)
-            socketFD = -1
-            return
-        }
+            var addr = sockaddr_un()
+            addr.sun_family = sa_family_t(AF_UNIX)
+            let maxPathLength = MemoryLayout.size(ofValue: addr.sun_path) - 1
+            withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
+                let buffer = UnsafeMutableRawPointer(ptr).assumingMemoryBound(to: CChar.self)
+                _ = path.withCString { cPath in
+                    strncpy(buffer, cPath, maxPathLength)
+                }
+            }
 
-        guard listen(socketFD, 1) >= 0 else {
-            logger.error("Failed to listen: \(String(cString: strerror(errno)))")
-            close(socketFD)
-            socketFD = -1
-            return
-        }
+            let bindResult = withUnsafePointer(to: &addr) { addrPtr in
+                addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockaddrPtr in
+                    bind(socketFD, sockaddrPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+                }
+            }
 
-        // Capture fd by value so cancel handler closes the correct descriptor.
-        let listeningFD = socketFD
-        listeningSource = DispatchSource.makeReadSource(fileDescriptor: listeningFD, queue: queue)
-        listeningSource?.setEventHandler { [weak self] in
-            self?.acceptConnection()
-        }
-        listeningSource?.setCancelHandler { [weak self] in
-            close(listeningFD)
-            self?.socketFD = -1
-        }
-        listeningSource?.resume()
+            guard bindResult >= 0 else {
+                logger.error("Failed to bind socket: \(String(cString: strerror(errno)))")
+                close(socketFD)
+                socketFD = -1
+                return
+            }
 
-        isListening = true
-        logger.info("Remote IPC listening at \(path)")
+            guard listen(socketFD, 1) >= 0 else {
+                logger.error("Failed to listen: \(String(cString: strerror(errno)))")
+                close(socketFD)
+                socketFD = -1
+                return
+            }
+
+            let listeningFD = socketFD
+            listeningSource = DispatchSource.makeReadSource(fileDescriptor: listeningFD, queue: queue)
+            listeningSource?.setEventHandler { [weak self] in
+                self?.acceptConnection()
+            }
+            listeningSource?.setCancelHandler { [weak self] in
+                close(listeningFD)
+                self?.socketFD = -1
+            }
+            listeningSource?.resume()
+
+            isListeningState = true
+            DispatchQueue.main.async { [weak self] in
+                self?.isListening = true
+            }
+            logger.info("Remote IPC listening at \(path)")
+        }
     }
 
     func stop() {
-        // Cancel handlers own close(fd) — don't double-close here.
-        if let cs = clientSource {
-            cs.cancel()
-            clientSource = nil
-        } else if clientFD >= 0 {
-            close(clientFD)
-            clientFD = -1
-        }
+        queue.sync {
+            if let cs = clientSource {
+                cs.cancel()
+                clientSource = nil
+            } else if clientFD >= 0 {
+                close(clientFD)
+                clientFD = -1
+            }
 
-        if let ls = listeningSource {
-            ls.cancel()
-            listeningSource = nil
-        } else if socketFD >= 0 {
-            close(socketFD)
-            socketFD = -1
-        }
+            if let ls = listeningSource {
+                ls.cancel()
+                listeningSource = nil
+            } else if socketFD >= 0 {
+                close(socketFD)
+                socketFD = -1
+            }
 
-        unlink(socketPath.path)
-        isListening = false
+            unlink(socketPath.path)
+            isListeningState = false
+            DispatchQueue.main.async { [weak self] in
+                self?.isListening = false
+            }
+        }
     }
 
     func send(_ frame: RemoteFrame) {
-        guard clientFD >= 0 else { return }
-        let fd = clientFD
         let data = FrameParser.packForTransport(frame)
 
         queue.async { [weak self] in
             guard let self else { return }
+            guard self.clientFD >= 0 else { return }
+            let fd = self.clientFD
             // Re-validate fd hasn't been closed/recycled since we captured it
             guard self.clientFD == fd else { return }
 
@@ -171,6 +179,10 @@ final class RemoteIPCServer: ObservableObject {
             close(clientFD)
         }
 
+        // Prevent SIGPIPE on broken-pipe writes — return EPIPE error instead of killing the process.
+        var one: Int32 = 1
+        setsockopt(newClientFD, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+
         clientFD = newClientFD
         buffer.removeAll(keepingCapacity: true)
 
@@ -181,7 +193,8 @@ final class RemoteIPCServer: ObservableObject {
         }
         clientSource?.setCancelHandler { [weak self] in
             close(newClientFD)
-            self?.clientFD = -1
+            guard let self, self.clientFD == newClientFD else { return }
+            self.clientFD = -1
         }
         clientSource?.resume()
 

@@ -58,6 +58,7 @@ final class RemoteClient {
     private static let maxBufferedTelemetryEvents = 100
     private static let handshakeRetryIntervalSeconds = 1.0
     private static let handshakeTimeoutSeconds = 12.0
+    private static let repairFallbackAttempt = 3
     static let appVersion = "1.1.0"
 
     // MARK: - Init
@@ -194,19 +195,20 @@ final class RemoteClient {
     private func listen() {
         let generation = connectionGeneration
         webSocket?.receive { [weak self] result in
-            Task { @MainActor in
-                guard let self, self.connectionGeneration == generation else { return }
+            guard let client = self else { return }
+            Task { @MainActor [client] in
+                guard client.connectionGeneration == generation else { return }
                 switch result {
                 case .failure(let error):
                     log.error("WebSocket receive failed: \(error.localizedDescription)")
-                    self.handleDisconnect(reason: error.localizedDescription)
+                    client.handleDisconnect(reason: error.localizedDescription)
                 case .success(let msg):
                     switch msg {
-                    case .data(let data): self.handleFrame(data)
-                    case .string(let text): self.handleFrame(Data(text.utf8))
+                    case .data(let data): client.handleFrame(data)
+                    case .string(let text): client.handleFrame(Data(text.utf8))
                     @unknown default: break
                     }
-                    self.listen()
+                    client.listen()
                 }
             }
         }
@@ -243,7 +245,7 @@ final class RemoteClient {
             ]
         )
 
-        reconnectTask = Task { [weak self] in
+        reconnectTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled, let self, let pairing = self.pairingInfo else { return }
             self.connect(pairing: pairing)
@@ -253,7 +255,7 @@ final class RemoteClient {
     private func scheduleHandshake(for generation: UInt64) {
         cancelHandshakeTasks()
 
-        handshakeRetryTask = Task { [weak self] in
+        handshakeRetryTask = Task { @MainActor [weak self] in
             var attempt = 0
             while !Task.isCancelled {
                 guard let self,
@@ -266,7 +268,8 @@ final class RemoteClient {
                 }
 
                 self.sendHello()
-                if !self.hasReceivedPairAccept {
+                if let pairing = self.pairingInfo,
+                   self.shouldSendPairRequest(for: pairing, attempt: attempt) {
                     self.sendPairRequest(recordTelemetry: attempt == 0)
                 }
 
@@ -275,7 +278,7 @@ final class RemoteClient {
             }
         }
 
-        handshakeTimeoutTask = Task { [weak self] in
+        handshakeTimeoutTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(Self.handshakeTimeoutSeconds))
             guard let self,
                   self.connectionGeneration == generation,
@@ -394,6 +397,7 @@ final class RemoteClient {
         }
         hasReceivedPairAccept = true
         _ = KeychainStore.save(key: "mac_public_key", data: keyData)
+        persistTrustedIdentity(for: msg)
         sendHello()
         establishSessionIfPossible()
     }
@@ -611,6 +615,26 @@ final class RemoteClient {
         return try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: data)
     }
 
+    private func shouldSendPairRequest(for pairing: PairingInfo, attempt: Int) -> Bool {
+        guard !hasReceivedPairAccept else { return false }
+        if !hasStoredTrust(for: pairing) {
+            return true
+        }
+        return attempt >= Self.repairFallbackAttempt
+    }
+
+    private func hasStoredTrust(for pairing: PairingInfo) -> Bool {
+        guard let storedKey = loadStoredMacKey(),
+              let trustedIdentity = Self.loadTrustedPairingIdentity() else {
+            return false
+        }
+        let currentIOSPub = iosKey.publicKey.rawRepresentation.base64EncodedString()
+        return storedKey.rawRepresentation.base64EncodedString() == pairing.macPub &&
+            trustedIdentity.deviceID == pairing.deviceID &&
+            trustedIdentity.macPub == pairing.macPub &&
+            trustedIdentity.iosPub == currentIOSPub
+    }
+
     private static func loadOrCreateKey() -> Curve25519.KeyAgreement.PrivateKey {
         if let data = KeychainStore.load(key: "ios_private_key"),
            let key = try? Curve25519.KeyAgreement.PrivateKey(rawRepresentation: data) {
@@ -627,6 +651,7 @@ final class RemoteClient {
         guard let info = pairingInfo,
               let data = try? JSONEncoder().encode(info) else {
             _ = KeychainStore.delete(key: "pairing_payload")
+            _ = KeychainStore.delete(key: "trusted_pairing_identity")
             return
         }
         _ = KeychainStore.save(key: "pairing_payload", data: data)
@@ -635,6 +660,25 @@ final class RemoteClient {
     private static func loadPairing() -> PairingInfo? {
         guard let data = KeychainStore.load(key: "pairing_payload") else { return nil }
         return try? JSONDecoder().decode(PairingInfo.self, from: data)
+    }
+
+    private func persistTrustedIdentity(for accept: PairAcceptPayload) {
+        guard let pairing = pairingInfo,
+              let data = try? JSONEncoder().encode(
+                TrustedPairingIdentity(
+                    deviceID: pairing.deviceID,
+                    macPub: accept.macPub,
+                    iosPub: iosKey.publicKey.rawRepresentation.base64EncodedString()
+                )
+              ) else {
+            return
+        }
+        _ = KeychainStore.save(key: "trusted_pairing_identity", data: data)
+    }
+
+    private static func loadTrustedPairingIdentity() -> TrustedPairingIdentity? {
+        guard let data = KeychainStore.load(key: "trusted_pairing_identity") else { return nil }
+        return try? JSONDecoder().decode(TrustedPairingIdentity.self, from: data)
     }
 
     func flaggedProtectedAction(for input: String) -> String? {

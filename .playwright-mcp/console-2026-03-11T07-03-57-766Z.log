@@ -1,0 +1,3 @@
+[     679ms] [WARNING] VIDEOJS: WARN: A plugin named "qualityLevels" already exists. You may want to avoid re-registering plugins! @ https://assets.awwwards.com/dist/js/9653.5c80bbb9.js:1
+[     712ms] [ERROR] Attestation check for Attribution Reporting on https://www.facebook.com failed. @ https://www.awwwards.com/inspiration/sofi-pod-showcase-sofi:0
+[    1086ms] [ERROR] Not signed in with the identity provider. @ https://www.awwwards.com/inspiration/sofi-pod-showcase-sofi:0

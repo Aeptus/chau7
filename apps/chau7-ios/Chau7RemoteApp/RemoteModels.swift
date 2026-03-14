@@ -21,6 +21,18 @@ struct PairingInfo: Codable, Equatable {
     }
 }
 
+struct TrustedPairingIdentity: Codable, Equatable {
+    let deviceID: String
+    let macPub: String
+    let iosPub: String
+
+    enum CodingKeys: String, CodingKey {
+        case deviceID = "device_id"
+        case macPub = "mac_pub"
+        case iosPub = "ios_pub"
+    }
+}
+
 // MARK: - Handshake
 
 struct HelloPayload: Codable {

@@ -50,6 +50,11 @@ private final class OverlayBlurView: NSVisualEffectView {
         Log.info("AppDelegate did finish launching.")
         didFinishLaunching = true
 
+        // Ignore SIGPIPE process-wide: broken socket/pipe writes return EPIPE error
+        // instead of killing the app. Per-socket SO_NOSIGPIPE is also set where possible,
+        // but this catches any unprotected write paths (proxies, IPC, MCP bridges).
+        signal(SIGPIPE, SIG_IGN)
+
         // Strip env vars from parent process that would confuse nested CLI tools.
         // When Chau7 is launched from within a Claude Code session (e.g. via
         // build-and-run.sh), CLAUDECODE=1 leaks into every terminal child process,
@@ -84,7 +89,9 @@ private final class OverlayBlurView: NSVisualEffectView {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.applyWindowOpacity()
+            Task { @MainActor [weak self] in
+                self?.applyWindowOpacity()
+            }
         }
 
         appThemeObserver = NotificationCenter.default.addObserver(
@@ -92,7 +99,9 @@ private final class OverlayBlurView: NSVisualEffectView {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.applyAppTheme()
+            Task { @MainActor [weak self] in
+                self?.applyAppTheme()
+            }
         }
 
         // Show splash screen while initializing
@@ -185,7 +194,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     func applicationWillTerminate(_ notification: Notification) {
         // Save tab state for restoration on next launch
         for host in overlayHosts {
-            host.model.saveTabState()
+            host.model.saveTabState(reason: .termination)
             host.model.closeAllSessionsForTermination()
         }
         Log.info("Saved tab state for restoration")

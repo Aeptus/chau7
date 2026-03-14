@@ -186,6 +186,42 @@ public enum CommandDetection {
         return nil
     }
 
+    /// Detects an AI app name from a command line only when the launcher command
+    /// appears executable from the provided shell context.
+    /// This avoids transient false positives when a user types a known AI CLI
+    /// name that is not actually installed.
+    public static func detectLaunchableApp(
+        from commandLine: String,
+        currentDirectory: String,
+        searchPath: String?
+    ) -> String? {
+        let tokens = tokenize(commandLine)
+        guard let token = extractCommandToken(from: tokens) else { return nil }
+        guard commandAppearsExecutable(token, currentDirectory: currentDirectory, searchPath: searchPath) else {
+            return nil
+        }
+
+        let normalized = normalizeToken(token)
+
+        if let match = appNameMap[normalized] {
+            return match
+        }
+
+        if normalized == "gh" {
+            if findSubcommand(tokens: tokens, after: "gh", looking: ["copilot"]) != nil {
+                return "Copilot"
+            }
+        }
+
+        if normalized == "npx" || normalized == "bunx" || normalized == "pnpm" {
+            if let aiApp = findSubcommand(tokens: tokens, after: normalized, looking: Array(appNameMap.keys)) {
+                return appNameMap[aiApp]
+            }
+        }
+
+        return nil
+    }
+
     /// Detects a dev server from a command line
     /// - Parameter commandLine: The command line string
     /// - Returns: The detected dev server name, or nil
@@ -452,6 +488,35 @@ public enum CommandDetection {
         return true
     }
 
+    /// Best-effort check that a command token can be executed by the shell using
+    /// the provided current directory and PATH.
+    public static func commandAppearsExecutable(
+        _ token: String,
+        currentDirectory: String,
+        searchPath: String?
+    ) -> Bool {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        if trimmed.contains("/") || trimmed.hasPrefix("~") {
+            guard let resolved = resolveCommandPath(trimmed, currentDirectory: currentDirectory) else {
+                return false
+            }
+            return isExecutableFile(atPath: resolved)
+        }
+
+        for directory in pathDirectories(from: searchPath, currentDirectory: currentDirectory) {
+            let candidate = URL(fileURLWithPath: directory, isDirectory: true)
+                .appendingPathComponent(trimmed)
+                .path
+            if isExecutableFile(atPath: candidate) {
+                return true
+            }
+        }
+
+        return false
+    }
+
     // MARK: - Internal Helpers
 
     /// Extracts the command token from tokenized input
@@ -508,6 +573,63 @@ public enum CommandDetection {
             break
         }
         return nil
+    }
+
+    private static func pathDirectories(from searchPath: String?, currentDirectory: String) -> [String] {
+        let fallback = ProcessInfo.processInfo.environment["PATH"] ?? ""
+        let rawPath = (searchPath?.isEmpty == false ? searchPath : fallback) ?? ""
+        let baseDirectory = standardizedDirectoryPath(currentDirectory)
+
+        return rawPath
+            .components(separatedBy: ":")
+            .map { entry in
+                let component = entry.isEmpty ? "." : entry
+                return resolveDirectoryPath(component, currentDirectory: baseDirectory)
+            }
+            .filter { !$0.isEmpty }
+    }
+
+    private static func resolveCommandPath(_ token: String, currentDirectory: String) -> String? {
+        let expanded = NSString(string: token).expandingTildeInPath
+        if expanded.hasPrefix("/") {
+            return URL(fileURLWithPath: expanded).standardized.path
+        }
+
+        let baseDirectory = standardizedDirectoryPath(currentDirectory)
+        guard !baseDirectory.isEmpty else { return nil }
+        return URL(fileURLWithPath: baseDirectory, isDirectory: true)
+            .appendingPathComponent(expanded)
+            .standardized
+            .path
+    }
+
+    private static func resolveDirectoryPath(_ path: String, currentDirectory: String) -> String {
+        let expanded = NSString(string: path).expandingTildeInPath
+        if expanded.hasPrefix("/") {
+            return URL(fileURLWithPath: expanded, isDirectory: true).standardized.path
+        }
+
+        let baseDirectory = standardizedDirectoryPath(currentDirectory)
+        guard !baseDirectory.isEmpty else { return "" }
+        return URL(fileURLWithPath: baseDirectory, isDirectory: true)
+            .appendingPathComponent(expanded, isDirectory: true)
+            .standardized
+            .path
+    }
+
+    private static func standardizedDirectoryPath(_ path: String) -> String {
+        let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        let expanded = NSString(string: trimmed).expandingTildeInPath
+        return URL(fileURLWithPath: expanded, isDirectory: true).standardized.path
+    }
+
+    private static func isExecutableFile(atPath path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+            return false
+        }
+        return FileManager.default.isExecutableFile(atPath: path)
     }
 }
 

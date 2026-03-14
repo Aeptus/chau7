@@ -65,6 +65,14 @@ MCP Tools — Telemetry,run_tag,Set tags on a telemetry run for organization and
 MCP Tools — Telemetry,run_latest_for_repo,Get the most recent run for a repository — optionally filter by provider,Shipped,Yes
 MCP Tools — Telemetry,session_list,"List AI sessions with run counts — filter by repo_path, active_only",Shipped,Yes
 MCP Tools — Telemetry,session_current,Get currently active AI sessions across all tabs,Shipped,Yes
+MCP Tools — Runtime,runtime_session_create,Start or attach an agent session in Chau7 and return a runtime session ID,Shipped,Yes
+MCP Tools — Runtime,runtime_session_list,List runtime sessions with optional inclusion of recently stopped sessions,Shipped,Yes
+MCP Tools — Runtime,runtime_session_get,Get detailed state for a single runtime session,Shipped,Yes
+MCP Tools — Runtime,runtime_session_stop,Stop a runtime session and optionally close its tab,Shipped,Yes
+MCP Tools — Runtime,runtime_turn_send,Send a formatted prompt to a runtime session including adopted sessions discovered from existing tabs,Shipped,Yes
+MCP Tools — Runtime,runtime_turn_status,Get the current turn state for a runtime session,Shipped,Yes
+MCP Tools — Runtime,runtime_events_poll,Poll the runtime event stream using a cursor,Shipped,Yes
+MCP Tools — Runtime,runtime_approval_respond,Approve or deny a pending runtime tool-use request,Shipped,Yes
 MCP Resources,chau7://telemetry/runs,Read-only resource: latest 20 telemetry run summaries,Shipped,No
 MCP Resources,chau7://telemetry/sessions,Read-only resource: AI session index with metadata,Shipped,No
 MCP Resources,chau7://telemetry/sessions/current,Read-only resource: currently active AI sessions,Shipped,No
