@@ -28,7 +28,7 @@ public enum RuntimeIsolation {
         if let override = normalizedHomeRoot(from: environment) {
             return override
         }
-        return fileManager.homeDirectoryForCurrentUser
+        return URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true).standardizedFileURL
     }
 
     public static func homePath(

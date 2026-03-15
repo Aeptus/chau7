@@ -4079,6 +4079,34 @@ final class RustTerminalView: NSView {
         rustTerminal?.sendBytes(bytes)
     }
 
+    /// Send a normalized key press to the PTY using terminal-specific encoding.
+    func send(keyPress: TerminalKeyPress) {
+        do {
+            let encoded = try keyPress.encode(applicationCursorMode: applicationCursorMode)
+            let preview = encoded.bytes.prefix(8).map { String(format: "%02X", $0) }.joined(separator: " ")
+            let suffix = encoded.bytes.count > 8 ? " ...<\(encoded.bytes.count - 8) more>" : ""
+            Log.trace("RustTerminalView[\(viewId)]: send(keyPress:) - key=\(keyPress.key) modifiers=\(keyPress.sortedModifierNames.joined(separator: "+")) bytes=[\(preview)\(suffix)]")
+            hideTipOverlay()
+
+            if rustTerminal?.displayOffset ?? 0 > 0 {
+                rustTerminal?.scrollTo(position: 0.0)
+                needsGridSync = true
+            }
+
+            if encoded.bytes == [0x7F] || encoded.bytes == [0x08],
+               let text = String(bytes: encoded.bytes, encoding: .utf8) {
+                applyLocalEchoForText(text)
+            }
+            if let text = encoded.text ?? String(bytes: encoded.bytes, encoding: .utf8) {
+                onInput?(text)
+            }
+
+            rustTerminal?.sendBytes(encoded.bytes)
+        } catch {
+            Log.warn("RustTerminalView[\(viewId)]: send(keyPress:) failed: \(error.localizedDescription)")
+        }
+    }
+
     /// Send text to the PTY
     func send(txt text: String) {
         let truncated = text.count > 50 ? String(text.prefix(50)) + "..." : text

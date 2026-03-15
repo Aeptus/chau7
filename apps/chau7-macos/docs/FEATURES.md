@@ -125,7 +125,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 
 ## MCP Tools
 
-### Tab Management (8 tools)
+### Tab Management (10 tools)
 
 | Tool | Description |
 | --- | --- |
@@ -134,6 +134,8 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | `tab_exec` | Execute a command in a tab — auto-queues if shell is still loading, checks prompt state |
 | `tab_status` | Detailed status: process state, child processes (PID/CPU/RSS), active telemetry run, git branch |
 | `tab_send_input` | Send raw input for interactive prompts — no auto-newline appended |
+| `tab_press_key` | Send terminal key presses for interactive TUIs — Enter, Escape, arrows, backspace, delete, paging keys, and ctrl/alt combos |
+| `tab_submit_prompt` | Submit the current interactive prompt by sending Enter as a key press |
 | `tab_close` | Close a tab with optional force flag — checks for running processes |
 | `tab_output` | Get recent terminal output (last N lines, max 5000) with 512KB cap |
 | `tab_set_cto` | Set per-tab CTO override (default/forceOn/forceOff) — recalculates flag files |

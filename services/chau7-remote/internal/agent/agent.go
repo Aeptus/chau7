@@ -343,6 +343,8 @@ func (a *Agent) handleIPCFrame(frame *protocol.Frame) {
 	case protocol.TypeTabList, protocol.TypeOutput, protocol.TypeSnapshot,
 		protocol.TypeApprovalRequest:
 		a.sendEncryptedToRelay(frame)
+	case protocol.TypeCachedTabList:
+		a.sendToRelay(frame)
 	case protocol.TypePing:
 		a.sendEncryptedToRelay(&protocol.Frame{
 			Version: 1,
@@ -380,6 +382,12 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		a.sessionMu.Lock()
 		a.sessionReady = true
 		a.sessionMu.Unlock()
+		a.sendToIPC(&protocol.Frame{
+			Version: 1,
+			Type:    protocol.TypeSessionReady,
+			Seq:     a.nextSeq(),
+			Payload: frame.Payload,
+		})
 		a.sendSessionStatus("ready")
 	case protocol.TypeTabSwitch, protocol.TypeInput, protocol.TypeRemoteTelemetry,
 		protocol.TypeApprovalResponse:
@@ -430,6 +438,10 @@ func (a *Agent) handlePairRequest(payload []byte) {
 		a.sendPairReject("invalid_ios_pub")
 		return
 	}
+
+	// A fallback re-pair must discard any provisional session state so the
+	// subsequent HELLO exchange derives fresh transport keys on both sides.
+	a.resetSession()
 
 	a.pairingMu.Lock()
 	a.pairingAttempts = 0
@@ -667,6 +679,12 @@ func (a *Agent) establishSession() {
 		Payload: data,
 	}
 	a.sendEncryptedToRelay(frame)
+	a.sendToIPC(&protocol.Frame{
+		Version: 1,
+		Type:    protocol.TypeSessionReady,
+		Seq:     a.nextSeq(),
+		Payload: data,
+	})
 	a.sendSessionStatus("ready")
 }
 

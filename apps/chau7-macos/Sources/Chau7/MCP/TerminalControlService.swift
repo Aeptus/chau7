@@ -127,17 +127,16 @@ final class TerminalControlService {
                 }
             }
 
-            let tabCountBefore = model.tabs.count
+            let tabIDsBefore = Set(model.tabs.map(\.id))
             if let dir = directory {
-                model.newTab(at: dir)
+                model.newTab(at: dir, selectNewTab: false)
             } else {
-                model.newTab()
+                model.newTab(selectNewTab: false)
             }
 
-            // Find the newly created tab — it's the one that didn't exist before
-            // (newTab always selects the new tab, so selectedTabID is reliable here)
-            guard model.tabs.count > tabCountBefore,
-                  let tabIndex = model.tabs.firstIndex(where: { $0.id == model.selectedTabID }) else {
+            // Find the newly created tab by UUID diff because MCP-created tabs open
+            // in the background and do not become the selected tab.
+            guard let tabIndex = model.tabs.firstIndex(where: { !tabIDsBefore.contains($0.id) }) else {
                 return self.jsonError("Tab creation failed")
             }
 
@@ -258,10 +257,38 @@ final class TerminalControlService {
 
         DispatchQueue.main.async {
             guard let (_, session) = self.resolveTab(tabID) else { return }
-            session.sendInput(input)
+            session.sendOrQueueInput(input)
         }
         Log.info("MCP: send_input to \(tabID) (\(input.count) chars)")
         return encodeAny(["ok": true])
+    }
+
+    func pressKey(tabID: String, key: String, modifiers: [String]) -> String {
+        let keyPress: TerminalKeyPress
+        do {
+            keyPress = try TerminalKeyPress(key: key, modifiers: modifiers)
+            _ = try keyPress.encode()
+        } catch {
+            return jsonError(error.localizedDescription)
+        }
+
+        let tabExists: Bool = onMain {
+            self.resolveTab(tabID) != nil
+        }
+        guard tabExists else {
+            return jsonError("Tab not found: \(tabID)")
+        }
+
+        DispatchQueue.main.async {
+            guard let (_, session) = self.resolveTab(tabID) else { return }
+            session.sendOrQueueKeyPress(keyPress)
+        }
+        Log.info("MCP: press_key in \(tabID): key=\(keyPress.key) modifiers=\(keyPress.sortedModifierNames.joined(separator: "+"))")
+        return encodeAny(["ok": true])
+    }
+
+    func submitPrompt(tabID: String) -> String {
+        pressKey(tabID: tabID, key: "enter", modifiers: [])
     }
 
     func closeTab(tabID: String, force: Bool) -> String {

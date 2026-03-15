@@ -54,6 +54,8 @@ MCP Tools — Tab Management,tab_create,"Open a new terminal tab with optional d
 MCP Tools — Tab Management,tab_exec,"Execute a shell command in a tab — auto-queues if shell is still loading, checks prompt state",Shipped,Yes
 MCP Tools — Tab Management,tab_status,"Detailed tab status: process state, child processes (PID/CPU/RSS), active telemetry run, git branch",Shipped,Yes
 MCP Tools — Tab Management,tab_send_input,"Send raw input to terminal for interactive prompts and confirmations — no auto-newline",Shipped,Yes
+MCP Tools — Tab Management,tab_press_key,"Send terminal key presses for interactive TUIs — Enter, Escape, arrows, backspace, delete, paging keys, and ctrl/alt combos",Shipped,Yes
+MCP Tools — Tab Management,tab_submit_prompt,Submit the current interactive prompt by sending Enter as a key press,Shipped,Yes
 MCP Tools — Tab Management,tab_close,Close a tab with optional force flag — checks for running processes before closing,Shipped,Yes
 MCP Tools — Tab Management,tab_output,"Get recent terminal output (last N lines, max 5000) with 512KB hard cap and trailing-blank stripping",Shipped,Yes
 MCP Tools — Tab Management,tab_set_cto,"Set per-tab CTO override (default/forceOn/forceOff) — recalculates flag files and records decision",Shipped,Yes

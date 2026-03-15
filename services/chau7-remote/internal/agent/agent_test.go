@@ -1,6 +1,9 @@
 package agent
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -59,5 +62,63 @@ func TestValidatedIOSPublicKeyRejectsMalformedBase64(t *testing.T) {
 func TestValidatedIOSPublicKeyRejectsLowOrderPoint(t *testing.T) {
 	if _, err := validatedIOSPublicKey("AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="); err == nil {
 		t.Fatal("expected low-order iOS key to be rejected")
+	}
+}
+
+func TestHandlePairRequestResetsStaleSessionBeforeRepair(t *testing.T) {
+	iosPub := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 32))
+	macPub := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 32))
+
+	a := &Agent{
+		state: &State{
+			DeviceID:     "mac-device",
+			MacPublicKey: macPub,
+		},
+		pairingCode:    "123456",
+		pairingExpires: time.Now().Add(time.Minute),
+		macName:        "Test Mac",
+		statePath:      t.TempDir() + "/state.json",
+		crypto:         &cryptoSession{},
+		macNonce:       []byte{1, 2, 3, 4},
+		iosNonce:       []byte{5, 6, 7, 8},
+		currentIOSPub:  "stale-ios-pub",
+		currentPeerID:  "stale-peer",
+		currentPeerName:"Old Phone",
+		sessionReady:   true,
+		maxReceivedSeq: 42,
+	}
+
+	payload, err := json.Marshal(PairRequestPayload{
+		DeviceID:    "mac-device",
+		PairingCode: "123456",
+		IOSPub:      iosPub,
+		IOSName:     "New Phone",
+	})
+	if err != nil {
+		t.Fatalf("marshal pair request: %v", err)
+	}
+
+	a.handlePairRequest(payload)
+
+	if a.crypto != nil {
+		t.Fatal("expected stale session crypto to be cleared before repair handshake")
+	}
+	if len(a.iosNonce) != 0 {
+		t.Fatal("expected stale iOS nonce to be cleared before repair handshake")
+	}
+	if a.sessionReady {
+		t.Fatal("expected sessionReady to be cleared for repair handshake")
+	}
+	if a.maxReceivedSeq != 0 {
+		t.Fatalf("expected maxReceivedSeq to reset, got %d", a.maxReceivedSeq)
+	}
+	if a.currentIOSPub != iosPub {
+		t.Fatal("expected repaired session to track the newly paired iOS public key")
+	}
+	if a.currentPeerID == "" || a.currentPeerID == "stale-peer" {
+		t.Fatal("expected repaired session to replace stale peer identity")
+	}
+	if len(a.macNonce) == 0 {
+		t.Fatal("expected repair handshake to send a fresh Mac hello nonce")
 	}
 }

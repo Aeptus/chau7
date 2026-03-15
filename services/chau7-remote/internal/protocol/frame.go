@@ -18,6 +18,9 @@ const (
 	TypeSessionReady    = 0x05
 	TypeTabList         = 0x10
 	TypeTabSwitch       = 0x11
+	TypeActivityState   = 0x12
+	TypeActivityCleared = 0x13
+	TypeCachedTabList   = 0x14
 	TypeOutput          = 0x20
 	TypeInput           = 0x21
 	TypeSnapshot        = 0x22

@@ -7,6 +7,9 @@ import Chau7Core
 struct Chau7RemoteWidgetBundle: WidgetBundle {
     var body: some Widget {
         Chau7RemoteWidget()
+#if DEBUG
+        Chau7RemoteDebugPlaceholderWidget()
+#endif
     }
 }
 
@@ -183,3 +186,46 @@ private func activityURL(host: String, tabID: UInt32?, requestID: String? = nil)
     components.queryItems = items.isEmpty ? nil : items
     return components.url!
 }
+
+#if DEBUG
+private struct Chau7RemoteDebugEntry: TimelineEntry {
+    let date: Date
+}
+
+private struct Chau7RemoteDebugProvider: TimelineProvider {
+    func placeholder(in context: Context) -> Chau7RemoteDebugEntry {
+        Chau7RemoteDebugEntry(date: .now)
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (Chau7RemoteDebugEntry) -> Void) {
+        completion(Chau7RemoteDebugEntry(date: .now))
+    }
+
+    func getTimeline(in context: Context, completion: @escaping (Timeline<Chau7RemoteDebugEntry>) -> Void) {
+        completion(Timeline(entries: [Chau7RemoteDebugEntry(date: .now)], policy: .never))
+    }
+}
+
+private struct Chau7RemoteDebugPlaceholderWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(
+            kind: "com.chau7.remote.debug-placeholder",
+            provider: Chau7RemoteDebugProvider()
+        ) { _ in
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Chau7 Remote")
+                    .font(.headline)
+                Text("Debug widget placeholder")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .padding()
+            .containerBackground(.fill.tertiary, for: .widget)
+        }
+        .configurationDisplayName("Chau7 Remote Debug")
+        .description("Debug-only placeholder widget used for Xcode launch integration.")
+        .supportedFamilies([.systemSmall])
+    }
+}
+#endif

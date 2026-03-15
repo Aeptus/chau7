@@ -10,6 +10,7 @@ struct TerminalView: View {
     @State private var inputText = ""
     @State private var sendCount = 0
     @State private var pendingProtectedSend: ProtectedRemoteSend?
+    @State private var outputScrollTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -159,10 +160,11 @@ struct TerminalView: View {
             }
             .background(Color.black)
             .foregroundStyle(.green)
-            .onChange(of: client.outputText) { _, _ in
-                withAnimation(.easeOut(duration: 0.15)) {
-                    proxy.scrollTo("bottom", anchor: .bottom)
-                }
+            .onAppear {
+                scheduleScrollToBottom(using: proxy, immediate: true)
+            }
+            .onChange(of: client.outputText.count) { _, _ in
+                scheduleScrollToBottom(using: proxy)
             }
         }
     }
@@ -267,6 +269,17 @@ struct TerminalView: View {
             }
         } else {
             action()
+        }
+    }
+
+    private func scheduleScrollToBottom(using proxy: ScrollViewProxy, immediate: Bool = false) {
+        outputScrollTask?.cancel()
+        outputScrollTask = Task { @MainActor in
+            if !immediate {
+                try? await Task.sleep(for: .milliseconds(40))
+            }
+            guard !Task.isCancelled else { return }
+            proxy.scrollTo("bottom", anchor: .bottom)
         }
     }
 
