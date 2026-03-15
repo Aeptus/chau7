@@ -1,4 +1,5 @@
 import AppKit
+import Chau7Core
 
 // MARK: - Unified Terminal View Protocol
 
@@ -88,6 +89,9 @@ protocol TerminalViewLike: NSView {
 
     /// Send text to the PTY
     func send(txt text: String)
+
+    /// Send a normalized key press to the PTY
+    func send(keyPress: TerminalKeyPress)
 
     // MARK: - Selection Methods
 

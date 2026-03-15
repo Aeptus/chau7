@@ -1956,7 +1956,7 @@ final class OverlayTabsModel: ObservableObject {
         }
     }
 
-    func newTab() {
+    func newTab(selectNewTab: Bool = true) {
         dispatchPrecondition(condition: .onQueue(.main))
         Log.trace("newTab: creating new tab, current tabs.count=\(tabs.count)")
         needsFreshTabOnShow = false
@@ -1984,11 +1984,15 @@ final class OverlayTabsModel: ObservableObject {
         lastReportedRenderedCount = -1
         lastPreferenceUpdateTime = Date()
 
-        selectedTabID = tab.id
-        Log.trace("newTab: selectedTabID=\(tab.id)")
-        focusSelected()
+        if selectNewTab {
+            selectedTabID = tab.id
+            Log.trace("newTab: selectedTabID=\(tab.id)")
+            focusSelected()
+            updateSnippetContextForSelection()
+        } else {
+            Log.trace("newTab: created background tab \(tab.id)")
+        }
         updateSuspensionState()
-        updateSnippetContextForSelection()
         if isSearchVisible {
             refreshSearch()
         }
@@ -2009,7 +2013,7 @@ final class OverlayTabsModel: ObservableObject {
         }
     }
 
-    func newTab(at directory: String) {
+    func newTab(at directory: String, selectNewTab: Bool = true) {
         needsFreshTabOnShow = false
         var tab = OverlayTab(appModel: appModel)
         let colors = TabColor.allCases
@@ -2030,10 +2034,14 @@ final class OverlayTabsModel: ObservableObject {
             tabs.append(tab)
         }
 
-        selectedTabID = tab.id
-        focusSelected()
+        if selectNewTab {
+            selectedTabID = tab.id
+            focusSelected()
+            updateSnippetContextForSelection()
+        } else {
+            Log.trace("newTab(at:): created background tab \(tab.id) at \(directory)")
+        }
         updateSuspensionState()
-        updateSnippetContextForSelection()
         if isSearchVisible {
             refreshSearch()
         }

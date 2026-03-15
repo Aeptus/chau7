@@ -437,6 +437,27 @@ final class TerminalSessionModelTests: XCTestCase {
         wait(for: [expectationDone], timeout: 1.0)
     }
 
+    func testQueuedInputAndEnterFlushInOriginalOrderOnAttach() throws {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+
+        session.sendOrQueueInput("hello")
+        session.sendOrQueueKeyPress(try TerminalKeyPress(key: "enter"))
+
+        let terminalView = RustTerminalView(frame: .zero)
+        var capturedInputs: [String] = []
+        terminalView.onInput = { capturedInputs.append($0) }
+
+        session.attachRustTerminal(terminalView)
+
+        let expectationDone = expectation(description: "queued text and enter flush in order")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            XCTAssertEqual(capturedInputs, ["hello", "\r"])
+            expectationDone.fulfill()
+        }
+        wait(for: [expectationDone], timeout: 1.0)
+    }
+
     func testPrefillInputAppliesImmediatelyWhenTerminalIsReady() {
         let model = AppModel()
         let session = TerminalSessionModel(appModel: model)
@@ -487,6 +508,38 @@ final class TerminalSessionModelTests: XCTestCase {
             readyExpectation.fulfill()
         }
         wait(for: [readyExpectation], timeout: 1.0)
+    }
+
+    func testBuildEnvironmentIncludesUserShellConfigHints() {
+        let model = AppModel()
+        let session = TerminalSessionModel(appModel: model)
+        let environment = Dictionary(
+            uniqueKeysWithValues: session.buildEnvironment().compactMap { entry in
+                let parts = entry.split(separator: "=", maxSplits: 1).map(String.init)
+                guard parts.count == 2 else { return nil }
+                return (parts[0], parts[1])
+            }
+        )
+
+        XCTAssertEqual(environment["CHAU7_USER_HOME"], ShellLaunchEnvironment.userHome())
+        XCTAssertEqual(environment["CHAU7_USER_ZDOTDIR"], ShellLaunchEnvironment.userZdotdir())
+        XCTAssertEqual(environment["CHAU7_USER_XDG_CONFIG_HOME"], ShellLaunchEnvironment.userXDGConfigHome())
+    }
+
+    func testPreInitializeZshWrapperUsesRuntimeShellEnvironment() throws {
+        TerminalSessionModel.preInitialize()
+        guard let integrationDir = TerminalSessionModel.getShellIntegrationDir() else {
+            XCTFail("Expected shell integration directory")
+            return
+        }
+
+        let zshrcPath = (integrationDir as NSString).appendingPathComponent(".zshrc")
+        let contents = try String(contentsOfFile: zshrcPath, encoding: .utf8)
+
+        XCTAssertTrue(contents.contains("CHAU7_USER_HOME"))
+        XCTAssertTrue(contents.contains("CHAU7_USER_ZDOTDIR"))
+        XCTAssertTrue(contents.contains("export ZDOTDIR=\"$CHAU7_USER_ZDOTDIR\""))
+        XCTAssertFalse(contents.contains("isolation-home/.zshrc"))
     }
 }
 #endif

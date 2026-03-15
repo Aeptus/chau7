@@ -251,6 +251,34 @@ final class MCPSession {
                 ]
             ],
             [
+                "name": "tab_press_key",
+                "description": "Send a terminal key press to a tab (for interactive TUIs like Claude Code). Use this for Enter, Escape, arrows, backspace, and control/alt key combos.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "tab_id": ["type": "string", "description": "Tab UUID"],
+                        "key": ["type": "string", "description": "Key name, e.g. enter, escape, tab, up, down, left, right, backspace, delete, home, end, page_up, page_down, insert, or a single character for ctrl/alt combos"],
+                        "modifiers": [
+                            "type": "array",
+                            "items": ["type": "string"],
+                            "description": "Optional modifiers: shift, control/ctrl, option/alt/meta"
+                        ]
+                    ],
+                    "required": ["tab_id", "key"]
+                ]
+            ],
+            [
+                "name": "tab_submit_prompt",
+                "description": "Submit the current interactive prompt in a tab by sending Enter as a key press.",
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "tab_id": ["type": "string", "description": "Tab UUID"]
+                    ],
+                    "required": ["tab_id"]
+                ]
+            ],
+            [
                 "name": "tab_close",
                 "description": "Close a tab. Fails if a process is running unless force=true.",
                 "inputSchema": [
@@ -472,6 +500,20 @@ final class MCPSession {
                 return jsonError("tab_id and input are required")
             }
             return controlService.sendInput(tabID: tabID, input: input)
+
+        case "tab_press_key":
+            guard let tabID = arguments["tab_id"] as? String,
+                  let key = arguments["key"] as? String else {
+                return jsonError("tab_id and key are required")
+            }
+            let modifiers = arguments["modifiers"] as? [String] ?? []
+            return controlService.pressKey(tabID: tabID, key: key, modifiers: modifiers)
+
+        case "tab_submit_prompt":
+            guard let tabID = arguments["tab_id"] as? String else {
+                return jsonError("tab_id is required")
+            }
+            return controlService.submitPrompt(tabID: tabID)
 
         case "tab_close":
             guard let tabID = arguments["tab_id"] as? String else {

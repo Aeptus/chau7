@@ -3,7 +3,6 @@ import Combine
 import os.log
 import Chau7Core
 import Darwin
-import CryptoKit
 
 @MainActor
 final class RemoteControlManager: ObservableObject {
@@ -24,16 +23,16 @@ final class RemoteControlManager: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     private weak var overlayModel: OverlayTabsModel?
 
-    private var tabIDByUUID: [UUID: UInt32] = [:]
-    private var uuidByTabID: [UInt32: UUID] = [:]
-    private var tabIDBySessionIdentifier: [String: UInt32] = [:]
-    private var nextTabID: UInt32 = 1
+    private var tabRegistry = RemoteTabRegistry()
     private var seqCounter: UInt64 = 1
     private var pendingProtectedInputs: [String: ProtectedRemoteInput] = [:]
     private var approvalContexts: [String: PendingRemoteApprovalContext] = [:]
     private var connectedPairedDeviceID: String?
     private var sessionStateCancellables: [String: AnyCancellable] = [:]
     private var activityRefreshWorkItem: DispatchWorkItem?
+    private var backgroundSnapshotTask: Task<Void, Never>?
+    private var outputFlushTask: Task<Void, Never>?
+    private var pendingOutputByTabID = RemotePendingOutputBuffer<Data>()
 
     private let ipc = RemoteIPCServer.shared
 
@@ -53,6 +52,8 @@ final class RemoteControlManager: ObservableObject {
             self?.sessionStatus = nil
             self?.connectedPairedDeviceID = nil
             self?.remoteActivity = nil
+            self?.cancelBackgroundSnapshotPrefetch()
+            self?.cancelPendingOutputFlush()
             self?.refreshPairedDevices()
         }
         ipc.start()
@@ -81,6 +82,8 @@ final class RemoteControlManager: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.sendTabList()
+                self?.sendSelectedTabSnapshot()
+                self?.scheduleBackgroundSnapshotPrefetch()
                 self?.rebuildSessionStateSubscriptions()
                 self?.scheduleRemoteActivityRefresh()
             }
@@ -90,7 +93,7 @@ final class RemoteControlManager: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.sendTabList()
-                self?.sendSnapshot(for: 0)
+                self?.sendSelectedTabSnapshot()
                 self?.scheduleRemoteActivityRefresh()
             }
             .store(in: &cancellables)
@@ -100,10 +103,16 @@ final class RemoteControlManager: ObservableObject {
 
     func recordOutput(_ data: Data, sessionIdentifier: String) {
         guard isIPCConnected else { return }
-        guard let tabID = tabIDBySessionIdentifier[sessionIdentifier] else { return }
-        let token = FeatureProfiler.shared.begin(.remoteOutput, bytes: data.count)
-        sendFrame(type: .output, tabID: tabID, payload: data)
-        FeatureProfiler.shared.end(token)
+        guard let tabID = tabRegistry.tabID(forSessionIdentifier: sessionIdentifier) else { return }
+        pendingOutputByTabID.append(data, to: tabID) { existing, chunk in
+            existing.append(chunk)
+        }
+
+        if pendingOutputByTabID[tabID]?.count ?? 0 >= RemoteOutputTuning.maxPendingBytesPerTab {
+            flushPendingOutput()
+        } else {
+            schedulePendingOutputFlush()
+        }
     }
 
     func sendSnapshot(for tabID: UInt32) {
@@ -111,14 +120,14 @@ final class RemoteControlManager: ObservableObject {
         let targetTab: OverlayTab?
         if tabID == 0 {
             targetTab = overlayModel.selectedTab
-        } else if let uuid = uuidByTabID[tabID] {
+        } else if let uuid = tabRegistry.uuid(for: tabID) {
             targetTab = overlayModel.tabs.first { $0.id == uuid }
         } else {
             targetTab = nil
         }
         guard let session = targetTab?.session,
               let snapshot = session.captureRemoteSnapshot() else { return }
-        sendFrame(type: .snapshot, tabID: tabID, payload: snapshot)
+        sendFrame(type: .snapshot, tabID: tabID, payload: RemoteOutputTuning.capSnapshot(snapshot))
     }
 
     private func startAgent() {
@@ -202,6 +211,8 @@ final class RemoteControlManager: ObservableObject {
     func stopAgent() {
         guard let process else { return }
         process.terminationHandler = nil
+        cancelBackgroundSnapshotPrefetch()
+        cancelPendingOutputFlush()
         // Terminate process BEFORE closing pipes to avoid SIGPIPE
         terminateProcess(process, name: "remote agent")
         cleanupPipes()
@@ -265,14 +276,13 @@ final class RemoteControlManager: ObservableObject {
             isIPCConnected = true
             sendInitialState()
         case .sessionStatus:
-            do {
-                let status = try JSONDecoder().decode(RemoteSessionStatus.self, from: frame.payload)
-                sessionStatus = status.status
-                connectedPairedDeviceID = status.pairedDeviceID
-                refreshPairedDevices()
-            } catch {
-                logger.warning("Failed to decode session status: \(error.localizedDescription)")
+            guard let status: RemoteSessionStatus = decodePayload(frame, as: RemoteSessionStatus.self, context: "session status") else { return }
+            sessionStatus = status.status
+            connectedPairedDeviceID = status.pairedDeviceID
+            if status.status == "ready" {
+                sendInitialState()
             }
+            refreshPairedDevices()
         case .tabSwitch:
             handleTabSwitch(frame)
         case .input:
@@ -293,31 +303,29 @@ final class RemoteControlManager: ObservableObject {
     }
 
     private func handlePairingInfo(_ frame: RemoteFrame) {
-        do {
-            let info = try JSONDecoder().decode(RemotePairingInfo.self, from: frame.payload)
-            pairingInfo = info
-            refreshPairedDevices()
-        } catch {
-            logger.warning("Failed to decode pairing info: \(error.localizedDescription)")
-        }
+        guard let info: RemotePairingInfo = decodePayload(frame, as: RemotePairingInfo.self, context: "pairing info") else { return }
+        pairingInfo = info
+        refreshPairedDevices()
     }
 
     private func handleTabSwitch(_ frame: RemoteFrame) {
         guard let overlayModel else { return }
-        do {
-            let payload = try JSONDecoder().decode(RemoteTabSwitchPayload.self, from: frame.payload)
-            if let uuid = uuidByTabID[payload.tabID] {
-                overlayModel.selectTab(id: uuid)
-                sendSnapshot(for: payload.tabID)
-            }
-        } catch {
-            logger.warning("Failed to decode tab switch payload: \(error.localizedDescription)")
+        guard let payload: RemoteTabSwitchPayload = decodePayload(frame, as: RemoteTabSwitchPayload.self, context: "tab switch") else { return }
+        if let uuid = tabRegistry.uuid(for: payload.tabID) {
+            overlayModel.selectTab(id: uuid)
+            sendSnapshot(for: payload.tabID)
+        } else {
+            sendError(code: "tab_unavailable", message: "That tab is no longer available for remote control.", tabID: payload.tabID)
         }
     }
 
     private func handleInput(_ frame: RemoteFrame) {
-        guard let (session, resolvedTabID) = resolveInputTarget(for: frame.tabID),
-              let text = String(data: frame.payload, encoding: .utf8) else {
+        guard let text = String(data: frame.payload, encoding: .utf8) else {
+            sendError(code: "invalid_input_encoding", message: "Remote input must be valid UTF-8.", tabID: frame.tabID)
+            return
+        }
+        guard let (session, resolvedTabID) = resolveInputTarget(for: frame.tabID) else {
+            sendError(code: "tab_unavailable", message: "That tab cannot receive remote input right now.", tabID: frame.tabID)
             return
         }
 
@@ -350,41 +358,42 @@ final class RemoteControlManager: ObservableObject {
         // Purge expired pending approvals on each response
         purgeExpiredProtectedInputs()
 
-        do {
-            let response = try JSONDecoder().decode(ApprovalResponsePayload.self, from: frame.payload)
-            approvalContexts.removeValue(forKey: response.requestID)
-            if let protectedInput = pendingProtectedInputs.removeValue(forKey: response.requestID) {
-                if response.approved,
-                   let session = session(for: protectedInput.tabID) {
-                    session.sendInput(protectedInput.text)
-                    logger.info("Remote: protected action approved for tab \(protectedInput.tabID)")
-                } else {
-                    logger.info("Remote: protected action denied for tab \(protectedInput.tabID)")
-                }
-                sendRemoteActivity()
-                return
+        guard let response: ApprovalResponsePayload = decodePayload(frame, as: ApprovalResponsePayload.self, context: "approval response") else { return }
+        approvalContexts.removeValue(forKey: response.requestID)
+        if let protectedInput = pendingProtectedInputs.removeValue(forKey: response.requestID) {
+            if response.approved,
+               let session = session(for: protectedInput.tabID) {
+                session.sendInput(protectedInput.text)
+                logger.info("Remote: protected action approved for tab \(protectedInput.tabID)")
+            } else {
+                logger.info("Remote: protected action denied for tab \(protectedInput.tabID)")
             }
-            TerminalControlService.shared.resolveApproval(requestID: response.requestID, approved: response.approved)
             sendRemoteActivity()
-            logger.info("Remote: approval response for \(response.requestID): \(response.approved ? "allowed" : "denied")")
-        } catch {
-            logger.warning("Failed to decode approval response: \(error.localizedDescription)")
+            return
         }
+        TerminalControlService.shared.resolveApproval(requestID: response.requestID, approved: response.approved)
+        sendRemoteActivity()
+        logger.info("Remote: approval response for \(response.requestID): \(response.approved ? "allowed" : "denied")")
     }
 
     private func handleRemoteTelemetry(_ frame: RemoteFrame) {
-        do {
-            let event = try JSONDecoder().decode(RemoteClientTelemetryEvent.self, from: frame.payload)
-            TelemetryStore.shared.insertRemoteClientEvent(event)
-        } catch {
-            logger.warning("Failed to decode remote telemetry event: \(error.localizedDescription)")
-        }
+        guard let event: RemoteClientTelemetryEvent = decodePayload(frame, as: RemoteClientTelemetryEvent.self, context: "remote telemetry") else { return }
+        TelemetryStore.shared.insertRemoteClientEvent(event)
     }
 
     private func sendInitialState() {
         sendTabList()
-        sendSnapshot(for: 0)
+        sendSelectedTabSnapshot()
+        scheduleBackgroundSnapshotPrefetch()
         sendRemoteActivity(force: true)
+    }
+
+    private func sendSelectedTabSnapshot() {
+        guard let overlayModel,
+              let tabID = tabRegistry.tabID(for: overlayModel.selectedTabID) else {
+            return
+        }
+        sendSnapshot(for: tabID)
     }
 
     private func rebuildSessionStateSubscriptions() {
@@ -438,7 +447,7 @@ final class RemoteControlManager: ObservableObject {
 
         let approvalsByTabID = Dictionary(grouping: approvalContexts.values, by: \.tabID)
         let candidates = overlayModel.tabs.compactMap { tab -> RemoteActivityCandidate? in
-            guard let tabID = tabIDByUUID[tab.id] else {
+            guard let tabID = tabRegistry.tabID(for: tab.id) else {
                 return nil
             }
 
@@ -587,34 +596,17 @@ final class RemoteControlManager: ObservableObject {
 
     private func sendTabList() {
         guard let overlayModel else { return }
-        var tabPayloads: [RemoteTabDescriptor] = []
-        var newTabIDByUUID: [UUID: UInt32] = [:]
-        var newUUIDByTabID: [UInt32: UUID] = [:]
-        var newTabIDBySession: [String: UInt32] = [:]
-
-        for tab in overlayModel.tabs {
-            let tabID = tabIDByUUID[tab.id] ?? nextTabID
-            if tabIDByUUID[tab.id] == nil {
-                nextTabID = nextTabID &+ 1
-            }
-            newTabIDByUUID[tab.id] = tabID
-            newUUIDByTabID[tabID] = tab.id
-            if let session = tab.session {
-                newTabIDBySession[session.tabIdentifier] = tabID
-            }
-            tabPayloads.append(
-                RemoteTabDescriptor(
-                    tabID: tabID,
+        let tabPayloads = tabRegistry.rebuild(
+            with: remoteControllableTabs(from: overlayModel).map { tab in
+                RemoteTabRegistryEntry(
+                    id: tab.id,
+                    sessionIdentifier: tab.session?.tabIdentifier,
                     title: tab.displayTitle,
                     isActive: tab.id == overlayModel.selectedTabID,
                     isMCPControlled: tab.isMCPControlled
                 )
-            )
-        }
-
-        tabIDByUUID = newTabIDByUUID
-        uuidByTabID = newUUIDByTabID
-        tabIDBySessionIdentifier = newTabIDBySession
+            }
+        )
 
         do {
             let payload = try JSONEncoder().encode(RemoteTabListPayload(tabs: tabPayloads))
@@ -623,6 +615,64 @@ final class RemoteControlManager: ObservableObject {
         } catch {
             logger.warning("Failed to encode tab list: \(error.localizedDescription)")
         }
+    }
+
+    private func scheduleBackgroundSnapshotPrefetch() {
+        cancelBackgroundSnapshotPrefetch()
+        guard isIPCConnected, let overlayModel else { return }
+
+        let backgroundTabIDs = tabRegistry.backgroundTabIDs(
+            for: remoteControllableTabs(from: overlayModel).map(\.id),
+            selectedTabID: overlayModel.selectedTabID
+        )
+
+        guard !backgroundTabIDs.isEmpty else { return }
+
+        backgroundSnapshotTask = Task { @MainActor [weak self] in
+            for (index, tabID) in backgroundTabIDs.enumerated() {
+                guard let self, !Task.isCancelled, self.isIPCConnected else { return }
+                if index > 0 {
+                    try? await Task.sleep(for: .milliseconds(75))
+                }
+                self.sendSnapshot(for: tabID)
+            }
+        }
+    }
+
+    private func cancelBackgroundSnapshotPrefetch() {
+        backgroundSnapshotTask?.cancel()
+        backgroundSnapshotTask = nil
+    }
+
+    private func schedulePendingOutputFlush() {
+        guard outputFlushTask == nil, isIPCConnected, !pendingOutputByTabID.isEmpty else { return }
+        outputFlushTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: RemoteOutputTuning.flushInterval)
+            guard let self, !Task.isCancelled else { return }
+            self.flushPendingOutput()
+        }
+    }
+
+    private func cancelPendingOutputFlush() {
+        outputFlushTask?.cancel()
+        outputFlushTask = nil
+        pendingOutputByTabID.removeAll(keepingCapacity: true)
+    }
+
+    private func flushPendingOutput() {
+        outputFlushTask?.cancel()
+        outputFlushTask = nil
+        guard isIPCConnected, !pendingOutputByTabID.isEmpty else { return }
+
+        for (tabID, payload) in pendingOutputByTabID.drainAll(sortedByTabID: true) {
+            let token = FeatureProfiler.shared.begin(.remoteOutput, bytes: payload.count)
+            sendFrame(type: .output, tabID: tabID, payload: payload)
+            FeatureProfiler.shared.end(token)
+        }
+    }
+
+    private func remoteControllableTabs(from overlayModel: OverlayTabsModel) -> [OverlayTab] {
+        overlayModel.tabs.filter { $0.session != nil }
     }
 
     private func sendFrame(type: RemoteFrameType, tabID: UInt32, payload: Data) {
@@ -637,22 +687,40 @@ final class RemoteControlManager: ObservableObject {
         ipc.send(frame)
     }
 
+    private func sendError(code: String, message: String, tabID: UInt32 = 0) {
+        let payload = RemoteErrorPayload(code: code, message: message)
+        guard let data = try? JSONEncoder().encode(payload) else {
+            logger.warning("Failed to encode remote error payload for code \(code)")
+            return
+        }
+        sendFrame(type: .error, tabID: tabID, payload: data)
+    }
+
     private func nextSeq() -> UInt64 {
         defer { seqCounter &+= 1 }
         return seqCounter
+    }
+
+    private func decodePayload<T: Decodable>(_ frame: RemoteFrame, as type: T.Type, context: String) -> T? {
+        do {
+            return try JSONDecoder().decode(type, from: frame.payload)
+        } catch {
+            logger.warning("Failed to decode \(context): \(error.localizedDescription)")
+            return nil
+        }
     }
 
     private func resolveInputTarget(for tabID: UInt32) -> (TerminalSessionModel, UInt32)? {
         guard let overlayModel else { return nil }
         if tabID == 0 {
             guard let selectedTab = overlayModel.selectedTab?.session,
-                  let resolvedTabID = tabIDByUUID[overlayModel.selectedTabID] else {
+                  let resolvedTabID = tabRegistry.tabID(for: overlayModel.selectedTabID) else {
                 return nil
             }
             return (selectedTab, resolvedTabID)
         }
 
-        guard let uuid = uuidByTabID[tabID],
+        guard let uuid = tabRegistry.uuid(for: tabID),
               let session = overlayModel.tabs.first(where: { $0.id == uuid })?.session else {
             return nil
         }
@@ -665,7 +733,7 @@ final class RemoteControlManager: ObservableObject {
         }
 
         guard let overlayModel,
-              let uuid = uuidByTabID[tabID] else {
+              let uuid = tabRegistry.uuid(for: tabID) else {
             return nil
         }
         return overlayModel.tabs.first(where: { $0.id == uuid })?.session
@@ -689,7 +757,7 @@ final class RemoteControlManager: ObservableObject {
 
         if let protectedInput = pendingProtectedInputs[requestID],
            let session = session(for: protectedInput.tabID),
-           let uuid = uuidByTabID[protectedInput.tabID],
+           let uuid = tabRegistry.uuid(for: protectedInput.tabID),
            let tab = overlayModel?.tabs.first(where: { $0.id == uuid }) {
             approvalContexts[requestID] = PendingRemoteApprovalContext(
                 requestID: approval.requestID,
@@ -708,7 +776,7 @@ final class RemoteControlManager: ObservableObject {
         guard let overlayModel,
               let tab = overlayModel.selectedTab,
               let session = tab.session,
-              let tabID = tabIDByUUID[tab.id] else {
+              let tabID = tabRegistry.tabID(for: tab.id) else {
             return
         }
 
@@ -974,218 +1042,4 @@ final class RemoteControlManager: ObservableObject {
 
         return true
     }
-}
-
-struct RemotePairingInfo: Codable, Equatable {
-    let deviceID: String
-    let macPub: String
-    let pairingCode: String
-    let expiresAt: String
-    let relayURL: String
-
-    enum CodingKeys: String, CodingKey {
-        case deviceID = "device_id"
-        case macPub = "mac_pub"
-        case pairingCode = "pairing_code"
-        case expiresAt = "expires_at"
-        case relayURL = "relay_url"
-    }
-}
-
-struct RemoteQRPayload: Codable, Equatable {
-    let relayURL: String
-    let deviceID: String
-    let macPub: String
-    let pairingCode: String
-    let expiresAt: String
-
-    enum CodingKeys: String, CodingKey {
-        case relayURL = "relay_url"
-        case deviceID = "device_id"
-        case macPub = "mac_pub"
-        case pairingCode = "pairing_code"
-        case expiresAt = "expires_at"
-    }
-}
-
-extension RemotePairingInfo {
-    func qrPayloadString() -> String? {
-        let payload = RemoteQRPayload(
-            relayURL: relayURL,
-            deviceID: deviceID,
-            macPub: macPub,
-            pairingCode: pairingCode,
-            expiresAt: expiresAt
-        )
-        guard let data = try? JSONEncoder().encode(payload) else {
-            Log.error("RemoteControlManager: failed to encode QR payload")
-            return nil
-        }
-        return String(data: data, encoding: .utf8)
-    }
-}
-
-struct RemoteTabDescriptor: Codable, Equatable {
-    let tabID: UInt32
-    let title: String
-    let isActive: Bool
-    let isMCPControlled: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case tabID = "tab_id"
-        case title
-        case isActive = "is_active"
-        case isMCPControlled = "is_mcp_controlled"
-    }
-}
-
-struct RemoteTabListPayload: Codable, Equatable {
-    let tabs: [RemoteTabDescriptor]
-}
-
-struct RemoteTabSwitchPayload: Codable, Equatable {
-    let tabID: UInt32
-
-    enum CodingKeys: String, CodingKey {
-        case tabID = "tab_id"
-    }
-}
-
-struct RemoteSessionStatus: Codable, Equatable {
-    let status: String
-    let pairedDeviceID: String?
-    let pairedDeviceName: String?
-
-    enum CodingKeys: String, CodingKey {
-        case status
-        case pairedDeviceID = "paired_device_id"
-        case pairedDeviceName = "paired_device_name"
-    }
-}
-
-struct RemotePairedDevice: Identifiable, Equatable {
-    let id: String
-    let name: String
-    let fingerprint: String
-    let pairedAt: String?
-    let lastConnectedAt: String?
-    let isConnected: Bool
-}
-
-private struct RemoteAgentStateSnapshot: Codable {
-    let deviceID: String?
-    let macPrivateKey: String?
-    let macPublicKey: String?
-    var pairedDevices: [RemoteAgentPairedDeviceSnapshot]
-    let iosPublicKey: String?
-    let iosName: String?
-    let keyEncrypted: Bool?
-    let relaySecret: String?
-
-    enum CodingKeys: String, CodingKey {
-        case deviceID = "device_id"
-        case macPrivateKey = "mac_private_key"
-        case macPublicKey = "mac_public_key"
-        case pairedDevices = "paired_devices"
-        case iosPublicKey = "ios_public_key"
-        case iosName = "ios_name"
-        case keyEncrypted = "key_encrypted"
-        case relaySecret = "relay_secret"
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        deviceID = try container.decodeIfPresent(String.self, forKey: .deviceID)
-        macPrivateKey = try container.decodeIfPresent(String.self, forKey: .macPrivateKey)
-        macPublicKey = try container.decodeIfPresent(String.self, forKey: .macPublicKey)
-        pairedDevices = try container.decodeIfPresent([RemoteAgentPairedDeviceSnapshot].self, forKey: .pairedDevices) ?? []
-        iosPublicKey = try container.decodeIfPresent(String.self, forKey: .iosPublicKey)
-        iosName = try container.decodeIfPresent(String.self, forKey: .iosName)
-        keyEncrypted = try container.decodeIfPresent(Bool.self, forKey: .keyEncrypted)
-        relaySecret = try container.decodeIfPresent(String.self, forKey: .relaySecret)
-        if pairedDevices.isEmpty,
-           let iosPublicKey,
-           let rawKey = Data(base64Encoded: iosPublicKey) {
-            pairedDevices = [
-                RemoteAgentPairedDeviceSnapshot(
-                    id: Self.fingerprint(for: rawKey),
-                    name: iosName ?? "",
-                    iosPublicKey: iosPublicKey,
-                    publicKeyFingerprint: Self.fingerprint(for: rawKey),
-                    pairedAt: nil,
-                    lastConnectedAt: nil
-                )
-            ]
-        }
-    }
-
-    func encode(to encoder: Encoder) throws {
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encodeIfPresent(deviceID, forKey: .deviceID)
-        try container.encodeIfPresent(macPrivateKey, forKey: .macPrivateKey)
-        try container.encodeIfPresent(macPublicKey, forKey: .macPublicKey)
-        try container.encode(pairedDevices, forKey: .pairedDevices)
-        try container.encodeIfPresent(pairedDevices.first?.iosPublicKey, forKey: .iosPublicKey)
-        try container.encodeIfPresent(pairedDevices.first?.name, forKey: .iosName)
-        try container.encodeIfPresent(keyEncrypted, forKey: .keyEncrypted)
-        try container.encodeIfPresent(relaySecret, forKey: .relaySecret)
-    }
-
-    mutating func removePairedDevice(id: String) {
-        pairedDevices.removeAll { $0.id == id }
-    }
-
-    private static func fingerprint(for rawKey: Data) -> String {
-        Data(SHA256.hash(data: rawKey).prefix(8)).base64EncodedString()
-    }
-}
-
-private struct RemoteAgentPairedDeviceSnapshot: Codable, Equatable {
-    let id: String
-    let name: String
-    let iosPublicKey: String
-    let publicKeyFingerprint: String
-    let pairedAt: String?
-    let lastConnectedAt: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case name
-        case iosPublicKey = "ios_public_key"
-        case publicKeyFingerprint = "public_key_fingerprint"
-        case pairedAt = "paired_at"
-        case lastConnectedAt = "last_connected_at"
-    }
-}
-
-private struct PendingRemoteApprovalContext {
-    let requestID: String
-    let tabID: UInt32
-    let tabTitle: String
-    let toolName: String
-    let projectName: String?
-    let sessionID: String?
-    let command: String
-    let flaggedCommand: String
-    let requestedAt: Date
-
-    var approval: RemoteActivityApproval {
-        RemoteActivityApproval(
-            requestID: requestID,
-            command: command,
-            flaggedCommand: flaggedCommand
-        )
-    }
-}
-
-private struct ProtectedRemoteInput {
-    let tabID: UInt32
-    let text: String
-    let flaggedCommand: String
-    let createdAt: Date = Date()
-
-    /// Protected inputs expire after 2 minutes.
-    static let ttl: TimeInterval = 120
-
-    var isExpired: Bool { Date().timeIntervalSince(createdAt) > Self.ttl }
 }

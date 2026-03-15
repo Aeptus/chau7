@@ -127,6 +127,7 @@ public enum RemoteFrameType: UInt8, CaseIterable, Sendable {
     case tabSwitch = 0x11
     case activityState = 0x12
     case activityCleared = 0x13
+    case cachedTabList = 0x14
     case output = 0x20
     case input = 0x21
     case snapshot = 0x22

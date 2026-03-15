@@ -20,6 +20,11 @@ enum CommandStatus: String {
 /// - Note: Thread Safety - @Published properties must be modified on main thread.
 ///   Callbacks may arrive on background threads and dispatch to main via DispatchQueue.main.async.
 final class TerminalSessionModel: NSObject, ObservableObject {
+    private enum PendingTerminalAction {
+        case text(String)
+        case keyPress(TerminalKeyPress)
+    }
+
     private struct LatencySampleBuffer {
         private var buffer: [Int]
         private var index = 0
@@ -297,9 +302,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private var pendingPrefillInput: String?
     /// Retry counter for pending prefill flush attempts.
     private var pendingPrefillRetries = 0
-    /// Restore commands (cd, scrollback cat) queued when the terminal view hasn't been
-    /// created yet. Flushed on view attachment before the prefill command.
-    private var pendingRestoreInput: String?
+    /// Input queued before the terminal view exists. Preserves ordering between raw
+    /// text input and synthesized key presses, then flushes on view attachment.
+    private var pendingTerminalActions: [PendingTerminalAction] = []
     /// Cached snapshot of the last rendered terminal frame, used for instant tab-switch visuals
     /// when the actual NSView has been removed from the hierarchy (distant-tab optimization).
     var lastRenderedSnapshot: NSImage?
@@ -566,7 +571,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             }
         }
 
-        flushPendingRestoreInput()
+        flushPendingTerminalActions()
         flushPendingPrefillInputIfReady()
     }
 
@@ -1950,22 +1955,26 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     /// Call this at app launch to create shell integration files for all supported shells
     /// This runs shell integration at startup (not as a command) so it won't be in history
     static func preInitialize() {
-        let home = RuntimeIsolation.homePath()
+        let fallbackHome = ShellLaunchEnvironment.userHome()
+        let fallbackZdotdir = ShellLaunchEnvironment.userZdotdir()
+        let fallbackXDGConfigHome = ShellLaunchEnvironment.userXDGConfigHome()
 
         // Create .zshrc for zsh
         let zshrc = """
         # Chau7 wrapper - source user's shell config first
-        export ZDOTDIR="\(home)"
-        [ -f "\(home)/.zshenv" ] && source "\(home)/.zshenv"
-        [ -f "\(home)/.zshrc" ] && source "\(home)/.zshrc"
+        export CHAU7_USER_HOME="${CHAU7_USER_HOME:-${HOME:-\(fallbackHome)}}"
+        export CHAU7_USER_ZDOTDIR="${CHAU7_USER_ZDOTDIR:-\(fallbackZdotdir)}"
+        export ZDOTDIR="$CHAU7_USER_ZDOTDIR"
+        [ -f "$CHAU7_USER_ZDOTDIR/.zshenv" ] && source "$CHAU7_USER_ZDOTDIR/.zshenv"
+        [ -f "$CHAU7_USER_ZDOTDIR/.zshrc" ] && source "$CHAU7_USER_ZDOTDIR/.zshrc"
         if [[ -o login ]]; then
-          [ -f "\(home)/.zprofile" ] && source "\(home)/.zprofile"
-          [ -f "\(home)/.zlogin" ] && source "\(home)/.zlogin"
+          [ -f "$CHAU7_USER_ZDOTDIR/.zprofile" ] && source "$CHAU7_USER_ZDOTDIR/.zprofile"
+          [ -f "$CHAU7_USER_ZDOTDIR/.zlogin" ] && source "$CHAU7_USER_ZDOTDIR/.zlogin"
         fi
 
         # Ensure Volta image node toolchains stay ahead of the legacy ~/.volta/bin shim.
         path=("${(s/:/)PATH}")
-        for _codex_image_bin in "\(home)/.volta/tools/image/node/"*"/bin"(N); do
+        for _codex_image_bin in "$CHAU7_USER_HOME/.volta/tools/image/node/"*"/bin"(N); do
           [ -x "$_codex_image_bin/codex" ] && path=($_codex_image_bin $path)
         done
         typeset -U path
@@ -2017,8 +2026,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         // Create .bashrc for bash
         let bashrc = """
         # Chau7 wrapper - source user's real .bashrc first
-        [ -f "\(home)/.bashrc" ] && source "\(home)/.bashrc"
-        [ -f "\(home)/.bash_profile" ] && source "\(home)/.bash_profile"
+        export CHAU7_USER_HOME="${CHAU7_USER_HOME:-${HOME:-\(fallbackHome)}}"
+        [ -f "$CHAU7_USER_HOME/.bashrc" ] && source "$CHAU7_USER_HOME/.bashrc"
+        [ -f "$CHAU7_USER_HOME/.bash_profile" ] && source "$CHAU7_USER_HOME/.bash_profile"
 
         # Chau7 default start directory
         if [ -n "$CHAU7_START_DIR" ] && [ -d "$CHAU7_START_DIR" ]; then
@@ -2055,8 +2065,22 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         // Create config.fish for fish
         let fishConfig = """
         # Chau7 wrapper - source user's real config.fish first
-        if test -f "\(home)/.config/fish/config.fish"
-          source "\(home)/.config/fish/config.fish"
+        set -gx CHAU7_USER_HOME (string trim -- "$CHAU7_USER_HOME")
+        if test -z "$CHAU7_USER_HOME"
+          if test -n "$HOME"
+            set -gx CHAU7_USER_HOME "$HOME"
+          else
+            set -gx CHAU7_USER_HOME "\(fallbackHome)"
+          end
+        end
+
+        set -gx CHAU7_USER_XDG_CONFIG_HOME (string trim -- "$CHAU7_USER_XDG_CONFIG_HOME")
+        if test -z "$CHAU7_USER_XDG_CONFIG_HOME"
+          set -gx CHAU7_USER_XDG_CONFIG_HOME "\(fallbackXDGConfigHome)"
+        end
+
+        if test -f "$CHAU7_USER_XDG_CONFIG_HOME/fish/config.fish"
+          source "$CHAU7_USER_XDG_CONFIG_HOME/fish/config.fish"
         end
 
         # Chau7 default start directory
@@ -2313,30 +2337,54 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
     /// Sends text input to the terminal (used for broadcast mode)
     func sendInput(_ text: String) {
-        activeTerminalView?.send(txt: text)
+        guard !text.isEmpty else { return }
+        guard let activeTerminalView else {
+            enqueuePendingTerminalAction(.text(text))
+            return
+        }
+        activeTerminalView.send(txt: text)
     }
 
     /// Queues executable input (e.g. `cd /path\n`) for when the terminal view
     /// becomes available. Used during tab restore when the view hasn't been
     /// created yet. If the view already exists, sends immediately.
     func sendOrQueueInput(_ text: String) {
-        guard !text.isEmpty else { return }
-        if existingRustTerminalView != nil {
-            sendInput(text)
-        } else {
-            if let existing = pendingRestoreInput {
-                pendingRestoreInput = existing + text
-            } else {
-                pendingRestoreInput = text
-            }
+        sendInput(text)
+    }
+
+    func sendKeyPress(_ keyPress: TerminalKeyPress) {
+        guard let activeTerminalView else {
+            enqueuePendingTerminalAction(.keyPress(keyPress))
+            return
+        }
+        activeTerminalView.send(keyPress: keyPress)
+    }
+
+    func sendOrQueueKeyPress(_ keyPress: TerminalKeyPress) {
+        sendKeyPress(keyPress)
+    }
+
+    private func enqueuePendingTerminalAction(_ action: PendingTerminalAction) {
+        switch (pendingTerminalActions.last, action) {
+        case let (.some(.text(existingText)), .text(newText)):
+            pendingTerminalActions[pendingTerminalActions.count - 1] = .text(existingText + newText)
+        default:
+            pendingTerminalActions.append(action)
         }
     }
 
-    private func flushPendingRestoreInput() {
-        guard let text = pendingRestoreInput else { return }
+    private func flushPendingTerminalActions() {
         guard existingRustTerminalView != nil else { return }
-        pendingRestoreInput = nil
-        sendInput(text)
+        let actions = pendingTerminalActions
+        pendingTerminalActions.removeAll(keepingCapacity: true)
+        for action in actions {
+            switch action {
+            case let .text(text):
+                sendInput(text)
+            case let .keyPress(keyPress):
+                sendKeyPress(keyPress)
+            }
+        }
     }
 
     /// Prefills the terminal input line without executing it.
@@ -2581,13 +2629,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private static let defaultLsColors = "exfxcxdxbxegedabagacad"
 
     private func launchPATHValue() -> String {
-        let current = ProcessInfo.processInfo.environment
         let ctoEnabled = FeatureSettings.shared.tokenOptimizationMode != .off
-
-        // Guarantee a usable PATH even if the parent process env is corrupt.
-        let macOSDefault = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-        let inherited = current["PATH"] ?? ""
-        let basePath = inherited.contains("/usr/bin") ? inherited : macOSDefault
+        let basePath = ShellLaunchEnvironment.preferredPATH()
 
         if ctoEnabled {
             return CTOManager.shared.prependedPATH(original: basePath)
@@ -2607,6 +2650,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         if let home = current["HOME"] {
             dict["HOME"] = home
         }
+        dict["CHAU7_USER_HOME"] = ShellLaunchEnvironment.userHome(environment: current)
+        dict["CHAU7_USER_ZDOTDIR"] = ShellLaunchEnvironment.userZdotdir(environment: current)
+        dict["CHAU7_USER_XDG_CONFIG_HOME"] = ShellLaunchEnvironment.userXDGConfigHome(environment: current)
         dict["CHAU7_START_DIR"] = startDirectoryForLaunch()
 
         // CTO: set session ID for flag file lookup by wrapper scripts.

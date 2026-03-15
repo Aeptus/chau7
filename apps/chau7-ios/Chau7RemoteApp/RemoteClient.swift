@@ -47,14 +47,12 @@ final class RemoteClient {
     private var shouldReconnect = false
     private var hasReceivedPairAccept = false
     private var connectionGeneration: UInt64 = 0
-    private var outputByTabID: [UInt32: String] = [:]
-    private var strippedOutputByTabID: [UInt32: String] = [:]
+    private var outputStore = RemoteTerminalOutputStore()
+    private var outputFlushTask: Task<Void, Never>?
     private var remoteSessionID: String?
     private var bufferedTelemetryEvents: [RemoteClientTelemetryEvent] = []
     private var pendingURLActions: [RemoteActivityURLAction] = []
 
-    private static let maxOutputBytes = 200_000
-    private static let maxFrameBytes = 65_536
     private static let maxHistory = 50
     private static let maxReconnectAttempts = 5
     private static let maxBufferedTelemetryEvents = 100
@@ -139,8 +137,9 @@ final class RemoteClient {
         reconnectAttempt = 0
         connectionGeneration &+= 1
         tabs = []
-        outputByTabID.removeAll()
-        strippedOutputByTabID.removeAll()
+        outputStore.reset()
+        outputFlushTask?.cancel()
+        outputFlushTask = nil
         bufferedTelemetryEvents.removeAll(keepingCapacity: true)
         liveActivityState = nil
         outputText = ""
@@ -166,6 +165,7 @@ final class RemoteClient {
 
     func switchTab(_ tabID: UInt32) {
         activeTabID = tabID
+        flushPendingOutput(for: tabID)
         refreshVisibleOutput()
         emitTelemetry(type: .tabSwitched, tabID: tabID, tabTitle: tabTitle(for: tabID))
         sendJSON(TabSwitchPayload(tabID: tabID), type: .tabSwitch)
@@ -382,13 +382,7 @@ final class RemoteClient {
     // MARK: - Frame Handlers
 
     private func handleHello(_ data: Data) {
-        let msg: HelloPayload
-        do {
-            msg = try JSONDecoder().decode(HelloPayload.self, from: data)
-        } catch {
-            log.error("handleHello: decode failed: \(error.localizedDescription)")
-            return
-        }
+        guard let msg: HelloPayload = decodePayload(data, as: HelloPayload.self, context: "handleHello") else { return }
         guard let nonce = Data(base64Encoded: msg.nonce) else {
             log.error("handleHello: invalid nonce base64")
             return
@@ -398,13 +392,7 @@ final class RemoteClient {
     }
 
     private func handlePairAccept(_ data: Data) {
-        let msg: PairAcceptPayload
-        do {
-            msg = try JSONDecoder().decode(PairAcceptPayload.self, from: data)
-        } catch {
-            log.error("handlePairAccept: decode failed: \(error.localizedDescription)")
-            return
-        }
+        guard let msg: PairAcceptPayload = decodePayload(data, as: PairAcceptPayload.self, context: "handlePairAccept") else { return }
         guard let keyData = Data(base64Encoded: msg.macPub) else {
             log.error("handlePairAccept: invalid macPub base64")
             return
@@ -418,6 +406,14 @@ final class RemoteClient {
         hasReceivedPairAccept = true
         _ = KeychainStore.save(key: "mac_public_key", data: keyData)
         persistTrustedIdentity(for: msg)
+        // If we fell back from trust-based reconnect to explicit pairing, any
+        // provisional session state must be discarded before re-deriving keys.
+        crypto = nil
+        isConnected = false
+        remoteSessionID = nil
+        nonceMac = nil
+        nonceIOS = CryptoUtils.randomBytes(count: 16)
+        seqCounter = 1
         sendHello()
         establishSessionIfPossible()
     }
@@ -448,13 +444,7 @@ final class RemoteClient {
     }
 
     private func handleTabList(_ data: Data) {
-        let msg: TabListPayload
-        do {
-            msg = try JSONDecoder().decode(TabListPayload.self, from: data)
-        } catch {
-            log.error("handleTabList: decode failed: \(error.localizedDescription)")
-            return
-        }
+        guard let msg: TabListPayload = decodePayload(data, as: TabListPayload.self, context: "handleTabList") else { return }
         tabs = msg.tabs
         if let active = msg.tabs.first(where: { $0.isActive }) {
             activeTabID = active.tabID
@@ -464,8 +454,7 @@ final class RemoteClient {
             activeTabID = 0
         }
         let visibleTabIDs = Set(msg.tabs.map(\.tabID))
-        outputByTabID = outputByTabID.filter { visibleTabIDs.contains($0.key) }
-        strippedOutputByTabID = strippedOutputByTabID.filter { visibleTabIDs.contains($0.key) }
+        outputStore.retainVisibleTabs(visibleTabIDs)
         refreshVisibleOutput()
         flushPendingURLActions()
     }
@@ -490,39 +479,26 @@ final class RemoteClient {
     }
 
     private func appendOutput(_ data: Data, tabID: UInt32) {
-        let capped = data.prefix(Self.maxFrameBytes)
-        guard let text = String(data: capped, encoding: .utf8) else { return }
         let resolvedTabID = resolvedTabID(for: tabID)
-        var existing = outputByTabID[resolvedTabID] ?? ""
-        existing.append(text)
-        outputByTabID[resolvedTabID] = trimOutput(existing)
-        strippedOutputByTabID[resolvedTabID] = ANSIStripper.strip(outputByTabID[resolvedTabID] ?? "")
-        if resolvedTabID == activeTabID || activeTabID == 0 {
-            refreshVisibleOutput()
+        outputStore.append(data, to: resolvedTabID)
+
+        if outputStore.pendingByteCount(for: resolvedTabID) >= RemoteOutputTuning.maxPendingBytesPerTab {
+            flushPendingOutput(for: resolvedTabID)
+        } else {
+            scheduleOutputFlush()
         }
     }
 
     private func storeSnapshot(_ data: Data, tabID: UInt32) {
         let resolvedTabID = resolvedTabID(for: tabID)
-        guard let text = String(data: data, encoding: .utf8) else {
-            log.warning("Snapshot contains non-UTF-8 data (\(data.count) bytes)")
-            return
-        }
-        outputByTabID[resolvedTabID] = trimOutput(text)
-        strippedOutputByTabID[resolvedTabID] = ANSIStripper.strip(outputByTabID[resolvedTabID] ?? "")
+        outputStore.replaceSnapshot(data, for: resolvedTabID)
         if resolvedTabID == activeTabID || activeTabID == 0 {
             refreshVisibleOutput()
         }
     }
 
     private func handleApprovalRequest(_ data: Data) {
-        let msg: ApprovalRequestPayload
-        do {
-            msg = try JSONDecoder().decode(ApprovalRequestPayload.self, from: data)
-        } catch {
-            log.error("handleApprovalRequest: decode failed: \(error.localizedDescription)")
-            return
-        }
+        guard let msg: ApprovalRequestPayload = decodePayload(data, as: ApprovalRequestPayload.self, context: "handleApprovalRequest") else { return }
         pendingApprovals.append(ApprovalRequest(
             requestID: msg.requestID, command: msg.command,
             flaggedCommand: msg.flaggedCommand, timestamp: Date()
@@ -796,20 +772,49 @@ final class RemoteClient {
     }
 
     private func refreshVisibleOutput() {
-        outputText = outputByTabID[activeTabID] ?? ""
-        strippedOutputText = strippedOutputByTabID[activeTabID] ?? ""
+        outputText = outputStore.visibleOutput(for: activeTabID)
+        strippedOutputText = ANSIStripper.strip(outputText)
     }
 
-    private func trimOutput(_ input: String) -> String {
-        guard input.utf8.count > Self.maxOutputBytes else { return input }
-        let excess = input.utf8.count - Self.maxOutputBytes
-        let start = input.utf8.startIndex
-        let end = input.utf8.endIndex
-        guard let idx = input.utf8.index(start, offsetBy: excess, limitedBy: end) else {
-            return input
+    private func scheduleOutputFlush() {
+        guard outputFlushTask == nil, outputStore.hasPendingOutput else { return }
+        outputFlushTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: RemoteOutputTuning.flushInterval)
+            guard let self, !Task.isCancelled else { return }
+            self.flushPendingOutput()
         }
-        let charIdx = input.index(after: String.Index(idx, within: input) ?? input.startIndex)
-        return String(input[charIdx...])
+    }
+
+    private func flushPendingOutput(for tabID: UInt32? = nil) {
+        if tabID == nil {
+            outputFlushTask?.cancel()
+            outputFlushTask = nil
+        }
+
+        if let tabID {
+            guard outputStore.hasPendingOutput(for: tabID) else { return }
+        } else {
+            guard outputStore.hasPendingOutput else { return }
+        }
+
+        let updatedTabIDs = outputStore.flushPendingOutput(for: tabID)
+
+        if tabID == nil, outputStore.hasPendingOutput {
+            scheduleOutputFlush()
+        }
+
+        if tabID == activeTabID || (tabID == nil && activeTabID == 0) || updatedTabIDs.contains(activeTabID) {
+            refreshVisibleOutput()
+        }
+    }
+
+    private func decodePayload<T: Decodable>(_ data: Data, as type: T.Type, context: String) -> T? {
+        do {
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            log.error("\(context): decode failed: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     private func emitTelemetry(
