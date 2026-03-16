@@ -260,5 +260,5 @@ These are the "visual surprises" the brand personality calls for. They should fe
 - [ ] Micro-interaction hover effects (ink splatter, quill stroke, etc.)
 - [ ] Annotated manuscript comparison section
 - [ ] Selective elevation shadows for hero/CTAs
-- [ ] Review and remove all thin-bordered card patterns across site
+- [x] Review and remove all thin-bordered card patterns across site (replaced with paper-stacking shadows, floating backgrounds, and accent borders; kept borders only on buttons, inputs, accordions, tables)
 - [ ] Review existing copy across all pages for voice consistency
