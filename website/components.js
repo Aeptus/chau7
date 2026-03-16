@@ -24,6 +24,7 @@ class SiteNav extends HTMLElement {
             <div class="nav-links">
                 <a href="/features">Features</a>
                 <a href="/mcp">MCP</a>
+                <a href="/remote">Remote</a>
                 <a href="/the-tech">The Tech</a>
                 <a href="/compare">Compare</a>
                 <a href="/pronunciation">How to say it</a>
@@ -51,6 +52,7 @@ class SiteFooter extends HTMLElement {
                     <h4>Product</h4>
                     <a href="/features">Features</a>
                     <a href="/mcp">MCP Tools</a>
+                    <a href="/remote">Remote</a>
                     <a href="/the-tech">The Tech</a>
                     <a href="/compare">Compare</a>
                 </div>

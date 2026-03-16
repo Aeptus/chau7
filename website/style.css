@@ -2848,3 +2848,173 @@ a.catalog-card:hover::after { opacity: 1; }
 
     .hero-ctas { flex-direction: column; align-items: center; gap: var(--space-sm); }
 }
+
+/* ── Features page: proof bar ────────────────────── */
+.proof-bar {
+    padding: var(--space-lg) 0;
+    text-align: center;
+}
+.proof-bar-inner {
+    max-width: var(--max-w);
+    margin: 0 auto;
+    padding: 0 clamp(1.5rem, 5vw, 4rem);
+}
+.proof-bar .agent-proof {
+    margin-bottom: var(--space-md);
+}
+.proof-stats {
+    display: flex;
+    justify-content: center;
+    gap: var(--space-xl);
+    flex-wrap: wrap;
+}
+.proof-stat {
+    text-align: center;
+}
+.proof-stat-number {
+    font-family: var(--serif);
+    font-size: var(--text-xl);
+    font-weight: 700;
+    color: var(--text);
+}
+.proof-stat-label {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin-top: 0.15rem;
+}
+
+/* ── Features page: screenshot in pillars ────────── */
+.pillar-screenshot {
+    margin: var(--space-lg) 0;
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+.pillar-screenshot img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+}
+.pillar-screenshot figcaption {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    text-align: center;
+    margin-top: var(--space-xs);
+    font-style: italic;
+}
+
+/* ── Screenshot placeholder ──────────────────────── */
+.screenshot-placeholder {
+    background: var(--bg-raised);
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 3rem 2rem;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    line-height: 1.6;
+    min-height: 280px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+.screenshot-placeholder .placeholder-label {
+    font-family: var(--mono);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+}
+
+/* ── Features page: pain points ──────────────────── */
+.pain-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--space-md);
+    margin-top: var(--space-lg);
+}
+.pain-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--space-lg);
+}
+.pain-card h4 {
+    font-family: var(--serif);
+    font-size: var(--text-md);
+    margin-bottom: var(--space-xs);
+}
+.pain-card p {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    line-height: 1.6;
+}
+
+/* ── Features page: mid CTA ─────────────────────── */
+.mid-cta-section {
+    padding: var(--space-2xl) 0;
+    text-align: center;
+}
+.mid-cta-section h2 {
+    font-family: var(--serif);
+    font-size: var(--text-xl);
+    max-width: 600px;
+    margin: 0 auto var(--space-md);
+}
+.mid-cta-section .cta-micro {
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    margin-top: var(--space-xs);
+}
+
+/* ── Features page: testimonials ─────────────────── */
+.testimonial-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: var(--space-md);
+    margin-top: var(--space-lg);
+}
+.testimonial-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--space-lg);
+}
+.testimonial-card blockquote {
+    font-size: var(--text-base);
+    line-height: 1.7;
+    color: var(--text);
+    margin-bottom: var(--space-md);
+    font-style: italic;
+}
+.testimonial-card blockquote::before {
+    content: '\201C';
+    font-family: var(--serif);
+    font-size: 2.5rem;
+    color: var(--accent);
+    line-height: 0;
+    display: block;
+    margin-bottom: var(--space-xs);
+}
+.testimonial-card cite {
+    display: block;
+    font-style: normal;
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+}
+.testimonial-card cite strong {
+    color: var(--text);
+    display: block;
+}
+
+/* ── Features hero: outcome-driven layout ────────── */
+.hero-features .hero-screenshot {
+    margin-top: var(--space-xl);
+}
+.hero-features .hero-ctas {
+    margin-top: var(--space-lg);
+}

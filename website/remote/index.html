@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>Remote | Control Chau7 from Your iPhone</title>
+    <meta name="description" content="Control your Chau7 terminal from your iPhone. End-to-end encrypted. Live Activities on your Lock Screen. Approve dangerous commands from the couch.">
+    <meta property="og:title" content="Chau7 Remote | Your Terminal in Your Pocket">
+    <meta property="og:description" content="End-to-end encrypted remote control for Chau7. View output, send commands, approve actions. All from your iPhone.">
+    <meta property="og:image" content="screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="https://chau7.sh/remote">
+    <link rel="stylesheet" href="/style.css">
+    <script src="/components.js"></script>
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7 Remote",
+        "operatingSystem": "iOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "How is the connection secured?",
+                "acceptedAnswer": { "@type": "Answer", "text": "All communication is end-to-end encrypted using Curve25519 key agreement and ChaChaPoly1305 AEAD. The relay server never sees your terminal data. It forwards opaque encrypted frames." }
+            },
+            {
+                "@type": "Question",
+                "name": "Does the relay server see my terminal output?",
+                "acceptedAnswer": { "@type": "Answer", "text": "No. The relay is a transparent WebSocket forwarder. Encryption happens on your Mac and your iPhone. The relay forwards encrypted blobs it cannot read." }
+            },
+            {
+                "@type": "Question",
+                "name": "Do I need to pair every time?",
+                "acceptedAnswer": { "@type": "Answer", "text": "No. After the first pairing (6-digit code), your iPhone stores the Mac's public key. Future connections authenticate automatically using the trusted key pair." }
+            }
+        ]
+    }]
+    </script>
+</head>
+<body>
+    <site-nav></site-nav>
+
+<main>
+        <!-- Hero -->
+        <section class="hero hero-mcp">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="hero-badge badge-alt">iOS Remote</div>
+                <h1 class="hero-title">
+                    Your terminal.<br><span class="gradient-text-alt">Your pocket.</span>
+                </h1>
+                <p class="hero-subtitle">
+                    Control Chau7 from your iPhone. View tabs, send commands, approve dangerous actions
+                    from the couch. End-to-end encrypted. The relay never sees a byte.
+                    Somewhere, a sock is traveling.
+                </p>
+            </div>
+        </section>
+
+        <!-- Hero Screenshot -->
+        <section class="showcase-section" aria-label="iOS app screenshot">
+            <div class="section-inner">
+                <div class="hero-screenshot reveal">
+                    <figure class="screenshot-frame elevated">
+                        <!-- PLACEHOLDER: iPhone showing Chau7 Remote app with terminal
+                             output visible, tab list, and the quick-key bar at the bottom
+                             (Esc, Tab, Ctrl+C, arrows). Show 2-3 tabs in the tab switcher. -->
+                        <div class="screenshot-placeholder" role="img" aria-label="Chau7 Remote iOS app showing terminal output, tab list with AI agent indicators, and quick-key bar">
+                            <span class="placeholder-label">Screenshot needed</span>
+                            <span>iPhone showing Chau7 Remote: terminal output with ANSI colors,</span>
+                            <span>tab list with 2-3 tabs (one MCP-controlled), quick-key bar visible.</span>
+                        </div>
+                        <figcaption>Your Mac's terminal. On your phone. Encrypted end-to-end.</figcaption>
+                    </figure>
+                </div>
+            </div>
+        </section>
+
+        <!-- How It Works -->
+        <section class="perf-section" aria-labelledby="how-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="how-heading">Three steps to remote sock control</h2>
+                    <p>Pair once. Connect forever. The encryption does the heavy lifting so you don't have to.</p>
+                </div>
+                <div class="steps-grid">
+                    <div class="step-card">
+                        <div class="step-num">1</div>
+                        <h4>Pair with a code</h4>
+                        <p>Your Mac shows a 6-digit code. Type it on your iPhone. That's the only time you'll need it. After that, your devices recognize each other by key fingerprint.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">2</div>
+                        <h4>Encrypted relay</h4>
+                        <p>Both devices connect to a Cloudflare relay via WebSocket. The relay forwards opaque blobs it can't read. It never decrypts, never inspects, never stores. Shiny and dumb, by design.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">3</div>
+                        <h4>Full control</h4>
+                        <p>View terminal output, switch tabs, send commands, approve dangerous actions. Everything your Mac sees, your phone sees. With the same latency as your Wi-Fi.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- What You Can Do -->
+        <section class="mcp-section" aria-labelledby="capabilities-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="capabilities-heading">Not a dashboard. <span class="gradient-text-alt">A remote control.</span></h2>
+                    <p>Read output, send commands, approve dangerous operations. If you can do it at your desk, you can do it from your phone. Possibly in better lighting.</p>
+                </div>
+
+                <div class="mcp-grid">
+                    <div class="mcp-block">
+                        <h4>Terminal &amp; I/O</h4>
+                        <div class="tool-list">
+                            <div class="tool"><code>Live output</code><span>Stream terminal output in real time with optional ANSI color rendering</span></div>
+                            <div class="tool"><code>Send commands</code><span>Type and submit commands with a terminal keyboard bar (Esc, Tab, Ctrl+C/D/Z/L, arrows)</span></div>
+                            <div class="tool"><code>Tab switching</code><span>View all open tabs with AI branding indicators, switch between them</span></div>
+                            <div class="tool"><code>MCP awareness</code><span>See which tabs are MCP-controlled with visual AI badges</span></div>
+                        </div>
+                    </div>
+                    <div class="mcp-block">
+                        <h4>Approvals &amp; Safety</h4>
+                        <div class="tool-list">
+                            <div class="tool"><code>Approval gate</code><span>Dangerous commands and MCP actions push to your phone for approval</span></div>
+                            <div class="tool"><code>Notifications</code><span>Get notified when your AI needs permission. Approve from the notification.</span></div>
+                            <div class="tool"><code>Approval history</code><span>Last 50 decisions with timestamps. See what you approved and when.</span></div>
+                            <div class="tool"><code>Protected actions</code><span>Secondary confirmation on destructive commands. Two taps, not one.</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Live Activities -->
+        <section class="perf-section" aria-labelledby="activities-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="activities-heading">Your Lock Screen knows what your AI is doing.</h2>
+                    <p>Live Activities and Dynamic Island. Because checking on your AI agents should not require opening an app. Or pants.</p>
+                </div>
+
+                <figure class="pillar-screenshot reveal" style="max-width: 500px; margin: var(--space-lg) auto;">
+                    <!-- PLACEHOLDER: iPhone Lock Screen showing a Chau7 Live Activity:
+                         "Claude Code - running" with project name, tool badge,
+                         and Approve/Deny buttons visible. Dynamic Island compact view too. -->
+                    <div class="screenshot-placeholder" role="img" aria-label="iPhone Lock Screen with Chau7 Live Activity showing Claude Code running, project name, and Approve/Deny action buttons">
+                        <span class="placeholder-label">Screenshot needed</span>
+                        <span>iPhone Lock Screen with Live Activity:</span>
+                        <span>"Claude Code - running", project name, Approve/Deny buttons.</span>
+                        <span>Bonus: Dynamic Island compact view showing terminal icon.</span>
+                    </div>
+                    <figcaption>Claude is running. It needs approval. You don't even need to unlock.</figcaption>
+                </figure>
+
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>Dynamic Island</h4>
+                        <p>Compact, expanded, and minimal views. See your AI's status at a glance without opening anything.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Lock Screen Actions</h4>
+                        <p>Approve or deny directly from the Lock Screen. Open the app, jump to a tab, or dismiss. One tap.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Priority-Based</h4>
+                        <p>Waiting for input ranks highest. Then failures, then running, then completed. The most urgent thing always shows.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Auto-Dismiss</h4>
+                        <p>Completed activities fade after 8 seconds. Failures stick around for 20. Nothing clutters your screen forever.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Security Deep Dive -->
+        <section class="mcp-section" aria-labelledby="security-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="security-heading">The encryption is not decorative.</h2>
+                    <p>Curve25519 key agreement. ChaChaPoly1305 authenticated encryption. The relay is a dumb pipe.</p>
+                </div>
+                <div class="perf-stack">
+                    <div class="perf-layer" style="--delay: 0">
+                        <div class="perf-label">Pair</div>
+                        <div class="perf-tech">6-Digit Code</div>
+                        <div class="perf-desc">One-time pairing via a short code displayed on your Mac. 10-minute TTL, 5-attempt lockout. After pairing, devices remember each other by Curve25519 public key fingerprint.</div>
+                    </div>
+                    <div class="perf-layer" style="--delay: 1">
+                        <div class="perf-label">Agree</div>
+                        <div class="perf-tech">X25519 + HKDF</div>
+                        <div class="perf-desc">Both devices perform X25519 key agreement and derive a per-session key via HKDF-SHA256. New session, new key. Nonces include a 4-byte prefix and monotonic sequence numbers to prevent replay.</div>
+                    </div>
+                    <div class="perf-layer" style="--delay: 2">
+                        <div class="perf-label">Encrypt</div>
+                        <div class="perf-tech">ChaChaPoly1305 AEAD</div>
+                        <div class="perf-desc">Every frame after handshake is authenticated and encrypted. The relay forwards ciphertext it cannot read. If someone compromises the relay, they get opaque blobs and sequence numbers. That's it.</div>
+                    </div>
+                    <div class="perf-layer" style="--delay: 3">
+                        <div class="perf-label">Store</div>
+                        <div class="perf-tech">Keychain + Machine UUID</div>
+                        <div class="perf-desc">iOS stores keys in the Secure Enclave via Keychain. macOS wraps private keys with AES-GCM derived from the machine UUID. Move the disk to another Mac, the keys are useless.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Architecture Diagram -->
+        <section class="perf-section" aria-labelledby="arch-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="arch-heading">And now for something completely architectural</h2>
+                    <p>Three pieces. One encrypted channel. The relay is intentionally stupid.</p>
+                </div>
+                <div class="arch-diagram">
+                    <pre>
+  <span class="arch-highlight">iPhone</span>                    <span class="arch-green">Relay</span>                    <span class="arch-highlight">Mac</span>
+
+  Chau7 Remote              Cloudflare Workers         chau7-remote agent
+       │                          │                          │
+       ├── WebSocket ─────────────┤                          │
+       │   (encrypted frames)     ├── WebSocket ─────────────┤
+       │                          │   (encrypted frames)     │
+       │                          │                          ├── Unix socket
+       │                          │                          │   to Chau7.app
+       │                          │                          │
+       │     relay sees:          │                          │
+       │     opaque blobs         │                          │
+       │     sequence numbers     │                          │
+       │     nothing else         │                          │</pre>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="faq-section" aria-labelledby="faq-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="faq-heading">Frequently asked questions</h2>
+                </div>
+                <div class="faq-list">
+                    <details>
+                        <summary>How is the connection secured?</summary>
+                        <div class="faq-answer">
+                            <p>All communication is end-to-end encrypted using Curve25519 key agreement and ChaChaPoly1305 AEAD. The relay server forwards opaque encrypted frames. It never sees your terminal data.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Does the relay server see my terminal output?</summary>
+                        <div class="faq-answer">
+                            <p>No. Encryption happens on your Mac and your iPhone. The relay is a transparent WebSocket forwarder running on Cloudflare Workers. It forwards ciphertext it cannot decrypt. By design.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Do I need to pair every time?</summary>
+                        <div class="faq-answer">
+                            <p>No. After the first pairing (6-digit code), your iPhone stores the Mac's Curve25519 public key in the Keychain. Future connections authenticate automatically via key fingerprint. No code needed.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>What happens if the relay goes down?</summary>
+                        <div class="faq-answer">
+                            <p>Both the Mac agent and the iOS app reconnect automatically with exponential backoff (up to 5 attempts). Your terminal keeps running normally. You just can't see it from your phone until the relay is back.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Can I run commands from my phone?</summary>
+                        <div class="faq-answer">
+                            <p>Yes. The iOS app has a full input field and a terminal keyboard bar with Esc, Tab, Ctrl+C/D/Z/L, and arrow keys. Hold-to-send mode prevents accidental submissions, because typing on a phone near a production server deserves a safety net.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>What if someone compromises the relay?</summary>
+                        <div class="faq-answer">
+                            <p>They get opaque encrypted blobs and sequence numbers. That's it. The relay never has your session keys. It's a WebSocket forwarder that happens to be very good at knowing nothing.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Does it work over cellular?</summary>
+                        <div class="faq-answer">
+                            <p>Yes. The connection goes through the Cloudflare relay, so any internet connection works. Wi-Fi, cellular, tethering, the questionable airport Wi-Fi. As long as both devices can reach the relay, you're connected.</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Put on the sock. Then put it in your pocket.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download Chau7 for macOS</a>
+                    <p class="cta-nudge">The iOS app pairs with the macOS app. Sock first, pocket second.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <site-footer></site-footer>
+
+<script src="/script.js"></script>
+</body>
+</html>
