@@ -83,7 +83,10 @@ func TestIntegration_FullTaskLifecycle(t *testing.T) {
 	ipc.SetDatabase(db)
 	taskManager := NewTaskManager(db, ipc, 5*time.Second, 30*time.Second)
 	baseline := NewBaselineEstimator(db, nil)
-	mockup := NewMockupClient("", "")
+	mockup, err := NewMockupClient("", "")
+	if err != nil {
+		t.Fatalf("Failed to create mockup client: %v", err)
+	}
 	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, mockup)
 	taskEndpoints := NewTaskEndpoints(taskManager, db)
 
@@ -604,8 +607,8 @@ func TestIntegration_MultipleProviders(t *testing.T) {
 	mockOpenAI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"id":      "openai_msg",
-			"model":   "gpt-4o",
+			"id":    "openai_msg",
+			"model": "gpt-4o",
 			"choices": []map[string]interface{}{
 				{
 					"message":       map[string]string{"role": "assistant", "content": "OpenAI response"},

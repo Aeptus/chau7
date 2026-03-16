@@ -11,7 +11,10 @@ import (
 )
 
 func TestNewMockupClient_NilOnEmptyURL(t *testing.T) {
-	client := NewMockupClient("", "api-key")
+	client, err := NewMockupClient("", "api-key")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
 	if client != nil {
 		t.Error("Expected nil client for empty URL")
 	}
@@ -48,7 +51,10 @@ func TestMockupClient_SendEvent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewMockupClient(server.URL, "test-key")
+	client, err := NewMockupClient(server.URL, "test-key")
+	if err != nil {
+		t.Fatalf("Unexpected client init error: %v", err)
+	}
 	defer client.Close()
 
 	event := &MockupEvent{
@@ -60,7 +66,7 @@ func TestMockupClient_SendEvent(t *testing.T) {
 		Data:          map[string]interface{}{"key": "value"},
 	}
 
-	err := client.SendEvent(event)
+	err = client.SendEvent(event)
 	if err != nil {
 		t.Fatalf("SendEvent error: %v", err)
 	}
@@ -94,7 +100,10 @@ func TestMockupClient_SendAPICallEvent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewMockupClient(server.URL, "test-key")
+	client, err := NewMockupClient(server.URL, "test-key")
+	if err != nil {
+		t.Fatalf("Unexpected client init error: %v", err)
+	}
 	defer client.Close()
 
 	record := &APICallRecord{
@@ -125,7 +134,7 @@ func TestMockupClient_SendAPICallEvent(t *testing.T) {
 		TenantID:  "tenant_789",
 	}
 
-	err := client.SendAPICallEvent(record, "task_abc", baseline, headers)
+	err = client.SendAPICallEvent(record, "task_abc", baseline, headers)
 	if err != nil {
 		t.Fatalf("SendAPICallEvent error: %v", err)
 	}
@@ -158,7 +167,10 @@ func TestMockupClient_BatchFlush(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewMockupClient(server.URL, "test-key")
+	client, err := NewMockupClient(server.URL, "test-key")
+	if err != nil {
+		t.Fatalf("Unexpected client init error: %v", err)
+	}
 	client.batchSize = 5 // Small batch for testing
 	defer client.Close()
 
@@ -181,7 +193,10 @@ func TestMockupClient_BatchFlush(t *testing.T) {
 }
 
 func TestMockupClient_Stats(t *testing.T) {
-	client := NewMockupClient("http://example.com", "test-key")
+	client, err := NewMockupClient("https://example.com", "test-key")
+	if err != nil {
+		t.Fatalf("Unexpected client init error: %v", err)
+	}
 	defer client.Close()
 
 	// Send some events
@@ -213,10 +228,13 @@ func TestMockupClient_Health(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewMockupClient(server.URL, "test-key")
+	client, err := NewMockupClient(server.URL, "test-key")
+	if err != nil {
+		t.Fatalf("Unexpected client init error: %v", err)
+	}
 	defer client.Close()
 
-	err := client.Health()
+	err = client.Health()
 	if err != nil {
 		t.Errorf("Health check failed: %v", err)
 	}
@@ -268,7 +286,10 @@ func TestMockupClient_TaskEvent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewMockupClient(server.URL, "test-key")
+	client, err := NewMockupClient(server.URL, "test-key")
+	if err != nil {
+		t.Fatalf("Unexpected client init error: %v", err)
+	}
 	defer client.Close()
 
 	task := &Task{
@@ -292,7 +313,7 @@ func TestMockupClient_TaskEvent(t *testing.T) {
 		"custom_field": "custom_value",
 	}
 
-	err := client.SendTaskEvent("task_started", task, headers, extra)
+	err = client.SendTaskEvent("task_started", task, headers, extra)
 	if err != nil {
 		t.Fatalf("SendTaskEvent error: %v", err)
 	}
@@ -314,5 +335,28 @@ func TestMockupClient_TaskEvent(t *testing.T) {
 
 	if data["custom_field"] != "custom_value" {
 		t.Errorf("custom_field = %v, want custom_value", data["custom_field"])
+	}
+}
+
+func TestNewMockupClient_InvalidBaseURL(t *testing.T) {
+	client, err := NewMockupClient("http://example.com", "api-key")
+	if err == nil {
+		t.Fatal("Expected error for non-loopback http URL")
+	}
+	if client != nil {
+		t.Fatal("Expected nil client for invalid URL")
+	}
+}
+
+func TestNewMockupClient_AllowsHTTPSPathPrefix(t *testing.T) {
+	client, err := NewMockupClient("https://api.example.com/mockup/", "api-key")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if client == nil {
+		t.Fatal("Expected client")
+	}
+	if client.baseURL != "https://api.example.com/mockup" {
+		t.Fatalf("Got baseURL %q", client.baseURL)
 	}
 }

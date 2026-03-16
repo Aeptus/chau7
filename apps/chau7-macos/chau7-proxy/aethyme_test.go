@@ -9,7 +9,10 @@ import (
 )
 
 func TestNewAethymeClient_NilOnEmptyURL(t *testing.T) {
-	client := NewAethymeClient("", "api-key")
+	client, err := NewAethymeClient("", "api-key")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
 	if client != nil {
 		t.Error("Expected nil client for empty URL")
 	}
@@ -46,7 +49,10 @@ func TestAethymeClient_GetContextPack(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAethymeClient(server.URL, "test-key")
+	client, err := NewAethymeClient(server.URL, "test-key")
+	if err != nil {
+		t.Fatalf("Unexpected client init error: %v", err)
+	}
 
 	pack, err := client.GetContextPack("pack_123")
 	if err != nil {
@@ -68,7 +74,10 @@ func TestAethymeClient_GetContextPack_NotFound(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAethymeClient(server.URL, "test-key")
+	client, err := NewAethymeClient(server.URL, "test-key")
+	if err != nil {
+		t.Fatalf("Unexpected client init error: %v", err)
+	}
 
 	pack, err := client.GetContextPack("nonexistent")
 	if err != nil {
@@ -93,10 +102,13 @@ func TestAethymeClient_Caching(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAethymeClient(server.URL, "test-key")
+	client, err := NewAethymeClient(server.URL, "test-key")
+	if err != nil {
+		t.Fatalf("Unexpected client init error: %v", err)
+	}
 
 	// First call
-	_, err := client.GetContextPack("pack_123")
+	_, err = client.GetContextPack("pack_123")
 	if err != nil {
 		t.Fatalf("First call error: %v", err)
 	}
@@ -133,7 +145,10 @@ func TestAethymeClient_GetRepoScorecard(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAethymeClient(server.URL, "test-key")
+	client, err := NewAethymeClient(server.URL, "test-key")
+	if err != nil {
+		t.Fatalf("Unexpected client init error: %v", err)
+	}
 
 	scorecard, err := client.GetRepoScorecard("repo_123")
 	if err != nil {
@@ -154,7 +169,10 @@ func TestAethymeClient_ClearCache(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAethymeClient(server.URL, "test-key")
+	client, err := NewAethymeClient(server.URL, "test-key")
+	if err != nil {
+		t.Fatalf("Unexpected client init error: %v", err)
+	}
 
 	// First call
 	client.GetContextPack("pack_123")
@@ -180,9 +198,12 @@ func TestAethymeClient_Health(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewAethymeClient(server.URL, "test-key")
+	client, err := NewAethymeClient(server.URL, "test-key")
+	if err != nil {
+		t.Fatalf("Unexpected client init error: %v", err)
+	}
 
-	err := client.Health()
+	err = client.Health()
 	if err != nil {
 		t.Errorf("Health check failed: %v", err)
 	}
@@ -210,5 +231,28 @@ func TestAethymeClient_NilClientMethods(t *testing.T) {
 	err = client.Health()
 	if err != nil {
 		t.Error("Health on nil client should return nil")
+	}
+}
+
+func TestNewAethymeClient_InvalidBaseURL(t *testing.T) {
+	client, err := NewAethymeClient("http://example.com", "api-key")
+	if err == nil {
+		t.Fatal("Expected error for non-loopback http URL")
+	}
+	if client != nil {
+		t.Fatal("Expected nil client for invalid URL")
+	}
+}
+
+func TestNewAethymeClient_AllowsHTTPSPathPrefix(t *testing.T) {
+	client, err := NewAethymeClient("https://api.example.com/aethyme/", "api-key")
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if client == nil {
+		t.Fatal("Expected client")
+	}
+	if client.baseURL != "https://api.example.com/aethyme" {
+		t.Fatalf("Got baseURL %q", client.baseURL)
 	}
 }

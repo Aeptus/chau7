@@ -36,7 +36,10 @@ func setupTestProxy(t *testing.T) (*ProxyHandler, *Database, string) {
 	ipc := NewIPCNotifier("") // No-op notifier
 	taskManager := NewTaskManager(db, ipc, 5*time.Second, 30*time.Second)
 	baseline := NewBaselineEstimator(db, nil) // No aethyme for tests
-	mockup := NewMockupClient("", "")         // No mockup for tests
+	mockup, err := NewMockupClient("", "")    // No mockup for tests
+	if err != nil {
+		t.Fatalf("Failed to create mockup client: %v", err)
+	}
 	proxy := NewProxyHandler(config, db, ipc, taskManager, baseline, mockup)
 
 	return proxy, db, tmpDir
