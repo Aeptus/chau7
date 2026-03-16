@@ -75,7 +75,7 @@ class SiteFooter extends HTMLElement {
                 </div>
             </div>
             <div class="footer-bottom">
-                <span>158 Swift files &middot; Rust backend &middot; Metal GPU &middot; 701 tests</span>
+                <span>252 Swift files &middot; Rust backend &middot; Metal GPU &middot; 1528 tests</span>
             </div>
         </div>
     </footer>`;

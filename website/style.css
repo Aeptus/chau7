@@ -11,10 +11,10 @@ site-nav, site-footer { display: contents; }
     --border:     #c4a87a;          /* warm brown border */
     --text:       #2c1810;          /* dark sepia ink */
     --text-muted: #6b5744;          /* faded ink */
-    --accent:     #a0522d;          /* sienna — Da Vinci red-brown */
+    --accent:     #cc7832;          /* logo amber — primary accent */
     --accent-alt: #5b7a3a;          /* muted Renaissance green */
     --electric:   #2dd4bf;          /* teal — electric accent for CTAs */
-    --gradient:   linear-gradient(135deg, #a0522d, #cc7832);
+    --gradient:   linear-gradient(135deg, #8b5e2f, #cc7832);
     --gradient-alt: linear-gradient(135deg, #5b7a3a, #7a9f50);
     --mono:       'Menlo', 'Cascadia Mono', 'Consolas', monospace;
     --sans:       -apple-system, 'Segoe UI', 'Helvetica Neue', sans-serif;
@@ -81,7 +81,7 @@ h1, h2, h3 { font-family: var(--serif); }
 
 /* ── Gradient text ───────────────────────────────── */
 .gradient-text {
-    background: linear-gradient(135deg, #6b3a1f, #a0522d, #cc7832);
+    background: linear-gradient(135deg, #8b5e2f, #cc7832, #e09050);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -335,7 +335,7 @@ h1, h2, h3 { font-family: var(--serif); }
     margin-bottom: var(--space-xl);
 }
 .hero-rotator {
-    background: linear-gradient(135deg, #6b3a1f, #a0522d, #cc7832);
+    background: linear-gradient(135deg, #8b5e2f, #cc7832, #e09050);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -902,7 +902,7 @@ h1, h2, h3 { font-family: var(--serif); }
 
 .json-key { color: #46648c; }
 .json-str { color: #5b7a3a; }
-.json-num { color: #a0522d; }
+.json-num { color: #cc7832; }
 .json-bool { color: #8b6914; }
 
 /* ── Auto-register ───────────────────────────────── */

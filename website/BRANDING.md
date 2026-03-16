@@ -138,13 +138,13 @@ These are the hallmarks of "The Linear Look" and AI-era sameness. Avoid all of t
 | `--border` | `#c4a87a` | Warm brown border |
 | `--text` | `#2c1810` | Dark sepia ink |
 | `--text-muted` | `#6b5744` | Faded ink |
-| `--accent` | `#cc7832` | Logo amber, primary accent (pending CSS update from `#a0522d`) |
+| `--accent` | `#cc7832` | Logo amber, primary accent |
 | `--accent-alt` | `#5b7a3a` | Muted Renaissance green |
-| `--gradient` | `135deg, #a0522d → #cc7832` | Sienna to amber |
+| `--gradient` | `135deg, #8b5e2f → #cc7832` | Warm brown to amber |
 | `--gradient-alt` | `135deg, #5b7a3a → #7a9f50` | Forest to sage |
-| `--electric` | TBD (teal, coral, or chartreuse) | Electric accent for CTAs and key moments only |
+| `--electric` | `#2dd4bf` | Teal electric accent for CTAs and key moments only |
 
-**Electric accent:** One unexpected color used sparingly for CTAs, hover states, and attention moments. Breaks the warm palette just enough to surprise. Candidates: `#2dd4bf` (teal), `#f472b6` (coral), `#a3e635` (chartreuse). Pick one. Use it rarely. Make it count.
+**Electric accent:** Teal (`#2dd4bf`), used sparingly for CTAs, hover states, and attention moments. Breaks the warm palette just enough to surprise. Used rarely. Makes it count.
 
 ### Persona accents (earth tones)
 
@@ -250,15 +250,15 @@ These are the "visual surprises" the brand personality calls for. They should fe
 
 ## Pending items
 
-- [ ] Update CSS `--accent` from `#a0522d` to `#cc7832` (logo amber)
-- [ ] Choose electric accent color (teal, coral, or chartreuse)
-- [ ] Implement ink-rule dividers (replace thin CSS borders)
+- [x] Update CSS `--accent` from `#a0522d` to `#cc7832` (logo amber)
+- [x] Choose electric accent color — **teal `#2dd4bf`** (already in CSS as `--electric`)
+- [x] Implement ink-rule dividers (SVG-based, in style.css)
+- [x] 404 page with full personality (`404.html`)
 - [ ] Sepia-tinted screenshot frames
 - [ ] Hand-drawn sketch elements (rendering pipeline diagram, terminal frame)
 - [ ] Scroll-driven section reveals (GSAP or CSS animation-timeline)
 - [ ] Micro-interaction hover effects (ink splatter, quill stroke, etc.)
 - [ ] Annotated manuscript comparison section
 - [ ] Selective elevation shadows for hero/CTAs
-- [ ] 404 page with full personality
 - [ ] Review and remove all thin-bordered card patterns across site
 - [ ] Review existing copy across all pages for voice consistency

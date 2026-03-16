@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>404 | Chau7</title>
+    <meta name="description" content="This page pulled a Wash. It's not coming back. But these pages are.">
+    <meta name="robots" content="noindex">
+    <link rel="stylesheet" href="/style.css">
+    <script src="/components.js"></script>
+    <style>
+        .four-oh-four {
+            text-align: center;
+            padding: 10rem 2rem 6rem;
+            min-height: 70vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .four-oh-four-code {
+            font-family: var(--serif);
+            font-size: clamp(5rem, 15vw, 10rem);
+            font-weight: 700;
+            letter-spacing: -0.04em;
+            background: var(--gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1;
+            margin-bottom: 1rem;
+        }
+        .four-oh-four h1 {
+            font-family: var(--serif);
+            font-size: clamp(1.5rem, 4vw, 2.2rem);
+            color: var(--text);
+            margin-bottom: 0.75rem;
+        }
+        .four-oh-four .subtitle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            max-width: 500px;
+            margin: 0 auto 2.5rem;
+            line-height: 1.6;
+        }
+        .four-oh-four-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            justify-content: center;
+            margin-bottom: 3rem;
+        }
+        .four-oh-four-links a {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text);
+            text-decoration: none;
+            font-size: 0.95rem;
+            transition: border-color 0.2s, transform 0.2s;
+        }
+        .four-oh-four-links a:hover {
+            border-color: var(--accent);
+            transform: translateY(-1px);
+        }
+        .four-oh-four .sock-consolation {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <site-nav></site-nav>
+
+<main>
+    <section class="four-oh-four">
+        <div class="four-oh-four-code">404</div>
+        <h1>This page pulled a Wash.</h1>
+        <p class="subtitle">
+            It's not coming back. We looked everywhere, including behind the couch.
+            Mostly behind the couch, actually. That's where socks end up.
+        </p>
+        <div class="four-oh-four-links">
+            <a href="/">Home</a>
+            <a href="/features">178 Features</a>
+            <a href="/mcp">MCP Tools</a>
+            <a href="/the-tech">The Tech</a>
+            <a href="/compare">Compare</a>
+            <a href="/pronunciation">How to Say It</a>
+        </div>
+        <p class="sock-consolation">If you were looking for a sock, you found the whole drawer.</p>
+    </section>
+</main>
+
+    <site-footer></site-footer>
+
+<script src="/script.js"></script>
+</body>
+</html>
