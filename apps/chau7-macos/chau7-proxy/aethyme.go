@@ -66,24 +66,27 @@ type cachedItem[T any] struct {
 }
 
 // NewAethymeClient creates a new Aethyme API client
-func NewAethymeClient(baseURL, apiKey string) *AethymeClient {
+func NewAethymeClient(baseURL, apiKey string) (*AethymeClient, error) {
 	if baseURL == "" {
-		return nil // Aethyme is optional
+		return nil, nil // Aethyme is optional
+	}
+
+	normalizedBaseURL, err := normalizeServiceBaseURL(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid Aethyme base URL: %w", err)
 	}
 
 	return &AethymeClient{
-		baseURL: baseURL,
-		apiKey:  apiKey,
-		httpClient: &http.Client{
-			Timeout: 10 * time.Second,
-		},
+		baseURL:    normalizedBaseURL,
+		apiKey:     apiKey,
+		httpClient: newRestrictedHTTPClient(10 * time.Second),
 		cache: &aethymeCache{
 			contextPacks:  make(map[string]*cachedItem[*ContextPack]),
 			skillPacks:    make(map[string]*cachedItem[*SkillPack]),
 			scorecards:    make(map[string]*cachedItem[*RepoScorecard]),
 			cacheDuration: 5 * time.Minute,
 		},
-	}
+	}, nil
 }
 
 // GetContextPack retrieves context pack metadata by ID
@@ -101,7 +104,7 @@ func (c *AethymeClient) GetContextPack(packID string) (*ContextPack, error) {
 	c.cache.mu.RUnlock()
 
 	// Fetch from API
-	url := fmt.Sprintf("%s/api/v1/context-packs/%s", c.baseURL, packID)
+	url := buildServiceURL(c.baseURL, fmt.Sprintf("/api/v1/context-packs/%s", packID))
 	resp, err := c.doRequest("GET", url)
 	if err != nil {
 		return nil, err
@@ -147,7 +150,7 @@ func (c *AethymeClient) GetSkillPack(packID string) (*SkillPack, error) {
 	c.cache.mu.RUnlock()
 
 	// Fetch from API
-	url := fmt.Sprintf("%s/api/v1/skill-packs/%s", c.baseURL, packID)
+	url := buildServiceURL(c.baseURL, fmt.Sprintf("/api/v1/skill-packs/%s", packID))
 	resp, err := c.doRequest("GET", url)
 	if err != nil {
 		return nil, err
@@ -193,7 +196,7 @@ func (c *AethymeClient) GetRepoScorecard(repoID string) (*RepoScorecard, error) 
 	c.cache.mu.RUnlock()
 
 	// Fetch from API
-	url := fmt.Sprintf("%s/api/v1/repos/%s/scorecard", c.baseURL, repoID)
+	url := buildServiceURL(c.baseURL, fmt.Sprintf("/api/v1/repos/%s/scorecard", repoID))
 	resp, err := c.doRequest("GET", url)
 	if err != nil {
 		return nil, err
@@ -230,7 +233,7 @@ func (c *AethymeClient) ListContextPacks(repoID string) ([]*ContextPack, error) 
 		return nil, nil
 	}
 
-	url := fmt.Sprintf("%s/api/v1/repos/%s/context-packs", c.baseURL, repoID)
+	url := buildServiceURL(c.baseURL, fmt.Sprintf("/api/v1/repos/%s/context-packs", repoID))
 	resp, err := c.doRequest("GET", url)
 	if err != nil {
 		return nil, err
@@ -270,7 +273,7 @@ func (c *AethymeClient) Health() error {
 		return nil // Aethyme is optional
 	}
 
-	url := fmt.Sprintf("%s/health", c.baseURL)
+	url := buildServiceURL(c.baseURL, "/health")
 	resp, err := c.httpClient.Get(url)
 	if err != nil {
 		return fmt.Errorf("aethyme: health check failed: %w", err)

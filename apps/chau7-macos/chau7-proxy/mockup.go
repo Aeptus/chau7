@@ -41,26 +41,29 @@ type MockupClient struct {
 	lastFlush time.Time
 
 	// Background flushing
-	ctx        context.Context
-	cancel     context.CancelFunc
-	flushChan  chan struct{}
-	doneChan   chan struct{}
+	ctx       context.Context
+	cancel    context.CancelFunc
+	flushChan chan struct{}
+	doneChan  chan struct{}
 }
 
 // NewMockupClient creates a new Mockup event forwarding client
-func NewMockupClient(baseURL, apiKey string) *MockupClient {
+func NewMockupClient(baseURL, apiKey string) (*MockupClient, error) {
 	if baseURL == "" {
-		return nil // Mockup is optional
+		return nil, nil // Mockup is optional
+	}
+
+	normalizedBaseURL, err := normalizeServiceBaseURL(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid Mockup base URL: %w", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	client := &MockupClient{
-		baseURL: baseURL,
-		apiKey:  apiKey,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		baseURL:       normalizedBaseURL,
+		apiKey:        apiKey,
+		httpClient:    newRestrictedHTTPClient(30 * time.Second),
 		batchSize:     100,
 		flushInterval: 5 * time.Second,
 		batch:         make([]*MockupEvent, 0, 100),
@@ -74,7 +77,7 @@ func NewMockupClient(baseURL, apiKey string) *MockupClient {
 	// Start background flusher
 	go client.backgroundFlush()
 
-	return client
+	return client, nil
 }
 
 // SendEvent queues an event for forwarding to Mockup
@@ -106,18 +109,18 @@ func (c *MockupClient) SendAPICallEvent(record *APICallRecord, taskID string, ba
 	}
 
 	data := map[string]interface{}{
-		"call_id":      fmt.Sprintf("call_%d", time.Now().UnixNano()),
-		"provider":     string(record.Provider),
-		"model":        record.Model,
-		"endpoint":     record.Endpoint,
-		"input_tokens": record.InputTokens,
+		"call_id":       fmt.Sprintf("call_%d", time.Now().UnixNano()),
+		"provider":      string(record.Provider),
+		"model":         record.Model,
+		"endpoint":      record.Endpoint,
+		"input_tokens":  record.InputTokens,
 		"output_tokens": record.OutputTokens,
-		"total_tokens": record.InputTokens + record.OutputTokens,
-		"latency_ms":   record.LatencyMs,
-		"status_code":  record.StatusCode,
-		"cost_usd":     record.CostUSD,
-		"session_id":   record.SessionID,
-		"task_id":      taskID,
+		"total_tokens":  record.InputTokens + record.OutputTokens,
+		"latency_ms":    record.LatencyMs,
+		"status_code":   record.StatusCode,
+		"cost_usd":      record.CostUSD,
+		"session_id":    record.SessionID,
+		"task_id":       taskID,
 	}
 
 	// Add baseline data if available
@@ -191,12 +194,12 @@ func (c *MockupClient) SendTaskAssessmentEvent(assessment *TaskAssessment, task 
 	}
 
 	data := map[string]interface{}{
-		"task_id":         assessment.TaskID,
-		"approved":        assessment.Approved,
-		"note":            assessment.Note,
-		"total_api_calls": assessment.TotalAPICalls,
-		"total_tokens":    assessment.TotalTokens,
-		"total_cost_usd":  assessment.TotalCostUSD,
+		"task_id":          assessment.TaskID,
+		"approved":         assessment.Approved,
+		"note":             assessment.Note,
+		"total_api_calls":  assessment.TotalAPICalls,
+		"total_tokens":     assessment.TotalTokens,
+		"total_cost_usd":   assessment.TotalCostUSD,
 		"duration_seconds": assessment.DurationSeconds,
 	}
 
@@ -281,7 +284,7 @@ func (c *MockupClient) sendBatch(events []*MockupEvent) error {
 		return fmt.Errorf("mockup: failed to marshal events: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", c.baseURL+"/api/v1/events", bytes.NewReader(body))
+	req, err := http.NewRequest("POST", buildServiceURL(c.baseURL, "/api/v1/events"), bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("mockup: failed to create request: %w", err)
 	}
@@ -351,7 +354,7 @@ func (c *MockupClient) Health() error {
 		return nil // Mockup is optional
 	}
 
-	resp, err := c.httpClient.Get(c.baseURL + "/health")
+	resp, err := c.httpClient.Get(buildServiceURL(c.baseURL, "/health"))
 	if err != nil {
 		return fmt.Errorf("mockup: health check failed: %w", err)
 	}

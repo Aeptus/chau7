@@ -36,16 +36,26 @@ func main() {
 	// v1.2: Initialize Aethyme client (optional)
 	var aethymeClient *AethymeClient
 	if config.AethymeURL != "" {
-		aethymeClient = NewAethymeClient(config.AethymeURL, config.AethymeAPIKey)
-		log.Printf("[INFO] Aethyme integration enabled: %s", config.AethymeURL)
+		client, err := NewAethymeClient(config.AethymeURL, config.AethymeAPIKey)
+		if err != nil {
+			log.Printf("[WARN] Aethyme integration disabled: %v", err)
+		} else {
+			aethymeClient = client
+			log.Printf("[INFO] Aethyme integration enabled: %s", client.baseURL)
+		}
 	}
 
 	// v1.2: Initialize Mockup client (optional)
 	var mockupClient *MockupClient
 	if config.MockupURL != "" {
-		mockupClient = NewMockupClient(config.MockupURL, config.MockupAPIKey)
-		log.Printf("[INFO] Mockup analytics enabled: %s", config.MockupURL)
-		defer mockupClient.Close()
+		client, err := NewMockupClient(config.MockupURL, config.MockupAPIKey)
+		if err != nil {
+			log.Printf("[WARN] Mockup analytics disabled: %v", err)
+		} else {
+			mockupClient = client
+			log.Printf("[INFO] Mockup analytics enabled: %s", client.baseURL)
+			defer mockupClient.Close()
+		}
 	}
 
 	// v1.2: Initialize baseline estimator
