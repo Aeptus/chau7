@@ -6,7 +6,7 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>The Tech | Chau7 Terminal</title>
-    <meta name="description" content="The core technical choices behind Chau7: Rust parsing, dangerous-command detection, lock-free buffers, triple-buffered terminal state, and Metal rendering on macOS.">
+    <meta name="description" content="100% local, zero telemetry. The core technical choices behind Chau7: local-first privacy, Rust parsing, dangerous-command detection, lock-free buffers, and Metal rendering on macOS.">
     <meta property="og:title" content="Chau7 The Tech | Why The Terminal Works The Way It Does">
     <meta property="og:description" content="Rust where bytes matter, Metal where pixels matter, and guardrails where shell mistakes get expensive.">
     <meta property="og:image" content="screenshots/05-hero-overview.png">
@@ -28,6 +28,11 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "Does Chau7 send any data to the cloud?",
+                "acceptedAnswer": { "@type": "Answer", "text": "No. Chau7 tracks tokens, costs, sessions, and AI telemetry in detail, but all of it stays on your Mac as local files. Zero network requests to any Chau7 server. No crash reporting, no analytics callbacks, no update checks." }
+            },
             {
                 "@type": "Question",
                 "name": "Why use Rust in a terminal?",
@@ -58,8 +63,43 @@
                     The guts of the terminal,<br><span class="gradient-text">without the hand-waving</span>.
                 </h1>
                 <p class="hero-subtitle">
-                    Rust where bytes turn into decisions, lock-free buffers where latency matters, and Metal where pixels need to move now, not eventually.
+                    100% local. Your data never leaves your Mac.
+                    Rust where bytes turn into decisions, Metal where pixels need to move now, and rich telemetry that belongs to you alone.
                 </p>
+            </div>
+        </section>
+
+        <!-- Privacy: the first thing you should know -->
+        <section class="mcp-section" aria-labelledby="privacy-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="privacy-heading">Your terminal is <span class="gradient-text">yours</span>.</h2>
+                    <p>Chau7 tracks everything about your AI usage. Tokens, costs, sessions, latency, tool calls. But all of it is yours. None of it leaves your Mac.</p>
+                </div>
+                <div class="ai-relevance">
+                    <h3>Rich telemetry. Zero exfiltration.</h3>
+                    <p>Chau7 gives you detailed telemetry: token counts per call, cost per session, latency trends, AI tool call history, session recordings with millisecond timestamps. That data is genuinely useful. It's also genuinely local.</p>
+                    <p>The API cost proxy intercepts LLM traffic on your machine to count tokens and estimate costs. It does not forward, store, or report that data anywhere except your local filesystem. The MCP server runs over a Unix socket. Session recordings are local files. Settings are local files. Every byte of telemetry Chau7 collects is written to your disk and nowhere else.</p>
+                    <p>There is no account to create because there is no server to talk to. We could not see your data even if we wanted to. We designed it that way on purpose.</p>
+                </div>
+                <div class="numbers-grid" style="margin-top: var(--space-lg);">
+                    <div class="number-card">
+                        <div class="number-value">0</div>
+                        <div class="number-label">Network requests to Chau7 servers</div>
+                    </div>
+                    <div class="number-card">
+                        <div class="number-value">Rich</div>
+                        <div class="number-label">Token, cost, and session telemetry</div>
+                    </div>
+                    <div class="number-card">
+                        <div class="number-value">0</div>
+                        <div class="number-label">Accounts required</div>
+                    </div>
+                    <div class="number-card">
+                        <div class="number-value">100%</div>
+                        <div class="number-label">Local. Your data never leaves your Mac.</div>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -233,6 +273,12 @@
                     <h2 id="faq-heading">Frequently asked questions</h2>
                 </div>
                 <div class="faq-list">
+                    <details>
+                        <summary>Does Chau7 send any data to the cloud?</summary>
+                        <div class="faq-answer">
+                            <p>No. Chau7 tracks tokens, costs, sessions, and AI telemetry in detail, but all of that data stays on your Mac as local files. There are zero network requests to any Chau7 server. No crash reporting, no analytics callbacks, no update checks. The only network traffic is whatever your shell and AI tools generate themselves.</p>
+                        </div>
+                    </details>
                     <details>
                         <summary>Why use Rust in a terminal?</summary>
                         <div class="faq-answer">
