@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>Chau7 vs Apple Terminal | Honest Terminal Comparison</title>
+    <meta name="description" content="An honest comparison of Chau7 and Apple's Terminal.app. Where Terminal.app's zero-install stability wins, where Chau7's 170+ features differ, and who needs what.">
+    <meta property="og:title" content="Chau7 vs Apple Terminal | Terminal Comparison">
+    <meta property="og:description" content="Terminal.app ships with every Mac. Chau7 adds 170+ features. Do you need them? Maybe not.">
+    <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="https://chau7.sh/compare/vs-terminal-app">
+    <link rel="stylesheet" href="/style.css">
+    <script src="/components.js"></script>
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://chau7.sh/" },
+            { "@type": "ListItem", "position": 2, "name": "Compare", "item": "https://chau7.sh/compare" },
+            { "@type": "ListItem", "position": 3, "name": "vs Apple Terminal" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "Should I switch from Terminal.app to Chau7?",
+                "acceptedAnswer": { "@type": "Answer", "text": "It depends on how much time you spend in the terminal. If you open it a few times a week for basic commands, Terminal.app is fine. If you live in the terminal and run AI coding agents, Chau7 adds GPU rendering, MCP tools, AI detection, session recording, and 170+ other features that Terminal.app does not offer." }
+            },
+            {
+                "@type": "Question",
+                "name": "Is Terminal.app really that limited?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Terminal.app does the basics well: shell access, basic tabs, profiles. It is stable and reliable. But it has no GPU rendering, no split panes, no AI awareness, no session recording, no SSH manager, and no extensibility. For heavy terminal use, that adds up." }
+            },
+            {
+                "@type": "Question",
+                "name": "Does Chau7 feel native on macOS like Terminal.app?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Chau7 is built with Swift and AppKit, the same frameworks Terminal.app uses. Native menus, native key handling, native text input, proper macOS window management. It is a macOS app, not a cross-platform wrapper." }
+            },
+            {
+                "@type": "Question",
+                "name": "Is Terminal.app faster than Chau7?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Terminal.app uses CPU rendering, Chau7 uses Metal GPU rendering. For large output (long logs, fast-scrolling text), Chau7 is faster. For basic commands, both feel instant. You will not notice a difference for everyday use." }
+            }
+        ]
+    }]
+    </script>
+</head>
+<body>
+    <site-nav></site-nav>
+
+<main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="/">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="/compare">Compare</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">vs Apple Terminal</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-compare">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="hero-badge badge-purple">Comparison</div>
+                <h1 class="hero-title">
+                    Chau7 vs <span class="gradient-text">Terminal.app</span>
+                </h1>
+                <p class="hero-subtitle">
+                    Terminal.app ships with every Mac. Zero install, zero configuration, zero drama.
+                    It's fine. For a lot of people, "fine" is the right answer. Here's when it isn't.
+                </p>
+            </div>
+        </section>
+
+        <!-- What Terminal.app does well -->
+        <section class="perf-section" aria-labelledby="terminal-strengths">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="terminal-strengths">What Terminal.app does well</h2>
+                    <p>Shipping with every Mac is a feature most terminals can only dream of.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>Zero install</h4>
+                        <p>Open your Mac. Open Terminal. You're done. No download, no DMG, no drag-to-Applications. It's there on day one, ready to go. The convenience of "already installed" is genuinely hard to beat.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Apple-level stability</h4>
+                        <p>Apple tests Terminal.app against every macOS update before it ships. It doesn't crash. It doesn't break after an OS upgrade. It's been reliable for as long as macOS has existed. That track record is worth something.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Tested against every macOS update</h4>
+                        <p>When a new macOS version drops, Terminal.app works on day one. Third-party terminals sometimes need updates for compatibility. Terminal.app never has that problem because Apple builds them together.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Fine for basic use</h4>
+                        <p>SSH into a server, run a git command, check a log file, install something with Homebrew. Terminal.app handles all of this without complaint. For occasional terminal use, it's all you need.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Consistent with macOS</h4>
+                        <p>Native text selection, native scrolling, native window management. Terminal.app behaves like every other macOS app because it literally is one, built by the same team that built the OS.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>No learning curve</h4>
+                        <p>There's nothing to configure unless you want to. Default colors, default font, default behavior. It works. For people who want a terminal and not a project, that simplicity is the feature.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- What Chau7 adds -->
+        <section class="perf-section" aria-labelledby="chau7-adds">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="chau7-adds">What Chau7 adds</h2>
+                    <p>Everything Terminal.app doesn't do. Which is a lot, once you start looking.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>GPU rendering</h4>
+                        <p>Metal-accelerated rendering with SIMD parsing. For large output, fast-scrolling logs, and heavy terminal use, GPU rendering makes a visible difference. Terminal.app uses CPU rendering, which is fine for basic commands but slows down with volume.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Split panes</h4>
+                        <p>Side-by-side terminal sessions in one window. Terminal.app has tabs but no splits. If you want to watch a log in one pane while working in another, you need a separate window in Terminal.app.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>AI detection and MCP</h4>
+                        <p>Chau7 recognizes AI coding tools, brands tabs per agent, and exposes 20 MCP tools for AI-driven terminal control. Terminal.app has no awareness of AI tools at all.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Session recording</h4>
+                        <p>Record and replay terminal sessions with a timeline. Useful for demos, debugging, and reviewing AI agent behavior. Terminal.app has no recording capability.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>SSH manager</h4>
+                        <p>Save, organize, and quick-connect to SSH hosts. Auto-imports from your SSH config. Jump host support. Terminal.app leaves SSH management to the command line.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>170+ features</h4>
+                        <p>Command palette, search, snippets, clipboard history, themes, transparency, line numbers, dangerous command guard, cost tracking, tab profiles, and more. Chau7 is what Terminal.app would be if Apple decided to make a developer tool out of it.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Who should use what -->
+        <section class="perf-section" aria-labelledby="who-heading">
+            <div class="section-inner">
+                <div class="ai-relevance">
+                    <h3 id="who-heading">Who should use what</h3>
+                    <p><strong>Keep Terminal.app if:</strong> You open the terminal a few times a week for basic commands. You don't need split panes, session recording, or AI features. You value zero-maintenance software that never breaks after an OS update. Terminal.app is genuinely fine for that workflow, and "fine" is not an insult.</p>
+                    <p><strong>Try Chau7 if:</strong> You live in the terminal. You run AI coding agents. You want GPU rendering, split panes, session recording, MCP tools, and the other 170+ features that Terminal.app doesn't offer. If the terminal is a tool you use for hours daily, a purpose-built one makes a difference.</p>
+                    <p><strong>The honest version:</strong> Terminal.app is a Honda Civic. It gets you there, it's reliable, it never breaks down. Chau7 is... a sock-shaped sports car? The metaphor falls apart, but the point is: if you need more, you know. If you don't, Terminal.app is a perfectly good answer.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Comparison Table -->
+        <section class="compare-section" aria-labelledby="table-heading">
+            <div class="section-inner">
+                <h2 id="table-heading">Quick comparison</h2>
+                <div class="compare-table-wrap">
+                    <table class="compare-table">
+                        <thead>
+                            <tr>
+                                <th>Feature</th>
+                                <th class="chau7-col">Chau7</th>
+                                <th>Terminal.app</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>GPU Rendering</td>
+                                <td class="chau7-col"><span class="compare-check">Metal</span></td>
+                                <td><span class="compare-cross">CPU only</span></td>
+                            </tr>
+                            <tr>
+                                <td>Split Panes</td>
+                                <td class="chau7-col"><span class="compare-check">Yes</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                            </tr>
+                            <tr>
+                                <td>MCP Server</td>
+                                <td class="chau7-col"><span class="compare-check">20 tools</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                            </tr>
+                            <tr>
+                                <td>AI Detection</td>
+                                <td class="chau7-col"><span class="compare-check">7+ CLIs</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                            </tr>
+                            <tr>
+                                <td>Session Recording</td>
+                                <td class="chau7-col"><span class="compare-check">Yes</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                            </tr>
+                            <tr>
+                                <td>SSH Manager</td>
+                                <td class="chau7-col"><span class="compare-check">Yes</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                            </tr>
+                            <tr>
+                                <td>Install Required</td>
+                                <td class="chau7-col"><span class="compare-cross">Yes</span></td>
+                                <td><span class="compare-check">Ships with macOS</span></td>
+                            </tr>
+                            <tr>
+                                <td>Stability</td>
+                                <td class="chau7-col"><span class="compare-partial">Beta</span></td>
+                                <td><span class="compare-check">Apple-tested</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="faq-section" aria-labelledby="faq-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="faq-heading">Frequently asked questions</h2>
+                </div>
+                <div class="faq-list">
+                    <details>
+                        <summary>Should I switch from Terminal.app?</summary>
+                        <div class="faq-answer">
+                            <p>Only if you feel limited by it. If Terminal.app does everything you need, keep using it. If you're bumping into its walls (no split panes, no session recording, no AI awareness, slow rendering with large output), a dedicated terminal like Chau7 removes those limits.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7 feel native like Terminal.app?</summary>
+                        <div class="faq-answer">
+                            <p>Yes. Chau7 is built with Swift and AppKit, the same frameworks Apple uses for Terminal.app. Native menus, native key handling, native text input. It behaves like a macOS app because it is one.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Is Chau7 faster than Terminal.app?</summary>
+                        <div class="faq-answer">
+                            <p>For large output and fast-scrolling text, yes. Metal GPU rendering handles volume better than CPU rendering. For running <code>ls</code> and <code>cd</code>, both feel instant and you won't notice a difference.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Will Chau7 break after a macOS update?</summary>
+                        <div class="faq-answer">
+                            <p>It might. Terminal.app is tested by Apple against every macOS release. Chau7 is a third-party app maintained by one developer. Compatibility with new macOS versions is a priority, but there's no guarantee of day-one support after a major OS update. That's the trade-off of third-party software.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Is Terminal.app really that limited?</summary>
+                        <div class="faq-answer">
+                            <p>For basic terminal use, no. Terminal.app handles shell access, tabs, profiles, and standard terminal features. It's limited when you need GPU rendering, split panes, session recording, AI detection, MCP tools, or any of the other features that power users expect from a modern terminal. "Limited" depends on what you're trying to do.</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Try it. Keep what works.</h2>
+                    <p class="cta-nudge">Free, open source, native macOS. Terminal.app isn't going anywhere if you want to go back.</p>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+
+    <site-footer></site-footer>
+
+<script src="/script.js"></script>
+</body>
+</html>

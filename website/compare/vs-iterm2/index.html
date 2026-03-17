@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>Chau7 vs iTerm2 | Honest Terminal Comparison</title>
+    <meta name="description" content="An honest comparison of Chau7 and iTerm2. Where iTerm2's 15+ years of maturity wins, where Chau7's AI features differ, and which terminal fits your workflow.">
+    <meta property="og:title" content="Chau7 vs iTerm2 | Terminal Comparison">
+    <meta property="og:description" content="iTerm2 has 15+ years. Chau7 has MCP, AI detection, and cost tracking. Here's how to pick.">
+    <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="https://chau7.sh/compare/vs-iterm2">
+    <link rel="stylesheet" href="/style.css">
+    <script src="/components.js"></script>
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://chau7.sh/" },
+            { "@type": "ListItem", "position": 2, "name": "Compare", "item": "https://chau7.sh/compare" },
+            { "@type": "ListItem", "position": 3, "name": "vs iTerm2" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "Can I import my iTerm2 profiles into Chau7?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Chau7 automatically detects and imports your iTerm2 profiles on first launch. Your color schemes, fonts, and key bindings come over so you can try Chau7 without rebuilding your setup from scratch." }
+            },
+            {
+                "@type": "Question",
+                "name": "Does Chau7 support iTerm2's triggers?",
+                "acceptedAnswer": { "@type": "Answer", "text": "No. Chau7 does not have a trigger system comparable to iTerm2's. If you rely on triggers for automated actions based on terminal output, iTerm2 remains the better choice for that workflow." }
+            },
+            {
+                "@type": "Question",
+                "name": "Is Chau7 as stable as iTerm2?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Not yet. iTerm2 has over 15 years of battle-testing across thousands of workflows. Chau7 is in beta, built by one developer. It has 1528 tests and a Rust backend, but it has not seen the volume of edge cases that iTerm2 has. Expect rough edges." }
+            },
+            {
+                "@type": "Question",
+                "name": "Can I run Chau7 and iTerm2 side by side?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Both are standalone macOS apps. You can run them simultaneously without conflict. Many users try Chau7 for AI agent sessions while keeping iTerm2 for everything else." }
+            }
+        ]
+    }]
+    </script>
+</head>
+<body>
+    <site-nav></site-nav>
+
+<main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="/">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="/compare">Compare</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">vs iTerm2</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-compare">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="hero-badge badge-purple">Comparison</div>
+                <h1 class="hero-title">
+                    Chau7 vs <span class="gradient-text">iTerm2</span>
+                </h1>
+                <p class="hero-subtitle">
+                    iTerm2 is the terminal most macOS developers know and trust. It has 15+ years of stability,
+                    a massive community, and features that have been refined across thousands of workflows.
+                    Chau7 is the new kid. Named after a sock. With opinions about AI.
+                </p>
+                <p class="hero-subtitle">
+                    <a href="https://iterm2.com" target="_blank" rel="noopener">Visit iTerm2 &rarr;</a>
+                </p>
+            </div>
+        </section>
+
+        <!-- What iTerm2 does well -->
+        <section class="perf-section" aria-labelledby="iterm2-strengths">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="iterm2-strengths">What iTerm2 does well</h2>
+                    <p>A lot. This is not a short list.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>15+ years of maturity</h4>
+                        <p>iTerm2 has seen every edge case twice. Obscure escape sequences, weird SSH configurations, ancient shell scripts that somehow still run in production. It handles them all because it's had 15 years to learn them.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Triggers and automation</h4>
+                        <p>iTerm2's trigger system lets you match terminal output with regex and fire actions automatically: highlight text, send notifications, run scripts. It's a proper automation layer that Chau7 does not have.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>tmux integration</h4>
+                        <p>iTerm2's native tmux integration is the gold standard. If tmux is central to your workflow, iTerm2 understands tmux sessions as first-class objects. Chau7 doesn't offer anything comparable here.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Python scripting API</h4>
+                        <p>A full Python API for automating iTerm2 from external scripts. Create sessions, send keystrokes, read screen contents, build custom workflows. Chau7 has JSON-RPC and MCP, but not a comparable scripting environment.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Massive community</h4>
+                        <p>Stack Overflow answers, blog posts, config snippets, shared profiles. When you hit a problem in iTerm2, someone else has already solved it. That's the power of being the default choice for a decade.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Battle-tested stability</h4>
+                        <p>iTerm2 is the terminal people use in production. SSH into servers at 3 AM, run database migrations, manage Kubernetes clusters. It's earned that trust through years of not breaking when it matters.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- What Chau7 adds -->
+        <section class="perf-section" aria-labelledby="chau7-adds">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="chau7-adds">What Chau7 adds</h2>
+                    <p>Features that didn't exist when iTerm2 was built. Because AI coding tools didn't exist when iTerm2 was built.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>MCP Server (20 tools)</h4>
+                        <p>Your AI agent can open tabs, run commands, read output, and check status through the Model Context Protocol. iTerm2 has no MCP support because MCP didn't exist until recently.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>AI CLI detection</h4>
+                        <p>Chau7 recognizes 7+ AI coding tools (Claude Code, Codex, Gemini CLI, Aider, and more) and auto-brands tabs with the agent's colors and name. iTerm2 sees them all as the same process.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Token and cost tracking</h4>
+                        <p>See how many tokens each AI session consumes and what it costs, per tab, per model, per call. Know what you're spending before the invoice arrives.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Context Token Optimization</h4>
+                        <p>CTO strips redundant context from what your AI sends, saving ~40% on tokens. Your AI agent doesn't know the difference. Your wallet does.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Session recording</h4>
+                        <p>Record terminal sessions with timeline scrubbing. Replay what happened, when it happened. Good for debugging AI agent behavior after the fact.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Dangerous command guard</h4>
+                        <p>When an AI agent tries to run something destructive (rm -rf, force push, drop table), Chau7 flags it before execution. A second pair of eyes for commands that don't get a second chance.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Who should use what -->
+        <section class="perf-section" aria-labelledby="who-heading">
+            <div class="section-inner">
+                <div class="ai-relevance">
+                    <h3 id="who-heading">Who should use what</h3>
+                    <p><strong>Stay with iTerm2 if:</strong> You don't use AI coding tools much, or you rely on triggers, tmux integration, or the Python scripting API. iTerm2 is the more mature, more stable, more proven terminal. There's no shame in that. Fifteen years of refinement is worth something.</p>
+                    <p><strong>Try Chau7 if:</strong> You run Claude Code, Codex, or similar tools daily and want visibility into what they're doing: which agent is where, how many tokens they're burning, whether that command is safe. Chau7 fills a gap iTerm2 wasn't designed for.</p>
+                    <p><strong>Good news:</strong> Chau7 imports your iTerm2 profiles automatically. You can try both side by side with zero setup cost. Keep what works. We won't be offended. (The sock might be, but we'll talk it down.)</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Comparison Table -->
+        <section class="compare-section" aria-labelledby="table-heading">
+            <div class="section-inner">
+                <h2 id="table-heading">Quick comparison</h2>
+                <div class="compare-table-wrap">
+                    <table class="compare-table">
+                        <thead>
+                            <tr>
+                                <th>Feature</th>
+                                <th class="chau7-col">Chau7</th>
+                                <th>iTerm2</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>MCP Server</td>
+                                <td class="chau7-col"><span class="compare-check">20 tools</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                            </tr>
+                            <tr>
+                                <td>AI CLI Detection</td>
+                                <td class="chau7-col"><span class="compare-check">7+ CLIs</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                            </tr>
+                            <tr>
+                                <td>Token/Cost Tracking</td>
+                                <td class="chau7-col"><span class="compare-check">Yes</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                            </tr>
+                            <tr>
+                                <td>Triggers / Automation</td>
+                                <td class="chau7-col"><span class="compare-cross">No</span></td>
+                                <td><span class="compare-check">Yes</span></td>
+                            </tr>
+                            <tr>
+                                <td>tmux Integration</td>
+                                <td class="chau7-col"><span class="compare-cross">No</span></td>
+                                <td><span class="compare-check">Native</span></td>
+                            </tr>
+                            <tr>
+                                <td>Python Scripting API</td>
+                                <td class="chau7-col"><span class="compare-cross">No</span></td>
+                                <td><span class="compare-check">Full API</span></td>
+                            </tr>
+                            <tr>
+                                <td>Session Recording</td>
+                                <td class="chau7-col"><span class="compare-check">Yes</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                            </tr>
+                            <tr>
+                                <td>Maturity</td>
+                                <td class="chau7-col"><span class="compare-partial">Beta</span></td>
+                                <td><span class="compare-check">15+ years</span></td>
+                            </tr>
+                            <tr>
+                                <td>Profile Import</td>
+                                <td class="chau7-col"><span class="compare-check">Imports iTerm2</span></td>
+                                <td>N/A</td>
+                            </tr>
+                            <tr>
+                                <td>Price</td>
+                                <td class="chau7-col">Free</td>
+                                <td>Free</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="faq-section" aria-labelledby="faq-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="faq-heading">Frequently asked questions</h2>
+                </div>
+                <div class="faq-list">
+                    <details>
+                        <summary>Can I import my iTerm2 profiles?</summary>
+                        <div class="faq-answer">
+                            <p>Yes. Chau7 detects your iTerm2 profiles on first launch and imports color schemes, fonts, and key bindings. You don't have to rebuild anything from scratch.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7 have triggers like iTerm2?</summary>
+                        <div class="faq-answer">
+                            <p>No. Chau7 does not have a trigger system comparable to iTerm2's regex-based automation. If triggers are central to your workflow, iTerm2 is the better choice for that specific need.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Is Chau7 as stable as iTerm2?</summary>
+                        <div class="faq-answer">
+                            <p>Not yet. iTerm2 has over 15 years of battle-testing across thousands of workflows and edge cases. Chau7 is in beta with 1528 tests and a Rust backend, but it hasn't seen the same volume of real-world use. Expect rough edges.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Can I run both at the same time?</summary>
+                        <div class="faq-answer">
+                            <p>Yes. Both are standalone macOS apps. You can run them simultaneously. Some people use Chau7 for AI agent sessions and iTerm2 for everything else. Whatever works.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7 support tmux?</summary>
+                        <div class="faq-answer">
+                            <p>You can run tmux inside Chau7, but there's no native tmux integration like iTerm2 offers. If tmux-native session management is essential to how you work, iTerm2 handles it better.</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Try it. Keep what works.</h2>
+                    <p class="cta-nudge">Imports your iTerm2 profiles. Free, open source. Low-risk experiment.</p>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+
+    <site-footer></site-footer>
+
+<script src="/script.js"></script>
+</body>
+</html>

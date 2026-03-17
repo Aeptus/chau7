@@ -6,9 +6,9 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>MCP Tools | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 exposes 20 MCP tools over Unix socket for AI agent control. Tab management, telemetry, session tracking. Auto-registers in Claude Code, Cursor, Windsurf, Codex.">
-    <meta property="og:title" content="Chau7 MCP Tools | 20 Tools for AI Agent Control">
-    <meta property="og:description" content="Your AI agent just got a terminal. 20 tools. Unix socket. Zero config.">
+    <meta name="description" content="Chau7 ships a local MCP server over Unix socket. 20 tools for terminal automation: tabs, commands, output, telemetry. Auto-registers in Claude Code, Cursor, Windsurf, Codex.">
+    <meta property="og:title" content="Chau7 MCP | Local Terminal Automation for AI Agents">
+    <meta property="og:description" content="A local MCP server that turns Chau7 into a programmable terminal. 20 tools. Unix socket. Zero config.">
     <meta property="og:image" content="screenshots/03-mcp-tab-demo.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -31,7 +31,7 @@
             {
                 "@type": "Question",
                 "name": "What is MCP?",
-                "acceptedAnswer": { "@type": "Answer", "text": "MCP (Model Context Protocol) is an open standard that lets AI agents interact with external tools and data sources. Chau7 implements an MCP server that exposes terminal control as 20 tools over a Unix socket." }
+                "acceptedAnswer": { "@type": "Answer", "text": "MCP (Model Context Protocol) is an open standard that lets AI agents interact with external tools and data sources. Chau7 implements a local MCP server that makes terminal automation available as 20 tools over a Unix socket. No cloud, no API keys." }
             },
             {
                 "@type": "Question",
@@ -60,13 +60,14 @@
         <section class="hero hero-mcp">
             <div class="hero-glow"></div>
             <div class="hero-content">
-                <div class="hero-badge badge-alt">Model Context Protocol</div>
+                <div class="hero-badge badge-alt">Local MCP Server</div>
                 <h1 class="hero-title">
-                    Your AI agent just got<br>a <span class="gradient-text-alt">terminal</span>.
+                    A clean way to<br><span class="gradient-text-alt">automate your terminal</span>.
                 </h1>
                 <p class="hero-subtitle">
-                    20 tools. Unix socket. Zero config. Chau7 exposes every tab, command,
-                    and session to any MCP-compatible AI agent.
+                    Chau7 ships a local MCP server over Unix socket. 20 tools for tabs, commands,
+                    output, and telemetry. Your AI agents use it. Your scripts use it.
+                    Nothing leaves your machine.
                 </p>
             </div>
         </section>
@@ -75,24 +76,24 @@
         <section class="perf-section" aria-labelledby="how-heading">
             <div class="section-inner">
                 <div class="section-header">
-                    <h2 id="how-heading">How it works</h2>
-                    <p>Three steps from launch to full terminal control.</p>
+                    <h2 id="how-heading">The plumbing</h2>
+                    <p>Local Unix socket. Standard MCP protocol. No network, no cloud, no API keys.</p>
                 </div>
                 <div class="steps-grid">
                     <div class="step-card">
                         <div class="step-num">1</div>
-                        <h4>Launch Chau7</h4>
-                        <p>On startup, Chau7 auto-registers its MCP server in Claude Code, Cursor, Windsurf, and Codex config files.</p>
+                        <h4>Auto-registration</h4>
+                        <p>On every launch, Chau7 writes its socket path into the MCP config of Claude Code, Cursor, Windsurf, and Codex. Your tools find it without you touching a file.</p>
                     </div>
                     <div class="step-card">
                         <div class="step-num">2</div>
-                        <h4>AI connects via MCP</h4>
-                        <p>Your AI agent discovers the Unix socket and calls tools like <code>tab_create</code>, <code>tab_exec</code>, and <code>tab_output</code>.</p>
+                        <h4>Local Unix socket</h4>
+                        <p>The server listens on a filesystem socket. No TCP, no port, no network. Only processes on your Mac can reach it.</p>
                     </div>
                     <div class="step-card">
                         <div class="step-num">3</div>
-                        <h4>Full terminal control</h4>
-                        <p>Create tabs, run commands, read output, inspect processes, track sessions. No hacks, no screen scraping.</p>
+                        <h4>Full terminal automation</h4>
+                        <p>20 tools give your AI agents, or your own scripts, a clean way to drive Chau7. Open tabs, run commands, read output, query telemetry. A proper API instead of screen scraping.</p>
                     </div>
                 </div>
             </div>
@@ -102,8 +103,8 @@
         <section class="mcp-section" aria-labelledby="tools-heading">
             <div class="section-inner">
                 <div class="section-header">
-                    <h2 id="tools-heading">20 tools. <span class="gradient-text-alt">Everything exposed.</span></h2>
-                    <p>Full terminal lifecycle control and AI telemetry, accessible through the standard MCP protocol.</p>
+                    <h2 id="tools-heading">20 tools. <span class="gradient-text-alt">Everything accessible.</span></h2>
+                    <p>Tabs, commands, output, sessions, and telemetry. All available through the standard MCP protocol. All local.</p>
                 </div>
 
                 <div class="mcp-grid">
@@ -215,7 +216,8 @@
             <div class="section-inner">
                 <div class="section-header">
                     <h2 id="safety-heading">You control what agents can do.</h2>
-                    <p>MCP access is powerful, and fully controllable.</p>
+                    <p>The MCP server is local, but that does not mean unguarded. You decide what runs.</p>
+                    <p style="color: var(--text-muted); font-style: italic; font-size: var(--text-sm); margin-top: var(--space-xs);">If you're wondering why these guardrails exist, imagine what happened before we added them. Actually, don't. We're still recovering.</p>
                 </div>
                 <div class="safety-grid">
                     <div class="safety-item">
@@ -248,7 +250,7 @@
                     <details>
                         <summary>What is MCP?</summary>
                         <div class="faq-answer">
-                            <p>MCP (Model Context Protocol) is an open standard that lets AI agents interact with external tools and data sources. Chau7 implements an MCP server that exposes terminal control as 20 tools over a Unix socket. <a href="https://modelcontextprotocol.io" target="_blank">Learn more about MCP</a>.</p>
+                            <p>MCP (Model Context Protocol) is an open standard that lets AI agents interact with external tools and data sources. Chau7 implements a local MCP server that makes terminal automation available as 20 tools over a Unix socket. No cloud, no API keys. <a href="https://modelcontextprotocol.io" target="_blank">Learn more about MCP</a>.</p>
                         </div>
                     </details>
                     <details>
@@ -261,6 +263,18 @@
                         <summary>Is MCP access safe?</summary>
                         <div class="faq-answer">
                             <p>Yes. Chau7 provides an approval gate for MCP actions, configurable tab limits, a global enable/disable toggle, and visual indicators for MCP-created tabs. You always know what an agent is doing, and you control what it can do.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Does MCP data leave my machine?</summary>
+                        <div class="faq-answer">
+                            <p>No. The MCP server runs on a local Unix socket. Only processes on your Mac can connect to it. There is no network listener, no port, no cloud relay. Tool calls, responses, and telemetry all stay on your filesystem.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Can I use MCP from my own scripts?</summary>
+                        <div class="faq-answer">
+                            <p>Yes. Any MCP-compatible client can connect to the Unix socket. You can also use the JSON-RPC API directly from any language that can talk to a Unix socket. Chau7's MCP is not limited to AI agents: it's a general-purpose terminal automation interface.</p>
                         </div>
                     </details>
                     <details>
@@ -277,7 +291,7 @@
         <section class="footer-cta-section" aria-label="Download call to action">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Give your AI agent real terminal access.</h2>
+                    <h2>A programmable terminal. Locally yours.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                 </div>
             </div>

@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>Chau7 vs VSCode Terminal | Honest Terminal Comparison</title>
+    <meta name="description" content="An honest comparison of Chau7 and VSCode's integrated terminal. IDE integration vs dedicated terminal features. Here's when each makes sense.">
+    <meta property="og:title" content="Chau7 vs VSCode Terminal | Terminal Comparison">
+    <meta property="og:description" content="VSCode's terminal lives where your code is. Chau7 is a standalone terminal with GPU rendering and MCP. Different tools.">
+    <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="website">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="canonical" href="https://chau7.sh/compare/vs-vscode">
+    <link rel="stylesheet" href="/style.css">
+    <script src="/components.js"></script>
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://chau7.sh/" },
+            { "@type": "ListItem", "position": 2, "name": "Compare", "item": "https://chau7.sh/compare" },
+            { "@type": "ListItem", "position": 3, "name": "vs VSCode" }
+        ]
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "Why would I use a separate terminal instead of VSCode's?",
+                "acceptedAnswer": { "@type": "Answer", "text": "VSCode's terminal is a panel inside an IDE. Chau7 is a dedicated terminal application with GPU rendering, MCP tools, AI detection, session recording, and 170+ terminal-specific features. If you spend significant time in the terminal, especially running AI agents, a purpose-built terminal gives you tools VSCode's panel cannot." }
+            },
+            {
+                "@type": "Question",
+                "name": "Does Chau7 integrate with VSCode?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Not directly. Chau7 is a standalone application, not a VSCode extension. They run as separate apps. Some developers use VSCode for editing and Chau7 for dedicated terminal sessions, especially for AI agents." }
+            },
+            {
+                "@type": "Question",
+                "name": "Can Copilot work with Chau7?",
+                "acceptedAnswer": { "@type": "Answer", "text": "GitHub Copilot's terminal integration is built into VSCode and does not extend to external terminals. However, Chau7 works with standalone AI agents like Claude Code, Codex, and Cursor via MCP. Different AI tools, different integration points." }
+            },
+            {
+                "@type": "Question",
+                "name": "Does VSCode's terminal have GPU rendering?",
+                "acceptedAnswer": { "@type": "Answer", "text": "VSCode recently added GPU-accelerated rendering for its terminal via WebGL. Chau7 uses native Metal rendering. Both are faster than CPU rendering, but Chau7's native Metal pipeline avoids the Electron overhead that VSCode carries." }
+            }
+        ]
+    }]
+    </script>
+</head>
+<body>
+    <site-nav></site-nav>
+
+<main>
+        <!-- Breadcrumb -->
+        <div class="breadcrumb">
+            <a href="/">Home</a>
+            <span class="breadcrumb-sep">/</span>
+            <a href="/compare">Compare</a>
+            <span class="breadcrumb-sep">/</span>
+            <span class="breadcrumb-current">vs VSCode Terminal</span>
+        </div>
+
+        <!-- Hero -->
+        <section class="hero hero-compare">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="hero-badge badge-purple">Comparison</div>
+                <h1 class="hero-title">
+                    Chau7 vs <span class="gradient-text">VSCode</span> Terminal
+                </h1>
+                <p class="hero-subtitle">
+                    VSCode's terminal lives where your code lives. That's a big deal.
+                    Chau7 is a dedicated terminal with features VSCode's panel can't match.
+                    This is less "which is better" and more "do you need both."
+                </p>
+                <p class="hero-subtitle">
+                    <a href="https://code.visualstudio.com" target="_blank" rel="noopener">Visit VSCode &rarr;</a>
+                </p>
+            </div>
+        </section>
+
+        <!-- What VSCode does well -->
+        <section class="perf-section" aria-labelledby="vscode-strengths">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="vscode-strengths">What VSCode's terminal does well</h2>
+                    <p>It's right there. In your editor. Where you already are.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>IDE integration</h4>
+                        <p>Click a file in the explorer, run a test in the terminal, see output, edit, repeat. The terminal and the editor share a context. Error links are clickable. File paths resolve. Tasks run from the same window. That tight coupling is VSCode's strongest argument.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Lives where your code is</h4>
+                        <p>No app switching. The terminal panel sits below your editor. Cmd+` toggles it. Your code and your terminal share a screen. For workflows centered on editing and running, the proximity matters.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Copilot built in</h4>
+                        <p>GitHub Copilot lives natively in VSCode. Terminal suggestions, inline completions, chat, code explanations. The AI and the IDE share context. That integration is tighter than anything an external terminal can offer with Copilot specifically.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Extension ecosystem</h4>
+                        <p>Thousands of extensions that interact with the terminal: task runners, linters, debuggers, remote containers, language servers. The terminal benefits from this ecosystem even without doing anything special.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>All-in-one workflow</h4>
+                        <p>Editor, terminal, debugger, source control, extensions, settings. One app, one window, one workflow. The appeal of not context-switching between apps is real. VSCode's strength is being the everything tool.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Cross-platform</h4>
+                        <p>macOS, Linux, Windows. Same editor, same terminal, same extensions. Chau7 is macOS only. If you work across platforms, VSCode is consistent everywhere.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- What Chau7 adds -->
+        <section class="perf-section" aria-labelledby="chau7-adds">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="chau7-adds">What Chau7 adds</h2>
+                    <p>What you get when the terminal is the whole app, not a panel in someone else's app.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>Native Metal rendering</h4>
+                        <p>Chau7 uses Metal for GPU rendering with SIMD parsing and a lock-free ring buffer. VSCode's terminal runs inside Electron with WebGL. For heavy terminal output, Chau7's native rendering pipeline is faster and smoother. The Electron overhead adds up.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>MCP Server (20 tools)</h4>
+                        <p>External AI agents (Claude Code, Codex, Cursor) can open tabs, run commands, and read output through MCP. VSCode's Copilot integration is internal to VSCode. Chau7's MCP works with any MCP-compatible client, not one specific AI.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>AI detection and branding</h4>
+                        <p>Chau7 recognizes 7+ AI coding tools and brands each tab with the agent's identity and colors. When you're running multiple agents, you see who's doing what. VSCode's terminal panel doesn't differentiate between AI processes.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Session recording</h4>
+                        <p>Record and replay terminal sessions with timeline scrubbing. Review what happened, when, and why. VSCode's terminal has no recording or replay capability.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Dedicated terminal features</h4>
+                        <p>SSH manager, command palette, snippets, clipboard history, dangerous command guard, cost tracking, tab profiles, and 170+ other features built for people who live in the terminal. VSCode's terminal panel is good. A dedicated terminal app is better at being a terminal.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Full screen, full focus</h4>
+                        <p>When you need to focus on terminal work, a dedicated app gives you a full window, full keyboard, full attention. VSCode's terminal panel splits your attention with the editor, sidebar, and status bar. Sometimes the terminal deserves the whole screen.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Who should use what -->
+        <section class="perf-section" aria-labelledby="who-heading">
+            <div class="section-inner">
+                <div class="ai-relevance">
+                    <h3 id="who-heading">Who should use what</h3>
+                    <p><strong>Use VSCode's terminal if:</strong> Your workflow centers on VSCode. You edit, run, debug, and commit all in one window. Copilot is your primary AI tool. You value the tight integration between editor and terminal more than terminal-specific features. For many developers, this is the right call.</p>
+                    <p><strong>Try Chau7 if:</strong> You run AI agents in dedicated terminal sessions outside your editor. Claude Code, Codex, or similar tools that need their own long-running processes. You want MCP control, session recording, AI detection, and cost tracking that VSCode's terminal panel doesn't provide. You spend enough time in the terminal that it deserves its own app.</p>
+                    <p><strong>The honest version:</strong> Most developers should probably use both. VSCode's terminal for quick edit-run cycles. Chau7 for dedicated AI agent sessions, SSH work, and heavy terminal use. They complement each other more than they compete.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Comparison Table -->
+        <section class="compare-section" aria-labelledby="table-heading">
+            <div class="section-inner">
+                <h2 id="table-heading">Quick comparison</h2>
+                <div class="compare-table-wrap">
+                    <table class="compare-table">
+                        <thead>
+                            <tr>
+                                <th>Feature</th>
+                                <th class="chau7-col">Chau7</th>
+                                <th>VSCode Terminal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>IDE Integration</td>
+                                <td class="chau7-col"><span class="compare-cross">No (standalone)</span></td>
+                                <td><span class="compare-check">Full</span></td>
+                            </tr>
+                            <tr>
+                                <td>GPU Rendering</td>
+                                <td class="chau7-col"><span class="compare-check">Native Metal</span></td>
+                                <td><span class="compare-partial">WebGL (Electron)</span></td>
+                            </tr>
+                            <tr>
+                                <td>MCP Server</td>
+                                <td class="chau7-col"><span class="compare-check">20 tools</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                            </tr>
+                            <tr>
+                                <td>AI Detection</td>
+                                <td class="chau7-col"><span class="compare-check">7+ CLIs</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                            </tr>
+                            <tr>
+                                <td>Built-in AI</td>
+                                <td class="chau7-col"><span class="compare-cross">No</span></td>
+                                <td><span class="compare-check">Copilot</span></td>
+                            </tr>
+                            <tr>
+                                <td>Extension Ecosystem</td>
+                                <td class="chau7-col"><span class="compare-cross">No</span></td>
+                                <td><span class="compare-check">Thousands</span></td>
+                            </tr>
+                            <tr>
+                                <td>Session Recording</td>
+                                <td class="chau7-col"><span class="compare-check">Yes</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                            </tr>
+                            <tr>
+                                <td>Cross-Platform</td>
+                                <td class="chau7-col"><span class="compare-cross">macOS only</span></td>
+                                <td><span class="compare-check">macOS, Linux, Windows</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="faq-section" aria-labelledby="faq-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="faq-heading">Frequently asked questions</h2>
+                </div>
+                <div class="faq-list">
+                    <details>
+                        <summary>Why would I use a separate terminal instead of VSCode's?</summary>
+                        <div class="faq-answer">
+                            <p>VSCode's terminal is a panel inside an Electron app. Chau7 is a native macOS terminal with Metal rendering, 20 MCP tools, AI detection, session recording, and 170+ terminal-specific features. If you spend significant time in the terminal, a dedicated app gives you more tools, better performance, and full-screen focus. If you mostly run quick commands while editing, VSCode's terminal is perfectly fine.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Can I use Copilot with Chau7?</summary>
+                        <div class="faq-answer">
+                            <p>GitHub Copilot's terminal features are built into VSCode and don't extend to external terminals. Chau7 works with standalone AI agents (Claude Code, Codex, Cursor) through MCP. Different AI tools, different integration points. If Copilot is your primary AI workflow, VSCode is where it lives.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Is Chau7 faster than VSCode's terminal?</summary>
+                        <div class="faq-answer">
+                            <p>For heavy output, yes. Chau7 uses native Metal rendering without Electron overhead. VSCode's terminal has improved with WebGL, but it still runs inside a browser engine. For basic commands, both feel instant. The difference shows up with large logs, fast-scrolling output, and sustained throughput.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Can I use both?</summary>
+                        <div class="faq-answer">
+                            <p>Yes, and that's what we'd recommend for most people. Use VSCode's terminal for edit-run-debug cycles where IDE integration matters. Use Chau7 for dedicated AI agent sessions, long-running processes, SSH work, and situations where the terminal deserves your full attention. They complement each other.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7 have a VSCode extension?</summary>
+                        <div class="faq-answer">
+                            <p>No. Chau7 is a standalone macOS app, not a VSCode extension. There's no way to embed Chau7 inside VSCode or vice versa. They are separate tools that serve different parts of your workflow.</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Try it. Keep what works.</h2>
+                    <p class="cta-nudge">Free, open source, complements VSCode. Give it a terminal session or three.</p>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+
+    <site-footer></site-footer>
+
+<script src="/script.js"></script>
+</body>
+</html>
