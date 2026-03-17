@@ -7,6 +7,8 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Bracket Matching | Chau7 Terminal</title>
     <meta name="description" content="Chau7's built-in editor highlights matching brackets, braces, and parentheses. Jump to matching delimiter instantly for faster code navigation.">
+    <meta name="application-name" content="Chau7">
+    <meta name="category" content="Terminal Emulator">
     <meta property="og:title" content="Bracket Matching | Chau7">
     <meta property="og:description" content="Chau7's built-in editor highlights matching brackets, braces, and parentheses. Jump to matching delimiter instantly for faster code navigation.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -38,7 +40,7 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"What delimiter types are matched?","acceptedAnswer":{"@type":"Answer","text":"Parentheses (), square brackets [], curly braces {}, and angle brackets &lt;&gt; are all matched with visual highlighting."}},{"@type":"Question","name":"How do I jump to the matching bracket?","acceptedAnswer":{"@type":"Answer","text":"Use the jump-to-match keyboard shortcut with your cursor next to any bracket. The cursor moves directly to the corresponding opening or closing delimiter."}}]
+        "mainEntity": [{"@type":"Question","name":"What is bracket matching in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Bracket matching in Chau7 is a built-in editor feature that automatically highlights the corresponding opening or closing delimiter when the cursor is next to a bracket, brace, or parenthesis. Chau7 supports parentheses (), square brackets [], curly braces {}, and angle brackets."}},{"@type":"Question","name":"What delimiter types does Chau7 match?","acceptedAnswer":{"@type":"Answer","text":"Chau7's bracket matching supports four delimiter pairs: parentheses (), square brackets [], curly braces {}, and angle brackets. Mismatched or unmatched delimiters are highlighted in an error color so you can spot structural problems immediately."}},{"@type":"Question","name":"How do I jump to the matching bracket in Chau7?","acceptedAnswer":{"@type":"Answer","text":"In Chau7's built-in editor, use the jump-to-match keyboard shortcut with your cursor next to any bracket. Chau7 moves the cursor directly to the corresponding opening or closing delimiter. Combined with selection, you can select everything between matching delimiters in two keystrokes."}},{"@type":"Question","name":"How does Chau7's bracket matching compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminal emulators like iTerm2, Terminal.app, and Alacritty do not include a built-in editor, so they have no bracket matching at all. Users must rely on external editors like Vim or Emacs for bracket matching. Chau7 provides bracket matching natively in its built-in editor with zero configuration."}}]
     }]
     </script>
 </head>
@@ -72,24 +74,67 @@
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is bracket matching in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's bracket matching compare to other terminals?</li>
                     <li class="question-item">Terminal editor bracket matching highlight</li>
-                    <li class="question-item">Jump to matching brace in terminal editor</li>
-                    <li class="question-item">Find closing parenthesis in nested code terminal</li>
+                    <li class="question-item">What delimiter types does Chau7 match?</li>
+                    <li class="question-item">How do I jump to the matching bracket in Chau7?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What Is Bracket Matching in Chau7 -->
+        <section class="feature-content" data-ui="bracket-matching-definition">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>When your cursor is adjacent to a bracket, brace, or parenthesis, Chau7's editor highlights the matching delimiter with a distinct background color. This works for all common delimiter pairs: parentheses (), square brackets [], curly braces {}, and angle brackets <>. Mismatched or unmatched delimiters are highlighted in an error color so you spot structural problems immediately.</p>
-                <p>Jump-to-match moves the cursor directly to the corresponding delimiter with a single keyboard shortcut. This works in both directions: from opening to closing and from closing to opening. Combined with selection, you can select everything between matching delimiters in two keystrokes, which is invaluable for extracting or restructuring nested code blocks.</p>
+                <h2>What is bracket matching in Chau7 terminal?</h2>
+                <p>Bracket matching in Chau7 is a built-in editor feature that automatically highlights the corresponding opening or closing delimiter when your cursor is adjacent to a bracket, brace, or parenthesis. Chau7 displays the matching delimiter with a distinct background color so you can trace nesting visually instead of counting by hand.</p>
+                <p>Chau7's bracket matching works inline as you move through the file. There is no mode to enable and no plugin to install. The feature is active by default in every editing session.</p>
+            </div>
+        </section>
 
+        <!-- How Does Chau7 Highlight Matching Brackets -->
+        <section class="feature-content" data-ui="bracket-matching-highlight">
+            <div class="section-inner prose">
+                <h2>How does Chau7 highlight matching brackets?</h2>
+                <p>When the cursor is adjacent to any bracket character, Chau7's editor highlights both the bracket under the cursor and its matching counterpart with a distinct background color. This visual highlighting is immediate and requires no keyboard shortcut.</p>
+                <p>Mismatched or unmatched delimiters are highlighted in an error color. Chau7 flags these structural problems the moment you encounter them, so you can fix nesting issues before they cause syntax errors.</p>
+            </div>
+        </section>
+
+        <!-- What Delimiter Types Does Chau7 Match -->
+        <section class="feature-content" data-ui="bracket-matching-delimiter-types">
+            <div class="section-inner prose">
+                <h2>What delimiter types does Chau7 match?</h2>
+                <p>Chau7's bracket matching supports four delimiter pairs: parentheses <code>()</code>, square brackets <code>[]</code>, curly braces <code>{}</code>, and angle brackets <code>&lt;&gt;</code>. All four pairs receive the same visual highlighting treatment.</p>
+                <p>This coverage handles the most common delimiter types found in JSON, YAML, HTML, and programming languages. Chau7 matches these delimiters regardless of nesting depth.</p>
+            </div>
+        </section>
+
+        <!-- How Do I Jump to the Matching Bracket -->
+        <section class="feature-content" data-ui="bracket-matching-jump">
+            <div class="section-inner prose">
+                <h2>How do I jump to the matching bracket in Chau7?</h2>
+                <p>Chau7's built-in editor provides a jump-to-match keyboard shortcut. Place the cursor next to any bracket and trigger the shortcut. Chau7 moves the cursor directly to the corresponding opening or closing delimiter.</p>
+                <p>Jump-to-match in Chau7 works in both directions: from opening to closing and from closing to opening. Combined with selection, you can select everything between matching delimiters in two keystrokes. This is useful for extracting or restructuring nested code blocks.</p>
+            </div>
+        </section>
+
+        <!-- Why Bracket Matching Matters -->
+        <section class="feature-content" data-ui="bracket-matching-why-matters">
+            <div class="section-inner prose">
                 <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Deeply nested brackets in JSON, YAML, or code are one of the most common sources of syntax errors during terminal editing. Chau7's editor highlights the matching bracket when you click or cursor next to one, so you can trace nesting visually instead of counting by hand.</p>
+                    <h3>Why bracket matching matters</h3>
+                    <p>Deeply nested brackets in JSON, YAML, or code are one of the most common sources of syntax errors during terminal editing. Chau7's bracket matching highlights the corresponding delimiter instantly, eliminating the need to count brackets manually.</p>
                 </div>
+            </div>
+        </section>
+
+        <!-- How Does Chau7's Bracket Matching Compare to Other Terminals -->
+        <section class="feature-content" data-ui="bracket-matching-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's bracket matching compare to other terminals?</h2>
+                <p>Most terminal emulators do not include a built-in text editor. iTerm2, Terminal.app, Alacritty, Kitty, and WezTerm all rely on external editors like Vim, Emacs, or nano for file editing. Bracket matching in those workflows depends entirely on the external editor's capabilities and configuration.</p>
+                <p>Chau7 provides bracket matching natively in its built-in editor. There is no external editor dependency, no plugin to configure, and no mode to activate. Bracket matching in Chau7 works out of the box with visual highlighting and jump-to-match navigation from the first edit.</p>
             </div>
         </section>
 
@@ -123,12 +168,16 @@
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>What delimiter types are matched?</summary>
-                        <div class="faq-answer"><p>Parentheses (), square brackets [], curly braces {}, and angle brackets <> are all matched with visual highlighting.</p></div>
+                        <summary>What delimiter types does Chau7 match?</summary>
+                        <div class="faq-answer"><p>Chau7's bracket matching supports four delimiter pairs: parentheses <code>()</code>, square brackets <code>[]</code>, curly braces <code>{}</code>, and angle brackets <code>&lt;&gt;</code>. All four pairs receive visual highlighting in Chau7's built-in editor.</p></div>
                     </details>
                     <details>
-                        <summary>How do I jump to the matching bracket?</summary>
-                        <div class="faq-answer"><p>Use the jump-to-match keyboard shortcut with your cursor next to any bracket. The cursor moves directly to the corresponding opening or closing delimiter.</p></div>
+                        <summary>How do I jump to the matching bracket in Chau7?</summary>
+                        <div class="faq-answer"><p>In Chau7's built-in editor, use the jump-to-match keyboard shortcut with your cursor next to any bracket. Chau7 moves the cursor directly to the corresponding opening or closing delimiter. Combined with selection, you can select everything between matching delimiters in two keystrokes.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7's bracket matching work without configuration?</summary>
+                        <div class="faq-answer"><p>Yes. Bracket matching in Chau7 is active by default in the built-in editor. There is no plugin to install, no setting to enable, and no external editor required. Chau7 highlights matching delimiters automatically from the first edit.</p></div>
                     </details>
                 </div>
             </div>

@@ -32,23 +32,28 @@
         "mainEntity": [
             {
                 "@type": "Question",
+                "name": "What technology powers Chau7 terminal?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 terminal is powered by Rust for PTY byte parsing and command inspection, Metal for native GPU rendering, Swift and AppKit for macOS UI, and lock-free SPSC buffers for data handoff between threads." }
+            },
+            {
+                "@type": "Question",
                 "name": "Does Chau7 send any data to the cloud?",
-                "acceptedAnswer": { "@type": "Answer", "text": "No. Chau7 tracks tokens, costs, sessions, and AI telemetry in detail, but all of it stays on your Mac as local files. Zero network requests to any Chau7 server. No crash reporting, no analytics callbacks, no update checks." }
+                "acceptedAnswer": { "@type": "Answer", "text": "No. Chau7 does not send any data to the cloud. Chau7 tracks tokens, costs, sessions, and AI telemetry in detail, but all of it stays on your Mac as local files. Zero network requests to any Chau7 server. No crash reporting, no analytics callbacks, no update checks." }
             },
             {
                 "@type": "Question",
-                "name": "Why use Rust in a terminal?",
-                "acceptedAnswer": { "@type": "Answer", "text": "Rust is used where Chau7 parses PTY bytes, maintains terminal state, and evaluates command streams. That gives predictable performance for hot-path parsing while making memory and concurrency bugs dramatically less likely." }
+                "name": "Why does Chau7 use Rust instead of pure Swift?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 uses Rust instead of pure Swift for the parsing hot path because Rust provides compile-time guarantees against data races, use-after-free, and buffer overflows. Swift handles Chau7 macOS UI, windowing, and tab management. Rust handles PTY byte parsing, terminal state, and command stream evaluation where predictable performance under heavy AI workloads matters most." }
             },
             {
                 "@type": "Question",
-                "name": "How can Chau7 flag dangerous commands before execution?",
-                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 inspects command text at the terminal input layer before the shell executes it. That lets it match destructive patterns such as rm -rf, suspicious pasted payloads, hidden Unicode characters, and multi-line trick commands regardless of shell aliases or prompt themes." }
+                "name": "How does Chau7 detect dangerous commands before execution?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 detects dangerous commands before execution by inspecting command text at the terminal input layer before the shell executes it. That lets Chau7 match destructive patterns such as rm -rf, suspicious pasted payloads, hidden Unicode characters, and multi-line trick commands regardless of shell aliases or prompt themes." }
             },
             {
                 "@type": "Question",
-                "name": "Why use Metal instead of OpenGL?",
-                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 is macOS-only, so Metal is the native graphics stack with the best long-term path for glyph rendering, dirty-region updates, and low-latency compositing on Apple hardware." }
+                "name": "Why does Chau7 use Metal instead of OpenGL for rendering?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 uses Metal instead of OpenGL because Chau7 is macOS-only and Apple deprecated OpenGL on macOS in 2018. Metal is the native, actively maintained graphics stack with the best long-term path for glyph rendering, dirty-region updates, and low-latency compositing on Apple hardware." }
             }
         ]
     }]
@@ -58,12 +63,15 @@
     <site-nav></site-nav>
 
 <main>
-        <section class="hero hero-perf">
+        <section class="hero hero-perf" data-ui="hero-tech-overview">
             <div class="hero-content">
                 <div class="hero-badge badge-blue">The Tech</div>
                 <h1 class="hero-title">
                     The guts of the terminal,<br><span class="gradient-text">without the hand-waving</span>.
                 </h1>
+                <p class="hero-subtitle">
+                    Chau7 terminal is powered by Rust for parsing, Metal for GPU rendering, and Swift + AppKit for native macOS UI.
+                </p>
                 <p class="hero-subtitle">
                     100% local. Your data never leaves your Mac.
                     Rust where bytes turn into decisions, Metal where pixels need to move now, and rich telemetry that belongs to you alone.
@@ -72,16 +80,17 @@
         </section>
 
         <!-- Privacy: the first thing you should know -->
-        <section class="mcp-section" aria-labelledby="privacy-heading">
+        <section class="mcp-section" aria-labelledby="privacy-heading" data-ui="privacy-local-first">
             <div class="section-inner">
                 <div class="section-header">
-                    <h2 id="privacy-heading">Your terminal is <span class="gradient-text">yours</span>.</h2>
-                    <p>Chau7 tracks everything about your AI usage. Tokens, costs, sessions, latency, tool calls. But all of it is yours. None of it leaves your Mac.</p>
+                    <h2 id="privacy-heading">Does Chau7 send data to the cloud? <span class="gradient-text">No.</span></h2>
+                    <p>Chau7 does not send any data to the cloud. Chau7 tracks everything about your AI usage. Tokens, costs, sessions, latency, tool calls. But all of it is yours. None of it leaves your Mac.</p>
                 </div>
                 <div class="ai-relevance">
                     <h3>Rich telemetry. Zero exfiltration.</h3>
                     <p>Chau7 gives you detailed telemetry: token counts per call, cost per session, latency trends, AI tool call history, session recordings with millisecond timestamps. That data is genuinely useful. It's also genuinely local.</p>
-                    <p>The API cost proxy intercepts LLM traffic on your machine to count tokens and estimate costs. It does not forward, store, or report that data anywhere except your local filesystem. The MCP server runs over a Unix socket. Session recordings are local files. Settings are local files. Every byte of telemetry Chau7 collects is written to your disk and nowhere else.</p>
+                    <p>The Chau7 API cost proxy intercepts LLM traffic on your machine to count tokens and estimate costs. It does not forward, store, or report that data anywhere except your local filesystem.</p>
+                    <p>The Chau7 MCP server runs over a Unix socket. Session recordings are local files. Settings are local files. Every byte of telemetry Chau7 collects is written to your disk and nowhere else.</p>
                     <p>There is no account to create because there is no server to talk to. We could not see your data even if we wanted to. We designed it that way on purpose.</p>
                 </div>
                 <div class="numbers-grid" style="margin-top: var(--space-lg);">
@@ -105,7 +114,7 @@
             </div>
         </section>
 
-        <section class="perf-section" aria-labelledby="numbers-heading">
+        <section class="perf-section" aria-labelledby="numbers-heading" data-ui="core-tech-numbers">
             <div class="section-inner">
                 <h2 id="numbers-heading" class="sr-only">Core technical choices</h2>
                 <div class="numbers-grid">
@@ -129,79 +138,80 @@
             </div>
         </section>
 
-        <section class="mcp-section" aria-labelledby="stack-heading">
+        <section class="mcp-section" aria-labelledby="stack-heading" data-ui="technical-stack-layers">
             <div class="section-inner">
                 <div class="section-header">
-                    <h2 id="stack-heading">The <span class="gradient-text">technical stack</span></h2>
+                    <h2 id="stack-heading">What technology powers <span class="gradient-text">Chau7 terminal</span>?</h2>
                     <p>Not a buzzword tour. The actual decisions that make Chau7 responsive, inspectable, and hard to trick.</p>
                 </div>
                 <div class="perf-stack">
                     <div class="perf-layer" style="--delay: 0">
                         <div class="perf-label">Input</div>
                         <div class="perf-tech">Terminal Intercept</div>
-                        <div class="perf-desc">Chau7 sees keystrokes, pasted payloads, and command submissions before the shell runs them. That is how dangerous-command confirmation, hidden-character detection, and shell-agnostic guardrails work at all.</div>
+                        <div class="perf-desc">Chau7 terminal sees keystrokes, pasted payloads, and command submissions before the shell runs them. That is how Chau7 dangerous-command confirmation, hidden-character detection, and shell-agnostic guardrails work at all.</div>
                     </div>
                     <div class="perf-layer" style="--delay: 1">
                         <div class="perf-label">Parse</div>
                         <div class="perf-tech">Rust + SIMD</div>
-                        <div class="perf-desc">ANSI streams and terminal bytes are parsed in Rust, using SIMD where bulk PTY output makes it worth it. Faster parsing is the obvious win. Deterministic behavior under heavy output is the more important one.</div>
+                        <div class="perf-desc">Chau7 parses ANSI streams and terminal bytes in Rust, using SIMD where bulk PTY output makes it worth it. Faster parsing is the obvious win. Deterministic behavior under heavy output is the more important one.</div>
                     </div>
                     <div class="perf-layer" style="--delay: 2">
                         <div class="perf-label">Transfer</div>
                         <div class="perf-tech">Lock-Free SPSC</div>
-                        <div class="perf-desc">The PTY reader and parser hand data across a single-producer single-consumer ring buffer. No mutex convoy, no unnecessary wakeups, no drama because one thread had opinions about another thread's timing.</div>
+                        <div class="perf-desc">The Chau7 PTY reader and parser hand data across a single-producer single-consumer ring buffer. No mutex convoy, no unnecessary wakeups, no drama because one thread had opinions about another thread's timing.</div>
                     </div>
                     <div class="perf-layer" style="--delay: 3">
                         <div class="perf-label">Render</div>
                         <div class="perf-tech">Triple Buffer + Metal</div>
-                        <div class="perf-desc">Terminal state swaps atomically, the renderer only redraws dirty regions, and Metal does the compositing. Chau7 is macOS-only, so it uses the graphics stack macOS actually wants.</div>
+                        <div class="perf-desc">Chau7 terminal state swaps atomically, the renderer only redraws dirty regions, and Metal does the compositing. Chau7 is macOS-only, so it uses the graphics stack macOS actually wants.</div>
                     </div>
                 </div>
             </div>
         </section>
 
-        <section class="perf-section" aria-labelledby="rust-heading">
-            <div class="section-inner">
-                <div class="section-header">
-                    <h2 id="rust-heading">Why <span class="gradient-text-alt">Rust</span> shows up in the hot path</h2>
-                    <p>Because terminals are mostly bytes, timing, and state transitions. That is exactly where “we&rsquo;ll be careful” stops being a strategy.</p>
+        <section class=”perf-section” aria-labelledby=”rust-heading” data-ui=”rust-instead-of-swift”>
+            <div class=”section-inner”>
+                <div class=”section-header”>
+                    <h2 id=”rust-heading”>Why does Chau7 use <span class=”gradient-text-alt”>Rust</span> instead of pure Swift?</h2>
+                    <p>Because terminals are mostly bytes, timing, and state transitions. That is exactly where “we'll be careful” stops being a strategy.</p>
                 </div>
-                <div class="ai-relevance">
+                <div class=”ai-relevance”>
                     <h3>Rust is not there for branding</h3>
-                    <p>Chau7 uses Rust where raw PTY data becomes terminal state, where ANSI escape sequences need to be parsed quickly, and where command streams need to be inspected without introducing UI jank. Those are the places where correctness and throughput meet. It is also where memory mistakes, race conditions, and “this only breaks under heavy output” bugs become expensive.</p>
+                    <p>Chau7 uses Rust instead of pure Swift for the performance-critical parsing layer. Swift handles macOS UI, windowing, and tab management beautifully. But the hot path, where raw PTY data becomes terminal state, where ANSI escape sequences need to be parsed quickly, and where command streams need to be inspected without introducing UI jank, needs stronger memory safety guarantees than Swift alone provides.</p>
+                    <p>Rust gives Chau7 compile-time guarantees against data races, use-after-free, and buffer overflows in the parsing layer. Swift's ARC model handles UI lifecycle well, but terminal byte parsing requires the kind of zero-cost abstraction and fearless concurrency that Rust was designed for.</p>
                     <p>That matters for AI-heavy workflows because AI CLIs are not polite terminal citizens. They dump huge logs, redraw frequently, stream output in bursts, and sometimes paste command text you really want to inspect before it runs. Rust gives Chau7 a safer place to do that work while still staying close to the metal.</p>
                 </div>
             </div>
         </section>
 
-        <section class="perf-section" aria-labelledby="ownership-heading">
+        <section class="perf-section" aria-labelledby="ownership-heading" data-ui="tech-ownership-split">
             <div class="section-inner">
                 <div class="section-header">
                     <h2 id="ownership-heading">Where Swift ends, where Rust begins, where Metal takes over</h2>
-                    <p>The split is deliberate. Native macOS UI where platform fit matters. Rust where parsing and safety matter. Metal where drawing speed matters.</p>
+                    <p>The Chau7 technology split is deliberate. Native macOS UI where platform fit matters. Rust where parsing and safety matter. Metal where drawing speed matters.</p>
                 </div>
                 <div class="tech-ownership">
                     <div class="tech-ownership-row">
                         <div class="tech-ownership-label">Swift + AppKit</div>
-                        <div class="tech-ownership-copy">Windowing, tab management, native menus, settings, and the Mac-specific UX that should feel like a real macOS app instead of a wrapped web view.</div>
+                        <div class="tech-ownership-copy">Chau7 uses Swift and AppKit for windowing, tab management, native menus, settings, and the Mac-specific UX that should feel like a real macOS app instead of a wrapped web view.</div>
                     </div>
                     <div class="tech-ownership-row">
                         <div class="tech-ownership-label">Rust core</div>
-                        <div class="tech-ownership-copy">PTY byte parsing, ANSI handling, command normalization, dangerous-command heuristics, and the state transitions that need to stay fast and predictable under agent-heavy workloads.</div>
+                        <div class="tech-ownership-copy">Chau7 uses Rust for PTY byte parsing, ANSI handling, command normalization, dangerous-command heuristics, and the state transitions that need to stay fast and predictable under agent-heavy workloads.</div>
                     </div>
                     <div class="tech-ownership-row">
                         <div class="tech-ownership-label">Metal renderer</div>
-                        <div class="tech-ownership-copy">Glyph compositing, dirty-region redraws, and low-latency presentation on Apple GPUs without adding a cross-platform abstraction layer Chau7 does not need.</div>
+                        <div class="tech-ownership-copy">Chau7 uses Metal for glyph compositing, dirty-region redraws, and low-latency presentation on Apple GPUs without adding a cross-platform abstraction layer Chau7 does not need.</div>
                     </div>
                 </div>
             </div>
         </section>
 
-        <section class="perf-section" aria-labelledby="guard-heading">
+        <section class="perf-section" aria-labelledby="guard-heading" data-ui="dangerous-command-detection">
             <div class="section-inner">
                 <div class="section-header">
-                    <h2 id="guard-heading">Dangerous commands are a parsing problem before they become a disaster</h2>
-                    <p>If you want to flag `rm -rf`, suspicious `dd`, hidden Unicode junk, or pasted multi-line nonsense, you need to inspect the command stream before the shell gets clever.</p>
+                    <h2 id="guard-heading">How does Chau7 detect dangerous commands before execution?</h2>
+                    <p>Chau7 detects dangerous commands before execution by inspecting the command stream at the terminal input layer, before the shell runs anything. If you want to flag <code>rm -rf</code>, suspicious <code>dd</code>, hidden Unicode junk, or pasted multi-line nonsense, you need to inspect the command stream before the shell gets clever.</p>
                 </div>
                 <div class="arch-diagram">
                     <pre>
@@ -217,9 +227,9 @@
       │
       └── <span class="arch-highlight">dangerous pattern</span> ─────────▶ warn, confirm, or block</pre>
                 </div>
-                <div class="prose">
-                    <p>That analyzer is where Chau7 can reason about things shells normally leave to aliases, wrappers, or hope. It can normalize whitespace, spot recursive-destructive flags, detect hidden control characters, catch suspicious line breaks, and treat “this command looks dangerous” as a terminal concern instead of an afterthought in dotfiles.</p>
-                    <p>This is also why the dangerous-command guard belongs on a page about the core tech stack. It is not merely a UX feature. It exists because Chau7 is architected to parse and understand terminal input at the right layer.</p>
+                <div class=”prose”>
+                    <p>The Chau7 command analyzer is where Chau7 terminal can reason about things shells normally leave to aliases, wrappers, or hope. Chau7 normalizes whitespace, spots recursive-destructive flags, detects hidden control characters, catches suspicious line breaks, and treats “this command looks dangerous” as a terminal concern instead of an afterthought in dotfiles.</p>
+                    <p>This is also why the Chau7 dangerous-command guard belongs on a page about the core tech stack. It is not merely a UX feature. It exists because Chau7 is architected to parse and understand terminal input at the right layer.</p>
                 </div>
                 <ul class="tech-signal-list">
                     <li><strong>Destructive recursion:</strong> patterns like <code>rm -rf</code>, recursive ownership changes, and commands aimed at the wrong root.</li>
@@ -230,22 +240,22 @@
             </div>
         </section>
 
-        <section class="perf-section" aria-labelledby="metal-heading">
+        <section class="perf-section" aria-labelledby="metal-heading" data-ui="metal-instead-of-opengl">
             <div class="section-inner">
                 <div class="section-header">
-                    <h2 id="metal-heading">Why Metal, why lock-free buffers, why the rest of the weirdness</h2>
-                    <p>Because terminals fail in very boring ways when their internals are generic.</p>
+                    <h2 id="metal-heading">Why does Chau7 use Metal instead of OpenGL for rendering?</h2>
+                    <p>Chau7 uses Metal instead of OpenGL because Chau7 is macOS-only and Metal is Apple's native, actively maintained GPU framework. OpenGL is deprecated on macOS. Terminals fail in very boring ways when their internals are generic.</p>
                 </div>
                 <div class="steps-grid">
                     <div class="step-card">
                         <div class="step-num">01</div>
-                        <h4>Native GPU path</h4>
-                        <p>Metal is the macOS-native rendering stack. Chau7 does not need cross-platform abstraction points here. It needs fast glyph compositing and predictable redraw behavior on Macs.</p>
+                        <h4>Native GPU path, not deprecated OpenGL</h4>
+                        <p>Metal is the macOS-native rendering stack. Apple deprecated OpenGL on macOS in 2018. Chau7 does not need cross-platform abstraction points here. Chau7 terminal needs fast glyph compositing and predictable redraw behavior on Apple hardware, and Metal delivers that without the overhead of a compatibility layer.</p>
                     </div>
                     <div class="step-card">
                         <div class="step-num">02</div>
                         <h4>No lock traffic in the handoff</h4>
-                        <p>The PTY reader and parser have one job each. The SPSC queue lets them do that without negotiating every packet like coworkers scheduling a meeting.</p>
+                        <p>The Chau7 PTY reader and parser have one job each. The SPSC queue lets them do that without negotiating every packet like coworkers scheduling a meeting.</p>
                     </div>
                     <div class="step-card">
                         <div class="step-num">03</div>
@@ -256,7 +266,7 @@
             </div>
         </section>
 
-        <section class="perf-section" aria-labelledby="ai-heading">
+        <section class="perf-section" aria-labelledby="ai-heading" data-ui="ai-terminal-workloads">
             <div class="section-inner">
                 <div class="section-header">
                     <h2 id="ai-heading">Why this matters for <span class="gradient-text-alt">AI</span> terminals</h2>
@@ -264,12 +274,12 @@
                 <div class="ai-relevance">
                     <h3>AI tools stress every weak layer</h3>
                     <p>Claude Code, Codex, Aider, and friends generate long bursts of output, redraw continuously, paste commands, and trigger edge cases that ordinary shell use only hits once a month. A terminal that is “fine most of the time” feels terrible under that load.</p>
-                    <p>Chau7 is engineered around that reality. Parsing is fast enough to keep up, buffers are simple enough not to deadlock under pressure, rendering is native enough not to wobble, and command inspection happens early enough to catch destructive mistakes before they turn into stories you tell in a postmortem.</p>
+                    <p>Chau7 terminal is engineered around that reality. Chau7 Rust parsing is fast enough to keep up. Chau7 lock-free buffers are simple enough not to deadlock under pressure. Chau7 Metal rendering is native enough not to wobble. And Chau7 command inspection happens early enough to catch destructive mistakes before they turn into stories you tell in a postmortem.</p>
                 </div>
             </div>
         </section>
 
-        <section class="faq-section" aria-labelledby="faq-heading">
+        <section class="faq-section" aria-labelledby="faq-heading" data-ui="faq-tech">
             <div class="section-inner">
                 <div class="section-header">
                     <h2 id="faq-heading">Frequently asked questions</h2>
@@ -282,9 +292,9 @@
                         </div>
                     </details>
                     <details>
-                        <summary>Why use Rust in a terminal?</summary>
+                        <summary>Why does Chau7 use Rust instead of pure Swift?</summary>
                         <div class="faq-answer">
-                            <p>Rust is used where Chau7 parses PTY bytes, maintains terminal state, and evaluates command streams. That gives predictable performance for hot-path parsing while making memory and concurrency bugs dramatically less likely.</p>
+                            <p>Chau7 uses Rust instead of pure Swift for the parsing hot path because Rust provides compile-time guarantees against data races, use-after-free, and buffer overflows. Swift handles Chau7 macOS UI, windowing, and tab management. Rust handles PTY byte parsing, terminal state, and command stream evaluation, where predictable performance and memory safety under heavy AI workloads matter most.</p>
                         </div>
                     </details>
                     <details>
@@ -294,16 +304,16 @@
                         </div>
                     </details>
                     <details>
-                        <summary>Why use Metal instead of OpenGL?</summary>
+                        <summary>Why does Chau7 use Metal instead of OpenGL?</summary>
                         <div class="faq-answer">
-                            <p>Chau7 is macOS-only, so Metal is the native graphics stack with the best long-term path for glyph rendering, dirty-region updates, and low-latency compositing on Apple hardware.</p>
+                            <p>Chau7 uses Metal instead of OpenGL because Chau7 is macOS-only and Apple deprecated OpenGL on macOS in 2018. Metal is the native, actively maintained graphics stack with the best long-term path for glyph rendering, dirty-region updates, and low-latency compositing on Apple hardware. There is no reason for Chau7 to use a deprecated cross-platform API when the native option is faster and better supported.</p>
                         </div>
                     </details>
                 </div>
             </div>
         </section>
 
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="cta-download">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Read the tech. Then let the sock parse your shell.</h2>

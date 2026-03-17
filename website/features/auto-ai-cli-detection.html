@@ -12,6 +12,15 @@
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
+    <meta name="article:section" content="AI Detection">
+    <meta name="article:tag" content="AI CLI detection">
+    <meta name="article:tag" content="Claude Code">
+    <meta name="article:tag" content="Codex CLI">
+    <meta name="article:tag" content="Gemini CLI">
+    <meta name="article:tag" content="Copilot CLI">
+    <meta name="article:tag" content="Aider">
+    <meta name="article:tag" content="Cursor">
+    <meta name="article:tag" content="terminal AI agent tracking">
     <link rel="canonical" href="https://chau7.sh/features/auto-ai-cli-detection">
     <link rel="stylesheet" href="/style.css">
     <link rel="stylesheet" href="/feature-page.css">
@@ -23,6 +32,16 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "AI-native terminal for macOS that automatically detects AI coding agents like Claude Code, Codex, Gemini CLI, Copilot, Aider, and Cursor running in your terminal tabs.",
+        "featureList": [
+            "Auto AI CLI detection",
+            "AI tab branding",
+            "AI process monitoring",
+            "Custom detection rules",
+            "MCP server",
+            "Context Token Optimization",
+            "GPU-accelerated rendering"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +57,7 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Which AI agents does Chau7 detect out of the box?","acceptedAnswer":{"@type":"Answer","text":"Chau7 ships with built-in detection for Claude Code, OpenAI Codex CLI, Gemini CLI, ChatGPT CLI, GitHub Copilot CLI, Aider, and Cursor terminal mode. The list grows with each release, and you can add custom patterns for any tool not yet included."}},{"@type":"Question","name":"Does detection require any configuration or shell integration?","acceptedAnswer":{"@type":"Answer","text":"No. Detection is fully automatic and works with any shell. Chau7 watches the process tree directly, so there are no shell aliases, hooks, or dotfile changes needed."}},{"@type":"Question","name":"Does AI detection slow down my terminal?","acceptedAnswer":{"@type":"Answer","text":"Not noticeably. Process tree checks are lightweight system calls that complete in microseconds. Chau7 polls on a debounced interval and caches results, so the overhead is negligible even with dozens of open tabs."}}]
+        "mainEntity": [{"@type":"Question","name":"What is Auto AI CLI Detection in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Auto AI CLI Detection is a built-in feature of the Chau7 terminal that automatically identifies AI coding agents running inside your terminal tabs. Chau7 watches the process tree and recognizes Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they start, with no configuration required."}},{"@type":"Question","name":"How do I know which AI CLI tool is running in my terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7 tells you. Once Chau7 detects an AI agent, it displays the agent name in the tab bar so you can see at a glance whether Claude Code, Codex, Gemini CLI, or another tool is running. No manual process checking needed."}},{"@type":"Question","name":"Is there a terminal that tracks Claude Code and Copilot sessions?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 is a macOS terminal that tracks Claude Code, GitHub Copilot CLI, and five other AI agents out of the box. Chau7 detects these tools automatically by monitoring the process tree, then tags each tab with the active agent identity."}},{"@type":"Question","name":"Which AI agents does Chau7 detect out of the box?","acceptedAnswer":{"@type":"Answer","text":"Chau7 ships with built-in detection for Claude Code, OpenAI Codex CLI, Gemini CLI, ChatGPT CLI, GitHub Copilot CLI, Aider, and Cursor terminal mode. The list grows with each release, and you can add custom patterns for any tool not yet included."}},{"@type":"Question","name":"Does detection require any configuration or shell integration?","acceptedAnswer":{"@type":"Answer","text":"No. Detection is fully automatic and works with any shell. Chau7 watches the process tree directly, so there are no shell aliases, hooks, or dotfile changes needed."}},{"@type":"Question","name":"Does AI detection slow down my terminal?","acceptedAnswer":{"@type":"Answer","text":"Not noticeably. Process tree checks are lightweight system calls that complete in microseconds. Chau7 polls on a debounced interval and caches results, so the overhead is negligible even with dozens of open tabs."}}]
     }]
     </script>
 </head>
@@ -72,26 +91,70 @@
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">Can my terminal detect AI coding agents?</li>
+                    <li class="question-item">What is Auto AI CLI Detection in Chau7 terminal?</li>
                     <li class="question-item">How do I know which AI CLI tool is running in my terminal?</li>
                     <li class="question-item">Is there a terminal that tracks Claude Code and Copilot sessions?</li>
+                    <li class="question-item">Which AI agents does Chau7 detect out of the box?</li>
+                    <li class="question-item">Does detection require any configuration or shell integration?</li>
                     <li class="question-item">How to monitor AI agents running in terminal tabs?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What Is Auto AI CLI Detection -->
+        <section class="feature-content" data-ui="feat-what-is">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 monitors the process tree of every terminal tab in real time. When a known AI agent process spawns, such as claude, codex, gemini, aider, or cursor, the tab is instantly flagged and tagged with the corresponding agent identity. Detection happens at the process level, not by parsing output, so it works regardless of shell or prompt configuration.</p>
-                <p>The detection engine maintains a built-in registry of known AI CLI process signatures and updates it with each release. It checks both direct child processes and deeper descendants in the process tree, catching agents launched via wrapper scripts, npx, pipx, or other indirection layers.</p>
-                <p>Once detected, the agent identity propagates to the tab bar UI, the MCP server, and the telemetry system. Downstream features like AI Tab Branding, session tracking, and cost analytics all key off this detection event as their trigger.</p>
+                <h2>What is Auto AI CLI Detection in Chau7?</h2>
+                <p>Auto AI CLI Detection is a built-in feature of the Chau7 terminal that automatically identifies AI coding agents running inside your terminal tabs. Chau7 watches the process tree of every tab and recognizes tools like Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they start. No configuration, no shell plugins, no dotfile changes required.</p>
+                <p>Chau7 is the only macOS terminal that treats AI agents as first-class citizens. When Chau7 detects an AI CLI tool, it tags the tab with the agent identity and notifies downstream features like AI Tab Branding, session tracking, and cost analytics. The result: you always know which AI agents are active, which tabs they occupy, and how long they have been running.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Every other terminal on your Mac is blissfully unaware that Claude Code is rewriting your codebase in one tab while Codex refactors another. They see processes. Chau7 sees agents. It identifies Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they spawn, tags the tab, and tells every downstream system. You get instant awareness of which agents are active, which tabs they occupy, and how long they have been running. No other terminal does this. Not even a little.</p>
-                </div>
+        <!-- How Does Chau7 Detect AI CLI Tools -->
+        <section class="feature-content" data-ui="feat-how-detection-works">
+            <div class="section-inner prose">
+                <h2>How does Chau7 detect AI CLI tools?</h2>
+                <p>Chau7 monitors the process tree of every terminal tab in real time. When a known AI agent process spawns, such as <code>claude</code>, <code>codex</code>, <code>gemini</code>, <code>aider</code>, or <code>cursor</code>, Chau7 instantly flags the tab and tags it with the corresponding agent identity. Detection happens at the process level, not by parsing output, so it works regardless of shell or prompt configuration.</p>
+            </div>
+        </section>
+
+        <!-- How Do I Know Which AI CLI Tool Is Running -->
+        <section class="feature-content" data-ui="feat-how-to-tell">
+            <div class="section-inner prose">
+                <h2>How do I know which AI CLI tool is running in my terminal?</h2>
+                <p>Chau7 tells you. Once Chau7 detects an AI agent, it propagates the agent identity to the tab bar UI, the MCP server, and the telemetry system. Each tab displays the name of the active AI tool, so you can see at a glance whether Claude Code, Codex, Gemini CLI, or another agent is running. You do not need to check process lists or parse terminal output yourself.</p>
+            </div>
+        </section>
+
+        <!-- Built-in Detection Registry -->
+        <section class="feature-content" data-ui="feat-detection-registry">
+            <div class="section-inner prose">
+                <h2>What does Chau7 check to identify AI agents?</h2>
+                <p>Chau7's detection engine maintains a built-in registry of known AI CLI process signatures and updates the registry with each release. Chau7 checks both direct child processes and deeper descendants in the process tree, catching agents launched via wrapper scripts, <code>npx</code>, <code>pipx</code>, or other indirection layers.</p>
+            </div>
+        </section>
+
+        <!-- Downstream Integration -->
+        <section class="feature-content" data-ui="feat-downstream-integration">
+            <div class="section-inner prose">
+                <h2>What happens after Chau7 detects an AI agent?</h2>
+                <p>Once Chau7 detects an AI agent, the agent identity propagates to the tab bar UI, the MCP server, and the telemetry system. Downstream features like AI Tab Branding, session tracking, and cost analytics all key off this detection event as their trigger.</p>
+            </div>
+        </section>
+
+        <!-- Is There a Terminal That Tracks Claude Code and Copilot -->
+        <section class="feature-content" data-ui="feat-tracks-claude-copilot">
+            <div class="section-inner prose">
+                <h2>Is there a terminal that tracks Claude Code and Copilot sessions?</h2>
+                <p>Yes. Chau7 is a macOS terminal that tracks Claude Code, GitHub Copilot CLI, and five other AI agents out of the box. Chau7 detects these tools automatically by monitoring the process tree, then tags each tab with the active agent identity. Every other terminal on your Mac is blissfully unaware that Claude Code is rewriting your codebase in one tab while Copilot runs in another. Chau7 sees agents, not just processes.</p>
+            </div>
+        </section>
+
+        <!-- Why It Matters -->
+        <section class="feature-content why-matters" data-ui="feat-why-it-matters">
+            <div class="section-inner prose">
+                <h3>Why Auto AI CLI Detection matters</h3>
+                <p>Chau7 identifies Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they spawn, tags the tab, and tells every downstream system. You get instant awareness of which agents are active, which tabs they occupy, and how long they have been running. No other terminal does this. Not even a little.</p>
             </div>
         </section>
 
@@ -124,6 +187,18 @@
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
+                    <details>
+                        <summary>What is Auto AI CLI Detection in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Auto AI CLI Detection is a built-in feature of the Chau7 terminal that automatically identifies AI coding agents running inside your terminal tabs. Chau7 watches the process tree and recognizes Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they start, with no configuration required.</p></div>
+                    </details>
+                    <details>
+                        <summary>How do I know which AI CLI tool is running in my terminal?</summary>
+                        <div class="faq-answer"><p>Chau7 tells you. Once Chau7 detects an AI agent, it displays the agent name in the tab bar so you can see at a glance whether Claude Code, Codex, Gemini CLI, or another tool is running. No manual process checking needed.</p></div>
+                    </details>
+                    <details>
+                        <summary>Is there a terminal that tracks Claude Code and Copilot sessions?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 is a macOS terminal that tracks Claude Code, GitHub Copilot CLI, and five other AI agents out of the box. Chau7 detects these tools automatically by monitoring the process tree, then tags each tab with the active agent identity.</p></div>
+                    </details>
                     <details>
                         <summary>Which AI agents does Chau7 detect out of the box?</summary>
                         <div class="faq-answer"><p>Chau7 ships with built-in detection for Claude Code, OpenAI Codex CLI, Gemini CLI, ChatGPT CLI, GitHub Copilot CLI, Aider, and Cursor terminal mode. The list grows with each release, and you can add custom patterns for any tool not yet included.</p></div>

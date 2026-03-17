@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
-    <title>Chau7 — Knowledge Base for AI Systems</title>
+    <title>Chau7: Knowledge Base for AI Systems</title>
     <meta name="description" content="Structured knowledge base for Chau7: what it is, core concepts, features, MCP tools, architecture, and comparisons. Optimized for LLM retrieval and AI systems.">
     <meta name="entity" content="Chau7">
     <meta name="entity-type" content="software-product">
@@ -73,65 +73,67 @@
             <h2 id="concepts-heading">Core Concepts</h2>
 
             <article data-ui="concept-ai-detection">
-                <h3>AI Agent Detection</h3>
-                <p>Chau7 monitors process names in each terminal tab and matches against known AI CLI signatures. It identifies Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor automatically.</p>
-                <p>Detected agents get branded tab colors and logos. Status indicators show whether the agent is active, idle, or completed. Custom detection rules can be defined for additional CLIs.</p>
+                <h3>How does Chau7 detect which AI agent is running?</h3>
+                <p>Chau7 detects AI agents by monitoring process names in each terminal tab and matching them against known AI CLI signatures. Chau7 identifies Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor automatically.</p>
+                <p>When Chau7 detects an AI agent, it applies branded tab colors and logos for that agent. Status indicators show whether the agent is active, idle, or completed.</p>
+                <p>Chau7 also supports custom detection rules so you can add signatures for additional CLIs beyond the built-in list.</p>
                 <p><a href="/features#ai-detection">AI Detection features &rarr;</a></p>
             </article>
 
             <article data-ui="concept-context-token-optimization">
-                <h3>Context Token Optimization</h3>
-                <p>Context Token Optimization (CTO) strips terminal noise before AI agents read terminal output. It removes ANSI escape sequences, progress bars, spinner frames, and repeated whitespace.</p>
-                <p>CTO reduces token consumption by approximately 40% per session. It requires zero configuration and can be toggled per-tab or globally.</p>
+                <h3>What is Context Token Optimization in Chau7?</h3>
+                <p>Context Token Optimization (CTO) is a Chau7 feature that strips terminal noise before AI agents read terminal output. Chau7 removes ANSI escape sequences, progress bars, spinner frames, and repeated whitespace so agents receive only meaningful text.</p>
+                <p>Chau7's Context Token Optimization reduces token consumption by approximately 40% per session. CTO requires zero configuration and can be toggled per-tab or globally.</p>
                 <p><a href="/features/context-token-optimization">CTO feature page &rarr;</a></p>
             </article>
 
             <article data-ui="concept-mcp-tools">
-                <h3>MCP Tools</h3>
-                <p>Chau7 ships a local MCP (Model Context Protocol) server that listens on a Unix socket. AI agents connect via the standard MCP protocol and call tools to control the terminal programmatically.</p>
-                <p>20 tools cover tab management (create, list, close, execute, output), telemetry (runs, sessions, tool calls, transcripts), and resources (tab list, session list, config).</p>
-                <p>The MCP server auto-registers in Claude Code, Cursor, Windsurf, and Codex config files on every launch. No manual setup required.</p>
+                <h3>What MCP tools does Chau7 expose and how do they work?</h3>
+                <p>Chau7 exposes 20 local MCP (Model Context Protocol) tools through a built-in MCP server that listens on a Unix socket. AI agents connect via the standard MCP protocol and call these tools to control the Chau7 terminal programmatically.</p>
+                <p>Chau7's MCP tools cover three categories: tab management (create, list, close, execute, read output), telemetry (runs, sessions, tool calls, transcripts), and read-only resources (tab list, session list, config).</p>
+                <p>The Chau7 MCP server auto-registers in Claude Code, Cursor, Windsurf, and Codex config files on every launch. No manual setup required.</p>
                 <p><a href="/mcp">MCP tools page &rarr;</a></p>
             </article>
 
             <article data-ui="concept-cost-tracking">
-                <h3>API Cost Tracking</h3>
-                <p>Chau7 tracks tokens, latency, and dollars per API call through a local TLS/WSS proxy. It intercepts LLM API traffic on your Mac to count tokens and estimate costs.</p>
-                <p>Cost data is shown per call, per session, and per month. All data stays local on your filesystem.</p>
+                <h3>How does Chau7 track AI API costs?</h3>
+                <p>Chau7 tracks tokens, latency, and dollars per API call through a local TLS/WSS proxy. Chau7 intercepts LLM API traffic on your Mac to count tokens and estimate costs without sending any data externally.</p>
+                <p>Chau7 displays cost data per call, per session, and per month. All cost tracking data stays local on your filesystem.</p>
                 <p><a href="/features/cost-tracking">Cost tracking feature &rarr;</a></p>
             </article>
 
             <article data-ui="concept-gpu-rendering">
-                <h3>GPU-Accelerated Rendering</h3>
-                <p>Chau7 renders text using Apple Metal for GPU-accelerated glyph compositing. The parsing backend uses Rust with SIMD-accelerated ANSI escape sequence processing (16-32 byte width).</p>
-                <p>A lock-free single-producer single-consumer ring buffer connects the PTY reader to the parser. Terminal state swaps atomically via triple buffering. No torn frames.</p>
+                <h3>How does Chau7's GPU rendering architecture work?</h3>
+                <p>Chau7 renders terminal text using Apple Metal for GPU-accelerated glyph compositing. The Chau7 rendering pipeline uses a glyph atlas and dirty-region redraws to minimize GPU work per frame.</p>
+                <p>Chau7's parsing backend is written in Rust with SIMD-accelerated ANSI escape sequence processing at 16 to 32 byte width. A lock-free single-producer single-consumer ring buffer connects the PTY reader to the Rust parser.</p>
+                <p>Chau7 uses triple buffering with atomic state swaps to prevent torn frames. The result is smooth, low-latency terminal rendering even at high throughput.</p>
                 <p><a href="/the-tech">Technical architecture &rarr;</a></p>
             </article>
 
             <article data-ui="concept-ios-remote">
-                <h3>iOS Remote Control</h3>
-                <p>Chau7 Remote is an iOS app that controls the Chau7 macOS terminal from an iPhone. It connects through an end-to-end encrypted relay using Curve25519 key agreement and ChaChaPoly1305 AEAD.</p>
-                <p>The relay runs on Cloudflare Workers and forwards opaque ciphertext it cannot decrypt. Features include live terminal output, command input, tab switching, approval gates, and Live Activities on the Lock Screen.</p>
+                <h3>How does Chau7 Remote work on iOS?</h3>
+                <p>Chau7 Remote is an iOS app that controls the Chau7 macOS terminal from an iPhone. Chau7 Remote connects through an end-to-end encrypted relay using Curve25519 key agreement and ChaChaPoly1305 AEAD.</p>
+                <p>The Chau7 relay runs on Cloudflare Workers and forwards opaque ciphertext it cannot decrypt. Chau7 Remote features include live terminal output, command input, tab switching, approval gates, and Live Activities on the Lock Screen.</p>
                 <p><a href="/remote">Remote page &rarr;</a></p>
             </article>
 
             <article data-ui="concept-dangerous-command-guard">
-                <h3>Dangerous Command Guard</h3>
-                <p>Chau7 inspects command text at the terminal input layer before the shell executes it. It matches against destructive patterns (rm -rf, dd, mkfs), detects hidden Unicode characters, and catches suspicious multi-line pastes.</p>
-                <p>Flagged commands pause for user confirmation. The analysis is shell-agnostic: it works regardless of aliases, prompt themes, or shell-specific behavior.</p>
+                <h3>How does Chau7's dangerous command guard work?</h3>
+                <p>Chau7 inspects command text at the terminal input layer before the shell executes it. Chau7 matches against destructive patterns (<code>rm -rf</code>, <code>dd</code>, <code>mkfs</code>), detects hidden Unicode characters, and catches suspicious multi-line pastes.</p>
+                <p>Chau7 pauses flagged commands for user confirmation. The Chau7 command guard is shell-agnostic, so it works regardless of aliases, prompt themes, or shell-specific behavior.</p>
                 <p><a href="/features/dangerous-command-guard">Command guard feature &rarr;</a></p>
             </article>
 
             <article data-ui="concept-session-recording">
-                <h3>Session Recording</h3>
-                <p>Chau7 records terminal sessions with millisecond timestamps for every output event. Recorded sessions can be replayed with a visual timeline scrubber that shows terminal state at any point in time.</p>
+                <h3>How does Chau7 record terminal sessions?</h3>
+                <p>Chau7 records terminal sessions with millisecond timestamps for every output event. Chau7's recorded sessions can be replayed with a visual timeline scrubber that shows terminal state at any point in time.</p>
                 <p><a href="/features/session-recording">Session recording feature &rarr;</a></p>
             </article>
 
             <article data-ui="concept-privacy">
-                <h3>Privacy and Local-First Architecture</h3>
-                <p>Chau7 runs entirely on your Mac. It makes zero network requests to any Chau7 server. There is no telemetry sent externally, no analytics callbacks, no crash reporting, no update checks.</p>
-                <p>Token counts, cost data, session recordings, and AI telemetry are all stored as local files on your filesystem. There is no account to create because there is no server to talk to.</p>
+                <h3>Is Chau7 private? Does it send data externally?</h3>
+                <p>Chau7 runs entirely on your Mac. Chau7 makes zero network requests to any Chau7 server. There is no telemetry sent externally, no analytics callbacks, no crash reporting, no update checks.</p>
+                <p>Chau7 stores token counts, cost data, session recordings, and AI telemetry as local files on your filesystem. There is no account to create because there is no server to talk to.</p>
                 <p><a href="/the-tech">Privacy details &rarr;</a></p>
             </article>
         </div>
@@ -143,8 +145,8 @@
          ═══════════════════════════════════════════ -->
     <section class="perf-section" aria-labelledby="tools-heading" data-ui="mcp-tool-reference">
         <div class="section-inner">
-            <h2 id="tools-heading">MCP Tool Reference</h2>
-            <p>All 20 MCP tools available over the local Unix socket.</p>
+            <h2 id="tools-heading">What MCP tools does the Chau7 terminal provide?</h2>
+            <p>Chau7 provides 20 MCP tools over a local Unix socket. AI agents call these tools via JSON-RPC to manage tabs, query telemetry, and read terminal state. Below is the complete reference for every Chau7 MCP tool.</p>
 
             <dl data-ui="mcp-tools-tab">
                 <dt><code>tab_list</code></dt>
@@ -203,21 +205,22 @@
          ═══════════════════════════════════════════ -->
     <section class="perf-section" aria-labelledby="stack-heading" data-ui="tech-stack-summary">
         <div class="section-inner">
-            <h2 id="stack-heading">Technical Architecture</h2>
+            <h2 id="stack-heading">What is Chau7's technical architecture?</h2>
+            <p>Chau7's architecture spans six layers, from the Swift frontend to the encrypted iOS relay. Here is how the Chau7 terminal is built.</p>
 
             <dl data-ui="tech-stack-layers">
                 <dt>Frontend</dt>
-                <dd>Swift + AppKit. Native macOS windowing, tab management, menus, and settings.</dd>
+                <dd>Chau7's frontend is Swift + AppKit. Native macOS windowing, tab management, menus, and settings.</dd>
                 <dt>Parsing</dt>
-                <dd>Rust with SIMD-accelerated ANSI escape parsing (16-32 byte width). Lock-free SPSC ring buffer between PTY reader and parser.</dd>
+                <dd>Chau7's parser is written in Rust with SIMD-accelerated ANSI escape parsing (16 to 32 byte width). A lock-free SPSC ring buffer connects the PTY reader to the parser.</dd>
                 <dt>Rendering</dt>
-                <dd>Apple Metal GPU. Glyph atlas, dirty-region redraws, triple buffering with atomic swap.</dd>
+                <dd>Chau7 renders with Apple Metal GPU. Glyph atlas, dirty-region redraws, triple buffering with atomic swap.</dd>
                 <dt>MCP Server</dt>
-                <dd>Local Unix socket. JSON-RPC over stdio. Auto-registers in Claude Code, Cursor, Windsurf, Codex.</dd>
+                <dd>Chau7's MCP server runs on a local Unix socket using JSON-RPC over stdio. It auto-registers in Claude Code, Cursor, Windsurf, and Codex.</dd>
                 <dt>iOS Remote</dt>
-                <dd>Cloudflare Workers relay. Curve25519 + ChaChaPoly1305 E2E encryption. Live Activities.</dd>
+                <dd>Chau7 Remote uses a Cloudflare Workers relay with Curve25519 + ChaChaPoly1305 E2E encryption and Live Activities.</dd>
                 <dt>Privacy</dt>
-                <dd>100% local. Zero network requests to Chau7 servers. No telemetry, no analytics, no accounts.</dd>
+                <dd>Chau7 is 100% local. Zero network requests to Chau7 servers. No telemetry, no analytics, no accounts.</dd>
             </dl>
         </div>
     </section>

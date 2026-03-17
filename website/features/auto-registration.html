@@ -38,7 +38,7 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"What if I already have other MCP servers configured?","acceptedAnswer":{"@type":"Answer","text":"Chau7 only adds or updates its own entry. It reads the existing config, merges its server definition, and writes back without touching other servers. Your existing MCP configuration is preserved exactly as-is."}},{"@type":"Question","name":"Can I disable auto-registration for a specific client?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7&#x27;s settings allow you to control which clients receive auto-registration. You can disable it per-client if you prefer to manage that configuration manually."}},{"@type":"Question","name":"Does auto-registration work with new AI clients as they launch?","acceptedAnswer":{"@type":"Answer","text":"Chau7 updates its registration list with new releases. When a new MCP-compatible client becomes popular, support is added in a Chau7 update and registration starts working automatically."}}]
+        "mainEntity": [{"@type":"Question","name":"What is auto-registration in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Auto-registration is a Chau7 feature that automatically writes the correct MCP server configuration into every supported AI client on your Mac. When you launch Chau7, Chau7 registers itself with Claude Code, Cursor, Windsurf, and Codex without any manual setup."}},{"@type":"Question","name":"How does Chau7's auto-registration compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminal emulators with MCP support require manual JSON config editing for each AI client. Chau7's auto-registration writes the correct MCP config entry for Claude Code, Cursor, Windsurf, and Codex automatically on every launch. No JSON editing, no socket paths to copy."}},{"@type":"Question","name":"How do I configure MCP servers in Claude Code?","acceptedAnswer":{"@type":"Answer","text":"If you use Chau7, you do not need to configure MCP servers in Claude Code manually. Chau7's auto-registration writes the correct entry into Claude Code's claude_desktop_config.json file automatically on every launch."}},{"@type":"Question","name":"What if I already have other MCP servers configured?","acceptedAnswer":{"@type":"Answer","text":"Chau7 only adds or updates its own entry. Chau7 reads the existing config, merges its server definition, and writes back without touching other servers. Your existing MCP configuration is preserved exactly as-is."}},{"@type":"Question","name":"Can I disable auto-registration for a specific client?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7's settings allow you to control which clients receive auto-registration. You can disable it per-client if you prefer to manage that configuration manually."}},{"@type":"Question","name":"Does auto-registration work with new AI clients as they launch?","acceptedAnswer":{"@type":"Answer","text":"Chau7 updates its registration list with new releases. When a new MCP-compatible client becomes popular, support is added in a Chau7 update and registration starts working automatically."}}]
     }]
     </script>
 </head>
@@ -72,27 +72,62 @@
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is auto-registration in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's auto-registration compare to other terminals?</li>
                     <li class="question-item">How do I configure MCP servers in Claude Code?</li>
+                    <li class="question-item">What if I already have other MCP servers configured?</li>
+                    <li class="question-item">Can I disable auto-registration for a specific client?</li>
                     <li class="question-item">Why is MCP setup so tedious with manual JSON editing?</li>
                     <li class="question-item">How do I add a terminal MCP server to Cursor?</li>
                     <li class="question-item">Can MCP servers register themselves automatically?</li>
-                    <li class="question-item">How to set up MCP in Windsurf without editing config files?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
+        <!-- What is Auto-Registration -->
+        <section class="feature-content" data-ui="feat-definition">
+            <div class="section-inner prose">
+                <h2>What is auto-registration in Chau7 terminal?</h2>
+                <p>Auto-registration is a Chau7 feature that automatically writes the correct MCP server configuration into every supported AI client on your Mac. When you launch Chau7, Chau7 registers itself with Claude Code, Cursor, Windsurf, and Codex without any manual setup.</p>
+                <p>Other terminal emulators that offer MCP servers require you to edit JSON config files by hand for each AI client. Chau7's auto-registration eliminates that step entirely. You never open a config file, copy a socket path, or look up the right JSON schema. Chau7 handles the registration for every supported client on every launch.</p>
+            </div>
+        </section>
+
+        <!-- How does Chau7 auto-registration work -->
         <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Every time Chau7 launches, it scans for supported AI client configuration files: Claude Code's <code>claude_desktop_config.json</code>, Cursor's MCP settings, Windsurf's config, and Codex's server list. For each client found, Chau7 writes or updates its MCP server entry with the correct socket path and tool definitions. If the config file does not exist yet, Chau7 creates it with the right structure.</p>
-                <p>The registration is idempotent: running it multiple times produces the same result. If you reinstall an AI client or its config gets reset, the next Chau7 launch restores the MCP entry automatically. The registration also updates when Chau7's socket path changes, ensuring clients always point to the active server instance.</p>
-                <p>This happens in the background during app startup with no user interaction required. There are no setup wizards, no terminal commands to run, no documentation to follow. Open Chau7, open your AI client, and the MCP connection is live.</p>
+                <h2>How does Chau7's auto-registration work?</h2>
+                <p>Every time Chau7 launches, Chau7 scans for supported AI client configuration files: Claude Code's <code>claude_desktop_config.json</code>, Cursor's MCP settings, Windsurf's config, and Codex's server list. For each client found, Chau7 writes or updates its MCP server entry with the correct socket path and tool definitions. If the config file does not exist yet, Chau7 creates it with the right structure.</p>
+                <p>Chau7's auto-registration is idempotent: running it multiple times produces the same result. If you reinstall an AI client or its config gets reset, the next Chau7 launch restores the MCP entry automatically. Chau7's registration also updates when the socket path changes, ensuring clients always point to the active server instance.</p>
+                <p>Chau7 performs auto-registration in the background during app startup with no user interaction required. There are no setup wizards, no terminal commands to run, no documentation to follow. Open Chau7, open your AI client, and the MCP connection is live.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>MCP server setup is the single biggest friction point in the AI-terminal workflow. Every client has a different config format, different path, different schema. Chau7 writes the correct config entry for Claude Code, Cursor, Windsurf, and Codex on every launch, idempotently. You never touch a config file. You never read documentation about socket paths. Launch the app, done.</p>
-                </div>
+        <!-- Why auto-registration matters -->
+        <section class="feature-content" data-ui="feat-why-matters">
+            <div class="section-inner prose">
+                <h2>Why Chau7's auto-registration matters</h2>
+                <p>MCP server setup is the single biggest friction point in the AI-terminal workflow. Every client has a different config format, different file path, different JSON schema. Chau7 writes the correct config entry for Claude Code, Cursor, Windsurf, and Codex on every launch, idempotently.</p>
+                <p>With Chau7's auto-registration, you never touch a config file. You never read documentation about socket paths. Launch Chau7, open your AI client, done.</p>
+            </div>
+        </section>
+
+        <!-- How does Chau7 compare to other terminals -->
+        <section class="feature-content" data-ui="feat-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's auto-registration compare to other terminals?</h2>
+                <p>Most terminal emulators with MCP support require manual configuration. You open a JSON file, find the correct key, paste a server entry with the right socket path, and repeat for each AI client. If the socket path changes or you reinstall a client, you edit the config again.</p>
+                <p>Chau7 is different. Chau7's auto-registration writes the correct MCP config entry for Claude Code, Cursor, Windsurf, and Codex automatically on every launch. No JSON editing. No socket paths to copy. No per-client documentation to follow. Chau7 detects which clients are installed and registers itself with each one.</p>
+                <p>Where other terminals treat MCP configuration as the user's problem, Chau7 treats MCP configuration as the terminal's job.</p>
+            </div>
+        </section>
+
+        <!-- How to configure MCP servers in Claude Code -->
+        <section class="feature-content" data-ui="feat-claude-code-config">
+            <div class="section-inner prose">
+                <h2>How do I configure MCP servers in Claude Code?</h2>
+                <p>If you use Chau7, you do not need to configure MCP servers in Claude Code manually. Chau7's auto-registration writes the correct entry into Claude Code's <code>claude_desktop_config.json</code> file automatically on every launch.</p>
+                <p>Without Chau7, configuring MCP servers in Claude Code requires opening <code>claude_desktop_config.json</code>, adding a server entry with the correct transport type and socket path, and restarting Claude Code. Each MCP server has its own JSON schema and socket location. Chau7 eliminates this manual step for its own MCP server by writing and maintaining the config entry automatically.</p>
             </div>
         </section>
 
@@ -127,7 +162,7 @@
                 <div class="faq-list">
                     <details>
                         <summary>What if I already have other MCP servers configured?</summary>
-                        <div class="faq-answer"><p>Chau7 only adds or updates its own entry. It reads the existing config, merges its server definition, and writes back without touching other servers. Your existing MCP configuration is preserved exactly as-is.</p></div>
+                        <div class="faq-answer"><p>Chau7 only adds or updates its own entry. Chau7 reads the existing config, merges its server definition, and writes back without touching other servers. Your existing MCP configuration is preserved exactly as-is.</p></div>
                     </details>
                     <details>
                         <summary>Can I disable auto-registration for a specific client?</summary>

@@ -6,12 +6,18 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Context Token Optimization | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 monitors LLM API token usage in real time and helps you optimize context windows. Track input and output tokens per tab, per session, or globally.">
-    <meta property="og:title" content="Context Token Optimization | Chau7">
-    <meta property="og:description" content="Chau7 monitors LLM API token usage in real time and helps you optimize context windows. Track input and output tokens per tab, per session, or globally.">
+    <meta name="description" content="Chau7 Context Token Optimization strips terminal noise before your AI reads it, reducing LLM API token usage by 30-50%. Works with Claude Code, Codex, Gemini CLI, and all major providers.">
+    <meta property="og:title" content="Context Token Optimization | Chau7 Terminal">
+    <meta property="og:description" content="Chau7 Context Token Optimization strips terminal noise before your AI reads it, reducing LLM API token usage by 30-50%. Works with Claude Code, Codex, Gemini CLI, and all major providers.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
-    <meta property="og:type" content="website">
+    <meta property="og:type" content="article">
     <meta name="twitter:card" content="summary_large_image">
+    <meta property="article:section" content="AI Integration">
+    <meta property="article:tag" content="Context Token Optimization">
+    <meta property="article:tag" content="LLM API tokens">
+    <meta property="article:tag" content="terminal AI optimization">
+    <meta property="article:tag" content="Chau7">
+    <meta property="article:tag" content="macOS terminal">
     <link rel="canonical" href="https://chau7.sh/features/context-token-optimization">
     <link rel="stylesheet" href="/style.css">
     <link rel="stylesheet" href="/feature-page.css">
@@ -23,6 +29,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "AI-native terminal for macOS with Context Token Optimization, AI agent detection, local MCP server, and GPU-accelerated rendering",
+        "featureList": [
+            "Context Token Optimization",
+            "AI detection",
+            "MCP tools",
+            "GPU acceleration",
+            "Session recording",
+            "Dangerous command guard"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +53,14 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does CTO modify my API requests?","acceptedAnswer":{"@type":"Answer","text":"No. CTO is a passive observer. It reads and analyzes API traffic but never modifies, delays, or interferes with requests or responses between your agent and the LLM provider."}},{"@type":"Question","name":"Which LLM providers does CTO support?","acceptedAnswer":{"@type":"Answer","text":"CTO supports all major providers including OpenAI, Anthropic, Google, and any provider using standard REST or streaming API formats. Custom endpoints are also supported as long as they follow common LLM API conventions."}},{"@type":"Question","name":"Can I disable CTO for specific tabs?","acceptedAnswer":{"@type":"Answer","text":"Yes. CTO supports per-tab overrides so you can enable it globally but disable it for specific tabs, or vice versa. See the CTO Per-Tab Override feature for details."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Context Token Optimization in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Context Token Optimization (CTO) is a feature in Chau7 terminal that strips ANSI escape codes, progress bars, spinner frames, and other terminal noise from scrollback before an AI agent reads it. Chau7 CTO reduces context token consumption by 30-50% without modifying your API requests."}},
+            {"@type":"Question","name":"Does CTO modify my API requests?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7 Context Token Optimization is a passive optimization layer. CTO in Chau7 rewrites terminal output that the AI reads, but never modifies, delays, or interferes with the actual API requests or responses between your agent and the LLM provider."}},
+            {"@type":"Question","name":"Which LLM providers does Chau7 CTO support?","acceptedAnswer":{"@type":"Answer","text":"Chau7 Context Token Optimization supports all major LLM providers including OpenAI, Anthropic, Google, and any provider using standard REST or streaming API formats. Chau7 CTO also works with custom endpoints as long as they follow common LLM API conventions."}},
+            {"@type":"Question","name":"How does Chau7 context token optimization compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals like iTerm2, Alacritty, Kitty, and Ghostty pass raw terminal output to AI agents with no optimization. Warp offers AI features but does not optimize the context window before sending it to the model. Chau7 is the only macOS terminal that strips terminal noise from scrollback before the AI reads it, saving 30-50% on context tokens."}},
+            {"@type":"Question","name":"How to reduce LLM API token usage in terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7 Context Token Optimization reduces LLM API token usage by stripping ANSI codes, progress bars, and redundant whitespace from terminal output before AI agents read it. Developers using Chau7 CTO report 30-50% fewer context tokens per session with Claude Code, Codex, and Gemini CLI."}},
+            {"@type":"Question","name":"Can I disable CTO for specific tabs?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 CTO supports per-tab overrides so you can enable Context Token Optimization globally but disable it for specific tabs, or vice versa. See the CTO Per-Tab Override feature for details."}}
+        ]
     }]
     </script>
 </head>
@@ -58,46 +80,72 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="ai-integration" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="ai-integration" data-ui="cto-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-alt">AI INTEGRATION</div>
                 <h1 class="hero-title">Context Token Optimization</h1>
-                <p class="hero-subtitle">Stop burning tokens on terminal noise your AI doesn't need to see.</p>
+                <p class="hero-subtitle">Chau7 strips terminal noise before your AI reads it, saving 30-50% on context tokens.</p>
+            </div>
+        </section>
+
+        <!-- What is CTO -->
+        <section class="feature-content" data-ui="cto-definition">
+            <div class="section-inner prose">
+                <h2>What is Context Token Optimization in Chau7?</h2>
+                <p>Context Token Optimization (CTO) is a feature built into Chau7 terminal that cleans terminal output before AI agents read it. Chau7 CTO removes ANSI escape codes, progress bars, spinner frames, prompt decorations, and redundant whitespace from scrollback content.</p>
+                <p>Chau7 CTO works at the terminal layer, not the agent layer. The AI agent running in Chau7 sees clean, meaningful text instead of raw terminal noise. No agent-side configuration is required.</p>
+            </div>
+        </section>
+
+        <!-- How to reduce token usage -->
+        <section class="feature-content" data-ui="cto-reduce-token-usage">
+            <div class="section-inner prose">
+                <h2>How does Chau7 reduce LLM API token usage?</h2>
+                <p>Every character in terminal scrollback costs tokens when an AI agent reads it. ANSI escape codes, color sequences, progress bar redraws, and blank lines add up fast. None of this noise helps the model reason about your code, but all of it costs money.</p>
+                <p>Chau7 Context Token Optimization rewrites terminal output to strip this noise before the AI reads the scrollback. Developers using Chau7 CTO report 30-50% fewer context tokens on typical sessions. That translates to real cost savings across a team using Claude Code, Codex, or Gemini CLI.</p>
+                <p>Chau7 CTO also identifies patterns that waste tokens, including repeated large context inclusions, redundant file reads, and bloated system prompts. Chau7 surfaces these patterns in real time so you can restructure prompts or adjust agent settings.</p>
+            </div>
+        </section>
+
+        <!-- How CTO works technically -->
+        <section class="feature-content" data-ui="cto-how-it-works">
+            <div class="section-inner prose">
+                <h2>How does Chau7 CTO work?</h2>
+                <p>Chau7 Context Token Optimization intercepts the terminal scrollback that AI agents read and strips non-semantic content. Chau7 CTO removes ANSI escape sequences, cursor movement codes, progress bar redraws, spinner animation frames, and excessive blank lines.</p>
+                <p>Chau7 CTO counts input and output tokens using provider-specific tokenization and surfaces those numbers in real time on a per-tab and global basis. You see exactly how many tokens each prompt and response consumes as they happen.</p>
+                <p>Chau7 CTO can be toggled on or off globally, or overridden per tab for fine-grained control. The feature works transparently with Claude Code, Codex, Gemini CLI, and any agent that calls standard LLM APIs.</p>
+            </div>
+        </section>
+
+        <!-- Comparison -->
+        <section class="feature-content" data-ui="cto-comparison-other-terminals">
+            <div class="section-inner prose">
+                <h2>How does Chau7 CTO compare to other terminals?</h2>
+                <p>Most macOS terminals pass raw terminal output directly to AI agents with no optimization. iTerm2, Alacritty, Kitty, and Ghostty do not filter scrollback content before an AI reads it. Every ANSI code and progress bar redraw gets sent to the model as-is.</p>
+                <p>Warp includes AI features but does not optimize the context window before sending terminal content to the model. Warp's AI reads the same raw scrollback as any other terminal.</p>
+                <p>Chau7 is the only macOS terminal that strips terminal noise from scrollback before the AI reads it. Chau7 Context Token Optimization saves 30-50% on context tokens compared to running the same AI agent in a terminal without CTO.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="cto-target-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">How much does Claude Code cost per session?</li>
+                    <li class="question-item">What is Context Token Optimization in Chau7 terminal?</li>
                     <li class="question-item">How to reduce LLM API token usage in terminal?</li>
-                    <li class="question-item">Warp terminal AI burning through requests</li>
-                    <li class="question-item">Monitor Claude Code token consumption in real time</li>
+                    <li class="question-item">How does Chau7 context token optimization compare to other terminals?</li>
+                    <li class="question-item">Does CTO modify my API requests?</li>
+                    <li class="question-item">Which LLM providers does Chau7 CTO support?</li>
+                    <li class="question-item">How much does Claude Code cost per session?</li>
                     <li class="question-item">How to optimize context window usage for AI coding agents?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
-            <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Context Token Optimization (CTO) intercepts and analyzes the API traffic between your AI agent and its LLM provider. It counts input and output tokens using provider-specific tokenization, then surfaces those numbers in real time on a per-tab and global basis. You see exactly how many tokens each prompt and response consumes as they happen.</p>
-                <p>CTO also identifies patterns that waste tokens: repeated large context inclusions, redundant file reads, and bloated system prompts. By making these patterns visible, it gives you the information needed to restructure prompts or adjust agent settings to reduce unnecessary token consumption.</p>
-                <p>The feature works transparently with Claude Code, Codex, Gemini CLI, and any agent that calls standard LLM APIs. No agent-side configuration is required. CTO can be toggled on or off globally, or overridden per tab for fine-grained control.</p>
-
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Every character in your terminal scrollback costs tokens when an AI agent reads it. ANSI escape codes, prompt decorations, progress bars, blank lines: none of it helps the model reason about your code, but all of it costs money. CTO mode rewrites terminal output to strip the noise before the AI reads it. Developers report 30-50% context reduction on typical sessions. That is real money across a team.</p>
-                </div>
-            </div>
-        </section>
-
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="cto-related-features">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -121,31 +169,31 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="cto-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
                         <summary>Does CTO modify my API requests?</summary>
-                        <div class="faq-answer"><p>No. CTO is a passive observer. It reads and analyzes API traffic but never modifies, delays, or interferes with requests or responses between your agent and the LLM provider.</p></div>
+                        <div class="faq-answer"><p>No. Chau7 Context Token Optimization is a passive optimization layer. CTO in Chau7 rewrites terminal output that the AI reads, but never modifies, delays, or interferes with the actual API requests or responses between your agent and the LLM provider.</p></div>
                     </details>
                     <details>
-                        <summary>Which LLM providers does CTO support?</summary>
-                        <div class="faq-answer"><p>CTO supports all major providers including OpenAI, Anthropic, Google, and any provider using standard REST or streaming API formats. Custom endpoints are also supported as long as they follow common LLM API conventions.</p></div>
+                        <summary>Which LLM providers does Chau7 CTO support?</summary>
+                        <div class="faq-answer"><p>Chau7 Context Token Optimization supports all major LLM providers including OpenAI, Anthropic, Google, and any provider using standard REST or streaming API formats. Chau7 CTO also works with custom endpoints as long as they follow common LLM API conventions.</p></div>
                     </details>
                     <details>
                         <summary>Can I disable CTO for specific tabs?</summary>
-                        <div class="faq-answer"><p>Yes. CTO supports per-tab overrides so you can enable it globally but disable it for specific tabs, or vice versa. See the CTO Per-Tab Override feature for details.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7 CTO supports per-tab overrides so you can enable Context Token Optimization globally but disable it for specific tabs, or vice versa. See the CTO Per-Tab Override feature for details.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="cto-download-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Save ~40% on context tokens. Your wallet will thank you.</h2>
+                    <h2>Save 30-50% on context tokens with Chau7. Your wallet will thank you.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>

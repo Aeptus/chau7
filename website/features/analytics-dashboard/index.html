@@ -12,6 +12,8 @@
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
+    <meta name="article:section" content="API Analytics">
+    <meta name="article:tag" content="analytics dashboard, AI cost tracking, token usage, LLM spending, terminal analytics, Chau7">
     <link rel="canonical" href="https://chau7.sh/features/analytics-dashboard">
     <link rel="stylesheet" href="/style.css">
     <link rel="stylesheet" href="/feature-page.css">
@@ -23,6 +25,8 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "AI-native terminal for macOS with a built-in analytics dashboard that visualizes LLM token usage, API costs, and latency trends across AI agent sessions",
+        "featureList": ["Analytics Dashboard", "Token Usage Charts", "Cost Breakdown by Provider", "Latency Tracking", "MCP Server API Export", "Date Range Filtering"],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +42,7 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Can I export dashboard data?","acceptedAnswer":{"@type":"Answer","text":"The underlying data is accessible through the MCP server API, so you can query and export it in JSON format for use in spreadsheets, external dashboards, or cost management tools."}},{"@type":"Question","name":"Does the dashboard update in real time?","acceptedAnswer":{"@type":"Answer","text":"The dashboard reflects data from completed API calls. New data points appear as calls complete, so the view is near real-time during active sessions."}},{"@type":"Question","name":"Can I share the dashboard with my team?","acceptedAnswer":{"@type":"Answer","text":"The MCP server endpoints that power the dashboard can be queried by any tool or script with access. Sharing the data with teammates or feeding it into a shared monitoring system is straightforward."}}]
+        "mainEntity": [{"@type":"Question","name":"What is Analytics Dashboard in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7's Analytics Dashboard is a built-in visual interface that aggregates LLM token usage, API costs, and latency trends across all AI agent sessions. It presents charts and summaries so developers can understand their AI spending at a glance without leaving the terminal."}},{"@type":"Question","name":"How does Chau7's analytics dashboard compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals have no visibility into AI agent API usage. Chau7 is the only terminal that intercepts LLM API calls through its TLS proxy, counts tokens, calculates costs, and presents everything in a built-in analytics dashboard. Other terminals require external tools or browser dashboards to achieve similar insights."}},{"@type":"Question","name":"How to view AI coding costs over time?","acceptedAnswer":{"@type":"Answer","text":"Chau7's Analytics Dashboard charts AI coding costs over time with daily, weekly, and monthly grouping. Filter by date range, provider, model, or repository to see exactly where your AI budget goes."}},{"@type":"Question","name":"Can I export dashboard data?","acceptedAnswer":{"@type":"Answer","text":"Chau7 exposes the analytics data through its MCP server API. You can query and export it in JSON format for use in spreadsheets, external dashboards, or cost management tools."}},{"@type":"Question","name":"Does the dashboard update in real time?","acceptedAnswer":{"@type":"Answer","text":"Chau7's Analytics Dashboard reflects data from completed API calls. New data points appear as calls complete, so the view is near real-time during active sessions."}},{"@type":"Question","name":"Can I share the dashboard with my team?","acceptedAnswer":{"@type":"Answer","text":"The MCP server endpoints that power Chau7's dashboard can be queried by any tool or script with access. Sharing the data with teammates or feeding it into a shared monitoring system is straightforward."}}]
     }]
     </script>
 </head>
@@ -63,7 +67,7 @@
             <div class="hero-content">
                 <div class="section-badge badge-blue">API ANALYTICS</div>
                 <h1 class="hero-title">Analytics Dashboard</h1>
-                <p class="hero-subtitle">Tokens, costs, latency. All in one dashboard. Finally, a chart that matters.</p>
+                <p class="hero-subtitle">Chau7's Analytics Dashboard visualizes LLM token usage, API costs, and latency trends across all your AI agent sessions. Finally, a chart that matters.</p>
             </div>
         </section>
 
@@ -72,26 +76,66 @@
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">LLM API cost monitor dashboard</li>
-                    <li class="question-item">Visual dashboard for AI agent token usage</li>
+                    <li class="question-item">What is Analytics Dashboard in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's analytics dashboard compare to other terminals?</li>
                     <li class="question-item">How to view AI coding costs over time?</li>
-                    <li class="question-item">Analytics for terminal AI agent API usage</li>
+                    <li class="question-item">Can I export dashboard data from Chau7?</li>
+                    <li class="question-item">Does Chau7's dashboard update in real time?</li>
+                    <li class="question-item">LLM API cost monitor dashboard for terminal</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
+        <!-- What is the Analytics Dashboard -->
+        <section class="feature-content" data-ui="feat-what-is">
+            <div class="section-inner prose">
+                <h2>What is the Analytics Dashboard in Chau7?</h2>
+                <p>Chau7's Analytics Dashboard is a built-in visual interface that aggregates data from token counting, cost tracking, and latency tracking. The Chau7 Analytics Dashboard presents charts and summaries so developers can understand their AI spending without leaving the terminal.</p>
+                <p>Chau7's Analytics Dashboard shows token usage trends, cost breakdowns by provider and model, and latency distributions over time. Data can be filtered by date range, provider, model, agent type, or repository.</p>
+            </div>
+        </section>
+
+        <!-- How to view AI coding costs over time -->
+        <section class="feature-content" data-ui="feat-costs-over-time">
+            <div class="section-inner prose">
+                <h2>How to view AI coding costs over time</h2>
+                <p>Chau7's Analytics Dashboard charts AI coding costs over time with daily, weekly, and monthly grouping. Select a date range to see cumulative spend, or drill into a single day to find the most expensive sessions.</p>
+                <p>Chau7 breaks costs down by provider and model, so you can see exactly how much you spend on OpenAI versus Anthropic versus any other LLM provider. Filter by repository to compare AI spending across projects.</p>
+            </div>
+        </section>
+
+        <!-- How it works -->
         <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>The Analytics Dashboard aggregates data from token counting, cost tracking, and latency tracking into a visual interface. It presents charts and summaries showing token usage trends, cost breakdowns by provider and model, and latency distributions over time. Data can be filtered by date range, provider, model, agent type, or repository.</p>
-                <p>The dashboard is accessible through the MCP server, which exposes the underlying data as queryable endpoints. This means you can build custom visualizations or integrate the data into existing monitoring tools if the built-in dashboard does not cover your use case.</p>
-                <p>Key metrics are highlighted at a glance: total spend over a period, most expensive sessions, token usage growth trends, and latency percentiles. The goal is to answer the question of where your AI budget goes without requiring you to dig through individual calls.</p>
+                <h2>How does Chau7's Analytics Dashboard work?</h2>
+                <p>Chau7's TLS proxy intercepts LLM API calls from AI agents running in the terminal. The proxy hands each call to the token counter and cost tracker, which log tokens, costs, and latency. The Chau7 Analytics Dashboard queries this telemetry data and renders it as interactive charts.</p>
+                <p>Chau7 exposes the underlying analytics data through its MCP server as queryable endpoints. You can build custom visualizations or integrate the data into existing monitoring tools if the built-in Chau7 dashboard does not cover your use case.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Individual per-call metrics are valuable for debugging, but understanding AI spending patterns requires an aggregate view. The Analytics Dashboard shows token usage, costs, and latency trends over time with daily/weekly/monthly grouping. It queries the same telemetry data that the MCP server exposes, so what you see in the dashboard matches what your automations report.</p>
-                </div>
+        <!-- Key metrics -->
+        <section class="feature-content" data-ui="feat-key-metrics">
+            <div class="section-inner prose">
+                <h2>Key metrics at a glance</h2>
+                <p>Chau7's Analytics Dashboard highlights key metrics at a glance: total spend over a period, most expensive sessions, token usage growth trends, and latency percentiles. The goal is to answer where your AI budget goes without requiring you to dig through individual calls.</p>
+            </div>
+        </section>
+
+        <!-- Comparison -->
+        <section class="feature-content" data-ui="feat-compare">
+            <div class="section-inner prose">
+                <h2>How does Chau7's analytics dashboard compare to other terminals?</h2>
+                <p>Most terminals have zero visibility into AI agent API usage. If you use iTerm2, Alacritty, Kitty, or the default macOS Terminal, you need external browser dashboards or manual API console checks to understand your LLM spending.</p>
+                <p>Chau7 is the only terminal that intercepts LLM API calls through its built-in TLS proxy, counts tokens, calculates costs per provider pricing, and presents everything in a local analytics dashboard. No browser tab. No third-party service. The data stays on your machine.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="feat-why-matters">
+            <div class="section-inner prose">
+                <h2>Why Chau7's Analytics Dashboard matters</h2>
+                <p>Individual per-call metrics are valuable for debugging, but understanding AI spending patterns requires an aggregate view. Chau7's Analytics Dashboard shows token usage, costs, and latency trends over time with daily, weekly, and monthly grouping.</p>
+                <p>The Chau7 Analytics Dashboard queries the same telemetry data that the MCP server exposes. What you see in the dashboard matches what your automations report.</p>
             </div>
         </section>
 
@@ -125,16 +169,28 @@
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Analytics Dashboard in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Chau7's Analytics Dashboard is a built-in visual interface that aggregates LLM token usage, API costs, and latency trends across all AI agent sessions. Chau7 presents charts and summaries so developers can understand their AI spending at a glance without leaving the terminal.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's analytics dashboard compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals have no visibility into AI agent API usage. Chau7 is the only terminal that intercepts LLM API calls through its TLS proxy, counts tokens, calculates costs, and presents everything in a built-in analytics dashboard. Other terminals require external tools or browser dashboards to achieve similar insights.</p></div>
+                    </details>
+                    <details>
+                        <summary>How to view AI coding costs over time?</summary>
+                        <div class="faq-answer"><p>Chau7's Analytics Dashboard charts AI coding costs over time with daily, weekly, and monthly grouping. Filter by date range, provider, model, or repository to see exactly where your AI budget goes.</p></div>
+                    </details>
+                    <details>
                         <summary>Can I export dashboard data?</summary>
-                        <div class="faq-answer"><p>The underlying data is accessible through the MCP server API, so you can query and export it in JSON format for use in spreadsheets, external dashboards, or cost management tools.</p></div>
+                        <div class="faq-answer"><p>Chau7 exposes the analytics data through its MCP server API. You can query and export it in JSON format for use in spreadsheets, external dashboards, or cost management tools.</p></div>
                     </details>
                     <details>
                         <summary>Does the dashboard update in real time?</summary>
-                        <div class="faq-answer"><p>The dashboard reflects data from completed API calls. New data points appear as calls complete, so the view is near real-time during active sessions.</p></div>
+                        <div class="faq-answer"><p>Chau7's Analytics Dashboard reflects data from completed API calls. New data points appear as calls complete, so the view is near real-time during active sessions.</p></div>
                     </details>
                     <details>
                         <summary>Can I share the dashboard with my team?</summary>
-                        <div class="faq-answer"><p>The MCP server endpoints that power the dashboard can be queried by any tool or script with access. Sharing the data with teammates or feeding it into a shared monitoring system is straightforward.</p></div>
+                        <div class="faq-answer"><p>The MCP server endpoints that power Chau7's Analytics Dashboard can be queried by any tool or script with access. Sharing the data with teammates or feeding it into a shared monitoring system is straightforward.</p></div>
                     </details>
                 </div>
             </div>
