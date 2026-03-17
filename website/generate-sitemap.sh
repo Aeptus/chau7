@@ -8,6 +8,8 @@ SITE="https://chau7.sh"
 DIR="$(cd "$(dirname "$0")" && pwd)"
 MIN_FEATURE_SIZE=3000
 
+today=$(date "+%Y-%m-%d" 2>/dev/null || echo "2026-03-17")
+
 CORE="$DIR/sitemap-core.xml"
 FEATURES="$DIR/sitemap-features.xml"
 COMPARE="$DIR/sitemap-compare.xml"
@@ -76,7 +78,7 @@ for file in $(find "$DIR" -name "*.html" -not -path "*/.git/*" | sort); do
             entry="  <url><loc>${SITE}/${url}</loc><lastmod>${mod}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>"
             echo "$entry" >> "$COMPARE"; ((compare_count++)) ;;
         compare/*)
-            entry="  <url><loc>${SITE}/${url}</loc><lastmod>${mod}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>"
+            entry="  <url><loc>${SITE}/${url}</loc><lastmod>${mod}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>"
             echo "$entry" >> "$COMPARE"; ((compare_count++)) ;;
         features)
             entry="  <url><loc>${SITE}/${url}</loc><lastmod>${mod}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>"
@@ -98,6 +100,34 @@ echo "</urlset>" >> "$CORE"
 echo "</urlset>" >> "$FEATURES"
 echo "</urlset>" >> "$COMPARE"
 
+# ── Concepts sitemap: high-level retrieval nodes ──
+# These map to existing pages/sections but surface them as concept entry points
+CONCEPTS="$DIR/sitemap-concepts.xml"
+echo "$header" > "$CONCEPTS"
+concept_count=0
+
+# Each concept: a retrievable knowledge node that answers a class of queries
+concepts=(
+    "/|1.0|weekly|what is chau7"
+    "/features|0.9|weekly|chau7 features list"
+    "/mcp|0.9|weekly|chau7 mcp tools terminal automation"
+    "/the-tech|0.8|weekly|chau7 technology stack rust metal"
+    "/remote|0.8|weekly|chau7 ios remote control"
+    "/compare|0.8|monthly|chau7 vs other terminals"
+    "/features#ai-detection|0.7|monthly|chau7 ai agent detection"
+    "/features#ai-integration|0.7|monthly|chau7 context token optimization"
+    "/features#ai-analytics|0.7|monthly|chau7 api cost tracking"
+    "/features#catalog|0.6|monthly|chau7 full feature catalog"
+)
+
+for concept in "${concepts[@]}"; do
+    IFS='|' read -r path priority freq description <<< "$concept"
+    echo "  <url><loc>${SITE}${path}</loc><lastmod>${today}</lastmod><changefreq>${freq}</changefreq><priority>${priority}</priority></url>" >> "$CONCEPTS"
+    ((concept_count++))
+done
+
+echo "</urlset>" >> "$CONCEPTS"
+
 # Sitemap index
 today=$(date "+%Y-%m-%d" 2>/dev/null || echo "2026-03-17")
 cat > "$INDEX" <<EOF
@@ -115,13 +145,18 @@ cat > "$INDEX" <<EOF
     <loc>${SITE}/sitemap-compare.xml</loc>
     <lastmod>${today}</lastmod>
   </sitemap>
+  <sitemap>
+    <loc>${SITE}/sitemap-concepts.xml</loc>
+    <lastmod>${today}</lastmod>
+  </sitemap>
 </sitemapindex>
 EOF
 
-total=$((core_count + feature_count + compare_count))
-echo "Generated sitemap index with 3 sitemaps:"
+total=$((core_count + feature_count + compare_count + concept_count))
+echo "Generated sitemap index with 4 sitemaps:"
 echo "  sitemap-core.xml:     ${core_count} URLs"
 echo "  sitemap-features.xml: ${feature_count} URLs"
 echo "  sitemap-compare.xml:  ${compare_count} URLs"
+echo "  sitemap-concepts.xml: ${concept_count} concept nodes"
 echo "  Skipped thin pages:   ${skipped}"
-echo "  Total:                ${total} URLs"
+echo "  Total:                ${total} entries"
