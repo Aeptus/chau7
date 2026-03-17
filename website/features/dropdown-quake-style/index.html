@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Dropdown (Quake-style) | Chau7 Terminal</title>
     <meta name="description" content="Chau7 Quake-style dropdown terminal slides from the top of your screen with a hotkey. Instant terminal access on macOS like Guake and Yakuake.">
+    <meta name="article:section" content="Window Modes">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="dropdown terminal">
+    <meta name="article:tag" content="Quake-style terminal">
+    <meta name="article:tag" content="hotkey window">
+    <meta name="article:tag" content="macOS terminal dropdown">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Dropdown (Quake-style) | Chau7">
     <meta property="og:description" content="Chau7 Quake-style dropdown terminal slides from the top of your screen with a hotkey. Instant terminal access on macOS like Guake and Yakuake.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with a Quake-style dropdown mode that slides from the top of the screen with a global hotkey.",
+        "featureList": [
+            "Quake-style dropdown from top of screen",
+            "Configurable global hotkey (default Ctrl+`)",
+            "Adjustable height, width, and position",
+            "Persistent session across show/hide cycles",
+            "Smooth animation with Reduced Motion support",
+            "Focus returns to previous app on retract"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"What is the default hotkey for the dropdown?","acceptedAnswer":{"@type":"Answer","text":"The default hotkey is Ctrl+` (backtick). You can remap it to any key combination in the keybindings preferences."}},{"@type":"Question","name":"Does the dropdown terminal keep my session alive?","acceptedAnswer":{"@type":"Answer","text":"Yes. The shell session persists across show and hide cycles. Running processes, working directory, and scrollback are all preserved."}},{"@type":"Question","name":"Can I adjust the dropdown height?","acceptedAnswer":{"@type":"Answer","text":"Yes. The dropdown height is configurable as a percentage of screen height, and you can also set a custom width and horizontal position."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Dropdown (Quake-style) in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Dropdown (Quake-style) is a window mode in the Chau7 terminal that slides a terminal panel down from the top of the screen when you press a global hotkey. Press the hotkey again and Chau7 retracts the panel. This replicates the Quake console experience natively on macOS."}},
+            {"@type":"Question","name":"iTerm2 hotkey window alternative native macOS","acceptedAnswer":{"@type":"Answer","text":"Chau7's Quake-style dropdown is a native macOS alternative to iTerm2's hotkey window. Chau7 slides the terminal from the top of the screen with a configurable global hotkey (default Ctrl+`), keeps the session alive across show/hide cycles, and supports adjustable height, width, and position."}},
+            {"@type":"Question","name":"Quake style terminal macOS dropdown","acceptedAnswer":{"@type":"Answer","text":"Chau7 provides a Quake-style dropdown terminal on macOS. Press a global hotkey and the terminal slides down from the top of the screen. Press again and it retracts. Linux users have had Guake and Yakuake for years. Chau7 brings the same experience natively to macOS."}},
+            {"@type":"Question","name":"What is the default hotkey for the dropdown?","acceptedAnswer":{"@type":"Answer","text":"The default hotkey for Chau7's dropdown terminal is Ctrl+` (backtick). You can remap it to any key combination in Chau7's keybindings preferences."}},
+            {"@type":"Question","name":"Does the dropdown terminal keep my session alive?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7's dropdown terminal keeps the shell session alive across show and hide cycles. Running processes, working directory, and scrollback are all preserved. The terminal stays in memory, so there is no launch delay."}}
+        ]
     }]
     </script>
 </head>
@@ -58,46 +80,85 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="window" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="window" data-ui="dropdown-quake-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">WINDOW MODES</div>
                 <h1 class="hero-title">Dropdown (Quake-style)</h1>
-                <p class="hero-subtitle">Press a key. Terminal drops down. Press again. It vanishes. Just like the '90s, but better.</p>
+                <p class="hero-subtitle">Press a key. Chau7 drops down. Press again. It vanishes. Just like the '90s, but better.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="dropdown-quake-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">Quake style terminal macOS dropdown</li>
+                    <li class="question-item">What is Dropdown (Quake-style) in Chau7 terminal?</li>
                     <li class="question-item">iTerm2 hotkey window alternative native macOS</li>
-                    <li class="question-item">Terminal slides down from top of screen Mac</li>
-                    <li class="question-item">Guake Yakuake equivalent for macOS</li>
-                    <li class="question-item">Instant terminal access global hotkey macOS</li>
+                    <li class="question-item">Quake style terminal macOS dropdown</li>
+                    <li class="question-item">What is the default hotkey for the dropdown?</li>
+                    <li class="question-item">Does the dropdown terminal keep my session alive?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Dropdown (Quake-style) -->
+        <section class="feature-content" data-ui="dropdown-quake-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7's dropdown mode replicates the Quake console experience on macOS. Press a configurable global hotkey (default Ctrl+`) and the terminal slides down from the top edge of your screen with a smooth animation. Press the hotkey again and it retracts. The terminal is instantly available from any application without reaching for the Dock or using Cmd+Tab.</p>
-                <p>The dropdown window spans the full width of your active monitor by default, but you can configure it to a specific width and horizontal position. Vertical height is adjustable as a percentage of screen height. The slide animation respects the macOS Reduced Motion preference, snapping instantly instead of animating when that setting is enabled.</p>
-                <p>The dropdown maintains its own session state independently from regular Chau7 windows. Your dropdown shell persists across show/hide cycles, so running processes, working directory, and scroll position are preserved. Focus returns to the previously active application when the dropdown retracts.</p>
+                <h2>What is Dropdown (Quake-style) in Chau7?</h2>
+                <p>Dropdown (Quake-style) is a window mode in the Chau7 terminal that slides a terminal panel down from the top of the screen when you press a global hotkey. Press the hotkey again and Chau7 retracts the panel.</p>
+                <p>Chau7's dropdown replicates the Quake console experience natively on macOS. The terminal is instantly available from any application without reaching for the Dock or using Cmd+Tab.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>The Quake-style dropdown is one of the most requested terminal features on macOS. Linux users have had Guake and Yakuake for years. Chau7 brings the same experience natively: a global hotkey summons a terminal that slides down from the top of the screen, and another press hides it. The terminal stays in memory, so there is no launch delay.</p>
-                </div>
+        <!-- Quake style terminal macOS -->
+        <section class="feature-content" data-ui="dropdown-quake-macos">
+            <div class="section-inner prose">
+                <h2>Quake-style terminal dropdown on macOS</h2>
+                <p>Linux users have had Guake and Yakuake for years. Chau7 brings the same Quake-style dropdown experience natively to macOS.</p>
+                <p>Chau7's dropdown window spans the full width of your active monitor by default. You can configure the width, horizontal position, and vertical height as a percentage of screen height. The slide animation respects the macOS Reduced Motion preference, snapping instantly instead of animating when that setting is enabled.</p>
+            </div>
+        </section>
+
+        <!-- iTerm2 hotkey window alternative -->
+        <section class="feature-content" data-ui="dropdown-quake-iterm2-alternative">
+            <div class="section-inner prose">
+                <h2>iTerm2 hotkey window alternative on native macOS</h2>
+                <p>Chau7's Quake-style dropdown is a native macOS alternative to iTerm2's hotkey window. Chau7 slides the terminal from the top of the screen with a configurable global hotkey, keeps the session alive across show/hide cycles, and supports adjustable height, width, and position.</p>
+                <p>Unlike iTerm2, Chau7 is built with Metal rendering and AI-native features. Chau7's dropdown mode integrates with all other Chau7 features including AI detection, tab branding, and MCP tools.</p>
+            </div>
+        </section>
+
+        <!-- Default hotkey -->
+        <section class="feature-content" data-ui="dropdown-quake-default-hotkey">
+            <div class="section-inner prose">
+                <h2>What is the default hotkey for Chau7's dropdown?</h2>
+                <p>The default hotkey for Chau7's dropdown terminal is <code>Ctrl+`</code> (backtick). You can remap it to any key combination in Chau7's keybindings preferences.</p>
+                <p>The hotkey is global, meaning it works from any application. Chau7 registers the hotkey at the system level so the dropdown appears instantly regardless of which app is in the foreground.</p>
+            </div>
+        </section>
+
+        <!-- Does the dropdown keep session alive -->
+        <section class="feature-content" data-ui="dropdown-quake-session-persistence">
+            <div class="section-inner prose">
+                <h2>Does Chau7's dropdown terminal keep my session alive?</h2>
+                <p>Yes. Chau7's dropdown terminal keeps the shell session alive across show and hide cycles. Running processes, working directory, and scrollback are all preserved.</p>
+                <p>Chau7's dropdown maintains its own session state independently from regular Chau7 windows. The terminal stays in memory, so there is no launch delay. Focus returns to the previously active application when Chau7 retracts the dropdown.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="dropdown-quake-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why Chau7's Quake-style dropdown matters</h2>
+                <p>The Quake-style dropdown is one of the most requested terminal features on macOS. A global hotkey summons Chau7 from the top of the screen, and another press hides it.</p>
+                <p>Chau7's dropdown eliminates the friction of switching to a terminal app. One keypress, instant access. The terminal stays in memory, so there is no cold start.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="dropdown-quake-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -121,28 +182,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="dropdown-quake-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Dropdown (Quake-style) in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Dropdown (Quake-style) is a window mode in the Chau7 terminal that slides a terminal panel down from the top of the screen when you press a global hotkey. Press the hotkey again and Chau7 retracts the panel. This replicates the Quake console experience natively on macOS.</p></div>
+                    </details>
+                    <details>
+                        <summary>iTerm2 hotkey window alternative native macOS</summary>
+                        <div class="faq-answer"><p>Chau7's Quake-style dropdown is a native macOS alternative to iTerm2's hotkey window. Chau7 slides the terminal from the top of the screen with a configurable global hotkey (default Ctrl+`), keeps the session alive across show/hide cycles, and supports adjustable height, width, and position.</p></div>
+                    </details>
+                    <details>
+                        <summary>Quake style terminal macOS dropdown</summary>
+                        <div class="faq-answer"><p>Chau7 provides a Quake-style dropdown terminal on macOS. Press a global hotkey and the terminal slides down from the top of the screen. Press again and it retracts. Linux users have had Guake and Yakuake for years. Chau7 brings the same experience natively to macOS.</p></div>
+                    </details>
+                    <details>
                         <summary>What is the default hotkey for the dropdown?</summary>
-                        <div class="faq-answer"><p>The default hotkey is Ctrl+` (backtick). You can remap it to any key combination in the keybindings preferences.</p></div>
+                        <div class="faq-answer"><p>The default hotkey for Chau7's dropdown terminal is Ctrl+` (backtick). You can remap it to any key combination in Chau7's keybindings preferences.</p></div>
                     </details>
                     <details>
                         <summary>Does the dropdown terminal keep my session alive?</summary>
-                        <div class="faq-answer"><p>Yes. The shell session persists across show and hide cycles. Running processes, working directory, and scrollback are all preserved.</p></div>
-                    </details>
-                    <details>
-                        <summary>Can I adjust the dropdown height?</summary>
-                        <div class="faq-answer"><p>Yes. The dropdown height is configurable as a percentage of screen height, and you can also set a custom width and horizontal position.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7's dropdown terminal keeps the shell session alive across show and hide cycles. Running processes, working directory, and scrollback are all preserved. The terminal stays in memory, so there is no launch delay.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="dropdown-quake-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Quake-style terminal dropdown. One key. Instant access.</h2>

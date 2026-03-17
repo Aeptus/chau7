@@ -6,12 +6,15 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Custom Detection Rules | Chau7 Terminal</title>
-    <meta name="description" content="Add custom detection rules to Chau7 so it recognizes any AI CLI tool by process name pattern. Extend detection beyond the built-in agent list.">
-    <meta property="og:title" content="Custom Detection Rules | Chau7">
-    <meta property="og:description" content="Add custom detection rules to Chau7 so it recognizes any AI CLI tool by process name pattern. Extend detection beyond the built-in agent list.">
+    <meta name="description" content="Chau7 custom detection rules let you teach the terminal to recognize any AI CLI tool by process name pattern. Extend Chau7's AI detection beyond the built-in agent list.">
+    <meta property="og:title" content="Custom Detection Rules | Chau7 Terminal">
+    <meta property="og:description" content="Chau7 custom detection rules let you teach the terminal to recognize any AI CLI tool by process name pattern. Extend Chau7's AI detection beyond the built-in agent list.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
+    <meta name="author" content="Chau7">
+    <meta property="article:author" content="Chau7">
+    <meta property="article:section" content="AI Detection">
     <link rel="canonical" href="https://chau7.sh/features/custom-detection-rules">
     <link rel="stylesheet" href="/style.css">
     <link rel="stylesheet" href="/feature-page.css">
@@ -23,6 +26,14 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "AI-native terminal for macOS with custom detection rules that let you teach Chau7 to recognize any AI CLI tool by process name pattern",
+        "featureList": [
+            "Custom AI detection rules",
+            "Process name pattern matching",
+            "Custom display names and colors",
+            "Team-shareable rule configuration",
+            "Works alongside built-in detection"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +49,48 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Do custom rules override built-in detection?","acceptedAnswer":{"@type":"Answer","text":"No. Custom rules run alongside built-in rules. If a process matches both, the built-in rule takes precedence to ensure consistent branding for well-known agents."}},{"@type":"Question","name":"Can I share custom detection rules with my team?","acceptedAnswer":{"@type":"Answer","text":"Custom rules are stored in Chau7&#x27;s settings and can be exported or version-controlled. Sharing a configuration file is the simplest way to distribute rules across a team."}}]
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "What is Custom Detection Rules in Chau7 terminal?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Custom Detection Rules is a Chau7 feature that lets you define process name patterns to detect any AI CLI tool in the terminal. Chau7 matches these patterns against running processes and applies custom display names and colors, giving internal or niche AI tools the same first-class treatment as built-in agents."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "How do I add a custom AI tool to my terminal detection?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Open Chau7 Settings, navigate to AI Detection, and add a new custom rule. Enter the process name pattern to match, a display name for the tool, and an optional brand color. Chau7 will immediately begin matching the pattern against running processes in every tab."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "How does Chau7's custom detection rules compare to other terminals?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Most terminals like iTerm2, Warp, Kitty, and Alacritty have no AI detection at all. Chau7 is the only terminal that detects AI agents automatically and lets you add custom detection rules for any AI CLI tool by process name pattern."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "Do custom rules override built-in detection?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "No. Custom rules in Chau7 run alongside built-in rules. If a process matches both a custom rule and a built-in rule, the built-in rule takes precedence to ensure consistent branding for well-known agents like Claude Code, Codex, and Gemini CLI."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "Can I share custom detection rules with my team?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Yes. Chau7 stores custom detection rules in its settings file, which can be exported or version-controlled. Sharing the configuration file is the simplest way to distribute Chau7 custom detection rules across a team."
+                }
+            }
+        ]
     }]
     </script>
 </head>
@@ -58,44 +110,68 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="ai-detection" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="ai-detection" data-ui="custom-detection-rules-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-alt">AI DETECTION</div>
                 <h1 class="hero-title">Custom Detection Rules</h1>
-                <p class="hero-subtitle">Got an AI tool we haven't heard of yet? Teach Chau7. It learns fast.</p>
+                <p class="hero-subtitle">Got an AI tool Chau7 hasn't heard of yet? Teach it. Chau7 learns fast.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="custom-detection-rules-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is Custom Detection Rules in Chau7 terminal?</li>
                     <li class="question-item">How do I add a custom AI tool to my terminal detection?</li>
-                    <li class="question-item">Can I detect private or internal AI CLI tools in Chau7?</li>
-                    <li class="question-item">Custom process detection rules for terminal AI monitoring</li>
-                    <li class="question-item">Add new AI agent to Chau7 detection list</li>
+                    <li class="question-item">How does Chau7's custom detection rules compare to other terminals?</li>
+                    <li class="question-item">Do custom rules override built-in detection?</li>
+                    <li class="question-item">Can I share custom detection rules with my team?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Custom Detection Rules -->
+        <section class="feature-content" data-ui="custom-detection-rules-overview">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 exposes a settings interface where you can define custom detection rules using process name patterns. Each rule maps a pattern to a display name and optional color, so your internal or niche AI tools get the same first-class treatment as built-in agents.</p>
-                <p>Patterns are matched against the process name and arguments in the tab's process tree. You can use substring matching to catch tools launched through various wrapper scripts or package managers. Custom rules are evaluated alongside built-in rules with no priority conflicts.</p>
+                <h2>What is Custom Detection Rules in Chau7?</h2>
+                <p>Custom Detection Rules is a Chau7 feature that lets you teach the terminal to recognize any AI CLI tool by process name pattern. Chau7 matches each custom rule against running processes in every tab and applies a display name and optional brand color when a match is found.</p>
+                <p>Chau7 ships with built-in detection for well-known agents like Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor. Custom detection rules extend Chau7's detection to cover any additional AI tool that has a recognizable process name.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>The AI tooling landscape moves faster than any vendor can ship updates. Your team's custom fine-tuned model CLI, that internal wrapper around Ollama, the niche open-source agent your coworker swears by: Chau7 can't ship built-in support for all of them, but it can learn. Custom detection rules let you extend detection to anything with a process name.</p>
-                </div>
+        <!-- How to add a custom AI tool -->
+        <section class="feature-content" data-ui="custom-detection-rules-how-to-add">
+            <div class="section-inner prose">
+                <h2>How do I add a custom AI tool to Chau7's detection?</h2>
+                <p>Open Chau7 Settings and navigate to the AI Detection section. Add a new custom rule by entering a process name pattern to match, a display name for the tool, and an optional brand color.</p>
+                <p>Chau7 matches patterns against the process name and arguments in each tab's process tree. You can use substring matching to catch tools launched through wrapper scripts or package managers.</p>
+                <p>Chau7 applies custom detection rules immediately. No restart is needed. Once saved, every open and future tab in Chau7 will evaluate the new rule alongside all other detection rules.</p>
+            </div>
+        </section>
+
+        <!-- Why custom detection rules matter -->
+        <section class="feature-content" data-ui="custom-detection-rules-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why Chau7's custom detection rules matter</h2>
+                <p>The AI tooling landscape moves faster than any vendor can ship updates. Your team's custom fine-tuned model CLI, an internal wrapper around Ollama, or a niche open-source agent all need detection support that no terminal ships by default.</p>
+                <p>Chau7 custom detection rules let you extend AI detection to anything with a process name. Instead of waiting for a Chau7 update, you define the rule yourself and get first-class AI detection for your tool in seconds.</p>
+            </div>
+        </section>
+
+        <!-- Comparison with other terminals -->
+        <section class="feature-content" data-ui="custom-detection-rules-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's custom detection compare to other terminals?</h2>
+                <p>Most terminals have no AI detection at all. iTerm2, Warp, Kitty, Alacritty, and the default macOS Terminal do not detect AI agents running in tabs and offer no mechanism for custom detection rules.</p>
+                <p>Chau7 is the only macOS terminal that detects AI CLI tools automatically and lets you add custom detection rules for tools it does not yet recognize. No other terminal offers process-based AI detection with user-defined pattern matching, custom display names, and brand colors.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="custom-detection-rules-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -119,24 +195,32 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="custom-detection-rules-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>Do custom rules override built-in detection?</summary>
-                        <div class="faq-answer"><p>No. Custom rules run alongside built-in rules. If a process matches both, the built-in rule takes precedence to ensure consistent branding for well-known agents.</p></div>
+                        <summary>Do custom rules override built-in detection in Chau7?</summary>
+                        <div class="faq-answer"><p>No. Custom rules in Chau7 run alongside built-in rules. If a process matches both a custom rule and a built-in rule, the built-in rule takes precedence to ensure consistent branding for well-known agents like Claude Code, Codex, and Gemini CLI.</p></div>
                     </details>
                     <details>
-                        <summary>Can I share custom detection rules with my team?</summary>
-                        <div class="faq-answer"><p>Custom rules are stored in Chau7's settings and can be exported or version-controlled. Sharing a configuration file is the simplest way to distribute rules across a team.</p></div>
+                        <summary>Can I share Chau7 custom detection rules with my team?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 stores custom detection rules in its settings file, which can be exported or version-controlled. Sharing the Chau7 configuration file is the simplest way to distribute custom detection rules across a team.</p></div>
+                    </details>
+                    <details>
+                        <summary>What pattern format do Chau7 custom detection rules use?</summary>
+                        <div class="faq-answer"><p>Chau7 custom detection rules use substring matching against process names and arguments. You enter the pattern string in Chau7 Settings, and Chau7 checks whether that string appears anywhere in the process name or argument list for each tab.</p></div>
+                    </details>
+                    <details>
+                        <summary>Do I need to restart Chau7 after adding a custom detection rule?</summary>
+                        <div class="faq-answer"><p>No. Chau7 applies custom detection rules immediately after you save them. Every open tab and every new tab will evaluate the updated rules without a restart.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="custom-detection-rules-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Your weird internal AI tool deserves detection too.</h2>

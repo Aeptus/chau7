@@ -6,9 +6,14 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Cursor Styles | Chau7 Terminal</title>
-    <meta name="description" content="Configure terminal cursor style in Chau7. Choose block, beam, or underline cursors with adjustable blink rate, color, and per-profile settings.">
+    <meta name="description" content="Chau7 lets you choose block, beam, or underline cursor styles with adjustable blink rate, custom color, and per-profile settings on macOS.">
+    <meta name="keywords" content="Chau7, terminal cursor style, block cursor, beam cursor, underline cursor, cursor blinking, macOS terminal, Vim cursor shape, cursor color, per-profile cursor">
+    <meta name="article:section" content="Customization">
+    <meta name="article:tag" content="cursor styles">
+    <meta name="article:tag" content="terminal customization">
+    <meta name="article:tag" content="macOS terminal">
     <meta property="og:title" content="Cursor Styles | Chau7">
-    <meta property="og:description" content="Configure terminal cursor style in Chau7. Choose block, beam, or underline cursors with adjustable blink rate, color, and per-profile settings.">
+    <meta property="og:description" content="Chau7 lets you choose block, beam, or underline cursor styles with adjustable blink rate, custom color, and per-profile settings on macOS.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -38,7 +43,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does the cursor change shape for Vim insert mode?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 responds to standard ANSI cursor shape escape sequences, so Vim, Neovim, and Zsh vi-mode can switch between block and beam cursors automatically."}},{"@type":"Question","name":"Can I disable cursor blinking entirely?","acceptedAnswer":{"@type":"Answer","text":"Yes. Set the blink rate slider to zero for a steady, non-blinking cursor."}},{"@type":"Question","name":"Can different profiles use different cursor styles?","acceptedAnswer":{"@type":"Answer","text":"Yes. Each profile stores its own cursor shape, blink rate, and color independently."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Cursor Styles in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Cursor Styles is a customization feature in Chau7 that lets you choose between block, beam, and underline cursor shapes, adjust blink rate with a continuous slider, set a custom cursor color, and save different cursor settings per profile."}},
+            {"@type":"Question","name":"How do I choose between block and beam cursor in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Open Chau7 preferences and select block, beam (vertical line), or underline from the cursor shape picker. Block cursors highlight the full character cell, beam cursors show a thin vertical line at the insertion point, and underline cursors sit beneath the character."}},
+            {"@type":"Question","name":"How to change terminal cursor style on macOS?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, open preferences and choose your cursor shape, blink rate, and color. Each profile can store independent cursor settings, so different shells or SSH sessions can use different cursor styles."}},
+            {"@type":"Question","name":"Does the cursor change shape for Vim insert mode?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 responds to standard ANSI cursor shape escape sequences, so Vim, Neovim, and Zsh vi-mode can switch between block and beam cursors automatically."}},
+            {"@type":"Question","name":"Can I disable cursor blinking entirely?","acceptedAnswer":{"@type":"Answer","text":"Yes. Set the Chau7 blink rate slider to zero for a steady, non-blinking cursor. The slider provides continuous control from completely steady to fast blink."}}
+        ]
     }]
     </script>
 </head>
@@ -58,44 +69,97 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="customization" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="customization" data-ui="cursor-styles-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">CUSTOMIZATION</div>
                 <h1 class="hero-title">Cursor Styles</h1>
-                <p class="hero-subtitle">Block, beam, underline. Blinking or steady. Your cursor, your call.</p>
+                <p class="hero-subtitle">Chau7 gives you full control over cursor shape, blink rate, and color in every terminal profile.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="cursor-styles-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">How to change terminal cursor style macOS</li>
-                    <li class="question-item">Terminal cursor blinking too fast how to adjust</li>
+                    <li class="question-item">What is Cursor Styles in Chau7 terminal</li>
                     <li class="question-item">Block vs beam cursor terminal preference</li>
+                    <li class="question-item">How to change terminal cursor style macOS</li>
+                    <li class="question-item">Does the cursor change shape for Vim insert mode</li>
+                    <li class="question-item">Can I disable cursor blinking entirely</li>
                     <li class="question-item">Change cursor color in terminal emulator</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Cursor Styles -->
+        <section class="feature-content" data-ui="cursor-styles-overview">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 supports block, beam (line), and underline cursor shapes, switchable from preferences or via standard ANSI escape sequences. Applications like Vim, Neovim, and Zsh vi-mode can request cursor shape changes at runtime and Chau7 responds correctly, switching between insert-mode beam and normal-mode block automatically.</p>
-                <p>Blink rate is adjustable from a steady non-blinking cursor up to a fast blink, with a continuous slider rather than fixed presets. Cursor color can be set independently from the theme palette, giving you a distinct visual anchor point in dense terminal output. Per-profile cursor settings mean your SSH session can use a different style from your local shell for instant visual context.</p>
+                <h2>What is Cursor Styles in Chau7?</h2>
+                <p>Cursor Styles is a customization feature in the Chau7 terminal emulator for macOS. Chau7 Cursor Styles lets you choose between block, beam, and underline cursor shapes, adjust how fast the cursor blinks, set a custom cursor color, and save different cursor settings per profile.</p>
+                <p>Chau7 also responds to ANSI cursor shape escape sequences. Applications like Vim, Neovim, and Zsh vi-mode can request cursor shape changes at runtime, and Chau7 switches between shapes automatically.</p>
+            </div>
+        </section>
 
+        <!-- Block vs Beam -->
+        <section class="feature-content" data-ui="cursor-styles-block-vs-beam">
+            <div class="section-inner prose">
+                <h2>Block vs beam cursor: which should you use in Chau7?</h2>
+                <p>Chau7 supports three cursor shapes: block, beam, and underline. Block cursors highlight the full character cell and are the traditional default for terminal emulators. Beam cursors display a thin vertical line at the insertion point, matching the cursor style used in most GUI text editors.</p>
+                <p>Many developers prefer the block cursor for normal-mode navigation and the beam cursor for insert-mode typing. Chau7 supports this pattern natively through ANSI escape sequences, so Vim and Neovim can switch between block and beam cursors without additional configuration.</p>
+                <p>Underline cursors sit beneath the character and are useful when you want minimal visual interruption. All three Chau7 cursor shapes can be combined with any blink rate and any cursor color.</p>
+            </div>
+        </section>
+
+        <!-- How to Change Cursor Style -->
+        <section class="feature-content" data-ui="cursor-styles-how-to-change">
+            <div class="section-inner prose">
+                <h2>How to change terminal cursor style on macOS with Chau7</h2>
+                <p>Open Chau7 preferences and navigate to the cursor section. Select block, beam, or underline from the cursor shape picker. The change takes effect immediately in all open tabs using that profile.</p>
+                <p>Chau7 stores cursor settings per profile. Each profile keeps its own cursor shape, blink rate, and color independently. You can set one profile to use a steady block cursor for local shells and another to use a blinking beam cursor for SSH sessions, giving you instant visual context when switching tabs.</p>
+            </div>
+        </section>
+
+        <!-- Vim Insert Mode -->
+        <section class="feature-content" data-ui="cursor-styles-vim-insert-mode">
+            <div class="section-inner prose">
+                <h2>Does the Chau7 cursor change shape for Vim insert mode?</h2>
+                <p>Yes. Chau7 responds to standard ANSI cursor shape escape sequences (DECSCUSR). When Vim or Neovim enters insert mode, the application sends an escape sequence requesting a beam cursor. Chau7 processes that sequence and switches the cursor shape immediately.</p>
+                <p>When Vim returns to normal mode, it sends a second escape sequence requesting a block cursor. Chau7 switches back. This automatic cursor shape switching also works with Zsh vi-mode and any other application that uses standard DECSCUSR sequences.</p>
+            </div>
+        </section>
+
+        <!-- Disable Blinking -->
+        <section class="feature-content" data-ui="cursor-styles-disable-blinking">
+            <div class="section-inner prose">
+                <h2>Can you disable cursor blinking entirely in Chau7?</h2>
+                <p>Yes. Chau7 provides a continuous blink rate slider in preferences. Set the Chau7 blink rate slider to zero for a completely steady, non-blinking cursor.</p>
+                <p>The Chau7 blink rate slider offers continuous control rather than fixed presets. You can set any speed from fully steady to fast blink. The blink rate setting is stored per profile, so you can have a blinking cursor in one Chau7 profile and a steady cursor in another.</p>
+            </div>
+        </section>
+
+        <!-- Cursor Color -->
+        <section class="feature-content" data-ui="cursor-styles-custom-color">
+            <div class="section-inner prose">
+                <h2>Custom cursor color in Chau7</h2>
+                <p>Chau7 lets you set cursor color independently from the theme palette. A distinct cursor color provides a strong visual anchor point in dense terminal output, making it easier to track your position when scrolling or switching between panes.</p>
+                <p>Cursor color in Chau7 is stored per profile, just like cursor shape and blink rate. Each Chau7 profile maintains independent cursor color settings.</p>
+            </div>
+        </section>
+
+        <!-- Why It Matters -->
+        <section class="feature-content" data-ui="cursor-styles-why-it-matters">
+            <div class="section-inner prose">
                 <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>The cursor is the single most-watched element on screen during terminal work. Getting its shape, blink rate, and color right matters more than most developers realize. Chau7 lets you configure cursor style, color, and blink behavior per-profile, so insert mode can look different from normal mode if you use Vim.</p>
+                    <h3>Why cursor customization matters</h3>
+                    <p>The cursor is the single most-watched element on screen during terminal work. Getting its shape, blink rate, and color right reduces eye strain and improves orientation. Chau7 gives you full control over all three, with per-profile storage so every shell environment can look exactly the way you want.</p>
                 </div>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="cursor-styles-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -119,31 +183,35 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="cursor-styles-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
+                    <details>
+                        <summary>What is Cursor Styles in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Cursor Styles is a customization feature in Chau7 that lets you choose between block, beam, and underline cursor shapes, adjust blink rate with a continuous slider, set a custom cursor color, and save different cursor settings per profile.</p></div>
+                    </details>
                     <details>
                         <summary>Does the cursor change shape for Vim insert mode?</summary>
                         <div class="faq-answer"><p>Yes. Chau7 responds to standard ANSI cursor shape escape sequences, so Vim, Neovim, and Zsh vi-mode can switch between block and beam cursors automatically.</p></div>
                     </details>
                     <details>
                         <summary>Can I disable cursor blinking entirely?</summary>
-                        <div class="faq-answer"><p>Yes. Set the blink rate slider to zero for a steady, non-blinking cursor.</p></div>
+                        <div class="faq-answer"><p>Yes. Set the Chau7 blink rate slider to zero for a steady, non-blinking cursor. The slider provides continuous control from completely steady to fast blink.</p></div>
                     </details>
                     <details>
                         <summary>Can different profiles use different cursor styles?</summary>
-                        <div class="faq-answer"><p>Yes. Each profile stores its own cursor shape, blink rate, and color independently.</p></div>
+                        <div class="faq-answer"><p>Yes. Each Chau7 profile stores its own cursor shape, blink rate, and color independently.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="cursor-styles-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Customize your cursor. It's the one thing you stare at all day.</h2>
+                    <h2>Customize your cursor. It is the one thing you stare at all day.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>

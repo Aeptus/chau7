@@ -6,12 +6,18 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>CTO Per-Tab Override | Chau7 Terminal</title>
-    <meta name="description" content="Override Chau7's global Context Token Optimization setting on a per-tab basis. Enable CTO only where you need it or disable it for specific sessions.">
+    <meta name="description" content="Chau7's CTO Per-Tab Override lets you enable or disable Context Token Optimization on individual terminal tabs. Choose Default, Force On, or Force Off per tab.">
     <meta property="og:title" content="CTO Per-Tab Override | Chau7">
-    <meta property="og:description" content="Override Chau7's global Context Token Optimization setting on a per-tab basis. Enable CTO only where you need it or disable it for specific sessions.">
+    <meta property="og:description" content="Chau7's CTO Per-Tab Override lets you enable or disable Context Token Optimization on individual terminal tabs. Choose Default, Force On, or Force Off per tab.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
-    <meta property="og:type" content="website">
+    <meta property="og:type" content="article">
     <meta name="twitter:card" content="summary_large_image">
+    <meta property="article:section" content="AI Integration">
+    <meta property="article:tag" content="Context Token Optimization">
+    <meta property="article:tag" content="CTO Per-Tab Override">
+    <meta property="article:tag" content="terminal token tracking">
+    <meta property="article:tag" content="MCP tab_set_cto">
+    <meta property="article:tag" content="per-tab settings">
     <link rel="canonical" href="https://chau7.sh/features/cto-per-tab-override">
     <link rel="stylesheet" href="/style.css">
     <link rel="stylesheet" href="/feature-page.css">
@@ -23,6 +29,14 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "AI-native terminal for macOS with per-tab Context Token Optimization override, local MCP server, and AI agent detection",
+        "featureList": [
+            "CTO Per-Tab Override",
+            "Context Token Optimization",
+            "AI detection",
+            "MCP tools",
+            "GPU acceleration"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +52,48 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"What are the three override modes?","acceptedAnswer":{"@type":"Answer","text":"Default follows the global CTO setting. Force On enables CTO on the tab regardless of the global setting. Force Off disables CTO on the tab regardless of the global setting."}},{"@type":"Question","name":"Can I set the override programmatically?","acceptedAnswer":{"@type":"Answer","text":"Yes. The MCP server exposes a tab_set_cto endpoint that accepts the tab ID and override value. This makes it easy to script CTO control into your workflow."}}]
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "What is CTO Per-Tab Override in Chau7 terminal?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "CTO Per-Tab Override is a feature in Chau7 terminal that lets you enable or disable Context Token Optimization on individual tabs, independent of the global setting. Each tab can be set to Default, Force On, or Force Off."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "How does Chau7's CTO per-tab override compare to other terminals?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Most terminals like iTerm2, Kitty, Alacritty, and Warp do not offer built-in token optimization at all. Chau7 is the only terminal that provides Context Token Optimization with per-tab granularity, letting you control token stripping on each tab independently."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "Can I enable token tracking for just one terminal tab?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Yes. In Chau7, you can set a single tab to Force On for CTO while leaving all other tabs at the default. This enables token tracking on just that one tab without affecting the rest of your workflow."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "What are the three override modes?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Chau7's CTO Per-Tab Override offers three modes: Default (follows the global CTO setting), Force On (enables CTO on the tab regardless of the global setting), and Force Off (disables CTO on the tab regardless of the global setting)."
+                }
+            },
+            {
+                "@type": "Question",
+                "name": "Can I set the override programmatically?",
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": "Yes. Chau7's MCP server exposes a tab_set_cto tool that accepts a tab ID and an override value (default, force_on, or force_off). AI agents and scripts can call this tool to control CTO per tab without manual interaction."
+                }
+            }
+        ]
     }]
     </script>
 </head>
@@ -58,44 +113,108 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="ai-integration" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="ai-integration" data-ui="cto-override-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-alt">AI INTEGRATION</div>
                 <h1 class="hero-title">CTO Per-Tab Override</h1>
-                <p class="hero-subtitle">Token optimization where you want it, full output where you don't. Tab by tab.</p>
+                <p class="hero-subtitle">Chau7 lets you control Context Token Optimization on each terminal tab independently. Token optimization where you want it, full output where you don't.</p>
+            </div>
+        </section>
+
+        <!-- What is CTO Per-Tab Override -->
+        <section class="feature-content" data-ui="cto-override-what-is">
+            <div class="section-inner prose">
+                <h2>What is CTO Per-Tab Override in Chau7 terminal?</h2>
+                <p>CTO Per-Tab Override is a feature in the Chau7 terminal that lets you enable or disable Context Token Optimization on individual tabs. Instead of a single global on/off switch, Chau7 gives each tab its own CTO setting.</p>
+                <p>Context Token Optimization strips terminal noise (ANSI escape sequences, progress bars, spinner frames) before AI agents read your output. Chau7's per-tab override lets you apply that stripping selectively, so each tab behaves exactly as you need it to.</p>
+            </div>
+        </section>
+
+        <!-- Can I enable token tracking for just one tab -->
+        <section class="feature-content" data-ui="cto-override-single-tab-tracking">
+            <div class="section-inner prose">
+                <h2>Can I enable token tracking for just one terminal tab?</h2>
+                <p>Yes. In Chau7, you can set a single tab to Force On for CTO while leaving all other tabs at the default. This enables token tracking and optimization on just that one tab without affecting the rest of your workflow.</p>
+                <p>This is useful when you want to monitor token usage for a specific AI agent session. Chau7 applies CTO only to the tab you select, so other tabs continue showing full, unfiltered output.</p>
+            </div>
+        </section>
+
+        <!-- Three override modes -->
+        <section class="feature-content" data-ui="cto-override-three-modes">
+            <div class="section-inner prose">
+                <h2>What are the three override modes?</h2>
+                <p>Chau7's CTO Per-Tab Override offers three modes for each tab:</p>
+                <dl>
+                    <dt><strong>Default</strong></dt>
+                    <dd>The tab follows the global CTO setting in Chau7. If CTO is enabled globally, the tab uses CTO. If CTO is disabled globally, the tab does not use CTO.</dd>
+
+                    <dt><strong>Force On</strong></dt>
+                    <dd>CTO is always active on this tab, regardless of the global setting in Chau7. Use Force On when you want token optimization on a specific tab even if CTO is off globally.</dd>
+
+                    <dt><strong>Force Off</strong></dt>
+                    <dd>CTO is always inactive on this tab, regardless of the global setting in Chau7. Use Force Off when you need raw, unfiltered output on a tab even if CTO is on globally.</dd>
+                </dl>
+                <p>You set the override through the tab context menu or programmatically through Chau7's MCP server.</p>
+            </div>
+        </section>
+
+        <!-- How it works -->
+        <section class="feature-content" data-ui="cto-override-how-it-works">
+            <div class="section-inner prose">
+                <h2>How CTO Per-Tab Override works in Chau7</h2>
+                <p>Each tab in Chau7 stores its own CTO override value. When Chau7 processes terminal output for a tab, it checks the tab-level override first. If the override is Default, Chau7 falls back to the global CTO setting. If the override is Force On or Force Off, Chau7 uses that value directly.</p>
+                <p>This means you can run multiple terminal sessions in Chau7 with different CTO behaviors at the same time. One tab can have CTO stripping ANSI noise for Claude Code while another tab shows full output for debugging.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="cto-override-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why per-tab CTO control matters</h2>
+                <p>A single global on/off toggle is too coarse for multi-tab workflows. Chau7's per-tab override solves this by letting you tailor CTO to each task.</p>
+                <p>You want CTO active on the tab where Claude Code is burning through tokens, but disabled on the tab where you are debugging output formatting. Chau7's CTO Per-Tab Override gives you that control without affecting other sessions.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="cto-override-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's CTO per-tab override compare to other terminals?</h2>
+                <p>Most terminal emulators do not offer built-in token optimization at all. iTerm2, Kitty, Alacritty, and Warp have no equivalent to Context Token Optimization. They pass raw terminal output to AI tools without any token-aware filtering.</p>
+                <p>Chau7 is the only terminal that provides Context Token Optimization with per-tab granularity. Where other terminals require external scripts or wrapper tools to strip terminal noise, Chau7 handles it natively with a three-mode override on each tab.</p>
+            </div>
+        </section>
+
+        <!-- Programmatic control -->
+        <section class="feature-content" data-ui="cto-override-programmatic">
+            <div class="section-inner prose">
+                <h2>Can I set the override programmatically?</h2>
+                <p>Yes. Chau7's MCP server exposes a <code>tab_set_cto</code> tool that accepts a tab ID and an override value. AI agents and scripts can call <code>tab_set_cto</code> to control CTO on any tab without manual interaction.</p>
+                <pre><code>tool: tab_set_cto
+args: { "tab_id": "C1C4AB49-...", "override": "force_on" }</code></pre>
+                <p>The accepted override values are <code>default</code>, <code>force_on</code>, and <code>force_off</code>. This makes it straightforward to integrate Chau7's CTO control into automated workflows, CI pipelines, or AI agent scripts.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="cto-override-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is CTO Per-Tab Override in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's CTO per-tab override compare to other terminals?</li>
                     <li class="question-item">Can I enable token tracking for just one terminal tab?</li>
+                    <li class="question-item">What are the three override modes?</li>
+                    <li class="question-item">Can I set the override programmatically?</li>
                     <li class="question-item">How to disable CTO for a specific AI session?</li>
                     <li class="question-item">Per-tab token optimization settings in terminal</li>
-                    <li class="question-item">Control token monitoring per terminal tab</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
-            <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>CTO Per-Tab Override gives you three modes for each tab: default (follows the global CTO setting), force on (always active regardless of global setting), and force off (always inactive regardless of global setting). You set the override through the MCP server or the tab context menu.</p>
-                <p>This is useful when you want CTO active globally but need to exclude a tab running a tool that produces noisy API traffic, or conversely when CTO is off globally but you want to profile one specific session without affecting others.</p>
-
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Global on/off is too coarse for multi-tab workflows. You want CTO active on the tab where Claude Code is burning through tokens, but disabled on the tab where you are debugging output formatting. Per-tab override gives you that control without affecting other sessions.</p>
-                </div>
-            </div>
-        </section>
-
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="cto-override-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -119,24 +238,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="cto-override-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is CTO Per-Tab Override in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>CTO Per-Tab Override is a feature in Chau7 terminal that lets you enable or disable Context Token Optimization on individual tabs, independent of the global setting. Each tab can be set to Default, Force On, or Force Off.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's CTO per-tab override compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals like iTerm2, Kitty, Alacritty, and Warp do not offer built-in token optimization. Chau7 is the only terminal that provides Context Token Optimization with per-tab granularity, letting you control token stripping on each tab independently.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I enable token tracking for just one terminal tab?</summary>
+                        <div class="faq-answer"><p>Yes. In Chau7, you can set a single tab to Force On for CTO while leaving all other tabs at the default. This enables token tracking on just that one tab without affecting the rest of your workflow.</p></div>
+                    </details>
+                    <details>
                         <summary>What are the three override modes?</summary>
-                        <div class="faq-answer"><p>Default follows the global CTO setting. Force On enables CTO on the tab regardless of the global setting. Force Off disables CTO on the tab regardless of the global setting.</p></div>
+                        <div class="faq-answer"><p>Chau7's CTO Per-Tab Override offers three modes: Default (follows the global CTO setting), Force On (enables CTO on the tab regardless of the global setting), and Force Off (disables CTO on the tab regardless of the global setting).</p></div>
                     </details>
                     <details>
                         <summary>Can I set the override programmatically?</summary>
-                        <div class="faq-answer"><p>Yes. The MCP server exposes a tab_set_cto endpoint that accepts the tab ID and override value. This makes it easy to script CTO control into your workflow.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7's MCP server exposes a <code>tab_set_cto</code> tool that accepts a tab ID and an override value (<code>default</code>, <code>force_on</code>, or <code>force_off</code>). AI agents and scripts can call this tool to control CTO per tab without manual interaction.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="cto-override-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Fine-tune token optimization per tab. Because one size never fits all.</h2>

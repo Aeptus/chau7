@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>100+ Fonts | Chau7 Terminal</title>
     <meta name="description" content="Chau7 bundles 100+ monospace fonts with variable weight and size support. Use Nerd Fonts, ligatures, and system fonts without extra setup.">
+    <meta name="article:section" content="Customization">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="terminal fonts">
+    <meta name="article:tag" content="Nerd Fonts">
+    <meta name="article:tag" content="monospace fonts">
+    <meta name="article:tag" content="font customization">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="100+ Fonts | Chau7">
     <meta property="og:description" content="Chau7 bundles 100+ monospace fonts with variable weight and size support. Use Nerd Fonts, ligatures, and system fonts without extra setup.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that bundles 100+ monospace fonts including Nerd Font variants with variable weight support and live preview.",
+        "featureList": [
+            "100+ bundled monospace fonts",
+            "Nerd Font variants included out of the box",
+            "Variable font weight support with continuous slider",
+            "Live font preview in font picker",
+            "Per-profile font configuration",
+            "System font detection and support"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Can I use my own custom fonts?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 detects any monospace font installed on your system and makes it available in the font picker alongside the 100+ bundled fonts."}},{"@type":"Question","name":"Do Nerd Font glyphs work out of the box?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 bundles Nerd Font variants so powerline symbols, devicons, and other special glyphs render without any manual font installation."}},{"@type":"Question","name":"Can I set different fonts per profile?","acceptedAnswer":{"@type":"Answer","text":"Yes. Each profile stores its own font family, size, and weight, so you can use different typography for SSH sessions, local development, or presentations."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is font support in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7 ships with over 100 monospace fonts embedded directly in the application bundle, including JetBrains Mono, Fira Code, Cascadia Code, Iosevka, and Hack. Chau7 includes Nerd Font variants out of the box and supports variable font weights, live preview, and per-profile font configuration."}},
+            {"@type":"Question","name":"How does Chau7's font support compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals require you to download, install, and configure fonts manually. iTerm2, Alacritty, and Kitty rely on system-installed fonts. Chau7 bundles 100+ fonts including Nerd Font variants, offers a live preview font picker, and supports continuous variable font weight adjustment."}},
+            {"@type":"Question","name":"How do I install Nerd Fonts in my terminal?","acceptedAnswer":{"@type":"Answer","text":"With Chau7, you do not need to install Nerd Fonts. Chau7 bundles Nerd Font variants directly in the app, so powerline symbols, devicons, and other special glyphs render without downloading or installing anything."}},
+            {"@type":"Question","name":"Can I use my own custom fonts?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 detects any monospace font installed on your system and makes it available in the font picker alongside the 100+ bundled fonts."}},
+            {"@type":"Question","name":"Do Nerd Font glyphs work out of the box?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 bundles Nerd Font variants so powerline symbols, devicons, file icons, and other special glyphs render without any manual font installation or configuration."}}
+        ]
     }]
     </script>
 </head>
@@ -58,46 +80,85 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="customization" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="customization" data-ui="fonts-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">CUSTOMIZATION</div>
                 <h1 class="hero-title">100+ Fonts</h1>
-                <p class="hero-subtitle">Every monospace font you love, ready to go. Pick one and start coding.</p>
+                <p class="hero-subtitle">Every monospace font you love, bundled in Chau7 and ready to go. Pick one and start coding.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="fonts-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is font support in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's font support compare to other terminals?</li>
                     <li class="question-item">How do I install Nerd Fonts in my terminal?</li>
-                    <li class="question-item">Terminal font rendering looks blurry on macOS Retina</li>
-                    <li class="question-item">Best monospace font for programming 2025</li>
-                    <li class="question-item">Terminal nerd fonts setup without Homebrew</li>
-                    <li class="question-item">How to change font weight in terminal emulator</li>
+                    <li class="question-item">Can I use my own custom fonts?</li>
+                    <li class="question-item">Do Nerd Font glyphs work out of the box?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is font support -->
+        <section class="feature-content" data-ui="fonts-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 ships with over 100 monospace fonts embedded directly in the application bundle, including popular choices like JetBrains Mono, Fira Code, Cascadia Code, Iosevk, and Hack. Nerd Font variants are included out of the box, so powerline symbols, file icons, and dev glyphs render correctly without downloading or installing anything. The font picker shows a live preview of each font at your current size and weight settings.</p>
-                <p>Variable font support means you can dial in exactly the weight you want rather than picking from a handful of static weights. Adjust from hairline to black in continuous increments using a slider. Font size scales smoothly with pinch-to-zoom or keyboard shortcuts, and per-profile font configuration lets you use different typefaces for different workflows.</p>
-                <p>System fonts are fully supported alongside bundled fonts. If you have a custom typeface installed at the OS level, Chau7 detects and offers it in the font picker. Font rendering uses Core Text natively for sharp subpixel antialiasing on Retina and non-Retina displays alike.</p>
+                <h2>What is font support in Chau7?</h2>
+                <p>Chau7 ships with over 100 monospace fonts embedded directly in the application bundle. Popular choices include JetBrains Mono, Fira Code, Cascadia Code, Iosevka, and Hack.</p>
+                <p>Chau7 includes Nerd Font variants out of the box, so powerline symbols, file icons, and dev glyphs render correctly without downloading or installing anything. The font picker in Chau7 shows a live preview of each font at your current size and weight settings.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Font choice directly affects readability during long coding sessions. Chau7 ships with a curated font picker that previews each option in real terminal output, so you can see exactly how your code will look before committing. No more downloading fonts, installing them system-wide, and restarting your terminal to test.</p>
-                </div>
+        <!-- How do I install Nerd Fonts -->
+        <section class="feature-content" data-ui="fonts-nerd-fonts">
+            <div class="section-inner prose">
+                <h2>How do I install Nerd Fonts in my terminal?</h2>
+                <p>With Chau7, you do not need to install Nerd Fonts. Chau7 bundles Nerd Font variants directly in the app, so powerline symbols, devicons, and other special glyphs render without downloading or installing anything.</p>
+                <p>No Homebrew, no manual font files, no system-wide installation. Chau7 handles Nerd Font rendering out of the box.</p>
+            </div>
+        </section>
+
+        <!-- Can I use my own custom fonts -->
+        <section class="feature-content" data-ui="fonts-custom">
+            <div class="section-inner prose">
+                <h2>Can I use my own custom fonts in Chau7?</h2>
+                <p>Yes. Chau7 detects any monospace font installed on your system and makes it available in the font picker alongside the 100+ bundled fonts.</p>
+                <p>Chau7's variable font support means you can dial in exactly the weight you want rather than picking from a handful of static weights. Adjust from hairline to black in continuous increments using a slider.</p>
+            </div>
+        </section>
+
+        <!-- Do Nerd Font glyphs work out of the box -->
+        <section class="feature-content" data-ui="fonts-nerd-glyphs">
+            <div class="section-inner prose">
+                <h2>Do Nerd Font glyphs work out of the box in Chau7?</h2>
+                <p>Yes. Chau7 bundles Nerd Font variants so powerline symbols, devicons, file icons, and other special glyphs render without any manual font installation or configuration.</p>
+                <p>Chau7's font rendering uses Core Text natively for sharp subpixel antialiasing on Retina and non-Retina displays alike.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="fonts-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's font support compare to other terminals?</h2>
+                <p>Most terminals require you to download, install, and configure fonts manually. iTerm2, Alacritty, and Kitty rely on system-installed fonts with no bundled options.</p>
+                <p>Chau7 bundles 100+ fonts including Nerd Font variants, offers a live preview font picker, and supports continuous variable font weight adjustment. Font size scales smoothly with pinch-to-zoom or keyboard shortcuts. Per-profile font configuration in Chau7 lets you use different typefaces for different workflows.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="fonts-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why Chau7's font support matters</h2>
+                <p>Font choice directly affects readability during long coding sessions. Chau7 ships with a curated font picker that previews each option in real terminal output, so you can see exactly how your code will look before committing.</p>
+                <p>No more downloading fonts, installing them system-wide, and restarting your terminal to test. Chau7 makes font selection instant.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="fonts-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -121,28 +182,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="fonts-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
+                    <details>
+                        <summary>What is font support in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Chau7 ships with over 100 monospace fonts embedded directly in the application bundle, including JetBrains Mono, Fira Code, Cascadia Code, Iosevka, and Hack. Chau7 includes Nerd Font variants out of the box and supports variable font weights, live preview, and per-profile font configuration.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's font support compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals require you to download, install, and configure fonts manually. iTerm2, Alacritty, and Kitty rely on system-installed fonts. Chau7 bundles 100+ fonts including Nerd Font variants, offers a live preview font picker, and supports continuous variable font weight adjustment.</p></div>
+                    </details>
+                    <details>
+                        <summary>How do I install Nerd Fonts in my terminal?</summary>
+                        <div class="faq-answer"><p>With Chau7, you do not need to install Nerd Fonts. Chau7 bundles Nerd Font variants directly in the app, so powerline symbols, devicons, and other special glyphs render without downloading or installing anything.</p></div>
+                    </details>
                     <details>
                         <summary>Can I use my own custom fonts?</summary>
                         <div class="faq-answer"><p>Yes. Chau7 detects any monospace font installed on your system and makes it available in the font picker alongside the 100+ bundled fonts.</p></div>
                     </details>
                     <details>
                         <summary>Do Nerd Font glyphs work out of the box?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7 bundles Nerd Font variants so powerline symbols, devicons, and other special glyphs render without any manual font installation.</p></div>
-                    </details>
-                    <details>
-                        <summary>Can I set different fonts per profile?</summary>
-                        <div class="faq-answer"><p>Yes. Each profile stores its own font family, size, and weight, so you can use different typography for SSH sessions, local development, or presentations.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7 bundles Nerd Font variants so powerline symbols, devicons, file icons, and other special glyphs render without any manual font installation or configuration.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="fonts-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Find your perfect terminal font. Takes seconds, lasts forever.</h2>

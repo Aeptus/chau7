@@ -6,12 +6,20 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Custom Keybindings | Chau7 Terminal</title>
-    <meta name="description" content="Remap every keyboard shortcut in Chau7. Includes Vim keybinding presets and conflict detection for muscle memory from any terminal.">
+    <meta name="description" content="Chau7 lets you remap every keyboard shortcut on macOS. Includes Vim keybinding presets, real-time conflict detection, and JSON export for syncing across machines.">
     <meta property="og:title" content="Custom Keybindings | Chau7">
-    <meta property="og:description" content="Remap every keyboard shortcut in Chau7. Includes Vim keybinding presets and conflict detection for muscle memory from any terminal.">
+    <meta property="og:description" content="Chau7 lets you remap every keyboard shortcut on macOS. Includes Vim keybinding presets, real-time conflict detection, and JSON export for syncing across machines.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
+    <meta name="article:section" content="Customization">
+    <meta name="article:tag" content="custom keybindings">
+    <meta name="article:tag" content="keyboard shortcuts">
+    <meta name="article:tag" content="Vim keybindings">
+    <meta name="article:tag" content="remap shortcuts macOS">
+    <meta name="article:tag" content="keybinding sync">
+    <meta name="article:tag" content="conflict detection">
+    <meta name="article:tag" content="terminal keyboard customization">
     <link rel="canonical" href="https://chau7.sh/features/custom-keybindings">
     <link rel="stylesheet" href="/style.css">
     <link rel="stylesheet" href="/feature-page.css">
@@ -23,6 +31,16 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "AI-native terminal for macOS with fully remappable keyboard shortcuts, Vim keybinding presets, real-time conflict detection, and JSON export for syncing keybindings across machines.",
+        "featureList": [
+            "Custom keybindings",
+            "Vim keybinding presets",
+            "Shortcut conflict detection",
+            "JSON keybinding export and import",
+            "Split pane navigation shortcuts",
+            "Tab management shortcuts",
+            "Visual keybinding editor"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +56,7 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Can I use Vim-style navigation between panes?","acceptedAnswer":{"@type":"Answer","text":"Yes. Enable the Vim keybinding preset to navigate splits with hjkl and manage tabs with Vim-style chords. You can further customize individual bindings."}},{"@type":"Question","name":"Will my keybindings sync across machines?","acceptedAnswer":{"@type":"Answer","text":"Keybindings export as JSON. You can store the file in your dotfiles repository and import it on any machine running Chau7."}},{"@type":"Question","name":"Does Chau7 detect shortcut conflicts?","acceptedAnswer":{"@type":"Answer","text":"Yes. The keybinding editor warns you immediately when a new combination conflicts with an existing action and lets you resolve it inline."}}]
+        "mainEntity": [{"@type":"Question","name":"What is Custom Keybindings in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Custom Keybindings is a built-in feature of the Chau7 terminal that lets you remap every keyboard shortcut through a visual preferences panel. Chau7 covers tab management, split pane navigation, font sizing, copy/paste, search, and all application-level actions. You record a new key combination by pressing it directly in the editor."}},{"@type":"Question","name":"How does Chau7's custom keybindings compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most macOS terminals offer limited or no shortcut remapping. Terminal.app has no keybinding editor. iTerm2 supports key mapping but requires manual hex code entry. Alacritty uses YAML config files with no GUI. Chau7 provides a visual keybinding editor with live conflict detection, Vim presets, and one-click JSON export, making Chau7 the most complete keybinding system among macOS terminals."}},{"@type":"Question","name":"How to remap terminal keyboard shortcuts macOS?","acceptedAnswer":{"@type":"Answer","text":"Open Chau7, go to Settings, then Keybindings. Click any action to select it, press the new key combination, and Chau7 records the binding immediately. If the combination conflicts with an existing shortcut, Chau7 warns you and lets you resolve the conflict inline."}},{"@type":"Question","name":"Can I use Vim-style navigation between panes?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 includes a Vim keybinding preset that maps hjkl to split pane navigation. Pressing Escape enters navigation mode, where h moves left, j moves down, k moves up, and l moves right between Chau7 split panes. You can customize individual Vim bindings further after enabling the preset."}},{"@type":"Question","name":"Will my keybindings sync across machines?","acceptedAnswer":{"@type":"Answer","text":"Chau7 keybindings export as a JSON file. You can store the exported JSON in your dotfiles repository or any cloud-synced folder and import it on any other machine running Chau7. The import restores all custom bindings in one step."}}]
     }]
     </script>
 </head>
@@ -63,7 +81,7 @@
             <div class="hero-content">
                 <div class="section-badge">CUSTOMIZATION</div>
                 <h1 class="hero-title">Custom Keybindings</h1>
-                <p class="hero-subtitle">Your shortcuts, your rules. Remap anything, conflict-free.</p>
+                <p class="hero-subtitle">Chau7 lets you remap every keyboard shortcut. Vim presets included. Conflict detection built in.</p>
             </div>
         </section>
 
@@ -72,26 +90,66 @@
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is Custom Keybindings in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's custom keybindings compare to other terminals?</li>
                     <li class="question-item">How to remap terminal keyboard shortcuts macOS</li>
-                    <li class="question-item">Vim keybindings in terminal emulator</li>
-                    <li class="question-item">Terminal shortcut conflicts with tmux keybindings</li>
-                    <li class="question-item">Custom key bindings terminal split pane navigation</li>
+                    <li class="question-item">Can I use Vim-style navigation between panes?</li>
+                    <li class="question-item">Will my keybindings sync across machines?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What Is Custom Keybindings -->
+        <section class="feature-content" data-ui="feat-what-is">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Every keyboard shortcut in Chau7 is fully remappable through the keybindings preferences panel. This includes tab management, split pane navigation, font sizing, copy/paste, search, and all application-level actions. The editor shows the current binding for each action and lets you record a new key combination by pressing it directly.</p>
-                <p>Vim keybinding presets configure navigation-oriented shortcuts out of the box. Pressing Escape enters a navigation mode where hjkl moves between splits, and common Vim-style chords work for tab switching and window management. The preset is a starting point that you can further customize per action.</p>
-                <p>Conflict detection warns you immediately when a new binding overlaps with an existing one, showing which action currently holds that combination. You can resolve conflicts inline without hunting through a flat list. Keybindings export and import as JSON for sharing across machines or teams.</p>
+                <h2>What is Custom Keybindings in Chau7?</h2>
+                <p>Custom Keybindings is a built-in feature of the Chau7 terminal that lets you remap every keyboard shortcut through a visual preferences panel. Chau7 covers tab management, split pane navigation, font sizing, copy/paste, search, and all application-level actions.</p>
+                <p>Chau7 displays the current binding for each action and lets you record a new key combination by pressing it directly in the keybinding editor. No config files to hand-edit, no hex codes to look up. Chau7 handles the mapping instantly.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Developers build deep muscle memory around keyboard shortcuts, and switching terminals should not mean relearning every binding. Chau7 lets you remap any shortcut through a visual editor with conflict detection. Bring your muscle memory from your old terminal, your editor, or your own imagination.</p>
-                </div>
+        <!-- How to Remap Terminal Keyboard Shortcuts macOS -->
+        <section class="feature-content" data-ui="feat-how-to-remap">
+            <div class="section-inner prose">
+                <h2>How to remap terminal keyboard shortcuts on macOS</h2>
+                <p>Open Chau7, go to Settings, then Keybindings. Click any action to select it, then press the new key combination you want to assign. Chau7 records the binding immediately with no restart required.</p>
+                <p>If the combination you press conflicts with an existing shortcut, Chau7 warns you and shows which action currently holds that combination. You can resolve the conflict inline without searching through a flat list. Chau7's conflict detection prevents accidental duplicate bindings.</p>
+            </div>
+        </section>
+
+        <!-- How Does Chau7 Compare to Other Terminals -->
+        <section class="feature-content" data-ui="feat-compare-other-terminals">
+            <div class="section-inner prose">
+                <h2>How does Chau7's custom keybindings compare to other terminals?</h2>
+                <p>Most macOS terminals offer limited or no shortcut remapping. Terminal.app has no keybinding editor at all. iTerm2 supports key mapping but requires manual hex code entry for many actions. Alacritty reads keybindings from a YAML config file with no graphical interface. Kitty uses a similar plain-text config approach.</p>
+                <p>Chau7 provides a visual keybinding editor with live conflict detection, Vim presets, and one-click JSON export. Chau7 is the only macOS terminal that combines a GUI editor, automatic conflict warnings, and portable keybinding files in a single workflow.</p>
+            </div>
+        </section>
+
+        <!-- Vim-Style Navigation Between Panes -->
+        <section class="feature-content" data-ui="feat-vim-navigation">
+            <div class="section-inner prose">
+                <h2>Can I use Vim-style navigation between panes in Chau7?</h2>
+                <p>Yes. Chau7 includes a Vim keybinding preset that maps hjkl to split pane navigation. Pressing Escape enters a navigation mode where h moves left, j moves down, k moves up, and l moves right between Chau7 split panes. Common Vim-style chords also work for tab switching and window management.</p>
+                <p>The Vim preset in Chau7 is a starting point, not a locked configuration. After enabling the preset, you can further customize individual bindings through the same visual keybinding editor. Chau7 lets you keep the Vim motions you want and override the ones you do not.</p>
+            </div>
+        </section>
+
+        <!-- Keybinding Sync Across Machines -->
+        <section class="feature-content" data-ui="feat-keybinding-sync">
+            <div class="section-inner prose">
+                <h2>Will my Chau7 keybindings sync across machines?</h2>
+                <p>Chau7 keybindings export as a JSON file. You can store the exported JSON in your dotfiles repository, iCloud Drive, or any cloud-synced folder. Importing the file on another machine running Chau7 restores all custom bindings in one step.</p>
+                <p>Teams can share a single keybinding JSON file so that every developer on the team uses the same shortcuts in Chau7. The JSON format is human-readable, making it easy to review changes in version control.</p>
+            </div>
+        </section>
+
+        <!-- Why It Matters -->
+        <section class="feature-content why-matters" data-ui="feat-why-it-matters">
+            <div class="section-inner prose">
+                <h3>Why Custom Keybindings matter in Chau7</h3>
+                <p>Developers build deep muscle memory around keyboard shortcuts. Switching terminals should not mean relearning every binding. Chau7 lets you remap any shortcut through a visual editor with real-time conflict detection.</p>
+                <p>Bring your muscle memory from your old terminal, your code editor, or your own preference. Chau7 adapts to you, not the other way around.</p>
             </div>
         </section>
 
@@ -125,16 +183,28 @@
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Custom Keybindings in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Custom Keybindings is a built-in feature of the Chau7 terminal that lets you remap every keyboard shortcut through a visual preferences panel. Chau7 covers tab management, split pane navigation, font sizing, copy/paste, search, and all application-level actions. You record a new key combination by pressing it directly in the editor.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's custom keybindings compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most macOS terminals offer limited or no shortcut remapping. Terminal.app has no keybinding editor. iTerm2 requires manual hex code entry. Alacritty uses YAML config files with no GUI. Chau7 provides a visual keybinding editor with live conflict detection, Vim presets, and one-click JSON export.</p></div>
+                    </details>
+                    <details>
+                        <summary>How to remap terminal keyboard shortcuts macOS?</summary>
+                        <div class="faq-answer"><p>Open Chau7, go to Settings, then Keybindings. Click any action, press the new key combination, and Chau7 records it immediately. If the combination conflicts with an existing shortcut, Chau7 warns you and lets you resolve the conflict inline.</p></div>
+                    </details>
+                    <details>
                         <summary>Can I use Vim-style navigation between panes?</summary>
-                        <div class="faq-answer"><p>Yes. Enable the Vim keybinding preset to navigate splits with hjkl and manage tabs with Vim-style chords. You can further customize individual bindings.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7 includes a Vim keybinding preset that maps hjkl to split pane navigation. Pressing Escape enters navigation mode, where h moves left, j moves down, k moves up, and l moves right between Chau7 split panes. You can customize individual Vim bindings further after enabling the preset.</p></div>
                     </details>
                     <details>
                         <summary>Will my keybindings sync across machines?</summary>
-                        <div class="faq-answer"><p>Keybindings export as JSON. You can store the file in your dotfiles repository and import it on any machine running Chau7.</p></div>
+                        <div class="faq-answer"><p>Chau7 keybindings export as a JSON file. Store the file in your dotfiles repository or any cloud-synced folder and import it on any machine running Chau7. The import restores all custom bindings in one step.</p></div>
                     </details>
                     <details>
                         <summary>Does Chau7 detect shortcut conflicts?</summary>
-                        <div class="faq-answer"><p>Yes. The keybinding editor warns you immediately when a new combination conflicts with an existing action and lets you resolve it inline.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7's keybinding editor warns you immediately when a new combination conflicts with an existing action and shows which action holds that combination. You can resolve the conflict inline without searching through a flat list.</p></div>
                     </details>
                 </div>
             </div>
