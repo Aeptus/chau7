@@ -30,3 +30,7 @@
 
 /*.png
   Cache-Control: public, max-age=86400
+
+/sitemap.xml
+  Content-Type: application/xml
+  Cache-Control: public, max-age=3600
