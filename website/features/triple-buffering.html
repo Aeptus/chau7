@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Triple Buffering | Chau7 Terminal</title>
     <meta name="description" content="Chau7 uses atomic-swap triple buffering to prevent tearing and render stalls between the terminal parser and GPU renderer.">
+    <meta name="article:section" content="GPU Rendering">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="triple buffering">
+    <meta name="article:tag" content="screen tearing">
+    <meta name="article:tag" content="atomic swap">
+    <meta name="article:tag" content="GPU rendering">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Triple Buffering | Chau7">
     <meta property="og:description" content="Chau7 uses atomic-swap triple buffering to prevent tearing and render stalls between the terminal parser and GPU renderer.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that uses atomic-swap triple buffering to prevent tearing and render stalls between the terminal parser and GPU renderer.",
+        "featureList": [
+            "Three-buffer rotation between parser and Metal renderer",
+            "Atomic pointer swap with acquire-release memory ordering",
+            "No mutexes, no condition variables, no priority inversion",
+            "Tear-free rendering at any output speed",
+            "ProMotion 120Hz display support",
+            "Sub-10-nanosecond synchronization cost per frame"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does triple buffering increase memory usage significantly?","acceptedAnswer":{"@type":"Answer","text":"Each buffer holds the visible terminal grid, typically 80x24 to 240x80 cells. At roughly 32 bytes per cell, three buffers consume under 2 MB even for a large terminal. The memory cost is negligible compared to the performance benefit."}},{"@type":"Question","name":"How does triple buffering interact with ProMotion 120Hz displays?","acceptedAnswer":{"@type":"Answer","text":"Triple buffering is refresh-rate independent. On a 120Hz ProMotion display, the renderer picks up the latest buffer 120 times per second. The parser continues writing at PTY speed regardless. The extra buffer ensures the renderer always has a complete frame even at twice the swap rate."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Triple Buffering in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Triple Buffering in Chau7 is a rendering architecture that maintains three screen buffers rotated between the terminal parser and the Metal GPU renderer using atomic pointer swaps. Chau7's triple buffering prevents tearing and render stalls without any mutexes or locks."}},
+            {"@type":"Question","name":"How does Chau7's triple buffering compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminal emulators use double buffering with mutex locks, which causes the parser to stall while the GPU reads the buffer. Chau7 uses three buffers with atomic swaps, so the parser and GPU never block each other. This lock-free design eliminates both tearing and render stalls."}},
+            {"@type":"Question","name":"How to prevent screen tearing in terminal applications","acceptedAnswer":{"@type":"Answer","text":"Chau7 prevents screen tearing by maintaining three screen buffers rotated with atomic pointer swaps. The parser writes into one buffer while the Metal renderer reads a different completed buffer. Because there are three buffers, neither thread ever waits for the other, and the renderer always draws a complete frame."}},
+            {"@type":"Question","name":"Does triple buffering increase memory usage significantly?","acceptedAnswer":{"@type":"Answer","text":"No. Each buffer in Chau7 holds the visible terminal grid, typically 80x24 to 240x80 cells. At roughly 32 bytes per cell, three buffers consume under 2 MB even for a large terminal. The memory cost is negligible compared to the performance benefit."}},
+            {"@type":"Question","name":"How does triple buffering interact with ProMotion 120Hz displays?","acceptedAnswer":{"@type":"Answer","text":"Chau7's triple buffering is refresh-rate independent. On a 120Hz ProMotion display, the Metal renderer picks up the latest buffer 120 times per second. The parser continues writing at PTY speed regardless. The extra buffer ensures the renderer always has a complete frame even at twice the standard swap rate."}}
+        ]
     }]
     </script>
 </head>
@@ -58,45 +80,77 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="rendering" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="rendering" data-ui="triple-buffer-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-purple">GPU RENDERING</div>
                 <h1 class="hero-title">Triple Buffering</h1>
-                <p class="hero-subtitle">Three buffers, atomic swaps. The parser and GPU never block each other. Zero tearing.</p>
+                <p class="hero-subtitle">Chau7 rotates three buffers with atomic swaps. The parser and GPU never block each other. Zero tearing.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="triple-buffer-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">What is triple buffering in a terminal emulator?</li>
+                    <li class="question-item">What is Triple Buffering in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's triple buffering compare to other terminals?</li>
                     <li class="question-item">How to prevent screen tearing in terminal applications</li>
-                    <li class="question-item">Terminal rendering stalls when output is faster than display refresh</li>
-                    <li class="question-item">Lock-free rendering pipeline for terminal emulators</li>
+                    <li class="question-item">Does triple buffering increase memory usage significantly?</li>
+                    <li class="question-item">How does triple buffering interact with ProMotion 120Hz displays?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Triple Buffering -->
+        <section class="feature-content" data-ui="triple-buffer-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 maintains three screen buffers: one being written by the parser, one being read by the Metal renderer, and one completed buffer waiting to be displayed. The parser writes new terminal state into the write buffer at PTY speed without any locks or synchronization. When a frame is complete, an atomic pointer swap makes the write buffer available to the renderer and gives the parser a fresh buffer to fill.</p>
-                <p>The Metal renderer picks up the latest completed buffer at display refresh time (60Hz or 120Hz depending on the display). Because there are three buffers in rotation, the renderer always has a consistent, complete frame to draw and the parser always has a free buffer to write into. Neither thread ever blocks waiting for the other.</p>
-                <p>The atomic swap uses a single compare-and-swap instruction with acquire-release memory ordering. There are no mutexes, no condition variables, and no possibility of priority inversion. The entire synchronization cost is one atomic instruction per frame, typically under 10 nanoseconds.</p>
+                <h2>What is Triple Buffering in Chau7?</h2>
+                <p>Triple Buffering in Chau7 is a rendering architecture that maintains three screen buffers rotated between the terminal parser and the Metal GPU renderer. Chau7's parser writes new terminal state into one buffer while the Metal renderer reads a different completed buffer. A third buffer sits ready as a spare.</p>
+                <p>When the parser finishes a frame, Chau7 performs an atomic pointer swap that makes the completed buffer available to the renderer and gives the parser a fresh buffer to fill. This lock-free design prevents both tearing and render stalls.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Without triple buffering, a terminal must either lock the screen buffer (causing the parser to stall while the GPU reads) or accept tearing artifacts. Chau7 maintains three buffers and rotates them with atomic swaps: the parser always has a buffer to write, the GPU always has a buffer to read, and they never contend. Smooth output at any speed.</p>
-                </div>
+        <!-- How to prevent screen tearing -->
+        <section class="feature-content" data-ui="triple-buffer-tearing-prevention">
+            <div class="section-inner prose">
+                <h2>How Chau7 prevents screen tearing in terminal applications</h2>
+                <p>Screen tearing happens when the renderer reads a buffer that the parser is still writing. The result is a frame that shows half-old and half-new content.</p>
+                <p>Chau7 eliminates this by maintaining three buffers in rotation. The parser always writes into a dedicated buffer. The renderer always reads from a separate completed buffer. Because there are three buffers, neither thread ever waits for the other, and the renderer always draws a complete, consistent frame.</p>
+                <p>The atomic swap uses a single compare-and-swap instruction with acquire-release memory ordering. There are no mutexes, no condition variables, and no possibility of priority inversion. The entire synchronization cost is one atomic instruction per frame, typically under 10 nanoseconds.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="triple-buffer-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's triple buffering compare to other terminals?</h2>
+                <p>Most terminal emulators use double buffering with mutex locks. When the GPU reads the buffer, the parser must wait. When the parser writes, the GPU must wait. This contention causes visible stalls during fast output.</p>
+                <p>Chau7 uses three buffers with atomic swaps instead of two buffers with locks. Chau7's parser and Metal renderer never block each other. The result is tear-free rendering at any output speed with no stalls and no frame drops.</p>
+            </div>
+        </section>
+
+        <!-- Memory usage -->
+        <section class="feature-content" data-ui="triple-buffer-memory">
+            <div class="section-inner prose">
+                <h2>Does Chau7's triple buffering increase memory usage significantly?</h2>
+                <p>No. Each buffer in Chau7 holds the visible terminal grid, typically 80x24 to 240x80 cells. At roughly 32 bytes per cell, three buffers consume under 2 MB even for a large terminal.</p>
+                <p>The memory cost of Chau7's triple buffering is negligible compared to the performance benefit. Eliminating all mutex contention between parser and renderer is worth 2 MB of memory.</p>
+            </div>
+        </section>
+
+        <!-- ProMotion 120Hz -->
+        <section class="feature-content" data-ui="triple-buffer-promotion">
+            <div class="section-inner prose">
+                <h2>How does Chau7's triple buffering interact with ProMotion 120Hz displays?</h2>
+                <p>Chau7's triple buffering is refresh-rate independent. On a 120Hz ProMotion display, the Metal renderer picks up the latest completed buffer 120 times per second. The parser continues writing at PTY speed regardless of the display refresh rate.</p>
+                <p>The extra buffer ensures Chau7's renderer always has a complete frame even at twice the standard swap rate. On 60Hz displays, Chau7's triple buffering works identically, just with fewer pickups per second.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="triple-buffer-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -120,24 +174,40 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="triple-buffer-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Triple Buffering in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Triple Buffering in Chau7 is a rendering architecture that maintains three screen buffers rotated between the terminal parser and the Metal GPU renderer using atomic pointer swaps. Chau7's triple buffering prevents tearing and render stalls without any mutexes or locks.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's triple buffering compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminal emulators use double buffering with mutex locks, which causes the parser to stall while the GPU reads the buffer. Chau7 uses three buffers with atomic swaps, so the parser and GPU never block each other. This lock-free design eliminates both tearing and render stalls.</p></div>
+                    </details>
+                    <details>
+                        <summary>How to prevent screen tearing in terminal applications</summary>
+                        <div class="faq-answer"><p>Chau7 prevents screen tearing by maintaining three screen buffers rotated with atomic pointer swaps. The parser writes into one buffer while the Metal renderer reads a different completed buffer. Because there are three buffers, neither thread ever waits for the other, and the renderer always draws a complete frame.</p></div>
+                    </details>
+                    <details>
                         <summary>Does triple buffering increase memory usage significantly?</summary>
-                        <div class="faq-answer"><p>Each buffer holds the visible terminal grid, typically 80x24 to 240x80 cells. At roughly 32 bytes per cell, three buffers consume under 2 MB even for a large terminal. The memory cost is negligible compared to the performance benefit.</p></div>
+                        <div class="faq-answer"><p>No. Each buffer in Chau7 holds the visible terminal grid, typically 80x24 to 240x80 cells. At roughly 32 bytes per cell, three buffers consume under 2 MB even for a large terminal. The memory cost is negligible compared to the performance benefit.</p></div>
                     </details>
                     <details>
                         <summary>How does triple buffering interact with ProMotion 120Hz displays?</summary>
-                        <div class="faq-answer"><p>Triple buffering is refresh-rate independent. On a 120Hz ProMotion display, the renderer picks up the latest buffer 120 times per second. The parser continues writing at PTY speed regardless. The extra buffer ensures the renderer always has a complete frame even at twice the swap rate.</p></div>
+                        <div class="faq-answer"><p>Chau7's triple buffering is refresh-rate independent. On a 120Hz ProMotion display, the Metal renderer picks up the latest buffer 120 times per second. The parser continues writing at PTY speed regardless. The extra buffer ensures the renderer always has a complete frame even at twice the standard swap rate.</p></div>
+                    </details>
+                    <details>
+                        <summary>What happens if the parser produces frames faster than the display refresh?</summary>
+                        <div class="faq-answer"><p>Chau7's renderer always picks up the latest completed buffer at display refresh time. If the parser has produced multiple frames between refreshes, intermediate frames are skipped. This is the correct behavior because displaying stale intermediate frames would waste GPU time without visual benefit.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="triple-buffer-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Tear-free rendering at any output speed. Not a compromise. Good engineering.</h2>

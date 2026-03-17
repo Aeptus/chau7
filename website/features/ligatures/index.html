@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Ligatures | Chau7 Terminal</title>
     <meta name="description" content="Chau7 renders font ligatures for programming fonts like Fira Code and JetBrains Mono, turning operators into clean symbols.">
+    <meta name="article:section" content="Terminal Core">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="ligatures">
+    <meta name="article:tag" content="programming fonts">
+    <meta name="article:tag" content="Fira Code">
+    <meta name="article:tag" content="JetBrains Mono">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Ligatures | Chau7">
     <meta property="og:description" content="Chau7 renders font ligatures for programming fonts like Fira Code and JetBrains Mono, turning operators into clean symbols.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that renders programming font ligatures for Fira Code, JetBrains Mono, Cascadia Code, and other OpenType fonts.",
+        "featureList": [
+            "OpenType ligature table rendering (liga and calt)",
+            "Fira Code, JetBrains Mono, Cascadia Code support",
+            "Correct cursor positioning through ligatured glyphs",
+            "Per-profile ligature toggle",
+            "Shared glyph atlas cache for zero overhead",
+            "Real-time ligature updates as you type"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Which fonts are supported for ligatures?","acceptedAnswer":{"@type":"Answer","text":"Any OpenType font with ligature tables works, including Fira Code, JetBrains Mono, Cascadia Code, Iosevka, Victor Mono, and Hasklig. Chau7 reads the font&#x27;s standard ligature (liga) and contextual alternates (calt) tables automatically."}},{"@type":"Question","name":"Do ligatures affect cursor positioning or text selection?","acceptedAnswer":{"@type":"Answer","text":"No. The cursor and text selection operate on character cells, not visual glyphs. A ligature that visually replaces three characters still occupies three selectable cells, and the cursor steps through each cell individually."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Ligatures in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Ligatures is a rendering feature in the Chau7 terminal that detects OpenType ligature substitutions in programming fonts and renders the combined glyphs across the correct number of character cells. Chau7 supports any font with ligature tables including Fira Code, JetBrains Mono, Cascadia Code, and Iosevka."}},
+            {"@type":"Question","name":"Which terminals support programming font ligatures?","acceptedAnswer":{"@type":"Answer","text":"Chau7, Kitty, and Warp support programming font ligatures on macOS. iTerm2 has partial ligature support. Alacritty does not support ligatures. Terminal.app does not support ligatures. Chau7 handles ligature rendering through its Metal-based renderer with Core Text layout, ensuring correct cursor positioning and zero additional overhead."}},
+            {"@type":"Question","name":"How to enable font ligatures in terminal emulator macOS","acceptedAnswer":{"@type":"Answer","text":"In Chau7, select a programming font with ligature tables (such as Fira Code or JetBrains Mono) in your profile settings. Chau7 detects and renders ligatures automatically. Ligature rendering in Chau7 can be toggled per profile, so you can enable ligatures for coding and disable them for log viewing."}},
+            {"@type":"Question","name":"Which fonts are supported for ligatures?","acceptedAnswer":{"@type":"Answer","text":"Any OpenType font with ligature tables works in Chau7, including Fira Code, JetBrains Mono, Cascadia Code, Iosevka, Victor Mono, and Hasklig. Chau7 reads the font's standard ligature (liga) and contextual alternates (calt) tables automatically."}},
+            {"@type":"Question","name":"Do ligatures affect cursor positioning or text selection?","acceptedAnswer":{"@type":"Answer","text":"No. In Chau7, the cursor and text selection operate on character cells, not visual glyphs. A ligature that visually replaces three characters still occupies three selectable cells in Chau7, and the cursor steps through each cell individually."}}
+        ]
     }]
     </script>
 </head>
@@ -58,45 +80,85 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="terminal" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="terminal" data-ui="ligatures-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">TERMINAL CORE</div>
                 <h1 class="hero-title">Ligatures</h1>
-                <p class="hero-subtitle">Programming ligatures that actually render. => becomes a real arrow. != becomes a real inequality.</p>
+                <p class="hero-subtitle">Chau7 renders programming ligatures correctly. <code>=></code> becomes a real arrow. <code>!=</code> becomes a real inequality.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="ligatures-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">How to enable font ligatures in terminal emulator macOS</li>
-                    <li class="question-item">Fira Code ligatures not working in my terminal</li>
+                    <li class="question-item">What is Ligatures in Chau7 terminal?</li>
                     <li class="question-item">Which terminals support programming font ligatures?</li>
-                    <li class="question-item">JetBrains Mono ligatures in terminal on macOS</li>
+                    <li class="question-item">How to enable font ligatures in terminal emulator macOS</li>
+                    <li class="question-item">Which fonts are supported for ligatures?</li>
+                    <li class="question-item">Do ligatures affect cursor positioning or text selection?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Ligatures -->
+        <section class="feature-content" data-ui="ligatures-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Programming fonts like Fira Code, JetBrains Mono, Cascadia Code, and Iosevka include OpenType ligature tables that replace multi-character sequences (like ->, ==, !=, |>) with single typographic glyphs. Chau7 detects these ligature substitutions by running Core Text layout on each visible line and checking for glyph replacements that span multiple character cells.</p>
-                <p>When a ligature is detected, Chau7 renders the substituted glyph across the spanned cells while maintaining correct cursor positioning. The cursor always moves in single-cell increments regardless of visual ligatures, so editing and selection behave identically to non-ligatured text. Ligatures update in real time as characters are typed or output changes.</p>
-                <p>Ligature rendering is toggled per-profile, so you can enable ligatures in your coding profile while keeping them disabled in a profile used for log viewing where character-exact rendering is preferred. The ligature detection cache is shared with the glyph atlas, so enabling ligatures adds no measurable overhead to the render path.</p>
+                <h2>What is Ligatures in Chau7?</h2>
+                <p>Ligatures is a rendering feature in the Chau7 terminal that detects OpenType ligature substitutions in programming fonts and renders the combined glyphs across the correct number of character cells. Programming fonts like Fira Code, JetBrains Mono, Cascadia Code, and Iosevka include ligature tables that replace multi-character sequences (like <code>-></code>, <code>==</code>, <code>!=</code>, <code>|></code>) with single typographic glyphs.</p>
+                <p>Chau7 detects these ligature substitutions by running Core Text layout on each visible line and checking for glyph replacements that span multiple character cells. When a ligature is detected, Chau7 renders the substituted glyph across the spanned cells while maintaining correct cursor positioning.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Programming ligatures improve code readability by rendering compound operators as distinct visual symbols. But most terminals cannot render them because their text engines treat each character independently. Chau7's Metal-based renderer handles ligature substitution correctly, so your Fira Code or JetBrains Mono investment actually pays off in the terminal too.</p>
-                </div>
+        <!-- How to enable ligatures -->
+        <section class="feature-content" data-ui="ligatures-how-to-enable">
+            <div class="section-inner prose">
+                <h2>How to enable font ligatures in Chau7 on macOS</h2>
+                <p>In Chau7, select a programming font with ligature tables (such as Fira Code or JetBrains Mono) in your profile settings. Chau7 detects and renders ligatures automatically. No additional configuration is needed.</p>
+                <p>Ligature rendering in Chau7 can be toggled per profile. This lets developers enable ligatures in a coding profile while keeping them disabled in a profile used for log viewing where character-exact rendering is preferred. The ligature detection cache in Chau7 is shared with the glyph atlas, so enabling ligatures adds no measurable overhead to the render path.</p>
+            </div>
+        </section>
+
+        <!-- Which terminals support ligatures -->
+        <section class="feature-content" data-ui="ligatures-comparison">
+            <div class="section-inner prose">
+                <h2>Which terminals support programming font ligatures?</h2>
+                <p>Chau7, Kitty, and Warp support programming font ligatures on macOS. iTerm2 has partial ligature support. Alacritty does not support ligatures. Terminal.app does not support ligatures.</p>
+                <p>Most terminals cannot render ligatures because their text engines treat each character independently. Chau7 handles ligature rendering through its Metal-based renderer with Core Text layout, ensuring correct cursor positioning and zero additional rendering overhead. Ligatures in Chau7 update in real time as characters are typed or output changes.</p>
+            </div>
+        </section>
+
+        <!-- Which fonts are supported -->
+        <section class="feature-content" data-ui="ligatures-fonts">
+            <div class="section-inner prose">
+                <h2>Which fonts are supported for ligatures in Chau7?</h2>
+                <p>Any OpenType font with ligature tables works in Chau7. This includes Fira Code, JetBrains Mono, Cascadia Code, Iosevka, Victor Mono, and Hasklig. Chau7 reads the font's standard ligature (<code>liga</code>) and contextual alternates (<code>calt</code>) tables automatically.</p>
+                <p>Chau7 does not require a specific font format or feature flag. If the font includes ligature substitution rules, Chau7 will render them. Custom or niche programming fonts work as long as they follow the OpenType ligature specification.</p>
+            </div>
+        </section>
+
+        <!-- Cursor positioning -->
+        <section class="feature-content" data-ui="ligatures-cursor">
+            <div class="section-inner prose">
+                <h2>Do ligatures affect cursor positioning or text selection in Chau7?</h2>
+                <p>No. In Chau7, the cursor and text selection operate on character cells, not visual glyphs. A ligature that visually replaces three characters still occupies three selectable cells in Chau7. The cursor steps through each cell individually.</p>
+                <p>This means editing and selection in Chau7 behave identically whether ligatures are enabled or disabled. Chau7 maintains the terminal's character grid model while rendering the visual ligature across the spanned cells.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="ligatures-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why ligature support matters</h2>
+                <p>Programming ligatures improve code readability by rendering compound operators as distinct visual symbols. But most terminals cannot render them because their text engines treat each character independently.</p>
+                <p>Chau7's Metal-based renderer handles ligature substitution correctly, so your Fira Code or JetBrains Mono investment actually pays off in the terminal too. For developers who chose a programming font specifically for its ligatures, Chau7 delivers on that promise.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="ligatures-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -120,24 +182,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="ligatures-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Ligatures in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Ligatures is a rendering feature in the Chau7 terminal that detects OpenType ligature substitutions in programming fonts and renders the combined glyphs across the correct number of character cells. Chau7 supports any font with ligature tables including Fira Code, JetBrains Mono, Cascadia Code, and Iosevka.</p></div>
+                    </details>
+                    <details>
+                        <summary>Which terminals support programming font ligatures?</summary>
+                        <div class="faq-answer"><p>Chau7, Kitty, and Warp support programming font ligatures on macOS. iTerm2 has partial ligature support. Alacritty does not support ligatures. Terminal.app does not support ligatures. Chau7 handles ligature rendering through its Metal-based renderer with Core Text layout, ensuring correct cursor positioning and zero additional overhead.</p></div>
+                    </details>
+                    <details>
+                        <summary>How to enable font ligatures in terminal emulator macOS</summary>
+                        <div class="faq-answer"><p>In Chau7, select a programming font with ligature tables (such as Fira Code or JetBrains Mono) in your profile settings. Chau7 detects and renders ligatures automatically. Ligature rendering in Chau7 can be toggled per profile, so you can enable ligatures for coding and disable them for log viewing.</p></div>
+                    </details>
+                    <details>
                         <summary>Which fonts are supported for ligatures?</summary>
-                        <div class="faq-answer"><p>Any OpenType font with ligature tables works, including Fira Code, JetBrains Mono, Cascadia Code, Iosevka, Victor Mono, and Hasklig. Chau7 reads the font's standard ligature (liga) and contextual alternates (calt) tables automatically.</p></div>
+                        <div class="faq-answer"><p>Any OpenType font with ligature tables works in Chau7, including Fira Code, JetBrains Mono, Cascadia Code, Iosevka, Victor Mono, and Hasklig. Chau7 reads the font's standard ligature (liga) and contextual alternates (calt) tables automatically.</p></div>
                     </details>
                     <details>
                         <summary>Do ligatures affect cursor positioning or text selection?</summary>
-                        <div class="faq-answer"><p>No. The cursor and text selection operate on character cells, not visual glyphs. A ligature that visually replaces three characters still occupies three selectable cells, and the cursor steps through each cell individually.</p></div>
+                        <div class="faq-answer"><p>No. In Chau7, the cursor and text selection operate on character cells, not visual glyphs. A ligature that visually replaces three characters still occupies three selectable cells in Chau7, and the cursor steps through each cell individually.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="ligatures-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Pretty operators in your terminal. Your font worked hard on those ligatures.</h2>

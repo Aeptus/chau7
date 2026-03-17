@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>IOSurface Display | Chau7 Terminal</title>
     <meta name="description" content="Chau7 renders directly to an IOSurface for zero-copy GPU-to-display output, eliminating compositor overhead on macOS.">
+    <meta name="article:section" content="GPU Rendering">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="IOSurface">
+    <meta name="article:tag" content="GPU rendering">
+    <meta name="article:tag" content="zero-copy display">
+    <meta name="article:tag" content="compositor bypass">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="IOSurface Display | Chau7">
     <meta property="og:description" content="Chau7 renders directly to an IOSurface for zero-copy GPU-to-display output, eliminating compositor overhead on macOS.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that renders directly to an IOSurface for zero-copy GPU-to-display output, eliminating compositor overhead.",
+        "featureList": [
+            "IOSurface-backed Metal rendering",
+            "Zero-copy GPU-to-display path",
+            "Compositor bypass for lower latency",
+            "120Hz ProMotion display support",
+            "CALayer-backed IOSurface integration",
+            "Sub-8.3ms frame budget at 120fps"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does IOSurface bypass require special entitlements?","acceptedAnswer":{"@type":"Answer","text":"No. IOSurface is a public framework available to all sandboxed macOS applications. Chau7 uses the standard CALayerBackedIOSurface approach that Apple documents for high-performance rendering."}},{"@type":"Question","name":"Does this affect window transparency or vibrancy effects?","acceptedAnswer":{"@type":"Answer","text":"IOSurface display is compatible with macOS vibrancy and transparency. The surface participates in the compositor blending stack normally; the difference is that Chau7 writes directly to the surface rather than going through an intermediate backing store."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is IOSurface Display in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"IOSurface Display is a rendering feature in the Chau7 terminal that writes Metal render passes directly to an IOSurface-backed texture. The macOS display controller reads the finished frame straight from GPU memory, bypassing the WindowServer compositor. This zero-copy path eliminates an extra GPU blit and removes roughly one frame of latency."}},
+            {"@type":"Question","name":"How does Chau7's IOSurface display compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most macOS terminals render into a standard backing store that the WindowServer compositor then copies to the display framebuffer. iTerm2, Alacritty, and Kitty all go through this compositor path. Chau7 is the only terminal that renders directly to an IOSurface, removing the intermediate copy and saving 1-2ms per frame."}},
+            {"@type":"Question","name":"How to reduce compositor latency in a macOS application","acceptedAnswer":{"@type":"Answer","text":"Chau7 reduces compositor latency by rendering into an IOSurface-backed Metal texture and configuring the CALayer to use the same IOSurface. The display controller reads the finished frame directly from GPU memory without an intermediate compositor blit. This approach saves 1-2ms per frame and keeps Chau7 under the 8.3ms budget for 120fps on ProMotion displays."}},
+            {"@type":"Question","name":"Does IOSurface bypass require special entitlements?","acceptedAnswer":{"@type":"Answer","text":"No. IOSurface is a public framework available to all sandboxed macOS applications. Chau7 uses the standard CALayerBackedIOSurface approach that Apple documents for high-performance rendering. No special entitlements or private APIs are needed."}},
+            {"@type":"Question","name":"Does this affect window transparency or vibrancy effects?","acceptedAnswer":{"@type":"Answer","text":"IOSurface display in Chau7 is compatible with macOS vibrancy and transparency. The surface participates in the compositor blending stack normally. The difference is that Chau7 writes directly to the surface rather than going through an intermediate backing store."}}
+        ]
     }]
     </script>
 </head>
@@ -58,45 +80,85 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="rendering" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="rendering" data-ui="iosurface-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-purple">GPU RENDERING</div>
                 <h1 class="hero-title">IOSurface Display</h1>
-                <p class="hero-subtitle">GPU to display. No compositor. No extra copy. No wasted frame.</p>
+                <p class="hero-subtitle">Chau7 sends frames from GPU memory directly to the display. No compositor. No extra copy. No wasted frame.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="iosurface-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">What is IOSurface and how does it speed up rendering on macOS?</li>
+                    <li class="question-item">What is IOSurface Display in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's IOSurface display compare to other terminals?</li>
                     <li class="question-item">How to reduce compositor latency in a macOS application</li>
-                    <li class="question-item">Terminal display lag even with GPU rendering enabled</li>
-                    <li class="question-item">macOS window server overhead reducing frame rate</li>
+                    <li class="question-item">Does IOSurface bypass require special entitlements?</li>
+                    <li class="question-item">Does this affect window transparency or vibrancy effects?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is IOSurface Display -->
+        <section class="feature-content" data-ui="iosurface-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Standard macOS applications render into a backing store that the WindowServer compositor then blits into the final display framebuffer. This introduces an extra copy and at least one frame of latency. Chau7 bypasses this by rendering directly into an IOSurface, a cross-process GPU memory object that can be handed to the display subsystem without an intermediate copy.</p>
-                <p>The Metal render pass writes the terminal frame into an IOSurface-backed texture. The CALayer backing the terminal view is configured with the same IOSurface, so the display controller reads the finished frame directly from GPU memory. The result is a zero-copy path from the Metal render pass to photons on screen.</p>
-                <p>This architecture is particularly beneficial on high-refresh-rate displays (120Hz ProMotion) where every millisecond counts. By removing the compositor blit, Chau7 reclaims roughly 1-2ms per frame, keeping total render latency under the 8.3ms budget required for 120fps output.</p>
+                <h2>What is IOSurface Display in Chau7?</h2>
+                <p>IOSurface Display is a rendering feature in the Chau7 terminal that writes Metal render passes directly to an IOSurface-backed texture. The macOS display controller reads the finished frame straight from GPU memory, bypassing the WindowServer compositor entirely.</p>
+                <p>Standard macOS applications render into a backing store that the WindowServer compositor then blits into the final display framebuffer. This introduces an extra GPU-to-GPU copy and at least one frame of latency. Chau7 eliminates both by using IOSurface as the shared memory surface between the Metal render pass and the display hardware.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>The macOS compositor adds a full frame of latency and a GPU-to-GPU copy for every window. For a terminal where you notice every millisecond of input lag, that is unacceptable overhead. IOSurface lets Chau7 send rendered frames directly from GPU memory to the display, bypassing the compositor entirely. Zero extra copies. Zero extra latency.</p>
-                </div>
+        <!-- How Chau7 reduces compositor latency -->
+        <section class="feature-content" data-ui="iosurface-compositor-bypass">
+            <div class="section-inner prose">
+                <h2>How Chau7 reduces compositor latency on macOS</h2>
+                <p>Chau7's Metal render pass writes the terminal frame into an IOSurface-backed texture. The CALayer backing the terminal view is configured with the same IOSurface, so the display controller reads the finished frame directly from GPU memory. The result is a zero-copy path from the Metal render pass to photons on screen.</p>
+                <p>This architecture is particularly beneficial on high-refresh-rate displays. On 120Hz ProMotion displays, every millisecond counts. By removing the compositor blit, Chau7 reclaims roughly 1 to 2 milliseconds per frame, keeping total render latency under the 8.3ms budget required for 120fps output.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="iosurface-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's IOSurface display compare to other terminals?</h2>
+                <p>Most macOS terminals render into a standard backing store that the WindowServer compositor then copies to the display framebuffer. iTerm2, Alacritty, and Kitty all go through this compositor path, adding an extra GPU blit and at least one frame of latency to every rendered frame.</p>
+                <p>Chau7 is the only terminal that renders directly to an IOSurface, removing the intermediate copy. This zero-copy approach saves 1 to 2 milliseconds per frame, which is the difference between hitting and missing the 8.3ms frame budget on a 120Hz display.</p>
+            </div>
+        </section>
+
+        <!-- Entitlements -->
+        <section class="feature-content" data-ui="iosurface-entitlements">
+            <div class="section-inner prose">
+                <h2>Does IOSurface bypass require special entitlements?</h2>
+                <p>No. IOSurface is a public framework available to all sandboxed macOS applications. Chau7 uses the standard CALayerBackedIOSurface approach that Apple documents for high-performance rendering.</p>
+                <p>No special entitlements, private APIs, or elevated permissions are needed. Chau7's IOSurface integration works within the standard macOS application sandbox.</p>
+            </div>
+        </section>
+
+        <!-- Transparency and vibrancy -->
+        <section class="feature-content" data-ui="iosurface-transparency">
+            <div class="section-inner prose">
+                <h2>Does IOSurface display affect window transparency or vibrancy?</h2>
+                <p>Chau7's IOSurface display is fully compatible with macOS vibrancy and transparency effects. The IOSurface participates in the compositor blending stack normally.</p>
+                <p>The difference is that Chau7 writes directly to the surface rather than going through an intermediate backing store. Transparency, blur, and vibrancy effects are applied by the compositor during blending, which happens after Chau7 has written the frame to the IOSurface.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="iosurface-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why IOSurface display matters</h2>
+                <p>The macOS compositor adds a full frame of latency and a GPU-to-GPU copy for every window. For a terminal where you notice every millisecond of input lag, that is unacceptable overhead.</p>
+                <p>Chau7's IOSurface display lets rendered frames travel directly from GPU memory to the display hardware. Zero extra copies. Zero extra latency. For developers who care about input responsiveness, Chau7's zero-copy rendering path makes a measurable difference.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="iosurface-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -120,24 +182,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="iosurface-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is IOSurface Display in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>IOSurface Display is a rendering feature in the Chau7 terminal that writes Metal render passes directly to an IOSurface-backed texture. The macOS display controller reads the finished frame straight from GPU memory, bypassing the WindowServer compositor. This zero-copy path eliminates an extra GPU blit and removes roughly one frame of latency.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's IOSurface display compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most macOS terminals render into a standard backing store that the WindowServer compositor then copies to the display framebuffer. iTerm2, Alacritty, and Kitty all go through this compositor path. Chau7 is the only terminal that renders directly to an IOSurface, removing the intermediate copy and saving 1-2ms per frame.</p></div>
+                    </details>
+                    <details>
+                        <summary>How to reduce compositor latency in a macOS application</summary>
+                        <div class="faq-answer"><p>Chau7 reduces compositor latency by rendering into an IOSurface-backed Metal texture and configuring the CALayer to use the same IOSurface. The display controller reads the finished frame directly from GPU memory without an intermediate compositor blit. This approach saves 1-2ms per frame and keeps Chau7 under the 8.3ms budget for 120fps on ProMotion displays.</p></div>
+                    </details>
+                    <details>
                         <summary>Does IOSurface bypass require special entitlements?</summary>
-                        <div class="faq-answer"><p>No. IOSurface is a public framework available to all sandboxed macOS applications. Chau7 uses the standard CALayerBackedIOSurface approach that Apple documents for high-performance rendering.</p></div>
+                        <div class="faq-answer"><p>No. IOSurface is a public framework available to all sandboxed macOS applications. Chau7 uses the standard CALayerBackedIOSurface approach that Apple documents for high-performance rendering. No special entitlements or private APIs are needed.</p></div>
                     </details>
                     <details>
                         <summary>Does this affect window transparency or vibrancy effects?</summary>
-                        <div class="faq-answer"><p>IOSurface display is compatible with macOS vibrancy and transparency. The surface participates in the compositor blending stack normally; the difference is that Chau7 writes directly to the surface rather than going through an intermediate backing store.</p></div>
+                        <div class="faq-answer"><p>IOSurface display in Chau7 is compatible with macOS vibrancy and transparency. The surface participates in the compositor blending stack normally. The difference is that Chau7 writes directly to the surface rather than going through an intermediate backing store.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="iosurface-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Skip the compositor entirely. Your frames deserve better.</h2>

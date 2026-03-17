@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Tab Profiles | Chau7 Terminal</title>
     <meta name="description" content="Configure per-tab shell, working directory, and environment variables in Chau7 for project-specific terminal setups.">
+    <meta name="article:section" content="Tab Management">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="tab profiles">
+    <meta name="article:tag" content="per-tab shell">
+    <meta name="article:tag" content="per-tab environment variables">
+    <meta name="article:tag" content="working directory">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Tab Profiles | Chau7">
     <meta property="og:description" content="Configure per-tab shell, working directory, and environment variables in Chau7 for project-specific terminal setups.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with tab profiles that let you preconfigure per-tab shell, working directory, and environment variables for project-specific terminal setups.",
+        "featureList": [
+            "Per-tab shell selection (bash, zsh, fish, or any executable)",
+            "Per-tab starting directory",
+            "Per-tab environment variables layered on system defaults",
+            "Profile export and import for team sharing",
+            "Default profile for new tabs",
+            "One-click profile launch from tab creation menu"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Can I share tab profiles with my team?","acceptedAnswer":{"@type":"Answer","text":"Tab profiles are stored in Chau7&#x27;s local settings. Export and import functionality allows you to share profile configurations with teammates who use Chau7."}},{"@type":"Question","name":"Do environment variables in profiles override system variables?","acceptedAnswer":{"@type":"Answer","text":"Yes. Profile environment variables are layered on top of the system environment. If a variable exists in both, the profile value takes precedence for that tab."}},{"@type":"Question","name":"Can I set a profile as the default for new tabs?","acceptedAnswer":{"@type":"Answer","text":"Yes. You can designate any profile as the default, and all new tabs will use that profile&#x27;s shell, directory, and environment configuration unless you explicitly choose a different one."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Tab Profiles in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Tab Profiles is a feature in Chau7 that lets you preconfigure the shell, starting directory, and environment variables for new tabs. Instead of opening a tab and navigating to your project directory or switching shells, you open a Chau7 tab with a profile that drops you exactly where you need to be with the right environment already set."}},
+            {"@type":"Question","name":"Can terminal tabs have different shells?","acceptedAnswer":{"@type":"Answer","text":"Yes. In Chau7, each tab profile specifies a shell: bash, zsh, fish, or any executable. When you create a new tab from a Chau7 profile, it launches the specified shell. Different tabs in the same Chau7 window can run different shells simultaneously."}},
+            {"@type":"Question","name":"How do I set a default directory for a terminal tab?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, create a tab profile and set the working directory to your project folder. Every time you open a new tab from that Chau7 profile, the shell starts in that directory. You can also set a profile as the default so all new Chau7 tabs start in your preferred directory."}},
+            {"@type":"Question","name":"Can I share tab profiles with my team?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 tab profiles can be exported and imported. Export your profile configuration and share it with teammates who use Chau7. This lets the entire team use consistent shell, directory, and environment settings for shared projects."}},
+            {"@type":"Question","name":"Do environment variables in profiles override system variables?","acceptedAnswer":{"@type":"Answer","text":"Yes. In Chau7, profile environment variables are layered on top of the system environment. If a variable exists in both, the Chau7 profile value takes precedence for that tab. Variables not specified in the profile inherit their system defaults."}}
+        ]
     }]
     </script>
 </head>
@@ -58,7 +80,7 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="tabs" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="tabs" data-ui="tab-profiles-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">TAB MANAGEMENT</div>
@@ -68,34 +90,75 @@
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="tab-profiles-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">How do I set a default directory for a terminal tab?</li>
+                    <li class="question-item">What is Tab Profiles in Chau7 terminal?</li>
                     <li class="question-item">Can terminal tabs have different shells?</li>
-                    <li class="question-item">How to set per-tab environment variables in a terminal?</li>
-                    <li class="question-item">Which terminal supports per-tab configuration profiles?</li>
+                    <li class="question-item">How do I set a default directory for a terminal tab?</li>
+                    <li class="question-item">Can I share tab profiles with my team?</li>
+                    <li class="question-item">Do environment variables in profiles override system variables?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Tab Profiles -->
+        <section class="feature-content" data-ui="tab-profiles-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Tab profiles let you preconfigure the shell, starting directory, and environment variables for new tabs. Instead of opening a tab and then navigating to your project directory or switching shells, you open a tab with a profile that drops you exactly where you need to be with the right environment already set.</p>
-                <p>Each profile specifies a shell (bash, zsh, fish, or any executable), a working directory, and a set of environment variables. When you create a new tab from a profile, Chau7 launches the specified shell in the specified directory with the specified environment layered on top of your system defaults. Profiles are saved in Chau7's settings and available from the tab creation menu.</p>
+                <h2>What is Tab Profiles in Chau7?</h2>
+                <p>Tab Profiles is a feature in Chau7 that lets you preconfigure the shell, starting directory, and environment variables for new tabs. Instead of opening a tab and then navigating to your project directory or switching shells, you open a Chau7 tab with a profile that drops you exactly where you need to be.</p>
+                <p>Each Chau7 profile specifies a shell (bash, zsh, fish, or any executable), a working directory, and a set of environment variables. Profiles are saved in Chau7's settings and available from the tab creation menu.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Developers working on multiple projects constantly switch contexts: different directories, different Node versions, different environment variables. Tab profiles let you define a complete tab configuration once and launch it with a click. It is project bookmarks for your terminal.</p>
-                </div>
+        <!-- Can tabs have different shells -->
+        <section class="feature-content" data-ui="tab-profiles-different-shells">
+            <div class="section-inner prose">
+                <h2>Can Chau7 tabs have different shells?</h2>
+                <p>Yes. In Chau7, each tab profile specifies a shell: bash, zsh, fish, or any executable. When you create a new tab from a Chau7 profile, it launches the specified shell in the specified directory.</p>
+                <p>Different tabs in the same Chau7 window can run different shells simultaneously. One tab can run zsh for your main project while another runs fish for a side project, all within the same Chau7 window.</p>
+            </div>
+        </section>
+
+        <!-- Default directory -->
+        <section class="feature-content" data-ui="tab-profiles-default-directory">
+            <div class="section-inner prose">
+                <h2>How do I set a default directory for a terminal tab in Chau7?</h2>
+                <p>In Chau7, create a tab profile and set the working directory to your project folder. Every time you open a new tab from that Chau7 profile, the shell starts in that directory automatically.</p>
+                <p>You can also set a Chau7 profile as the default so all new tabs start in your preferred directory. Developers working on multiple projects can create one profile per project, each pointing to the correct directory.</p>
+            </div>
+        </section>
+
+        <!-- Sharing profiles -->
+        <section class="feature-content" data-ui="tab-profiles-sharing">
+            <div class="section-inner prose">
+                <h2>Can I share Chau7 tab profiles with my team?</h2>
+                <p>Yes. Chau7 tab profiles can be exported and imported. Export your profile configuration and share it with teammates who use Chau7.</p>
+                <p>This lets the entire team use consistent shell, directory, and environment settings for shared projects. Onboarding a new teammate to a project becomes faster when they can import the Chau7 profile and start with the right environment immediately.</p>
+            </div>
+        </section>
+
+        <!-- Environment variable override -->
+        <section class="feature-content" data-ui="tab-profiles-env-override">
+            <div class="section-inner prose">
+                <h2>Do Chau7 profile environment variables override system variables?</h2>
+                <p>Yes. In Chau7, profile environment variables are layered on top of the system environment. If a variable exists in both, the Chau7 profile value takes precedence for that tab.</p>
+                <p>Variables not specified in the Chau7 profile inherit their system defaults. This layering approach lets you override specific values (like <code>NODE_ENV</code> or <code>AWS_PROFILE</code>) per project without losing the rest of your system environment.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="tab-profiles-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why tab profiles matter</h2>
+                <p>Developers working on multiple projects constantly switch contexts: different directories, different Node versions, different environment variables. Without tab profiles, every new tab starts from scratch.</p>
+                <p>Chau7 tab profiles let you define a complete tab configuration once and launch it with a click. Tab profiles in Chau7 are project bookmarks for your terminal.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="tab-profiles-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -119,28 +182,40 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="tab-profiles-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Tab Profiles in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Tab Profiles is a feature in Chau7 that lets you preconfigure the shell, starting directory, and environment variables for new tabs. Instead of opening a tab and navigating to your project directory or switching shells, you open a Chau7 tab with a profile that drops you exactly where you need to be with the right environment already set.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can terminal tabs have different shells?</summary>
+                        <div class="faq-answer"><p>Yes. In Chau7, each tab profile specifies a shell: bash, zsh, fish, or any executable. When you create a new tab from a Chau7 profile, it launches the specified shell. Different tabs in the same Chau7 window can run different shells simultaneously.</p></div>
+                    </details>
+                    <details>
+                        <summary>How do I set a default directory for a terminal tab?</summary>
+                        <div class="faq-answer"><p>In Chau7, create a tab profile and set the working directory to your project folder. Every time you open a new tab from that Chau7 profile, the shell starts in that directory. You can also set a profile as the default so all new Chau7 tabs start in your preferred directory.</p></div>
+                    </details>
+                    <details>
                         <summary>Can I share tab profiles with my team?</summary>
-                        <div class="faq-answer"><p>Tab profiles are stored in Chau7's local settings. Export and import functionality allows you to share profile configurations with teammates who use Chau7.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7 tab profiles can be exported and imported. Export your profile configuration and share it with teammates who use Chau7. This lets the entire team use consistent shell, directory, and environment settings for shared projects.</p></div>
                     </details>
                     <details>
                         <summary>Do environment variables in profiles override system variables?</summary>
-                        <div class="faq-answer"><p>Yes. Profile environment variables are layered on top of the system environment. If a variable exists in both, the profile value takes precedence for that tab.</p></div>
+                        <div class="faq-answer"><p>Yes. In Chau7, profile environment variables are layered on top of the system environment. If a variable exists in both, the Chau7 profile value takes precedence for that tab. Variables not specified in the profile inherit their system defaults.</p></div>
                     </details>
                     <details>
                         <summary>Can I set a profile as the default for new tabs?</summary>
-                        <div class="faq-answer"><p>Yes. You can designate any profile as the default, and all new tabs will use that profile's shell, directory, and environment configuration unless you explicitly choose a different one.</p></div>
+                        <div class="faq-answer"><p>Yes. In Chau7, you can designate any profile as the default. All new tabs will use that profile's shell, directory, and environment configuration unless you explicitly choose a different profile from the tab creation menu.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="tab-profiles-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Set up a tab profile once. Use it forever. (Sound familiar, tmux users?)</h2>

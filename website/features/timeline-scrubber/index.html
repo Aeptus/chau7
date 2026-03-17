@@ -6,9 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Timeline Scrubber | Chau7 Terminal</title>
-    <meta name="description" content="Chau7's timeline scrubber lets you visually navigate recorded terminal sessions and replay terminal state at any point.">
+    <meta name="description" content="Chau7's timeline scrubber lets you visually navigate recorded terminal sessions, click to seek any moment, and replay terminal state at any point in time.">
+    <meta name="article:section" content="Session">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="timeline scrubber">
+    <meta name="article:tag" content="session replay">
+    <meta name="article:tag" content="terminal recording navigation">
+    <meta name="article:tag" content="terminal session playback">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Timeline Scrubber | Chau7">
-    <meta property="og:description" content="Chau7's timeline scrubber lets you visually navigate recorded terminal sessions and replay terminal state at any point.">
+    <meta property="og:description" content="Chau7's timeline scrubber lets you visually navigate recorded terminal sessions, click to seek any moment, and replay terminal state at any point in time.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with a built-in timeline scrubber for visually navigating recorded terminal sessions with click-to-seek and variable-speed playback.",
+        "featureList": [
+            "Visual timeline of session activity over time",
+            "Click-to-seek navigation to any moment in a recording",
+            "Drag-to-scrub playhead with real-time terminal state reconstruction",
+            "Variable-speed playback including fast-forward and frame-by-frame",
+            "Activity density visualization showing output peaks",
+            "Full terminal state reconstruction at any timestamp"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Can I search within a recorded session?","acceptedAnswer":{"@type":"Answer","text":"The scrubber provides visual navigation through the timeline. Combined with the activity visualization, you can quickly identify high-output periods that typically correspond to the events you are looking for."}},{"@type":"Question","name":"Does the timeline show command boundaries?","acceptedAnswer":{"@type":"Answer","text":"The timeline visualizes output density over time. Commands that produce lots of output appear as distinct peaks, making it easy to identify individual command executions and navigate between them."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Timeline Scrubber in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Timeline Scrubber is a visual navigation tool in Chau7 for recorded terminal sessions. Chau7's scrubber displays session activity as a timeline with output density peaks, lets developers click to seek any moment, and reconstructs the exact terminal state at that timestamp."}},
+            {"@type":"Question","name":"How does Chau7's timeline scrubber compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals do not record sessions at all, and those that do (like asciinema) offer only linear playback. Chau7's timeline scrubber provides visual navigation with click-to-seek, drag-to-scrub, variable-speed playback, and full terminal state reconstruction at any point. No other terminal offers this level of session navigation."}},
+            {"@type":"Question","name":"How do I replay a terminal session at a specific point in time?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, open a recorded session and click anywhere on the timeline scrubber to jump to that moment. Chau7 reconstructs the exact terminal state, including every character, color, and cursor position, from the recording data. You can also drag the playhead to scrub through the session."}},
+            {"@type":"Question","name":"Can I search within a recorded session?","acceptedAnswer":{"@type":"Answer","text":"Chau7's timeline scrubber provides visual navigation through recorded sessions. The activity visualization in Chau7 shows output density peaks that help developers quickly identify high-output periods corresponding to command executions or error output."}},
+            {"@type":"Question","name":"Does the timeline show command boundaries?","acceptedAnswer":{"@type":"Answer","text":"Chau7's timeline scrubber visualizes output density over time. Commands that produce lots of output appear as distinct peaks in Chau7's timeline, making it easy to identify individual command executions and navigate between them."}}
+        ]
     }]
     </script>
 </head>
@@ -58,44 +80,76 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="session" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="session" data-ui="timeline-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SESSION</div>
                 <h1 class="hero-title">Timeline Scrubber</h1>
-                <p class="hero-subtitle">Scrub through recordings like a video. Jump to any moment. See exactly what happened.</p>
+                <p class="hero-subtitle">Chau7 lets you scrub through terminal recordings like a video. Jump to any moment. See exactly what happened.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="timeline-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is Timeline Scrubber in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's timeline scrubber compare to other terminals?</li>
                     <li class="question-item">How do I replay a terminal session at a specific point in time?</li>
-                    <li class="question-item">Is there a visual timeline for terminal recordings?</li>
-                    <li class="question-item">How to fast-forward through idle time in a terminal recording?</li>
-                    <li class="question-item">Can I scrub through terminal output like a video?</li>
+                    <li class="question-item">Can I search within a recorded session?</li>
+                    <li class="question-item">Does the timeline show command boundaries?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Timeline Scrubber -->
+        <section class="feature-content" data-ui="timeline-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>The timeline scrubber presents a visual representation of a recorded session's activity over time. Dense output periods appear as peaks in the timeline, while idle periods are visible as gaps. You can click anywhere on the timeline to jump to that moment, or drag the playhead to scrub through the session and watch the terminal state change in real time.</p>
-                <p>Playback supports variable speed: normal speed for realistic replay, fast-forward to skip idle sections, and frame-by-frame stepping for detailed inspection. At any point during playback or scrubbing, the terminal view shows the exact state that existed at that timestamp: every character, color, and cursor position is reconstructed from the recording data.</p>
+                <h2>What is Timeline Scrubber in Chau7?</h2>
+                <p>Timeline Scrubber is a visual navigation tool in Chau7 for recorded terminal sessions. Chau7's scrubber displays session activity as a timeline where dense output periods appear as peaks and idle periods appear as gaps.</p>
+                <p>Developers can click anywhere on Chau7's timeline to jump to that moment, or drag the playhead to scrub through the session and watch the terminal state change in real time. At any point, Chau7 reconstructs the exact terminal state from the recording data.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Raw terminal recordings are useless without navigation. Scrolling through a text dump to find the moment a build failed is like searching a VHS tape by holding fast-forward. The timeline scrubber gives you a visual timeline with click-to-seek, so you can jump to the exact second an error occurred.</p>
-                </div>
+        <!-- How to replay at a specific point -->
+        <section class="feature-content" data-ui="timeline-replay">
+            <div class="section-inner prose">
+                <h2>How do I replay a terminal session at a specific point in time?</h2>
+                <p>In Chau7, open a recorded session and click anywhere on the timeline scrubber to jump to that moment. Chau7 reconstructs the exact terminal state at that timestamp, including every character, color, and cursor position.</p>
+                <p>Chau7's playback supports variable speed: normal speed for realistic replay, fast-forward to skip idle sections, and frame-by-frame stepping for detailed inspection. Developers can pause at any point and examine the full terminal state.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="timeline-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's timeline scrubber compare to other terminals?</h2>
+                <p>Most terminals do not record sessions at all. Tools like asciinema offer linear playback but no visual timeline navigation. Chau7's timeline scrubber provides click-to-seek, drag-to-scrub, variable-speed playback, and full terminal state reconstruction at any point.</p>
+                <p>No other terminal offers this level of session navigation. Chau7's timeline scrubber makes recorded sessions as easy to navigate as a video player, replacing the linear text-dump approach used by other recording tools.</p>
+            </div>
+        </section>
+
+        <!-- Search within recorded session -->
+        <section class="feature-content" data-ui="timeline-search">
+            <div class="section-inner prose">
+                <h2>Can I search within a recorded session in Chau7?</h2>
+                <p>Chau7's timeline scrubber provides visual navigation through recorded sessions. The activity visualization in Chau7 shows output density peaks that help developers quickly identify high-output periods.</p>
+                <p>High-output periods in Chau7's timeline typically correspond to command executions, build output, or error messages. Developers can click on any peak to jump to that moment and inspect the terminal state.</p>
+            </div>
+        </section>
+
+        <!-- Command boundaries -->
+        <section class="feature-content" data-ui="timeline-command-boundaries">
+            <div class="section-inner prose">
+                <h2>Does the Chau7 timeline show command boundaries?</h2>
+                <p>Chau7's timeline scrubber visualizes output density over time. Commands that produce lots of output appear as distinct peaks in the timeline, making it easy to identify individual command executions.</p>
+                <p>Developers can navigate between command peaks in Chau7's timeline by clicking on them directly. This approach lets developers find specific commands without scanning through the entire recording linearly.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="timeline-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -115,24 +169,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="timeline-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Timeline Scrubber in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Timeline Scrubber is a visual navigation tool in Chau7 for recorded terminal sessions. Chau7's scrubber displays session activity as a timeline with output density peaks, lets developers click to seek any moment, and reconstructs the exact terminal state at that timestamp.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's timeline scrubber compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals do not record sessions at all, and those that do offer only linear playback. Chau7's timeline scrubber provides visual navigation with click-to-seek, drag-to-scrub, variable-speed playback, and full terminal state reconstruction at any point. No other terminal offers this level of session navigation.</p></div>
+                    </details>
+                    <details>
+                        <summary>How do I replay a terminal session at a specific point in time?</summary>
+                        <div class="faq-answer"><p>In Chau7, open a recorded session and click anywhere on the timeline scrubber to jump to that moment. Chau7 reconstructs the exact terminal state, including every character, color, and cursor position, from the recording data. You can also drag the playhead to scrub through the session.</p></div>
+                    </details>
+                    <details>
                         <summary>Can I search within a recorded session?</summary>
-                        <div class="faq-answer"><p>The scrubber provides visual navigation through the timeline. Combined with the activity visualization, you can quickly identify high-output periods that typically correspond to the events you are looking for.</p></div>
+                        <div class="faq-answer"><p>Chau7's timeline scrubber provides visual navigation through recorded sessions. The activity visualization in Chau7 shows output density peaks that help developers quickly identify high-output periods corresponding to command executions or error output.</p></div>
                     </details>
                     <details>
                         <summary>Does the timeline show command boundaries?</summary>
-                        <div class="faq-answer"><p>The timeline visualizes output density over time. Commands that produce lots of output appear as distinct peaks, making it easy to identify individual command executions and navigate between them.</p></div>
+                        <div class="faq-answer"><p>Chau7's timeline scrubber visualizes output density over time. Commands that produce lots of output appear as distinct peaks in Chau7's timeline, making it easy to identify individual command executions and navigate between them.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="timeline-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Navigate terminal recordings visually. Like a DVR for your shell.</h2>

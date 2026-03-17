@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>High Contrast Mode | Chau7 Terminal</title>
     <meta name="description" content="Chau7 respects macOS High Contrast accessibility settings. Enhanced borders, text contrast, and visual clarity for low-vision terminal users.">
+    <meta name="article:section" content="Accessibility">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="high contrast mode">
+    <meta name="article:tag" content="accessibility">
+    <meta name="article:tag" content="low vision">
+    <meta name="article:tag" content="macOS accessibility">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="High Contrast Mode | Chau7">
     <meta property="og:description" content="Chau7 respects macOS High Contrast accessibility settings. Enhanced borders, text contrast, and visual clarity for low-vision terminal users.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that automatically respects macOS High Contrast accessibility settings with enhanced borders, text weight, and UI element contrast.",
+        "featureList": [
+            "Automatic macOS High Contrast detection",
+            "Enhanced border rendering for windows, tabs, and panes",
+            "Increased text contrast for terminal content",
+            "Focus ring and selection highlighting enhancement",
+            "Theme-preserving contrast adjustment",
+            "Zero-configuration accessibility adaptation"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Do I need to configure high contrast separately in Chau7?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7 automatically detects the macOS High Contrast accessibility setting and adapts its rendering. No per-app configuration is needed."}},{"@type":"Question","name":"Does high contrast mode affect my theme?","acceptedAnswer":{"@type":"Answer","text":"Theme colors are adjusted to improve contrast while preserving the overall character of your chosen scheme. The goal is readability enhancement, not a complete visual override."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is High Contrast Mode in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"High Contrast Mode in Chau7 automatically detects the macOS High Contrast accessibility setting and enhances the visual presentation of the terminal. Chau7 increases border prominence, text contrast, and UI element visibility without requiring any per-app configuration."}},
+            {"@type":"Question","name":"How does Chau7's high contrast mode compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Many terminals ignore the macOS High Contrast setting entirely, leaving borders and text unchanged. Chau7 actively adapts borders, text weight, selection highlighting, cursor visibility, and focus rings when High Contrast is enabled. Chau7 also preserves your chosen theme character while boosting readability."}},
+            {"@type":"Question","name":"Do I need to configure high contrast separately in Chau7?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7 automatically detects the macOS High Contrast accessibility setting and adapts its rendering. No per-app configuration is needed."}},
+            {"@type":"Question","name":"Does high contrast mode in Chau7 affect my theme?","acceptedAnswer":{"@type":"Answer","text":"Chau7 adjusts theme colors to improve contrast while preserving the overall character of your chosen color scheme. The goal is readability enhancement, not a complete visual override."}},
+            {"@type":"Question","name":"Which Chau7 UI elements change in high contrast mode?","acceptedAnswer":{"@type":"Answer","text":"Chau7 enhances borders around windows, tabs, and split panes. Selection highlighting, cursor visibility, focus rings, and interactive controls all receive enhanced contrast treatment in Chau7's high contrast mode."}}
+        ]
     }]
     </script>
 </head>
@@ -58,7 +80,7 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="accessibility" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="accessibility" data-ui="high-contrast-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">ACCESSIBILITY</div>
@@ -68,33 +90,66 @@
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="high-contrast-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is High Contrast Mode in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's high contrast mode compare to other terminals?</li>
                     <li class="question-item">High contrast terminal macOS accessibility</li>
-                    <li class="question-item">Terminal respects macOS accessibility display settings</li>
-                    <li class="question-item">Enhanced contrast terminal emulator low vision</li>
+                    <li class="question-item">Do I need to configure high contrast separately in Chau7?</li>
+                    <li class="question-item">Does high contrast mode affect my theme?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is High Contrast Mode in Chau7 -->
+        <section class="feature-content" data-ui="high-contrast-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>When macOS High Contrast mode is enabled in System Settings, Chau7 automatically enhances its visual presentation. Borders around windows, tabs, split panes, and UI controls become more prominent with higher-contrast colors. Text rendering shifts to prioritize contrast over aesthetics, ensuring every character is maximally distinguishable from its background.</p>
-                <p>The high contrast adaptation applies to both the terminal content area and all chrome elements. Selection highlighting, cursor visibility, focus rings, and interactive controls all receive enhanced contrast treatment. Theme colors are adjusted to maintain readability without completely overriding your chosen color scheme.</p>
+                <h2>What is High Contrast Mode in Chau7?</h2>
+                <p>High Contrast Mode in Chau7 automatically detects the macOS High Contrast accessibility setting and enhances the visual presentation of the entire terminal. Chau7 increases border prominence, text contrast, and UI element visibility.</p>
+                <p>Chau7 applies high contrast enhancements to both the terminal content area and all chrome elements. Selection highlighting, cursor visibility, focus rings, and interactive controls all receive enhanced contrast treatment in Chau7.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Low-vision developers and anyone working in challenging lighting conditions benefit from enhanced contrast. Chau7 respects the macOS High Contrast setting and automatically adjusts borders, text weight, and UI element contrast. No manual theme switching required.</p>
-                </div>
+        <!-- Do I need to configure high contrast separately -->
+        <section class="feature-content" data-ui="high-contrast-configuration">
+            <div class="section-inner prose">
+                <h2>Do I need to configure high contrast separately in Chau7?</h2>
+                <p>No. Chau7 automatically detects the macOS High Contrast accessibility setting and adapts its rendering. No per-app configuration is needed.</p>
+                <p>When you enable High Contrast in macOS System Settings, Chau7 picks up the change immediately. Chau7 enhances borders around windows, tabs, split panes, and UI controls without any manual setup.</p>
+            </div>
+        </section>
+
+        <!-- Does high contrast mode affect my theme -->
+        <section class="feature-content" data-ui="high-contrast-theme-impact">
+            <div class="section-inner prose">
+                <h2>Does high contrast mode in Chau7 affect my theme?</h2>
+                <p>Chau7 adjusts theme colors to improve contrast while preserving the overall character of your chosen color scheme. The goal is readability enhancement, not a complete visual override.</p>
+                <p>Text rendering in Chau7 shifts to prioritize contrast over aesthetics, ensuring every character is maximally distinguishable from its background. Your theme remains recognizable while becoming more readable.</p>
+            </div>
+        </section>
+
+        <!-- How does Chau7's high contrast compare to other terminals -->
+        <section class="feature-content" data-ui="high-contrast-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's high contrast mode compare to other terminals?</h2>
+                <p>Many terminals ignore the macOS High Contrast setting entirely, leaving borders and text unchanged. Some terminals require manual theme switching to achieve higher contrast.</p>
+                <p>Chau7 actively adapts borders, text weight, selection highlighting, cursor visibility, and focus rings when High Contrast is enabled. Chau7 also preserves your chosen theme character while boosting readability, so you do not need to switch to a separate high-contrast theme.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="high-contrast-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why Chau7 high contrast mode matters</h2>
+                <p>Low-vision developers and anyone working in challenging lighting conditions benefit from enhanced contrast. Chau7 respects the macOS High Contrast setting automatically, so accessibility is built in rather than bolted on.</p>
+                <p>Chau7 adjusts borders, text weight, and UI element contrast without requiring manual theme switching. This zero-configuration approach means accessibility works from the first launch.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="high-contrast-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -118,24 +173,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="high-contrast-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
+                    <details>
+                        <summary>What is High Contrast Mode in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>High Contrast Mode in Chau7 automatically detects the macOS High Contrast accessibility setting and enhances the visual presentation of the terminal. Chau7 increases border prominence, text contrast, and UI element visibility without requiring any per-app configuration.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's high contrast mode compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Many terminals ignore the macOS High Contrast setting entirely, leaving borders and text unchanged. Chau7 actively adapts borders, text weight, selection highlighting, cursor visibility, and focus rings when High Contrast is enabled. Chau7 also preserves your chosen theme character while boosting readability.</p></div>
+                    </details>
                     <details>
                         <summary>Do I need to configure high contrast separately in Chau7?</summary>
                         <div class="faq-answer"><p>No. Chau7 automatically detects the macOS High Contrast accessibility setting and adapts its rendering. No per-app configuration is needed.</p></div>
                     </details>
                     <details>
-                        <summary>Does high contrast mode affect my theme?</summary>
-                        <div class="faq-answer"><p>Theme colors are adjusted to improve contrast while preserving the overall character of your chosen scheme. The goal is readability enhancement, not a complete visual override.</p></div>
+                        <summary>Does high contrast mode in Chau7 affect my theme?</summary>
+                        <div class="faq-answer"><p>Chau7 adjusts theme colors to improve contrast while preserving the overall character of your chosen color scheme. The goal is readability enhancement, not a complete visual override.</p></div>
+                    </details>
+                    <details>
+                        <summary>Which Chau7 UI elements change in high contrast mode?</summary>
+                        <div class="faq-answer"><p>Chau7 enhances borders around windows, tabs, and split panes. Selection highlighting, cursor visibility, focus rings, and interactive controls all receive enhanced contrast treatment in Chau7's high contrast mode.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="high-contrast-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>A terminal that adapts to your vision needs. Automatically.</h2>

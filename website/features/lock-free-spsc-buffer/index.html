@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Lock-Free SPSC Buffer | Chau7 Terminal</title>
     <meta name="description" content="Chau7 uses a lock-free single-producer single-consumer ring buffer for zero-contention PTY data transfer between threads.">
+    <meta name="article:section" content="GPU Rendering">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="lock-free buffer">
+    <meta name="article:tag" content="SPSC ring buffer">
+    <meta name="article:tag" content="PTY data transfer">
+    <meta name="article:tag" content="zero contention">
+    <meta name="article:tag" content="terminal performance">
     <meta property="og:title" content="Lock-Free SPSC Buffer | Chau7">
     <meta property="og:description" content="Chau7 uses a lock-free single-producer single-consumer ring buffer for zero-contention PTY data transfer between threads.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that uses a lock-free single-producer single-consumer ring buffer for zero-contention PTY data transfer between reader and parser threads.",
+        "featureList": [
+            "Lock-free SPSC ring buffer for PTY data",
+            "Zero-contention thread communication",
+            "Atomic cursor-based producer-consumer design",
+            "Cache-line padding to prevent false sharing",
+            "Power-of-two buffer sizing with bitwise wrap",
+            "POSIX backpressure on buffer full"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"What happens if the ring buffer fills up?","acceptedAnswer":{"@type":"Answer","text":"If the parser falls behind the reader, the reader detects a full buffer via the cursor positions and applies backpressure by pausing the PTY read. This is the correct behavior: it signals the child process to slow down via standard POSIX flow control, preventing unbounded memory growth."}},{"@type":"Question","name":"Why SPSC instead of a multi-producer or multi-consumer buffer?","acceptedAnswer":{"@type":"Answer","text":"The PTY data path has exactly one producer (the reader thread) and one consumer (the parser thread). An SPSC buffer exploits this fixed topology to eliminate all atomic read-modify-write operations, using only atomic loads and stores. Multi-producer or multi-consumer queues require compare-and-swap loops that are strictly more expensive."}},{"@type":"Question","name":"How large is the ring buffer?","acceptedAnswer":{"@type":"Answer","text":"The default size is 256 KB, which provides roughly 3ms of buffering at 80 MB/s throughput. This is large enough to absorb scheduling jitter between the reader and parser threads while small enough to remain resident in L2 cache on Apple Silicon."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Lock-Free SPSC Buffer in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"The Lock-Free SPSC Buffer in Chau7 is a single-producer single-consumer ring buffer that transfers PTY data between the reader thread and the parser thread with zero contention. Chau7 uses atomic cursors instead of mutexes, eliminating kernel synchronization from the hottest data path in the terminal."}},
+            {"@type":"Question","name":"How does Chau7's lock-free SPSC buffer compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminal emulators use mutex-protected queues or pipe-based communication between their PTY reader and parser. Chau7 uses a lock-free SPSC ring buffer with atomic cursors and cache-line padding, eliminating all contention and kernel transitions from the PTY data path. This design is one reason Chau7 achieves higher throughput than terminals that use traditional synchronization."}},
+            {"@type":"Question","name":"How does Chau7 build a lock-free buffer for terminal PTY data?","acceptedAnswer":{"@type":"Answer","text":"Chau7's SPSC buffer uses two atomic cursors: a write cursor advanced by the PTY reader thread and a read cursor advanced by the parser thread. Each thread only writes its own cursor and reads the other. The buffer is sized to a power of two (256 KB), allowing index wrapping with a bitwise AND. Cache-line padding separates the cursors to prevent false sharing."}},
+            {"@type":"Question","name":"What happens if Chau7's ring buffer fills up?","acceptedAnswer":{"@type":"Answer","text":"If the parser falls behind the reader in Chau7, the reader detects a full buffer via the cursor positions and applies backpressure by pausing the PTY read. This signals the child process to slow down via standard POSIX flow control, preventing unbounded memory growth."}},
+            {"@type":"Question","name":"Why does Chau7 use SPSC instead of a multi-producer or multi-consumer buffer?","acceptedAnswer":{"@type":"Answer","text":"Chau7's PTY data path has exactly one producer (the reader thread) and one consumer (the parser thread). An SPSC buffer exploits this fixed topology to eliminate all atomic read-modify-write operations, using only atomic loads and stores. Multi-producer or multi-consumer queues require compare-and-swap loops that are strictly more expensive."}}
+        ]
     }]
     </script>
 </head>
@@ -58,45 +80,76 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="rendering" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="rendering" data-ui="spsc-buffer-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-purple">GPU RENDERING</div>
                 <h1 class="hero-title">Lock-Free SPSC Buffer</h1>
-                <p class="hero-subtitle">One reader thread, one parser thread, one lock-free ring buffer. Zero contention.</p>
+                <p class="hero-subtitle">Chau7 connects reader and parser with one lock-free ring buffer. Zero contention.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="spsc-buffer-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">How to build a lock-free buffer for terminal PTY data</li>
-                    <li class="question-item">Terminal performance bottleneck between PTY reader and parser</li>
-                    <li class="question-item">Single producer single consumer ring buffer for real-time applications</li>
-                    <li class="question-item">Reducing thread contention in terminal emulator architecture</li>
+                    <li class="question-item">What is Lock-Free SPSC Buffer in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's lock-free SPSC buffer compare to other terminals?</li>
+                    <li class="question-item">How does Chau7 build a lock-free buffer for terminal PTY data?</li>
+                    <li class="question-item">What happens if Chau7's ring buffer fills up?</li>
+                    <li class="question-item">Why does Chau7 use SPSC instead of a multi-producer or multi-consumer buffer?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Lock-Free SPSC Buffer -->
+        <section class="feature-content" data-ui="spsc-buffer-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>The PTY reader thread and the ANSI parser thread communicate through a lock-free single-producer single-consumer (SPSC) ring buffer. The reader writes raw bytes from the PTY file descriptor into the ring buffer. The parser reads bytes out of the ring buffer and processes escape sequences. No mutex, spinlock, or kernel synchronization primitive is used at any point in this path.</p>
-                <p>The ring buffer uses two atomic cursors: a write cursor advanced by the reader and a read cursor advanced by the parser. Each thread only writes its own cursor and reads the other, so there is no contention. The buffer is sized to a power of two (typically 256 KB), allowing index wrapping with a simple bitwise AND instead of a modulo operation.</p>
-                <p>Cache-line padding separates the two cursors to prevent false sharing on ARM and x86 architectures. The reader and parser operate on independent cache lines, so neither thread's writes invalidate the other's cached cursor value. This eliminates the last source of cross-core overhead in the data pipeline.</p>
+                <h2>What is Lock-Free SPSC Buffer in Chau7?</h2>
+                <p>The Lock-Free SPSC Buffer in Chau7 is a single-producer single-consumer ring buffer that transfers PTY data between the reader thread and the parser thread with zero contention. Chau7 uses atomic cursors instead of mutexes, eliminating kernel synchronization from the hottest data path in the terminal.</p>
+                <p>The PTY-to-parser pipeline is the path through which every byte of program output flows in Chau7. A mutex on this path would create contention between the PTY reader and the parser, adding latency on every I/O cycle. Chau7's lock-free design avoids this entirely.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>The PTY-to-parser pipeline is the hottest data path in a terminal emulator. Every byte of program output flows through it. A mutex on this path would create contention between the PTY reader and the parser, adding latency on every I/O cycle. Chau7 uses a single-producer single-consumer ring buffer with no locks, no kernel transitions, and no contention. The reader and parser proceed independently.</p>
-                </div>
+        <!-- How Chau7 builds the buffer -->
+        <section class="feature-content" data-ui="spsc-buffer-how">
+            <div class="section-inner prose">
+                <h2>How does Chau7 build a lock-free buffer for terminal PTY data?</h2>
+                <p>Chau7's SPSC ring buffer uses two atomic cursors. A write cursor is advanced by the reader thread, and a read cursor is advanced by the parser thread. Each thread only writes its own cursor and reads the other, so there is no contention on any shared memory location.</p>
+                <p>The buffer in Chau7 is sized to a power of two (typically 256 KB), allowing index wrapping with a simple bitwise AND instead of a modulo operation. Cache-line padding separates the two cursors to prevent false sharing on ARM and x86 architectures, ensuring neither thread's writes invalidate the other's cached cursor value.</p>
+            </div>
+        </section>
+
+        <!-- Buffer full behavior -->
+        <section class="feature-content" data-ui="spsc-buffer-full">
+            <div class="section-inner prose">
+                <h2>What happens if Chau7's ring buffer fills up?</h2>
+                <p>If the parser falls behind the reader in Chau7, the reader detects a full buffer via the cursor positions and applies backpressure by pausing the PTY read. This is the correct behavior for a terminal emulator.</p>
+                <p>Pausing the PTY read in Chau7 signals the child process to slow down via standard POSIX flow control. This prevents unbounded memory growth and keeps the system stable under burst output. The buffer size of 256 KB provides roughly 3ms of buffering at 80 MB/s throughput, which is large enough to absorb normal scheduling jitter.</p>
+            </div>
+        </section>
+
+        <!-- Why SPSC -->
+        <section class="feature-content" data-ui="spsc-buffer-why-spsc">
+            <div class="section-inner prose">
+                <h2>Why does Chau7 use SPSC instead of a multi-producer or multi-consumer buffer?</h2>
+                <p>Chau7's PTY data path has exactly one producer (the reader thread) and one consumer (the parser thread). An SPSC buffer exploits this fixed topology to eliminate all atomic read-modify-write operations, using only atomic loads and stores.</p>
+                <p>Multi-producer or multi-consumer queues require compare-and-swap loops that are strictly more expensive than atomic loads and stores. Since Chau7's PTY data path will always have exactly one reader and one parser, the SPSC design is the optimal choice for this topology.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="spsc-buffer-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's lock-free SPSC buffer compare to other terminals?</h2>
+                <p>Most terminal emulators use mutex-protected queues or pipe-based communication between their PTY reader and parser. These approaches introduce kernel transitions and contention on every I/O cycle.</p>
+                <p>Chau7 uses a lock-free SPSC ring buffer with atomic cursors and cache-line padding, eliminating all contention and kernel transitions from the PTY data path. This design is one reason Chau7 achieves higher throughput than terminals that use traditional synchronization primitives.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="spsc-buffer-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -120,28 +173,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="spsc-buffer-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>What happens if the ring buffer fills up?</summary>
-                        <div class="faq-answer"><p>If the parser falls behind the reader, the reader detects a full buffer via the cursor positions and applies backpressure by pausing the PTY read. This is the correct behavior: it signals the child process to slow down via standard POSIX flow control, preventing unbounded memory growth.</p></div>
+                        <summary>What is Lock-Free SPSC Buffer in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>The Lock-Free SPSC Buffer in Chau7 is a single-producer single-consumer ring buffer that transfers PTY data between the reader thread and the parser thread with zero contention. Chau7 uses atomic cursors instead of mutexes, eliminating kernel synchronization from the hottest data path in the terminal.</p></div>
                     </details>
                     <details>
-                        <summary>Why SPSC instead of a multi-producer or multi-consumer buffer?</summary>
-                        <div class="faq-answer"><p>The PTY data path has exactly one producer (the reader thread) and one consumer (the parser thread). An SPSC buffer exploits this fixed topology to eliminate all atomic read-modify-write operations, using only atomic loads and stores. Multi-producer or multi-consumer queues require compare-and-swap loops that are strictly more expensive.</p></div>
+                        <summary>How does Chau7's lock-free SPSC buffer compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminal emulators use mutex-protected queues or pipe-based communication between their PTY reader and parser. Chau7 uses a lock-free SPSC ring buffer with atomic cursors and cache-line padding, eliminating all contention and kernel transitions from the PTY data path.</p></div>
                     </details>
                     <details>
-                        <summary>How large is the ring buffer?</summary>
-                        <div class="faq-answer"><p>The default size is 256 KB, which provides roughly 3ms of buffering at 80 MB/s throughput. This is large enough to absorb scheduling jitter between the reader and parser threads while small enough to remain resident in L2 cache on Apple Silicon.</p></div>
+                        <summary>How does Chau7 build a lock-free buffer for terminal PTY data?</summary>
+                        <div class="faq-answer"><p>Chau7's SPSC buffer uses two atomic cursors: a write cursor advanced by the PTY reader thread and a read cursor advanced by the parser thread. Each thread only writes its own cursor and reads the other. The buffer is sized to a power of two (256 KB), allowing index wrapping with a bitwise AND. Cache-line padding separates the cursors to prevent false sharing.</p></div>
+                    </details>
+                    <details>
+                        <summary>What happens if Chau7's ring buffer fills up?</summary>
+                        <div class="faq-answer"><p>If the parser falls behind the reader in Chau7, the reader detects a full buffer via the cursor positions and applies backpressure by pausing the PTY read. This signals the child process to slow down via standard POSIX flow control, preventing unbounded memory growth.</p></div>
+                    </details>
+                    <details>
+                        <summary>Why does Chau7 use SPSC instead of a multi-producer or multi-consumer buffer?</summary>
+                        <div class="faq-answer"><p>Chau7's PTY data path has exactly one producer (the reader thread) and one consumer (the parser thread). An SPSC buffer exploits this fixed topology to eliminate all atomic read-modify-write operations, using only atomic loads and stores. Multi-producer or multi-consumer queues require compare-and-swap loops that are strictly more expensive.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="spsc-buffer-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Lock-free data pipeline. Because mutexes are so last decade.</h2>

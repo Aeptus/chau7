@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>MCP Approval Gate | Chau7 Terminal</title>
     <meta name="description" content="Chau7's MCP Approval Gate lets you review and approve AI tool calls before execution, keeping you in control of automated actions.">
+    <meta name="article:section" content="Safety">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="MCP approval gate">
+    <meta name="article:tag" content="AI tool approval">
+    <meta name="article:tag" content="MCP safety">
+    <meta name="article:tag" content="agent control">
+    <meta name="article:tag" content="terminal safety">
     <meta property="og:title" content="MCP Approval Gate | Chau7">
     <meta property="og:description" content="Chau7's MCP Approval Gate lets you review and approve AI tool calls before execution, keeping you in control of automated actions.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with an MCP Approval Gate that lets you review and approve AI tool calls before execution.",
+        "featureList": [
+            "Review and approve MCP tool calls before execution",
+            "Per-tool and per-agent approval rules",
+            "Remembered approvals that persist across sessions",
+            "Auto-approve safe read-only operations",
+            "Block specific tools permanently",
+            "Works with any MCP-connected agent"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does the approval gate slow down AI workflows?","acceptedAnswer":{"@type":"Answer","text":"Only for the actions you choose to gate. Read-only operations and pre-approved tools execute instantly. The gate only pauses execution for tools that match your approval rules, so trusted workflows run at full speed."}},{"@type":"Question","name":"Can I approve tools once and remember the decision?","acceptedAnswer":{"@type":"Answer","text":"Yes. When approving a tool call, you can choose to remember the decision for that tool, that tool from a specific agent, or that exact tool-and-parameter combination. Remembered approvals persist across sessions."}},{"@type":"Question","name":"Does this work with all MCP-connected agents?","acceptedAnswer":{"@type":"Answer","text":"Yes. The approval gate operates at the MCP protocol layer inside Chau7, so it works with any agent that connects through MCP: Claude, custom agents, or any future MCP-compatible assistant."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is MCP Approval Gate in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"The MCP Approval Gate in Chau7 is a safety feature that intercepts AI tool calls made through the MCP protocol and presents them for your review before execution. Chau7 shows the tool name, all parameters, and the originating agent, letting you accept, reject, or modify each request."}},
+            {"@type":"Question","name":"How do I control which MCP actions AI can execute in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Chau7's MCP Approval Gate lets you configure approval rules per-tool and per-agent. You can auto-approve safe read-only operations, require approval for write operations, and permanently block specific tools. Rules persist across sessions in Chau7, so you build up a trust profile over time."}},
+            {"@type":"Question","name":"Can I approve MCP tool calls before they run in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Yes. When an AI agent requests a tool action through MCP, Chau7 intercepts the request and presents an approval dialog showing the tool name, parameters, and originating agent. You can accept, reject, or modify the request before it reaches the shell."}},
+            {"@type":"Question","name":"Does Chau7's approval gate slow down AI workflows?","acceptedAnswer":{"@type":"Answer","text":"Chau7's approval gate only pauses execution for tools that match your approval rules. Read-only operations and pre-approved tools execute instantly in Chau7. Trusted workflows run at full speed because you control exactly which actions require review."}},
+            {"@type":"Question","name":"Can I approve tools once and remember the decision in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Yes. When approving a tool call in Chau7, you can choose to remember the decision for that tool, that tool from a specific agent, or that exact tool-and-parameter combination. Remembered approvals in Chau7 persist across sessions."}}
+        ]
     }]
     </script>
 </head>
@@ -58,44 +80,76 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="safety" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="safety" data-ui="mcp-approval-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SAFETY</div>
                 <h1 class="hero-title">MCP Approval Gate</h1>
-                <p class="hero-subtitle">Your AI agent wants to run a command. You get to say yes or no first.</p>
+                <p class="hero-subtitle">Your AI agent wants to run a command. Chau7 lets you say yes or no first.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="mcp-approval-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">How do I control which MCP actions AI can execute in my terminal?</li>
-                    <li class="question-item">Can I approve MCP tool calls before they run?</li>
-                    <li class="question-item">Is there a way to gate AI tool execution in a terminal emulator?</li>
-                    <li class="question-item">How to prevent unauthorized MCP commands from running?</li>
+                    <li class="question-item">What is MCP Approval Gate in Chau7 terminal?</li>
+                    <li class="question-item">How do I control which MCP actions AI can execute in Chau7?</li>
+                    <li class="question-item">Can I approve MCP tool calls before they run in Chau7?</li>
+                    <li class="question-item">Does Chau7's approval gate slow down AI workflows?</li>
+                    <li class="question-item">Can I approve tools once and remember the decision in Chau7?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is MCP Approval Gate -->
+        <section class="feature-content" data-ui="mcp-approval-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>When an AI agent connected via MCP requests a tool action: executing a command, writing a file, or modifying terminal state: Chau7 can intercept the request and present it for your approval. The approval dialog shows the tool name, all parameters, and the originating agent, letting you accept, reject, or modify the request before it reaches the shell.</p>
-                <p>Approval rules are configurable per-tool and per-agent. You can auto-approve safe read-only operations like listing files, require approval for write operations, and permanently block specific tools. Rules persist across sessions, so you build up a trust profile over time without repeated prompts for tools you have already vetted.</p>
+                <h2>What is MCP Approval Gate in Chau7?</h2>
+                <p>The MCP Approval Gate in Chau7 is a safety feature that intercepts AI tool calls made through the MCP protocol and presents them for your review before execution. Chau7 shows the tool name, all parameters, and the originating agent in an approval dialog.</p>
+                <p>The Chau7 approval gate operates at the MCP protocol layer, so it works with any agent that connects through MCP. Whether you use Claude, custom agents, or any future MCP-compatible assistant, Chau7 gates the tool calls the same way.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>MCP gives AI agents powerful capabilities inside your terminal, but power without oversight is a liability. The approval gate lets you review every MCP tool call before it executes. Enable it globally, per-tool, or not at all. It is the difference between 'my AI can do anything' and 'my AI can do anything I approve.'</p>
-                </div>
+        <!-- How to control MCP actions -->
+        <section class="feature-content" data-ui="mcp-approval-control">
+            <div class="section-inner prose">
+                <h2>How do I control which MCP actions AI can execute in Chau7?</h2>
+                <p>Chau7's MCP Approval Gate lets you configure approval rules per-tool and per-agent. You can auto-approve safe read-only operations like listing files, require approval for write operations, and permanently block specific tools.</p>
+                <p>Approval rules in Chau7 persist across sessions, so you build up a trust profile over time without repeated prompts for tools you have already vetted. Chau7 gives you full control over what AI agents can and cannot do in your terminal.</p>
+            </div>
+        </section>
+
+        <!-- Approving tool calls -->
+        <section class="feature-content" data-ui="mcp-approval-how">
+            <div class="section-inner prose">
+                <h2>Can I approve MCP tool calls before they run in Chau7?</h2>
+                <p>Yes. When an AI agent connected via MCP requests a tool action in Chau7, the approval gate intercepts the request and presents it for your review. The approval dialog in Chau7 shows the tool name, all parameters, and the originating agent.</p>
+                <p>You can accept, reject, or modify the request before it reaches the shell. Chau7 does not execute any gated tool call until you explicitly approve it.</p>
+            </div>
+        </section>
+
+        <!-- Speed impact -->
+        <section class="feature-content" data-ui="mcp-approval-speed">
+            <div class="section-inner prose">
+                <h2>Does Chau7's approval gate slow down AI workflows?</h2>
+                <p>Chau7's approval gate only pauses execution for tools that match your approval rules. Read-only operations and pre-approved tools execute instantly in Chau7.</p>
+                <p>Trusted workflows run at full speed because you control exactly which actions require review in Chau7. The gate is designed to be invisible for safe operations and present only when a tool call warrants human oversight.</p>
+            </div>
+        </section>
+
+        <!-- Remembered approvals -->
+        <section class="feature-content" data-ui="mcp-approval-remember">
+            <div class="section-inner prose">
+                <h2>Can I approve tools once and remember the decision in Chau7?</h2>
+                <p>Yes. When approving a tool call in Chau7, you can choose to remember the decision for that tool, that tool from a specific agent, or that exact tool-and-parameter combination.</p>
+                <p>Remembered approvals in Chau7 persist across sessions. Over time, Chau7 learns your trust preferences and only prompts you for genuinely new or modified tool calls.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="mcp-approval-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -115,28 +169,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="mcp-approval-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>Does the approval gate slow down AI workflows?</summary>
-                        <div class="faq-answer"><p>Only for the actions you choose to gate. Read-only operations and pre-approved tools execute instantly. The gate only pauses execution for tools that match your approval rules, so trusted workflows run at full speed.</p></div>
+                        <summary>What is MCP Approval Gate in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>The MCP Approval Gate in Chau7 is a safety feature that intercepts AI tool calls made through the MCP protocol and presents them for your review before execution. Chau7 shows the tool name, all parameters, and the originating agent, letting you accept, reject, or modify each request.</p></div>
                     </details>
                     <details>
-                        <summary>Can I approve tools once and remember the decision?</summary>
-                        <div class="faq-answer"><p>Yes. When approving a tool call, you can choose to remember the decision for that tool, that tool from a specific agent, or that exact tool-and-parameter combination. Remembered approvals persist across sessions.</p></div>
+                        <summary>How do I control which MCP actions AI can execute in Chau7?</summary>
+                        <div class="faq-answer"><p>Chau7's MCP Approval Gate lets you configure approval rules per-tool and per-agent. You can auto-approve safe read-only operations, require approval for write operations, and permanently block specific tools. Rules persist across sessions in Chau7, so you build up a trust profile over time.</p></div>
                     </details>
                     <details>
-                        <summary>Does this work with all MCP-connected agents?</summary>
-                        <div class="faq-answer"><p>Yes. The approval gate operates at the MCP protocol layer inside Chau7, so it works with any agent that connects through MCP: Claude, custom agents, or any future MCP-compatible assistant.</p></div>
+                        <summary>Can I approve MCP tool calls before they run in Chau7?</summary>
+                        <div class="faq-answer"><p>Yes. When an AI agent requests a tool action through MCP, Chau7 intercepts the request and presents an approval dialog showing the tool name, parameters, and originating agent. You can accept, reject, or modify the request before it reaches the shell.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7's approval gate slow down AI workflows?</summary>
+                        <div class="faq-answer"><p>Chau7's approval gate only pauses execution for tools that match your approval rules. Read-only operations and pre-approved tools execute instantly in Chau7. Trusted workflows run at full speed because you control exactly which actions require review.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I approve tools once and remember the decision in Chau7?</summary>
+                        <div class="faq-answer"><p>Yes. When approving a tool call in Chau7, you can choose to remember the decision for that tool, that tool from a specific agent, or that exact tool-and-parameter combination. Remembered approvals in Chau7 persist across sessions.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="mcp-approval-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Trust, but verify. MCP actions with an approval step.</h2>

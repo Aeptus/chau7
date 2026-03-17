@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Unicode & Emoji Support | Chau7 Terminal</title>
     <meta name="description" content="Chau7 renders full Unicode including CJK wide characters, right-to-left text, combining marks, and color emoji in the terminal.">
+    <meta name="article:section" content="Terminal Core">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="Unicode">
+    <meta name="article:tag" content="emoji">
+    <meta name="article:tag" content="CJK characters">
+    <meta name="article:tag" content="Nerd Fonts">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Unicode & Emoji Support | Chau7">
     <meta property="og:description" content="Chau7 renders full Unicode including CJK wide characters, right-to-left text, combining marks, and color emoji in the terminal.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,16 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that renders full Unicode including CJK wide characters, right-to-left text, combining marks, and color emoji.",
+        "featureList": [
+            "Unicode 15.1 character width calculation",
+            "CJK ideograph and fullwidth form double-width rendering",
+            "Extended Grapheme Cluster boundary grouping",
+            "ZWJ emoji sequence rendering as single glyphs",
+            "Core Text complex script shaping for Arabic, Devanagari, Thai",
+            "Per-script font fallback configuration for CJK fonts",
+            "Nerd Font and Powerline symbol support"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +55,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does Chau7 support Nerd Fonts and Powerline symbols?","acceptedAnswer":{"@type":"Answer","text":"Yes. Nerd Font symbols are Private Use Area code points that Chau7 renders at the correct single-cell width. Powerline-patched fonts work without any special configuration."}},{"@type":"Question","name":"How does Chau7 handle emoji that are wider than two cells?","acceptedAnswer":{"@type":"Answer","text":"No standard emoji exceeds two terminal cells. ZWJ sequences (like family emoji composed of multiple people) are rendered as a single glyph within two cells. If the font does not support a particular ZWJ sequence, Chau7 falls back to rendering the component emoji sequentially."}},{"@type":"Question","name":"Can I use a different font for CJK characters?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 supports per-script font fallback configuration. You can assign a dedicated CJK font (like Sarasa Mono or Noto Sans CJK) that will be used for CJK code points while your primary font handles Latin text."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Unicode & Emoji Support in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Unicode & Emoji Support in Chau7 means the terminal correctly renders the full Unicode character set including CJK wide characters, right-to-left text, combining marks, and color emoji. Chau7 implements Unicode 15.1 character width calculation and Extended Grapheme Cluster boundaries for correct cell alignment."}},
+            {"@type":"Question","name":"How does Chau7's unicode & emoji support compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Many terminals misalign CJK characters, break emoji sequences, or fail to render combining marks correctly. Chau7 implements Unicode 15.1 width calculation, Extended Grapheme Cluster grouping, and Core Text shaping for complex scripts. Chau7 also supports per-script font fallback so developers can assign dedicated CJK fonts."}},
+            {"@type":"Question","name":"How to fix broken Unicode rendering in my terminal","acceptedAnswer":{"@type":"Answer","text":"Broken Unicode rendering in terminals typically comes from incorrect character width calculation or missing grapheme cluster grouping. Chau7 solves both by implementing Unicode 15.1 East Asian Width properties and Extended Grapheme Cluster boundaries. Switching to Chau7 fixes CJK alignment, combining mark rendering, and emoji display."}},
+            {"@type":"Question","name":"Does Chau7 support Nerd Fonts and Powerline symbols?","acceptedAnswer":{"@type":"Answer","text":"Yes. Nerd Font symbols are Private Use Area code points that Chau7 renders at the correct single-cell width. Powerline-patched fonts work in Chau7 without any special configuration."}},
+            {"@type":"Question","name":"How does Chau7 handle emoji that are wider than two cells?","acceptedAnswer":{"@type":"Answer","text":"No standard emoji exceeds two terminal cells. Chau7 renders ZWJ sequences (like family emoji composed of multiple people) as a single glyph within two cells. If the font does not support a particular ZWJ sequence, Chau7 falls back to rendering the component emoji sequentially."}}
+        ]
     }]
     </script>
 </head>
@@ -58,46 +81,76 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="terminal" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="terminal" data-ui="unicode-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">TERMINAL CORE</div>
                 <h1 class="hero-title">Unicode & Emoji Support</h1>
-                <p class="hero-subtitle">CJK, RTL, combining characters, color emoji. Unicode rendered correctly, not approximately.</p>
+                <p class="hero-subtitle">Chau7 renders CJK, RTL, combining characters, and color emoji correctly. Not approximately.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="unicode-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">Terminal not displaying emoji correctly on macOS</li>
-                    <li class="question-item">CJK characters wrong width in terminal emulator</li>
+                    <li class="question-item">What is Unicode & Emoji Support in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's unicode & emoji support compare to other terminals?</li>
                     <li class="question-item">How to fix broken Unicode rendering in my terminal</li>
-                    <li class="question-item">Terminal emoji alignment issues with Powerline fonts</li>
-                    <li class="question-item">Combining characters not rendering in terminal</li>
+                    <li class="question-item">Does Chau7 support Nerd Fonts and Powerline symbols?</li>
+                    <li class="question-item">How does Chau7 handle emoji that are wider than two cells?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Unicode & Emoji Support -->
+        <section class="feature-content" data-ui="unicode-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 implements Unicode 15.1 character width calculation using the East Asian Width property and the emoji presentation selector rules. CJK ideographs, fullwidth forms, and emoji with presentation selectors are correctly assigned double-width cells. Ambiguous-width characters follow a configurable policy (single or double width) to match user locale expectations.</p>
-                <p>Combining characters and grapheme clusters are rendered correctly by grouping code points according to Unicode Extended Grapheme Cluster boundaries. A base character followed by any number of combining marks (accents, diacritics, enclosing marks) occupies a single terminal cell. Emoji sequences including skin tone modifiers, ZWJ sequences (family, profession), and flag sequences are rendered as a single glyph in one or two cells.</p>
-                <p>Text shaping is delegated to Core Text, which handles complex scripts (Arabic, Devanagari, Thai) that require contextual glyph selection and reordering. The shaped glyph output is cached in the Metal glyph atlas alongside monospace glyphs, so complex script rendering incurs no per-frame overhead after the initial shaping pass.</p>
+                <h2>What is Unicode & Emoji Support in Chau7?</h2>
+                <p>Unicode & Emoji Support in Chau7 means the terminal correctly renders the full Unicode character set. Chau7 implements Unicode 15.1 character width calculation using the East Asian Width property and emoji presentation selector rules.</p>
+                <p>CJK ideographs, fullwidth forms, and emoji with presentation selectors are correctly assigned double-width cells in Chau7. Ambiguous-width characters follow a configurable policy (single or double width) to match user locale expectations.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Modern developer workflows produce Unicode content constantly: international file paths, multilingual log messages, emoji in commit messages, and mathematical symbols in documentation. Chau7 handles Unicode at the grapheme-cluster level, correctly measuring and rendering everything from Chinese characters to ZWJ emoji sequences.</p>
-                </div>
+        <!-- How to fix broken Unicode -->
+        <section class="feature-content" data-ui="unicode-fix-broken">
+            <div class="section-inner prose">
+                <h2>How to fix broken Unicode rendering in your terminal</h2>
+                <p>Broken Unicode rendering in terminals typically comes from two problems: incorrect character width calculation and missing grapheme cluster grouping. Characters display at the wrong width, causing misalignment. Combining marks appear as separate characters instead of attaching to their base.</p>
+                <p>Chau7 solves both problems. Chau7 implements Unicode 15.1 East Asian Width properties for correct cell assignment and Extended Grapheme Cluster boundaries for combining mark grouping. A base character followed by any number of combining marks (accents, diacritics, enclosing marks) occupies a single terminal cell in Chau7.</p>
+            </div>
+        </section>
+
+        <!-- Comparison -->
+        <section class="feature-content" data-ui="unicode-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's Unicode and emoji support compare to other terminals?</h2>
+                <p>Many terminals misalign CJK characters because they use outdated or incomplete width tables. Some terminals break ZWJ emoji sequences into individual components. Others fail to render combining marks as part of their base character.</p>
+                <p>Chau7 implements Unicode 15.1 width calculation, Extended Grapheme Cluster grouping, and delegates complex script shaping to Core Text. Chau7 also supports per-script font fallback configuration, so developers can assign a dedicated CJK font like Sarasa Mono or Noto Sans CJK while keeping their primary font for Latin text.</p>
+            </div>
+        </section>
+
+        <!-- Nerd Fonts and Powerline -->
+        <section class="feature-content" data-ui="unicode-nerd-fonts">
+            <div class="section-inner prose">
+                <h2>Does Chau7 support Nerd Fonts and Powerline symbols?</h2>
+                <p>Yes. Nerd Font symbols are Private Use Area code points that Chau7 renders at the correct single-cell width. Powerline-patched fonts work in Chau7 without any special configuration.</p>
+                <p>Chau7's glyph atlas caches Nerd Font and Powerline glyphs alongside standard monospace glyphs. After the initial render, these special symbols incur no per-frame overhead in Chau7's Metal rendering pipeline.</p>
+            </div>
+        </section>
+
+        <!-- Emoji wider than two cells -->
+        <section class="feature-content" data-ui="unicode-emoji-width">
+            <div class="section-inner prose">
+                <h2>How does Chau7 handle emoji that are wider than two cells?</h2>
+                <p>No standard emoji exceeds two terminal cells. Chau7 renders ZWJ sequences (like family emoji composed of multiple people) as a single glyph within two cells.</p>
+                <p>If the font does not support a particular ZWJ sequence, Chau7 falls back to rendering the component emoji sequentially. Skin tone modifiers and flag sequences also render as single glyphs in Chau7 when the font supports them.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="unicode-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -121,28 +174,40 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="unicode-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Unicode & Emoji Support in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Unicode & Emoji Support in Chau7 means the terminal correctly renders the full Unicode character set including CJK wide characters, right-to-left text, combining marks, and color emoji. Chau7 implements Unicode 15.1 character width calculation and Extended Grapheme Cluster boundaries for correct cell alignment.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's Unicode & emoji support compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Many terminals misalign CJK characters, break emoji sequences, or fail to render combining marks correctly. Chau7 implements Unicode 15.1 width calculation, Extended Grapheme Cluster grouping, and Core Text shaping for complex scripts. Chau7 also supports per-script font fallback so developers can assign dedicated CJK fonts.</p></div>
+                    </details>
+                    <details>
+                        <summary>How to fix broken Unicode rendering in my terminal</summary>
+                        <div class="faq-answer"><p>Broken Unicode rendering in terminals typically comes from incorrect character width calculation or missing grapheme cluster grouping. Chau7 solves both by implementing Unicode 15.1 East Asian Width properties and Extended Grapheme Cluster boundaries. Switching to Chau7 fixes CJK alignment, combining mark rendering, and emoji display.</p></div>
+                    </details>
+                    <details>
                         <summary>Does Chau7 support Nerd Fonts and Powerline symbols?</summary>
-                        <div class="faq-answer"><p>Yes. Nerd Font symbols are Private Use Area code points that Chau7 renders at the correct single-cell width. Powerline-patched fonts work without any special configuration.</p></div>
+                        <div class="faq-answer"><p>Yes. Nerd Font symbols are Private Use Area code points that Chau7 renders at the correct single-cell width. Powerline-patched fonts work in Chau7 without any special configuration.</p></div>
                     </details>
                     <details>
                         <summary>How does Chau7 handle emoji that are wider than two cells?</summary>
-                        <div class="faq-answer"><p>No standard emoji exceeds two terminal cells. ZWJ sequences (like family emoji composed of multiple people) are rendered as a single glyph within two cells. If the font does not support a particular ZWJ sequence, Chau7 falls back to rendering the component emoji sequentially.</p></div>
+                        <div class="faq-answer"><p>No standard emoji exceeds two terminal cells. Chau7 renders ZWJ sequences (like family emoji composed of multiple people) as a single glyph within two cells. If the font does not support a particular ZWJ sequence, Chau7 falls back to rendering the component emoji sequentially.</p></div>
                     </details>
                     <details>
-                        <summary>Can I use a different font for CJK characters?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7 supports per-script font fallback configuration. You can assign a dedicated CJK font (like Sarasa Mono or Noto Sans CJK) that will be used for CJK code points while your primary font handles Latin text.</p></div>
+                        <summary>Can I use a different font for CJK characters in Chau7?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 supports per-script font fallback configuration. Developers can assign a dedicated CJK font (like Sarasa Mono or Noto Sans CJK) that Chau7 uses for CJK code points while the primary font handles Latin text.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="unicode-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>A terminal that speaks every language. Including emoji.</h2>

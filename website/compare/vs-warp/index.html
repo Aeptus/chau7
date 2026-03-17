@@ -7,6 +7,8 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Chau7 vs Warp | Honest Terminal Comparison</title>
     <meta name="description" content="An honest comparison of Chau7 and Warp. Two AI-aware terminals with very different philosophies. Built-in AI vs open MCP standard. Here's how to choose.">
+    <meta name="entity" content="Chau7 vs Warp Comparison">
+    <meta name="entity-type" content="comparison">
     <meta property="og:title" content="Chau7 vs Warp | Terminal Comparison">
     <meta property="og:description" content="Warp has built-in AI. Chau7 has MCP for any AI agent. Two philosophies, one honest comparison.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -16,14 +18,28 @@
     <link rel="stylesheet" href="/style.css">
     <script src="/components.js"></script>
     <script type="application/ld+json">
-    [{
+    {
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "AI-native terminal emulator for macOS with Metal GPU rendering, local MCP server, AI agent detection, session recording, and 170+ developer features. Free, open source, fully local.",
+        "featureList": [
+            "Metal GPU rendering",
+            "Local MCP server with 20 tools",
+            "AI agent detection for 7+ CLIs",
+            "Session recording and replay",
+            "Context Token Optimization",
+            "Cost tracking per session",
+            "Fully local, no account required",
+            "Open source",
+            "Dangerous command guard"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
-    },
+    }
+    </script>
+    <script type="application/ld+json">
     {
         "@context": "https://schema.org",
         "@type": "BreadcrumbList",
@@ -32,33 +48,40 @@
             { "@type": "ListItem", "position": 2, "name": "Compare", "item": "https://chau7.sh/compare" },
             { "@type": "ListItem", "position": 3, "name": "vs Warp" }
         ]
-    },
+    }
+    </script>
+    <script type="application/ld+json">
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
             {
                 "@type": "Question",
+                "name": "What is the difference between Chau7 and Warp terminal?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 and Warp are both AI-aware terminals with different philosophies. Warp builds AI directly into the terminal with command suggestions, natural language queries, and inline completions. Chau7 exposes the terminal as a tool that any external AI agent can control via a local MCP server. Warp requires a cloud account and has paid tiers. Chau7 is fully local, free, and open source." }
+            },
+            {
+                "@type": "Question",
                 "name": "Is Warp's built-in AI better than Chau7's MCP approach?",
-                "acceptedAnswer": { "@type": "Answer", "text": "They solve different problems. Warp integrates its own AI directly into the terminal for command suggestions and natural language queries. Chau7 exposes the terminal as a tool that any external AI agent can control via MCP. If you want one polished AI experience, Warp. If you want your existing AI tools to drive the terminal through an open standard, Chau7." }
+                "acceptedAnswer": { "@type": "Answer", "text": "They solve different problems. Warp integrates its own AI directly into the terminal for command suggestions and natural language queries. Chau7 exposes the terminal as a tool that any external AI agent can control via MCP. If you want one polished AI experience, Warp. If you want your existing AI tools like Claude Code, Codex, or Cursor to drive the terminal through an open standard, Chau7." }
             },
             {
                 "@type": "Question",
                 "name": "Does Chau7 require a cloud account like Warp?",
-                "acceptedAnswer": { "@type": "Answer", "text": "No. Chau7 is fully local. No cloud account, no sign-up, no telemetry sent anywhere. The MCP server communicates over a local Unix socket. Everything stays on your machine." }
+                "acceptedAnswer": { "@type": "Answer", "text": "No. Chau7 is fully local. No cloud account, no sign-up, no telemetry sent anywhere. Chau7's MCP server communicates over a local Unix socket. Everything stays on your machine. Warp requires a cloud account for its AI features." }
             },
             {
                 "@type": "Question",
-                "name": "Is Chau7 free? Does it have paid tiers?",
-                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 is free and open source with no paid tiers. All features are available to everyone. Warp offers a free tier but gates some AI features behind paid plans." }
+                "name": "Is Chau7 or Warp more private?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 is more private. Chau7 is fully local with no cloud account, no telemetry, and no data leaving your machine. The MCP server runs over a local Unix socket. Warp requires a cloud account and processes AI queries through its servers. If privacy is a priority, Chau7's local-first architecture is the safer choice." }
             },
             {
                 "@type": "Question",
-                "name": "Does Chau7 have AI command suggestions like Warp?",
-                "acceptedAnswer": { "@type": "Answer", "text": "No. Chau7 does not have built-in AI features like command suggestions, natural language queries, or AI-generated completions. It provides tools for external AI agents to use the terminal, not its own AI." }
+                "name": "Should I choose Warp or Chau7 for Claude Code?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 is the better choice for Claude Code. Chau7's MCP server gives Claude Code direct terminal control through 20 tools: opening tabs, running commands, reading output, tracking costs. Warp's built-in AI is its own system and does not integrate with external AI agents like Claude Code. Chau7 also detects Claude Code automatically and brands the tab." }
             }
         ]
-    }]
+    }
     </script>
 </head>
 <body>
@@ -75,7 +98,7 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-compare">
+        <section class="hero hero-compare" data-ui="compare-warp-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="hero-badge badge-purple">Comparison</div>
@@ -94,93 +117,105 @@
         </section>
 
         <!-- What Warp does well -->
-        <section class="perf-section" aria-labelledby="warp-strengths">
+        <section class="perf-section" aria-labelledby="warp-strengths" data-ui="compare-warp-strengths">
             <div class="section-inner">
                 <div class="section-header">
-                    <h2 id="warp-strengths">What Warp does well</h2>
+                    <h2 id="warp-strengths">What does Warp do well?</h2>
                     <p>Warp has a vision and they've invested deeply in it.</p>
                 </div>
                 <div class="safety-grid">
                     <div class="safety-item">
                         <h4>Built-in AI, everywhere</h4>
-                        <p>Command suggestions, natural language queries, AI-generated completions, inline explanations. Warp's AI is woven into the terminal itself, not bolted on. If you want AI help while typing commands, Warp delivers that experience out of the box.</p>
+                        <p>Command suggestions, natural language queries, AI-generated completions, inline explanations. Warp's AI is woven into the terminal itself, not bolted on.</p>
+                        <p>If you want AI help while typing commands, Warp delivers that experience out of the box.</p>
                     </div>
                     <div class="safety-item">
                         <h4>Warp Drive</h4>
-                        <p>Shared workflows, parameterized commands, team knowledge bases. Warp Drive lets teams build reusable command templates that anyone can run. It's a collaboration layer that no other terminal offers.</p>
+                        <p>Shared workflows, parameterized commands, team knowledge bases. Warp Drive lets teams build reusable command templates that anyone can run.</p>
+                        <p>Warp Drive is a collaboration layer that no other terminal offers. Chau7 has no team features.</p>
                     </div>
                     <div class="safety-item">
                         <h4>Polished UX</h4>
-                        <p>Warp has a full team, funding, and designers. The result is a cohesive, polished user experience. Block-based terminal output, modern editing, thoughtful interactions. It feels like a product, not a project.</p>
+                        <p>Warp has a full team, funding, and designers. The result is a cohesive, polished user experience with block-based terminal output and modern editing.</p>
+                        <p>Warp feels like a product, not a project. Chau7 is a beta built by one person.</p>
                     </div>
                     <div class="safety-item">
                         <h4>Funded team</h4>
-                        <p>Warp has professional engineers, product managers, and a roadmap backed by investment. Chau7 is one person. That difference shows in pace of development, support responsiveness, and breadth of features. Honesty requires saying this.</p>
+                        <p>Warp has professional engineers, product managers, and a roadmap backed by investment. That difference shows in pace of development and support responsiveness.</p>
+                        <p>Chau7 is one person. Honesty requires saying this.</p>
                     </div>
                     <div class="safety-item">
                         <h4>Collaborative features</h4>
-                        <p>Share terminal sessions, build team workflows, centralize command knowledge. If your team needs to work together in the terminal, Warp has built for that use case.</p>
+                        <p>Share terminal sessions, build team workflows, centralize command knowledge. Warp has built for the team use case.</p>
+                        <p>If your team needs to work together in the terminal, Warp has features Chau7 does not.</p>
                     </div>
                     <div class="safety-item">
                         <h4>Cross-platform</h4>
-                        <p>Warp runs on macOS and Linux. Chau7 is macOS only. If you work across operating systems, Warp follows you. We can't.</p>
+                        <p>Warp runs on macOS and Linux. Chau7 is macOS only.</p>
+                        <p>If you work across operating systems, Warp follows you. Chau7 can't.</p>
                     </div>
                 </div>
             </div>
         </section>
 
         <!-- What Chau7 adds -->
-        <section class="perf-section" aria-labelledby="chau7-adds">
+        <section class="perf-section" aria-labelledby="chau7-adds" data-ui="compare-warp-chau7-advantages">
             <div class="section-inner">
                 <div class="section-header">
-                    <h2 id="chau7-adds">What Chau7 adds</h2>
+                    <h2 id="chau7-adds">What is the difference between Chau7 and Warp?</h2>
                     <p>A different philosophy. Not better or worse. Different.</p>
                 </div>
                 <div class="safety-grid">
                     <div class="safety-item">
                         <h4>MCP for any AI agent</h4>
-                        <p>Chau7's MCP server works with Claude Code, Codex, Cursor, Windsurf, and any future MCP-compatible client. You're not locked into one AI vendor. The terminal becomes a tool that any agent can use through an open standard.</p>
+                        <p>Chau7's MCP server works with Claude Code, Codex, Cursor, Windsurf, and any future MCP-compatible client. You're not locked into one AI vendor.</p>
+                        <p>Chau7 turns the terminal into a tool that any agent can use through an open standard.</p>
                     </div>
                     <div class="safety-item">
                         <h4>Fully local, no account required</h4>
-                        <p>No cloud, no sign-up, no telemetry. The MCP server runs over a local Unix socket. Everything stays on your machine. Warp requires a cloud account for AI features.</p>
+                        <p>Chau7 runs with no cloud, no sign-up, no telemetry. Chau7's MCP server runs over a local Unix socket. Everything stays on your machine.</p>
+                        <p>Warp requires a cloud account for AI features. Chau7 does not.</p>
                     </div>
                     <div class="safety-item">
                         <h4>Free with no paid tier</h4>
-                        <p>Every feature in Chau7 is free and open source. No "upgrade to Pro for AI features." Warp has a free tier but gates some capabilities behind paid plans.</p>
+                        <p>Every feature in Chau7 is free and open source. No "upgrade to Pro for AI features."</p>
+                        <p>Warp has a free tier but gates some capabilities behind paid plans. Chau7 has no paid tiers.</p>
                     </div>
                     <div class="safety-item">
                         <h4>Open source</h4>
-                        <p>Chau7's code is on GitHub. You can read it, audit it, fork it. Warp is closed source. For some people this doesn't matter. For others it's a dealbreaker.</p>
+                        <p>Chau7's code is on GitHub. You can read it, audit it, fork it.</p>
+                        <p>Warp is closed source. For some people this doesn't matter. For others it's a dealbreaker.</p>
                     </div>
                     <div class="safety-item">
                         <h4>AI detection and branding</h4>
-                        <p>Chau7 recognizes which AI agent is running in each tab and brands them with colors and names. When you have five agents across ten tabs, you see who's who at a glance.</p>
+                        <p>Chau7 recognizes which AI agent is running in each tab and brands them with colors and names.</p>
+                        <p>When you have five agents across ten tabs, Chau7 shows you who's who at a glance.</p>
                     </div>
                     <div class="safety-item">
                         <h4>Token and cost tracking</h4>
-                        <p>See tokens consumed and dollars spent per session, per model, per call. Context Token Optimization saves ~40% automatically. Warp doesn't track external AI agent costs.</p>
+                        <p>Chau7 shows tokens consumed and dollars spent per session, per model, per call. Chau7's Context Token Optimization saves ~40% automatically.</p>
+                        <p>Warp doesn't track external AI agent costs. Chau7 does.</p>
                     </div>
                 </div>
             </div>
         </section>
 
         <!-- Who should use what -->
-        <section class="perf-section" aria-labelledby="who-heading">
+        <section class="perf-section" aria-labelledby="who-heading" data-ui="compare-warp-who-should-use">
             <div class="section-inner">
                 <div class="ai-relevance">
-                    <h3 id="who-heading">Who should use what</h3>
+                    <h3 id="who-heading">Should I choose Warp or Chau7?</h3>
                     <p><strong>Use Warp if:</strong> You want AI built into the terminal itself. Command suggestions, natural language queries, AI completions as you type. Warp's integrated approach is polished and purposeful. If you also need team collaboration features or cross-platform support, Warp is the stronger choice.</p>
-                    <p><strong>Try Chau7 if:</strong> You already use external AI agents (Claude Code, Codex, Cursor) and want them to drive the terminal through an open standard. If "local-first, no account, no vendor lock-in" matters to you, Chau7's MCP approach gives your existing tools terminal access without tying you to one provider.</p>
+                    <p><strong>Try Chau7 if:</strong> You already use external AI agents like Claude Code, Codex, or Cursor and want them to drive the terminal through an open standard. If "local-first, no account, no vendor lock-in" matters to you, Chau7's MCP approach gives your existing tools terminal access without tying you to one provider.</p>
                     <p><strong>The honest version:</strong> Warp and Chau7 agree that terminals should understand AI. They disagree on how. Warp says "we'll build the AI." Chau7 says "we'll let any AI in." Both are reasonable positions. Pick the one that matches how you already work.</p>
                 </div>
             </div>
         </section>
 
         <!-- Comparison Table -->
-        <section class="compare-section" aria-labelledby="table-heading">
+        <section class="compare-section" aria-labelledby="table-heading" data-ui="compare-warp-feature-table">
             <div class="section-inner">
-                <h2 id="table-heading">Quick comparison</h2>
+                <h2 id="table-heading">How does Chau7 compare to Warp feature by feature?</h2>
                 <div class="compare-table-wrap">
                     <table class="compare-table">
                         <thead>
@@ -238,28 +273,34 @@
         </section>
 
         <!-- FAQ -->
-        <section class="faq-section" aria-labelledby="faq-heading">
+        <section class="faq-section" aria-labelledby="faq-heading" data-ui="compare-warp-faq">
             <div class="section-inner">
                 <div class="section-header">
-                    <h2 id="faq-heading">Frequently asked questions</h2>
+                    <h2 id="faq-heading">Frequently asked questions about Chau7 vs Warp</h2>
                 </div>
                 <div class="faq-list">
                     <details>
-                        <summary>Is Warp's AI better than Chau7's MCP?</summary>
+                        <summary>What is the difference between Chau7 and Warp terminal?</summary>
                         <div class="faq-answer">
-                            <p>They do different things. Warp's AI helps you write commands by suggesting completions and answering questions in natural language. Chau7's MCP lets external AI agents (Claude Code, Codex, Cursor) control the terminal programmatically. Warp's AI is a copilot. Chau7's MCP is an API. Different tools for different problems.</p>
+                            <p>Chau7 and Warp are both AI-aware terminals with different philosophies. Warp builds AI directly into the terminal with command suggestions and natural language queries. Chau7 exposes the terminal as a tool any external AI agent can control via MCP. Warp requires a cloud account. Chau7 is fully local, free, and open source.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Does Chau7 require a cloud account?</summary>
+                        <summary>Is Warp's built-in AI better than Chau7's MCP approach?</summary>
                         <div class="faq-answer">
-                            <p>No. Chau7 is fully local. No sign-up, no cloud account, no data leaves your machine. The MCP server runs over a Unix socket on localhost. Warp requires an account for its AI features.</p>
+                            <p>They do different things. Warp's AI helps you write commands by suggesting completions and answering questions in natural language. Chau7's MCP lets external AI agents like Claude Code, Codex, and Cursor control the terminal programmatically. Warp's AI is a copilot. Chau7's MCP is an API. Different tools for different problems.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Does Chau7 have AI command suggestions?</summary>
+                        <summary>Does Chau7 require a cloud account like Warp?</summary>
                         <div class="faq-answer">
-                            <p>No. Chau7 does not have built-in AI features like command suggestions, natural language queries, or inline completions. Its AI story is about letting external agents drive the terminal, not providing its own AI. If you want the terminal itself to suggest commands, Warp is the one to look at.</p>
+                            <p>No. Chau7 is fully local. No sign-up, no cloud account, no data leaves your machine. Chau7's MCP server runs over a Unix socket on localhost. Warp requires an account for its AI features.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Should I choose Warp or Chau7 for Claude Code?</summary>
+                        <div class="faq-answer">
+                            <p>Chau7 is the better choice for Claude Code. Chau7's MCP server gives Claude Code direct terminal control through 20 tools. Chau7 also detects Claude Code automatically and brands the tab. Warp's built-in AI is its own system and does not integrate with external agents like Claude Code.</p>
                         </div>
                     </details>
                     <details>
@@ -268,22 +309,16 @@
                             <p>No. Warp has a full team and funding. Chau7 is built by one person and is in beta. The UX is functional but not as refined. If fit-and-finish matters to you more than MCP and open source, Warp is the more polished product today.</p>
                         </div>
                     </details>
-                    <details>
-                        <summary>Can I use both?</summary>
-                        <div class="faq-answer">
-                            <p>Yes. Some developers use Warp for day-to-day terminal work (taking advantage of its built-in AI) and Chau7 for AI agent sessions where MCP control and cost tracking matter. They're separate apps that don't conflict.</p>
-                        </div>
-                    </details>
                 </div>
             </div>
         </section>
 
         <!-- Footer CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="compare-warp-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Try it. Keep what works.</h2>
-                    <p class="cta-nudge">Free, open source, no account needed. The bar for trying is very low.</p>
+                    <h2>Try Chau7. Keep what works.</h2>
+                    <p class="cta-nudge">Chau7 is free, open source, and requires no account. The bar for trying is very low.</p>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                 </div>
             </div>

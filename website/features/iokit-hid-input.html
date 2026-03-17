@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>IOKit HID Input | Chau7 Terminal</title>
     <meta name="description" content="Chau7 uses IOKit HID for raw keyboard input, bypassing the NSEvent queue for sub-millisecond key-to-screen latency.">
+    <meta name="article:section" content="GPU Rendering">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="IOKit HID">
+    <meta name="article:tag" content="keyboard latency">
+    <meta name="article:tag" content="raw input">
+    <meta name="article:tag" content="sub-millisecond latency">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="IOKit HID Input | Chau7">
     <meta property="og:description" content="Chau7 uses IOKit HID for raw keyboard input, bypassing the NSEvent queue for sub-millisecond key-to-screen latency.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that uses IOKit HID for raw keyboard input, bypassing the NSEvent queue to achieve sub-millisecond key-to-screen latency.",
+        "featureList": [
+            "Direct IOKit HID keyboard event callback",
+            "Sub-millisecond key-to-screen latency",
+            "NSEvent queue bypass for faster input",
+            "High-priority dedicated input thread",
+            "Automatic fallback for accessibility features",
+            "Full compatibility with third-party keyboard remappers"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does IOKit HID input work with macOS accessibility features?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 falls back to NSEvent processing when accessibility keyboard features (Slow Keys, Sticky Keys) are enabled, since those features require WindowServer-level event transformation."}},{"@type":"Question","name":"Is IOKit HID input compatible with third-party keyboard remappers?","acceptedAnswer":{"@type":"Answer","text":"Remappers like Karabiner-Elements operate at the IOKit driver level, below Chau7&#x27;s HID client. Their key remappings are fully visible to Chau7&#x27;s HID callback, so all custom key bindings work as expected."}},{"@type":"Question","name":"Does this affect IME input for CJK languages?","acceptedAnswer":{"@type":"Answer","text":"IME input is handled through the standard NSTextInputClient protocol on the main thread. IOKit HID input handles only direct key events; when an IME is active, events are routed through the normal AppKit path to preserve correct composition behavior."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is IOKit HID Input in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"IOKit HID Input in Chau7 is a low-level keyboard input path that reads raw key events directly from Apple's IOKit HID subsystem. Chau7 bypasses the NSEvent queue and WindowServer event stream, delivering key events to the PTY within microseconds of the hardware interrupt."}},
+            {"@type":"Question","name":"How does Chau7's IOKit HID input compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most macOS terminals rely on NSEvent for keyboard input, which adds 2-8ms of latency per keystroke due to WindowServer processing and run loop batching. Chau7 registers a direct IOKit HID callback, receiving raw key-down and key-up reports before they enter the WindowServer event stream. This gives Chau7 sub-millisecond input latency."}},
+            {"@type":"Question","name":"How to reduce keyboard input latency on macOS terminal","acceptedAnswer":{"@type":"Answer","text":"Chau7 reduces keyboard input latency by reading events from IOKit's HID subsystem directly, bypassing the NSEvent queue. The IOKit HID callback in Chau7 translates USB HID usage codes to terminal escape sequences on a dedicated high-priority thread, achieving sub-millisecond key-to-screen latency."}},
+            {"@type":"Question","name":"Does Chau7 IOKit HID input work with macOS accessibility features?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 falls back to NSEvent processing when accessibility keyboard features like Slow Keys and Sticky Keys are enabled, since those features require WindowServer-level event transformation."}},
+            {"@type":"Question","name":"Is Chau7 IOKit HID input compatible with third-party keyboard remappers?","acceptedAnswer":{"@type":"Answer","text":"Yes. Remappers like Karabiner-Elements operate at the IOKit driver level, below Chau7's HID client. Their key remappings are fully visible to Chau7's HID callback, so all custom key bindings work as expected."}}
+        ]
     }]
     </script>
 </head>
@@ -58,7 +80,7 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="rendering" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="rendering" data-ui="iokit-hid-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-purple">GPU RENDERING</div>
@@ -68,35 +90,66 @@
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="iokit-hid-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is IOKit HID Input in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's IOKit HID input compare to other terminals?</li>
                     <li class="question-item">How to reduce keyboard input latency on macOS terminal</li>
-                    <li class="question-item">Why does my terminal feel sluggish when typing fast?</li>
-                    <li class="question-item">NSEvent keyboard latency versus raw HID input on macOS</li>
-                    <li class="question-item">Lowest latency keyboard handling for macOS apps</li>
+                    <li class="question-item">Does IOKit HID input work with macOS accessibility features?</li>
+                    <li class="question-item">Is IOKit HID input compatible with third-party keyboard remappers?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is IOKit HID Input in Chau7 -->
+        <section class="feature-content" data-ui="iokit-hid-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>macOS keyboard events normally travel through the IOKit HID driver, into the WindowServer, through the NSEvent dispatch queue, and finally into the application's run loop. Each hop adds latency, and the NSEvent queue batches events per run loop iteration. Chau7 registers a direct IOKit HID client callback for keyboard events, receiving raw key-down and key-up reports before they enter the WindowServer event stream.</p>
-                <p>The HID callback translates USB HID usage codes to terminal escape sequences on a dedicated high-priority thread, bypassing the main thread run loop entirely. Dead key composition, modifier state, and keyboard layout mapping are handled in this path using IOKit's own key-mapping tables, preserving correct behavior for international keyboards and IME input.</p>
-                <p>The result is that key events arrive at the PTY within microseconds of the hardware interrupt, rather than the 2-8ms typical of NSEvent-based input handling. For fast typists and latency-sensitive workflows like Vim or interactive REPLs, this eliminates the perceptible lag between keypress and screen update.</p>
+                <h2>What is IOKit HID Input in Chau7?</h2>
+                <p>IOKit HID Input in Chau7 is a low-level keyboard input path that reads raw key events directly from Apple's IOKit HID subsystem. Chau7 registers a direct IOKit HID client callback for keyboard events, receiving raw key-down and key-up reports before they enter the WindowServer event stream.</p>
+                <p>The Chau7 HID callback translates USB HID usage codes to terminal escape sequences on a dedicated high-priority thread, bypassing the main thread run loop entirely. Key events arrive at the PTY within microseconds of the hardware interrupt.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Input latency is the most noticeable performance characteristic of a terminal. Even a few milliseconds of extra delay between keypress and screen update creates a subtle but persistent feeling that the application is not keeping up. Chau7 reads keyboard events from IOKit's HID subsystem directly, bypassing the entire NSEvent queue. The overhead is sub-millisecond.</p>
-                </div>
+        <!-- How to reduce keyboard input latency on macOS terminal -->
+        <section class="feature-content" data-ui="iokit-hid-latency-reduction">
+            <div class="section-inner prose">
+                <h2>How to reduce keyboard input latency on macOS terminal</h2>
+                <p>macOS keyboard events normally travel through the IOKit HID driver, into the WindowServer, through the NSEvent dispatch queue, and finally into the application's run loop. Each hop adds latency. The NSEvent queue batches events per run loop iteration, adding another 2-8ms per keystroke.</p>
+                <p>Chau7 eliminates this overhead by reading events from IOKit's HID subsystem directly. The IOKit HID callback in Chau7 translates USB HID usage codes to terminal escape sequences on a dedicated high-priority thread. The result is sub-millisecond key-to-screen latency in Chau7.</p>
+            </div>
+        </section>
+
+        <!-- Does Chau7 IOKit HID input work with accessibility features -->
+        <section class="feature-content" data-ui="iokit-hid-accessibility">
+            <div class="section-inner prose">
+                <h2>Does Chau7 IOKit HID input work with macOS accessibility features?</h2>
+                <p>Yes. Chau7 falls back to NSEvent processing when accessibility keyboard features like Slow Keys and Sticky Keys are enabled. Those features require WindowServer-level event transformation, so Chau7 routes through the standard AppKit path when they are active.</p>
+                <p>Dead key composition, modifier state, and keyboard layout mapping are handled in Chau7's IOKit path using IOKit's own key-mapping tables. This preserves correct behavior for international keyboards and IME input.</p>
+            </div>
+        </section>
+
+        <!-- Is Chau7 IOKit HID input compatible with keyboard remappers -->
+        <section class="feature-content" data-ui="iokit-hid-remappers">
+            <div class="section-inner prose">
+                <h2>Is Chau7 IOKit HID input compatible with third-party keyboard remappers?</h2>
+                <p>Yes. Remappers like Karabiner-Elements operate at the IOKit driver level, below Chau7's HID client. Their key remappings are fully visible to Chau7's HID callback, so all custom key bindings work as expected.</p>
+                <p>IME input in Chau7 is handled through the standard NSTextInputClient protocol on the main thread. When an IME is active, Chau7 routes events through the normal AppKit path to preserve correct composition behavior for CJK languages.</p>
+            </div>
+        </section>
+
+        <!-- How does Chau7's IOKit HID input compare to other terminals -->
+        <section class="feature-content" data-ui="iokit-hid-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's IOKit HID input compare to other terminals?</h2>
+                <p>Most macOS terminals rely on NSEvent for keyboard input, which adds 2-8ms of latency per keystroke due to WindowServer processing and run loop batching. This overhead is invisible for casual use but noticeable for fast typists and latency-sensitive workflows like Vim or interactive REPLs.</p>
+                <p>Chau7 is the only macOS terminal that registers a direct IOKit HID callback for keyboard input. This gives Chau7 sub-millisecond input latency, eliminating the perceptible lag between keypress and screen update that affects NSEvent-based terminals.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="iokit-hid-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -120,28 +173,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="iokit-hid-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>Does IOKit HID input work with macOS accessibility features?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7 falls back to NSEvent processing when accessibility keyboard features (Slow Keys, Sticky Keys) are enabled, since those features require WindowServer-level event transformation.</p></div>
+                        <summary>What is IOKit HID Input in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>IOKit HID Input in Chau7 is a low-level keyboard input path that reads raw key events directly from Apple's IOKit HID subsystem. Chau7 bypasses the NSEvent queue and WindowServer event stream, delivering key events to the PTY within microseconds of the hardware interrupt.</p></div>
                     </details>
                     <details>
-                        <summary>Is IOKit HID input compatible with third-party keyboard remappers?</summary>
-                        <div class="faq-answer"><p>Remappers like Karabiner-Elements operate at the IOKit driver level, below Chau7's HID client. Their key remappings are fully visible to Chau7's HID callback, so all custom key bindings work as expected.</p></div>
+                        <summary>How does Chau7's IOKit HID input compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most macOS terminals rely on NSEvent for keyboard input, which adds 2-8ms of latency per keystroke due to WindowServer processing and run loop batching. Chau7 registers a direct IOKit HID callback, receiving raw key-down and key-up reports before they enter the WindowServer event stream. This gives Chau7 sub-millisecond input latency.</p></div>
                     </details>
                     <details>
-                        <summary>Does this affect IME input for CJK languages?</summary>
-                        <div class="faq-answer"><p>IME input is handled through the standard NSTextInputClient protocol on the main thread. IOKit HID input handles only direct key events; when an IME is active, events are routed through the normal AppKit path to preserve correct composition behavior.</p></div>
+                        <summary>How to reduce keyboard input latency on macOS terminal</summary>
+                        <div class="faq-answer"><p>Chau7 reduces keyboard input latency by reading events from IOKit's HID subsystem directly, bypassing the NSEvent queue. The IOKit HID callback in Chau7 translates USB HID usage codes to terminal escape sequences on a dedicated high-priority thread, achieving sub-millisecond key-to-screen latency.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7 IOKit HID input work with macOS accessibility features?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 falls back to NSEvent processing when accessibility keyboard features like Slow Keys and Sticky Keys are enabled, since those features require WindowServer-level event transformation.</p></div>
+                    </details>
+                    <details>
+                        <summary>Is Chau7 IOKit HID input compatible with third-party keyboard remappers?</summary>
+                        <div class="faq-answer"><p>Yes. Remappers like Karabiner-Elements operate at the IOKit driver level, below Chau7's HID client. Their key remappings are fully visible to Chau7's HID callback, so all custom key bindings work as expected.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="iokit-hid-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Sub-millisecond input latency. You will feel the difference.</h2>

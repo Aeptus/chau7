@@ -6,7 +6,14 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Chau7 vs Kitty | Honest Terminal Comparison</title>
-    <meta name="description" content="An honest comparison of Chau7 and Kitty. Extensible kittens plugin system vs AI-native MCP tools. Cross-platform vs macOS-native. Here's how to choose.">
+    <meta name="description" content="An honest comparison of Chau7 and Kitty terminal. Extensible kittens plugin system vs AI-native MCP tools. Cross-platform vs macOS-native. Here is how to choose.">
+    <meta name="article:section" content="Compare">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="Kitty">
+    <meta name="article:tag" content="terminal comparison">
+    <meta name="article:tag" content="kittens plugin">
+    <meta name="article:tag" content="macOS terminal">
+    <meta name="article:tag" content="AI terminal">
     <meta property="og:title" content="Chau7 vs Kitty | Terminal Comparison">
     <meta property="og:description" content="Kitty has kittens and cross-platform. Chau7 has MCP and native macOS. An honest look at both.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -22,6 +29,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with MCP server, AI agent detection, native AppKit/Metal rendering, and session recording. This page compares Chau7 and Kitty terminal.",
+        "featureList": [
+            "AI agent detection for 7+ CLIs",
+            "MCP server with 20 tools for AI agents",
+            "Context Token Optimization (saves ~40% on tokens)",
+            "Token and cost tracking per session",
+            "Native macOS UI with AppKit and Metal",
+            "Session recording with timeline scrubbing"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -37,26 +53,11 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {
-                "@type": "Question",
-                "name": "Does Chau7 have a plugin system like Kitty's kittens?",
-                "acceptedAnswer": { "@type": "Answer", "text": "No. Chau7 does not have a plugin or extension system. Kitty's kittens let you write custom terminal behaviors in Python, which is a significant extensibility advantage. Chau7 offers MCP tools and JSON-RPC for external automation, but no way to add custom UI or behavior through plugins." }
-            },
-            {
-                "@type": "Question",
-                "name": "Does Kitty support the image protocol better than Chau7?",
-                "acceptedAnswer": { "@type": "Answer", "text": "Kitty created its own image protocol (the Kitty graphics protocol) which is widely supported by tools and applications. Chau7 supports inline images but does not implement the Kitty graphics protocol. If image rendering in the terminal is important to your workflow, Kitty has the stronger story here." }
-            },
-            {
-                "@type": "Question",
-                "name": "Can I use Kitty on Linux and Windows?",
-                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Kitty runs on macOS, Linux, and Windows. Chau7 is macOS only. If you work across operating systems, Kitty follows you. Chau7 cannot." }
-            },
-            {
-                "@type": "Question",
-                "name": "Which has better remote control capabilities?",
-                "acceptedAnswer": { "@type": "Answer", "text": "Kitty has a mature remote control protocol for scripting terminal behavior from external processes. Chau7 has MCP (designed for AI agents) and JSON-RPC. They serve different purposes: Kitty's remote control is general scripting, Chau7's MCP is AI agent integration." }
-            }
+            {"@type":"Question","name":"What is the difference between Chau7 and Kitty terminal?","acceptedAnswer":{"@type":"Answer","text":"Kitty is a feature-rich, extensible, cross-platform terminal with a Python plugin system (kittens), its own image protocol, and a remote control API. Chau7 is a macOS-native terminal built around AI agent integration with MCP server, AI detection, cost tracking, and session recording. Kitty excels at extensibility and cross-platform use. Chau7 excels at AI agent workflows on macOS."}},
+            {"@type":"Question","name":"Is Kitty or Chau7 better for AI-assisted development?","acceptedAnswer":{"@type":"Answer","text":"Chau7 is better for AI-assisted development. Chau7 detects 7+ AI coding tools, brands tabs per agent, provides an MCP server with 20 tools, tracks token usage and dollar costs, and records sessions for debugging agent behavior. Kitty has a general-purpose remote control protocol but no AI-specific features like agent detection, cost tracking, or MCP support."}},
+            {"@type":"Question","name":"Does Kitty terminal support macOS features like Chau7?","acceptedAnswer":{"@type":"Answer","text":"Kitty runs on macOS but uses a cross-platform toolkit, not native AppKit. Chau7 is built with Swift and AppKit, providing native macOS menus, native key handling, and Metal GPU rendering. Chau7 behaves like a macOS app because it is one. Kitty works well on macOS but does not feel the same as a native app."}},
+            {"@type":"Question","name":"How does Kitty's image protocol compare to Chau7?","acceptedAnswer":{"@type":"Answer","text":"Kitty created its own graphics protocol for rendering images in the terminal. The Kitty graphics protocol has become a de facto standard that many tools support. Chau7 supports inline images but does not implement the Kitty graphics protocol. If image rendering in the terminal is important to your workflow, Kitty has the stronger story."}},
+            {"@type":"Question","name":"Should I use Kitty or Chau7 on macOS?","acceptedAnswer":{"@type":"Answer","text":"Use Kitty if you want extensibility (kittens plugin system), cross-platform consistency, or the Kitty image protocol. Use Chau7 if you run AI coding agents daily and want MCP control, AI detection, cost tracking, and native macOS behavior. Kitty is the more mature and extensible general-purpose terminal. Chau7 is more focused on AI agent integration on macOS."}}
         ]
     }]
     </script>
@@ -75,7 +76,7 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-compare">
+        <section class="hero hero-compare" data-ui="compare-kitty-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="hero-badge badge-purple">Comparison</div>
@@ -85,7 +86,7 @@
                 <p class="hero-subtitle">
                     Kitty is a feature-rich, extensible, cross-platform terminal with a Python plugin system that
                     developers love. Chau7 is a macOS-native terminal built around AI agent integration.
-                    Both are opinionated. Both are fast. They're opinionated about different things.
+                    Both are opinionated. Both are fast. They are opinionated about different things.
                 </p>
                 <p class="hero-subtitle">
                     <a href="https://sw.kovidgoyal.net/kitty/" target="_blank" rel="noopener">Visit Kitty &rarr;</a>
@@ -93,92 +94,137 @@
             </div>
         </section>
 
+        <!-- What is the difference between Chau7 and Kitty -->
+        <section class="perf-section" data-ui="compare-kitty-difference" aria-labelledby="difference-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="difference-heading">What is the difference between Chau7 and Kitty terminal?</h2>
+                    <p>Extensibility and cross-platform vs AI-native and macOS-native.</p>
+                </div>
+                <p class="prose" style="max-width:72ch;margin:0 auto 2rem;">Kitty is a feature-rich, extensible terminal that runs on macOS, Linux, and Windows. Kitty's kittens plugin system lets developers write custom terminal behaviors in Python. Kitty also created its own image protocol that has become a de facto standard.</p>
+                <p class="prose" style="max-width:72ch;margin:0 auto 2rem;">Chau7 is a macOS-native terminal built around AI agent integration. Chau7 provides an MCP server with 20 tools, AI agent detection for 7+ CLIs, token and cost tracking, Context Token Optimization, and session recording. Chau7 is built with Swift and AppKit for native macOS behavior.</p>
+            </div>
+        </section>
+
         <!-- What Kitty does well -->
-        <section class="perf-section" aria-labelledby="kitty-strengths">
+        <section class="perf-section" data-ui="compare-kitty-strengths" aria-labelledby="kitty-strengths">
             <div class="section-inner">
                 <div class="section-header">
                     <h2 id="kitty-strengths">What Kitty does well</h2>
-                    <p>Kitty is a genuinely impressive piece of software. Here's why.</p>
+                    <p>Kitty is a genuinely impressive piece of software. Here is why.</p>
                 </div>
                 <div class="safety-grid">
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-kitty-kittens">
                         <h4>Kittens plugin system</h4>
-                        <p>Write custom terminal behaviors in Python. Kittens can draw custom UIs in the terminal, handle keyboard input, interact with remote machines, and extend Kitty in ways no other terminal allows. It's a real extensibility layer, not a hack.</p>
+                        <p>Kitty lets you write custom terminal behaviors in Python. Kittens can draw custom UIs in the terminal, handle keyboard input, interact with remote machines, and extend Kitty in ways no other terminal allows. Kitty's kittens are a real extensibility layer, not a hack.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-kitty-cross-platform">
                         <h4>Cross-platform</h4>
-                        <p>macOS, Linux, Windows. Same features, same configuration, same kittens. If you work across operating systems, Kitty is consistent everywhere. Chau7 is macOS only.</p>
+                        <p>Kitty runs on macOS, Linux, and Windows. Same features, same configuration, same kittens. If you work across operating systems, Kitty is consistent everywhere. Chau7 is macOS only.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-kitty-community">
                         <h4>Mature community</h4>
-                        <p>Active development, responsive maintainer, thorough documentation. Kitty has built a community of users who contribute kittens, file detailed bug reports, and share configurations. That community knowledge compounds over time.</p>
+                        <p>Kitty has active development, a responsive maintainer, and thorough documentation. Kitty's community contributes kittens, files detailed bug reports, and shares configurations. That community knowledge compounds over time.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-kitty-image-protocol">
                         <h4>Image protocol</h4>
-                        <p>Kitty created its own graphics protocol for rendering images in the terminal. It's become a de facto standard that other tools support. If you display images, charts, or graphics in the terminal, Kitty's protocol is the most widely adopted.</p>
+                        <p>Kitty created its own graphics protocol for rendering images in the terminal. The Kitty graphics protocol has become a de facto standard that other tools support. If you display images, charts, or graphics in the terminal, Kitty's protocol is the most widely adopted.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-kitty-remote-control">
                         <h4>Remote control protocol</h4>
-                        <p>Script Kitty from external processes. Create windows, send text, change colors, query state. It's a proper API for automating the terminal, predating MCP by years.</p>
+                        <p>Kitty lets you script the terminal from external processes. Create windows, send text, change colors, query state. Kitty's remote control is a proper API for automating the terminal, predating MCP by years.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-kitty-config">
                         <h4>Highly configurable</h4>
-                        <p>Detailed configuration for fonts, colors, keybindings, layouts, and behaviors. Kitty respects power users who want to tune every detail. The documentation for configuration alone is extensive.</p>
+                        <p>Kitty provides detailed configuration for fonts, colors, keybindings, layouts, and behaviors. Kitty respects power users who want to tune every detail. Kitty's configuration documentation alone is extensive.</p>
                     </div>
                 </div>
             </div>
         </section>
 
         <!-- What Chau7 adds -->
-        <section class="perf-section" aria-labelledby="chau7-adds">
+        <section class="perf-section" data-ui="compare-kitty-chau7-adds" aria-labelledby="chau7-adds">
             <div class="section-inner">
                 <div class="section-header">
                     <h2 id="chau7-adds">What Chau7 adds</h2>
-                    <p>AI-specific features and native macOS integration. That's the trade.</p>
+                    <p>AI-specific features and native macOS integration. That is the trade.</p>
                 </div>
                 <div class="safety-grid">
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-kitty-ai-detection">
                         <h4>AI detection and branding</h4>
-                        <p>Chau7 recognizes 7+ AI coding tools running in your tabs and brands them with agent-specific colors and names. When you're running Claude Code, Codex, and Aider across different tabs, you see who's who instantly. Kitty sees them all as the same process.</p>
+                        <p>Chau7 recognizes 7+ AI coding tools running in your tabs and brands them with agent-specific colors and names. When you are running Claude Code, Codex, and Aider across different tabs, Chau7 shows you who is who instantly. Kitty sees them all as the same process.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-kitty-mcp">
                         <h4>MCP Server (20 tools)</h4>
-                        <p>Purpose-built for AI agents. Your AI opens tabs, runs commands, reads output, checks status. The MCP standard means any compatible client works. Kitty's remote control is for scripting. Chau7's MCP is for AI agents. Different audiences, different protocols.</p>
+                        <p>Chau7's MCP server is purpose-built for AI agents. Your AI opens tabs, runs commands, reads output, checks status. The MCP standard means any compatible client works. Kitty's remote control is for general scripting. Chau7's MCP is for AI agents. Different audiences, different protocols.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-kitty-cto">
                         <h4>Context Token Optimization</h4>
-                        <p>CTO strips redundant context from AI agent sessions, saving ~40% on tokens. Your AI runs leaner, costs less, gets better signal. This is a feature that only makes sense in an AI-aware terminal.</p>
+                        <p>Chau7's CTO strips redundant context from AI agent sessions, saving approximately 40% on tokens. Your AI runs leaner, costs less, gets better signal. Context Token Optimization is a feature that only makes sense in an AI-aware terminal.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-kitty-cost">
                         <h4>Cost and token tracking</h4>
-                        <p>See what each AI session costs: tokens consumed, dollars spent, per model, per call. If you're running multiple agents daily, this visibility matters.</p>
+                        <p>Chau7 shows what each AI session costs: tokens consumed, dollars spent, per model, per call. If you are running multiple agents daily, Chau7's cost visibility matters.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-kitty-native-macos">
                         <h4>Native macOS UI</h4>
-                        <p>Chau7 is built with Swift and AppKit. Native menus, native key handling, native rendering pipeline. It behaves like a macOS app because it is one. Kitty uses its own cross-platform toolkit, which works well but doesn't feel the same on macOS.</p>
+                        <p>Chau7 is built with Swift and AppKit. Native menus, native key handling, native rendering pipeline. Chau7 behaves like a macOS app because Chau7 is one. Kitty uses its own cross-platform toolkit, which works well but does not feel the same on macOS.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-kitty-session-recording">
                         <h4>Session recording</h4>
-                        <p>Record terminal sessions with timeline scrubbing and replay. Review what an AI agent did, when it did it, what output it saw. Useful for debugging agent behavior after the fact.</p>
+                        <p>Chau7 records terminal sessions with timeline scrubbing and replay. Review what an AI agent did, when it did it, what output it saw. Chau7's session recording is useful for debugging agent behavior after the fact.</p>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- Who should use what -->
-        <section class="perf-section" aria-labelledby="who-heading">
+        <!-- Is Kitty or Chau7 better for AI development -->
+        <section class="perf-section" data-ui="compare-kitty-ai-development" aria-labelledby="ai-dev-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="ai-dev-heading">Is Kitty or Chau7 better for AI-assisted development?</h2>
+                </div>
+                <p class="prose" style="max-width:72ch;margin:0 auto 1.5rem;">Chau7 is better for AI-assisted development. Chau7 detects AI coding agents automatically, brands tabs per agent, provides an MCP server with 20 tools for AI-driven terminal control, tracks token usage and dollar costs, and records sessions for debugging agent behavior.</p>
+                <p class="prose" style="max-width:72ch;margin:0 auto 1.5rem;">Kitty has a general-purpose remote control protocol that could be used for AI workflows, but Kitty does not have agent detection, cost tracking, or MCP support. If AI coding agents are central to your workflow, Chau7 is purpose-built for that use case.</p>
+            </div>
+        </section>
+
+        <!-- Does Kitty support macOS features like Chau7 -->
+        <section class="perf-section" data-ui="compare-kitty-macos-native" aria-labelledby="macos-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="macos-heading">Does Kitty terminal support macOS features like Chau7?</h2>
+                </div>
+                <p class="prose" style="max-width:72ch;margin:0 auto 1.5rem;">Kitty runs on macOS but uses a cross-platform toolkit, not native AppKit. Kitty works well on macOS but does not provide native macOS menus, native key handling, or Metal GPU rendering.</p>
+                <p class="prose" style="max-width:72ch;margin:0 auto 1.5rem;">Chau7 is built with Swift and AppKit. Chau7 provides native macOS menus, proper dead key handling, Metal GPU rendering, and system integration features like proper Dock behavior and Spotlight search. Chau7 feels like a native macOS app because Chau7 is built as one.</p>
+            </div>
+        </section>
+
+        <!-- Kitty image protocol vs Chau7 -->
+        <section class="perf-section" data-ui="compare-kitty-image-compare" aria-labelledby="image-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="image-heading">How does Kitty's image protocol compare to Chau7?</h2>
+                </div>
+                <p class="prose" style="max-width:72ch;margin:0 auto 1.5rem;">Kitty created its own graphics protocol for rendering images in the terminal. The Kitty graphics protocol has become a de facto standard that many tools and applications support.</p>
+                <p class="prose" style="max-width:72ch;margin:0 auto 1.5rem;">Chau7 supports inline images but does not implement the Kitty graphics protocol. If image rendering in the terminal is important to your workflow, Kitty has the stronger story here. Chau7's focus is on AI agent integration rather than image rendering.</p>
+            </div>
+        </section>
+
+        <!-- Should I use Kitty or Chau7 on macOS -->
+        <section class="perf-section" data-ui="compare-kitty-should-use" aria-labelledby="who-heading">
             <div class="section-inner">
                 <div class="ai-relevance">
-                    <h3 id="who-heading">Who should use what</h3>
-                    <p><strong>Use Kitty if:</strong> You want extensibility and cross-platform. Kittens let you build custom terminal behaviors that no other terminal supports. If you work on macOS and Linux, Kitty is consistent across both. If you display images in the terminal, Kitty's graphics protocol is the standard.</p>
-                    <p><strong>Try Chau7 if:</strong> You're on macOS, you run AI coding agents daily, and you want the terminal to understand what those agents are doing. MCP control, AI detection, cost tracking, and session recording are Chau7's focus. If native macOS behavior matters to you (proper key handling, AppKit menus, Metal rendering), Chau7 feels more at home on the platform.</p>
-                    <p><strong>The honest version:</strong> Kitty is the more mature, more extensible, more portable terminal. Chau7 is more focused on the specific problem of AI agent integration on macOS. If AI isn't part of your terminal workflow, Kitty is the more capable general-purpose choice.</p>
+                    <h3 id="who-heading">Should I use Kitty or Chau7 on macOS?</h3>
+                    <p><strong>Use Kitty if:</strong> You want extensibility and cross-platform consistency. Kitty's kittens let you build custom terminal behaviors that no other terminal supports. If you work on macOS and Linux, Kitty is consistent across both. If you display images in the terminal, Kitty's graphics protocol is the standard.</p>
+                    <p><strong>Try Chau7 if:</strong> You are on macOS, you run AI coding agents daily, and you want the terminal to understand what those agents are doing. Chau7's MCP control, AI detection, cost tracking, and session recording are built for that workflow. If native macOS behavior matters to you (proper key handling, AppKit menus, Metal rendering), Chau7 feels more at home on the platform.</p>
+                    <p><strong>The honest version:</strong> Kitty is the more mature, more extensible, more portable terminal. Chau7 is more focused on the specific problem of AI agent integration on macOS. If AI is not part of your terminal workflow, Kitty is the more capable general-purpose choice.</p>
                 </div>
             </div>
         </section>
 
         <!-- Comparison Table -->
-        <section class="compare-section" aria-labelledby="table-heading">
+        <section class="compare-section" data-ui="compare-kitty-table" aria-labelledby="table-heading">
             <div class="section-inner">
                 <h2 id="table-heading">Quick comparison</h2>
                 <div class="compare-table-wrap">
@@ -238,40 +284,46 @@
         </section>
 
         <!-- FAQ -->
-        <section class="faq-section" aria-labelledby="faq-heading">
+        <section class="faq-section" data-ui="compare-kitty-faq" aria-labelledby="faq-heading">
             <div class="section-inner">
                 <div class="section-header">
                     <h2 id="faq-heading">Frequently asked questions</h2>
                 </div>
                 <div class="faq-list">
                     <details>
-                        <summary>Does Chau7 have anything like kittens?</summary>
+                        <summary>What is the difference between Chau7 and Kitty terminal?</summary>
                         <div class="faq-answer">
-                            <p>No. Chau7 has no plugin or extension system. Kitty's kittens let you write Python scripts that draw custom UIs, handle input, and extend terminal behavior in ways Chau7 cannot match. If extensibility is your priority, Kitty wins here. Chau7 has MCP and JSON-RPC for external automation, but that's not the same as a plugin system.</p>
+                            <p>Kitty is a feature-rich, extensible, cross-platform terminal with a Python plugin system (kittens), its own image protocol, and a remote control API. Chau7 is a macOS-native terminal built around AI agent integration with MCP server, AI detection, cost tracking, and session recording. Kitty excels at extensibility. Chau7 excels at AI agent workflows on macOS.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Which is faster?</summary>
+                        <summary>Is Kitty or Chau7 better for AI-assisted development?</summary>
                         <div class="faq-answer">
-                            <p>Both are GPU-accelerated and optimized for performance. Kitty uses OpenGL, Chau7 uses Metal. Both are fast terminals. Performance differences in practice are marginal. Pick based on features and platform, not benchmarks.</p>
+                            <p>Chau7 is better for AI-assisted development. Chau7 detects AI coding agents, provides an MCP server with 20 tools, tracks token costs, and records sessions. Kitty has a remote control protocol but no AI-specific features like agent detection or MCP support.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Does Kitty support the Kitty image protocol?</summary>
+                        <summary>Does Kitty terminal support macOS features like Chau7?</summary>
                         <div class="faq-answer">
-                            <p>Yes. Kitty created its own graphics protocol, and it has become widely supported by other tools. Chau7 supports inline images but does not implement the Kitty graphics protocol. If image rendering matters to your workflow, Kitty has the stronger support.</p>
+                            <p>Kitty runs on macOS but uses a cross-platform toolkit. Chau7 is built with Swift and AppKit, providing native macOS menus, proper dead key handling, and Metal GPU rendering. Chau7 feels like a native macOS app because Chau7 is one.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Can I use Kitty's remote control for AI agent integration?</summary>
+                        <summary>How does Kitty's image protocol compare to Chau7?</summary>
                         <div class="faq-answer">
-                            <p>Kitty's remote control protocol is general-purpose scripting, not designed for AI agents specifically. You could potentially script AI workflows through it, but it doesn't have agent detection, cost tracking, or the MCP standard that AI tools expect. Chau7's MCP is purpose-built for that use case.</p>
+                            <p>Kitty created its own graphics protocol that has become a de facto standard. Chau7 supports inline images but does not implement the Kitty graphics protocol. If image rendering matters to your workflow, Kitty has stronger support.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Is Chau7 better than Kitty?</summary>
+                        <summary>Should I use Kitty or Chau7 on macOS?</summary>
                         <div class="faq-answer">
-                            <p>At AI agent integration on macOS, yes. At everything else, Kitty is the more mature and capable terminal. It has a plugin system, cross-platform support, a larger community, and years of refinement. Chau7 is focused on one specific problem. If that problem is yours, it's a good fit. If not, Kitty is excellent.</p>
+                            <p>Use Kitty for extensibility, cross-platform consistency, and the Kitty image protocol. Use Chau7 for AI agent integration, MCP control, cost tracking, and native macOS behavior. Kitty is the more mature general-purpose terminal. Chau7 is focused on AI agent workflows on macOS.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7 have anything like Kitty's kittens?</summary>
+                        <div class="faq-answer">
+                            <p>No. Chau7 has no plugin or extension system. Kitty's kittens let you write Python scripts that draw custom UIs, handle input, and extend terminal behavior. Chau7 has MCP and JSON-RPC for external automation, but that is not the same as a plugin system.</p>
                         </div>
                     </details>
                 </div>
@@ -279,10 +331,10 @@
         </section>
 
         <!-- Footer CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" data-ui="compare-kitty-cta" aria-label="Download call to action">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Try it. Keep what works.</h2>
+                    <h2>Try Chau7. Keep what works.</h2>
                     <p class="cta-nudge">Free, open source, macOS-native. Or stick with Kitty. We respect the kittens.</p>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                 </div>

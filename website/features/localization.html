@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Localization (4 Languages) | Chau7 Terminal</title>
     <meta name="description" content="Chau7 is localized in 4 languages with full RTL support. Switch languages at runtime without restarting for a native-feel terminal experience.">
+    <meta name="article:section" content="Accessibility">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="localization">
+    <meta name="article:tag" content="RTL support">
+    <meta name="article:tag" content="multilingual terminal">
+    <meta name="article:tag" content="language switching">
+    <meta name="article:tag" content="macOS terminal">
     <meta property="og:title" content="Localization (4 Languages) | Chau7">
     <meta property="og:description" content="Chau7 is localized in 4 languages with full RTL support. Switch languages at runtime without restarting for a native-feel terminal experience.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS localized in 4 languages with full RTL support and runtime language switching without restart.",
+        "featureList": [
+            "4-language localization",
+            "Full RTL layout support for application chrome",
+            "Runtime language switching without restart",
+            "Automatic macOS system language detection",
+            "Translated menus, preferences, dialogs, and accessibility labels",
+            "Mirrored tab bars and preference panels for RTL languages"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Which languages are supported?","acceptedAnswer":{"@type":"Answer","text":"Chau7 is currently localized in four languages. The application follows your macOS system language automatically and supports runtime switching between all available languages."}},{"@type":"Question","name":"Does RTL support affect terminal content?","acceptedAnswer":{"@type":"Answer","text":"Terminal content remains left-to-right since terminal protocols are inherently LTR. RTL support applies to all application chrome: menus, tabs, preferences, dialogs, and accessibility labels."}},{"@type":"Question","name":"Can I switch languages without restarting?","acceptedAnswer":{"@type":"Answer","text":"Yes. Language switching is instant at runtime. All menus, labels, and UI elements update immediately without requiring an application restart."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Localization (4 Languages) in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Localization is a feature in the Chau7 terminal that provides full translations in four languages for every menu item, preference label, dialog, error message, and accessibility description. Chau7 follows the macOS system language automatically and supports runtime language switching without restarting."}},
+            {"@type":"Question","name":"How does Chau7's localization compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminal emulators are English-only. iTerm2 and Alacritty do not offer localized interfaces. Kitty has partial community translations. Chau7 is fully localized in four languages with complete RTL layout support, runtime switching, and translated accessibility labels."}},
+            {"@type":"Question","name":"Which languages does Chau7's terminal support?","acceptedAnswer":{"@type":"Answer","text":"Chau7 is currently localized in four languages. Chau7 follows the macOS system language automatically and supports runtime switching between all available languages without restarting the application."}},
+            {"@type":"Question","name":"Which languages does Chau7 support?","acceptedAnswer":{"@type":"Answer","text":"Chau7 is currently localized in four languages. The application follows the macOS system language automatically and supports runtime switching between all available languages."}},
+            {"@type":"Question","name":"Does Chau7's RTL support affect terminal content?","acceptedAnswer":{"@type":"Answer","text":"Terminal content in Chau7 remains left-to-right since terminal protocols are inherently LTR. Chau7's RTL support applies to all application chrome including menus, tabs, preferences, dialogs, and accessibility labels. The tab bar, preference panels, and text alignment all mirror correctly for RTL languages."}}
+        ]
     }]
     </script>
 </head>
@@ -58,45 +80,76 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="accessibility" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="accessibility" data-ui="localization-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">ACCESSIBILITY</div>
                 <h1 class="hero-title">Localization (4 Languages)</h1>
-                <p class="hero-subtitle">Your terminal, in your language. Because not everyone thinks in English.</p>
+                <p class="hero-subtitle">Chau7 speaks your language. Because not everyone thinks in English.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="localization-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">Terminal app localized languages macOS</li>
-                    <li class="question-item">RTL right-to-left terminal emulator support</li>
-                    <li class="question-item">Change terminal app language without restart</li>
-                    <li class="question-item">Non-English terminal emulator UI macOS</li>
+                    <li class="question-item">What is Localization (4 Languages) in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's localization compare to other terminals?</li>
+                    <li class="question-item">Which languages does Chau7's terminal support?</li>
+                    <li class="question-item">Which languages does Chau7 support?</li>
+                    <li class="question-item">Does Chau7's RTL support affect terminal content?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Localization -->
+        <section class="feature-content" data-ui="localization-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 is fully localized in four languages, with every menu item, preference label, dialog, error message, and accessibility description translated. The application follows the macOS system language by default, so it appears in your preferred language automatically. If your system language is set to a supported language, Chau7's interface matches without any configuration.</p>
-                <p>Runtime language switching lets you change the interface language without restarting the application. This is useful for developers who work in multilingual environments or prefer their tools in a different language from their system setting. All UI elements update immediately including menus, tab labels, and the preferences window.</p>
-                <p>Right-to-left language support covers the complete UI layout. Menus, tab bars, preferences panels, and text alignment all mirror correctly for RTL languages. The terminal content area itself remains left-to-right since terminal protocols are LTR, but all application chrome respects the RTL writing direction.</p>
+                <h2>What is Localization (4 Languages) in Chau7?</h2>
+                <p>Localization is a feature in the Chau7 terminal that provides full translations in four languages for every menu item, preference label, dialog, error message, and accessibility description. Chau7 follows the macOS system language by default, so the interface appears in your preferred language automatically.</p>
+                <p>Chau7's localization covers the complete application interface. If your macOS system language is set to a supported language, Chau7 matches without any configuration required.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Developers work in every language, and a terminal that only speaks English creates unnecessary friction. Chau7 supports localization for its UI, menus, settings, and documentation. The terminal speaks your language so you can focus on your code.</p>
-                </div>
+        <!-- Which languages -->
+        <section class="feature-content" data-ui="localization-languages">
+            <div class="section-inner prose">
+                <h2>Which languages does Chau7 support?</h2>
+                <p>Chau7 is currently localized in four languages. Chau7 follows the macOS system language automatically and supports runtime switching between all available languages.</p>
+                <p>Runtime language switching in Chau7 lets you change the interface language without restarting the application. All UI elements update immediately including menus, tab labels, and the preferences window. This is useful for developers who work in multilingual environments or prefer their tools in a different language from their system setting.</p>
+            </div>
+        </section>
+
+        <!-- RTL support -->
+        <section class="feature-content" data-ui="localization-rtl">
+            <div class="section-inner prose">
+                <h2>Does Chau7's RTL support affect terminal content?</h2>
+                <p>Terminal content in Chau7 remains left-to-right since terminal protocols are inherently LTR. Chau7's RTL support applies to all application chrome including menus, tabs, preferences, dialogs, and accessibility labels.</p>
+                <p>Chau7's tab bars, preference panels, and text alignment all mirror correctly for RTL languages. The complete UI layout in Chau7 respects the RTL writing direction while keeping terminal content in the standard LTR orientation that terminal protocols require.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="localization-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's localization compare to other terminals?</h2>
+                <p>Most terminal emulators are English-only. iTerm2 and Alacritty do not offer localized interfaces. Kitty has partial community translations but no complete localization package.</p>
+                <p>Chau7 is fully localized in four languages with complete RTL layout support, runtime switching, and translated accessibility labels. Chau7's localization covers every user-facing string in the application, not just menus.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="localization-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why localization matters in Chau7</h2>
+                <p>Developers work in every language, and a terminal that only speaks English creates unnecessary friction. Chau7 supports localization for its UI, menus, settings, and documentation.</p>
+                <p>Chau7's localization also includes translated accessibility labels, so VoiceOver users who prefer a non-English language get screen reader announcements in their own language. The terminal speaks your language so you can focus on your code.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="localization-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -120,28 +173,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="localization-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>Which languages are supported?</summary>
-                        <div class="faq-answer"><p>Chau7 is currently localized in four languages. The application follows your macOS system language automatically and supports runtime switching between all available languages.</p></div>
+                        <summary>What is Localization (4 Languages) in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Localization is a feature in the Chau7 terminal that provides full translations in four languages for every menu item, preference label, dialog, error message, and accessibility description. Chau7 follows the macOS system language automatically and supports runtime language switching without restarting.</p></div>
                     </details>
                     <details>
-                        <summary>Does RTL support affect terminal content?</summary>
-                        <div class="faq-answer"><p>Terminal content remains left-to-right since terminal protocols are inherently LTR. RTL support applies to all application chrome: menus, tabs, preferences, dialogs, and accessibility labels.</p></div>
+                        <summary>How does Chau7's localization compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminal emulators are English-only. iTerm2 and Alacritty do not offer localized interfaces. Kitty has partial community translations. Chau7 is fully localized in four languages with complete RTL layout support, runtime switching, and translated accessibility labels.</p></div>
                     </details>
                     <details>
-                        <summary>Can I switch languages without restarting?</summary>
-                        <div class="faq-answer"><p>Yes. Language switching is instant at runtime. All menus, labels, and UI elements update immediately without requiring an application restart.</p></div>
+                        <summary>Which languages does Chau7 support?</summary>
+                        <div class="faq-answer"><p>Chau7 is currently localized in four languages. The application follows the macOS system language automatically and supports runtime switching between all available languages.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7's RTL support affect terminal content?</summary>
+                        <div class="faq-answer"><p>Terminal content in Chau7 remains left-to-right since terminal protocols are inherently LTR. Chau7's RTL support applies to all application chrome including menus, tabs, preferences, dialogs, and accessibility labels.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I switch languages in Chau7 without restarting?</summary>
+                        <div class="faq-answer"><p>Yes. Language switching in Chau7 is instant at runtime. All menus, labels, and UI elements update immediately without requiring an application restart.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="localization-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Use your terminal in your language. Bienvenue.</h2>

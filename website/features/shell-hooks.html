@@ -6,9 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Shell Hooks | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 shell hooks let you run custom logic before and after every command. Automate workflows triggered by command entry, exit, or directory changes.">
+    <meta name="description" content="Chau7 shell hooks let you run custom logic before and after every command. Automate workflows triggered by command entry, exit code, or directory changes in Chau7.">
+    <meta name="article:section" content="Scripting API">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="shell hooks">
+    <meta name="article:tag" content="pre-command hook">
+    <meta name="article:tag" content="post-command hook">
+    <meta name="article:tag" content="terminal automation">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Shell Hooks | Chau7">
-    <meta property="og:description" content="Chau7 shell hooks let you run custom logic before and after every command. Automate workflows triggered by command entry, exit, or directory changes.">
+    <meta property="og:description" content="Chau7 shell hooks let you run custom logic before and after every command. Automate workflows triggered by command entry, exit code, or directory changes in Chau7.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with shell hooks that run custom logic before and after every command.",
+        "featureList": [
+            "Pre-command hooks",
+            "Post-command hooks",
+            "Directory change hooks",
+            "Exit code access in hooks",
+            "Execution duration tracking",
+            "Bash, Zsh, and Fish support"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"What information do hooks receive?","acceptedAnswer":{"@type":"Answer","text":"Hooks receive the command text, working directory, exit status, and execution duration as environment variables. Pre-command hooks fire before execution; post-command hooks fire after."}},{"@type":"Question","name":"Which shells are supported?","acceptedAnswer":{"@type":"Answer","text":"Chau7 provides shell integration scripts for Bash, Zsh, and Fish that set up hook plumbing automatically. Manual configuration is also possible for other shells."}},{"@type":"Question","name":"Can I trigger actions when I change directories?","acceptedAnswer":{"@type":"Answer","text":"Yes. Directory change hooks fire whenever the working directory changes, enabling automatic environment activation, version switching, or context updates."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Shell Hooks in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Shell Hooks is a feature in the Chau7 terminal that lets you run custom logic before and after every command. Chau7 provides pre-command hooks, post-command hooks, and directory change hooks that fire automatically at key points in the command lifecycle."}},
+            {"@type":"Question","name":"How does Chau7's shell hooks compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals rely on manual shell configuration for hooks. iTerm2 offers shell integration but limited hook customization. Alacritty and Kitty have no built-in hook support. Chau7 provides pre-exec, post-exec, and directory change hooks with structured environment variables out of the box for Bash, Zsh, and Fish."}},
+            {"@type":"Question","name":"Terminal pre-command post-command hooks automation","acceptedAnswer":{"@type":"Answer","text":"Chau7 shell hooks automate terminal workflows by running custom scripts at command lifecycle events. Pre-command hooks fire after you press Enter but before the command executes. Post-command hooks fire after completion with access to the exit code, duration, and command text."}},
+            {"@type":"Question","name":"What information do hooks receive?","acceptedAnswer":{"@type":"Answer","text":"Chau7 shell hooks receive the command text, working directory, exit status, and execution duration as environment variables. Pre-command hooks fire before execution. Post-command hooks fire after execution with the full result context."}},
+            {"@type":"Question","name":"Which shells are supported?","acceptedAnswer":{"@type":"Answer","text":"Chau7 provides shell integration scripts for Bash, Zsh, and Fish that set up hook plumbing automatically. Manual configuration is also possible for other shells by emitting the expected escape sequences."}}
+        ]
     }]
     </script>
 </head>
@@ -58,45 +80,94 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="scripting" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="scripting" data-ui="shell-hooks-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SCRIPTING API</div>
                 <h1 class="hero-title">Shell Hooks</h1>
-                <p class="hero-subtitle">Run custom logic on every command. Pre-exec, post-exec, on-error. Automatically.</p>
+                <p class="hero-subtitle">Chau7 runs custom logic on every command. Pre-exec, post-exec, on-error. Automatically.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="shell-hooks-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is Shell Hooks in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's shell hooks compare to other terminals?</li>
                     <li class="question-item">Terminal pre-command post-command hooks automation</li>
-                    <li class="question-item">Run script after every terminal command macOS</li>
-                    <li class="question-item">Terminal hook on directory change cd event</li>
-                    <li class="question-item">Automate actions based on terminal command exit code</li>
+                    <li class="question-item">What information do hooks receive?</li>
+                    <li class="question-item">Which shells are supported?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Shell Hooks -->
+        <section class="feature-content" data-ui="shell-hooks-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 integrates shell hooks that fire at key points in the command lifecycle. A pre-command hook runs after you press Enter but before the command executes, giving you a chance to log, validate, or modify the environment. A post-command hook runs after the command completes, with access to the exit code, execution duration, and command text for reporting, notification, or conditional automation.</p>
-                <p>Hooks are configured as shell functions or script paths in your shell configuration. Chau7 provides shell integration scripts for Bash, Zsh, and Fish that set up the hook plumbing automatically. The hooks receive structured information as environment variables, including the command text, working directory, exit status, and timing data. This lets you build automation like Slack notifications on long-running command completion, automatic git status after cd into a repository, or time tracking for development tasks.</p>
-                <p>Directory change hooks fire whenever the working directory changes, whether from an explicit cd command or a directory change triggered by a script. This enables workflows like automatically activating Python virtual environments, switching Node.js versions via nvm, or updating the terminal title with project context.</p>
+                <h2>What is Shell Hooks in Chau7?</h2>
+                <p>Shell Hooks is a feature in the Chau7 terminal that lets you run custom logic before and after every command. Chau7 provides three hook types: pre-command hooks, post-command hooks, and directory change hooks.</p>
+                <p>Chau7 shell hooks fire automatically at key points in the command lifecycle. You configure them once, and Chau7 runs them on every command without you thinking about them.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Shell hooks transform the terminal from a passive command executor into an automation platform. Chau7 supports pre-exec, post-exec, and on-error hooks that can trigger notifications, log commands, switch themes, or run arbitrary scripts. You configure them once, and they run on every command without you thinking about them.</p>
-                </div>
+        <!-- Pre-command and post-command hooks -->
+        <section class="feature-content" data-ui="shell-hooks-pre-post">
+            <div class="section-inner prose">
+                <h2>How do Chau7's pre-command and post-command hooks work?</h2>
+                <p>Chau7 integrates shell hooks that fire at key points in the command lifecycle. A pre-command hook in Chau7 runs after you press Enter but before the command executes. This gives you a chance to log, validate, or modify the environment before execution begins.</p>
+                <p>A post-command hook in Chau7 runs after the command completes. Chau7 provides the exit code, execution duration, and command text as environment variables. You can use these post-command hooks for reporting, notification, or conditional automation.</p>
+            </div>
+        </section>
+
+        <!-- What information do hooks receive -->
+        <section class="feature-content" data-ui="shell-hooks-information">
+            <div class="section-inner prose">
+                <h2>What information do Chau7 hooks receive?</h2>
+                <p>Chau7 shell hooks receive structured information as environment variables. These include the command text, working directory, exit status, and timing data.</p>
+                <p>This structured data from Chau7 lets you build automation like Slack notifications on long-running command completion, automatic git status after cd into a repository, or time tracking for development tasks.</p>
+            </div>
+        </section>
+
+        <!-- Which shells are supported -->
+        <section class="feature-content" data-ui="shell-hooks-shells">
+            <div class="section-inner prose">
+                <h2>Which shells does Chau7 support for hooks?</h2>
+                <p>Chau7 provides shell integration scripts for Bash, Zsh, and Fish that set up the hook plumbing automatically. The hooks are configured as shell functions or script paths in your shell configuration.</p>
+                <p>Manual configuration is also possible for other shells by emitting the expected escape sequences that Chau7 listens for.</p>
+            </div>
+        </section>
+
+        <!-- Directory change hooks -->
+        <section class="feature-content" data-ui="shell-hooks-directory-change">
+            <div class="section-inner prose">
+                <h2>Can Chau7 trigger actions when you change directories?</h2>
+                <p>Yes. Chau7 directory change hooks fire whenever the working directory changes, whether from an explicit cd command or a directory change triggered by a script.</p>
+                <p>Chau7's directory change hooks enable workflows like automatically activating Python virtual environments, switching Node.js versions via nvm, or updating the terminal title with project context.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="shell-hooks-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's shell hooks compare to other terminals?</h2>
+                <p>Most terminals rely on manual shell configuration for hooks. iTerm2 offers shell integration but limited hook customization. Alacritty and Kitty have no built-in hook support at all.</p>
+                <p>Chau7 provides pre-exec, post-exec, and directory change hooks with structured environment variables out of the box. Chau7's shell hooks work with Bash, Zsh, and Fish, and they integrate directly with the terminal's command lifecycle model.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="shell-hooks-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why Chau7 shell hooks matter</h2>
+                <p>Shell hooks in Chau7 transform the terminal from a passive command executor into an automation platform. Chau7 supports pre-exec, post-exec, and on-error hooks that can trigger notifications, log commands, switch themes, or run arbitrary scripts.</p>
+                <p>Developers configure Chau7's shell hooks once and they run on every command. No manual intervention. No remembering to trigger a script. Chau7 handles the lifecycle integration automatically.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="shell-hooks-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -112,31 +183,39 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="shell-hooks-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>What information do hooks receive?</summary>
-                        <div class="faq-answer"><p>Hooks receive the command text, working directory, exit status, and execution duration as environment variables. Pre-command hooks fire before execution; post-command hooks fire after.</p></div>
+                        <summary>What is Shell Hooks in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Shell Hooks is a feature in the Chau7 terminal that lets you run custom logic before and after every command. Chau7 provides pre-command hooks, post-command hooks, and directory change hooks that fire automatically at key points in the command lifecycle.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's shell hooks compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals rely on manual shell configuration for hooks. iTerm2 offers shell integration but limited hook customization. Alacritty and Kitty have no built-in hook support. Chau7 provides pre-exec, post-exec, and directory change hooks with structured environment variables out of the box for Bash, Zsh, and Fish.</p></div>
+                    </details>
+                    <details>
+                        <summary>What information do Chau7 hooks receive?</summary>
+                        <div class="faq-answer"><p>Chau7 shell hooks receive the command text, working directory, exit status, and execution duration as environment variables. Pre-command hooks fire before execution. Post-command hooks fire after execution with the full result context.</p></div>
                     </details>
                     <details>
                         <summary>Which shells are supported?</summary>
-                        <div class="faq-answer"><p>Chau7 provides shell integration scripts for Bash, Zsh, and Fish that set up hook plumbing automatically. Manual configuration is also possible for other shells.</p></div>
+                        <div class="faq-answer"><p>Chau7 provides shell integration scripts for Bash, Zsh, and Fish that set up hook plumbing automatically. Manual configuration is also possible for other shells by emitting the expected escape sequences.</p></div>
                     </details>
                     <details>
-                        <summary>Can I trigger actions when I change directories?</summary>
-                        <div class="faq-answer"><p>Yes. Directory change hooks fire whenever the working directory changes, enabling automatic environment activation, version switching, or context updates.</p></div>
+                        <summary>Can Chau7 trigger actions when I change directories?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 directory change hooks fire whenever the working directory changes, enabling automatic environment activation, version switching, or context updates.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="shell-hooks-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Automate your terminal workflow. Hooks make it effortless.</h2>
+                    <h2>Automate your terminal workflow. Chau7 hooks make it effortless.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>

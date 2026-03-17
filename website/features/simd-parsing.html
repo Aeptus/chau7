@@ -6,9 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>SIMD Parsing | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 parses ANSI escape sequences using 16-32 byte SIMD instructions in Rust, achieving cache-line-speed terminal throughput.">
+    <meta name="description" content="Chau7 parses ANSI escape sequences using 16-32 byte SIMD instructions in Rust, achieving cache-line-speed terminal throughput on both Apple Silicon and Intel Macs.">
+    <meta name="article:section" content="GPU Rendering">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="SIMD parsing">
+    <meta name="article:tag" content="ANSI escape sequences">
+    <meta name="article:tag" content="Rust terminal parser">
+    <meta name="article:tag" content="terminal performance">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="SIMD Parsing | Chau7">
-    <meta property="og:description" content="Chau7 parses ANSI escape sequences using 16-32 byte SIMD instructions in Rust, achieving cache-line-speed terminal throughput.">
+    <meta property="og:description" content="Chau7 parses ANSI escape sequences using 16-32 byte SIMD instructions in Rust, achieving cache-line-speed terminal throughput on both Apple Silicon and Intel Macs.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with a SIMD-accelerated Rust parser that scans 16-32 bytes per cycle for ANSI escape sequences.",
+        "featureList": [
+            "SIMD-accelerated ANSI escape sequence parsing",
+            "ARM NEON support for Apple Silicon",
+            "SSE2/AVX2 support for Intel Macs",
+            "4-6 GB/s throughput on printable text",
+            "Rust-based parser implementation",
+            "Automatic SIMD width selection per hardware"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does SIMD parsing work on Intel Macs?","acceptedAnswer":{"@type":"Answer","text":"Yes. The Rust parser compiles with both ARM NEON (Apple Silicon) and SSE2/AVX2 (Intel) backends, selected at compile time. Both paths process 16+ bytes per iteration."}},{"@type":"Question","name":"How does SIMD handle multi-byte UTF-8 sequences?","acceptedAnswer":{"@type":"Answer","text":"The SIMD scanner looks for escape introducers (0x1B, 0x90-0x9F), not character boundaries. UTF-8 continuation bytes (0x80-0xBF) never match these values, so multi-byte characters pass through the fast path without special handling. Full UTF-8 decoding happens in a subsequent stage."}},{"@type":"Question","name":"What throughput does SIMD parsing achieve?","acceptedAnswer":{"@type":"Answer","text":"On Apple M-series chips, the parser sustains 4-6 GB/s on pure printable text and 1-2 GB/s on escape-heavy output like colored compiler diagnostics. In practice, PTY bandwidth (~800 MB/s) is the limiting factor."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is SIMD Parsing in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"SIMD Parsing is a feature in the Chau7 terminal where the ANSI escape sequence parser uses ARM NEON and x86 SSE/AVX SIMD intrinsics to scan 16 to 32 bytes simultaneously. Chau7's Rust-based parser achieves throughput measured in gigabytes per second, processing data at roughly the speed of an L1 cache read."}},
+            {"@type":"Question","name":"How does Chau7's simd parsing compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals parse ANSI escape sequences one byte at a time through a state machine. Alacritty uses a Rust parser but without SIMD acceleration. iTerm2 and Kitty use scalar C or C++ parsers. Chau7 is the only terminal that uses SIMD intrinsics to scan 16-32 bytes per instruction, eliminating the parser as a throughput bottleneck."}},
+            {"@type":"Question","name":"Why is terminal output slow even on a fast machine?","acceptedAnswer":{"@type":"Answer","text":"Terminal output is often slow because the ANSI escape sequence parser processes bytes one at a time. Even with a fast GPU renderer, a scalar parser creates a bottleneck that limits overall throughput. Chau7 solves this by using SIMD instructions to scan 16-32 bytes per cycle in its Rust-based parser."}},
+            {"@type":"Question","name":"Does SIMD parsing work on Intel Macs?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7's Rust parser compiles with both ARM NEON (Apple Silicon) and SSE2/AVX2 (Intel) backends, selected at compile time. Both paths in Chau7 process 16+ bytes per iteration."}},
+            {"@type":"Question","name":"How does SIMD handle multi-byte UTF-8 sequences?","acceptedAnswer":{"@type":"Answer","text":"Chau7's SIMD scanner looks for escape introducers (0x1B, 0x90-0x9F), not character boundaries. UTF-8 continuation bytes (0x80-0xBF) never match these values, so multi-byte characters pass through the fast path without special handling. Full UTF-8 decoding happens in a subsequent stage of Chau7's parser."}}
+        ]
     }]
     </script>
 </head>
@@ -58,46 +80,94 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="rendering" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="rendering" data-ui="simd-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-purple">GPU RENDERING</div>
                 <h1 class="hero-title">SIMD Parsing</h1>
-                <p class="hero-subtitle">SIMD-accelerated Rust parser. 16-32 bytes per cycle. Your ANSI escape sequences never had it so good.</p>
+                <p class="hero-subtitle">Chau7's SIMD-accelerated Rust parser. 16-32 bytes per cycle. Your ANSI escape sequences never had it so good.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="simd-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is SIMD Parsing in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's simd parsing compare to other terminals?</li>
                     <li class="question-item">tmux very slow output in less</li>
-                    <li class="question-item">Why is terminal output slow even on a fast machine?</li>
-                    <li class="question-item">How fast can a terminal emulator parse ANSI escape codes?</li>
-                    <li class="question-item">Terminal bottleneck parsing escape sequences during large output</li>
-                    <li class="question-item">Fastest ANSI parser for terminal emulators</li>
+                    <li class="question-item">Does SIMD parsing work on Intel Macs?</li>
+                    <li class="question-item">How does SIMD handle multi-byte UTF-8 sequences?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is SIMD Parsing -->
+        <section class="feature-content" data-ui="simd-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Terminal emulators must parse every byte of output from the PTY, scanning for ANSI escape sequences (CSI, OSC, DCS, and more) that control cursor movement, colors, and screen manipulation. Traditional parsers examine one byte at a time through a state machine. Chau7's parser, written in Rust, uses ARM NEON and x86 SSE/AVX SIMD intrinsics to scan 16 to 32 bytes simultaneously.</p>
-                <p>The SIMD fast path loads a chunk of PTY data into a vector register and compares all bytes against the ESC character (0x1B) and the C1 control range in a single instruction. If no escape characters are found in the chunk, the entire block is dispatched as printable text without touching the state machine. When an escape is detected, the parser falls back to a scalar state machine for that sequence only, then resumes SIMD scanning.</p>
-                <p>This approach achieves throughput measured in gigabytes per second on Apple Silicon. The parser processes data at roughly the speed of an L1 cache read, meaning the PTY read syscall and kernel buffer copy are the actual bottleneck, not the parser itself.</p>
+                <h2>What is SIMD Parsing in Chau7?</h2>
+                <p>SIMD Parsing is a feature in the Chau7 terminal where the ANSI escape sequence parser uses SIMD intrinsics to scan 16 to 32 bytes simultaneously. Chau7's parser is written in Rust and uses ARM NEON on Apple Silicon and SSE/AVX on Intel Macs.</p>
+                <p>Terminal emulators must parse every byte of output from the PTY, scanning for ANSI escape sequences (CSI, OSC, DCS, and more) that control cursor movement, colors, and screen manipulation. Traditional parsers examine one byte at a time. Chau7's SIMD parser processes an entire cache line in a single operation.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Parsing is the first stage of the terminal pipeline and sets the throughput ceiling for everything downstream. Traditional byte-by-byte parsers create a bottleneck that no amount of GPU rendering can compensate for. Chau7's parser processes 16-32 bytes per SIMD instruction using Rust intrinsics, handling entire cache lines in a single cycle. The specific SIMD width adapts to your hardware.</p>
-                </div>
+        <!-- How does SIMD parsing work -->
+        <section class="feature-content" data-ui="simd-how">
+            <div class="section-inner prose">
+                <h2>How does Chau7's SIMD parsing work?</h2>
+                <p>Chau7's SIMD fast path loads a chunk of PTY data into a vector register and compares all bytes against the ESC character (0x1B) and the C1 control range in a single instruction. If no escape characters are found in the chunk, Chau7 dispatches the entire block as printable text without touching the state machine.</p>
+                <p>When an escape is detected, Chau7's parser falls back to a scalar state machine for that sequence only, then resumes SIMD scanning. This hybrid approach in Chau7 means the common case (printable text) runs at full SIMD speed while escape sequences get correct handling.</p>
+            </div>
+        </section>
+
+        <!-- Why is terminal output slow -->
+        <section class="feature-content" data-ui="simd-slow-output">
+            <div class="section-inner prose">
+                <h2>Why is terminal output slow even on a fast machine?</h2>
+                <p>Parsing is the first stage of the terminal pipeline and sets the throughput ceiling for everything downstream. Traditional byte-by-byte parsers create a bottleneck that no amount of GPU rendering can compensate for.</p>
+                <p>Chau7 solves this by processing 16-32 bytes per SIMD instruction using Rust intrinsics. Chau7's parser handles entire cache lines in a single cycle, so the PTY read syscall and kernel buffer copy become the actual bottleneck, not the parser itself.</p>
+            </div>
+        </section>
+
+        <!-- Intel Mac support -->
+        <section class="feature-content" data-ui="simd-intel">
+            <div class="section-inner prose">
+                <h2>Does Chau7's SIMD parsing work on Intel Macs?</h2>
+                <p>Yes. Chau7's Rust parser compiles with both ARM NEON (Apple Silicon) and SSE2/AVX2 (Intel) backends. The SIMD backend is selected at compile time based on the target architecture.</p>
+                <p>Both paths in Chau7 process 16+ bytes per iteration. The specific SIMD width adapts to your hardware, so Chau7 delivers the maximum throughput your processor supports.</p>
+            </div>
+        </section>
+
+        <!-- UTF-8 handling -->
+        <section class="feature-content" data-ui="simd-utf8">
+            <div class="section-inner prose">
+                <h2>How does Chau7's SIMD handle multi-byte UTF-8 sequences?</h2>
+                <p>Chau7's SIMD scanner looks for escape introducers (0x1B, 0x90-0x9F), not character boundaries. UTF-8 continuation bytes (0x80-0xBF) never match these values, so multi-byte characters pass through the fast path without special handling.</p>
+                <p>Full UTF-8 decoding happens in a subsequent stage of Chau7's parser. This two-stage design lets Chau7 maintain full SIMD speed on mixed ASCII and Unicode content.</p>
+            </div>
+        </section>
+
+        <!-- Throughput numbers -->
+        <section class="feature-content" data-ui="simd-throughput">
+            <div class="section-inner prose">
+                <h2>What throughput does Chau7's SIMD parsing achieve?</h2>
+                <p>On Apple M-series chips, Chau7's parser sustains 4-6 GB/s on pure printable text and 1-2 GB/s on escape-heavy output like colored compiler diagnostics. Chau7 processes data at roughly the speed of an L1 cache read.</p>
+                <p>In practice, PTY bandwidth (around 800 MB/s) is the limiting factor, not Chau7's parser. The parser has headroom to spare even on the most escape-heavy terminal output.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="simd-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's SIMD parsing compare to other terminals?</h2>
+                <p>Most terminals parse ANSI escape sequences one byte at a time through a state machine. Alacritty uses a Rust parser but without SIMD acceleration. iTerm2 and Kitty use scalar C or C++ parsers.</p>
+                <p>Chau7 is the only terminal that uses SIMD intrinsics to scan 16-32 bytes per instruction. This eliminates the parser as a throughput bottleneck in Chau7, something no other terminal has achieved.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="simd-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -121,31 +191,39 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="simd-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>Does SIMD parsing work on Intel Macs?</summary>
-                        <div class="faq-answer"><p>Yes. The Rust parser compiles with both ARM NEON (Apple Silicon) and SSE2/AVX2 (Intel) backends, selected at compile time. Both paths process 16+ bytes per iteration.</p></div>
+                        <summary>What is SIMD Parsing in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>SIMD Parsing is a feature in the Chau7 terminal where the ANSI escape sequence parser uses ARM NEON and x86 SSE/AVX SIMD intrinsics to scan 16 to 32 bytes simultaneously. Chau7's Rust-based parser achieves throughput measured in gigabytes per second, processing data at roughly the speed of an L1 cache read.</p></div>
                     </details>
                     <details>
-                        <summary>How does SIMD handle multi-byte UTF-8 sequences?</summary>
-                        <div class="faq-answer"><p>The SIMD scanner looks for escape introducers (0x1B, 0x90-0x9F), not character boundaries. UTF-8 continuation bytes (0x80-0xBF) never match these values, so multi-byte characters pass through the fast path without special handling. Full UTF-8 decoding happens in a subsequent stage.</p></div>
+                        <summary>How does Chau7's SIMD parsing compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals parse ANSI escape sequences one byte at a time through a state machine. Alacritty uses a Rust parser but without SIMD acceleration. iTerm2 and Kitty use scalar C or C++ parsers. Chau7 is the only terminal that uses SIMD intrinsics to scan 16-32 bytes per instruction, eliminating the parser as a throughput bottleneck.</p></div>
                     </details>
                     <details>
-                        <summary>What throughput does SIMD parsing achieve?</summary>
-                        <div class="faq-answer"><p>On Apple M-series chips, the parser sustains 4-6 GB/s on pure printable text and 1-2 GB/s on escape-heavy output like colored compiler diagnostics. In practice, PTY bandwidth (~800 MB/s) is the limiting factor.</p></div>
+                        <summary>Does Chau7's SIMD parsing work on Intel Macs?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7's Rust parser compiles with both ARM NEON (Apple Silicon) and SSE2/AVX2 (Intel) backends, selected at compile time. Both paths in Chau7 process 16+ bytes per iteration.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's SIMD handle multi-byte UTF-8 sequences?</summary>
+                        <div class="faq-answer"><p>Chau7's SIMD scanner looks for escape introducers (0x1B, 0x90-0x9F), not character boundaries. UTF-8 continuation bytes (0x80-0xBF) never match these values, so multi-byte characters pass through the fast path without special handling. Full UTF-8 decoding happens in a subsequent stage of Chau7's parser.</p></div>
+                    </details>
+                    <details>
+                        <summary>What throughput does Chau7's SIMD parsing achieve?</summary>
+                        <div class="faq-answer"><p>On Apple M-series chips, Chau7's parser sustains 4-6 GB/s on pure printable text and 1-2 GB/s on escape-heavy output like colored compiler diagnostics. In practice, PTY bandwidth (around 800 MB/s) is the limiting factor, not Chau7's parser.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="simd-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Parsing at cache-line speed. Written in Rust, because of course it is.</h2>
+                    <h2>Parsing at cache-line speed in Chau7. Written in Rust, because of course it is.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>

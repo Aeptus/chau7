@@ -6,9 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Tab Watchdog | Chau7 Terminal</title>
-    <meta name="description" content="Chau7's tab watchdog monitors terminal health and auto-refreshes stale tabs, resetting after timeout instead of giving up.">
+    <meta name="description" content="Chau7's tab watchdog monitors terminal health and auto-refreshes stale tabs. The watchdog resets after timeout instead of giving up, keeping every tab alive.">
+    <meta name="article:section" content="Tab Management">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="tab watchdog">
+    <meta name="article:tag" content="frozen terminal tab">
+    <meta name="article:tag" content="stale tab recovery">
+    <meta name="article:tag" content="terminal health monitoring">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Tab Watchdog | Chau7">
-    <meta property="og:description" content="Chau7's tab watchdog monitors terminal health and auto-refreshes stale tabs, resetting after timeout instead of giving up.">
+    <meta property="og:description" content="Chau7's tab watchdog monitors terminal health and auto-refreshes stale tabs. The watchdog resets after timeout instead of giving up, keeping every tab alive.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with a built-in tab watchdog that monitors terminal health and auto-refreshes stale or frozen tabs.",
+        "featureList": [
+            "Background health monitoring for every open tab",
+            "Automatic refresh of stale or frozen tabs",
+            "Reset-after-timeout strategy instead of give-up-after-failure",
+            "Lightweight health checks with negligible overhead",
+            "Process state and output activity monitoring",
+            "Internal consistency checks between backend and frontend"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Can I configure the watchdog timeout?","acceptedAnswer":{"@type":"Answer","text":"The watchdog uses sensible defaults that work for most workflows. The retry interval and timeout thresholds are tuned to balance responsiveness with avoiding unnecessary refreshes."}},{"@type":"Question","name":"Does the watchdog affect terminal performance?","acceptedAnswer":{"@type":"Answer","text":"No. The health checks are extremely lightweight: they inspect process status and internal state flags without touching the render pipeline or scrollback buffer. The overhead is negligible even with dozens of tabs open."}},{"@type":"Question","name":"What triggers a watchdog refresh?","acceptedAnswer":{"@type":"Answer","text":"Common triggers include a shell process that exited unexpectedly, a terminal view that stopped receiving updates despite an active process, or internal state inconsistencies between the backend and frontend. Manual user activity is never interrupted by the watchdog."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Tab Watchdog in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Tab Watchdog is a background health monitor in the Chau7 terminal that periodically checks every open tab for signs of staleness. When Chau7's watchdog detects a stale or frozen tab, it automatically refreshes the tab to restore it to a working state without user intervention."}},
+            {"@type":"Question","name":"How does Chau7's tab watchdog compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals have no automatic recovery for frozen or stale tabs. iTerm2, Warp, Alacritty, and Kitty require the user to manually close and reopen a stuck tab. Chau7's tab watchdog detects the problem automatically and refreshes the tab in the background, making Chau7 the only terminal with built-in tab health monitoring."}},
+            {"@type":"Question","name":"How to fix a frozen terminal tab without closing it?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, frozen terminal tabs are fixed automatically by the tab watchdog. Chau7's watchdog detects when a tab stops responding and triggers an automatic refresh that restores the tab without losing the session. No manual intervention is needed."}},
+            {"@type":"Question","name":"Can I configure the watchdog timeout?","acceptedAnswer":{"@type":"Answer","text":"Chau7's tab watchdog uses sensible defaults that work for most workflows. The retry interval and timeout thresholds are tuned to balance responsiveness with avoiding unnecessary refreshes."}},
+            {"@type":"Question","name":"Does the watchdog affect terminal performance?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7's watchdog health checks are extremely lightweight. They inspect process status and internal state flags without touching the render pipeline or scrollback buffer. The overhead is negligible even with dozens of tabs open in Chau7."}}
+        ]
     }]
     </script>
 </head>
@@ -58,44 +80,77 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="tabs" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="tabs" data-ui="tab-watchdog-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">TAB MANAGEMENT</div>
                 <h1 class="hero-title">Tab Watchdog</h1>
-                <p class="hero-subtitle">A background watchdog that notices when tabs go stale and fixes them before you do.</p>
+                <p class="hero-subtitle">Chau7 runs a background watchdog that notices when tabs go stale and fixes them before you do.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="tab-watchdog-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">Why does my terminal tab show stale content?</li>
+                    <li class="question-item">What is Tab Watchdog in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's tab watchdog compare to other terminals?</li>
                     <li class="question-item">How to fix a frozen terminal tab without closing it?</li>
-                    <li class="question-item">Does Chau7 detect and fix stuck terminal sessions?</li>
-                    <li class="question-item">What happens when a terminal tab stops responding?</li>
+                    <li class="question-item">Can I configure the watchdog timeout?</li>
+                    <li class="question-item">Does the watchdog affect terminal performance?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Tab Watchdog -->
+        <section class="feature-content" data-ui="tab-watchdog-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 runs a lightweight watchdog that periodically checks the health of every open tab. It monitors process state, output activity, and internal consistency. When a tab enters a stale state: for example, the shell process exited unexpectedly or the terminal view fell out of sync with the backend: the watchdog triggers an automatic refresh that restores the tab to a working state.</p>
-                <p>The watchdog uses a reset-after-timeout strategy rather than a give-up-after-failure approach. If a refresh does not resolve the issue immediately, the watchdog backs off and tries again after a configurable interval. This means transient issues (like a brief system overload) are recovered automatically, while persistent problems get retried rather than silently abandoned.</p>
+                <h2>What is Tab Watchdog in Chau7?</h2>
+                <p>Tab Watchdog is a background health monitor in the Chau7 terminal that periodically checks every open tab for signs of staleness. Chau7's watchdog monitors process state, output activity, and internal consistency between the terminal backend and frontend.</p>
+                <p>When Chau7's tab watchdog detects a stale tab, it automatically triggers a refresh that restores the tab to a working state. No manual intervention is needed. The developer never has to close and reopen a stuck session.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Stale or frozen terminal tabs are a quiet productivity killer. You switch to a tab expecting to see output, find it stuck, and waste time restarting the session. Chau7's watchdog monitors every tab for signs of staleness and resets state automatically. It resets after timeout rather than giving up permanently, because terminals are supposed to be resilient.</p>
-                </div>
+        <!-- How to fix a frozen tab -->
+        <section class="feature-content" data-ui="tab-watchdog-fix-frozen">
+            <div class="section-inner prose">
+                <h2>How to fix a frozen terminal tab without closing it</h2>
+                <p>In Chau7, frozen terminal tabs are fixed automatically. Chau7's tab watchdog detects when a tab stops responding and triggers a refresh that restores the tab without losing the session context.</p>
+                <p>Common triggers for a Chau7 watchdog refresh include a shell process that exited unexpectedly, a terminal view that stopped receiving updates despite an active process, or internal state inconsistencies between the backend and frontend.</p>
+                <p>The Chau7 watchdog uses a reset-after-timeout strategy rather than a give-up-after-failure approach. If a refresh does not resolve the issue immediately, the watchdog backs off and tries again after an interval. Transient issues like a brief system overload are recovered automatically, while persistent problems get retried rather than silently abandoned.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="tab-watchdog-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's tab watchdog compare to other terminals?</h2>
+                <p>Most terminals have no automatic recovery for frozen or stale tabs. iTerm2, Warp, Alacritty, and Kitty all require the user to manually close and reopen a stuck tab.</p>
+                <p>Chau7 is the only terminal with a built-in tab watchdog that detects staleness and refreshes tabs automatically. Chau7's watchdog runs in the background, checks every open tab, and restores broken tabs without any user action.</p>
+            </div>
+        </section>
+
+        <!-- Does watchdog affect performance -->
+        <section class="feature-content" data-ui="tab-watchdog-performance">
+            <div class="section-inner prose">
+                <h2>Does the Chau7 tab watchdog affect terminal performance?</h2>
+                <p>No. Chau7's watchdog health checks are extremely lightweight. They inspect process status and internal state flags without touching the render pipeline or scrollback buffer.</p>
+                <p>The overhead of Chau7's tab watchdog is negligible even with dozens of tabs open. The watchdog runs on a background timer and does not block the main thread or the GPU rendering pipeline.</p>
+            </div>
+        </section>
+
+        <!-- Configuring the watchdog -->
+        <section class="feature-content" data-ui="tab-watchdog-configuration">
+            <div class="section-inner prose">
+                <h2>Can I configure the Chau7 watchdog timeout?</h2>
+                <p>Chau7's tab watchdog uses sensible defaults that work for most workflows. The retry interval and timeout thresholds are tuned to balance responsiveness with avoiding unnecessary refreshes.</p>
+                <p>The watchdog resets its state after each timeout cycle rather than permanently giving up. This design means Chau7 keeps trying to recover tabs even after repeated failures, because terminals are supposed to be resilient.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="tab-watchdog-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -119,28 +174,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="tab-watchdog-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Tab Watchdog in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Tab Watchdog is a background health monitor in the Chau7 terminal that periodically checks every open tab for signs of staleness. When Chau7's watchdog detects a stale or frozen tab, it automatically refreshes the tab to restore it to a working state without user intervention.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's tab watchdog compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals have no automatic recovery for frozen or stale tabs. iTerm2, Warp, Alacritty, and Kitty require the user to manually close and reopen a stuck tab. Chau7's tab watchdog detects the problem automatically and refreshes the tab in the background, making Chau7 the only terminal with built-in tab health monitoring.</p></div>
+                    </details>
+                    <details>
+                        <summary>How to fix a frozen terminal tab without closing it?</summary>
+                        <div class="faq-answer"><p>In Chau7, frozen terminal tabs are fixed automatically by the tab watchdog. Chau7's watchdog detects when a tab stops responding and triggers an automatic refresh that restores the tab without losing the session. No manual intervention is needed.</p></div>
+                    </details>
+                    <details>
                         <summary>Can I configure the watchdog timeout?</summary>
-                        <div class="faq-answer"><p>The watchdog uses sensible defaults that work for most workflows. The retry interval and timeout thresholds are tuned to balance responsiveness with avoiding unnecessary refreshes.</p></div>
+                        <div class="faq-answer"><p>Chau7's tab watchdog uses sensible defaults that work for most workflows. The retry interval and timeout thresholds are tuned to balance responsiveness with avoiding unnecessary refreshes.</p></div>
                     </details>
                     <details>
                         <summary>Does the watchdog affect terminal performance?</summary>
-                        <div class="faq-answer"><p>No. The health checks are extremely lightweight: they inspect process status and internal state flags without touching the render pipeline or scrollback buffer. The overhead is negligible even with dozens of tabs open.</p></div>
-                    </details>
-                    <details>
-                        <summary>What triggers a watchdog refresh?</summary>
-                        <div class="faq-answer"><p>Common triggers include a shell process that exited unexpectedly, a terminal view that stopped receiving updates despite an active process, or internal state inconsistencies between the backend and frontend. Manual user activity is never interrupted by the watchdog.</p></div>
+                        <div class="faq-answer"><p>No. Chau7's watchdog health checks are extremely lightweight. They inspect process status and internal state flags without touching the render pipeline or scrollback buffer. The overhead is negligible even with dozens of tabs open in Chau7.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="tab-watchdog-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Tabs that heal themselves. Like Wolverine, but for your terminal.</h2>

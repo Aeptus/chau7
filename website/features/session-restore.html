@@ -6,9 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Session Restore | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 restores your tabs, working directories, and terminal state automatically when you relaunch the app.">
+    <meta name="description" content="Chau7 restores your tabs, working directories, split panes, and terminal state automatically when you relaunch the app.">
+    <meta name="article:section" content="Session">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="session restore">
+    <meta name="article:tag" content="restore tabs">
+    <meta name="article:tag" content="terminal session persistence">
+    <meta name="article:tag" content="crash recovery">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Session Restore | Chau7">
-    <meta property="og:description" content="Chau7 restores your tabs, working directories, and terminal state automatically when you relaunch the app.">
+    <meta property="og:description" content="Chau7 restores your tabs, working directories, split panes, and terminal state automatically when you relaunch the app.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that restores tabs, working directories, split panes, and terminal configuration automatically after app restart or crash.",
+        "featureList": [
+            "Automatic tab and working directory restoration",
+            "Split pane layout preservation",
+            "Tab ordering and window position persistence",
+            "Crash recovery from periodic state snapshots",
+            "Deleted directory fallback to home directory",
+            "Selective tab exclusion from session restore"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does session restore work after a crash?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 persists workspace state periodically, not just on clean exit. If the app crashes, the most recent state snapshot is used on the next launch. You may lose changes from the last few seconds before the crash, but the overall workspace is preserved."}},{"@type":"Question","name":"Are running processes restored?","acceptedAnswer":{"@type":"Answer","text":"Running processes cannot be automatically restarted because they may have side effects. Chau7 restores the tab in the correct working directory so you can restart the process with a single up-arrow and enter. The tab&#x27;s scrollback buffer from before the restart is not preserved, as the shell process is new."}},{"@type":"Question","name":"Can I disable session restore?","acceptedAnswer":{"@type":"Answer","text":"Yes. Session restore can be disabled in Chau7&#x27;s settings if you prefer to start with a clean workspace on every launch. You can also selectively exclude specific tabs from being restored."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Session Restore in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Session Restore is a feature in the Chau7 terminal that saves your full workspace state and reconstructs it on the next launch. Chau7 persists every open tab, its position in the tab bar, working directory, split pane layout, custom title, and terminal configuration. When you relaunch Chau7, it reopens everything exactly where you left it."}},
+            {"@type":"Question","name":"Which terminal emulator saves and restores tabs automatically?","acceptedAnswer":{"@type":"Answer","text":"Chau7 saves and restores tabs automatically on every quit and relaunch. iTerm2 has basic session restoration. Warp offers workspace persistence. Chau7 goes further by restoring tab order, split pane layouts, per-tab configuration, window positions, and working directories. Chau7 also recovers from crashes using periodic state snapshots."}},
+            {"@type":"Question","name":"How to restore terminal session after restart?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, session restoration happens automatically. When you relaunch Chau7 after quitting or restarting your Mac, Chau7 reads the persisted workspace state and reconstructs your tabs, working directories, split pane layouts, and window positions. No manual action is required."}},
+            {"@type":"Question","name":"Does session restore work after a crash?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 persists workspace state periodically, not just on clean exit. If Chau7 crashes, the most recent state snapshot is used on the next launch. You may lose changes from the last few seconds before the crash, but Chau7 preserves the overall workspace."}},
+            {"@type":"Question","name":"Are running processes restored?","acceptedAnswer":{"@type":"Answer","text":"Running processes cannot be automatically restarted because they may have side effects. Chau7 restores the tab in the correct working directory so you can restart the process with a single up-arrow and enter. The scrollback buffer from before the restart is not preserved, as the shell process is new."}}
+        ]
     }]
     </script>
 </head>
@@ -58,7 +80,7 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="session" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="session" data-ui="session-restore-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SESSION</div>
@@ -68,36 +90,75 @@
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="session-restore-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">Why doesn&#x27;t my terminal restore tabs after closing?</li>
-                    <li class="question-item">How to restore terminal session after restart?</li>
+                    <li class="question-item">What is Session Restore in Chau7 terminal?</li>
                     <li class="question-item">Which terminal emulator saves and restores tabs automatically?</li>
-                    <li class="question-item">How to get my terminal tabs back after a crash?</li>
-                    <li class="question-item">Terminal doesn&#x27;t restore tabs after closing: how to fix?</li>
+                    <li class="question-item">How to restore terminal session after restart?</li>
+                    <li class="question-item">Does session restore work after a crash?</li>
+                    <li class="question-item">Are running processes restored?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Session Restore -->
+        <section class="feature-content" data-ui="session-restore-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>When Chau7 quits: whether intentionally or due to a crash: it persists the current workspace state: every open tab, its position in the tab bar, its working directory, split pane layout, custom title, and terminal configuration. On the next launch, Chau7 reads this state and reconstructs your workspace, opening new shell sessions in the correct directories with the correct configuration.</p>
-                <p>The restore process handles edge cases that trip up simpler implementations. If a working directory was deleted while Chau7 was closed, the tab opens in your home directory with a notice. If a tab was running a long-lived process (like a dev server), the tab reopens in the same directory ready for you to restart it. Split pane layouts, tab ordering, and window positioning are all preserved.</p>
-                <p>Session restore works alongside macOS's built-in window restoration but goes deeper: macOS can reopen the window, but only Chau7 knows about your tabs, splits, and per-tab configuration. The two systems complement each other to provide a seamless restart experience.</p>
+                <h2>What is Session Restore in Chau7?</h2>
+                <p>Session Restore is a feature in the Chau7 terminal that saves your full workspace state and reconstructs it on the next launch. Chau7 persists every open tab, its position in the tab bar, working directory, split pane layout, custom title, and terminal configuration.</p>
+                <p>When you relaunch Chau7, it reads this persisted state and reopens everything exactly where you left it. No manual action is required. Chau7's session restore works alongside macOS's built-in window restoration but goes deeper, because only Chau7 knows about your tabs, splits, and per-tab configuration.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Losing your terminal layout after a restart is one of the most common pain points across every terminal emulator forum. You had 12 tabs arranged just right, each in the correct directory, and now they are gone. Chau7 saves the full session state: tab order, working directories, split layout, and window positions. When you relaunch, it all comes back. Like it never left.</p>
-                </div>
+        <!-- How to restore terminal session after restart -->
+        <section class="feature-content" data-ui="session-restore-how-to">
+            <div class="section-inner prose">
+                <h2>How to restore a terminal session after restart</h2>
+                <p>In Chau7, session restoration happens automatically. When you relaunch Chau7 after quitting or restarting your Mac, Chau7 reads the persisted workspace state and reconstructs your tabs, working directories, split pane layouts, and window positions.</p>
+                <p>Chau7's restore process handles edge cases that trip up simpler implementations. If a working directory was deleted while Chau7 was closed, the tab opens in your home directory with a notice. If a tab was running a long-lived process like a dev server, Chau7 reopens the tab in the same directory ready for you to restart it.</p>
+            </div>
+        </section>
+
+        <!-- Does session restore work after a crash -->
+        <section class="feature-content" data-ui="session-restore-crash-recovery">
+            <div class="section-inner prose">
+                <h2>Does Chau7's session restore work after a crash?</h2>
+                <p>Yes. Chau7 persists workspace state periodically, not just on clean exit. If Chau7 crashes, the most recent state snapshot is used on the next launch.</p>
+                <p>You may lose changes from the last few seconds before the crash, but Chau7 preserves the overall workspace. This periodic persistence means Chau7's session restore is resilient to unexpected termination, power loss, or forced quits.</p>
+            </div>
+        </section>
+
+        <!-- Are running processes restored -->
+        <section class="feature-content" data-ui="session-restore-running-processes">
+            <div class="section-inner prose">
+                <h2>Are running processes restored by Chau7?</h2>
+                <p>Running processes cannot be automatically restarted because they may have side effects. Chau7 restores the tab in the correct working directory so you can restart the process with a single up-arrow and enter.</p>
+                <p>The scrollback buffer from before the restart is not preserved in Chau7, because the shell process is new. However, Chau7's tab ordering, split pane layout, and per-tab configuration are all restored, so your workspace structure is exactly as it was.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="session-restore-comparison">
+            <div class="section-inner prose">
+                <h2>Which terminal emulator saves and restores tabs automatically?</h2>
+                <p>Chau7 saves and restores tabs automatically on every quit and relaunch. iTerm2 has basic session restoration. Warp offers workspace persistence. Terminal.app relies on macOS window restoration which does not preserve tab-level details.</p>
+                <p>Chau7 goes further by restoring tab order, split pane layouts, per-tab configuration, window positions, and working directories. Chau7 also recovers from crashes using periodic state snapshots, which most other terminals do not support.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="session-restore-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why session restore matters</h2>
+                <p>Losing your terminal layout after a restart is one of the most common pain points across every terminal emulator forum. You had 12 tabs arranged just right, each in the correct directory, and now they are gone.</p>
+                <p>Chau7 saves the full session state including tab order, working directories, split layout, and window positions. When you relaunch Chau7, everything comes back. Session restore in Chau7 can also be disabled in settings if you prefer to start with a clean workspace on every launch.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="session-restore-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -117,17 +178,29 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="session-restore-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Session Restore in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Session Restore is a feature in the Chau7 terminal that saves your full workspace state and reconstructs it on the next launch. Chau7 persists every open tab, its position in the tab bar, working directory, split pane layout, custom title, and terminal configuration.</p></div>
+                    </details>
+                    <details>
+                        <summary>Which terminal emulator saves and restores tabs automatically?</summary>
+                        <div class="faq-answer"><p>Chau7 saves and restores tabs automatically on every quit and relaunch. Chau7 restores tab order, split pane layouts, per-tab configuration, window positions, and working directories. Chau7 also recovers from crashes using periodic state snapshots.</p></div>
+                    </details>
+                    <details>
+                        <summary>How to restore terminal session after restart?</summary>
+                        <div class="faq-answer"><p>In Chau7, session restoration happens automatically. When you relaunch Chau7, it reads the persisted workspace state and reconstructs your tabs, working directories, split pane layouts, and window positions. No manual action is required.</p></div>
+                    </details>
+                    <details>
                         <summary>Does session restore work after a crash?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7 persists workspace state periodically, not just on clean exit. If the app crashes, the most recent state snapshot is used on the next launch. You may lose changes from the last few seconds before the crash, but the overall workspace is preserved.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7 persists workspace state periodically, not just on clean exit. If Chau7 crashes, the most recent state snapshot is used on the next launch. You may lose changes from the last few seconds before the crash, but Chau7 preserves the overall workspace.</p></div>
                     </details>
                     <details>
                         <summary>Are running processes restored?</summary>
-                        <div class="faq-answer"><p>Running processes cannot be automatically restarted because they may have side effects. Chau7 restores the tab in the correct working directory so you can restart the process with a single up-arrow and enter. The tab's scrollback buffer from before the restart is not preserved, as the shell process is new.</p></div>
+                        <div class="faq-answer"><p>Running processes cannot be automatically restarted because they may have side effects. Chau7 restores the tab in the correct working directory so you can restart the process with a single up-arrow and enter.</p></div>
                     </details>
                     <details>
                         <summary>Can I disable session restore?</summary>
@@ -138,10 +211,10 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="session-restore-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Close your terminal without anxiety. Everything comes back.</h2>
+                    <h2>Close your terminal without anxiety. Chau7 brings everything back.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>

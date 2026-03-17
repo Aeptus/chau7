@@ -6,9 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>20 MCP Tools | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 exposes 20 MCP tools giving AI agents full terminal control: tab creation, command execution, output capture, and telemetry access.">
+    <meta name="description" content="Chau7 exposes 20 MCP tools giving AI agents full terminal control: tab creation, command execution, output capture, and telemetry access over a local Unix socket.">
+    <meta name="article:section" content="MCP Server">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="MCP tools">
+    <meta name="article:tag" content="AI terminal control">
+    <meta name="article:tag" content="Model Context Protocol">
+    <meta name="article:tag" content="terminal automation">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="20 MCP Tools | Chau7">
-    <meta property="og:description" content="Chau7 exposes 20 MCP tools giving AI agents full terminal control: tab creation, command execution, output capture, and telemetry access.">
+    <meta property="og:description" content="Chau7 exposes 20 MCP tools giving AI agents full terminal control: tab creation, command execution, output capture, and telemetry access over a local Unix socket.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that exposes 20 MCP tools for full AI agent terminal control including tab lifecycle, command execution, output capture, and telemetry.",
+        "featureList": [
+            "tab_create, tab_close, tab_list, tab_status tools",
+            "tab_exec for command execution with structured output",
+            "tab_send_input for interactive prompts",
+            "tab_output for scrollback buffer capture",
+            "run_get, run_list, run_transcript, run_tool_calls for telemetry",
+            "Auto-registration in Claude Code, Cursor, Windsurf, Codex"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Which AI clients work with Chau7&#x27;s MCP tools?","acceptedAnswer":{"@type":"Answer","text":"Any MCP-compatible client works, including Claude Code (Claude CLI), Cursor, Windsurf, and Codex. Chau7 auto-registers its server configuration in each client&#x27;s config file on launch, so there is no manual setup required."}},{"@type":"Question","name":"Do the MCP tools require network access?","acceptedAnswer":{"@type":"Answer","text":"No. The MCP server communicates over a local Unix socket with no network exposure. All tool calls stay on your machine, and no authentication is needed because the socket is only accessible to your user account."}},{"@type":"Question","name":"Can MCP tools run destructive commands?","acceptedAnswer":{"@type":"Answer","text":"Yes, the tools execute whatever commands you send, just like typing in a terminal. Chau7 provides tab limits to prevent runaway tab creation, but command-level safety is the responsibility of the AI agent and its configuration."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is 20 MCP Tools in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7 exposes 20 MCP tools through its built-in MCP server that give AI agents full terminal control. The tools cover tab lifecycle (create, close, list, status), command execution (exec, send input), output capture (scrollback retrieval), and telemetry (run tracking, session listing, transcripts)."}},
+            {"@type":"Question","name":"How does Chau7's 20 MCP tools compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"No other terminal exposes MCP tools. iTerm2, Warp, Alacritty, and Kitty do not implement the Model Context Protocol. Chau7 is the only terminal with a built-in MCP server that gives AI agents structured access to tab lifecycle, command execution, output capture, and telemetry."}},
+            {"@type":"Question","name":"How do I let AI agents control my terminal?","acceptedAnswer":{"@type":"Answer","text":"Install Chau7 and it auto-registers its MCP server in the config files for Claude Code, Cursor, Windsurf, and Codex. AI agents then call Chau7's 20 MCP tools to create tabs, execute commands, read output, and access telemetry over a local Unix socket."}},
+            {"@type":"Question","name":"Which AI clients work with Chau7's MCP tools?","acceptedAnswer":{"@type":"Answer","text":"Any MCP-compatible client works with Chau7's MCP tools, including Claude Code, Cursor, Windsurf, and Codex. Chau7 auto-registers its server configuration in each client's config file on launch, so there is no manual setup required."}},
+            {"@type":"Question","name":"Do the MCP tools require network access?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7's MCP server communicates over a local Unix socket with no network exposure. All tool calls stay on your machine, and no authentication is needed because the socket is only accessible to your user account."}}
+        ]
     }]
     </script>
 </head>
@@ -58,46 +80,76 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="mcp" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="mcp" data-ui="mcp-tools-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-alt">MCP SERVER</div>
                 <h1 class="hero-title">20 MCP Tools</h1>
-                <p class="hero-subtitle">20 MCP tools. Full terminal control. Your AI agent just got its own command center.</p>
+                <p class="hero-subtitle">Chau7 gives AI agents 20 MCP tools for full terminal control. Your agent just got its own command center.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="mcp-tools-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is 20 MCP Tools in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's 20 MCP tools compare to other terminals?</li>
                     <li class="question-item">How do I let AI agents control my terminal?</li>
-                    <li class="question-item">Is there a terminal with a built-in MCP server?</li>
-                    <li class="question-item">How can Claude Code create and manage terminal tabs programmatically?</li>
-                    <li class="question-item">What MCP tools are available for terminal automation?</li>
-                    <li class="question-item">How do I give Cursor or Windsurf access to my terminal?</li>
+                    <li class="question-item">Which AI clients work with Chau7's MCP tools?</li>
+                    <li class="question-item">Do the MCP tools require network access?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is 20 MCP Tools -->
+        <section class="feature-content" data-ui="mcp-tools-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 ships a full MCP server that exposes 20 tools organized around terminal primitives: tab lifecycle (create, close, list, status), command execution (exec, send raw input), output retrieval (scrollback buffer capture), and telemetry (run tracking, session listing, transcripts). Each tool maps to a single, well-defined operation so agents can compose complex workflows from simple building blocks.</p>
-                <p>The tools are designed for real-world agent patterns. <code>tab_exec</code> runs a command and waits for completion, returning structured output. <code>tab_send_input</code> handles interactive prompts by sending raw keystrokes. <code>tab_output</code> retrieves the last N lines of scrollback, letting agents read command results without parsing terminal escape sequences. Status tools report process state, working directory, and active child processes so agents always know what is happening.</p>
-                <p>Telemetry tools (<code>run_get</code>, <code>run_list</code>, <code>run_transcript</code>, <code>run_tool_calls</code>) give agents access to their own execution history. An agent can review what it did in previous runs, inspect tool call patterns, and use session data to inform current decisions. This creates a feedback loop where agents learn from their own terminal interactions.</p>
+                <h2>What is 20 MCP Tools in Chau7?</h2>
+                <p>Chau7 exposes 20 MCP tools through its built-in MCP server that give AI agents full terminal control. The Chau7 MCP tools are organized around terminal primitives: tab lifecycle (<code>tab_create</code>, <code>tab_close</code>, <code>tab_list</code>, <code>tab_status</code>), command execution (<code>tab_exec</code>, <code>tab_send_input</code>), output capture (<code>tab_output</code>), and telemetry (<code>run_get</code>, <code>run_list</code>, <code>run_transcript</code>, <code>run_tool_calls</code>).</p>
+                <p>Each Chau7 MCP tool maps to a single, well-defined operation. Agents compose complex workflows from these simple building blocks. The <code>tab_exec</code> tool runs a command and waits for completion, returning structured output. The <code>tab_send_input</code> tool handles interactive prompts by sending raw keystrokes. The <code>tab_output</code> tool retrieves scrollback lines so agents can read command results.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Without Chau7, AI agents are limited to injecting text into a single terminal session and hoping for the best. With 20 purpose-built MCP tools, agents can create tabs, execute commands, read output, inspect processes, track sessions, and manage their own workspace. It is the difference between shouting into a room and having a proper conversation.</p>
-                </div>
+        <!-- How to let AI agents control terminal -->
+        <section class="feature-content" data-ui="mcp-tools-how-to-use">
+            <div class="section-inner prose">
+                <h2>How do I let AI agents control my terminal?</h2>
+                <p>Install Chau7 and it auto-registers its MCP server in the config files for Claude Code, Cursor, Windsurf, and Codex. No manual configuration is needed. AI agents then call Chau7's 20 MCP tools over a local Unix socket.</p>
+                <p>Once registered, agents can call Chau7's <code>tab_create</code> to open new tabs, <code>tab_exec</code> to run commands, <code>tab_output</code> to read results, and <code>tab_status</code> to check process state. Chau7's telemetry tools let agents review their own execution history and learn from previous runs.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="mcp-tools-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's 20 MCP tools compare to other terminals?</h2>
+                <p>No other terminal exposes MCP tools. iTerm2, Warp, Alacritty, and Kitty do not implement the Model Context Protocol and have no structured interface for AI agents.</p>
+                <p>Without Chau7, AI agents are limited to injecting text into a single terminal session and hoping for the best. With Chau7's 20 purpose-built MCP tools, agents can create tabs, execute commands, read output, inspect processes, track sessions, and manage their own workspace through structured API calls.</p>
+            </div>
+        </section>
+
+        <!-- Which AI clients work -->
+        <section class="feature-content" data-ui="mcp-tools-ai-clients">
+            <div class="section-inner prose">
+                <h2>Which AI clients work with Chau7's MCP tools?</h2>
+                <p>Any MCP-compatible client works with Chau7's MCP tools. Chau7 auto-registers its server configuration in Claude Code, Cursor, Windsurf, and Codex on every launch. No manual setup is required for these clients.</p>
+                <p>Other MCP-compatible tools and agents can also connect to Chau7's Unix socket server. Chau7 uses the standard MCP protocol, so any client that speaks MCP can access all 20 tools.</p>
+            </div>
+        </section>
+
+        <!-- Network access -->
+        <section class="feature-content" data-ui="mcp-tools-network">
+            <div class="section-inner prose">
+                <h2>Do Chau7's MCP tools require network access?</h2>
+                <p>No. Chau7's MCP server communicates over a local Unix socket with no network exposure. All tool calls stay on your machine.</p>
+                <p>No authentication is needed for Chau7's MCP tools because the Unix socket is only accessible to your user account. This design means Chau7's MCP server cannot be reached from other machines or other user accounts on the same machine.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="mcp-tools-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -121,28 +173,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="mcp-tools-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>Which AI clients work with Chau7&#x27;s MCP tools?</summary>
-                        <div class="faq-answer"><p>Any MCP-compatible client works, including Claude Code (Claude CLI), Cursor, Windsurf, and Codex. Chau7 auto-registers its server configuration in each client's config file on launch, so there is no manual setup required.</p></div>
+                        <summary>What is 20 MCP Tools in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Chau7 exposes 20 MCP tools through its built-in MCP server that give AI agents full terminal control. The tools cover tab lifecycle (create, close, list, status), command execution (exec, send input), output capture (scrollback retrieval), and telemetry (run tracking, session listing, transcripts).</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's 20 MCP tools compare to other terminals?</summary>
+                        <div class="faq-answer"><p>No other terminal exposes MCP tools. iTerm2, Warp, Alacritty, and Kitty do not implement the Model Context Protocol. Chau7 is the only terminal with a built-in MCP server that gives AI agents structured access to tab lifecycle, command execution, output capture, and telemetry.</p></div>
+                    </details>
+                    <details>
+                        <summary>How do I let AI agents control my terminal?</summary>
+                        <div class="faq-answer"><p>Install Chau7 and it auto-registers its MCP server in the config files for Claude Code, Cursor, Windsurf, and Codex. AI agents then call Chau7's 20 MCP tools to create tabs, execute commands, read output, and access telemetry over a local Unix socket.</p></div>
+                    </details>
+                    <details>
+                        <summary>Which AI clients work with Chau7's MCP tools?</summary>
+                        <div class="faq-answer"><p>Any MCP-compatible client works with Chau7's MCP tools, including Claude Code, Cursor, Windsurf, and Codex. Chau7 auto-registers its server configuration in each client's config file on launch, so there is no manual setup required.</p></div>
                     </details>
                     <details>
                         <summary>Do the MCP tools require network access?</summary>
-                        <div class="faq-answer"><p>No. The MCP server communicates over a local Unix socket with no network exposure. All tool calls stay on your machine, and no authentication is needed because the socket is only accessible to your user account.</p></div>
-                    </details>
-                    <details>
-                        <summary>Can MCP tools run destructive commands?</summary>
-                        <div class="faq-answer"><p>Yes, the tools execute whatever commands you send, just like typing in a terminal. Chau7 provides tab limits to prevent runaway tab creation, but command-level safety is the responsibility of the AI agent and its configuration.</p></div>
+                        <div class="faq-answer"><p>No. Chau7's MCP server communicates over a local Unix socket with no network exposure. All tool calls stay on your machine, and no authentication is needed because the socket is only accessible to your user account.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="mcp-tools-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Give your AI agent a real terminal. Not a text box with delusions of grandeur.</h2>

@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>VoiceOver Support | Chau7 Terminal</title>
     <meta name="description" content="Chau7 provides full macOS VoiceOver support for blind and low-vision developers. Terminal output is announced with semantic navigation of content.">
+    <meta name="article:section" content="Accessibility">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="VoiceOver">
+    <meta name="article:tag" content="accessibility">
+    <meta name="article:tag" content="screen reader">
+    <meta name="article:tag" content="blind developer">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="VoiceOver Support | Chau7">
     <meta property="og:description" content="Chau7 provides full macOS VoiceOver support for blind and low-vision developers. Terminal output is announced with semantic navigation of content.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with full VoiceOver support, providing automatic output announcement, semantic navigation, and complete accessibility for blind and low-vision developers.",
+        "featureList": [
+            "Automatic terminal output announcement via VoiceOver",
+            "Line-by-line, word-by-word, and character-by-character navigation",
+            "Semantic accessibility tree for prompt, command, and output regions",
+            "Accessible tab bar, split panes, and preferences",
+            "Accurate cursor and selection reporting",
+            "Descriptive accessibility labels throughout the UI"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does VoiceOver announce new terminal output?","acceptedAnswer":{"@type":"Answer","text":"Yes. New output is announced automatically as it appears, so screen reader users hear command results without manually navigating to them."}},{"@type":"Question","name":"Can I navigate terminal content with VoiceOver?","acceptedAnswer":{"@type":"Answer","text":"Yes. Standard VoiceOver navigation (line by line, word by word, character by character) works within the terminal buffer with accurate cursor and selection reporting."}},{"@type":"Question","name":"Are all UI elements accessible?","acceptedAnswer":{"@type":"Answer","text":"Yes. Tab bar, split panes, preferences, dialogs, and all controls have correct accessibility roles, labels, and descriptions for complete VoiceOver navigation."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is VoiceOver Support in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"VoiceOver Support in Chau7 means the terminal implements the full macOS NSAccessibility protocol, exposing terminal content to VoiceOver as navigable text elements. Chau7 announces new output automatically, reports cursor position and selection state, and structures the accessibility tree so prompt, command, and output regions are distinct elements."}},
+            {"@type":"Question","name":"How does Chau7's voiceover support compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Terminal.app has limited VoiceOver support with incomplete output announcement. iTerm2 provides basic accessibility but does not structure terminal content as distinct navigable regions. Alacritty and Kitty have minimal accessibility support. Chau7 provides full VoiceOver integration with automatic output announcement, semantic navigation, and accessible controls throughout the UI."}},
+            {"@type":"Question","name":"Does Chau7 announce new terminal output with VoiceOver?","acceptedAnswer":{"@type":"Answer","text":"Yes. When VoiceOver is active, Chau7 announces new terminal output automatically as it appears. Screen reader users hear command results without manually navigating to them. Chau7 posts accessibility notifications for each new line of output."}},
+            {"@type":"Question","name":"Can I navigate terminal content with VoiceOver in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 supports standard VoiceOver navigation within the terminal buffer. Users can move line by line, word by word, or character by character using VoiceOver gestures and keyboard commands. Chau7 reports cursor position, selection state, and current line accurately to the macOS accessibility system."}},
+            {"@type":"Question","name":"Is Chau7 a good terminal for blind developers on macOS?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 is designed with accessibility from the start. The terminal provides full VoiceOver support with automatic output announcement, semantic navigation of prompt and command regions, accessible tab bar and split panes, and descriptive labels on every UI control. Chau7 is free and open source."}}
+        ]
     }]
     </script>
 </head>
@@ -58,46 +80,79 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="accessibility" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="accessibility" data-ui="voiceover-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">ACCESSIBILITY</div>
                 <h1 class="hero-title">VoiceOver Support</h1>
-                <p class="hero-subtitle">Full VoiceOver integration. Because accessible terminals shouldn't be an afterthought.</p>
+                <p class="hero-subtitle">Chau7 provides full VoiceOver integration. Because accessible terminals should not be an afterthought.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="voiceover-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is VoiceOver Support in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's voiceover support compare to other terminals?</li>
                     <li class="question-item">Terminal VoiceOver macOS blind developer</li>
-                    <li class="question-item">Screen reader accessible terminal emulator Mac</li>
-                    <li class="question-item">VoiceOver read terminal output macOS</li>
-                    <li class="question-item">Accessible terminal for visually impaired developers</li>
-                    <li class="question-item">Best terminal app for blind users macOS</li>
+                    <li class="question-item">Does VoiceOver announce new terminal output?</li>
+                    <li class="question-item">Can I navigate terminal content with VoiceOver?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is VoiceOver Support in Chau7 -->
+        <section class="feature-content" data-ui="voiceover-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 implements full NSAccessibility protocol support, exposing terminal content to VoiceOver as navigable text elements. New terminal output is announced automatically so screen reader users hear command results as they appear. The accessibility tree is structured semantically: the prompt, command, and output regions are distinct elements that VoiceOver can navigate independently.</p>
-                <p>Interactive VoiceOver navigation works within the terminal buffer. Users can move line by line, word by word, or character by character through terminal content using standard VoiceOver gestures and keyboard commands. The cursor position, selection state, and current line are all reported accurately to the accessibility system.</p>
-                <p>Tab bar, split panes, preferences, and all UI controls are fully accessible with correct roles, labels, and descriptions. Keyboard focus management ensures VoiceOver users can navigate the complete application structure without sighted assistance. Accessibility labels use descriptive text rather than technical identifiers.</p>
+                <h2>What is VoiceOver Support in Chau7 terminal?</h2>
+                <p>VoiceOver Support in Chau7 means the terminal implements the full macOS NSAccessibility protocol. Chau7 exposes terminal content to VoiceOver as navigable text elements with distinct regions for the prompt, command input, and output.</p>
+                <p>Chau7 announces new terminal output automatically when VoiceOver is active. Screen reader users hear command results as they appear without manually navigating to them.</p>
+                <p>The Chau7 accessibility tree is structured semantically. The prompt, command, and output regions are distinct elements that VoiceOver can navigate independently. This structure lets blind and low-vision developers move through terminal content with the same precision as sighted users reading on screen.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Terminal.app's VoiceOver support has long been inadequate, and most third-party terminals treat accessibility as an afterthought. Chau7 provides full VoiceOver integration with terminal content announcement, cursor tracking, and proper accessibility labels throughout the UI. Accessible by design, not by patch.</p>
-                </div>
+        <!-- Does VoiceOver announce new terminal output -->
+        <section class="feature-content" data-ui="voiceover-output-announcement">
+            <div class="section-inner prose">
+                <h2>Does Chau7 announce new terminal output with VoiceOver?</h2>
+                <p>Yes. When VoiceOver is active, Chau7 posts accessibility notifications for each new line of output. Screen reader users hear command results automatically as they appear.</p>
+                <p>Chau7 does not require manual navigation to read new output. When a command finishes, VoiceOver announces the result immediately. This automatic announcement in Chau7 means blind developers get the same real-time feedback that sighted developers get by watching the screen.</p>
+            </div>
+        </section>
+
+        <!-- Can I navigate terminal content with VoiceOver -->
+        <section class="feature-content" data-ui="voiceover-navigation">
+            <div class="section-inner prose">
+                <h2>Can I navigate terminal content with VoiceOver in Chau7?</h2>
+                <p>Yes. Chau7 supports standard VoiceOver navigation within the terminal buffer. Users can move line by line, word by word, or character by character using VoiceOver gestures and keyboard commands.</p>
+                <p>Chau7 reports cursor position, selection state, and current line accurately to the macOS accessibility system. Interactive VoiceOver rotor navigation also works within Chau7's terminal buffer, allowing users to jump between different content regions.</p>
+            </div>
+        </section>
+
+        <!-- How Chau7 VoiceOver compares to other terminals -->
+        <section class="feature-content" data-ui="voiceover-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's VoiceOver support compare to other terminals?</h2>
+                <p>Terminal.app has limited VoiceOver support. Output announcement is incomplete, and terminal content is not structured as distinct navigable regions.</p>
+                <p>iTerm2 provides basic accessibility but does not expose prompt, command, and output as separate elements for VoiceOver navigation.</p>
+                <p>Alacritty and Kitty have minimal accessibility support. Neither terminal provides automatic output announcement or semantic navigation for VoiceOver users.</p>
+                <p>Chau7 provides full VoiceOver integration with automatic output announcement, semantic navigation of content regions, and accessible controls throughout the entire UI. Tab bar, split panes, preferences, and all dialogs in Chau7 have correct accessibility roles, labels, and descriptions.</p>
+            </div>
+        </section>
+
+        <!-- Why VoiceOver support matters -->
+        <section class="feature-content" data-ui="voiceover-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why VoiceOver support matters</h2>
+                <p>Blind and low-vision developers need terminal access to write code, run tests, deploy software, and manage servers. A terminal without proper VoiceOver support forces these developers to work around broken accessibility instead of focusing on their actual work.</p>
+                <p>Chau7 treats VoiceOver support as a core feature, not a patch. Every UI control in Chau7 has a descriptive accessibility label. Keyboard focus management ensures VoiceOver users can navigate the complete application structure without sighted assistance.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="voiceover-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -121,28 +176,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="voiceover-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>Does VoiceOver announce new terminal output?</summary>
-                        <div class="faq-answer"><p>Yes. New output is announced automatically as it appears, so screen reader users hear command results without manually navigating to them.</p></div>
+                        <summary>What is VoiceOver Support in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>VoiceOver Support in Chau7 means the terminal implements the full macOS NSAccessibility protocol, exposing terminal content to VoiceOver as navigable text elements. Chau7 announces new output automatically, reports cursor position and selection state, and structures the accessibility tree so prompt, command, and output regions are distinct elements.</p></div>
                     </details>
                     <details>
-                        <summary>Can I navigate terminal content with VoiceOver?</summary>
-                        <div class="faq-answer"><p>Yes. Standard VoiceOver navigation (line by line, word by word, character by character) works within the terminal buffer with accurate cursor and selection reporting.</p></div>
+                        <summary>How does Chau7's VoiceOver support compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Terminal.app has limited VoiceOver support with incomplete output announcement. iTerm2 provides basic accessibility but does not structure terminal content as distinct navigable regions. Alacritty and Kitty have minimal accessibility support. Chau7 provides full VoiceOver integration with automatic output announcement, semantic navigation, and accessible controls throughout the UI.</p></div>
                     </details>
                     <details>
-                        <summary>Are all UI elements accessible?</summary>
-                        <div class="faq-answer"><p>Yes. Tab bar, split panes, preferences, dialogs, and all controls have correct accessibility roles, labels, and descriptions for complete VoiceOver navigation.</p></div>
+                        <summary>Does Chau7 announce new terminal output with VoiceOver?</summary>
+                        <div class="faq-answer"><p>Yes. When VoiceOver is active, Chau7 announces new terminal output automatically as it appears. Screen reader users hear command results without manually navigating to them. Chau7 posts accessibility notifications for each new line of output.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I navigate terminal content with VoiceOver in Chau7?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 supports standard VoiceOver navigation within the terminal buffer. Users can move line by line, word by word, or character by character using VoiceOver gestures and keyboard commands. Chau7 reports cursor position, selection state, and current line accurately to the macOS accessibility system.</p></div>
+                    </details>
+                    <details>
+                        <summary>Is Chau7 a good terminal for blind developers on macOS?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 is designed with accessibility from the start. The terminal provides full VoiceOver support with automatic output announcement, semantic navigation of prompt and command regions, accessible tab bar and split panes, and descriptive labels on every UI control. Chau7 is free and open source.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="voiceover-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>A terminal that works with your screen reader. Not against it.</h2>

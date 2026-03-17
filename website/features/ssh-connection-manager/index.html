@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>SSH Connection Manager | Chau7 Terminal</title>
     <meta name="description" content="Chau7 includes a visual SSH connection manager with saved profiles, identity file selection, and jump host support for macOS terminals.">
+    <meta name="article:section" content="SSH & Remote">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="SSH connection manager">
+    <meta name="article:tag" content="SSH profiles">
+    <meta name="article:tag" content="SSH hosts">
+    <meta name="article:tag" content="jump host">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="SSH Connection Manager | Chau7">
     <meta property="og:description" content="Chau7 includes a visual SSH connection manager with saved profiles, identity file selection, and jump host support for macOS terminals.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with a built-in SSH connection manager that stores profiles with hostname, port, identity file, and jump host configuration.",
+        "featureList": [
+            "Visual SSH connection manager",
+            "Saved SSH profiles with hostname, port, and identity file",
+            "Jump host and ProxyJump support",
+            "SSH config auto-import",
+            "Profile groups by environment",
+            "One-click SSH connection from command palette"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does it replace my ~/.ssh/config file?","acceptedAnswer":{"@type":"Answer","text":"No. The connection manager works alongside your SSH config. You can import hosts from SSH config automatically, and profiles you create in the manager are stored separately: your SSH config remains untouched unless you explicitly export to it."}},{"@type":"Question","name":"Can I share SSH profiles with my team?","acceptedAnswer":{"@type":"Answer","text":"Profiles can be exported as JSON files (without private key contents) for sharing. Import them on another machine or distribute them through your team&#x27;s shared configuration repository."}},{"@type":"Question","name":"Does it support key-based and password authentication?","acceptedAnswer":{"@type":"Answer","text":"Yes. Profiles can specify identity files for key-based auth. For password authentication, Chau7 detects the password prompt and can optionally integrate with the macOS Keychain to auto-fill credentials."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is SSH Connection Manager in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"SSH Connection Manager is a built-in feature in the Chau7 terminal that provides a visual interface for creating, organizing, and connecting to SSH hosts. Each profile stores hostname, port, username, identity file path, and optional jump host configuration. Chau7 lets you connect to any saved host with a single click or keyboard shortcut."}},
+            {"@type":"Question","name":"How does Chau7's SSH connection manager compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals require developers to manage SSH connections through ~/.ssh/config or shell aliases. iTerm2 has a basic Profiles feature but no visual SSH manager with groups, tags, or notes. Warp, Alacritty, and Kitty have no SSH connection management at all. Chau7 provides a dedicated visual SSH manager with saved profiles, searchable tags, and one-click connections."}},
+            {"@type":"Question","name":"Is there a terminal with a built-in SSH connection manager?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 is a macOS terminal with a built-in SSH connection manager. Chau7's SSH manager stores profiles with hostname, port, username, identity file, and jump host. Profiles are organized into groups and accessible from the command palette or sidebar panel."}},
+            {"@type":"Question","name":"Does it replace my ~/.ssh/config file?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7's SSH connection manager works alongside your SSH config. You can import hosts from SSH config automatically, and profiles you create in Chau7 are stored separately. Your SSH config remains untouched unless you explicitly export to it."}},
+            {"@type":"Question","name":"Can I share SSH profiles with my team?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 SSH profiles can be exported as JSON files without private key contents. Import them on another machine or distribute them through your team's shared configuration repository. Chau7 keeps credentials out of the export by default."}}
+        ]
     }]
     </script>
 </head>
@@ -58,7 +80,7 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="ssh" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="ssh" data-ui="ssh-manager-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SSH & REMOTE</div>
@@ -68,35 +90,76 @@
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="ssh-manager-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is SSH Connection Manager in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's SSH connection manager compare to other terminals?</li>
                     <li class="question-item">Is there a terminal with a built-in SSH connection manager?</li>
-                    <li class="question-item">How do I manage dozens of SSH hosts without bookmarks?</li>
-                    <li class="question-item">SSH connection manager for macOS terminal: what are my options?</li>
-                    <li class="question-item">Can I save SSH profiles with identity files and ports in a terminal app?</li>
+                    <li class="question-item">Does it replace my ~/.ssh/config file?</li>
+                    <li class="question-item">Can I share SSH profiles with my team?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is SSH Connection Manager -->
+        <section class="feature-content" data-ui="ssh-manager-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>The SSH Connection Manager provides a visual interface for creating, organizing, and connecting to SSH hosts. Each profile stores the hostname, port, username, identity file path, and optional jump host configuration. Profiles are organized into groups: production, staging, personal: and are accessible from the command palette or a dedicated sidebar panel.</p>
-                <p>Connect to any saved host with a single click or keyboard shortcut. Chau7 opens a new tab with the correct SSH command, applying any profile-specific terminal settings (colors, font size, environment variables) automatically. Failed connections show clear error messages with troubleshooting hints rather than raw SSH error output.</p>
-                <p>Profiles support notes and tags for searchability. Attach a description to each host so you remember which server is which six months from now. Tags let you filter connections by role (web, database, cache) or environment (prod, staging, dev).</p>
+                <h2>What is SSH Connection Manager in Chau7?</h2>
+                <p>SSH Connection Manager is a built-in feature in the Chau7 terminal that provides a visual interface for creating, organizing, and connecting to SSH hosts. Each Chau7 SSH profile stores the hostname, port, username, identity file path, and optional jump host configuration.</p>
+                <p>Chau7 organizes SSH profiles into groups by environment: production, staging, personal. Profiles are accessible from the command palette or a dedicated sidebar panel.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Managing SSH connections by memory does not hold up past a handful of hosts. Once you have more than a handful of hosts, you are either maintaining a cheat sheet, relying on shell history, or typing ssh user@host from memory and hoping autocomplete fills in the right one. Chau7 provides a visual SSH manager with stored profiles, so connecting to any host is a single click.</p>
-                </div>
+        <!-- How does Chau7's SSH manager compare -->
+        <section class="feature-content" data-ui="ssh-manager-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's SSH connection manager compare to other terminals?</h2>
+                <p>Most terminals require developers to manage SSH connections through <code>~/.ssh/config</code> or shell aliases. iTerm2 has a basic Profiles feature but no visual SSH manager with groups, tags, or notes. Warp, Alacritty, and Kitty have no SSH connection management at all.</p>
+                <p>Chau7 provides a dedicated visual SSH manager with saved profiles, searchable tags, and one-click connections. Chau7 also auto-imports hosts from your existing SSH config so you do not have to recreate them manually.</p>
+            </div>
+        </section>
+
+        <!-- Is there a terminal with built-in SSH manager -->
+        <section class="feature-content" data-ui="ssh-manager-built-in">
+            <div class="section-inner prose">
+                <h2>Is there a terminal with a built-in SSH connection manager?</h2>
+                <p>Yes. Chau7 is a macOS terminal with a built-in SSH connection manager. Chau7's SSH manager stores profiles with hostname, port, username, identity file, and jump host configuration.</p>
+                <p>Connect to any saved host in Chau7 with a single click or keyboard shortcut. Chau7 opens a new tab with the correct SSH command and applies any profile-specific terminal settings (colors, font size, environment variables) automatically.</p>
+                <p>Failed connections in Chau7 show clear error messages with troubleshooting hints rather than raw SSH error output.</p>
+            </div>
+        </section>
+
+        <!-- Does it replace ~/.ssh/config -->
+        <section class="feature-content" data-ui="ssh-manager-ssh-config">
+            <div class="section-inner prose">
+                <h2>Does Chau7 replace my ~/.ssh/config file?</h2>
+                <p>No. Chau7's SSH connection manager works alongside your SSH config. You can import hosts from <code>~/.ssh/config</code> automatically, and profiles you create in Chau7 are stored separately.</p>
+                <p>Your SSH config remains untouched unless you explicitly export to it. Chau7 keeps its own profile store so you can add tags, notes, and groups without modifying your system SSH configuration.</p>
+            </div>
+        </section>
+
+        <!-- Can I share SSH profiles -->
+        <section class="feature-content" data-ui="ssh-manager-sharing">
+            <div class="section-inner prose">
+                <h2>Can I share SSH profiles with my team?</h2>
+                <p>Yes. Chau7 SSH profiles can be exported as JSON files without private key contents. Import them on another machine or distribute them through your team's shared configuration repository.</p>
+                <p>Chau7 keeps credentials out of the export by default. Profiles include hostname, port, username, tags, and notes, but not private key data. This makes Chau7 SSH profiles safe to commit to a shared repository.</p>
+            </div>
+        </section>
+
+        <!-- Profile organization -->
+        <section class="feature-content" data-ui="ssh-manager-organization">
+            <div class="section-inner prose">
+                <h2>How Chau7 organizes SSH profiles</h2>
+                <p>Chau7 SSH profiles support notes and tags for searchability. Attach a description to each host so you remember which server is which six months from now.</p>
+                <p>Tags in Chau7 let you filter connections by role (web, database, cache) or environment (prod, staging, dev). Combined with the command palette, finding the right host in Chau7 takes a few keystrokes instead of a memory test.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="ssh-manager-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -120,28 +183,40 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="ssh-manager-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is SSH Connection Manager in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>SSH Connection Manager is a built-in feature in the Chau7 terminal that provides a visual interface for creating, organizing, and connecting to SSH hosts. Each profile stores hostname, port, username, identity file path, and optional jump host configuration. Chau7 lets you connect to any saved host with a single click or keyboard shortcut.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's SSH connection manager compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals require developers to manage SSH connections through ~/.ssh/config or shell aliases. iTerm2 has a basic Profiles feature but no visual SSH manager with groups, tags, or notes. Warp, Alacritty, and Kitty have no SSH connection management at all. Chau7 provides a dedicated visual SSH manager with saved profiles, searchable tags, and one-click connections.</p></div>
+                    </details>
+                    <details>
+                        <summary>Is there a terminal with a built-in SSH connection manager?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 is a macOS terminal with a built-in SSH connection manager. Chau7's SSH manager stores profiles with hostname, port, username, identity file, and jump host. Profiles are organized into groups and accessible from the command palette or sidebar panel.</p></div>
+                    </details>
+                    <details>
                         <summary>Does it replace my ~/.ssh/config file?</summary>
-                        <div class="faq-answer"><p>No. The connection manager works alongside your SSH config. You can import hosts from SSH config automatically, and profiles you create in the manager are stored separately: your SSH config remains untouched unless you explicitly export to it.</p></div>
+                        <div class="faq-answer"><p>No. Chau7's SSH connection manager works alongside your SSH config. You can import hosts from SSH config automatically, and profiles you create in Chau7 are stored separately. Your SSH config remains untouched unless you explicitly export to it.</p></div>
                     </details>
                     <details>
                         <summary>Can I share SSH profiles with my team?</summary>
-                        <div class="faq-answer"><p>Profiles can be exported as JSON files (without private key contents) for sharing. Import them on another machine or distribute them through your team's shared configuration repository.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7 SSH profiles can be exported as JSON files without private key contents. Import them on another machine or distribute them through your team's shared configuration repository. Chau7 keeps credentials out of the export by default.</p></div>
                     </details>
                     <details>
-                        <summary>Does it support key-based and password authentication?</summary>
-                        <div class="faq-answer"><p>Yes. Profiles can specify identity files for key-based auth. For password authentication, Chau7 detects the password prompt and can optionally integrate with the macOS Keychain to auto-fill credentials.</p></div>
+                        <summary>Does Chau7 support key-based and password authentication?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 SSH profiles can specify identity files for key-based auth. For password authentication, Chau7 detects the password prompt and can optionally integrate with the macOS Keychain to auto-fill credentials.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="ssh-manager-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Organize your SSH connections. Because your memory has limits.</h2>

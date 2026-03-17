@@ -6,9 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Reduced Motion | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 respects macOS Reduced Motion preference. All animations are replaced with instant transitions for users sensitive to motion.">
+    <meta name="description" content="Chau7 respects the macOS Reduce Motion accessibility preference and replaces all animations with instant transitions for users sensitive to motion.">
+    <meta name="article:section" content="Accessibility">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="reduced motion">
+    <meta name="article:tag" content="accessibility">
+    <meta name="article:tag" content="disable animations">
+    <meta name="article:tag" content="macOS Reduce Motion">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Reduced Motion | Chau7">
-    <meta property="og:description" content="Chau7 respects macOS Reduced Motion preference. All animations are replaced with instant transitions for users sensitive to motion.">
+    <meta property="og:description" content="Chau7 respects the macOS Reduce Motion accessibility preference and replaces all animations with instant transitions for users sensitive to motion.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that respects the macOS Reduce Motion preference and replaces all animations with instant transitions.",
+        "featureList": [
+            "Automatic macOS Reduce Motion detection",
+            "Instant transitions for all decorative animations",
+            "Runtime preference monitoring without restart",
+            "Quake-style dropdown snap instead of slide",
+            "Tab switching cut instead of crossfade",
+            "Cursor blinking preserved for orientation"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does Chau7 automatically detect reduced motion?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 reads the macOS Reduce Motion preference at launch and monitors it for changes at runtime. No manual configuration is needed."}},{"@type":"Question","name":"Which animations are affected?","acceptedAnswer":{"@type":"Answer","text":"All decorative and transitional animations including dropdown slide, tab transitions, window effects, and UI state changes. Cursor blinking is preserved unless separately disabled."}},{"@type":"Question","name":"Can I disable animations without the system setting?","acceptedAnswer":{"@type":"Answer","text":"The recommended approach is to enable Reduce Motion in macOS System Settings &gt; Accessibility &gt; Display, which affects Chau7 and all other applications consistently."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Reduced Motion in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Reduced Motion is an accessibility feature in the Chau7 terminal that reads the macOS Reduce Motion preference and replaces all decorative animations with instant transitions. Chau7 detects the setting at launch and monitors it at runtime, so toggling the macOS preference takes effect immediately without restarting Chau7."}},
+            {"@type":"Question","name":"How does Chau7's reduced motion compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals either ignore the macOS Reduce Motion preference entirely or only partially reduce animations. Chau7 disables all decorative and transitional animations including dropdown slide, tab transitions, window effects, and UI state changes. Chau7 also monitors the preference at runtime and updates instantly when you toggle it."}},
+            {"@type":"Question","name":"How do I disable animations in a macOS terminal?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, enable Reduce Motion in macOS System Settings > Accessibility > Display. Chau7 reads this preference automatically and replaces all decorative animations with instant transitions. No manual configuration in Chau7 is needed."}},
+            {"@type":"Question","name":"Does Chau7 automatically detect reduced motion?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 reads the macOS Reduce Motion preference at launch and monitors it for changes at runtime. No manual configuration is needed. If you toggle the macOS setting while Chau7 is running, the behavior updates immediately without requiring a restart."}},
+            {"@type":"Question","name":"Which animations are affected by Chau7's reduced motion?","acceptedAnswer":{"@type":"Answer","text":"All decorative and transitional animations in Chau7 are affected, including dropdown slide, tab transitions, window effects, and UI state changes. Chau7's Quake-style dropdown snaps into position rather than sliding. Tab switching cuts rather than crossfading. Cursor blinking is preserved because it serves an orientation purpose rather than a decorative one."}}
+        ]
     }]
     </script>
 </head>
@@ -58,43 +80,77 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="accessibility" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="accessibility" data-ui="reduced-motion-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">ACCESSIBILITY</div>
                 <h1 class="hero-title">Reduced Motion</h1>
-                <p class="hero-subtitle">Respects macOS Reduce Motion. Instant transitions, zero unnecessary animation.</p>
+                <p class="hero-subtitle">Chau7 respects macOS Reduce Motion. Instant transitions, zero unnecessary animation.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="reduced-motion-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is Reduced Motion in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's reduced motion compare to other terminals?</li>
                     <li class="question-item">Terminal disable animations macOS reduced motion</li>
-                    <li class="question-item">Terminal emulator respects accessibility motion settings</li>
-                    <li class="question-item">Reduce motion in terminal app macOS vestibular</li>
+                    <li class="question-item">Does Chau7 automatically detect reduced motion?</li>
+                    <li class="question-item">Which animations are affected?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Reduced Motion -->
+        <section class="feature-content" data-ui="reduced-motion-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 checks the macOS Reduce Motion accessibility preference and disables all non-essential animations when it is enabled. Tab transitions, dropdown slide animations, window resize effects, and UI state changes all switch to instant transitions. This includes the Quake-style dropdown, which snaps into position rather than sliding, and tab switching, which cuts rather than crossfading.</p>
-                <p>The reduced motion setting is detected at launch and monitored for changes at runtime. If you toggle the macOS setting while Chau7 is running, the behavior updates immediately without requiring a restart. Essential functional feedback like cursor blinking is preserved unless separately disabled, since it serves an orientation purpose rather than a decorative one.</p>
+                <h2>What is Reduced Motion in Chau7?</h2>
+                <p>Reduced Motion is an accessibility feature in the Chau7 terminal that reads the macOS Reduce Motion preference and replaces all decorative animations with instant transitions.</p>
+                <p>Chau7 detects the Reduce Motion setting at launch and monitors it at runtime. Toggling the macOS preference takes effect immediately in Chau7 without requiring a restart.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Motion sensitivity affects a meaningful number of developers. Animations that feel polished to one person can trigger discomfort in another. Chau7 respects the macOS Reduce Motion preference and replaces all animations with instant transitions. Every feature works the same, just without the motion.</p>
-                </div>
+        <!-- Does Chau7 automatically detect reduced motion -->
+        <section class="feature-content" data-ui="reduced-motion-auto-detect">
+            <div class="section-inner prose">
+                <h2>Does Chau7 automatically detect reduced motion?</h2>
+                <p>Yes. Chau7 reads the macOS Reduce Motion preference at launch and monitors it for changes at runtime. No manual configuration in Chau7 is needed.</p>
+                <p>If you toggle the macOS Reduce Motion setting while Chau7 is running, Chau7 updates its behavior immediately. There is no need to restart Chau7 or change any Chau7-specific setting.</p>
+            </div>
+        </section>
+
+        <!-- Which animations are affected -->
+        <section class="feature-content" data-ui="reduced-motion-affected-animations">
+            <div class="section-inner prose">
+                <h2>Which animations are affected by Chau7's reduced motion?</h2>
+                <p>All decorative and transitional animations in Chau7 are affected. This includes dropdown slide animations, tab transitions, window resize effects, and UI state changes.</p>
+                <p>Chau7's Quake-style dropdown snaps into position rather than sliding. Tab switching in Chau7 cuts rather than crossfading. Window effects and UI state changes become instant.</p>
+                <p>Cursor blinking in Chau7 is preserved unless separately disabled, because cursor blinking serves an orientation purpose rather than a decorative one.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="reduced-motion-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's reduced motion compare to other terminals?</h2>
+                <p>Most terminals either ignore the macOS Reduce Motion preference entirely or only partially reduce animations. Alacritty and Kitty have minimal animations to begin with. iTerm2 has some animation support but does not comprehensively respond to the system preference.</p>
+                <p>Chau7 disables all decorative and transitional animations when Reduce Motion is enabled. Chau7 also monitors the macOS preference at runtime and updates instantly when you toggle it, without requiring a restart.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="reduced-motion-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why reduced motion matters</h2>
+                <p>Motion sensitivity affects a meaningful number of developers. Animations that feel polished to one person can trigger discomfort or disorientation in another.</p>
+                <p>Chau7 respects the macOS Reduce Motion preference and replaces all decorative animations with instant transitions. Every feature in Chau7 works the same way, just without the motion. The recommended approach is to enable Reduce Motion in macOS System Settings, Accessibility, Display, which affects Chau7 and all other applications consistently.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="reduced-motion-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -118,28 +174,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="reduced-motion-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
+                    <details>
+                        <summary>What is Reduced Motion in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Reduced Motion is an accessibility feature in the Chau7 terminal that reads the macOS Reduce Motion preference and replaces all decorative animations with instant transitions. Chau7 detects the setting at launch and monitors it at runtime, so toggling the macOS preference takes effect immediately without restarting Chau7.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's reduced motion compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals either ignore the macOS Reduce Motion preference entirely or only partially reduce animations. Chau7 disables all decorative and transitional animations including dropdown slide, tab transitions, window effects, and UI state changes. Chau7 also monitors the preference at runtime and updates instantly when you toggle it.</p></div>
+                    </details>
                     <details>
                         <summary>Does Chau7 automatically detect reduced motion?</summary>
                         <div class="faq-answer"><p>Yes. Chau7 reads the macOS Reduce Motion preference at launch and monitors it for changes at runtime. No manual configuration is needed.</p></div>
                     </details>
                     <details>
                         <summary>Which animations are affected?</summary>
-                        <div class="faq-answer"><p>All decorative and transitional animations including dropdown slide, tab transitions, window effects, and UI state changes. Cursor blinking is preserved unless separately disabled.</p></div>
+                        <div class="faq-answer"><p>All decorative and transitional animations in Chau7 are affected, including dropdown slide, tab transitions, window effects, and UI state changes. Cursor blinking is preserved unless separately disabled.</p></div>
                     </details>
                     <details>
                         <summary>Can I disable animations without the system setting?</summary>
-                        <div class="faq-answer"><p>The recommended approach is to enable Reduce Motion in macOS System Settings > Accessibility > Display, which affects Chau7 and all other applications consistently.</p></div>
+                        <div class="faq-answer"><p>The recommended approach is to enable Reduce Motion in macOS System Settings, Accessibility, Display, which affects Chau7 and all other applications consistently.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="reduced-motion-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>All the features, none of the unnecessary motion.</h2>

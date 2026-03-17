@@ -7,6 +7,14 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>LLM Error Explanation | Chau7 Terminal</title>
     <meta name="description" content="Chau7 lets you send terminal errors to any LLM provider for instant analysis. Supports OpenAI, Anthropic, Ollama, and custom API endpoints.">
+    <meta name="article:section" content="AI Integration">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="LLM error explanation">
+    <meta name="article:tag" content="AI error analysis">
+    <meta name="article:tag" content="terminal error">
+    <meta name="article:tag" content="OpenAI">
+    <meta name="article:tag" content="Anthropic">
+    <meta name="article:tag" content="Ollama">
     <meta property="og:title" content="LLM Error Explanation | Chau7">
     <meta property="og:description" content="Chau7 lets you send terminal errors to any LLM provider for instant analysis. Supports OpenAI, Anthropic, Ollama, and custom API endpoints.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +31,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that lets you send terminal errors to any LLM provider for instant one-click analysis and explanation.",
+        "featureList": [
+            "One-click error explanation via LLM",
+            "OpenAI, Anthropic, and Ollama provider support",
+            "Custom API endpoint configuration",
+            "In-terminal explanation display",
+            "Error context packaging",
+            "Works alongside active AI agent sessions"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +55,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Which LLM providers are supported?","acceptedAnswer":{"@type":"Answer","text":"OpenAI, Anthropic, Ollama (local), and any custom endpoint that accepts the standard chat completion API format. You configure your preferred provider and API key in Chau7&#x27;s settings."}},{"@type":"Question","name":"Does this feature send my terminal output to the cloud?","acceptedAnswer":{"@type":"Answer","text":"Only the error text you explicitly choose to analyze is sent. If privacy is a concern, configure a local Ollama instance and nothing leaves your machine."}},{"@type":"Question","name":"Can I customize the analysis prompt?","acceptedAnswer":{"@type":"Answer","text":"The default prompt is tuned for clear, actionable error explanations. Custom prompt templates are planned for a future release."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is LLM Error Explanation in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"LLM Error Explanation is a feature in the Chau7 terminal that lets you send any terminal error to an LLM provider for instant analysis with a single click. Chau7 packages the error text and surrounding context into a prompt, sends it to your configured provider, and displays the explanation directly in the terminal."}},
+            {"@type":"Question","name":"How does Chau7's LLM error explanation compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"No other terminal emulator offers built-in LLM error explanation. iTerm2, Alacritty, Kitty, and Warp require you to copy an error, open a browser, paste it into ChatGPT, and switch back to the terminal. Chau7 replaces that entire workflow with a single click that returns the explanation inside the terminal."}},
+            {"@type":"Question","name":"How to explain terminal errors with AI in Chau7?","acceptedAnswer":{"@type":"Answer","text":"When an error appears in Chau7, click the error to send it to your configured LLM provider. Chau7 packages the error text and surrounding context into a prompt and returns the explanation directly in the terminal interface. No browser or copy-paste required."}},
+            {"@type":"Question","name":"Which LLM providers does Chau7 support for error explanation?","acceptedAnswer":{"@type":"Answer","text":"Chau7 supports OpenAI, Anthropic, Ollama (local), and any custom endpoint that accepts the standard chat completion API format. You configure your preferred provider and API key in Chau7's settings."}},
+            {"@type":"Question","name":"Does Chau7's error explanation send terminal output to the cloud?","acceptedAnswer":{"@type":"Answer","text":"Chau7 only sends the error text you explicitly choose to analyze. No other terminal output is transmitted. If privacy is a concern, configure a local Ollama instance in Chau7 and nothing leaves your machine."}}
+        ]
     }]
     </script>
 </head>
@@ -58,44 +81,76 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="ai-integration" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="ai-integration" data-ui="llm-error-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-alt">AI INTEGRATION</div>
                 <h1 class="hero-title">LLM Error Explanation</h1>
-                <p class="hero-subtitle">One click turns a cryptic error into a human explanation. No browser required.</p>
+                <p class="hero-subtitle">Chau7 turns a cryptic error into a human explanation with one click. No browser required.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="llm-error-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">How to explain terminal errors with AI?</li>
-                    <li class="question-item">One-click error analysis in terminal using LLM</li>
-                    <li class="question-item">Send terminal errors to ChatGPT or Claude for explanation</li>
-                    <li class="question-item">AI-powered error explanation in terminal app</li>
+                    <li class="question-item">What is LLM Error Explanation in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's LLM error explanation compare to other terminals?</li>
+                    <li class="question-item">How to explain terminal errors with AI in Chau7?</li>
+                    <li class="question-item">Which LLM providers does Chau7 support for error explanation?</li>
+                    <li class="question-item">Does Chau7's error explanation send terminal output to the cloud?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is LLM Error Explanation -->
+        <section class="feature-content" data-ui="llm-error-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>When an error appears in your terminal, Chau7 lets you send it to an LLM for analysis with a single action. The error text and surrounding context are packaged into a prompt and sent to your configured LLM provider. The explanation is returned directly in the terminal interface.</p>
-                <p>You choose the provider: OpenAI, Anthropic, a local Ollama instance, or any custom endpoint that accepts standard chat completion requests. The feature works independently of any AI agent running in the tab, so you can use it in plain shell sessions as well as alongside active agent sessions.</p>
+                <h2>What is LLM Error Explanation in Chau7?</h2>
+                <p>LLM Error Explanation is a feature in the Chau7 terminal that lets you send any terminal error to an LLM for instant analysis with a single action. Chau7 packages the error text and surrounding context into a prompt and sends it to your configured LLM provider.</p>
+                <p>The explanation is returned directly in the Chau7 terminal interface. You never leave the terminal to understand an error. Chau7's error explanation works independently of any AI agent running in the tab, so you can use it in plain shell sessions as well as alongside active agent sessions.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Cryptic error messages are a constant friction point. The old workflow: copy error, open browser, paste into ChatGPT, wait for response, switch back to terminal. The Chau7 workflow: click the error, read the explanation. It is faster by an order of magnitude, and you never leave your terminal.</p>
-                </div>
+        <!-- How to explain errors -->
+        <section class="feature-content" data-ui="llm-error-how">
+            <div class="section-inner prose">
+                <h2>How to explain terminal errors with AI in Chau7</h2>
+                <p>When an error appears in Chau7, click the error to send it for analysis. Chau7 captures the error text and surrounding context, packages them into a prompt optimized for clear explanations, and sends the prompt to your configured LLM provider.</p>
+                <p>The old workflow involves copying the error, opening a browser, pasting into ChatGPT, waiting for a response, and switching back to the terminal. Chau7 replaces that entire sequence with a single click. The explanation appears inside the terminal within seconds.</p>
+            </div>
+        </section>
+
+        <!-- LLM providers -->
+        <section class="feature-content" data-ui="llm-error-providers">
+            <div class="section-inner prose">
+                <h2>Which LLM providers does Chau7 support for error explanation?</h2>
+                <p>Chau7 supports OpenAI, Anthropic, Ollama (local), and any custom endpoint that accepts the standard chat completion API format. You configure your preferred provider and API key in Chau7's settings.</p>
+                <p>For developers who prefer local inference, Chau7 works with Ollama so the error text never leaves your machine. Chau7 sends requests to whichever provider you configure, using the same standard API format across all of them.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="llm-error-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's LLM error explanation compare to other terminals?</h2>
+                <p>No other terminal emulator offers built-in LLM error explanation. iTerm2, Alacritty, Kitty, and Warp all require you to copy an error, open a browser, paste it into ChatGPT or Claude, and switch back to the terminal.</p>
+                <p>Chau7 replaces that entire workflow with a single click. The explanation appears inside the Chau7 terminal without any context switching. For developers who encounter errors dozens of times per day, Chau7's built-in error explanation saves significant time.</p>
+            </div>
+        </section>
+
+        <!-- Privacy -->
+        <section class="feature-content" data-ui="llm-error-privacy">
+            <div class="section-inner prose">
+                <h2>Does Chau7's error explanation send terminal output to the cloud?</h2>
+                <p>Chau7 only sends the error text you explicitly choose to analyze. No other terminal output is transmitted. Chau7 does not send anything in the background or without your action.</p>
+                <p>If privacy is a concern, configure a local Ollama instance in Chau7 and nothing leaves your machine. Chau7 gives you full control over which provider processes your error data.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="llm-error-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -119,28 +174,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="llm-error-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>Which LLM providers are supported?</summary>
-                        <div class="faq-answer"><p>OpenAI, Anthropic, Ollama (local), and any custom endpoint that accepts the standard chat completion API format. You configure your preferred provider and API key in Chau7's settings.</p></div>
+                        <summary>What is LLM Error Explanation in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>LLM Error Explanation is a feature in the Chau7 terminal that lets you send any terminal error to an LLM provider for instant analysis with a single click. Chau7 packages the error text and surrounding context into a prompt, sends it to your configured provider, and displays the explanation directly in the terminal.</p></div>
                     </details>
                     <details>
-                        <summary>Does this feature send my terminal output to the cloud?</summary>
-                        <div class="faq-answer"><p>Only the error text you explicitly choose to analyze is sent. If privacy is a concern, configure a local Ollama instance and nothing leaves your machine.</p></div>
+                        <summary>How does Chau7's LLM error explanation compare to other terminals?</summary>
+                        <div class="faq-answer"><p>No other terminal emulator offers built-in LLM error explanation. iTerm2, Alacritty, Kitty, and Warp require you to copy an error, open a browser, paste it into ChatGPT, and switch back to the terminal. Chau7 replaces that entire workflow with a single click that returns the explanation inside the terminal.</p></div>
                     </details>
                     <details>
-                        <summary>Can I customize the analysis prompt?</summary>
-                        <div class="faq-answer"><p>The default prompt is tuned for clear, actionable error explanations. Custom prompt templates are planned for a future release.</p></div>
+                        <summary>How to explain terminal errors with AI in Chau7?</summary>
+                        <div class="faq-answer"><p>When an error appears in Chau7, click the error to send it to your configured LLM provider. Chau7 packages the error text and surrounding context into a prompt and returns the explanation directly in the terminal interface. No browser or copy-paste required.</p></div>
+                    </details>
+                    <details>
+                        <summary>Which LLM providers does Chau7 support for error explanation?</summary>
+                        <div class="faq-answer"><p>Chau7 supports OpenAI, Anthropic, Ollama (local), and any custom endpoint that accepts the standard chat completion API format. You configure your preferred provider and API key in Chau7's settings.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7's error explanation send terminal output to the cloud?</summary>
+                        <div class="faq-answer"><p>Chau7 only sends the error text you explicitly choose to analyze. No other terminal output is transmitted. If privacy is a concern, configure a local Ollama instance in Chau7 and nothing leaves your machine.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="llm-error-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Stop copy-pasting errors into a browser tab. There's a better way.</h2>

@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Tab Limits | Chau7 Terminal</title>
     <meta name="description" content="Set a maximum number of MCP-created tabs in Chau7 to prevent AI agents from spawning unlimited terminal sessions.">
+    <meta name="article:section" content="MCP Server">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="tab limits">
+    <meta name="article:tag" content="MCP tab limit">
+    <meta name="article:tag" content="AI agent guardrail">
+    <meta name="article:tag" content="tab_create limit">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Tab Limits | Chau7">
     <meta property="og:description" content="Set a maximum number of MCP-created tabs in Chau7 to prevent AI agents from spawning unlimited terminal sessions.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with configurable tab limits that prevent AI agents from spawning unlimited MCP-created terminal sessions.",
+        "featureList": [
+            "Configurable maximum for MCP-created tabs",
+            "Clear error messages when limit is reached",
+            "Manual tabs exempt from the limit",
+            "Closed tabs free slots for new ones",
+            "Per-settings tab limit adjustment",
+            "Guardrail for runaway AI agent loops"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"What is the default tab limit?","acceptedAnswer":{"@type":"Answer","text":"The default limit is set conservatively to prevent runaway behavior while still allowing agents to work with multiple tabs for parallel tasks. You can adjust it in Chau7&#x27;s settings to match your workflow."}},{"@type":"Question","name":"Does the limit count tabs that have been closed?","acceptedAnswer":{"@type":"Answer","text":"No. The limit counts currently open MCP-created tabs. Once an agent closes a tab, that slot is freed for a new one. This encourages agents to clean up after themselves."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Tab Limits in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Tab Limits is a feature in Chau7 that sets a configurable maximum on the number of tabs AI agents can create through the MCP server. When an agent calls tab_create and the limit is reached, Chau7 returns an error message explaining the constraint. Tabs you create manually are never counted against the limit."}},
+            {"@type":"Question","name":"How does Chau7's tab limits compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals have no concept of tab limits for AI agents because they have no MCP server. Chau7 is the only terminal that provides a configurable ceiling on MCP-created tabs while leaving manual tab creation unrestricted. This guardrail prevents runaway AI agent behavior without limiting the developer."}},
+            {"@type":"Question","name":"How do I prevent AI agents from creating too many terminal tabs?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, set a tab limit in the settings. The limit applies exclusively to tabs created through Chau7's MCP server by AI agents. When the limit is reached, Chau7 returns an error to the agent explaining the constraint. Tabs you create manually are never affected by the limit."}},
+            {"@type":"Question","name":"What is the default tab limit?","acceptedAnswer":{"@type":"Answer","text":"Chau7's default tab limit is set conservatively to prevent runaway behavior while still allowing agents to work with multiple tabs for parallel tasks. You can adjust the tab limit in Chau7's settings to match your workflow."}},
+            {"@type":"Question","name":"Does the limit count tabs that have been closed?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7's tab limit counts only currently open MCP-created tabs. Once an agent closes a tab, that slot is freed for a new one. This design encourages AI agents to clean up after themselves and reuse tab slots."}}
+        ]
     }]
     </script>
 </head>
@@ -58,7 +80,7 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="mcp" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="mcp" data-ui="tab-limits-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-alt">MCP SERVER</div>
@@ -68,34 +90,66 @@
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="tab-limits-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is Tab Limits in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's tab limits compare to other terminals?</li>
                     <li class="question-item">How do I prevent AI agents from creating too many terminal tabs?</li>
-                    <li class="question-item">Can MCP tools create unlimited tabs?</li>
-                    <li class="question-item">What happens if an AI agent opens dozens of terminal tabs?</li>
-                    <li class="question-item">How to limit AI agent resource usage in the terminal?</li>
+                    <li class="question-item">What is the default tab limit?</li>
+                    <li class="question-item">Does the limit count tabs that have been closed?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Tab Limits -->
+        <section class="feature-content" data-ui="tab-limits-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7's settings include a configurable tab limit that applies exclusively to MCP-created tabs. When an agent calls <code>tab_create</code>, Chau7 checks the current count of MCP-spawned tabs against the limit. If the limit is reached, the tool returns an error message explaining the constraint rather than silently failing or creating the tab anyway.</p>
-                <p>The limit only affects tabs created through the MCP server. Tabs you create manually through the UI are never counted against the limit and are never blocked. This means you always retain full control of your terminal while the guardrail applies only to automated agent behavior.</p>
+                <h2>What is Tab Limits in Chau7?</h2>
+                <p>Tab Limits is a feature in Chau7 that sets a configurable maximum on the number of tabs AI agents can create through the MCP server. When an agent calls <code>tab_create</code> and the limit is reached, Chau7 returns an error message explaining the constraint rather than silently failing or creating the tab anyway.</p>
+                <p>The Chau7 tab limit applies exclusively to MCP-created tabs. Tabs you create manually through the UI are never counted against the limit and are never blocked.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>AI agents operating in loops can create tabs faster than you can notice. A coding agent that retries a failing test might open ten tabs in ten seconds. Tab limits set a ceiling on MCP-created tabs so runaway automation stays contained. It is a five-second setting that prevents a very bad afternoon.</p>
-                </div>
+        <!-- Comparison -->
+        <section class="feature-content" data-ui="tab-limits-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's tab limits compare to other terminals?</h2>
+                <p>Most terminals have no concept of tab limits for AI agents because they have no MCP server. iTerm2, Warp, Alacritty, and Kitty do not provide any mechanism to cap agent-created tabs.</p>
+                <p>Chau7 is the only terminal that provides a configurable ceiling on MCP-created tabs while leaving manual tab creation unrestricted. This guardrail in Chau7 prevents runaway AI agent behavior without limiting the developer.</p>
+            </div>
+        </section>
+
+        <!-- How to prevent AI agents from creating too many tabs -->
+        <section class="feature-content" data-ui="tab-limits-prevent-runaway">
+            <div class="section-inner prose">
+                <h2>How do I prevent AI agents from creating too many terminal tabs?</h2>
+                <p>In Chau7, set a tab limit in the settings. The limit applies exclusively to tabs created through Chau7's MCP server by AI agents like Claude Code, Codex, and Cursor.</p>
+                <p>When the limit is reached, Chau7 returns a clear error to the agent explaining the constraint. AI agents operating in loops can create tabs faster than you can notice. A coding agent that retries a failing test might open ten tabs in ten seconds. Chau7's tab limit sets a ceiling so runaway automation stays contained.</p>
+            </div>
+        </section>
+
+        <!-- Default tab limit -->
+        <section class="feature-content" data-ui="tab-limits-default">
+            <div class="section-inner prose">
+                <h2>What is Chau7's default tab limit?</h2>
+                <p>Chau7's default tab limit is set conservatively to prevent runaway behavior while still allowing agents to work with multiple tabs for parallel tasks. You can adjust the tab limit in Chau7's settings to match your workflow.</p>
+                <p>The limit only affects tabs created through Chau7's MCP server. You always retain full control of your terminal, and manually created tabs are never blocked by the limit.</p>
+            </div>
+        </section>
+
+        <!-- Closed tabs and the limit -->
+        <section class="feature-content" data-ui="tab-limits-closed-tabs">
+            <div class="section-inner prose">
+                <h2>Does Chau7's limit count tabs that have been closed?</h2>
+                <p>No. Chau7's tab limit counts only currently open MCP-created tabs. Once an agent closes a tab, that slot is freed for a new one.</p>
+                <p>This design in Chau7 encourages AI agents to clean up after themselves and reuse tab slots. An agent that closes finished tabs can continue creating new ones without hitting the limit.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="tab-limits-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -119,24 +173,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="tab-limits-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Tab Limits in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Tab Limits is a feature in Chau7 that sets a configurable maximum on the number of tabs AI agents can create through the MCP server. When an agent calls tab_create and the limit is reached, Chau7 returns an error message explaining the constraint. Tabs you create manually are never counted against the limit.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's tab limits compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals have no concept of tab limits for AI agents because they have no MCP server. Chau7 is the only terminal that provides a configurable ceiling on MCP-created tabs while leaving manual tab creation unrestricted. This guardrail prevents runaway AI agent behavior without limiting the developer.</p></div>
+                    </details>
+                    <details>
+                        <summary>How do I prevent AI agents from creating too many terminal tabs?</summary>
+                        <div class="faq-answer"><p>In Chau7, set a tab limit in the settings. The limit applies exclusively to tabs created through Chau7's MCP server by AI agents. When the limit is reached, Chau7 returns an error to the agent explaining the constraint. Tabs you create manually are never affected by the limit.</p></div>
+                    </details>
+                    <details>
                         <summary>What is the default tab limit?</summary>
-                        <div class="faq-answer"><p>The default limit is set conservatively to prevent runaway behavior while still allowing agents to work with multiple tabs for parallel tasks. You can adjust it in Chau7's settings to match your workflow.</p></div>
+                        <div class="faq-answer"><p>Chau7's default tab limit is set conservatively to prevent runaway behavior while still allowing agents to work with multiple tabs for parallel tasks. You can adjust the tab limit in Chau7's settings to match your workflow.</p></div>
                     </details>
                     <details>
                         <summary>Does the limit count tabs that have been closed?</summary>
-                        <div class="faq-answer"><p>No. The limit counts currently open MCP-created tabs. Once an agent closes a tab, that slot is freed for a new one. This encourages agents to clean up after themselves.</p></div>
+                        <div class="faq-answer"><p>No. Chau7's tab limit counts only currently open MCP-created tabs. Once an agent closes a tab, that slot is freed for a new one. This design encourages AI agents to clean up after themselves and reuse tab slots.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="tab-limits-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Prevent tab explosions. Your future self will be grateful.</h2>

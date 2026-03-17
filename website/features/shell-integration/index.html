@@ -6,9 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Shell Integration | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 integrates with zsh, bash, and fish shells for automatic command detection, directory tracking, and exit code reporting.">
+    <meta name="description" content="Chau7 integrates with zsh, bash, and fish shells for automatic command detection, directory tracking, and exit code reporting. No configuration files modified.">
+    <meta name="article:section" content="Terminal Core">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="shell integration">
+    <meta name="article:tag" content="command detection">
+    <meta name="article:tag" content="directory tracking">
+    <meta name="article:tag" content="OSC escape sequences">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Shell Integration | Chau7">
-    <meta property="og:description" content="Chau7 integrates with zsh, bash, and fish shells for automatic command detection, directory tracking, and exit code reporting.">
+    <meta property="og:description" content="Chau7 integrates with zsh, bash, and fish shells for automatic command detection, directory tracking, and exit code reporting. No configuration files modified.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with automatic shell integration for command detection, directory tracking, and exit code reporting.",
+        "featureList": [
+            "Automatic command boundary detection",
+            "Working directory tracking via OSC 7",
+            "Exit code reporting",
+            "Per-command timing",
+            "Click-to-select command output",
+            "Scroll-to-previous-prompt navigation"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does shell integration modify my shell configuration files?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7 injects the integration hooks at shell startup via environment variables, without modifying .zshrc, .bashrc, or config.fish. Your configuration files remain untouched."}},{"@type":"Question","name":"What happens if I use a shell that is not zsh, bash, or fish?","acceptedAnswer":{"@type":"Answer","text":"Chau7 still functions as a standard terminal emulator. Features that depend on shell integration (command detection, directory tracking) will be unavailable, but all other functionality works normally. You can manually emit OSC 133 and OSC 7 sequences from any shell to enable integration."}},{"@type":"Question","name":"Can I disable shell integration?","acceptedAnswer":{"@type":"Answer","text":"Yes. A single toggle in Chau7&#x27;s settings disables automatic hook injection. You can also selectively disable individual features (like directory tracking) while keeping others active."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Shell Integration in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Shell Integration is a feature in the Chau7 terminal that installs lightweight hooks into zsh, bash, and fish to report command boundaries, working directories, and exit codes. Chau7 uses these signals to build a structured model of each command, enabling features like click-to-select output and scroll-to-previous-prompt."}},
+            {"@type":"Question","name":"How does Chau7's shell integration compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"iTerm2 offers shell integration that requires manual script installation. Warp has built-in integration but only for zsh. Alacritty and Kitty have no shell integration. Chau7 auto-injects minimal hooks into zsh, bash, and fish at startup without modifying configuration files, providing command detection, directory tracking, and exit code reporting out of the box."}},
+            {"@type":"Question","name":"How does terminal shell integration work?","acceptedAnswer":{"@type":"Answer","text":"Chau7 injects lightweight shell hooks that emit invisible OSC 133 and OSC 7 escape sequences at key points in the command lifecycle. OSC 133 marks prompt, command input, and output boundaries. OSC 7 reports the current working directory. Chau7 reads these sequences to build a structured model of each command."}},
+            {"@type":"Question","name":"Does shell integration modify my shell configuration files?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7 injects the integration hooks at shell startup via environment variables, without modifying .zshrc, .bashrc, or config.fish. Your configuration files remain untouched. You can disable auto-injection in Chau7's settings."}},
+            {"@type":"Question","name":"What happens if I use a shell that is not zsh, bash, or fish?","acceptedAnswer":{"@type":"Answer","text":"Chau7 still functions as a standard terminal emulator. Features that depend on shell integration like command detection and directory tracking will be unavailable, but all other Chau7 functionality works normally. You can manually emit OSC 133 and OSC 7 sequences from any shell to enable integration."}}
+        ]
     }]
     </script>
 </head>
@@ -58,7 +80,7 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="terminal" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="terminal" data-ui="shell-integration-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">TERMINAL CORE</div>
@@ -68,35 +90,84 @@
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="shell-integration-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is Shell Integration in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's shell integration compare to other terminals?</li>
                     <li class="question-item">How does terminal shell integration work?</li>
-                    <li class="question-item">Terminal not tracking current working directory for new tabs</li>
-                    <li class="question-item">How to detect command start and end in a terminal emulator</li>
-                    <li class="question-item">Shell integration for zsh bash fish in macOS terminal</li>
+                    <li class="question-item">Does shell integration modify my shell configuration files?</li>
+                    <li class="question-item">What happens if I use a shell that is not zsh, bash, or fish?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Shell Integration -->
+        <section class="feature-content" data-ui="shell-integration-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 installs lightweight shell hooks into zsh, bash, and fish that emit invisible escape sequences (OSC 133 and OSC 7) at key points in the command lifecycle. A precmd/preexec pair marks the boundary between the prompt, the command input, and the command output. OSC 7 reports the current working directory after every directory change.</p>
-                <p>These escape sequences allow Chau7 to build a structured model of each command: the prompt region, the command text, the output region, the exit code, and the working directory at the time of execution. This model powers features like click-to-select-command-output, scroll-to-previous-prompt, and new-tab-in-same-directory.</p>
-                <p>Shell integration hooks are injected automatically when Chau7 detects a supported shell. The hooks are minimal (under 20 lines per shell) and do not modify shell behavior, aliases, or key bindings. Users who manage their own shell configuration can disable auto-injection and add the hooks manually.</p>
+                <h2>What is Shell Integration in Chau7?</h2>
+                <p>Shell Integration is a feature in the Chau7 terminal that installs lightweight hooks into zsh, bash, and fish. These hooks report command boundaries, working directories, and exit codes to Chau7 automatically.</p>
+                <p>Chau7 uses these signals to build a structured model of each command: the prompt region, the command text, the output region, the exit code, and the working directory at the time of execution.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Without shell integration, a terminal sees only a stream of characters with no structure. It cannot tell where one command ends and another begins, what the current directory is, or whether the last command succeeded. Chau7's shell integration hooks into zsh, bash, and fish to report all of this automatically, enabling features like per-command timing, directory-aware tab titles, and command-level navigation.</p>
-                </div>
+        <!-- How does shell integration work -->
+        <section class="feature-content" data-ui="shell-integration-how">
+            <div class="section-inner prose">
+                <h2>How does Chau7's shell integration work?</h2>
+                <p>Chau7 installs lightweight shell hooks into zsh, bash, and fish that emit invisible escape sequences at key points in the command lifecycle. A precmd/preexec pair using OSC 133 marks the boundary between the prompt, the command input, and the command output. OSC 7 reports the current working directory after every directory change.</p>
+                <p>Chau7's shell integration hooks are minimal, under 20 lines per shell. They do not modify shell behavior, aliases, or key bindings. Chau7 auto-injects these hooks when it detects a supported shell at startup.</p>
+            </div>
+        </section>
+
+        <!-- What features does shell integration enable -->
+        <section class="feature-content" data-ui="shell-integration-features-enabled">
+            <div class="section-inner prose">
+                <h2>What features does Chau7's shell integration enable?</h2>
+                <p>Chau7's structured command model powers click-to-select-command-output, scroll-to-previous-prompt, and new-tab-in-same-directory. Per-command timing becomes available because Chau7 knows exactly when each command starts and finishes.</p>
+                <p>Directory-aware tab titles update automatically in Chau7 because OSC 7 reports the current working directory. Command-level navigation lets you jump between prompts without scrolling through output.</p>
+            </div>
+        </section>
+
+        <!-- Does it modify shell config -->
+        <section class="feature-content" data-ui="shell-integration-no-modification">
+            <div class="section-inner prose">
+                <h2>Does Chau7's shell integration modify your shell configuration files?</h2>
+                <p>No. Chau7 injects the integration hooks at shell startup via environment variables. Chau7 does not modify .zshrc, .bashrc, or config.fish. Your configuration files remain untouched.</p>
+                <p>Users who manage their own shell configuration can disable Chau7's auto-injection in settings and add the hooks manually instead.</p>
+            </div>
+        </section>
+
+        <!-- Unsupported shells -->
+        <section class="feature-content" data-ui="shell-integration-unsupported-shells">
+            <div class="section-inner prose">
+                <h2>What happens if you use a shell that is not zsh, bash, or fish?</h2>
+                <p>Chau7 still functions as a standard terminal emulator. Features that depend on Chau7's shell integration, like command detection and directory tracking, will be unavailable. All other Chau7 functionality works normally.</p>
+                <p>You can manually emit OSC 133 and OSC 7 sequences from any shell to enable Chau7's shell integration features. This makes Chau7's integration extensible to shells like nushell, elvish, or custom interpreters.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="shell-integration-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's shell integration compare to other terminals?</h2>
+                <p>iTerm2 offers shell integration that requires manual script installation. Warp has built-in integration but only for zsh. Alacritty and Kitty have no shell integration at all.</p>
+                <p>Chau7 auto-injects minimal hooks into zsh, bash, and fish at startup without modifying configuration files. Chau7's shell integration provides command detection, directory tracking, and exit code reporting out of the box with zero configuration.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="shell-integration-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why Chau7's shell integration matters</h2>
+                <p>Without shell integration, a terminal sees only a stream of characters with no structure. The terminal cannot tell where one command ends and another begins, what the current directory is, or whether the last command succeeded.</p>
+                <p>Chau7's shell integration hooks into zsh, bash, and fish to report all of this automatically. This enables per-command timing, directory-aware tab titles, and command-level navigation in Chau7 with zero manual setup.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="shell-integration-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -120,31 +191,39 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="shell-integration-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>Does shell integration modify my shell configuration files?</summary>
-                        <div class="faq-answer"><p>No. Chau7 injects the integration hooks at shell startup via environment variables, without modifying .zshrc, .bashrc, or config.fish. Your configuration files remain untouched.</p></div>
+                        <summary>What is Shell Integration in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Shell Integration is a feature in the Chau7 terminal that installs lightweight hooks into zsh, bash, and fish to report command boundaries, working directories, and exit codes. Chau7 uses these signals to build a structured model of each command, enabling features like click-to-select output and scroll-to-previous-prompt.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's shell integration compare to other terminals?</summary>
+                        <div class="faq-answer"><p>iTerm2 offers shell integration that requires manual script installation. Warp has built-in integration but only for zsh. Alacritty and Kitty have no shell integration. Chau7 auto-injects minimal hooks into zsh, bash, and fish at startup without modifying configuration files, providing command detection, directory tracking, and exit code reporting out of the box.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7's shell integration modify my shell configuration files?</summary>
+                        <div class="faq-answer"><p>No. Chau7 injects the integration hooks at shell startup via environment variables, without modifying .zshrc, .bashrc, or config.fish. Your configuration files remain untouched. You can disable auto-injection in Chau7's settings.</p></div>
                     </details>
                     <details>
                         <summary>What happens if I use a shell that is not zsh, bash, or fish?</summary>
-                        <div class="faq-answer"><p>Chau7 still functions as a standard terminal emulator. Features that depend on shell integration (command detection, directory tracking) will be unavailable, but all other functionality works normally. You can manually emit OSC 133 and OSC 7 sequences from any shell to enable integration.</p></div>
+                        <div class="faq-answer"><p>Chau7 still functions as a standard terminal emulator. Features that depend on Chau7's shell integration like command detection and directory tracking will be unavailable, but all other Chau7 functionality works normally. You can manually emit OSC 133 and OSC 7 sequences from any shell to enable integration.</p></div>
                     </details>
                     <details>
-                        <summary>Can I disable shell integration?</summary>
-                        <div class="faq-answer"><p>Yes. A single toggle in Chau7's settings disables automatic hook injection. You can also selectively disable individual features (like directory tracking) while keeping others active.</p></div>
+                        <summary>Can I disable Chau7's shell integration?</summary>
+                        <div class="faq-answer"><p>Yes. A single toggle in Chau7's settings disables automatic hook injection. You can also selectively disable individual features like directory tracking while keeping others active.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="shell-integration-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Smarter terminal, zero configuration. Your shell already knows what to say.</h2>
+                    <h2>Smarter terminal, zero configuration. Chau7's shell already knows what to say.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>

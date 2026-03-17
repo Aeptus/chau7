@@ -6,9 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Terminal Search | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 provides in-terminal search with regex, case sensitivity toggles, and match-by-match navigation through scrollback output.">
+    <meta name="description" content="Chau7 provides in-terminal search with regex support, case sensitivity toggles, and match-by-match navigation through the entire scrollback buffer.">
+    <meta name="article:section" content="Search">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="terminal search">
+    <meta name="article:tag" content="regex search">
+    <meta name="article:tag" content="scrollback search">
+    <meta name="article:tag" content="terminal output search">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Terminal Search | Chau7">
-    <meta property="og:description" content="Chau7 provides in-terminal search with regex, case sensitivity toggles, and match-by-match navigation through scrollback output.">
+    <meta property="og:description" content="Chau7 provides in-terminal search with regex support, case sensitivity toggles, and match-by-match navigation through the entire scrollback buffer.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with built-in regex search through the entire scrollback buffer, case sensitivity toggles, and match-by-match navigation.",
+        "featureList": [
+            "Regex search through terminal scrollback",
+            "Case sensitivity toggle",
+            "Whole-word matching",
+            "Match-by-match navigation with counter",
+            "Incremental search results as you type",
+            "Scrollback buffer up to 100,000 lines"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"How large is the scrollback buffer?","acceptedAnswer":{"@type":"Answer","text":"The default scrollback is 10,000 lines per tab, configurable up to 100,000 lines. Search performance remains fast across the full buffer thanks to incremental indexing."}},{"@type":"Question","name":"Can I copy search results?","acceptedAnswer":{"@type":"Answer","text":"Yes. When a match is highlighted, Cmd+C copies the matched text. You can also select and copy a range of matches or the lines containing them."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Terminal Search in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Terminal Search is a built-in feature in the Chau7 terminal that lets developers search through all terminal output, including content that has scrolled off screen. Chau7's search supports regex patterns, case sensitivity toggles, whole-word matching, and match-by-match navigation with a position counter."}},
+            {"@type":"Question","name":"How does Chau7's terminal search compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals offer basic text search. Chau7's terminal search adds regex support, case sensitivity and whole-word toggles, incremental results as you type, and match-by-match navigation with a counter. Chau7 searches the entire scrollback buffer, not just the visible viewport."}},
+            {"@type":"Question","name":"How do I search through terminal output in a terminal emulator?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, press Cmd+F to open the search bar. Type a query to highlight all matches in the scrollback buffer. Use Enter to jump to the next match and Shift+Enter for the previous match. Toggle regex mode to search with regular expression patterns for IP addresses, error codes, or timestamps."}},
+            {"@type":"Question","name":"How large is the scrollback buffer?","acceptedAnswer":{"@type":"Answer","text":"Chau7's default scrollback buffer is 10,000 lines per tab, configurable up to 100,000 lines. Search performance in Chau7 remains fast across the full buffer thanks to incremental indexing."}},
+            {"@type":"Question","name":"Can I copy search results?","acceptedAnswer":{"@type":"Answer","text":"Yes. In Chau7, when a search match is highlighted, Cmd+C copies the matched text. You can also select and copy a range of matches or the lines containing them."}}
+        ]
     }]
     </script>
 </head>
@@ -58,44 +80,76 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="search" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="search" data-ui="terminal-search-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SEARCH</div>
                 <h1 class="hero-title">Terminal Search</h1>
-                <p class="hero-subtitle">Regex search through your terminal output. Case-sensitive. Match-by-match navigation. Actually useful.</p>
+                <p class="hero-subtitle">Chau7 gives you regex search through your terminal output. Case-sensitive. Match-by-match navigation. Actually useful.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="terminal-search-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is Terminal Search in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's terminal search compare to other terminals?</li>
                     <li class="question-item">How do I search through terminal output in a terminal emulator?</li>
-                    <li class="question-item">Is there a terminal with regex search in scrollback?</li>
-                    <li class="question-item">Can I search terminal history with case sensitivity and navigation?</li>
+                    <li class="question-item">How large is the scrollback buffer?</li>
+                    <li class="question-item">Can I copy search results?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Terminal Search -->
+        <section class="feature-content" data-ui="terminal-search-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Press Cmd+F to open the search bar. Type a query to highlight all matches in the terminal scrollback buffer. Navigate between matches with Enter (next) and Shift+Enter (previous), or click the arrow buttons. The current match is highlighted distinctly from other matches, and a counter shows your position in the result set.</p>
-                <p>Toggle regex mode to search with full regular expression patterns: find IP addresses, error codes, timestamps, or any structured pattern in your output. Case sensitivity is togglable independently, and whole-word matching is available for precise searches.</p>
-                <p>Search operates over the entire scrollback buffer, not just the visible viewport. For terminals with large scrollback (tens of thousands of lines), search is incremental: results appear as you type, with matches nearest to your current scroll position shown first.</p>
+                <h2>What is Terminal Search in Chau7?</h2>
+                <p>Terminal Search is a built-in feature in the Chau7 terminal that lets developers search through all terminal output, including content that has scrolled off screen. Chau7's search covers the entire scrollback buffer, not just the visible viewport.</p>
+                <p>Chau7's Terminal Search supports full regex patterns, case sensitivity toggles, and whole-word matching. A match counter shows the current position in the result set so developers always know where they are.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Terminal output scrolls past and is gone. When you need to find a specific error, a particular log line, or a URL from earlier output, you need search that actually works. Chau7 provides regex search with case sensitivity toggle and match-by-match navigation. It searches the scrollback buffer, so content that scrolled off screen is still findable.</p>
-                </div>
+        <!-- How to search terminal output -->
+        <section class="feature-content" data-ui="terminal-search-how-to">
+            <div class="section-inner prose">
+                <h2>How do I search through terminal output in Chau7?</h2>
+                <p>Press <code>Cmd+F</code> to open Chau7's search bar. Type a query to highlight all matches in the terminal scrollback buffer. Navigate between matches with <code>Enter</code> (next) and <code>Shift+Enter</code> (previous), or click the arrow buttons.</p>
+                <p>Toggle regex mode in Chau7 to search with full regular expression patterns. This lets developers find IP addresses, error codes, timestamps, or any structured pattern in terminal output.</p>
+                <p>Case sensitivity is togglable independently in Chau7's search bar. Whole-word matching is also available for precise searches that avoid partial matches.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="terminal-search-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's terminal search compare to other terminals?</h2>
+                <p>Most terminals offer basic text search with limited options. Chau7's terminal search adds regex support, independent case sensitivity and whole-word toggles, incremental results as you type, and match-by-match navigation with a position counter.</p>
+                <p>Chau7 searches the entire scrollback buffer. Many terminals only search visible content or require plugins for regex support. Chau7 provides all search capabilities built in, with no configuration needed.</p>
+            </div>
+        </section>
+
+        <!-- Scrollback buffer size -->
+        <section class="feature-content" data-ui="terminal-search-scrollback">
+            <div class="section-inner prose">
+                <h2>How large is the Chau7 scrollback buffer?</h2>
+                <p>Chau7's default scrollback buffer is 10,000 lines per tab. Developers can configure the scrollback buffer up to 100,000 lines in Chau7's settings.</p>
+                <p>Search performance in Chau7 remains fast across the full buffer thanks to incremental indexing. Results appear as the developer types, with matches nearest to the current scroll position shown first.</p>
+            </div>
+        </section>
+
+        <!-- Copying search results -->
+        <section class="feature-content" data-ui="terminal-search-copy">
+            <div class="section-inner prose">
+                <h2>Can I copy search results in Chau7?</h2>
+                <p>Yes. In Chau7, when a search match is highlighted, <code>Cmd+C</code> copies the matched text. Developers can also select and copy a range of matches or the lines containing them.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="terminal-search-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -115,27 +169,39 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="terminal-search-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Terminal Search in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Terminal Search is a built-in feature in the Chau7 terminal that lets developers search through all terminal output, including content that has scrolled off screen. Chau7's search supports regex patterns, case sensitivity toggles, whole-word matching, and match-by-match navigation with a position counter.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's terminal search compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals offer basic text search. Chau7's terminal search adds regex support, case sensitivity and whole-word toggles, incremental results as you type, and match-by-match navigation with a counter. Chau7 searches the entire scrollback buffer, not just the visible viewport.</p></div>
+                    </details>
+                    <details>
+                        <summary>How do I search through terminal output in a terminal emulator?</summary>
+                        <div class="faq-answer"><p>In Chau7, press Cmd+F to open the search bar. Type a query to highlight all matches in the scrollback buffer. Use Enter to jump to the next match and Shift+Enter for the previous match. Toggle regex mode to search with regular expression patterns for IP addresses, error codes, or timestamps.</p></div>
+                    </details>
+                    <details>
                         <summary>How large is the scrollback buffer?</summary>
-                        <div class="faq-answer"><p>The default scrollback is 10,000 lines per tab, configurable up to 100,000 lines. Search performance remains fast across the full buffer thanks to incremental indexing.</p></div>
+                        <div class="faq-answer"><p>Chau7's default scrollback buffer is 10,000 lines per tab, configurable up to 100,000 lines. Search performance in Chau7 remains fast across the full buffer thanks to incremental indexing.</p></div>
                     </details>
                     <details>
                         <summary>Can I copy search results?</summary>
-                        <div class="faq-answer"><p>Yes. When a match is highlighted, Cmd+C copies the matched text. You can also select and copy a range of matches or the lines containing them.</p></div>
+                        <div class="faq-answer"><p>Yes. In Chau7, when a search match is highlighted, Cmd+C copies the matched text. You can also select and copy a range of matches or the lines containing them.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="terminal-search-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Find that error message from five minutes ago. It's still there.</h2>
+                    <h2>Find that error message from five minutes ago. It is still there.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>

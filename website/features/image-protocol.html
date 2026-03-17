@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Image Protocol | Chau7 Terminal</title>
     <meta name="description" content="Chau7 displays inline images in the terminal via the iTerm2 image protocol and Sixel graphics for visual CLI workflows.">
+    <meta name="article:section" content="Terminal Core">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="image protocol">
+    <meta name="article:tag" content="iTerm2 image protocol">
+    <meta name="article:tag" content="Sixel graphics">
+    <meta name="article:tag" content="inline images">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Image Protocol | Chau7">
     <meta property="og:description" content="Chau7 displays inline images in the terminal via the iTerm2 image protocol and Sixel graphics for visual CLI workflows.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that displays inline images via the iTerm2 image protocol (OSC 1337) and Sixel graphics, with GPU-composited rendering and scrollback preservation.",
+        "featureList": [
+            "iTerm2 image protocol (OSC 1337) support",
+            "Sixel graphics rendering",
+            "GPU-composited image display via Metal",
+            "PNG, JPEG, GIF, BMP, TIFF, and PDF support",
+            "Images preserved in scrollback buffer",
+            "Compatible with imgcat, viu, timg, and catimg"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Which image formats are supported?","acceptedAnswer":{"@type":"Answer","text":"The iTerm2 protocol supports PNG, JPEG, GIF (including animated GIF), BMP, TIFF, and PDF. Sixel graphics produce raster output at the resolution specified by the Sixel data stream."}},{"@type":"Question","name":"Do images survive scrollback?","acceptedAnswer":{"@type":"Answer","text":"Yes. Images are stored in the scrollback buffer alongside text content and remain visible when you scroll up. They are released from memory only when they exit the scrollback limit."}},{"@type":"Question","name":"Can I use imgcat or similar tools with Chau7?","acceptedAnswer":{"@type":"Answer","text":"Yes. Any tool that outputs iTerm2 image protocol sequences works with Chau7 out of the box, including imgcat, viu, timg, and catimg."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Image Protocol in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Image Protocol in Chau7 lets you display inline images directly in the terminal. Chau7 supports the iTerm2 image protocol (OSC 1337) for base64-encoded images and Sixel graphics for raster output. Images are decoded on a background thread and rendered via Metal GPU compositing."}},
+            {"@type":"Question","name":"Does Chau7 support the iTerm2 image protocol?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 fully supports the iTerm2 image protocol (OSC 1337). Any tool that outputs iTerm2 image protocol sequences works with Chau7 out of the box, including imgcat, viu, timg, and catimg."}},
+            {"@type":"Question","name":"How to display images in the terminal on macOS","acceptedAnswer":{"@type":"Answer","text":"Chau7 displays inline images in the terminal using the iTerm2 image protocol. Use tools like imgcat to send an image to the terminal, and Chau7 renders it inline at the cursor position. Chau7 also supports Sixel graphics for raster image output."}},
+            {"@type":"Question","name":"Which image formats does Chau7 support?","acceptedAnswer":{"@type":"Answer","text":"The iTerm2 image protocol in Chau7 supports PNG, JPEG, GIF (including animated GIF), BMP, TIFF, and PDF. Sixel graphics produce raster output at the resolution specified by the Sixel data stream."}},
+            {"@type":"Question","name":"Do images survive scrollback in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Yes. Images in Chau7 are stored in the scrollback buffer alongside text content and remain visible when you scroll up. Images are memory-mapped and released only when they scroll past the scrollback limit."}}
+        ]
     }]
     </script>
 </head>
@@ -58,7 +80,7 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="terminal" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="terminal" data-ui="image-protocol-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">TERMINAL CORE</div>
@@ -68,35 +90,66 @@
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="image-protocol-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">How to display images in the terminal on macOS</li>
+                    <li class="question-item">What is Image Protocol in Chau7 terminal?</li>
                     <li class="question-item">iTerm2 image protocol support in other terminals</li>
-                    <li class="question-item">Sixel graphics terminal emulator macOS</li>
-                    <li class="question-item">Show inline images in terminal for data science workflows</li>
+                    <li class="question-item">How to display images in the terminal on macOS</li>
+                    <li class="question-item">Which image formats are supported?</li>
+                    <li class="question-item">Do images survive scrollback?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Image Protocol in Chau7 -->
+        <section class="feature-content" data-ui="image-protocol-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 supports two inline image protocols. The iTerm2 image protocol uses an OSC 1337 escape sequence to transmit a base64-encoded image (PNG, JPEG, GIF, or PDF) that the terminal renders inline at the cursor position. The image is decoded on a background thread and uploaded to a Metal texture for GPU-composited display alongside text content.</p>
-                <p>Sixel graphics support allows programs that output Sixel-encoded raster data (common in scientific computing and retro computing tools) to render images directly in the terminal grid. Chau7 decodes the Sixel color registers and pixel data into an RGBA bitmap that is composited into the terminal framebuffer at the correct cell position.</p>
-                <p>Both protocols respect the terminal grid: images occupy a calculated number of character cells based on their pixel dimensions and the current cell size. Scrollback preserves images, so they remain visible when scrolling up through previous output. Images are memory-mapped and released when they scroll out of the scrollback buffer.</p>
+                <h2>What is Image Protocol in Chau7?</h2>
+                <p>Image Protocol in Chau7 lets you display inline images directly in the terminal. Chau7 supports the iTerm2 image protocol (OSC 1337) for transmitting base64-encoded images that render inline at the cursor position.</p>
+                <p>Chau7 also supports Sixel graphics, which allows programs that output Sixel-encoded raster data to render images directly in the terminal grid. Chau7 decodes the Sixel color registers and pixel data into an RGBA bitmap.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Data science, DevOps, and design workflows produce visual output: matplotlib charts, architecture diagrams, CI status badges. Chau7 supports inline image rendering via the iTerm2 image protocol, so you can display images directly in terminal output without switching to another application.</p>
-                </div>
+        <!-- How to display images in the terminal on macOS -->
+        <section class="feature-content" data-ui="image-protocol-how-to-display">
+            <div class="section-inner prose">
+                <h2>How to display images in the terminal on macOS</h2>
+                <p>Chau7 displays inline images using the iTerm2 image protocol. Use tools like <code>imgcat</code>, <code>viu</code>, <code>timg</code>, or <code>catimg</code> to send an image to the terminal. Chau7 renders the image inline at the cursor position.</p>
+                <p>Chau7 decodes images on a background thread and uploads them to a Metal texture for GPU-composited display alongside text content. Both iTerm2 protocol images and Sixel graphics respect the terminal grid, occupying a calculated number of character cells based on pixel dimensions and cell size.</p>
+            </div>
+        </section>
+
+        <!-- Which image formats does Chau7 support -->
+        <section class="feature-content" data-ui="image-protocol-formats">
+            <div class="section-inner prose">
+                <h2>Which image formats does Chau7 support?</h2>
+                <p>The iTerm2 image protocol in Chau7 supports PNG, JPEG, GIF (including animated GIF), BMP, TIFF, and PDF. These formats cover the vast majority of image output from data science, DevOps, and design workflows.</p>
+                <p>Sixel graphics in Chau7 produce raster output at the resolution specified by the Sixel data stream. Sixel support in Chau7 is useful for scientific computing and retro computing tools that output Sixel-encoded images.</p>
+            </div>
+        </section>
+
+        <!-- Do images survive scrollback in Chau7 -->
+        <section class="feature-content" data-ui="image-protocol-scrollback">
+            <div class="section-inner prose">
+                <h2>Do images survive scrollback in Chau7?</h2>
+                <p>Yes. Images in Chau7 are stored in the scrollback buffer alongside text content and remain visible when you scroll up through previous output.</p>
+                <p>Images in Chau7 are memory-mapped and released only when they scroll past the scrollback buffer limit. This means you can scroll back to review charts, diagrams, or screenshots from earlier in your session.</p>
+            </div>
+        </section>
+
+        <!-- iTerm2 image protocol support comparison -->
+        <section class="feature-content" data-ui="image-protocol-comparison">
+            <div class="section-inner prose">
+                <h2>Does Chau7 support the iTerm2 image protocol?</h2>
+                <p>Yes. Chau7 fully supports the iTerm2 image protocol (OSC 1337). Any tool that outputs iTerm2 image protocol sequences works with Chau7 out of the box.</p>
+                <p>Not all terminals support the iTerm2 image protocol. Alacritty and the default macOS Terminal.app do not render inline images. Chau7 supports both the iTerm2 image protocol and Sixel graphics, making it one of the most complete image rendering implementations in a macOS terminal.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="image-protocol-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -120,28 +173,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="image-protocol-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>Which image formats are supported?</summary>
-                        <div class="faq-answer"><p>The iTerm2 protocol supports PNG, JPEG, GIF (including animated GIF), BMP, TIFF, and PDF. Sixel graphics produce raster output at the resolution specified by the Sixel data stream.</p></div>
+                        <summary>What is Image Protocol in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Image Protocol in Chau7 lets you display inline images directly in the terminal. Chau7 supports the iTerm2 image protocol (OSC 1337) for base64-encoded images and Sixel graphics for raster output. Images are decoded on a background thread and rendered via Metal GPU compositing.</p></div>
                     </details>
                     <details>
-                        <summary>Do images survive scrollback?</summary>
-                        <div class="faq-answer"><p>Yes. Images are stored in the scrollback buffer alongside text content and remain visible when you scroll up. They are released from memory only when they exit the scrollback limit.</p></div>
+                        <summary>Does Chau7 support the iTerm2 image protocol?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 fully supports the iTerm2 image protocol (OSC 1337). Any tool that outputs iTerm2 image protocol sequences works with Chau7 out of the box, including imgcat, viu, timg, and catimg.</p></div>
                     </details>
                     <details>
-                        <summary>Can I use imgcat or similar tools with Chau7?</summary>
-                        <div class="faq-answer"><p>Yes. Any tool that outputs iTerm2 image protocol sequences works with Chau7 out of the box, including imgcat, viu, timg, and catimg.</p></div>
+                        <summary>How to display images in the terminal on macOS</summary>
+                        <div class="faq-answer"><p>Chau7 displays inline images in the terminal using the iTerm2 image protocol. Use tools like imgcat to send an image to the terminal, and Chau7 renders it inline at the cursor position. Chau7 also supports Sixel graphics for raster image output.</p></div>
+                    </details>
+                    <details>
+                        <summary>Which image formats does Chau7 support?</summary>
+                        <div class="faq-answer"><p>The iTerm2 image protocol in Chau7 supports PNG, JPEG, GIF (including animated GIF), BMP, TIFF, and PDF. Sixel graphics produce raster output at the resolution specified by the Sixel data stream.</p></div>
+                    </details>
+                    <details>
+                        <summary>Do images survive scrollback in Chau7?</summary>
+                        <div class="faq-answer"><p>Yes. Images in Chau7 are stored in the scrollback buffer alongside text content and remain visible when you scroll up. Images are memory-mapped and released only when they scroll past the scrollback limit.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="image-protocol-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>See images in your terminal. The future is now. (The future is weird.)</h2>

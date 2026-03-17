@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Line Numbers | Chau7 Terminal</title>
     <meta name="description" content="Chau7's built-in editor shows line numbers with an optional relative mode for Vim-style navigation. Configurable gutter width and styling.">
+    <meta name="article:section" content="Built-in Editor">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="line numbers">
+    <meta name="article:tag" content="relative line numbers">
+    <meta name="article:tag" content="terminal editor">
+    <meta name="article:tag" content="Vim navigation">
+    <meta name="article:tag" content="gutter">
     <meta property="og:title" content="Line Numbers | Chau7">
     <meta property="og:description" content="Chau7's built-in editor shows line numbers with an optional relative mode for Vim-style navigation. Configurable gutter width and styling.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with a built-in editor that shows line numbers, relative line numbers, and a configurable gutter for Vim-style navigation.",
+        "featureList": [
+            "Absolute line numbers in the editor gutter",
+            "Relative line numbers for Vim-style navigation",
+            "Hybrid mode with absolute on current line",
+            "Auto-sizing gutter width based on file length",
+            "Current line highlighting",
+            "Toggleable line number gutter"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Can I enable relative line numbers?","acceptedAnswer":{"@type":"Answer","text":"Yes. Relative line numbers show the distance from the current line, matching Vim&#x27;s relativenumber behavior. You can also enable hybrid mode with the absolute number on the current line."}},{"@type":"Question","name":"Can I hide line numbers entirely?","acceptedAnswer":{"@type":"Answer","text":"Yes. The line number gutter is fully optional and can be toggled off in the editor preferences for a minimal editing view."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Line Numbers in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Line Numbers is a feature in the Chau7 terminal's built-in editor that displays a line number gutter along the left edge of the editing area. Chau7 supports absolute line numbers, relative line numbers for Vim-style navigation, and a hybrid mode that shows the absolute number on the current line with relative offsets elsewhere."}},
+            {"@type":"Question","name":"How does Chau7's line numbers compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminal emulators do not include a built-in editor, so line numbers are not relevant. Terminals like iTerm2, Alacritty, and Kitty rely on external editors. Chau7 includes a built-in editor with line numbers, relative line numbers, and hybrid mode, so developers can navigate error references without leaving the terminal."}},
+            {"@type":"Question","name":"How does Chau7 display line numbers in its terminal editor?","acceptedAnswer":{"@type":"Answer","text":"Chau7 displays a line number gutter along the left edge of the built-in editor. The gutter width adjusts automatically based on total line count. The current line is highlighted, and numbers update dynamically as you scroll and resize."}},
+            {"@type":"Question","name":"Can I enable relative line numbers in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7's built-in editor supports relative line numbers that show the distance from the current line, matching Vim's relativenumber behavior. Chau7 also supports hybrid mode, which displays the absolute number on the current line and relative offsets on all other lines."}},
+            {"@type":"Question","name":"Can I hide line numbers entirely in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Yes. The line number gutter in Chau7's built-in editor is fully optional. You can toggle line numbers off in the editor preferences for a minimal editing view."}}
+        ]
     }]
     </script>
 </head>
@@ -58,43 +80,76 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="editor" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="editor" data-ui="line-numbers-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">BUILT-IN EDITOR</div>
                 <h1 class="hero-title">Line Numbers</h1>
-                <p class="hero-subtitle">Line numbers in the terminal editor. Because 'error on line 47' means nothing without them.</p>
+                <p class="hero-subtitle">Chau7 shows line numbers in the terminal editor. Because "error on line 47" means nothing without them.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="line-numbers-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">Terminal editor line numbers display</li>
-                    <li class="question-item">Relative line numbers in terminal editor like vim</li>
-                    <li class="question-item">Show line number gutter terminal text editor</li>
+                    <li class="question-item">What is Line Numbers in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's line numbers compare to other terminals?</li>
+                    <li class="question-item">How does Chau7 display line numbers in its terminal editor?</li>
+                    <li class="question-item">Can I enable relative line numbers in Chau7?</li>
+                    <li class="question-item">Can I hide line numbers entirely in Chau7?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Line Numbers -->
+        <section class="feature-content" data-ui="line-numbers-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>The built-in editor displays a line number gutter along the left edge of the editing area. Line numbers update dynamically as you scroll and resize, with the current line highlighted for easy orientation. The gutter width adjusts automatically based on the total line count to avoid wasted space in short files or clipping in long ones.</p>
-                <p>Relative line numbers mode shows the distance from the current line instead of absolute positions, matching the behavior of Vim's relativenumber setting. This makes motion commands intuitive: the number displayed next to a target line is exactly the count you need to reach it. You can enable both absolute and relative numbers simultaneously, showing the absolute number on the current line and relative offsets elsewhere.</p>
+                <h2>What is Line Numbers in Chau7?</h2>
+                <p>Line Numbers is a feature in the Chau7 terminal's built-in editor that displays a line number gutter along the left edge of the editing area. Chau7 shows absolute line numbers by default, with optional relative and hybrid modes.</p>
+                <p>The line number gutter in Chau7 updates dynamically as you scroll and resize. The gutter width adjusts automatically based on the total line count to avoid wasted space in short files or clipping in long ones.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Line numbers are essential for navigating error messages, git diffs, and stack traces. When a compiler says 'error on line 47,' you need to be able to jump there. Chau7's editor shows line numbers by default, with configurable display and optional relative line numbers for Vim-style navigation.</p>
-                </div>
+        <!-- How Chau7 displays line numbers -->
+        <section class="feature-content" data-ui="line-numbers-display">
+            <div class="section-inner prose">
+                <h2>How does Chau7 display line numbers in its terminal editor?</h2>
+                <p>Chau7's built-in editor renders a line number gutter along the left edge of the editing area. The current line is highlighted for easy orientation, and the gutter width scales automatically based on total line count.</p>
+                <p>Chau7 supports three display modes for line numbers. Absolute mode shows standard sequential numbers. Relative mode shows the distance from the current line, matching Vim's <code>relativenumber</code> setting. Hybrid mode shows the absolute number on the current line and relative offsets on all other lines.</p>
+            </div>
+        </section>
+
+        <!-- Relative line numbers -->
+        <section class="feature-content" data-ui="line-numbers-relative">
+            <div class="section-inner prose">
+                <h2>Can I enable relative line numbers in Chau7?</h2>
+                <p>Yes. Chau7's built-in editor supports relative line numbers that show the distance from the current line instead of absolute positions. This matches the behavior of Vim's <code>relativenumber</code> setting.</p>
+                <p>Relative line numbers in Chau7 make motion commands intuitive. The number displayed next to a target line is exactly the count you need to reach it. Chau7 also supports hybrid mode, which combines the absolute number on the current line with relative offsets elsewhere.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="line-numbers-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's line numbers compare to other terminals?</h2>
+                <p>Most terminal emulators do not include a built-in editor, so line numbers are not a relevant feature. Terminals like iTerm2, Alacritty, and Kitty rely on external editors such as Vim or VS Code for editing.</p>
+                <p>Chau7 includes a built-in editor with line numbers, relative line numbers, and hybrid mode. Developers using Chau7 can navigate error references, git diffs, and stack traces without leaving the terminal or opening an external editor.</p>
+            </div>
+        </section>
+
+        <!-- Hiding line numbers -->
+        <section class="feature-content" data-ui="line-numbers-hiding">
+            <div class="section-inner prose">
+                <h2>Can I hide line numbers entirely in Chau7?</h2>
+                <p>Yes. The line number gutter in Chau7's built-in editor is fully optional. You can toggle line numbers off in the editor preferences for a minimal editing view.</p>
+                <p>Chau7 remembers your line number preference across sessions. Whether you prefer absolute numbers, relative numbers, hybrid mode, or no numbers at all, Chau7 restores your choice each time.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="line-numbers-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -118,24 +173,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="line-numbers-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>Can I enable relative line numbers?</summary>
-                        <div class="faq-answer"><p>Yes. Relative line numbers show the distance from the current line, matching Vim's relativenumber behavior. You can also enable hybrid mode with the absolute number on the current line.</p></div>
+                        <summary>What is Line Numbers in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Line Numbers is a feature in the Chau7 terminal's built-in editor that displays a line number gutter along the left edge of the editing area. Chau7 supports absolute line numbers, relative line numbers for Vim-style navigation, and a hybrid mode that shows the absolute number on the current line with relative offsets elsewhere.</p></div>
                     </details>
                     <details>
-                        <summary>Can I hide line numbers entirely?</summary>
-                        <div class="faq-answer"><p>Yes. The line number gutter is fully optional and can be toggled off in the editor preferences for a minimal editing view.</p></div>
+                        <summary>How does Chau7's line numbers compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminal emulators do not include a built-in editor, so line numbers are not relevant. Terminals like iTerm2, Alacritty, and Kitty rely on external editors. Chau7 includes a built-in editor with line numbers, relative line numbers, and hybrid mode, so developers can navigate error references without leaving the terminal.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7 display line numbers in its terminal editor?</summary>
+                        <div class="faq-answer"><p>Chau7 displays a line number gutter along the left edge of the built-in editor. The gutter width adjusts automatically based on total line count. The current line is highlighted, and numbers update dynamically as you scroll and resize.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I enable relative line numbers in Chau7?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7's built-in editor supports relative line numbers that show the distance from the current line, matching Vim's relativenumber behavior. Chau7 also supports hybrid mode, which displays the absolute number on the current line and relative offsets on all other lines.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I hide line numbers entirely in Chau7?</summary>
+                        <div class="faq-answer"><p>Yes. The line number gutter in Chau7's built-in editor is fully optional. You can toggle line numbers off in the editor preferences for a minimal editing view.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="line-numbers-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Navigate by line number. The way error messages intended.</h2>

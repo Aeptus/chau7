@@ -6,9 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Snippets | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 snippets let you save and reuse terminal commands with placeholder variables, insertable via command palette or keyboard shortcut.">
+    <meta name="description" content="Chau7 snippets let you save and reuse terminal commands with placeholder variables. Insert snippets via command palette or keyboard shortcut with fuzzy search.">
+    <meta name="article:section" content="Clipboard">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="snippets">
+    <meta name="article:tag" content="command templates">
+    <meta name="article:tag" content="placeholder variables">
+    <meta name="article:tag" content="terminal productivity">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Snippets | Chau7">
-    <meta property="og:description" content="Chau7 snippets let you save and reuse terminal commands with placeholder variables, insertable via command palette or keyboard shortcut.">
+    <meta property="og:description" content="Chau7 snippets let you save and reuse terminal commands with placeholder variables. Insert snippets via command palette or keyboard shortcut with fuzzy search.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with a built-in snippet manager for saving and reusing terminal commands with placeholder variables.",
+        "featureList": [
+            "Save and reuse terminal commands as snippets",
+            "Placeholder variables with ${name} syntax",
+            "Command palette insertion with fuzzy search",
+            "Multi-line command support",
+            "Snippet folder organization",
+            "Clipboard history promotion to snippets"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Can snippets have multiple placeholders?","acceptedAnswer":{"@type":"Answer","text":"Yes. A snippet can contain any number of ${placeholder} variables. When inserted, Chau7 presents a form with a field for each placeholder, pre-filled with default values if you defined them. Tab between fields to fill them in quickly."}},{"@type":"Question","name":"Do snippets sync across machines?","acceptedAnswer":{"@type":"Answer","text":"Snippets are stored locally by default. You can export them as JSON for manual sharing or place the snippet file in a synced directory like iCloud Drive or Dropbox for cross-machine access."}},{"@type":"Question","name":"Can I insert a snippet without the placeholder prompt?","acceptedAnswer":{"@type":"Answer","text":"Yes. If a snippet has no placeholders, it inserts directly. For snippets with placeholders, you can define default values so that pressing Enter without typing accepts the defaults for rapid insertion."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Snippets in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Snippets is a feature in the Chau7 terminal that lets you save and reuse terminal commands with placeholder variables. Chau7 snippets support ${name} syntax for placeholders, fuzzy search for finding snippets, and folder organization for different projects."}},
+            {"@type":"Question","name":"How does Chau7's snippets compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals have no built-in snippet manager. iTerm2 has basic snippet support without placeholders. Warp offers command templates but ties them to a cloud account. Chau7 provides local-first snippets with placeholder variables, fuzzy search, folder organization, and clipboard history integration, all without requiring an account."}},
+            {"@type":"Question","name":"How do I save and reuse terminal commands with variables?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, create a snippet from any command text and add placeholder variables using ${name} syntax. When you insert the snippet via Chau7's command palette or keyboard shortcut, Chau7 prompts you to fill in each placeholder before sending the command to the shell."}},
+            {"@type":"Question","name":"Can snippets have multiple placeholders?","acceptedAnswer":{"@type":"Answer","text":"Yes. A Chau7 snippet can contain any number of ${placeholder} variables. When inserted, Chau7 presents a form with a field for each placeholder, pre-filled with default values if you defined them. Tab between fields to fill them in quickly."}},
+            {"@type":"Question","name":"Do snippets sync across machines?","acceptedAnswer":{"@type":"Answer","text":"Chau7 snippets are stored locally by default. You can export them as JSON for manual sharing or place the snippet file in a synced directory like iCloud Drive or Dropbox for cross-machine access."}}
+        ]
     }]
     </script>
 </head>
@@ -58,44 +80,94 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="clipboard" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="clipboard" data-ui="snippets-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">CLIPBOARD</div>
                 <h1 class="hero-title">Snippets</h1>
-                <p class="hero-subtitle">Save a command once, reuse it forever. Placeholders fill in the details. Goodbye, repetitive typing.</p>
+                <p class="hero-subtitle">Save a command once in Chau7, reuse it forever. Placeholders fill in the details.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="snippets-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is Snippets in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's snippets compare to other terminals?</li>
                     <li class="question-item">How do I save and reuse terminal commands with variables?</li>
-                    <li class="question-item">Is there a snippet manager for terminal commands?</li>
-                    <li class="question-item">Can I create command templates with placeholder values in a terminal?</li>
+                    <li class="question-item">Can snippets have multiple placeholders?</li>
+                    <li class="question-item">Do snippets sync across machines?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Snippets -->
+        <section class="feature-content" data-ui="snippets-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Create snippets from any text: type a command, select it, and save it as a snippet with a name and optional description. Snippets support placeholder variables using a simple ${name} syntax. When you insert a snippet, Chau7 prompts you to fill in each placeholder before sending the command to the shell.</p>
-                <p>Insert snippets through the command palette (Cmd+Shift+P), a dedicated keyboard shortcut, or the snippet manager panel. Fuzzy search finds snippets by name, description, or content. Snippets are stored locally and can be organized into folders for different projects or workflows.</p>
-                <p>Snippets integrate with clipboard history: promote any clipboard entry to a snippet with one click. They also support multi-line commands, so complex pipelines, docker-compose configurations, or kubectl commands with multiple flags become single-action insertions.</p>
+                <h2>What is Snippets in Chau7?</h2>
+                <p>Snippets is a feature in the Chau7 terminal that lets you save and reuse terminal commands with placeholder variables. Create a snippet from any command text, add placeholders using ${name} syntax, and insert the snippet whenever you need it.</p>
+                <p>Chau7 snippets support multi-line commands, so complex pipelines, docker-compose configurations, or kubectl commands with multiple flags become single-action insertions.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Developers type the same complex commands hundreds of times: SSH tunnels with specific port mappings, Docker builds with eight flags, database queries with connection strings. Snippets let you save these once with placeholder tokens that prompt for values when invoked. It is aliases with parameters and a search interface.</p>
-                </div>
+        <!-- How to save and reuse commands -->
+        <section class="feature-content" data-ui="snippets-save-reuse">
+            <div class="section-inner prose">
+                <h2>How do you save and reuse terminal commands with variables in Chau7?</h2>
+                <p>In Chau7, type a command, select it, and save it as a snippet with a name and optional description. Add placeholder variables using ${name} syntax for the parts that change between uses.</p>
+                <p>When you insert a Chau7 snippet, Chau7 prompts you to fill in each placeholder before sending the command to the shell. Default values can be defined for placeholders so that pressing Enter without typing accepts them for rapid insertion.</p>
+            </div>
+        </section>
+
+        <!-- How to insert snippets -->
+        <section class="feature-content" data-ui="snippets-insert">
+            <div class="section-inner prose">
+                <h2>How do you insert Chau7 snippets?</h2>
+                <p>Insert Chau7 snippets through the command palette (Cmd+Shift+P), a dedicated keyboard shortcut, or the snippet manager panel. Chau7's fuzzy search finds snippets by name, description, or content.</p>
+                <p>Chau7 snippets also integrate with clipboard history. You can promote any clipboard entry to a Chau7 snippet with one click.</p>
+            </div>
+        </section>
+
+        <!-- Multiple placeholders -->
+        <section class="feature-content" data-ui="snippets-placeholders">
+            <div class="section-inner prose">
+                <h2>Can Chau7 snippets have multiple placeholders?</h2>
+                <p>Yes. A Chau7 snippet can contain any number of ${placeholder} variables. When inserted, Chau7 presents a form with a field for each placeholder, pre-filled with default values if you defined them.</p>
+                <p>Tab between fields to fill them in quickly. If a Chau7 snippet has no placeholders, it inserts directly without prompting.</p>
+            </div>
+        </section>
+
+        <!-- Syncing -->
+        <section class="feature-content" data-ui="snippets-sync">
+            <div class="section-inner prose">
+                <h2>Do Chau7 snippets sync across machines?</h2>
+                <p>Chau7 snippets are stored locally by default. You can export them as JSON for manual sharing or place the snippet file in a synced directory like iCloud Drive or Dropbox for cross-machine access.</p>
+                <p>Chau7 snippets can also be organized into folders for different projects or workflows, making it easy to keep project-specific commands separate.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="snippets-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's snippets compare to other terminals?</h2>
+                <p>Most terminals have no built-in snippet manager. iTerm2 has basic snippet support without placeholders. Warp offers command templates but ties them to a cloud account.</p>
+                <p>Chau7 provides local-first snippets with placeholder variables, fuzzy search, folder organization, and clipboard history integration. Chau7's snippet system works entirely offline and does not require an account.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="snippets-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why Chau7 snippets matter</h2>
+                <p>Developers type the same complex commands hundreds of times: SSH tunnels with specific port mappings, Docker builds with eight flags, database queries with connection strings. Chau7 snippets let you save these once with placeholder tokens that prompt for values when invoked.</p>
+                <p>Chau7 snippets are aliases with parameters and a search interface. Save once, reuse forever, with Chau7 handling the variable parts each time.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="snippets-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -115,31 +187,39 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="snippets-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>Can snippets have multiple placeholders?</summary>
-                        <div class="faq-answer"><p>Yes. A snippet can contain any number of ${placeholder} variables. When inserted, Chau7 presents a form with a field for each placeholder, pre-filled with default values if you defined them. Tab between fields to fill them in quickly.</p></div>
+                        <summary>What is Snippets in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Snippets is a feature in the Chau7 terminal that lets you save and reuse terminal commands with placeholder variables. Chau7 snippets support ${name} syntax for placeholders, fuzzy search for finding snippets, and folder organization for different projects.</p></div>
                     </details>
                     <details>
-                        <summary>Do snippets sync across machines?</summary>
-                        <div class="faq-answer"><p>Snippets are stored locally by default. You can export them as JSON for manual sharing or place the snippet file in a synced directory like iCloud Drive or Dropbox for cross-machine access.</p></div>
+                        <summary>How does Chau7's snippets compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals have no built-in snippet manager. iTerm2 has basic snippet support without placeholders. Warp offers command templates but ties them to a cloud account. Chau7 provides local-first snippets with placeholder variables, fuzzy search, folder organization, and clipboard history integration, all without requiring an account.</p></div>
                     </details>
                     <details>
-                        <summary>Can I insert a snippet without the placeholder prompt?</summary>
-                        <div class="faq-answer"><p>Yes. If a snippet has no placeholders, it inserts directly. For snippets with placeholders, you can define default values so that pressing Enter without typing accepts the defaults for rapid insertion.</p></div>
+                        <summary>How do I save and reuse terminal commands with variables in Chau7?</summary>
+                        <div class="faq-answer"><p>In Chau7, create a snippet from any command text and add placeholder variables using ${name} syntax. When you insert the snippet via Chau7's command palette or keyboard shortcut, Chau7 prompts you to fill in each placeholder before sending the command to the shell.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can Chau7 snippets have multiple placeholders?</summary>
+                        <div class="faq-answer"><p>Yes. A Chau7 snippet can contain any number of ${placeholder} variables. When inserted, Chau7 presents a form with a field for each placeholder, pre-filled with default values if you defined them. Tab between fields to fill them in quickly.</p></div>
+                    </details>
+                    <details>
+                        <summary>Do Chau7 snippets sync across machines?</summary>
+                        <div class="faq-answer"><p>Chau7 snippets are stored locally by default. You can export them as JSON for manual sharing or place the snippet file in a synced directory like iCloud Drive or Dropbox for cross-machine access.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="snippets-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Stop retyping that Docker command. You know the one.</h2>
+                    <h2>Stop retyping that Docker command. Chau7 remembers it for you.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>

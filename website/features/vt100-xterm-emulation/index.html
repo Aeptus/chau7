@@ -6,9 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Full VT100/xterm Emulation | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 provides complete VT100 and xterm terminal emulation with 256-color, 24-bit true color, and full escape sequence support.">
+    <meta name="description" content="Chau7 provides complete VT100 and xterm terminal emulation with 256-color, 24-bit true color, and full escape sequence support on macOS.">
+    <meta name="article:section" content="Terminal Core">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="VT100">
+    <meta name="article:tag" content="xterm">
+    <meta name="article:tag" content="true color">
+    <meta name="article:tag" content="256 color">
+    <meta name="article:tag" content="terminal emulation">
     <meta property="og:title" content="Full VT100/xterm Emulation | Chau7">
-    <meta property="og:description" content="Chau7 provides complete VT100 and xterm terminal emulation with 256-color, 24-bit true color, and full escape sequence support.">
+    <meta property="og:description" content="Chau7 provides complete VT100 and xterm terminal emulation with 256-color, 24-bit true color, and full escape sequence support on macOS.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with complete VT100 and xterm emulation, supporting 256-color, 24-bit true color, CSI/OSC/DCS sequences, and the Kitty keyboard protocol.",
+        "featureList": [
+            "Full VT100, VT220, and xterm control sequence support",
+            "256-color indexed palette (SGR 38;5;n)",
+            "24-bit true color (SGR 38;2;r;g;b)",
+            "Kitty keyboard protocol (CSI u)",
+            "Sixel graphics via DCS sequences",
+            "Timeout-based recovery for broken escape sequences"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"What TERM value does Chau7 set?","acceptedAnswer":{"@type":"Answer","text":"Chau7 sets TERM=xterm-256color by default, which provides broad compatibility with existing terminfo databases. A custom Chau7 terminfo entry is also available for applications that want to query advanced capabilities like true color and Sixel support."}},{"@type":"Question","name":"Does Chau7 support the Kitty keyboard protocol?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 implements the progressive enhancement keyboard protocol (CSI u) that Kitty popularized, allowing applications to distinguish key-down, key-up, and repeat events with full modifier information."}},{"@type":"Question","name":"How does Chau7 handle broken escape sequences from misbehaving programs?","acceptedAnswer":{"@type":"Answer","text":"The parser uses a timeout-based recovery mechanism. If an escape sequence is incomplete after a configurable timeout (default 100ms), the parser treats the ESC byte as a literal character and resumes normal parsing. This prevents a single malformed sequence from corrupting the rest of the output stream."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Full VT100/xterm Emulation in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Full VT100/xterm Emulation in Chau7 means the terminal implements the complete VT100, VT220, and xterm control sequence specification. Chau7 handles CSI sequences for cursor movement and character attributes, OSC sequences for window titles and clipboard access, DCS sequences for Sixel graphics, and all standard mode settings like DECCKM, DECAWM, and DECOM."}},
+            {"@type":"Question","name":"Which terminal emulators support true color 24-bit on macOS?","acceptedAnswer":{"@type":"Answer","text":"Chau7, iTerm2, Kitty, Alacritty, and Warp all support 24-bit true color on macOS. Chau7 supports true color via SGR 38;2;r;g;b and correctly advertises this capability so that applications like Vim and tmux auto-detect and use the best available color mode. Terminal.app does not support true color."}},
+            {"@type":"Question","name":"How to check if my terminal supports 256 colors","acceptedAnswer":{"@type":"Answer","text":"Check the TERM environment variable. If it contains '256color' (like xterm-256color), the terminal advertises 256-color support. Chau7 sets TERM=xterm-256color by default. You can also run a 256-color test script to verify that all 256 indexed colors render correctly."}},
+            {"@type":"Question","name":"What TERM value does Chau7 set?","acceptedAnswer":{"@type":"Answer","text":"Chau7 sets TERM=xterm-256color by default, which provides broad compatibility with existing terminfo databases. A custom Chau7 terminfo entry is also available for applications that want to query advanced capabilities like true color and Sixel support."}},
+            {"@type":"Question","name":"Does Chau7 support the Kitty keyboard protocol?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 implements the progressive enhancement keyboard protocol (CSI u) that Kitty popularized. This protocol allows applications to distinguish key-down, key-up, and repeat events with full modifier information. Applications like Neovim and other modern TUI tools can use this protocol for more precise keyboard input handling in Chau7."}}
+        ]
     }]
     </script>
 </head>
@@ -58,7 +80,7 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="terminal" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="terminal" data-ui="vt100-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">TERMINAL CORE</div>
@@ -68,36 +90,75 @@
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="vt100-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">Terminal not rendering colors correctly in tmux or Vim</li>
+                    <li class="question-item">What is Full VT100/xterm Emulation in Chau7 terminal?</li>
                     <li class="question-item">Which terminal emulators support true color 24-bit on macOS?</li>
-                    <li class="question-item">xterm escape sequences not working in my terminal</li>
                     <li class="question-item">How to check if my terminal supports 256 colors</li>
-                    <li class="question-item">Terminal emulator compatibility with ncurses applications</li>
+                    <li class="question-item">What TERM value does Chau7 set?</li>
+                    <li class="question-item">Does Chau7 support the Kitty keyboard protocol?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is VT100/xterm Emulation in Chau7 -->
+        <section class="feature-content" data-ui="vt100-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 implements the full VT100, VT220, and xterm control sequence specification. This includes CSI sequences for cursor movement, screen manipulation, and character attributes; OSC sequences for window titles, color palette changes, and clipboard access; DCS sequences for DECRQSS and Sixel graphics; and all standard mode settings (DECCKM, DECAWM, DECOM, and dozens more).</p>
-                <p>Color support spans the complete range: the original 8 ANSI colors, 16-color extended palette, 256-color indexed palette (SGR 38;5;n), and full 24-bit true color (SGR 38;2;r;g;b). The terminal correctly advertises its capabilities via the TERM environment variable and responds to DA (Device Attributes) queries so that applications like Vim, tmux, and htop automatically detect and use the best available color mode.</p>
-                <p>Emulation accuracy is validated against a suite of terminal conformance tests, including vttest, esctest, and a custom test harness that verifies behavior against xterm's reference implementation. Edge cases like origin mode interaction with scroll regions, character set switching (G0/G1/G2/G3), and protected area support are all handled correctly.</p>
+                <h2>What is Full VT100/xterm Emulation in Chau7 terminal?</h2>
+                <p>Full VT100/xterm Emulation in Chau7 means the terminal implements the complete VT100, VT220, and xterm control sequence specification. Chau7 handles CSI sequences for cursor movement, screen manipulation, and character attributes. Chau7 handles OSC sequences for window titles, color palette changes, and clipboard access. Chau7 handles DCS sequences for DECRQSS and Sixel graphics.</p>
+                <p>Chau7 also implements all standard mode settings including DECCKM, DECAWM, DECOM, and dozens more. Emulation accuracy in Chau7 is validated against vttest, esctest, and a custom test harness that verifies behavior against xterm's reference implementation.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Terminal emulation bugs manifest as garbled output, broken TUI layouts, and applications that refuse to run. Chau7 implements VT100 and xterm escape sequences comprehensively, including 256-color, true color (24-bit), and all standard control sequences. If it works in xterm, it works in Chau7.</p>
-                </div>
+        <!-- Which terminals support true color on macOS -->
+        <section class="feature-content" data-ui="vt100-true-color-macos">
+            <div class="section-inner prose">
+                <h2>Which terminal emulators support true color 24-bit on macOS?</h2>
+                <p>Chau7, iTerm2, Kitty, Alacritty, and Warp all support 24-bit true color on macOS. Terminal.app does not support true color.</p>
+                <p>Chau7 supports true color via <code>SGR 38;2;r;g;b</code> for foreground and <code>SGR 48;2;r;g;b</code> for background. Chau7 correctly advertises true color capability through Device Attributes responses, so applications like Vim, tmux, and htop automatically detect and use 24-bit color when running in Chau7.</p>
+            </div>
+        </section>
+
+        <!-- How to check 256 color support -->
+        <section class="feature-content" data-ui="vt100-256-color-check">
+            <div class="section-inner prose">
+                <h2>How to check if my terminal supports 256 colors</h2>
+                <p>Check the <code>TERM</code> environment variable. If it contains "256color" (like <code>xterm-256color</code>), the terminal advertises 256-color support. Run <code>echo $TERM</code> to see the current value.</p>
+                <p>Chau7 sets <code>TERM=xterm-256color</code> by default. Chau7's color support spans the complete range: the original 8 ANSI colors, 16-color extended palette, 256-color indexed palette (<code>SGR 38;5;n</code>), and full 24-bit true color (<code>SGR 38;2;r;g;b</code>).</p>
+            </div>
+        </section>
+
+        <!-- What TERM value does Chau7 set -->
+        <section class="feature-content" data-ui="vt100-term-value">
+            <div class="section-inner prose">
+                <h2>What TERM value does Chau7 set?</h2>
+                <p>Chau7 sets <code>TERM=xterm-256color</code> by default. This value provides broad compatibility with existing terminfo databases and ensures that most applications detect color support correctly.</p>
+                <p>A custom Chau7 terminfo entry is also available for applications that want to query advanced capabilities like true color and Sixel support. Applications can use the terminfo entry to detect that Chau7 supports features beyond what standard <code>xterm-256color</code> advertises.</p>
+            </div>
+        </section>
+
+        <!-- Kitty keyboard protocol -->
+        <section class="feature-content" data-ui="vt100-kitty-keyboard">
+            <div class="section-inner prose">
+                <h2>Does Chau7 support the Kitty keyboard protocol?</h2>
+                <p>Yes. Chau7 implements the progressive enhancement keyboard protocol (CSI u) that Kitty popularized. This protocol allows applications to distinguish key-down, key-up, and repeat events with full modifier information.</p>
+                <p>Modern TUI applications like Neovim use the Kitty keyboard protocol for more precise keyboard input handling. Chau7's implementation of the CSI u protocol means these applications get accurate keyboard events when running in Chau7.</p>
+            </div>
+        </section>
+
+        <!-- Why VT100/xterm emulation matters -->
+        <section class="feature-content" data-ui="vt100-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why complete terminal emulation matters</h2>
+                <p>Terminal emulation bugs manifest as garbled output, broken TUI layouts, and applications that refuse to run. Incomplete escape sequence handling causes Vim to render incorrectly, tmux to lose color information, and ncurses applications to break.</p>
+                <p>Chau7 implements VT100 and xterm escape sequences comprehensively, including edge cases like origin mode interaction with scroll regions, character set switching (G0/G1/G2/G3), and protected area support. If an application works in xterm, that application works in Chau7.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="vt100-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -121,28 +182,40 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="vt100-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
+                    <details>
+                        <summary>What is Full VT100/xterm Emulation in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Full VT100/xterm Emulation in Chau7 means the terminal implements the complete VT100, VT220, and xterm control sequence specification. Chau7 handles CSI sequences for cursor movement and character attributes, OSC sequences for window titles and clipboard access, DCS sequences for Sixel graphics, and all standard mode settings like DECCKM, DECAWM, and DECOM.</p></div>
+                    </details>
+                    <details>
+                        <summary>Which terminal emulators support true color 24-bit on macOS?</summary>
+                        <div class="faq-answer"><p>Chau7, iTerm2, Kitty, Alacritty, and Warp all support 24-bit true color on macOS. Chau7 supports true color via SGR 38;2;r;g;b and correctly advertises this capability so that applications like Vim and tmux auto-detect and use the best available color mode. Terminal.app does not support true color.</p></div>
+                    </details>
+                    <details>
+                        <summary>How to check if my terminal supports 256 colors</summary>
+                        <div class="faq-answer"><p>Check the TERM environment variable. If it contains "256color" (like xterm-256color), the terminal advertises 256-color support. Chau7 sets TERM=xterm-256color by default. You can also run a 256-color test script to verify that all 256 indexed colors render correctly.</p></div>
+                    </details>
                     <details>
                         <summary>What TERM value does Chau7 set?</summary>
                         <div class="faq-answer"><p>Chau7 sets TERM=xterm-256color by default, which provides broad compatibility with existing terminfo databases. A custom Chau7 terminfo entry is also available for applications that want to query advanced capabilities like true color and Sixel support.</p></div>
                     </details>
                     <details>
                         <summary>Does Chau7 support the Kitty keyboard protocol?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7 implements the progressive enhancement keyboard protocol (CSI u) that Kitty popularized, allowing applications to distinguish key-down, key-up, and repeat events with full modifier information.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7 implements the progressive enhancement keyboard protocol (CSI u) that Kitty popularized. This protocol allows applications to distinguish key-down, key-up, and repeat events with full modifier information. Applications like Neovim can use this protocol for more precise keyboard input handling in Chau7.</p></div>
                     </details>
                     <details>
                         <summary>How does Chau7 handle broken escape sequences from misbehaving programs?</summary>
-                        <div class="faq-answer"><p>The parser uses a timeout-based recovery mechanism. If an escape sequence is incomplete after a configurable timeout (default 100ms), the parser treats the ESC byte as a literal character and resumes normal parsing. This prevents a single malformed sequence from corrupting the rest of the output stream.</p></div>
+                        <div class="faq-answer"><p>Chau7's parser uses a timeout-based recovery mechanism. If an escape sequence is incomplete after a configurable timeout (default 100ms), the parser treats the ESC byte as a literal character and resumes normal parsing. This prevents a single malformed sequence from corrupting the rest of the output stream.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="vt100-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Full VT100/xterm compatibility. Even the obscure bits.</h2>

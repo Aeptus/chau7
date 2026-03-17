@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Chau7 vs Alacritty | Honest Terminal Comparison</title>
     <meta name="description" content="An honest comparison of Chau7 and Alacritty. Minimal and cross-platform vs feature-rich and macOS-native. Different terminals for different people.">
+    <meta name="article:section" content="Compare">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="Alacritty">
+    <meta name="article:tag" content="terminal comparison">
+    <meta name="article:tag" content="GPU terminal">
+    <meta name="article:tag" content="macOS terminal">
+    <meta name="article:tag" content="minimal terminal">
     <meta property="og:title" content="Chau7 vs Alacritty | Terminal Comparison">
     <meta property="og:description" content="Alacritty is minimal and cross-platform. Chau7 is feature-rich and macOS-native. Honestly different tools.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -22,6 +29,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with 170+ features including MCP server, AI detection, session recording, and GPU-accelerated Metal rendering. This page compares Chau7 and Alacritty.",
+        "featureList": [
+            "Built-in tabs and split panes",
+            "AI agent detection for 7+ CLIs",
+            "MCP server with 20 tools",
+            "Session recording with timeline scrubbing",
+            "Metal GPU-accelerated rendering",
+            "Command palette, search, and snippets"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -37,26 +53,11 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {
-                "@type": "Question",
-                "name": "Is Chau7 as fast as Alacritty?",
-                "acceptedAnswer": { "@type": "Answer", "text": "Both use GPU rendering (Chau7 with Metal, Alacritty with OpenGL) and care deeply about performance. Chau7 adds SIMD parsing and a lock-free ring buffer. In practice, both are fast terminals. Alacritty's simplicity means fewer things competing for resources, which can be an advantage in raw throughput scenarios." }
-            },
-            {
-                "@type": "Question",
-                "name": "Does Alacritty have tabs or split panes?",
-                "acceptedAnswer": { "@type": "Answer", "text": "No. Alacritty deliberately excludes tabs and split panes. The philosophy is that your window manager or tmux should handle those. Chau7 includes built-in tabs, split panes, and 170+ other features. Different philosophies for different workflows." }
-            },
-            {
-                "@type": "Question",
-                "name": "Can I use Alacritty on Linux and Windows?",
-                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Alacritty runs on macOS, Linux, and Windows. Chau7 is macOS only. If you need cross-platform support, Alacritty is the clear winner here." }
-            },
-            {
-                "@type": "Question",
-                "name": "Why would I pick a feature-rich terminal over a minimal one?",
-                "acceptedAnswer": { "@type": "Answer", "text": "If you run AI coding agents and want MCP control, session recording, cost tracking, and AI detection, those features need to live somewhere. Chau7 puts them in the terminal. If you do not need those features, a minimal terminal like Alacritty lets you build your own stack with exactly the tools you want." }
-            }
+            {"@type":"Question","name":"What is the difference between Chau7 and Alacritty?","acceptedAnswer":{"@type":"Answer","text":"Alacritty is intentionally minimal: fast GPU rendering, cross-platform (macOS, Linux, Windows), config-file-only, no tabs, no split panes. Chau7 is intentionally maximal: 170+ features, AI-native with MCP server and agent detection, macOS-only, built-in tabs, split panes, session recording, and cost tracking. Alacritty delegates features to external tools. Chau7 builds everything into one app."}},
+            {"@type":"Question","name":"Is Chau7 or Alacritty faster for terminal rendering?","acceptedAnswer":{"@type":"Answer","text":"Both use GPU rendering and care deeply about performance. Chau7 uses Metal (macOS native) with SIMD parsing and a lock-free ring buffer. Alacritty uses OpenGL. In practice, both are fast terminals. Alacritty's simplicity means fewer things competing for resources, which can be an advantage in raw throughput scenarios."}},
+            {"@type":"Question","name":"Does Alacritty support AI coding agent detection like Chau7?","acceptedAnswer":{"@type":"Answer","text":"No. Alacritty does not detect AI coding agents, does not have an MCP server, and does not track tokens or costs. Alacritty's philosophy excludes features beyond core terminal rendering. Chau7 detects 7+ AI CLIs (Claude Code, Codex, Gemini CLI, Aider, and more), brands tabs per agent, and exposes 20 MCP tools for AI-driven terminal control."}},
+            {"@type":"Question","name":"Can Alacritty do split panes and tabs?","acceptedAnswer":{"@type":"Answer","text":"No. Alacritty deliberately excludes tabs and split panes. The philosophy is that your window manager or tmux should handle multiplexing. Chau7 includes built-in tabs with drag reorder, split panes, and AI branding per tab. These are different design philosophies for different workflows."}},
+            {"@type":"Question","name":"Should I switch from Alacritty to Chau7?","acceptedAnswer":{"@type":"Answer","text":"If you run AI coding agents daily and want MCP control, AI detection, session recording, and cost tracking built into your terminal, Chau7 adds value that Alacritty cannot provide. If you prefer minimal software, use a tiling window manager, work across multiple operating systems, or do not need AI features, Alacritty remains an excellent choice. Chau7 is macOS only."}}
         ]
     }]
     </script>
@@ -75,7 +76,7 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-compare">
+        <section class="hero hero-compare" data-ui="compare-alacritty-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="hero-badge badge-purple">Comparison</div>
@@ -93,35 +94,47 @@
             </div>
         </section>
 
+        <!-- What is the difference between Chau7 and Alacritty -->
+        <section class="perf-section" data-ui="compare-alacritty-difference" aria-labelledby="difference-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="difference-heading">What is the difference between Chau7 and Alacritty?</h2>
+                    <p>Different design philosophies for different developers.</p>
+                </div>
+                <p class="prose" style="max-width:72ch;margin:0 auto 2rem;">Alacritty is a minimal, cross-platform terminal that focuses on rendering text fast. Alacritty deliberately excludes tabs, split panes, and GUI settings. Alacritty's philosophy is that your window manager or tmux should handle those concerns.</p>
+                <p class="prose" style="max-width:72ch;margin:0 auto 2rem;">Chau7 takes the opposite approach. Chau7 builds 170+ features into a single macOS-native app: tabs, split panes, AI detection, MCP server, session recording, cost tracking, and more. Chau7 is designed for developers who want everything in one place.</p>
+            </div>
+        </section>
+
         <!-- What Alacritty does well -->
-        <section class="perf-section" aria-labelledby="alacritty-strengths">
+        <section class="perf-section" data-ui="compare-alacritty-strengths" aria-labelledby="alacritty-strengths">
             <div class="section-inner">
                 <div class="section-header">
                     <h2 id="alacritty-strengths">What Alacritty does well</h2>
-                    <p>There's an elegance to doing one thing and doing it right.</p>
+                    <p>There is an elegance to doing one thing and doing it right.</p>
                 </div>
                 <div class="safety-grid">
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-alacritty-simplicity">
                         <h4>Simplicity as a feature</h4>
-                        <p>Alacritty does not have tabs. It does not have split panes. It does not have a GUI settings panel. This is not a limitation. It's a deliberate choice. Your window manager handles windows. tmux handles multiplexing. Alacritty handles rendering text very fast.</p>
+                        <p>Alacritty does not have tabs. Alacritty does not have split panes. Alacritty does not have a GUI settings panel. This is not a limitation. Alacritty delegates window management to your window manager and multiplexing to tmux. Alacritty handles rendering text very fast.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-alacritty-cross-platform">
                         <h4>Cross-platform</h4>
-                        <p>macOS, Linux, Windows. Same config file, same behavior. If you switch between operating systems, Alacritty follows you everywhere. Chau7 is macOS only and will stay that way.</p>
+                        <p>Alacritty runs on macOS, Linux, and Windows. Same config file, same behavior. If you switch between operating systems, Alacritty follows you everywhere. Chau7 is macOS only and will stay that way.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-alacritty-gpu">
                         <h4>Proven GPU rendering</h4>
-                        <p>Alacritty pioneered GPU-accelerated terminal rendering. Years of optimization, thousands of users, battle-tested across platforms and GPU drivers. It's the benchmark others measure against.</p>
+                        <p>Alacritty pioneered GPU-accelerated terminal rendering. Years of optimization, thousands of users, battle-tested across platforms and GPU drivers. Alacritty is the benchmark others measure against.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-alacritty-minimal">
                         <h4>Minimal philosophy</h4>
-                        <p>Less code means fewer bugs. Fewer features means fewer things to configure. Alacritty respects your time by not asking you to learn features you don't need. There's a real appeal to software that knows what it's not.</p>
+                        <p>Less code means fewer bugs. Fewer features means fewer things to configure. Alacritty respects your time by not asking you to learn features you do not need. There is a real appeal to software that knows what it is not.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-alacritty-tiling">
                         <h4>Tiling WM friendly</h4>
-                        <p>If you use i3, Sway, yabai, or any tiling window manager, Alacritty is the terminal that gets out of your way. No title bars fighting your WM. No built-in tabs competing with your tiling layout. It fits.</p>
+                        <p>If you use i3, Sway, yabai, or any tiling window manager, Alacritty gets out of your way. No title bars fighting your window manager. No built-in tabs competing with your tiling layout. Alacritty fits.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-alacritty-config">
                         <h4>Config file only</h4>
                         <p>One TOML file. Version-controllable. Shareable. Reproducible. No GUI state to lose, no preferences pane to click through. If you think config belongs in dotfiles, Alacritty agrees.</p>
                     </div>
@@ -130,55 +143,88 @@
         </section>
 
         <!-- What Chau7 adds -->
-        <section class="perf-section" aria-labelledby="chau7-adds">
+        <section class="perf-section" data-ui="compare-alacritty-chau7-adds" aria-labelledby="chau7-adds">
             <div class="section-inner">
                 <div class="section-header">
                     <h2 id="chau7-adds">What Chau7 adds</h2>
-                    <p>Everything Alacritty deliberately leaves out. That's the whole pitch.</p>
+                    <p>Everything Alacritty deliberately leaves out. That is the whole pitch.</p>
                 </div>
                 <div class="safety-grid">
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-alacritty-tabs-splits">
                         <h4>Tabs and split panes</h4>
-                        <p>Built-in tab management with AI branding, drag reorder, and split panes. If you'd rather not rely on tmux or a window manager for multiplexing, Chau7 handles it natively.</p>
+                        <p>Chau7 provides built-in tab management with AI branding, drag reorder, and split panes. If you would rather not rely on tmux or a window manager for multiplexing, Chau7 handles it natively.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-alacritty-ssh">
                         <h4>SSH manager</h4>
-                        <p>Save, organize, and quick-connect to SSH hosts. Auto-imports from your SSH config. Jump host support. Alacritty delegates this to external tools. Chau7 puts it in the app.</p>
+                        <p>Chau7 lets you save, organize, and quick-connect to SSH hosts. Chau7 auto-imports from your SSH config. Chau7 supports jump hosts. Alacritty delegates this to external tools. Chau7 puts it in the app.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-alacritty-ai-mcp">
                         <h4>AI detection and MCP</h4>
-                        <p>Recognizes 7+ AI coding tools, brands tabs per agent, exposes 20 MCP tools for AI-driven terminal control. This is the part that doesn't map to Alacritty at all, because Alacritty's philosophy wouldn't include it.</p>
+                        <p>Chau7 recognizes 7+ AI coding tools, brands tabs per agent, and exposes 20 MCP tools for AI-driven terminal control. This is the part that does not map to Alacritty at all, because Alacritty's philosophy would not include it.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-alacritty-session-recording">
                         <h4>Session recording</h4>
-                        <p>Record terminal sessions with timeline scrubbing and replay. Useful for debugging, demos, and reviewing what an AI agent did while you weren't looking.</p>
+                        <p>Chau7 records terminal sessions with timeline scrubbing and replay. Session recording in Chau7 is useful for debugging, demos, and reviewing what an AI agent did while you were not looking.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-alacritty-productivity">
                         <h4>Command palette, search, snippets</h4>
-                        <p>Keyboard-driven feature access, in-terminal search, saved command snippets. Chau7 builds in what Alacritty users typically reach for separate tools to do.</p>
+                        <p>Chau7 includes keyboard-driven feature access, in-terminal search, and saved command snippets. Chau7 builds in what Alacritty users typically reach for separate tools to do.</p>
                     </div>
-                    <div class="safety-item">
+                    <div class="safety-item" data-ui="compare-alacritty-features">
                         <h4>170+ features</h4>
-                        <p>Themes, transparency, line numbers, clipboard history, command history search, dangerous command guard, cost tracking, and more. Chau7 is the opposite of minimal. That's the point.</p>
+                        <p>Chau7 includes themes, transparency, line numbers, clipboard history, command history search, dangerous command guard, cost tracking, and more. Chau7 is the opposite of minimal. That is the point.</p>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- Who should use what -->
-        <section class="perf-section" aria-labelledby="who-heading">
+        <!-- Is Chau7 or Alacritty faster -->
+        <section class="perf-section" data-ui="compare-alacritty-performance" aria-labelledby="performance-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="performance-heading">Is Chau7 or Alacritty faster for terminal rendering?</h2>
+                </div>
+                <p class="prose" style="max-width:72ch;margin:0 auto 1.5rem;">Both Chau7 and Alacritty use GPU rendering and care deeply about performance. Chau7 uses Metal (macOS native) with SIMD escape sequence parsing and a lock-free ring buffer. Alacritty uses OpenGL.</p>
+                <p class="prose" style="max-width:72ch;margin:0 auto 1.5rem;">In practice, both Chau7 and Alacritty are fast terminals. Alacritty's simplicity means fewer things competing for resources, which can be an advantage in raw throughput scenarios. Chau7's Metal rendering takes advantage of macOS-specific GPU optimizations.</p>
+            </div>
+        </section>
+
+        <!-- Does Alacritty support AI detection -->
+        <section class="perf-section" data-ui="compare-alacritty-ai-detection" aria-labelledby="ai-detection-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="ai-detection-heading">Does Alacritty support AI coding agent detection like Chau7?</h2>
+                </div>
+                <p class="prose" style="max-width:72ch;margin:0 auto 1.5rem;">No. Alacritty does not detect AI coding agents, does not have an MCP server, and does not track tokens or costs. Alacritty's philosophy excludes features beyond core terminal rendering.</p>
+                <p class="prose" style="max-width:72ch;margin:0 auto 1.5rem;">Chau7 detects 7+ AI CLIs including Claude Code, Codex, Gemini CLI, Aider, and more. Chau7 brands tabs per agent, exposes 20 MCP tools, and tracks token usage and dollar costs per session.</p>
+            </div>
+        </section>
+
+        <!-- Can Alacritty do split panes and tabs -->
+        <section class="perf-section" data-ui="compare-alacritty-tabs-question" aria-labelledby="tabs-heading">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="tabs-heading">Can Alacritty do split panes and tabs?</h2>
+                </div>
+                <p class="prose" style="max-width:72ch;margin:0 auto 1.5rem;">No. Alacritty deliberately excludes tabs and split panes. Alacritty's design philosophy is that your window manager or tmux should handle multiplexing. This is a deliberate architectural choice, not a missing feature.</p>
+                <p class="prose" style="max-width:72ch;margin:0 auto 1.5rem;">Chau7 takes the opposite position: build everything into one app. Chau7 includes built-in tabs with drag reorder, split panes, AI branding per tab, and tab profiles.</p>
+            </div>
+        </section>
+
+        <!-- Should I switch from Alacritty to Chau7 -->
+        <section class="perf-section" data-ui="compare-alacritty-should-switch" aria-labelledby="who-heading">
             <div class="section-inner">
                 <div class="ai-relevance">
-                    <h3 id="who-heading">Who should use what</h3>
-                    <p><strong>Use Alacritty if:</strong> You want a fast, minimal terminal that works on macOS, Linux, and Windows. You use a tiling window manager. You prefer tmux for multiplexing. You like config files over GUI settings. You don't need AI-specific features in the terminal. Alacritty does one thing and does it very well.</p>
-                    <p><strong>Try Chau7 if:</strong> You want a feature-rich, macOS-native terminal with built-in tabs, splits, AI detection, MCP, session recording, and 170+ other things. You run AI coding agents and want the terminal to understand them. You'd rather have features built in than assembled from separate tools.</p>
-                    <p><strong>The honest version:</strong> These are different tools entirely. Comparing Alacritty and Chau7 is like comparing a fixed-gear bike and an SUV. Both get you there. The question is what you want to carry.</p>
+                    <h3 id="who-heading">Should I switch from Alacritty to Chau7?</h3>
+                    <p><strong>Use Alacritty if:</strong> You want a fast, minimal terminal that works on macOS, Linux, and Windows. You use a tiling window manager. You prefer tmux for multiplexing. You like config files over GUI settings. You do not need AI-specific features in the terminal. Alacritty does one thing and does it very well.</p>
+                    <p><strong>Try Chau7 if:</strong> You want a feature-rich, macOS-native terminal with built-in tabs, splits, AI detection, MCP, session recording, and 170+ other features. You run AI coding agents and want the terminal to understand them. You would rather have features built in than assembled from separate tools.</p>
+                    <p><strong>The honest version:</strong> Chau7 and Alacritty are different tools entirely. Comparing Alacritty and Chau7 is like comparing a fixed-gear bike and an SUV. Both get you there. The question is what you want to carry.</p>
                 </div>
             </div>
         </section>
 
         <!-- Comparison Table -->
-        <section class="compare-section" aria-labelledby="table-heading">
+        <section class="compare-section" data-ui="compare-alacritty-table" aria-labelledby="table-heading">
             <div class="section-inner">
                 <h2 id="table-heading">Quick comparison</h2>
                 <div class="compare-table-wrap">
@@ -238,40 +284,46 @@
         </section>
 
         <!-- FAQ -->
-        <section class="faq-section" aria-labelledby="faq-heading">
+        <section class="faq-section" data-ui="compare-alacritty-faq" aria-labelledby="faq-heading">
             <div class="section-inner">
                 <div class="section-header">
                     <h2 id="faq-heading">Frequently asked questions</h2>
                 </div>
                 <div class="faq-list">
                     <details>
-                        <summary>Is Chau7 as fast as Alacritty?</summary>
+                        <summary>What is the difference between Chau7 and Alacritty?</summary>
                         <div class="faq-answer">
-                            <p>Both use GPU rendering and care about performance. Chau7 uses Metal (macOS native), Alacritty uses OpenGL. Chau7 also has SIMD escape sequence parsing and a lock-free ring buffer. In practice, both are fast. Alacritty's simplicity gives it fewer things competing for resources, which can matter in extreme throughput scenarios.</p>
+                            <p>Alacritty is intentionally minimal: fast GPU rendering, cross-platform, config-file-only, no tabs, no split panes. Chau7 is intentionally maximal: 170+ features, AI-native with MCP server and agent detection, macOS-only, built-in tabs, split panes, session recording, and cost tracking. Alacritty delegates features to external tools. Chau7 builds everything into one app.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Why doesn't Alacritty have tabs?</summary>
+                        <summary>Is Chau7 or Alacritty faster for terminal rendering?</summary>
                         <div class="faq-answer">
-                            <p>By design. Alacritty's philosophy is that the terminal should render text and your window manager or tmux should handle everything else. It's a deliberate architectural choice, not a missing feature. Chau7 takes the opposite position: build everything into one app.</p>
+                            <p>Both Chau7 and Alacritty use GPU rendering and care about performance. Chau7 uses Metal (macOS native) with SIMD parsing and a lock-free ring buffer. Alacritty uses OpenGL. In practice, both are fast. Alacritty's simplicity gives it fewer things competing for resources, which can matter in extreme throughput scenarios.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Does Alacritty support AI coding agent detection like Chau7?</summary>
+                        <div class="faq-answer">
+                            <p>No. Alacritty does not detect AI coding agents, does not have an MCP server, and does not track tokens or costs. Chau7 detects 7+ AI CLIs, brands tabs per agent, and exposes 20 MCP tools for AI-driven terminal control.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Can Alacritty do split panes and tabs?</summary>
+                        <div class="faq-answer">
+                            <p>No. Alacritty deliberately excludes tabs and split panes. Alacritty's philosophy is that your window manager or tmux should handle multiplexing. Chau7 includes built-in tabs, split panes, and 170+ other features. Different philosophies for different workflows.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Should I switch from Alacritty to Chau7?</summary>
+                        <div class="faq-answer">
+                            <p>If you run AI coding agents and want MCP control, session recording, cost tracking, and AI detection, Chau7 adds value Alacritty cannot provide. If you prefer minimal software, use a tiling window manager, or work across multiple operating systems, Alacritty remains excellent. Chau7 is macOS only.</p>
                         </div>
                     </details>
                     <details>
                         <summary>Can I use Chau7 on Linux?</summary>
                         <div class="faq-answer">
-                            <p>No. Chau7 is a native macOS app built with Swift, AppKit, and Metal. There are no plans for Linux or Windows ports. If you need cross-platform, Alacritty is the better choice.</p>
-                        </div>
-                    </details>
-                    <details>
-                        <summary>Do I need AI features in my terminal?</summary>
-                        <div class="faq-answer">
-                            <p>That depends on your workflow. If you run AI coding agents (Claude Code, Codex, Cursor) daily and want visibility into what they're doing, AI-aware features are helpful. If you don't use AI tools in the terminal, you don't need them. Alacritty's minimalism is a perfectly good answer for that case.</p>
-                        </div>
-                    </details>
-                    <details>
-                        <summary>Can I use Alacritty with a tiling window manager on macOS?</summary>
-                        <div class="faq-answer">
-                            <p>Yes, and it works beautifully. Alacritty's lack of built-in chrome (no tabs, no title bar clutter) makes it ideal for tiling setups with yabai, Amethyst, or Aerospace. Chau7's built-in tabs and features are less natural in a tiling WM context.</p>
+                            <p>No. Chau7 is a native macOS app built with Swift, AppKit, and Metal. There are no plans for Linux or Windows ports. If you need cross-platform support, Alacritty is the better choice.</p>
                         </div>
                     </details>
                 </div>
@@ -279,10 +331,10 @@
         </section>
 
         <!-- Footer CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" data-ui="compare-alacritty-cta" aria-label="Download call to action">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Try it. Keep what works.</h2>
+                    <h2>Try Chau7. Keep what works.</h2>
                     <p class="cta-nudge">Free, open source, 170+ features. Or stick with Alacritty. Both are good answers.</p>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                 </div>

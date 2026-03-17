@@ -6,9 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>MCP Tab Indicator | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 shows a visual indicator on tabs created by AI agents through MCP, so you always know which tabs are yours.">
+    <meta name="description" content="Chau7 shows a visual indicator on tabs created by AI agents through MCP, so you always know which tabs are yours and which ones your agent opened.">
+    <meta name="article:section" content="MCP Server">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="MCP tab indicator">
+    <meta name="article:tag" content="AI agent tabs">
+    <meta name="article:tag" content="tab origin tracking">
+    <meta name="article:tag" content="Model Context Protocol">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="MCP Tab Indicator | Chau7">
-    <meta property="og:description" content="Chau7 shows a visual indicator on tabs created by AI agents through MCP, so you always know which tabs are yours.">
+    <meta property="og:description" content="Chau7 shows a visual indicator on tabs created by AI agents through MCP, so you always know which tabs are yours and which ones your agent opened.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that visually marks tabs created by AI agents through MCP so developers can distinguish automated tabs from manual ones.",
+        "featureList": [
+            "Visual badge on MCP-created tabs",
+            "Persistent indicator for tab lifetime",
+            "Works with all AI agents via MCP",
+            "Tab origin tracking in tab bar",
+            "Compatible with tab status and metadata",
+            "No effect on tab functionality"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Can I remove the MCP indicator from a tab?","acceptedAnswer":{"@type":"Answer","text":"The indicator reflects the tab&#x27;s origin and cannot be manually toggled. If you want a clean tab without the indicator, create it yourself through the UI rather than through MCP."}},{"@type":"Question","name":"Does the indicator affect tab behavior?","acceptedAnswer":{"@type":"Answer","text":"No. MCP-created tabs function identically to user-created tabs. The indicator is purely visual: it does not restrict what you can do with the tab."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is MCP Tab Indicator in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"MCP Tab Indicator is a feature in Chau7 that adds a visual badge to any tab created by an AI agent through the MCP server. Chau7 marks these tabs so developers can instantly distinguish agent-created tabs from tabs they opened themselves."}},
+            {"@type":"Question","name":"How can I tell which tabs were created by AI agents?","acceptedAnswer":{"@type":"Answer","text":"Chau7 displays a visual indicator on every tab created through its MCP server. When an AI agent like Claude Code or Cursor calls tab_create, Chau7 tags that tab with an MCP origin marker that appears in the tab bar for the lifetime of the tab."}},
+            {"@type":"Question","name":"How do I track what my AI agent is doing in the terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7 provides MCP Tab Indicator to see which tabs an agent created, AI Detection to identify which tabs have AI processes running, and Session Tracking to monitor agent activity over time. Together, these Chau7 features give full visibility into agent behavior."}},
+            {"@type":"Question","name":"Can I remove the MCP indicator from a tab?","acceptedAnswer":{"@type":"Answer","text":"The MCP indicator in Chau7 reflects the tab's origin and cannot be manually toggled. The indicator persists for the lifetime of the tab, even after the agent disconnects. To get a tab without the indicator, create it through Chau7's UI rather than through MCP."}},
+            {"@type":"Question","name":"Does the indicator affect tab behavior?","acceptedAnswer":{"@type":"Answer","text":"No. MCP-created tabs in Chau7 function identically to user-created tabs. The indicator is purely visual and does not restrict commands, output, or any other tab functionality in Chau7."}}
+        ]
     }]
     </script>
 </head>
@@ -58,44 +80,76 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="mcp" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="mcp" data-ui="mcp-tab-indicator-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-alt">MCP SERVER</div>
                 <h1 class="hero-title">MCP Tab Indicator</h1>
-                <p class="hero-subtitle">Tabs you opened. Tabs your AI opened. Now you can tell the difference.</p>
+                <p class="hero-subtitle">Chau7 marks every tab your AI agent creates. Your tabs stay yours. Agent tabs stay labeled.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="mcp-tab-indicator-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is MCP Tab Indicator in Chau7 terminal?</li>
                     <li class="question-item">How can I tell which tabs were created by AI agents?</li>
-                    <li class="question-item">Do MCP-created tabs look different from regular tabs?</li>
                     <li class="question-item">How do I track what my AI agent is doing in the terminal?</li>
-                    <li class="question-item">Can I distinguish automated terminal sessions from manual ones?</li>
+                    <li class="question-item">Can I remove the MCP indicator from a tab?</li>
+                    <li class="question-item">Does the indicator affect tab behavior?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is MCP Tab Indicator -->
+        <section class="feature-content" data-ui="mcp-tab-indicator-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>When the MCP server creates a tab via <code>tab_create</code>, Chau7 tags that tab with an MCP origin marker. The tab bar renders a subtle visual indicator on these tabs: distinct enough to notice at a glance but unobtrusive enough not to clutter the interface. The indicator persists for the lifetime of the tab, even if the agent disconnects.</p>
-                <p>The indicator works alongside other tab metadata like the working directory and running process. Combined with the tab status tool, you get a complete picture: which agent created the tab, what command is running, and whether the process is idle or active.</p>
+                <h2>What is MCP Tab Indicator in Chau7?</h2>
+                <p>MCP Tab Indicator is a feature in Chau7 that adds a visual badge to any tab created by an AI agent through the MCP server. When an agent calls <code>tab_create</code>, Chau7 tags that tab with an MCP origin marker visible in the tab bar.</p>
+                <p>The Chau7 MCP Tab Indicator persists for the lifetime of the tab, even if the agent disconnects. This persistent marking in Chau7 means developers always know which tabs were part of an automated workflow.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>When an AI agent creates several tabs during a complex task, you need to know which tabs are part of the automated workflow and which ones are your own work. MCP Tab Indicator adds a visual badge to every tab created through MCP so the distinction is immediate. No clicking, no guessing.</p>
-                </div>
+        <!-- How to tell which tabs were created by AI -->
+        <section class="feature-content" data-ui="mcp-tab-indicator-how-to-tell">
+            <div class="section-inner prose">
+                <h2>How can I tell which tabs were created by AI agents?</h2>
+                <p>Chau7 displays a visual indicator on every tab created through its MCP server. The indicator is distinct enough to notice at a glance but unobtrusive enough not to clutter the tab bar.</p>
+                <p>The Chau7 MCP Tab Indicator works alongside other tab metadata like the working directory and running process. Combined with Chau7's <code>tab_status</code> tool, developers get a complete picture: which agent created the tab, what command is running, and whether the process is idle or active.</p>
+            </div>
+        </section>
+
+        <!-- How to track AI agent activity -->
+        <section class="feature-content" data-ui="mcp-tab-indicator-tracking">
+            <div class="section-inner prose">
+                <h2>How do I track what my AI agent is doing in Chau7?</h2>
+                <p>Chau7 provides multiple layers of AI agent visibility. The MCP Tab Indicator shows which tabs an agent created. Chau7's AI Detection identifies which tabs have AI processes actively running. Chau7's Session Tracking monitors agent activity over time.</p>
+                <p>Together, these Chau7 features give full visibility into agent behavior. Developers can see which tabs are automated, which agents are active, and what each agent has been doing across sessions.</p>
+            </div>
+        </section>
+
+        <!-- Can I remove the indicator -->
+        <section class="feature-content" data-ui="mcp-tab-indicator-remove">
+            <div class="section-inner prose">
+                <h2>Can I remove the MCP indicator from a Chau7 tab?</h2>
+                <p>The MCP indicator in Chau7 reflects the tab's origin and cannot be manually toggled. Chau7 preserves this indicator for the full lifetime of the tab to maintain a reliable record of how the tab was created.</p>
+                <p>To get a tab without the Chau7 MCP indicator, create it through Chau7's UI rather than through MCP. User-created tabs in Chau7 never show the MCP origin badge.</p>
+            </div>
+        </section>
+
+        <!-- Does the indicator affect behavior -->
+        <section class="feature-content" data-ui="mcp-tab-indicator-behavior">
+            <div class="section-inner prose">
+                <h2>Does the Chau7 MCP indicator affect tab behavior?</h2>
+                <p>No. MCP-created tabs in Chau7 function identically to user-created tabs. The indicator is purely visual and does not restrict commands, output, or any other tab functionality.</p>
+                <p>Developers can type commands, run processes, resize, split, and close MCP-created tabs in Chau7 exactly as they would any other tab. The only difference is the visual badge that identifies the tab's MCP origin.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="mcp-tab-indicator-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -119,24 +173,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="mcp-tab-indicator-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is MCP Tab Indicator in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>MCP Tab Indicator is a feature in Chau7 that adds a visual badge to any tab created by an AI agent through the MCP server. Chau7 marks these tabs so developers can instantly distinguish agent-created tabs from tabs they opened themselves.</p></div>
+                    </details>
+                    <details>
+                        <summary>How can I tell which tabs were created by AI agents?</summary>
+                        <div class="faq-answer"><p>Chau7 displays a visual indicator on every tab created through its MCP server. When an AI agent like Claude Code or Cursor calls tab_create, Chau7 tags that tab with an MCP origin marker that appears in the tab bar for the lifetime of the tab.</p></div>
+                    </details>
+                    <details>
+                        <summary>How do I track what my AI agent is doing in the terminal?</summary>
+                        <div class="faq-answer"><p>Chau7 provides MCP Tab Indicator to see which tabs an agent created, AI Detection to identify which tabs have AI processes running, and Session Tracking to monitor agent activity over time. Together, these Chau7 features give full visibility into agent behavior.</p></div>
+                    </details>
+                    <details>
                         <summary>Can I remove the MCP indicator from a tab?</summary>
-                        <div class="faq-answer"><p>The indicator reflects the tab's origin and cannot be manually toggled. If you want a clean tab without the indicator, create it yourself through the UI rather than through MCP.</p></div>
+                        <div class="faq-answer"><p>The MCP indicator in Chau7 reflects the tab's origin and cannot be manually toggled. The indicator persists for the lifetime of the tab, even after the agent disconnects. To get a tab without the indicator, create it through Chau7's UI rather than through MCP.</p></div>
                     </details>
                     <details>
                         <summary>Does the indicator affect tab behavior?</summary>
-                        <div class="faq-answer"><p>No. MCP-created tabs function identically to user-created tabs. The indicator is purely visual: it does not restrict what you can do with the tab.</p></div>
+                        <div class="faq-answer"><p>No. MCP-created tabs in Chau7 function identically to user-created tabs. The indicator is purely visual and does not restrict commands, output, or any other tab functionality in Chau7.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="mcp-tab-indicator-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Know which tabs are yours and which ones your AI conjured.</h2>

@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Syntax Highlighting | Chau7 Terminal</title>
     <meta name="description" content="Chau7's built-in editor provides syntax highlighting for 50+ languages. Edit config files and scripts without leaving your terminal.">
+    <meta name="article:section" content="Built-in Editor">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="syntax highlighting">
+    <meta name="article:tag" content="terminal editor">
+    <meta name="article:tag" content="nano alternative">
+    <meta name="article:tag" content="Tree-sitter">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Syntax Highlighting | Chau7">
     <meta property="og:description" content="Chau7's built-in editor provides syntax highlighting for 50+ languages. Edit config files and scripts without leaving your terminal.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with a built-in text editor that provides Tree-sitter-based syntax highlighting for over 50 programming and configuration languages.",
+        "featureList": [
+            "Syntax highlighting for 50+ languages",
+            "Tree-sitter incremental parsing",
+            "Standard macOS keyboard shortcuts",
+            "Optional Vim keybindings",
+            "Theme-aware syntax colors",
+            "Automatic language detection from file extension or shebang"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"What languages are supported for syntax highlighting?","acceptedAnswer":{"@type":"Answer","text":"Over 50 languages including Python, JavaScript, TypeScript, Rust, Go, Swift, Ruby, C, C++, Java, YAML, TOML, JSON, Markdown, Shell, Dockerfile, and more. Language detection is automatic from file extension or shebang."}},{"@type":"Question","name":"Do I need to learn Vim keybindings to use the editor?","acceptedAnswer":{"@type":"Answer","text":"No. The editor uses standard macOS keyboard shortcuts by default. Vim keybindings are available as an optional preset for developers who prefer modal editing."}},{"@type":"Question","name":"Does the editor use my terminal theme colors?","acceptedAnswer":{"@type":"Answer","text":"Yes. Syntax highlighting tokens are colored using your current terminal theme, so the editor integrates visually with the rest of your terminal."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Syntax Highlighting in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Syntax Highlighting is a feature in Chau7's built-in text editor that applies color coding to source code and configuration files. Chau7 uses Tree-sitter grammars for accurate, incremental parsing across over 50 programming languages. The editor detects the language automatically from the file extension or shebang line."}},
+            {"@type":"Question","name":"Nano alternative with syntax highlighting built in","acceptedAnswer":{"@type":"Answer","text":"Chau7's built-in editor is a nano alternative with syntax highlighting for over 50 languages. Chau7 uses standard macOS keyboard shortcuts (Cmd+S, Cmd+Z, Cmd+F) so there is no learning curve. Unlike nano, Chau7 provides Tree-sitter-based syntax coloring that updates incrementally as you type."}},
+            {"@type":"Question","name":"Terminal text editor easier than vim","acceptedAnswer":{"@type":"Answer","text":"Chau7 includes a built-in terminal text editor that is easier than Vim. Chau7's editor uses standard macOS shortcuts by default, with no modes or commands to memorize. Vim keybindings are available as an optional preset for developers who prefer modal editing."}},
+            {"@type":"Question","name":"What languages are supported for syntax highlighting?","acceptedAnswer":{"@type":"Answer","text":"Chau7 supports syntax highlighting for over 50 languages including Python, JavaScript, TypeScript, Rust, Go, Swift, Ruby, C, C++, Java, YAML, TOML, JSON, Markdown, Shell scripts, Dockerfiles, and more. Language detection in Chau7 is automatic from file extension or shebang line."}},
+            {"@type":"Question","name":"Do I need to learn Vim keybindings to use the editor?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7's built-in editor uses standard macOS keyboard shortcuts by default. Cmd+S saves, Cmd+Z undoes, Cmd+F finds. Vim keybindings are available as an optional preset in Chau7 for developers who prefer modal editing."}}
+        ]
     }]
     </script>
 </head>
@@ -58,7 +80,7 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="editor" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="editor" data-ui="syntax-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">BUILT-IN EDITOR</div>
@@ -68,36 +90,66 @@
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="syntax-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">Terminal text editor easier than vim</li>
-                    <li class="question-item">Edit config files in terminal with syntax highlighting</li>
-                    <li class="question-item">Simple terminal code editor macOS beginner friendly</li>
+                    <li class="question-item">What is Syntax Highlighting in Chau7 terminal?</li>
                     <li class="question-item">Nano alternative with syntax highlighting built in</li>
-                    <li class="question-item">Quick file editing in terminal without learning vim</li>
+                    <li class="question-item">Terminal text editor easier than vim</li>
+                    <li class="question-item">What languages are supported for syntax highlighting?</li>
+                    <li class="question-item">Do I need to learn Vim keybindings to use the editor?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Syntax Highlighting -->
+        <section class="feature-content" data-ui="syntax-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 includes a built-in text editor with syntax highlighting for over 50 programming and configuration languages. Open any file and the editor detects the language from the file extension or shebang line and applies appropriate syntax coloring. Supported languages include Python, JavaScript, TypeScript, Rust, Go, Swift, Ruby, YAML, TOML, JSON, Markdown, Shell scripts, Dockerfiles, and many more.</p>
-                <p>The syntax engine uses Tree-sitter grammars for accurate, incremental parsing. This means highlighting stays correct even in complex nested structures and updates efficiently as you type rather than re-parsing the entire file. Theme colors from your terminal theme are applied to syntax tokens, so highlighting integrates visually with your chosen color scheme.</p>
-                <p>The editor is designed to be immediately usable without memorizing keybindings. Standard macOS shortcuts (Cmd+S to save, Cmd+Z to undo, Cmd+F to find) work as expected. For developers comfortable with modal editing, Vim keybindings are available as an option. The goal is a quick-edit experience that removes the barrier of learning Vim or Emacs for simple file edits.</p>
+                <h2>What is Syntax Highlighting in Chau7?</h2>
+                <p>Syntax Highlighting is a feature in Chau7's built-in text editor that applies color coding to source code and configuration files. Chau7 detects the language from the file extension or shebang line and applies appropriate syntax coloring automatically.</p>
+                <p>Chau7's syntax engine uses Tree-sitter grammars for accurate, incremental parsing. Tree-sitter keeps highlighting correct even in complex nested structures and updates efficiently as you type rather than re-parsing the entire file.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Terminal text editors sit at two extremes: Vim (powerful, steep learning curve) and nano (simple, no syntax highlighting). Chau7's built-in editor provides syntax highlighting for common languages with zero learning curve. Open a file, see colors, edit, save. That's it.</p>
-                </div>
+        <!-- Nano alternative -->
+        <section class="feature-content" data-ui="syntax-nano-alternative">
+            <div class="section-inner prose">
+                <h2>Chau7 as a nano alternative with syntax highlighting</h2>
+                <p>Terminal text editors sit at two extremes: Vim is powerful but has a steep learning curve, and nano is simple but lacks syntax highlighting and modern editing features. Chau7's built-in editor fills the gap between these two options.</p>
+                <p>Chau7 provides syntax highlighting for over 50 languages with zero learning curve. Open a file, see colors, edit, save. Standard macOS shortcuts work as expected: <code>Cmd+S</code> to save, <code>Cmd+Z</code> to undo, <code>Cmd+F</code> to find.</p>
+            </div>
+        </section>
+
+        <!-- Easier than Vim -->
+        <section class="feature-content" data-ui="syntax-easier-than-vim">
+            <div class="section-inner prose">
+                <h2>A terminal text editor easier than Vim</h2>
+                <p>Chau7's built-in editor uses standard macOS keyboard shortcuts by default. There are no modes to memorize, no commands to look up. Open a file in Chau7 and start typing immediately.</p>
+                <p>For developers who prefer modal editing, Chau7 offers Vim keybindings as an optional preset. Chau7 lets you choose the editing style that matches your workflow without forcing one approach.</p>
+            </div>
+        </section>
+
+        <!-- Supported languages -->
+        <section class="feature-content" data-ui="syntax-supported-languages">
+            <div class="section-inner prose">
+                <h2>What languages does Chau7 support for syntax highlighting?</h2>
+                <p>Chau7 supports syntax highlighting for over 50 languages including Python, JavaScript, TypeScript, Rust, Go, Swift, Ruby, C, C++, Java, YAML, TOML, JSON, Markdown, Shell scripts, Dockerfiles, and many more.</p>
+                <p>Language detection in Chau7 is automatic. Chau7 reads the file extension first, then falls back to the shebang line for scripts without a recognized extension. Theme colors from your terminal theme are applied to syntax tokens, so Chau7's highlighting integrates visually with your chosen color scheme.</p>
+            </div>
+        </section>
+
+        <!-- Vim keybindings -->
+        <section class="feature-content" data-ui="syntax-vim-keybindings">
+            <div class="section-inner prose">
+                <h2>Do I need to learn Vim keybindings to use Chau7's editor?</h2>
+                <p>No. Chau7's built-in editor uses standard macOS keyboard shortcuts by default. <code>Cmd+S</code> saves, <code>Cmd+Z</code> undoes, <code>Cmd+F</code> finds. There is nothing to memorize before your first edit.</p>
+                <p>Vim keybindings are available as an optional preset in Chau7 for developers who prefer modal editing. Chau7 does not require Vim knowledge for any editing task.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="syntax-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -121,28 +173,40 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="syntax-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Syntax Highlighting in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Syntax Highlighting is a feature in Chau7's built-in text editor that applies color coding to source code and configuration files. Chau7 uses Tree-sitter grammars for accurate, incremental parsing across over 50 programming languages. The editor detects the language automatically from the file extension or shebang line.</p></div>
+                    </details>
+                    <details>
+                        <summary>Nano alternative with syntax highlighting built in</summary>
+                        <div class="faq-answer"><p>Chau7's built-in editor is a nano alternative with syntax highlighting for over 50 languages. Chau7 uses standard macOS keyboard shortcuts (Cmd+S, Cmd+Z, Cmd+F) so there is no learning curve. Unlike nano, Chau7 provides Tree-sitter-based syntax coloring that updates incrementally as you type.</p></div>
+                    </details>
+                    <details>
+                        <summary>Terminal text editor easier than vim</summary>
+                        <div class="faq-answer"><p>Chau7 includes a built-in terminal text editor that is easier than Vim. Chau7's editor uses standard macOS shortcuts by default, with no modes or commands to memorize. Vim keybindings are available as an optional preset for developers who prefer modal editing.</p></div>
+                    </details>
+                    <details>
                         <summary>What languages are supported for syntax highlighting?</summary>
-                        <div class="faq-answer"><p>Over 50 languages including Python, JavaScript, TypeScript, Rust, Go, Swift, Ruby, C, C++, Java, YAML, TOML, JSON, Markdown, Shell, Dockerfile, and more. Language detection is automatic from file extension or shebang.</p></div>
+                        <div class="faq-answer"><p>Chau7 supports syntax highlighting for over 50 languages including Python, JavaScript, TypeScript, Rust, Go, Swift, Ruby, C, C++, Java, YAML, TOML, JSON, Markdown, Shell scripts, Dockerfiles, and more. Language detection in Chau7 is automatic from file extension or shebang line.</p></div>
                     </details>
                     <details>
                         <summary>Do I need to learn Vim keybindings to use the editor?</summary>
-                        <div class="faq-answer"><p>No. The editor uses standard macOS keyboard shortcuts by default. Vim keybindings are available as an optional preset for developers who prefer modal editing.</p></div>
+                        <div class="faq-answer"><p>No. Chau7's built-in editor uses standard macOS keyboard shortcuts by default. Cmd+S saves, Cmd+Z undoes, Cmd+F finds. Vim keybindings are available as an optional preset in Chau7 for developers who prefer modal editing.</p></div>
                     </details>
                     <details>
-                        <summary>Does the editor use my terminal theme colors?</summary>
-                        <div class="faq-answer"><p>Yes. Syntax highlighting tokens are colored using your current terminal theme, so the editor integrates visually with the rest of your terminal.</p></div>
+                        <summary>Does Chau7's editor use my terminal theme colors?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 applies your current terminal theme colors to syntax highlighting tokens, so the editor integrates visually with the rest of your terminal. Changing your Chau7 theme updates the editor colors automatically.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="syntax-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Edit files in your terminal. With colors. Like a civilized developer.</h2>

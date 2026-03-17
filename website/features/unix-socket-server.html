@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Unix Socket Server | Chau7 Terminal</title>
     <meta name="description" content="Chau7's MCP server uses a Unix domain socket for zero-network-exposure communication between AI agents and your terminal.">
+    <meta name="article:section" content="MCP Server">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="Unix socket">
+    <meta name="article:tag" content="MCP server">
+    <meta name="article:tag" content="IPC">
+    <meta name="article:tag" content="AI agent communication">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Unix Socket Server | Chau7">
     <meta property="og:description" content="Chau7's MCP server uses a Unix domain socket for zero-network-exposure communication between AI agents and your terminal.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS whose MCP server communicates over a Unix domain socket for zero-network-exposure IPC with AI agents.",
+        "featureList": [
+            "Unix domain socket for MCP communication",
+            "Zero network exposure by design",
+            "Filesystem-level permission enforcement",
+            "Lower latency than TCP loopback",
+            "Automatic socket creation on launch",
+            "Stale socket detection and cleanup"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Where is the socket file located?","acceptedAnswer":{"@type":"Answer","text":"The socket is created under your home directory in a predictable location that MCP clients can discover automatically. The exact path is configured during auto-registration so clients never need to search for it."}},{"@type":"Question","name":"What happens if the socket file is not cleaned up?","acceptedAnswer":{"@type":"Answer","text":"Chau7 detects stale socket files on launch and removes them before creating a new one. If the app crashes, the next launch will clean up automatically."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Unix Socket Server in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"The Unix Socket Server in Chau7 is the transport layer for Chau7's MCP server. Chau7 creates a Unix domain socket at a well-known path under the user's home directory. AI agents like Claude Code and Cursor connect to this socket directly with no TCP, no HTTP, and no port binding."}},
+            {"@type":"Question","name":"How does Chau7's unix socket server compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals do not have an MCP server at all. Terminals that support external control typically use TCP or HTTP, exposing a network port. Chau7's MCP server uses a Unix domain socket exclusively, providing zero network exposure and filesystem-level permission enforcement without passwords or tokens."}},
+            {"@type":"Question","name":"How does Chau7's MCP server communicate with AI agents?","acceptedAnswer":{"@type":"Answer","text":"Chau7's MCP server communicates through a Unix domain socket created at a predictable path. AI agents connect to the socket file directly. The operating system enforces that only processes running as the same user can access the socket. No TCP, no ports, no authentication tokens are needed."}},
+            {"@type":"Question","name":"Where is the socket file located?","acceptedAnswer":{"@type":"Answer","text":"Chau7 creates the socket under the user's home directory in a predictable location. The exact path is configured during Chau7's auto-registration into Claude Code, Cursor, and other AI client config files, so MCP clients discover the socket path automatically."}},
+            {"@type":"Question","name":"What happens if the socket file is not cleaned up?","acceptedAnswer":{"@type":"Answer","text":"Chau7 detects stale socket files on launch and removes them before creating a new one. If Chau7 crashes, the next launch will clean up the stale socket automatically. No manual intervention is needed."}}
+        ]
     }]
     </script>
 </head>
@@ -58,44 +80,76 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="mcp" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="mcp" data-ui="unix-socket-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-alt">MCP SERVER</div>
                 <h1 class="hero-title">Unix Socket Server</h1>
-                <p class="hero-subtitle">Local Unix socket. No network exposure, no authentication drama. Just fast, private IPC.</p>
+                <p class="hero-subtitle">Chau7's MCP server runs on a local Unix socket. No network exposure, no authentication drama. Fast, private IPC.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="unix-socket-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">How does Chau7&#x27;s MCP server communicate with AI agents?</li>
-                    <li class="question-item">Is the MCP connection secure if it runs locally?</li>
-                    <li class="question-item">Does Chau7&#x27;s MCP server expose any network ports?</li>
-                    <li class="question-item">What transport does the MCP server use?</li>
+                    <li class="question-item">What is Unix Socket Server in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's unix socket server compare to other terminals?</li>
+                    <li class="question-item">How does Chau7's MCP server communicate with AI agents?</li>
+                    <li class="question-item">Where is the socket file located?</li>
+                    <li class="question-item">What happens if the socket file is not cleaned up?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Unix Socket Server -->
+        <section class="feature-content" data-ui="unix-socket-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 creates a Unix domain socket at a well-known path under the user's home directory. When an AI client like Claude Code or Cursor needs to communicate with the terminal, it connects to this socket directly: no TCP, no HTTP, no port binding. The operating system enforces that only processes running as the same user can access the socket file, providing authentication without passwords or tokens.</p>
-                <p>Unix sockets have lower latency and higher throughput than TCP loopback connections because they skip the entire network stack. For MCP tool calls that happen dozens of times per agent session: listing tabs, reading output, checking status: this overhead reduction adds up. The socket is created on launch and cleaned up on exit, with no lingering listeners or zombie processes.</p>
+                <h2>What is Unix Socket Server in Chau7?</h2>
+                <p>The Unix Socket Server in Chau7 is the transport layer for Chau7's MCP server. Chau7 creates a Unix domain socket at a well-known path under the user's home directory. AI agents like Claude Code and Cursor connect to this socket directly.</p>
+                <p>No TCP, no HTTP, no port binding. The operating system enforces that only processes running as the same user can access the socket file, providing authentication without passwords or tokens.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>A network-exposed MCP server would be a security liability: any process on your machine could connect and control your terminal. Chau7's MCP server communicates exclusively over a local Unix domain socket with filesystem permission checks. No TCP, no ports, no authentication tokens to rotate. It is fast (lower latency than TCP loopback) and private by construction.</p>
-                </div>
+        <!-- How Chau7's MCP server communicates -->
+        <section class="feature-content" data-ui="unix-socket-communication">
+            <div class="section-inner prose">
+                <h2>How does Chau7's MCP server communicate with AI agents?</h2>
+                <p>Chau7's MCP server communicates through a Unix domain socket created at a predictable path. When an AI client like Claude Code needs to list tabs, read output, or execute commands, it connects to Chau7's socket file directly.</p>
+                <p>Unix sockets have lower latency and higher throughput than TCP loopback connections because they skip the entire network stack. For MCP tool calls that happen dozens of times per agent session, this overhead reduction in Chau7 adds up.</p>
+            </div>
+        </section>
+
+        <!-- Comparison -->
+        <section class="feature-content" data-ui="unix-socket-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's Unix socket server compare to other terminals?</h2>
+                <p>Most terminals do not have an MCP server at all. Terminals that support external control typically use TCP or HTTP, exposing a network port that any process on the machine can connect to.</p>
+                <p>Chau7's MCP server uses a Unix domain socket exclusively. Chau7's socket provides zero network exposure and filesystem-level permission enforcement. No passwords, no tokens, no TLS certificates to manage. Security is enforced by the operating system's file permission model.</p>
+            </div>
+        </section>
+
+        <!-- Where is the socket file -->
+        <section class="feature-content" data-ui="unix-socket-location">
+            <div class="section-inner prose">
+                <h2>Where is Chau7's socket file located?</h2>
+                <p>Chau7 creates the socket under the user's home directory in a predictable location. The exact path is configured during Chau7's auto-registration into Claude Code, Cursor, Windsurf, and other AI client config files.</p>
+                <p>MCP clients discover Chau7's socket path automatically through the registered configuration. Developers never need to search for or manually specify the socket path.</p>
+            </div>
+        </section>
+
+        <!-- Stale socket cleanup -->
+        <section class="feature-content" data-ui="unix-socket-cleanup">
+            <div class="section-inner prose">
+                <h2>What happens if Chau7's socket file is not cleaned up?</h2>
+                <p>Chau7 detects stale socket files on launch and removes them before creating a new one. If Chau7 crashes, the next launch will clean up the stale socket automatically.</p>
+                <p>The socket is created on Chau7's launch and cleaned up on Chau7's exit. No lingering listeners, no zombie processes, and no manual intervention needed.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="unix-socket-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -119,24 +173,40 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="unix-socket-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Unix Socket Server in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>The Unix Socket Server in Chau7 is the transport layer for Chau7's MCP server. Chau7 creates a Unix domain socket at a well-known path under the user's home directory. AI agents like Claude Code and Cursor connect to this socket directly with no TCP, no HTTP, and no port binding.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's unix socket server compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals do not have an MCP server at all. Terminals that support external control typically use TCP or HTTP, exposing a network port. Chau7's MCP server uses a Unix domain socket exclusively, providing zero network exposure and filesystem-level permission enforcement without passwords or tokens.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's MCP server communicate with AI agents?</summary>
+                        <div class="faq-answer"><p>Chau7's MCP server communicates through a Unix domain socket created at a predictable path. AI agents connect to the socket file directly. The operating system enforces that only processes running as the same user can access the socket. No TCP, no ports, no authentication tokens are needed.</p></div>
+                    </details>
+                    <details>
                         <summary>Where is the socket file located?</summary>
-                        <div class="faq-answer"><p>The socket is created under your home directory in a predictable location that MCP clients can discover automatically. The exact path is configured during auto-registration so clients never need to search for it.</p></div>
+                        <div class="faq-answer"><p>Chau7 creates the socket under the user's home directory in a predictable location. The exact path is configured during Chau7's auto-registration into Claude Code, Cursor, and other AI client config files, so MCP clients discover the socket path automatically.</p></div>
                     </details>
                     <details>
                         <summary>What happens if the socket file is not cleaned up?</summary>
-                        <div class="faq-answer"><p>Chau7 detects stale socket files on launch and removes them before creating a new one. If the app crashes, the next launch will clean up automatically.</p></div>
+                        <div class="faq-answer"><p>Chau7 detects stale socket files on launch and removes them before creating a new one. If Chau7 crashes, the next launch will clean up the stale socket automatically. No manual intervention is needed.</p></div>
+                    </details>
+                    <details>
+                        <summary>Is the Unix socket connection secure?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7's Unix domain socket is protected by the operating system's file permission model. Only processes running as the same user can connect to Chau7's socket. No network ports are opened, so remote access is impossible by design.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="unix-socket-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>MCP over Unix socket. Secure by default, not by configuration.</h2>

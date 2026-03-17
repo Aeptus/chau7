@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Fullscreen Mode | Chau7 Terminal</title>
     <meta name="description" content="Chau7 supports native macOS fullscreen mode with menu bar hiding, Space integration, and smooth transitions for distraction-free terminal use.">
+    <meta name="article:section" content="Window Modes">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="fullscreen mode">
+    <meta name="article:tag" content="macOS Spaces">
+    <meta name="article:tag" content="split view">
+    <meta name="article:tag" content="distraction-free terminal">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Fullscreen Mode | Chau7">
     <meta property="og:description" content="Chau7 supports native macOS fullscreen mode with menu bar hiding, Space integration, and smooth transitions for distraction-free terminal use.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with native fullscreen mode, macOS Space integration, Split View support, and smooth fullscreen transitions.",
+        "featureList": [
+            "Native macOS fullscreen with Space creation",
+            "Mission Control and trackpad gesture integration",
+            "macOS Split View support in fullscreen",
+            "Automatic terminal grid recalculation",
+            "Customizable fullscreen keyboard shortcut",
+            "Menu bar hiding for maximum screen real estate"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does fullscreen work with macOS Spaces?","acceptedAnswer":{"@type":"Answer","text":"Yes. Entering fullscreen creates a native macOS Space, fully integrated with Mission Control and trackpad swiping gestures."}},{"@type":"Question","name":"Can I use split view with Chau7 in fullscreen?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 supports macOS Split View, so you can tile it alongside another application in a shared fullscreen Space."}},{"@type":"Question","name":"What is the keyboard shortcut for fullscreen?","acceptedAnswer":{"@type":"Answer","text":"The default is Ctrl+Cmd+F, matching the macOS standard. You can also remap it in the keybindings preferences."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Fullscreen Mode in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Fullscreen Mode in Chau7 uses the native macOS fullscreen API to create a dedicated Space, hide the menu bar, and expand the terminal grid to fill the entire display. Chau7 automatically recalculates row and column counts when entering fullscreen."}},
+            {"@type":"Question","name":"How does Chau7's fullscreen mode compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals support basic fullscreen, but Chau7 provides full macOS Space integration, Split View support, Mission Control compatibility, and automatic grid recalculation. Chau7 also lets you remap the fullscreen shortcut in its keybindings preferences."}},
+            {"@type":"Question","name":"Does Chau7 fullscreen work with macOS Spaces?","acceptedAnswer":{"@type":"Answer","text":"Yes. Entering fullscreen in Chau7 creates a native macOS Space. Chau7 integrates fully with Mission Control and trackpad swiping gestures for switching between Spaces."}},
+            {"@type":"Question","name":"Can I use split view with Chau7 in fullscreen?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 supports macOS Split View, so you can tile Chau7 alongside another application in a shared fullscreen Space."}},
+            {"@type":"Question","name":"What is the keyboard shortcut for Chau7 fullscreen?","acceptedAnswer":{"@type":"Answer","text":"The default keyboard shortcut for Chau7 fullscreen is Ctrl+Cmd+F, matching the macOS standard. You can remap the fullscreen shortcut in Chau7's keybindings preferences."}}
+        ]
     }]
     </script>
 </head>
@@ -58,7 +80,7 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="window" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="window" data-ui="fullscreen-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">WINDOW MODES</div>
@@ -68,33 +90,66 @@
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="fullscreen-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is Fullscreen Mode in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's fullscreen mode compare to other terminals?</li>
                     <li class="question-item">Terminal fullscreen mode macOS native Space</li>
-                    <li class="question-item">Hide menu bar in terminal fullscreen</li>
-                    <li class="question-item">Fullscreen terminal with multiple desktops macOS</li>
+                    <li class="question-item">Does fullscreen work with macOS Spaces?</li>
+                    <li class="question-item">Can I use split view with Chau7 in fullscreen?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Fullscreen Mode in Chau7 -->
+        <section class="feature-content" data-ui="fullscreen-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 uses the native macOS fullscreen API, so entering fullscreen creates a dedicated Space and hides the menu bar for maximum screen real estate. The transition uses the standard macOS fullscreen animation, and the terminal window integrates with Mission Control and trackpad gestures for swiping between Spaces.</p>
-                <p>In fullscreen mode, the terminal grid expands to fill the entire display, automatically recalculating row and column counts. Tab bar and any configured padding remain visible, providing a complete terminal environment without window chrome. The escape hatch is the standard macOS fullscreen toggle (Ctrl+Cmd+F or the green window button) plus any custom keybinding you configure.</p>
+                <h2>What is Fullscreen Mode in Chau7?</h2>
+                <p>Fullscreen Mode in Chau7 uses the native macOS fullscreen API. When you enter fullscreen, Chau7 creates a dedicated macOS Space and hides the menu bar for maximum screen real estate.</p>
+                <p>Chau7 automatically recalculates the terminal grid when entering fullscreen. Row and column counts expand to fill the entire display, and the tab bar and any configured padding remain visible.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Fullscreen mode eliminates every visual distraction, which matters during deep debugging, code reviews in the terminal, or SSH sessions where you need maximum screen real estate. Chau7 uses native macOS fullscreen with proper Space integration, so you can swipe between fullscreen terminal and other apps.</p>
-                </div>
+        <!-- Does fullscreen work with macOS Spaces -->
+        <section class="feature-content" data-ui="fullscreen-spaces">
+            <div class="section-inner prose">
+                <h2>Does Chau7 fullscreen work with macOS Spaces?</h2>
+                <p>Yes. Entering fullscreen in Chau7 creates a native macOS Space. Chau7 integrates fully with Mission Control and trackpad swiping gestures for switching between Spaces.</p>
+                <p>The fullscreen transition in Chau7 uses the standard macOS animation. You can swipe between the fullscreen Chau7 terminal and other apps using the trackpad, just like any native macOS fullscreen window.</p>
+            </div>
+        </section>
+
+        <!-- Can I use split view with Chau7 -->
+        <section class="feature-content" data-ui="fullscreen-split-view">
+            <div class="section-inner prose">
+                <h2>Can I use Split View with Chau7 in fullscreen?</h2>
+                <p>Yes. Chau7 supports macOS Split View. You can tile Chau7 alongside another application in a shared fullscreen Space.</p>
+                <p>Split View with Chau7 is useful when you need a terminal side by side with a browser, editor, or documentation window. Chau7 recalculates the terminal grid to fit the Split View pane size.</p>
+            </div>
+        </section>
+
+        <!-- How does Chau7's fullscreen compare to other terminals -->
+        <section class="feature-content" data-ui="fullscreen-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's fullscreen mode compare to other terminals?</h2>
+                <p>Most terminals support basic fullscreen. However, Chau7 provides full macOS Space integration, Split View support, Mission Control compatibility, and automatic grid recalculation in a single package.</p>
+                <p>Chau7 also lets you remap the fullscreen keyboard shortcut in its keybindings preferences. The default is Ctrl+Cmd+F, matching the macOS standard.</p>
+            </div>
+        </section>
+
+        <!-- Why fullscreen matters -->
+        <section class="feature-content" data-ui="fullscreen-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why Chau7 fullscreen matters</h2>
+                <p>Fullscreen mode in Chau7 eliminates every visual distraction. This matters during deep debugging, code reviews in the terminal, or SSH sessions where you need maximum screen real estate.</p>
+                <p>Chau7 uses native macOS fullscreen with proper Space integration, so switching between the fullscreen terminal and other apps is a trackpad swipe away. No window management required.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="fullscreen-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -118,28 +173,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="fullscreen-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>Does fullscreen work with macOS Spaces?</summary>
-                        <div class="faq-answer"><p>Yes. Entering fullscreen creates a native macOS Space, fully integrated with Mission Control and trackpad swiping gestures.</p></div>
+                        <summary>What is Fullscreen Mode in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Fullscreen Mode in Chau7 uses the native macOS fullscreen API to create a dedicated Space, hide the menu bar, and expand the terminal grid to fill the entire display. Chau7 automatically recalculates row and column counts when entering fullscreen.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's fullscreen mode compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals support basic fullscreen, but Chau7 provides full macOS Space integration, Split View support, Mission Control compatibility, and automatic grid recalculation. Chau7 also lets you remap the fullscreen shortcut in its keybindings preferences.</p></div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7 fullscreen work with macOS Spaces?</summary>
+                        <div class="faq-answer"><p>Yes. Entering fullscreen in Chau7 creates a native macOS Space. Chau7 integrates fully with Mission Control and trackpad swiping gestures for switching between Spaces.</p></div>
                     </details>
                     <details>
                         <summary>Can I use split view with Chau7 in fullscreen?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7 supports macOS Split View, so you can tile it alongside another application in a shared fullscreen Space.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7 supports macOS Split View, so you can tile Chau7 alongside another application in a shared fullscreen Space.</p></div>
                     </details>
                     <details>
-                        <summary>What is the keyboard shortcut for fullscreen?</summary>
-                        <div class="faq-answer"><p>The default is Ctrl+Cmd+F, matching the macOS standard. You can also remap it in the keybindings preferences.</p></div>
+                        <summary>What is the keyboard shortcut for Chau7 fullscreen?</summary>
+                        <div class="faq-answer"><p>The default keyboard shortcut for Chau7 fullscreen is Ctrl+Cmd+F, matching the macOS standard. You can remap the fullscreen shortcut in Chau7's keybindings preferences.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="fullscreen-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Go fullscreen. The rest of your screen was just decoration anyway.</h2>

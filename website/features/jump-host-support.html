@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Jump Host Support | Chau7 Terminal</title>
     <meta name="description" content="Chau7 supports multi-hop SSH through bastion and jump hosts with ProxyJump, simplifying access to private network servers.">
+    <meta name="article:section" content="SSH &amp; Remote">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="jump host">
+    <meta name="article:tag" content="bastion host">
+    <meta name="article:tag" content="ProxyJump">
+    <meta name="article:tag" content="multi-hop SSH">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Jump Host Support | Chau7">
     <meta property="og:description" content="Chau7 supports multi-hop SSH through bastion and jump hosts with ProxyJump, simplifying access to private network servers.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with native support for multi-hop SSH through bastion and jump hosts using ProxyJump and ProxyCommand.",
+        "featureList": [
+            "Native ProxyJump chain configuration",
+            "ProxyCommand directive support",
+            "Visual hop diagram in connection manager",
+            "Per-hop authentication settings",
+            "Auto-import from ~/.ssh/config",
+            "Connection test without opening a session"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"How many hops does it support?","acceptedAnswer":{"@type":"Answer","text":"There is no hard limit. Chau7 supports arbitrary ProxyJump chains: bastion to bastion to target, or longer if your network requires it. Each hop can have independent authentication settings."}},{"@type":"Question","name":"Does it work with ProxyCommand as well as ProxyJump?","acceptedAnswer":{"@type":"Answer","text":"Yes. Both ProxyJump and ProxyCommand directives are supported. ProxyJump chains are visualized as hop diagrams; ProxyCommand entries are displayed with the full command for transparency."}},{"@type":"Question","name":"Can I test the connection without opening a full session?","acceptedAnswer":{"@type":"Answer","text":"Yes. The connection manager includes a test button that verifies reachability through each hop and reports which stage succeeded or failed, without opening a terminal session."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Jump Host Support in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Jump Host Support is a feature in the Chau7 terminal that lets you configure and connect through multi-hop SSH chains using bastion and jump hosts. Chau7's connection manager handles ProxyJump configuration natively, constructs the correct multi-hop SSH command automatically, and visualizes each hop in a path diagram."}},
+            {"@type":"Question","name":"How does Chau7's jump host support compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals have no visual jump host management. iTerm2 and Terminal.app require manual ProxyJump configuration in ~/.ssh/config with no visual feedback. Chau7 is the only terminal that visualizes jump host chains as path diagrams, shows per-hop connection progress, and lets you test connectivity through each hop before opening a session."}},
+            {"@type":"Question","name":"How do I SSH through a jump host or bastion in a terminal app?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, open the SSH connection manager and create or edit a profile. Specify one or more jump hosts in the connection chain. Chau7 constructs the correct multi-hop SSH command automatically, handling different identity files and usernames for the bastion and the target host. Connect with a single click."}},
+            {"@type":"Question","name":"How many hops does it support?","acceptedAnswer":{"@type":"Answer","text":"There is no hard limit. Chau7 supports arbitrary ProxyJump chains: bastion to bastion to target, or longer if your network requires it. Each hop in the Chau7 connection chain can have independent authentication settings including different identity files and usernames."}},
+            {"@type":"Question","name":"Does it work with ProxyCommand as well as ProxyJump?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 supports both ProxyJump and ProxyCommand directives. ProxyJump chains are visualized as hop diagrams in Chau7's connection manager. ProxyCommand entries are displayed with the full command for transparency."}}
+        ]
     }]
     </script>
 </head>
@@ -58,44 +80,86 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="ssh" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="ssh" data-ui="jump-host-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SSH & REMOTE</div>
                 <h1 class="hero-title">Jump Host Support</h1>
-                <p class="hero-subtitle">Multi-hop SSH through bastion hosts. Configured once, connected with a click.</p>
+                <p class="hero-subtitle">Chau7 handles multi-hop SSH through bastion hosts. Configured once, connected with a click.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="jump-host-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is Jump Host Support in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's jump host support compare to other terminals?</li>
                     <li class="question-item">How do I SSH through a jump host or bastion in a terminal app?</li>
-                    <li class="question-item">Is there a terminal that supports ProxyJump for multi-hop SSH?</li>
-                    <li class="question-item">How to connect to private servers through a bastion host easily?</li>
+                    <li class="question-item">How many hops does it support?</li>
+                    <li class="question-item">Does it work with ProxyCommand as well as ProxyJump?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Jump Host Support -->
+        <section class="feature-content" data-ui="jump-host-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7's connection manager supports ProxyJump configuration natively. When creating or editing an SSH profile, specify one or more jump hosts in the connection chain. Chau7 constructs the correct multi-hop SSH command automatically, handling authentication at each hop: including different identity files and usernames for the bastion and the target host.</p>
-                <p>Jump host chains are visualized in the connection manager as a path diagram showing each hop, its authentication method, and connection status. When connecting, Chau7 displays progress through each hop so you can see exactly where a connection is failing if something goes wrong.</p>
-                <p>Profiles imported from ~/.ssh/config that use ProxyJump or ProxyCommand directives are parsed and displayed as jump host chains automatically. The visual representation makes it easy to understand complex network topologies that would otherwise be buried in config file syntax.</p>
+                <h2>What is Jump Host Support in Chau7?</h2>
+                <p>Jump Host Support is a feature in the Chau7 terminal that lets you configure and connect through multi-hop SSH chains using bastion and jump hosts. Chau7's connection manager handles ProxyJump configuration natively.</p>
+                <p>When creating or editing an SSH profile in Chau7, you specify one or more jump hosts in the connection chain. Chau7 constructs the correct multi-hop SSH command automatically, handling authentication at each hop including different identity files and usernames for the bastion and the target host.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Production infrastructure sits behind bastion hosts, requiring multi-hop SSH connections that are tedious to type and easy to misconfigure. Chau7 lets you configure jump host chains visually and connect through them with a single click. The complexity is in the configuration, not in your daily workflow.</p>
-                </div>
+        <!-- How to SSH through a jump host -->
+        <section class="feature-content" data-ui="jump-host-how-to-connect">
+            <div class="section-inner prose">
+                <h2>How do I SSH through a jump host or bastion in Chau7?</h2>
+                <p>In Chau7, open the SSH connection manager and create or edit a profile. Specify one or more jump hosts in the connection chain. Chau7 constructs the correct multi-hop SSH command automatically.</p>
+                <p>Jump host chains are visualized in Chau7's connection manager as a path diagram showing each hop, its authentication method, and connection status. When connecting, Chau7 displays progress through each hop so you can see exactly where a connection is failing if something goes wrong.</p>
+                <p>Profiles imported from <code>~/.ssh/config</code> that use ProxyJump or ProxyCommand directives are parsed and displayed as jump host chains automatically in Chau7. The visual representation makes it easy to understand complex network topologies that would otherwise be buried in config file syntax.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="jump-host-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's jump host support compare to other terminals?</h2>
+                <p>Most terminals have no visual jump host management. iTerm2 and Terminal.app require manual ProxyJump configuration in <code>~/.ssh/config</code> with no visual feedback on the connection chain.</p>
+                <p>Chau7 is the only terminal that visualizes jump host chains as path diagrams, shows per-hop connection progress, and lets you test connectivity through each hop before opening a session. Chau7 also auto-imports ProxyJump and ProxyCommand directives from your existing SSH config.</p>
+            </div>
+        </section>
+
+        <!-- How many hops -->
+        <section class="feature-content" data-ui="jump-host-hop-count">
+            <div class="section-inner prose">
+                <h2>How many hops does Chau7 support?</h2>
+                <p>There is no hard limit on the number of hops in Chau7. Chau7 supports arbitrary ProxyJump chains: bastion to bastion to target, or longer if your network requires it.</p>
+                <p>Each hop in the Chau7 connection chain can have independent authentication settings. This means different identity files, different usernames, and different ports for each bastion in the chain.</p>
+            </div>
+        </section>
+
+        <!-- ProxyCommand support -->
+        <section class="feature-content" data-ui="jump-host-proxycommand">
+            <div class="section-inner prose">
+                <h2>Does Chau7 work with ProxyCommand as well as ProxyJump?</h2>
+                <p>Yes. Chau7 supports both ProxyJump and ProxyCommand directives. ProxyJump chains are visualized as hop diagrams in Chau7's connection manager. ProxyCommand entries are displayed with the full command for transparency.</p>
+                <p>Chau7's connection manager also includes a test button that verifies reachability through each hop. The test reports which stage succeeded or failed without opening a terminal session, making it easy to debug connection issues in complex jump host chains.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="jump-host-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why jump host support matters</h2>
+                <p>Production infrastructure sits behind bastion hosts, requiring multi-hop SSH connections that are tedious to type and easy to misconfigure. Chau7 lets you configure jump host chains visually and connect through them with a single click.</p>
+                <p>The complexity lives in Chau7's configuration, not in your daily workflow. For teams managing infrastructure behind multiple bastion layers, Chau7's jump host support turns a multi-step manual process into a one-click connection.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="jump-host-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -119,28 +183,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="jump-host-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Jump Host Support in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Jump Host Support is a feature in the Chau7 terminal that lets you configure and connect through multi-hop SSH chains using bastion and jump hosts. Chau7's connection manager handles ProxyJump configuration natively, constructs the correct multi-hop SSH command automatically, and visualizes each hop in a path diagram.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's jump host support compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals have no visual jump host management. iTerm2 and Terminal.app require manual ProxyJump configuration in ~/.ssh/config with no visual feedback. Chau7 is the only terminal that visualizes jump host chains as path diagrams, shows per-hop connection progress, and lets you test connectivity through each hop before opening a session.</p></div>
+                    </details>
+                    <details>
+                        <summary>How do I SSH through a jump host or bastion in a terminal app?</summary>
+                        <div class="faq-answer"><p>In Chau7, open the SSH connection manager and create or edit a profile. Specify one or more jump hosts in the connection chain. Chau7 constructs the correct multi-hop SSH command automatically, handling different identity files and usernames for the bastion and the target host. Connect with a single click.</p></div>
+                    </details>
+                    <details>
                         <summary>How many hops does it support?</summary>
-                        <div class="faq-answer"><p>There is no hard limit. Chau7 supports arbitrary ProxyJump chains: bastion to bastion to target, or longer if your network requires it. Each hop can have independent authentication settings.</p></div>
+                        <div class="faq-answer"><p>There is no hard limit. Chau7 supports arbitrary ProxyJump chains: bastion to bastion to target, or longer if your network requires it. Each hop in the Chau7 connection chain can have independent authentication settings including different identity files and usernames.</p></div>
                     </details>
                     <details>
                         <summary>Does it work with ProxyCommand as well as ProxyJump?</summary>
-                        <div class="faq-answer"><p>Yes. Both ProxyJump and ProxyCommand directives are supported. ProxyJump chains are visualized as hop diagrams; ProxyCommand entries are displayed with the full command for transparency.</p></div>
-                    </details>
-                    <details>
-                        <summary>Can I test the connection without opening a full session?</summary>
-                        <div class="faq-answer"><p>Yes. The connection manager includes a test button that verifies reachability through each hop and reports which stage succeeded or failed, without opening a terminal session.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7 supports both ProxyJump and ProxyCommand directives. ProxyJump chains are visualized as hop diagrams in Chau7's connection manager. ProxyCommand entries are displayed with the full command for transparency.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="jump-host-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Simplify multi-hop SSH. No more chaining ProxyJump commands from memory.</h2>

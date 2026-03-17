@@ -7,6 +7,13 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Hyperlinks | Chau7 Terminal</title>
     <meta name="description" content="Chau7 auto-detects clickable URLs and supports the OSC 8 hyperlink protocol for rich terminal links with custom text.">
+    <meta name="article:section" content="Terminal Core">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="hyperlinks">
+    <meta name="article:tag" content="OSC 8">
+    <meta name="article:tag" content="clickable URLs">
+    <meta name="article:tag" content="terminal links">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Hyperlinks | Chau7">
     <meta property="og:description" content="Chau7 auto-detects clickable URLs and supports the OSC 8 hyperlink protocol for rich terminal links with custom text.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that auto-detects clickable URLs in terminal output and supports the OSC 8 hyperlink protocol for rich links with custom display text.",
+        "featureList": [
+            "Real-time URL auto-detection in terminal output",
+            "OSC 8 hyperlink protocol support",
+            "Cmd+click to open URLs in default browser",
+            "Hover tooltip for truncated URLs",
+            "Keyboard navigation through visible links",
+            "Configurable URL scheme detection"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Which URL schemes does auto-detection recognize?","acceptedAnswer":{"@type":"Answer","text":"Chau7 detects http, https, file, ssh, and ftp URLs by default. The detection pattern is configurable in settings for users who need to recognize custom schemes."}},{"@type":"Question","name":"Do OSC 8 hyperlinks work inside tmux?","acceptedAnswer":{"@type":"Answer","text":"Yes, provided your tmux version supports OSC 8 passthrough (tmux 3.4+). Chau7 correctly renders hyperlinks passed through tmux, screen, and other multiplexers that forward OSC 8 sequences."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Hyperlinks in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Hyperlinks in Chau7 combines two features: real-time URL auto-detection that makes plain URLs clickable in terminal output, and OSC 8 hyperlink protocol support that lets CLI tools emit links with custom display text. Chau7 renders both types with a subtle underline and opens them on Cmd+click."}},
+            {"@type":"Question","name":"How does Chau7's hyperlinks compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Many terminals support basic URL detection but lack OSC 8 protocol support or keyboard link navigation. Chau7 supports both auto-detected URLs and OSC 8 hyperlinks, adds hover tooltips for truncated URLs, and provides keyboard navigation to cycle through all links in the visible terminal."}},
+            {"@type":"Question","name":"How to make terminal URLs clickable on macOS","acceptedAnswer":{"@type":"Answer","text":"Chau7 automatically detects URLs in terminal output and makes them clickable. Cmd+click opens the URL in your default browser. Chau7 detects http, https, file, ssh, and ftp URLs by default, and the detection pattern is configurable in Chau7's settings."}},
+            {"@type":"Question","name":"Which URL schemes does Chau7 auto-detection recognize?","acceptedAnswer":{"@type":"Answer","text":"Chau7 detects http, https, file, ssh, and ftp URLs by default. The URL detection pattern is configurable in Chau7's settings for users who need to recognize custom schemes."}},
+            {"@type":"Question","name":"Do OSC 8 hyperlinks work inside tmux with Chau7?","acceptedAnswer":{"@type":"Answer","text":"Yes, provided your tmux version supports OSC 8 passthrough (tmux 3.4+). Chau7 correctly renders hyperlinks passed through tmux, screen, and other multiplexers that forward OSC 8 sequences."}}
+        ]
     }]
     </script>
 </head>
@@ -58,7 +80,7 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="terminal" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="terminal" data-ui="hyperlinks-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">TERMINAL CORE</div>
@@ -68,35 +90,66 @@
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="hyperlinks-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is Hyperlinks in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's hyperlinks compare to other terminals?</li>
                     <li class="question-item">How to make terminal URLs clickable on macOS</li>
-                    <li class="question-item">OSC 8 hyperlink support in terminal emulators</li>
-                    <li class="question-item">Terminal does not recognize URLs as clickable links</li>
-                    <li class="question-item">How to open links from terminal output without copy-pasting</li>
+                    <li class="question-item">Which URL schemes does auto-detection recognize?</li>
+                    <li class="question-item">Do OSC 8 hyperlinks work inside tmux?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Hyperlinks in Chau7 -->
+        <section class="feature-content" data-ui="hyperlinks-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 runs a URL detection regex over terminal output in real time, identifying http://, https://, file://, and other common URL schemes. Detected URLs are rendered with a subtle underline and become clickable: Cmd+click opens the URL in the default browser, and a hover tooltip shows the full URL for truncated or wrapped links.</p>
-                <p>For programs that want richer control over hyperlinks, Chau7 supports the OSC 8 hyperlink protocol. This allows CLI tools to emit escape sequences that associate a URL with arbitrary display text, similar to an HTML anchor tag. For example, a compiler can output an error message where the file path is a hyperlink that opens the file in your editor at the correct line number.</p>
-                <p>Both auto-detected URLs and OSC 8 hyperlinks are accessible via keyboard navigation. A shortcut cycles through all links in the visible terminal, highlighting each one. Pressing Enter opens the highlighted link. This makes link navigation possible without reaching for the mouse.</p>
+                <h2>What is Hyperlinks in Chau7?</h2>
+                <p>Hyperlinks in Chau7 combines two features. First, Chau7 runs a URL detection regex over terminal output in real time, identifying plain URLs and making them clickable. Second, Chau7 supports the OSC 8 hyperlink protocol, which lets CLI tools emit escape sequences that associate a URL with custom display text.</p>
+                <p>Chau7 renders both auto-detected URLs and OSC 8 hyperlinks with a subtle underline. Cmd+click opens the URL in your default browser, and a hover tooltip shows the full URL for truncated or wrapped links.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Modern CLI tools output URLs constantly: links to documentation, CI builds, pull requests, file paths. In most terminals, you have to manually copy-paste them into a browser. Chau7 supports OSC 8 hyperlinks, making URLs clickable. It also detects plain URLs in terminal output and makes those clickable too.</p>
-                </div>
+        <!-- How to make terminal URLs clickable on macOS -->
+        <section class="feature-content" data-ui="hyperlinks-how-to-click">
+            <div class="section-inner prose">
+                <h2>How to make terminal URLs clickable on macOS</h2>
+                <p>Chau7 automatically detects URLs in terminal output and makes them clickable. No configuration is needed. When Chau7 identifies a URL, it renders the text with an underline that appears on hover.</p>
+                <p>Cmd+click on any detected URL in Chau7 opens it in your default browser. Chau7 also provides keyboard navigation: a shortcut cycles through all links in the visible terminal, and pressing Enter opens the highlighted link.</p>
+            </div>
+        </section>
+
+        <!-- Which URL schemes does auto-detection recognize -->
+        <section class="feature-content" data-ui="hyperlinks-url-schemes">
+            <div class="section-inner prose">
+                <h2>Which URL schemes does Chau7 auto-detection recognize?</h2>
+                <p>Chau7 detects http, https, file, ssh, and ftp URLs by default. The detection pattern is configurable in Chau7's settings for users who need to recognize custom URL schemes.</p>
+                <p>For programs that want richer control over hyperlinks, Chau7 supports the OSC 8 hyperlink protocol. This allows CLI tools to emit escape sequences that associate a URL with arbitrary display text, similar to an HTML anchor tag.</p>
+            </div>
+        </section>
+
+        <!-- Do OSC 8 hyperlinks work inside tmux -->
+        <section class="feature-content" data-ui="hyperlinks-tmux">
+            <div class="section-inner prose">
+                <h2>Do OSC 8 hyperlinks work inside tmux with Chau7?</h2>
+                <p>Yes, provided your tmux version supports OSC 8 passthrough (tmux 3.4+). Chau7 correctly renders hyperlinks passed through tmux, screen, and other multiplexers that forward OSC 8 sequences.</p>
+                <p>If your multiplexer does not forward OSC 8 sequences, Chau7 still auto-detects plain URLs in the output and makes those clickable.</p>
+            </div>
+        </section>
+
+        <!-- How does Chau7's hyperlinks compare to other terminals -->
+        <section class="feature-content" data-ui="hyperlinks-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's hyperlinks compare to other terminals?</h2>
+                <p>Many terminals support basic URL detection but lack OSC 8 protocol support or keyboard link navigation. Some terminals require you to copy-paste URLs manually from terminal output into a browser.</p>
+                <p>Chau7 supports both auto-detected URLs and OSC 8 hyperlinks. Chau7 adds hover tooltips for truncated URLs and provides keyboard navigation to cycle through all links in the visible terminal. This combination makes Chau7 one of the most complete hyperlink implementations in a macOS terminal.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="hyperlinks-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -120,16 +173,28 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="hyperlinks-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>Which URL schemes does auto-detection recognize?</summary>
-                        <div class="faq-answer"><p>Chau7 detects http, https, file, ssh, and ftp URLs by default. The detection pattern is configurable in settings for users who need to recognize custom schemes.</p></div>
+                        <summary>What is Hyperlinks in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Hyperlinks in Chau7 combines two features: real-time URL auto-detection that makes plain URLs clickable in terminal output, and OSC 8 hyperlink protocol support that lets CLI tools emit links with custom display text. Chau7 renders both types with a subtle underline and opens them on Cmd+click.</p></div>
                     </details>
                     <details>
-                        <summary>Do OSC 8 hyperlinks work inside tmux?</summary>
+                        <summary>How does Chau7's hyperlinks compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Many terminals support basic URL detection but lack OSC 8 protocol support or keyboard link navigation. Chau7 supports both auto-detected URLs and OSC 8 hyperlinks, adds hover tooltips for truncated URLs, and provides keyboard navigation to cycle through all links in the visible terminal.</p></div>
+                    </details>
+                    <details>
+                        <summary>How to make terminal URLs clickable on macOS</summary>
+                        <div class="faq-answer"><p>Chau7 automatically detects URLs in terminal output and makes them clickable. Cmd+click opens the URL in your default browser. Chau7 detects http, https, file, ssh, and ftp URLs by default, and the detection pattern is configurable in Chau7's settings.</p></div>
+                    </details>
+                    <details>
+                        <summary>Which URL schemes does Chau7 auto-detection recognize?</summary>
+                        <div class="faq-answer"><p>Chau7 detects http, https, file, ssh, and ftp URLs by default. The URL detection pattern is configurable in Chau7's settings for users who need to recognize custom schemes.</p></div>
+                    </details>
+                    <details>
+                        <summary>Do OSC 8 hyperlinks work inside tmux with Chau7?</summary>
                         <div class="faq-answer"><p>Yes, provided your tmux version supports OSC 8 passthrough (tmux 3.4+). Chau7 correctly renders hyperlinks passed through tmux, screen, and other multiplexers that forward OSC 8 sequences.</p></div>
                     </details>
                 </div>
@@ -137,7 +202,7 @@
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="hyperlinks-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Click links in your terminal. Groundbreaking, we know.</h2>

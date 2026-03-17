@@ -6,9 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Padding & Margins | Chau7 Terminal</title>
-    <meta name="description" content="Adjust terminal content padding and window margins in Chau7 for a clean, spacious layout. Pixel-level control for precise terminal aesthetics.">
+    <meta name="description" content="Chau7 lets you configure terminal content padding on all four sides with pixel-level precision. Padding values are stored per profile, and the terminal grid resizes automatically.">
+    <meta name="article:section" content="Customization">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="padding and margins">
+    <meta name="article:tag" content="terminal spacing">
+    <meta name="article:tag" content="content inset">
+    <meta name="article:tag" content="per-profile padding">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Padding & Margins | Chau7">
-    <meta property="og:description" content="Adjust terminal content padding and window margins in Chau7 for a clean, spacious layout. Pixel-level control for precise terminal aesthetics.">
+    <meta property="og:description" content="Chau7 lets you configure terminal content padding on all four sides with pixel-level precision. Padding values are stored per profile, and the terminal grid resizes automatically.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with pixel-level padding and margin controls on all four sides, stored per profile with automatic grid resizing.",
+        "featureList": [
+            "Independent top, bottom, left, right padding",
+            "Pixel-level precision",
+            "Per-profile padding storage",
+            "Automatic terminal grid resizing",
+            "Instant live preview",
+            "Compact and spacious layouts per profile"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Can I set different padding for each side?","acceptedAnswer":{"@type":"Answer","text":"Yes. Top, bottom, left, and right padding are independently configurable down to the pixel."}},{"@type":"Question","name":"Does padding affect the terminal grid size?","acceptedAnswer":{"@type":"Answer","text":"Yes. The terminal grid resizes to fit within the padded content area, so column and row counts adjust to maintain correct text layout."}},{"@type":"Question","name":"Can different profiles have different padding?","acceptedAnswer":{"@type":"Answer","text":"Yes. Padding values are stored per profile, allowing compact and spacious layouts to coexist."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Padding & Margins in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Padding & Margins is a feature in the Chau7 terminal that lets you configure the spacing between the terminal content area and the window edges with pixel-level precision. Chau7 supports independent top, bottom, left, and right padding. Padding values in Chau7 are stored per profile so different layouts can coexist."}},
+            {"@type":"Question","name":"How does Chau7's padding & margins compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals offer limited or no padding controls. iTerm2 provides a single uniform margin setting. Alacritty supports basic padding but with no per-profile storage. Chau7 offers independent four-side padding with pixel precision, per-profile storage, and automatic grid resizing, giving developers more control than any other macOS terminal."}},
+            {"@type":"Question","name":"How to add padding to terminal content area","acceptedAnswer":{"@type":"Answer","text":"In Chau7, open Settings and navigate to the Appearance section. Set the top, bottom, left, and right padding values independently using pixel values. Changes in Chau7 apply immediately and the terminal grid resizes to fit the adjusted content area."}},
+            {"@type":"Question","name":"Can I set different padding for each side?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 supports independent top, bottom, left, and right padding, each configurable down to the pixel. This lets you create asymmetric layouts in Chau7, such as extra left padding to clear a sidebar or extra top padding below the tab bar."}},
+            {"@type":"Question","name":"Does padding affect the terminal grid size?","acceptedAnswer":{"@type":"Answer","text":"Yes. The terminal grid in Chau7 resizes to fit within the padded content area, so column and row counts adjust automatically to maintain correct text layout. Adding padding in Chau7 reduces the available grid area, which means fewer visible columns and rows."}}
+        ]
     }]
     </script>
 </head>
@@ -58,44 +80,85 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="customization" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="customization" data-ui="padding-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">CUSTOMIZATION</div>
                 <h1 class="hero-title">Padding & Margins</h1>
-                <p class="hero-subtitle">A little breathing room makes a big difference. Pixel-perfect terminal spacing.</p>
+                <p class="hero-subtitle">Chau7 gives your terminal room to breathe. Pixel-perfect spacing on all four sides.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="padding-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is Padding & Margins in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's padding & margins compare to other terminals?</li>
                     <li class="question-item">How to add padding to terminal content area</li>
-                    <li class="question-item">Terminal inner margin configuration macOS</li>
-                    <li class="question-item">Terminal text too close to window edge fix</li>
-                    <li class="question-item">Adjust terminal content inset spacing</li>
+                    <li class="question-item">Can I set different padding for each side?</li>
+                    <li class="question-item">Does padding affect the terminal grid size?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Padding & Margins -->
+        <section class="feature-content" data-ui="padding-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 lets you configure the padding between the terminal content area and the window edges with pixel-level precision. Set top, bottom, left, and right padding independently to create the exact spacing you want. This moves the terminal grid inward from the window frame, giving text room to breathe without wasting screen real estate.</p>
-                <p>Padding values are stored per profile, so a presentation profile can use generous spacing for readability while a tiling-oriented profile uses minimal padding to maximize content density. Changes apply immediately and the terminal grid resizes to fit the adjusted content area, maintaining correct column and row counts.</p>
+                <h2>What is Padding & Margins in Chau7?</h2>
+                <p>Padding & Margins is a feature in the Chau7 terminal that lets you configure the spacing between the terminal content area and the window edges with pixel-level precision. Chau7 supports independent top, bottom, left, and right padding.</p>
+                <p>Padding values in Chau7 are stored per profile, so a presentation profile can use generous spacing for readability while a tiling-oriented profile uses minimal padding to maximize content density.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Text jammed against window edges looks cramped and feels chaotic. A small amount of padding dramatically improves the visual quality of a terminal window. Chau7 lets you configure padding on all four sides independently, so you can get the exact layout that feels right for your setup.</p>
-                </div>
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="padding-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's padding & margins compare to other terminals?</h2>
+                <p>Most terminals offer limited or no padding controls. iTerm2 provides a single uniform margin setting with no per-side control. Alacritty supports basic padding but with no per-profile storage.</p>
+                <p>Chau7 offers independent four-side padding with pixel precision, per-profile storage, and automatic grid resizing. Developers get more control over terminal spacing in Chau7 than in any other macOS terminal.</p>
+            </div>
+        </section>
+
+        <!-- How to add padding -->
+        <section class="feature-content" data-ui="padding-how-to-add">
+            <div class="section-inner prose">
+                <h2>How to add padding to terminal content area</h2>
+                <p>In Chau7, open Settings and navigate to the Appearance section. Set the top, bottom, left, and right padding values independently using pixel values.</p>
+                <p>Changes in Chau7 apply immediately and the terminal grid resizes to fit the adjusted content area, maintaining correct column and row counts. This moves the terminal grid inward from the window frame, giving text room to breathe without wasting screen real estate.</p>
+            </div>
+        </section>
+
+        <!-- Per-side padding -->
+        <section class="feature-content" data-ui="padding-per-side">
+            <div class="section-inner prose">
+                <h2>Can I set different padding for each side?</h2>
+                <p>Yes. Chau7 supports independent top, bottom, left, and right padding, each configurable down to the pixel. This lets you create asymmetric layouts in Chau7, such as extra left padding to clear a sidebar or extra top padding below the tab bar.</p>
+                <p>Per-side padding in Chau7 is especially useful for tiling window managers where the terminal may sit next to other applications with their own visual boundaries.</p>
+            </div>
+        </section>
+
+        <!-- Grid size effect -->
+        <section class="feature-content" data-ui="padding-grid-effect">
+            <div class="section-inner prose">
+                <h2>Does padding affect the terminal grid size?</h2>
+                <p>Yes. The terminal grid in Chau7 resizes to fit within the padded content area, so column and row counts adjust automatically to maintain correct text layout.</p>
+                <p>Adding padding in Chau7 reduces the available grid area, which means fewer visible columns and rows. Programs that query terminal dimensions will see the adjusted size, so full-screen applications like Vim or tmux will render correctly within the padded area.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="padding-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why padding and margins matter</h2>
+                <p>Text jammed against window edges looks cramped and feels chaotic. A small amount of padding dramatically improves the visual quality of a terminal window.</p>
+                <p>Chau7 lets you configure padding on all four sides independently, so you can get the exact layout that feels right for your setup. Whether you prefer a spacious presentation layout or a compact tiling configuration, Chau7's per-profile padding makes both possible.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="padding-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -119,28 +182,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="padding-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Padding & Margins in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Padding & Margins is a feature in the Chau7 terminal that lets you configure the spacing between the terminal content area and the window edges with pixel-level precision. Chau7 supports independent top, bottom, left, and right padding. Padding values in Chau7 are stored per profile so different layouts can coexist.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's padding & margins compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals offer limited or no padding controls. iTerm2 provides a single uniform margin setting. Alacritty supports basic padding but with no per-profile storage. Chau7 offers independent four-side padding with pixel precision, per-profile storage, and automatic grid resizing, giving developers more control than any other macOS terminal.</p></div>
+                    </details>
+                    <details>
+                        <summary>How to add padding to terminal content area</summary>
+                        <div class="faq-answer"><p>In Chau7, open Settings and navigate to the Appearance section. Set the top, bottom, left, and right padding values independently using pixel values. Changes in Chau7 apply immediately and the terminal grid resizes to fit the adjusted content area.</p></div>
+                    </details>
+                    <details>
                         <summary>Can I set different padding for each side?</summary>
-                        <div class="faq-answer"><p>Yes. Top, bottom, left, and right padding are independently configurable down to the pixel.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7 supports independent top, bottom, left, and right padding, each configurable down to the pixel. This lets you create asymmetric layouts in Chau7, such as extra left padding to clear a sidebar or extra top padding below the tab bar.</p></div>
                     </details>
                     <details>
                         <summary>Does padding affect the terminal grid size?</summary>
-                        <div class="faq-answer"><p>Yes. The terminal grid resizes to fit within the padded content area, so column and row counts adjust to maintain correct text layout.</p></div>
-                    </details>
-                    <details>
-                        <summary>Can different profiles have different padding?</summary>
-                        <div class="faq-answer"><p>Yes. Padding values are stored per profile, allowing compact and spacious layouts to coexist.</p></div>
+                        <div class="faq-answer"><p>Yes. The terminal grid in Chau7 resizes to fit within the padded content area, so column and row counts adjust automatically to maintain correct text layout. Adding padding in Chau7 reduces the available grid area, which means fewer visible columns and rows.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="padding-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Give your terminal room to breathe. It's been asking nicely.</h2>

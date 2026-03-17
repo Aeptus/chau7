@@ -6,9 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Metal Rendering | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 uses Apple Metal for GPU-accelerated terminal rendering with glyph atlas caching and dirty region tracking for maximum frame rates.">
+    <meta name="description" content="Chau7 uses Apple Metal for GPU-accelerated terminal rendering with glyph atlas caching and dirty region tracking. Smooth output even during massive bursts.">
+    <meta name="article:section" content="GPU Rendering">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="Metal rendering">
+    <meta name="article:tag" content="GPU-accelerated terminal">
+    <meta name="article:tag" content="glyph atlas">
+    <meta name="article:tag" content="terminal performance">
+    <meta name="article:tag" content="macOS">
     <meta property="og:title" content="Metal Rendering | Chau7">
-    <meta property="og:description" content="Chau7 uses Apple Metal for GPU-accelerated terminal rendering with glyph atlas caching and dirty region tracking for maximum frame rates.">
+    <meta property="og:description" content="Chau7 uses Apple Metal for GPU-accelerated terminal rendering with glyph atlas caching and dirty region tracking. Smooth output even during massive bursts.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that uses Apple Metal for GPU-accelerated rendering with glyph atlas caching and dirty region tracking for maximum frame rates.",
+        "featureList": [
+            "Apple Metal GPU-accelerated rendering",
+            "Glyph atlas with Core Text rasterization",
+            "Dirty region tracking for minimal redraws",
+            "Instanced rendering with two draw calls per frame",
+            "Metal 2 with Metal 1 fallback",
+            "Sub-1% cell redraw for interactive sessions"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does Metal rendering work on all Macs?","acceptedAnswer":{"@type":"Answer","text":"Yes. Every Mac shipped since 2012 supports Metal. Chau7 targets Metal 2 features available on Apple Silicon and recent Intel Macs, with automatic fallback to Metal 1 on older hardware."}},{"@type":"Question","name":"How much GPU memory does the glyph atlas use?","acceptedAnswer":{"@type":"Answer","text":"The atlas starts at 1024x1024 pixels (4 MB for RGBA) and grows on demand. A typical developer font at 13pt requires roughly 2-3 MB for the full ASCII range plus common symbols. CJK or emoji glyphs are cached incrementally as they appear."}},{"@type":"Question","name":"Can I disable GPU rendering?","acceptedAnswer":{"@type":"Answer","text":"There is no need to. Metal rendering uses less energy than CPU rendering because the GPU is purpose-built for textured quad compositing. In benchmarks, Chau7&#x27;s Metal path draws fewer watts than a Core Text-based renderer at the same frame rate."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Metal Rendering in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Metal Rendering in Chau7 means the entire terminal grid is drawn on the GPU using Apple's Metal API. Chau7 uses a glyph atlas to cache pre-rasterized characters and dirty region tracking to redraw only changed cells. The result is smooth rendering even during massive output bursts."}},
+            {"@type":"Question","name":"VS Code terminal freezing lag fix","acceptedAnswer":{"@type":"Answer","text":"VS Code's integrated terminal uses a software renderer that struggles with large output bursts. Chau7 solves this by rendering with Apple Metal on the GPU, using a glyph atlas cache and dirty region tracking. Chau7 handles output that would freeze VS Code's terminal without any stutter."}},
+            {"@type":"Question","name":"How to fix slow terminal rendering with lots of colored output","acceptedAnswer":{"@type":"Answer","text":"Slow rendering with colored output happens because CPU-based renderers redraw every cell on every frame. Chau7 uses Apple Metal to render on the GPU with dirty region tracking that redraws only changed cells. For a typical session, Chau7's Metal renderer touches fewer than 1% of cells per frame."}},
+            {"@type":"Question","name":"Does Metal rendering work on all Macs?","acceptedAnswer":{"@type":"Answer","text":"Yes. Every Mac shipped since 2012 supports Metal. Chau7 targets Metal 2 features available on Apple Silicon and recent Intel Macs, with automatic fallback to Metal 1 on older hardware."}},
+            {"@type":"Question","name":"How much GPU memory does the glyph atlas use?","acceptedAnswer":{"@type":"Answer","text":"Chau7's glyph atlas starts at 1024x1024 pixels (4 MB for RGBA) and grows on demand. A typical developer font at 13pt requires roughly 2 to 3 MB for the full ASCII range plus common symbols. CJK or emoji glyphs are cached incrementally as they appear in Chau7."}}
+        ]
     }]
     </script>
 </head>
@@ -58,46 +80,76 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="rendering" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="rendering" data-ui="metal-rendering-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-purple">GPU RENDERING</div>
                 <h1 class="hero-title">Metal Rendering</h1>
-                <p class="hero-subtitle">Apple Metal GPU rendering. Glyph atlas. Dirty region tracking. Your terminal has never been this fast.</p>
+                <p class="hero-subtitle">Chau7 renders your terminal on the GPU with Apple Metal. Glyph atlas. Dirty region tracking. Your terminal has never been this fast.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="metal-rendering-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">Terminal freezes with large output</li>
-                    <li class="question-item">Why is my terminal lagging on macOS when catting large files?</li>
-                    <li class="question-item">How to fix slow terminal rendering with lots of colored output</li>
+                    <li class="question-item">What is Metal Rendering in Chau7 terminal?</li>
                     <li class="question-item">VS Code terminal freezing lag fix</li>
-                    <li class="question-item">Fastest GPU-accelerated terminal emulator for macOS 2025</li>
+                    <li class="question-item">How to fix slow terminal rendering with lots of colored output</li>
+                    <li class="question-item">Does Metal rendering work on all Macs?</li>
+                    <li class="question-item">How much GPU memory does the glyph atlas use?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Metal Rendering -->
+        <section class="feature-content" data-ui="metal-rendering-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 renders the entire terminal grid on the GPU using Apple's Metal API. Each visible character is looked up in a glyph atlas, a single GPU texture that caches pre-rasterized glyphs at the current font size and DPI. When a glyph is encountered for the first time it is rasterized by Core Text and uploaded to the atlas. Subsequent frames reference the cached texture coordinates, avoiding per-frame CPU rasterization entirely.</p>
-                <p>Dirty region tracking ensures the GPU only re-renders cells that actually changed since the last frame. When the parser updates the screen buffer, it marks a bounding rectangle of modified cells. The Metal render pass reads only those cells and composites them into the existing framebuffer. For a typical interactive session where a single line changes at a time, this means the GPU touches fewer than 1% of the total cells per frame.</p>
-                <p>The Metal pipeline uses instanced rendering: one draw call submits all visible glyphs as textured quads with per-instance color, position, and atlas coordinates. Background colors are rendered in a separate pass underneath. The result is a two-draw-call frame for any terminal size, regardless of how many unique colors or attributes appear on screen.</p>
+                <h2>What is Metal Rendering in Chau7?</h2>
+                <p>Metal Rendering in Chau7 means the entire terminal grid is drawn on the GPU using Apple's Metal API. Chau7 uses a glyph atlas to cache pre-rasterized characters so the CPU never re-rasterizes the same glyph twice.</p>
+                <p>Chau7's Metal renderer uses dirty region tracking to redraw only cells that actually changed since the last frame. For a typical interactive session where a single line changes at a time, Chau7's GPU touches fewer than 1% of the total cells per frame.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>CPU-based terminal renderers redraw the entire screen on every update, which causes visible stutter when programs flood output. Chau7 renders with Apple Metal: a hardware-accelerated glyph atlas caches pre-rasterized characters, and dirty region tracking ensures only changed cells get redrawn. The result is smooth rendering even during massive output bursts. This is not marketing fluff. It is a measurably different experience.</p>
-                </div>
+        <!-- How Chau7 fixes terminal lag -->
+        <section class="feature-content" data-ui="metal-rendering-fix-lag">
+            <div class="section-inner prose">
+                <h2>How to fix slow terminal rendering with lots of colored output</h2>
+                <p>Slow rendering with colored output happens because CPU-based terminal renderers redraw every cell on every frame. Terminals like VS Code's integrated terminal and basic macOS Terminal.app use software rendering that struggles with large output bursts.</p>
+                <p>Chau7 solves this by rendering on the GPU with Apple Metal. Chau7's glyph atlas caches pre-rasterized characters as a GPU texture. Chau7's dirty region tracking ensures only changed cells get redrawn. The result is smooth rendering in Chau7 even when programs flood thousands of lines per second.</p>
+            </div>
+        </section>
+
+        <!-- How the Metal pipeline works -->
+        <section class="feature-content" data-ui="metal-rendering-pipeline">
+            <div class="section-inner prose">
+                <h2>How Chau7's Metal rendering pipeline works</h2>
+                <p>Chau7's Metal pipeline uses instanced rendering. One draw call submits all visible glyphs as textured quads with per-instance color, position, and atlas coordinates. Background colors are rendered in a separate pass underneath. The result is a two-draw-call frame for any terminal size in Chau7, regardless of how many unique colors or attributes appear on screen.</p>
+                <p>When a new glyph is encountered for the first time, Chau7 rasterizes it with Core Text and uploads it to the glyph atlas texture. Subsequent frames in Chau7 reference the cached texture coordinates, avoiding per-frame CPU rasterization entirely.</p>
+            </div>
+        </section>
+
+        <!-- Metal compatibility -->
+        <section class="feature-content" data-ui="metal-rendering-compatibility">
+            <div class="section-inner prose">
+                <h2>Does Chau7's Metal rendering work on all Macs?</h2>
+                <p>Yes. Every Mac shipped since 2012 supports Metal. Chau7 targets Metal 2 features available on Apple Silicon and recent Intel Macs, with automatic fallback to Metal 1 on older hardware.</p>
+                <p>Chau7's Metal rendering uses less energy than CPU rendering because the GPU is purpose-built for textured quad compositing. In benchmarks, Chau7's Metal path draws fewer watts than a Core Text-based renderer at the same frame rate.</p>
+            </div>
+        </section>
+
+        <!-- Glyph atlas memory -->
+        <section class="feature-content" data-ui="metal-rendering-atlas-memory">
+            <div class="section-inner prose">
+                <h2>How much GPU memory does Chau7's glyph atlas use?</h2>
+                <p>Chau7's glyph atlas starts at 1024x1024 pixels (4 MB for RGBA) and grows on demand. A typical developer font at 13pt requires roughly 2 to 3 MB for the full ASCII range plus common symbols.</p>
+                <p>CJK or emoji glyphs are cached incrementally in Chau7 as they appear. Chau7's atlas management is designed to minimize GPU memory usage while avoiding re-rasterization for frequently used characters.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="metal-rendering-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -121,28 +173,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="metal-rendering-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
+                    <details>
+                        <summary>What is Metal Rendering in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Metal Rendering in Chau7 means the entire terminal grid is drawn on the GPU using Apple's Metal API. Chau7 uses a glyph atlas to cache pre-rasterized characters and dirty region tracking to redraw only changed cells. The result is smooth rendering even during massive output bursts.</p></div>
+                    </details>
+                    <details>
+                        <summary>VS Code terminal freezing lag fix</summary>
+                        <div class="faq-answer"><p>VS Code's integrated terminal uses a software renderer that struggles with large output bursts. Chau7 solves this by rendering with Apple Metal on the GPU, using a glyph atlas cache and dirty region tracking. Chau7 handles output that would freeze VS Code's terminal without any stutter.</p></div>
+                    </details>
+                    <details>
+                        <summary>How to fix slow terminal rendering with lots of colored output</summary>
+                        <div class="faq-answer"><p>Slow rendering with colored output happens because CPU-based renderers redraw every cell on every frame. Chau7 uses Apple Metal to render on the GPU with dirty region tracking that redraws only changed cells. For a typical session, Chau7's Metal renderer touches fewer than 1% of cells per frame.</p></div>
+                    </details>
                     <details>
                         <summary>Does Metal rendering work on all Macs?</summary>
                         <div class="faq-answer"><p>Yes. Every Mac shipped since 2012 supports Metal. Chau7 targets Metal 2 features available on Apple Silicon and recent Intel Macs, with automatic fallback to Metal 1 on older hardware.</p></div>
                     </details>
                     <details>
                         <summary>How much GPU memory does the glyph atlas use?</summary>
-                        <div class="faq-answer"><p>The atlas starts at 1024x1024 pixels (4 MB for RGBA) and grows on demand. A typical developer font at 13pt requires roughly 2-3 MB for the full ASCII range plus common symbols. CJK or emoji glyphs are cached incrementally as they appear.</p></div>
-                    </details>
-                    <details>
-                        <summary>Can I disable GPU rendering?</summary>
-                        <div class="faq-answer"><p>There is no need to. Metal rendering uses less energy than CPU rendering because the GPU is purpose-built for textured quad compositing. In benchmarks, Chau7's Metal path draws fewer watts than a Core Text-based renderer at the same frame rate.</p></div>
+                        <div class="faq-answer"><p>Chau7's glyph atlas starts at 1024x1024 pixels (4 MB for RGBA) and grows on demand. A typical developer font at 13pt requires roughly 2 to 3 MB for the full ASCII range plus common symbols. CJK or emoji glyphs are cached incrementally as they appear in Chau7.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="metal-rendering-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>GPU-rendered terminal. Because your Mac has a GPU and it's bored.</h2>

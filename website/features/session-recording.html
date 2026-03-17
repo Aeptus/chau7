@@ -6,9 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Session Recording | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 records terminal sessions with precise timestamps for every output event: built-in, no external tools required.">
+    <meta name="description" content="Chau7 records terminal sessions with millisecond-precision timestamps for every output event. Built-in, no external tools required.">
+    <meta name="article:section" content="Session">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="session recording">
+    <meta name="article:tag" content="terminal recording">
+    <meta name="article:tag" content="timestamped output">
+    <meta name="article:tag" content="terminal replay">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Session Recording | Chau7">
-    <meta property="og:description" content="Chau7 records terminal sessions with precise timestamps for every output event: built-in, no external tools required.">
+    <meta property="og:description" content="Chau7 records terminal sessions with millisecond-precision timestamps for every output event. Built-in, no external tools required.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS with built-in session recording that captures every byte of terminal output with millisecond-precision timestamps.",
+        "featureList": [
+            "Built-in session recording without external tools",
+            "Millisecond-precision timestamps for every output event",
+            "Timestamped event stream storage format",
+            "Timeline scrubber for replay and scrubbing",
+            "Compact storage capturing raw bytes not pixels",
+            "No performance impact during recording"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"How much storage do session recordings use?","acceptedAnswer":{"@type":"Answer","text":"Recordings capture raw terminal bytes, not pixels, so they are extremely compact. A typical hour-long session produces a few megabytes. Idle time (no output) adds almost no storage because only output events are recorded."}},{"@type":"Question","name":"Can I export recordings to share with others?","acceptedAnswer":{"@type":"Answer","text":"Recordings can be replayed in Chau7&#x27;s timeline scrubber. The recording format captures the full terminal protocol, preserving colors, formatting, and cursor positioning exactly as they appeared."}},{"@type":"Question","name":"Does recording affect terminal performance?","acceptedAnswer":{"@type":"Answer","text":"No measurable impact. Recording adds a timestamp and write to a buffer for each output event: operations that take microseconds. The terminal remains fully responsive during recording."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Session Recording in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Session Recording is a built-in feature in the Chau7 terminal that captures every byte of terminal output along with millisecond-precision timestamps. Chau7 records the raw terminal protocol, preserving escape sequences, colors, cursor movements, and every character exactly as they appeared. No external tools like asciinema or script are needed."}},
+            {"@type":"Question","name":"How does Chau7's session recording compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals have no built-in session recording. Developers typically rely on external tools like asciinema or the script command. Chau7 records sessions natively with millisecond-precision timestamps, stores recordings as compact timestamped event streams, and provides a built-in timeline scrubber for replay. Chau7's recording is integrated with the telemetry system and accessible through the MCP server."}},
+            {"@type":"Question","name":"How do I record a terminal session with timestamps?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, session recording captures every byte of terminal output with a millisecond-precision timestamp automatically. Recordings start and stop without interrupting your workflow. Chau7's recordings can be replayed in the built-in timeline scrubber at original speed, fast-forwarded through idle periods, or scrubbed to any point."}},
+            {"@type":"Question","name":"How much storage do session recordings use?","acceptedAnswer":{"@type":"Answer","text":"Chau7's recordings capture raw terminal bytes, not pixels, so they are extremely compact. A typical hour-long session recorded in Chau7 produces a few megabytes. Idle time (no output) adds almost no storage because Chau7 only records output events."}},
+            {"@type":"Question","name":"Can I export recordings to share with others?","acceptedAnswer":{"@type":"Answer","text":"Chau7's recordings can be replayed in the built-in timeline scrubber. The recording format captures the full terminal protocol, preserving colors, formatting, and cursor positioning exactly as they appeared in Chau7."}}
+        ]
     }]
     </script>
 </head>
@@ -58,46 +80,85 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="session" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="session" data-ui="session-recording-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">SESSION</div>
                 <h1 class="hero-title">Session Recording</h1>
-                <p class="hero-subtitle">Built-in session recording. Every keystroke, every output, millisecond timestamps. No extra tools.</p>
+                <p class="hero-subtitle">Chau7 records terminal sessions with millisecond timestamps. Built-in. No extra tools.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="session-recording-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is Session Recording in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's session recording compare to other terminals?</li>
                     <li class="question-item">How do I record a terminal session with timestamps?</li>
-                    <li class="question-item">Is there a terminal with built-in session recording?</li>
-                    <li class="question-item">How to record terminal for demo or tutorial without asciinema?</li>
-                    <li class="question-item">Can I replay a terminal session exactly as it happened?</li>
-                    <li class="question-item">What is the best way to record terminal output for documentation?</li>
+                    <li class="question-item">How much storage do session recordings use?</li>
+                    <li class="question-item">Can I export recordings to share with others?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Session Recording -->
+        <section class="feature-content" data-ui="session-recording-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 captures every byte of terminal output along with a millisecond-precision timestamp as it arrives from the shell process. This creates a complete, time-accurate record of the session: not a screen recording or a text dump, but a faithful reproduction of every escape sequence, color change, cursor movement, and character that appeared in the terminal.</p>
-                <p>Recordings are stored efficiently as timestamped event streams. Because they capture the raw terminal protocol rather than rendered pixels, a multi-hour session typically compresses to a few megabytes. The recordings can be replayed in Chau7's timeline scrubber at original speed, fast-forwarded through idle periods, or scrubbed to any point to inspect the terminal state at that exact moment.</p>
-                <p>Recording is integrated directly into the terminal: there is no separate tool to install, no wrapper script to remember, and no compatibility issues with your shell or the programs you run. Every session can be recorded, and recordings start and stop without interrupting your workflow.</p>
+                <h2>What is Session Recording in Chau7?</h2>
+                <p>Session Recording is a built-in feature in the Chau7 terminal that captures every byte of terminal output along with a millisecond-precision timestamp. Chau7 records the raw terminal protocol, not a screen recording or text dump.</p>
+                <p>Chau7's session recording preserves every escape sequence, color change, cursor movement, and character exactly as they appeared. No external tools like asciinema or the <code>script</code> command are needed.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Terminal session recording has been a third-party bolt-on for decades. Tools like asciinema and script work, but they require setup, generate separate files, and live outside the terminal's awareness. Chau7 records sessions as a native feature with millisecond-precise timestamps, integrated with the telemetry system, and accessible through the MCP server. The recording happens on its own.</p>
-                </div>
+        <!-- How do I record a session with timestamps -->
+        <section class="feature-content" data-ui="session-recording-how-to-record">
+            <div class="section-inner prose">
+                <h2>How do I record a terminal session with timestamps in Chau7?</h2>
+                <p>Chau7's session recording captures every byte of output with a millisecond-precision timestamp as it arrives from the shell process. Recordings in Chau7 start and stop without interrupting your workflow.</p>
+                <p>Chau7's recordings can be replayed in the built-in timeline scrubber at original speed, fast-forwarded through idle periods, or scrubbed to any point to inspect the terminal state at that exact moment. Recording is integrated directly into Chau7, so there is no separate tool to install and no wrapper script to remember.</p>
+            </div>
+        </section>
+
+        <!-- How much storage -->
+        <section class="feature-content" data-ui="session-recording-storage">
+            <div class="section-inner prose">
+                <h2>How much storage do Chau7's session recordings use?</h2>
+                <p>Chau7's recordings capture raw terminal bytes, not pixels. This makes them extremely compact. A typical hour-long session recorded in Chau7 produces a few megabytes.</p>
+                <p>Idle time adds almost no storage to Chau7's recordings because only output events are recorded. A multi-hour session with normal usage typically compresses to single-digit megabytes.</p>
+            </div>
+        </section>
+
+        <!-- Comparison to other terminals -->
+        <section class="feature-content" data-ui="session-recording-comparison">
+            <div class="section-inner prose">
+                <h2>How does Chau7's session recording compare to other terminals?</h2>
+                <p>Most terminals have no built-in session recording. iTerm2, Warp, Alacritty, and Kitty require external tools like asciinema or the <code>script</code> command for recording. These tools require setup, generate separate files, and live outside the terminal's awareness.</p>
+                <p>Chau7 records sessions natively with millisecond-precision timestamps. Chau7 stores recordings as compact timestamped event streams and provides a built-in timeline scrubber for replay. Chau7's recording is integrated with the telemetry system and accessible through the MCP server.</p>
+            </div>
+        </section>
+
+        <!-- Can I export recordings -->
+        <section class="feature-content" data-ui="session-recording-export">
+            <div class="section-inner prose">
+                <h2>Can I export Chau7's recordings to share with others?</h2>
+                <p>Chau7's recordings can be replayed in the built-in timeline scrubber. The recording format captures the full terminal protocol, preserving colors, formatting, and cursor positioning exactly as they appeared in Chau7.</p>
+                <p>Chau7's recording format is designed for faithful reproduction of every aspect of the terminal session, making it suitable for documentation, demos, and post-incident review.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="session-recording-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why session recording matters</h2>
+                <p>Terminal session recording has been a third-party bolt-on for decades. Tools like asciinema and <code>script</code> work, but they require setup, generate separate files, and live outside the terminal's awareness.</p>
+                <p>Chau7 records sessions as a native feature with millisecond-precise timestamps, integrated with the telemetry system, and accessible through the MCP server. The recording happens automatically without requiring any external tooling.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="session-recording-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -117,31 +178,43 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="session-recording-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Session Recording in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Session Recording is a built-in feature in the Chau7 terminal that captures every byte of terminal output along with millisecond-precision timestamps. Chau7 records the raw terminal protocol, preserving escape sequences, colors, cursor movements, and every character exactly as they appeared. No external tools like asciinema or script are needed.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's session recording compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminals have no built-in session recording. Developers typically rely on external tools like asciinema or the script command. Chau7 records sessions natively with millisecond-precision timestamps, stores recordings as compact timestamped event streams, and provides a built-in timeline scrubber for replay.</p></div>
+                    </details>
+                    <details>
+                        <summary>How do I record a terminal session with timestamps?</summary>
+                        <div class="faq-answer"><p>In Chau7, session recording captures every byte of terminal output with a millisecond-precision timestamp automatically. Recordings start and stop without interrupting your workflow. Chau7's recordings can be replayed in the built-in timeline scrubber at original speed, fast-forwarded, or scrubbed to any point.</p></div>
+                    </details>
+                    <details>
                         <summary>How much storage do session recordings use?</summary>
-                        <div class="faq-answer"><p>Recordings capture raw terminal bytes, not pixels, so they are extremely compact. A typical hour-long session produces a few megabytes. Idle time (no output) adds almost no storage because only output events are recorded.</p></div>
+                        <div class="faq-answer"><p>Chau7's recordings capture raw terminal bytes, not pixels, so they are extremely compact. A typical hour-long session produces a few megabytes. Idle time adds almost no storage because Chau7 only records output events.</p></div>
                     </details>
                     <details>
                         <summary>Can I export recordings to share with others?</summary>
-                        <div class="faq-answer"><p>Recordings can be replayed in Chau7's timeline scrubber. The recording format captures the full terminal protocol, preserving colors, formatting, and cursor positioning exactly as they appeared.</p></div>
+                        <div class="faq-answer"><p>Chau7's recordings can be replayed in the built-in timeline scrubber. The recording format captures the full terminal protocol, preserving colors, formatting, and cursor positioning exactly as they appeared.</p></div>
                     </details>
                     <details>
                         <summary>Does recording affect terminal performance?</summary>
-                        <div class="faq-answer"><p>No measurable impact. Recording adds a timestamp and write to a buffer for each output event: operations that take microseconds. The terminal remains fully responsive during recording.</p></div>
+                        <div class="faq-answer"><p>No measurable impact. Chau7's recording adds a timestamp and write to a buffer for each output event. These operations take microseconds. The terminal remains fully responsive during recording.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="session-recording-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Record your terminal sessions natively. asciinema is great, but built-in is better.</h2>
+                    <h2>Record your terminal sessions natively. Built-in is better.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>

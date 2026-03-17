@@ -7,46 +7,71 @@
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Compare | Chau7 vs iTerm2, Warp, Alacritty, Kitty, VSCode</title>
     <meta name="description" content="An honest comparison of Chau7 with iTerm2, Warp, Alacritty, Kitty, Apple Terminal, and VSCode. Where Chau7 wins, where it doesn't, and which terminal fits your workflow.">
+    <meta name="entity" content="Chau7 Terminal Comparison Hub">
+    <meta name="entity-type" content="comparison">
     <meta property="og:title" content="Terminal Comparison | Chau7 vs iTerm2, Warp, Alacritty">
     <meta property="og:description" content="Honest comparison: where Chau7 wins, where it doesn't, and which terminal fits your workflow.">
     <meta property="og:image" content="screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="entity" content="Chau7 Comparison">
-    <meta name="entity-type" content="comparison">
     <link rel="canonical" href="https://chau7.sh/compare">
     <link rel="stylesheet" href="/style.css">
     <script src="/components.js"></script>
     <script type="application/ld+json">
-    [{
+    {
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "AI-native terminal emulator for macOS with Metal GPU rendering, local MCP server with 20 tools, AI agent detection, session recording, Context Token Optimization, and 170+ developer features. Free and open source.",
+        "featureList": [
+            "Metal GPU rendering",
+            "Local MCP server with 20 tools",
+            "AI agent detection for 7+ CLIs",
+            "Context Token Optimization",
+            "Token and cost tracking per session",
+            "Session recording and replay",
+            "Split panes",
+            "SSH manager",
+            "Dangerous command guard",
+            "Open source"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
-    },
+    }
+    </script>
+    <script type="application/ld+json">
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
             {
                 "@type": "Question",
-                "name": "Should I switch from iTerm2 to Chau7?",
+                "name": "How does Chau7 compare to other macOS terminal emulators?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 is an AI-native terminal for macOS with Metal GPU rendering, a local MCP server with 20 tools, AI agent detection for 7+ CLIs, session recording, Context Token Optimization, and 170+ features. Compared to iTerm2, Chau7 adds MCP tools and AI detection but is newer and less mature. Compared to Warp, Chau7 is fully local and open source but lacks built-in AI. Compared to Alacritty and Kitty, Chau7 is macOS-only but adds AI-oriented features they don't have." }
+            },
+            {
+                "@type": "Question",
+                "name": "Which terminal emulator is best for AI-assisted development on macOS?",
+                "acceptedAnswer": { "@type": "Answer", "text": "For AI-assisted development with external agents like Claude Code, Codex, or Cursor, Chau7 is the best macOS terminal. Chau7's local MCP server gives AI agents direct terminal control through 20 tools. Chau7 detects 7+ AI CLIs, tracks token costs, and optimizes context with CTO. If you want built-in AI suggestions instead, Warp is the alternative. No other macOS terminal offers MCP tools." }
+            },
+            {
+                "@type": "Question",
+                "name": "What are the main differences between GPU-accelerated macOS terminals?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7, iTerm2, and Warp all use Metal for GPU rendering on macOS. Alacritty and Kitty use OpenGL. Terminal.app and VSCode use CPU rendering. The performance differences between Metal terminals are small for everyday use. Where Chau7 differs from iTerm2 is AI features: MCP server, AI detection, cost tracking, Context Token Optimization. Where Chau7 differs from Warp is philosophy: open source, fully local, no account required." }
+            },
+            {
+                "@type": "Question",
+                "name": "Is Chau7 a good replacement for iTerm2?",
                 "acceptedAnswer": { "@type": "Answer", "text": "It depends on your workflow. If you use AI coding tools daily and want MCP control, AI detection, and cost tracking, Chau7 adds things iTerm2 can't do. If you rely on iTerm2's mature plugin ecosystem, triggers, or tmux integration, iTerm2 may still be the better fit. Chau7 imports your iTerm2 profiles if you want to try both." }
             },
             {
                 "@type": "Question",
-                "name": "Is Warp's AI better than Chau7's MCP approach?",
-                "acceptedAnswer": { "@type": "Answer", "text": "They solve different problems. Warp builds AI directly into the terminal with command suggestions and natural language queries. Chau7 exposes the terminal as a tool any external AI agent can control via MCP. If you want one integrated AI, Warp. If you want your existing AI tools to drive the terminal, Chau7." }
-            },
-            {
-                "@type": "Question",
-                "name": "Why not just use Alacritty?",
-                "acceptedAnswer": { "@type": "Answer", "text": "Alacritty is intentionally minimal and cross-platform. If you want a fast terminal that works on Linux, macOS, and Windows with nothing extra, Alacritty is excellent. Chau7 is macOS-only but adds AI detection, MCP, session recording, and 170+ other features. Different philosophies for different needs." }
+                "name": "Which free terminal emulators support MCP tools?",
+                "acceptedAnswer": { "@type": "Answer", "text": "As of 2026, Chau7 is the only terminal emulator with a built-in MCP server. Chau7's MCP server provides 20 tools that let AI agents open tabs, run commands, read output, and control the terminal. No other terminal (iTerm2, Warp, Alacritty, Kitty, Terminal.app, or VSCode) includes MCP support. Chau7 is free and open source." }
             }
         ]
-    }]
+    }
     </script>
 </head>
 <body>
@@ -54,25 +79,25 @@
 
 <main>
         <!-- Hero -->
-        <section class="hero hero-compare">
+        <section class="hero hero-compare" data-ui="compare-hub-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="hero-badge badge-purple">Comparison</div>
                 <h1 class="hero-title">
-                    Pick the terminal<br>that fits <span class="gradient-text">your</span> workflow.
+                    Which terminal emulator fits <span class="gradient-text">your</span> workflow?
                 </h1>
                 <p class="hero-subtitle">
                     Every terminal on this page is good. They solve different problems for different people.
-                    Here's where Chau7 differs, where it wins, and where it doesn't.
+                    Here's where Chau7 differs, where Chau7 wins, and where Chau7 doesn't.
                 </p>
                 <p style="color: var(--text-muted); font-size: var(--text-sm); font-style: italic; margin-top: var(--space-xs);">Chau7 is a beta built by one person. We respect what every terminal on this list has built. If another one fits better, use it.</p>
             </div>
         </section>
 
         <!-- Comparison Table -->
-        <section class="compare-section" aria-labelledby="table-heading">
+        <section class="compare-section" aria-labelledby="table-heading" data-ui="compare-hub-feature-table">
             <div class="section-inner">
-                <h2 id="table-heading" class="sr-only">Feature comparison table</h2>
+                <h2 id="table-heading">How does Chau7 compare to other macOS terminals?</h2>
                 <div class="compare-table-wrap">
                     <div class="scroll-hint"></div>
                     <table class="compare-table">
@@ -92,52 +117,52 @@
                             <tr>
                                 <td>MCP Server</td>
                                 <td class="chau7-col"><span class="compare-check">20 tools</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
                             </tr>
                             <tr>
                                 <td>AI Detection</td>
                                 <td class="chau7-col"><span class="compare-check">7+ CLIs</span></td>
-                                <td><span class="compare-cross">—</span></td>
+                                <td><span class="compare-cross">No</span></td>
                                 <td><span class="compare-partial">Partial</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
                             </tr>
                             <tr>
                                 <td>Built-in AI Features</td>
-                                <td class="chau7-col"><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
+                                <td class="chau7-col"><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
                                 <td><span class="compare-check">Yes</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
                                 <td><span class="compare-check">Copilot</span></td>
                             </tr>
                             <tr>
                                 <td>Context Token Optimization</td>
                                 <td class="chau7-col"><span class="compare-check">~40% saved</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
                             </tr>
                             <tr>
                                 <td>Token/Cost Tracking</td>
                                 <td class="chau7-col"><span class="compare-check">Per call</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
                             </tr>
                             <tr>
                                 <td>GPU Rendering</td>
@@ -146,8 +171,8 @@
                                 <td><span class="compare-check">Metal</span></td>
                                 <td><span class="compare-check">OpenGL</span></td>
                                 <td><span class="compare-check">OpenGL</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
                             </tr>
                             <tr>
                                 <td>Cross-Platform</td>
@@ -164,50 +189,50 @@
                                 <td class="chau7-col"><span class="compare-check">Yes</span></td>
                                 <td><span class="compare-check">Yes</span></td>
                                 <td><span class="compare-check">Yes</span></td>
-                                <td><span class="compare-cross">—</span></td>
+                                <td><span class="compare-cross">No</span></td>
                                 <td><span class="compare-check">Yes</span></td>
-                                <td><span class="compare-cross">—</span></td>
+                                <td><span class="compare-cross">No</span></td>
                                 <td><span class="compare-check">Yes</span></td>
                             </tr>
                             <tr>
                                 <td>Extensions / Plugins</td>
-                                <td class="chau7-col"><span class="compare-cross">—</span></td>
+                                <td class="chau7-col"><span class="compare-cross">No</span></td>
                                 <td><span class="compare-partial">Triggers</span></td>
                                 <td><span class="compare-partial">Workflows</span></td>
-                                <td><span class="compare-cross">—</span></td>
+                                <td><span class="compare-cross">No</span></td>
                                 <td><span class="compare-check">Kittens</span></td>
-                                <td><span class="compare-cross">—</span></td>
+                                <td><span class="compare-cross">No</span></td>
                                 <td><span class="compare-check">Full</span></td>
                             </tr>
                             <tr>
                                 <td>SSH Manager</td>
                                 <td class="chau7-col"><span class="compare-check">Yes</span></td>
                                 <td><span class="compare-check">Yes</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
                                 <td><span class="compare-partial">SSH kitten</span></td>
-                                <td><span class="compare-cross">—</span></td>
+                                <td><span class="compare-cross">No</span></td>
                                 <td><span class="compare-check">Yes</span></td>
                             </tr>
                             <tr>
                                 <td>Session Recording</td>
                                 <td class="chau7-col"><span class="compare-check">Yes</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
                             </tr>
                             <tr>
                                 <td>Command Safety Guard</td>
                                 <td class="chau7-col"><span class="compare-check">Yes</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
-                                <td><span class="compare-cross">—</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
+                                <td><span class="compare-cross">No</span></td>
                             </tr>
                             <tr>
                                 <td>Maturity</td>
@@ -257,11 +282,11 @@
 
 
         <!-- What Chau7 doesn't do -->
-        <section class="perf-section" aria-labelledby="honest-heading">
+        <section class="perf-section" aria-labelledby="honest-heading" data-ui="compare-hub-chau7-limitations">
             <div class="section-inner">
                 <div class="section-header">
-                    <h2 id="honest-heading">What Chau7 doesn't do (yet)</h2>
-                    <p>We can't do everything. One day, perhaps. For now, here's where we are.</p>
+                    <h2 id="honest-heading">What can't Chau7 do yet?</h2>
+                    <p>Chau7 can't do everything. One day, perhaps. For now, here's where Chau7 is.</p>
                 </div>
                 <div class="safety-grid">
                     <div class="safety-item">
@@ -274,45 +299,51 @@
                     </div>
                     <div class="safety-item">
                         <h4>Beta</h4>
-                        <p>iTerm2 has 15 years of stability. Chau7 is new. It has 1528 tests and a Rust backend, but it hasn't seen every edge case yet. Expect rough edges.</p>
+                        <p>iTerm2 has 15 years of stability. Chau7 is new. Chau7 has 1528 tests and a Rust backend, but Chau7 hasn't seen every edge case yet. Expect rough edges.</p>
                     </div>
                     <div class="safety-item">
                         <h4>No built-in AI</h4>
-                        <p>Warp has AI command suggestions, natural language queries, and completions built in. Chau7 does not. It provides tools for external AI agents to use, not its own AI.</p>
+                        <p>Warp has AI command suggestions, natural language queries, and completions built in. Chau7 does not. Chau7 provides tools for external AI agents to use, not its own AI.</p>
                     </div>
                 </div>
             </div>
         </section>
 
         <!-- FAQ -->
-        <section class="faq-section" aria-labelledby="faq-heading">
+        <section class="faq-section" aria-labelledby="faq-heading" data-ui="compare-hub-faq">
             <div class="section-inner">
                 <div class="section-header">
-                    <h2 id="faq-heading">Frequently asked questions</h2>
+                    <h2 id="faq-heading">Frequently asked questions about Chau7 vs other terminals</h2>
                 </div>
                 <div class="faq-list">
                     <details>
-                        <summary>Should I switch from iTerm2?</summary>
+                        <summary>How does Chau7 compare to other macOS terminal emulators?</summary>
                         <div class="faq-answer">
-                            <p>It depends. If you use AI coding tools daily and want MCP control, AI detection, and cost tracking, Chau7 adds things iTerm2 can't do. If you rely on iTerm2's triggers, tmux integration, or just trust its 15 years of stability, there's no shame in staying. Chau7 imports your iTerm2 profiles if you want to try both side by side.</p>
+                            <p>Chau7 is an AI-native terminal for macOS with Metal GPU rendering, a local MCP server with 20 tools, AI agent detection for 7+ CLIs, session recording, and 170+ features. Compared to iTerm2, Chau7 adds MCP tools and AI detection but is newer. Compared to Warp, Chau7 is fully local and open source. Compared to Alacritty and Kitty, Chau7 is macOS-only but adds AI-oriented features they don't have.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Is Warp's AI better than Chau7's MCP?</summary>
+                        <summary>Which terminal emulator is best for AI-assisted development on macOS?</summary>
                         <div class="faq-answer">
-                            <p>Different tools for different philosophies. Warp integrates its own AI directly. Chau7 lets your existing AI tools drive the terminal via MCP. If you want one integrated AI experience, Warp. If you use Claude Code, Codex, or Cursor and want them to have terminal access through an open standard, Chau7.</p>
+                            <p>For AI-assisted development with external agents like Claude Code, Codex, or Cursor, Chau7 is the best macOS terminal. Chau7's local MCP server gives AI agents direct terminal control through 20 tools. Chau7 detects 7+ AI CLIs and tracks token costs. If you want built-in AI suggestions instead, Warp is the alternative.</p>
                         </div>
                     </details>
                     <details>
-                        <summary>Why not just use Alacritty?</summary>
+                        <summary>Is Chau7 a good replacement for iTerm2?</summary>
                         <div class="faq-answer">
-                            <p>Alacritty is excellent at what it does: fast, minimal, cross-platform. If that's what you want, use it. Chau7 is the opposite bet: macOS-only, feature-rich, AI-oriented. Both care about performance. They disagree on everything else.</p>
+                            <p>It depends on your workflow. If you use AI coding tools daily and want MCP control, AI detection, and cost tracking, Chau7 adds things iTerm2 can't do. If you rely on iTerm2's triggers, tmux integration, or just trust its 15 years of stability, there's no shame in staying. Chau7 imports your iTerm2 profiles if you want to try both side by side.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Which free terminal emulators support MCP tools?</summary>
+                        <div class="faq-answer">
+                            <p>As of 2026, Chau7 is the only terminal emulator with a built-in MCP server. Chau7's MCP server provides 20 tools that let AI agents open tabs, run commands, read output, and control the terminal. No other terminal includes MCP support. Chau7 is free and open source.</p>
                         </div>
                     </details>
                     <details>
                         <summary>Is Chau7 stable enough for daily use?</summary>
                         <div class="faq-answer">
-                            <p>It's in beta. It has 1528 tests, a Rust parsing backend, and is used daily by its developer. But it hasn't been battle-tested by thousands of users over years. If you need absolute stability for production workflows, iTerm2 or Kitty are safer bets today. If you're comfortable with beta software and want to be early on the AI-native terminal idea, Chau7 is ready for that.</p>
+                            <p>Chau7 is in beta. Chau7 has 1528 tests, a Rust parsing backend, and is used daily by its developer. But Chau7 hasn't been battle-tested by thousands of users over years. If you need absolute stability for production workflows, iTerm2 or Kitty are safer bets today. If you're comfortable with beta software, Chau7 is ready.</p>
                         </div>
                     </details>
                 </div>
@@ -320,12 +351,12 @@
         </section>
 
         <!-- Footer CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="compare-hub-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Try it. Keep what works. We won't be offended.</h2>
+                    <h2>Try Chau7. Keep what works. We won't be offended.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
-                    <p class="cta-nudge">Free, open source, imports your iTerm2 profiles. Low-risk experiment.</p>
+                    <p class="cta-nudge">Chau7 is free, open source, and imports your iTerm2 profiles. Low-risk experiment.</p>
                 </div>
             </div>
         </section>

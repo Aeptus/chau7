@@ -6,9 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Multi-Agent Awareness | Chau7 Terminal</title>
-    <meta name="description" content="Run Claude Code, Codex, Gemini CLI, and other AI agents in separate Chau7 tabs with fully independent detection, branding, and telemetry for each.">
+    <meta name="description" content="Chau7 treats each terminal tab as an independent AI tracking context. Run Claude Code, Codex, Gemini CLI, and other agents simultaneously with fully isolated detection, branding, and telemetry per tab.">
+    <meta name="article:section" content="AI Detection">
+    <meta name="article:tag" content="Chau7">
+    <meta name="article:tag" content="multi-agent awareness">
+    <meta name="article:tag" content="AI agent detection">
+    <meta name="article:tag" content="concurrent AI sessions">
+    <meta name="article:tag" content="per-tab tracking">
+    <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Multi-Agent Awareness | Chau7">
-    <meta property="og:description" content="Run Claude Code, Codex, Gemini CLI, and other AI agents in separate Chau7 tabs with fully independent detection, branding, and telemetry for each.">
+    <meta property="og:description" content="Chau7 treats each terminal tab as an independent AI tracking context. Run Claude Code, Codex, Gemini CLI, and other agents simultaneously with fully isolated detection, branding, and telemetry per tab.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -23,6 +30,15 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that tracks multiple AI agents across tabs with fully independent detection, branding, and telemetry per tab.",
+        "featureList": [
+            "Per-tab AI agent detection",
+            "Independent branding per agent",
+            "Isolated telemetry and metrics per tab",
+            "MCP session list for all active agents",
+            "Concurrent Claude Code, Codex, Gemini CLI support",
+            "No cross-contamination between agent tabs"
+        ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -38,7 +54,13 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Is there a limit to how many AI agents I can run at once?","acceptedAnswer":{"@type":"Answer","text":"No artificial limit. Each tab tracks its agent independently, so you can run as many concurrent sessions as your machine supports."}},{"@type":"Question","name":"Can I see a summary of all active agents across tabs?","acceptedAnswer":{"@type":"Answer","text":"Yes. The MCP server provides a session list endpoint that returns all active AI sessions with their agent type, tab ID, run count, and current status."}},{"@type":"Question","name":"Does multi-agent tracking affect performance?","acceptedAnswer":{"@type":"Answer","text":"Each tab&#x27;s monitoring is lightweight and independent. Running ten agent tabs adds roughly the same overhead as running ten regular shell tabs: the per-tab cost of process monitoring is negligible."}}]
+        "mainEntity": [
+            {"@type":"Question","name":"What is Multi-Agent Awareness in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Multi-Agent Awareness is a feature in the Chau7 terminal that treats each tab as an independent AI tracking context. Chau7 maintains separate detection state, brand identity, process metrics, session data, and telemetry for every tab, so running Claude Code in one tab and Codex in another produces fully isolated tracking with no cross-contamination."}},
+            {"@type":"Question","name":"Can I run multiple AI agents in different terminal tabs?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 supports running any number of AI agents across separate tabs simultaneously. Each tab independently detects which AI agent is running, applies the correct branding, and tracks metrics in isolation. Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor are all supported concurrently."}},
+            {"@type":"Question","name":"How to track multiple AI coding sessions at the same time?","acceptedAnswer":{"@type":"Answer","text":"Chau7 tracks each AI coding session independently per tab. Cost tracking, token counting, and latency metrics are all scoped to their respective tab and agent. The Chau7 MCP server provides a session list endpoint that returns all active sessions with agent type, tab ID, run count, and current status."}},
+            {"@type":"Question","name":"Is there a limit to how many AI agents I can run at once?","acceptedAnswer":{"@type":"Answer","text":"No artificial limit. Chau7 tracks each agent independently per tab, so you can run as many concurrent AI sessions as your machine supports. The per-tab cost of process monitoring in Chau7 is negligible."}},
+            {"@type":"Question","name":"Can I see a summary of all active agents across tabs?","acceptedAnswer":{"@type":"Answer","text":"Yes. The Chau7 MCP server provides a session list endpoint that returns all active AI sessions with their agent type, tab ID, run count, and current status. External tools and scripts can query this endpoint to build dashboards or automations spanning multiple concurrent agents."}}
+        ]
     }]
     </script>
 </head>
@@ -58,45 +80,85 @@
         </div>
 
         <!-- Hero -->
-        <section class="hero hero-feature" data-category="ai-detection" data-ui="feat-hero">
+        <section class="hero hero-feature" data-category="ai-detection" data-ui="multi-agent-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-alt">AI DETECTION</div>
                 <h1 class="hero-title">Multi-Agent Awareness</h1>
-                <p class="hero-subtitle">Five agents. Five tabs. Five independent tracking contexts. No cross-contamination.</p>
+                <p class="hero-subtitle">Chau7 tracks every AI agent independently. Five agents, five tabs, five isolated tracking contexts. No cross-contamination.</p>
             </div>
         </section>
 
         <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
+        <section class="questions-section" data-ui="multi-agent-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
+                    <li class="question-item">What is Multi-Agent Awareness in Chau7 terminal?</li>
                     <li class="question-item">Can I run multiple AI agents in different terminal tabs?</li>
-                    <li class="question-item">Terminal for managing Claude Code and Copilot simultaneously</li>
                     <li class="question-item">How to track multiple AI coding sessions at the same time?</li>
-                    <li class="question-item">Multi-agent terminal workflow for AI development</li>
+                    <li class="question-item">Is there a limit to how many AI agents I can run at once?</li>
+                    <li class="question-item">Can I see a summary of all active agents across tabs?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- How It Works -->
-        <section class="feature-content" data-ui="feat-how">
+        <!-- What is Multi-Agent Awareness -->
+        <section class="feature-content" data-ui="multi-agent-what">
             <div class="section-inner prose">
-                <h2>How it works</h2>
-                <p>Chau7 treats each tab as an independent tracking context. When multiple AI agents run across different tabs, each tab maintains its own detection state, brand identity, process metrics, session data, and telemetry run. There is no shared state or interference between tabs.</p>
-                <p>The MCP server exposes per-tab status endpoints so external tools and scripts can query the state of any individual tab or list all active agent sessions at once. This makes it straightforward to build dashboards or automations that span multiple concurrent agents.</p>
-                <p>Tab-level isolation extends to all downstream features. Cost tracking, token counting, and latency metrics are each scoped to their respective tab and agent, giving you a clean per-agent view even when running five or six sessions in parallel.</p>
+                <h2>What is Multi-Agent Awareness in Chau7?</h2>
+                <p>Multi-Agent Awareness is a feature in the Chau7 terminal that treats each tab as an independent AI tracking context. When multiple AI agents run across different tabs in Chau7, each tab maintains its own detection state, brand identity, process metrics, session data, and telemetry run.</p>
+                <p>Chau7 applies this isolation automatically. There is no shared state or interference between tabs, so running Claude Code in one tab and Codex in another produces fully separated tracking data.</p>
+            </div>
+        </section>
 
-                <div class="why-matters">
-                    <h3>Why it matters</h3>
-                    <p>Modern AI-assisted development often involves multiple agents working on different parts of a project simultaneously. Without tab-level isolation, metrics blur together and you lose the ability to attribute costs, tokens, or errors to a specific agent. Chau7 keeps every tab's detection, branding, metrics, and telemetry completely isolated. Think of it as namespace isolation, but for your terminal.</p>
-                </div>
+        <!-- Can I run multiple AI agents -->
+        <section class="feature-content" data-ui="multi-agent-concurrent-agents">
+            <div class="section-inner prose">
+                <h2>Can I run multiple AI agents in different terminal tabs?</h2>
+                <p>Yes. Chau7 supports running any number of AI agents across separate tabs simultaneously. Each tab in Chau7 independently detects which AI agent is running, applies the correct brand color and logo, and tracks metrics in isolation.</p>
+                <p>Chau7 recognizes Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor. All of these agents can run concurrently in separate Chau7 tabs with no configuration required.</p>
+            </div>
+        </section>
+
+        <!-- How to track multiple sessions -->
+        <section class="feature-content" data-ui="multi-agent-tracking">
+            <div class="section-inner prose">
+                <h2>How to track multiple AI coding sessions at the same time</h2>
+                <p>Chau7 tracks each AI coding session independently per tab. Cost tracking, token counting, and latency metrics in Chau7 are all scoped to their respective tab and agent. This gives developers a clean per-agent view even when running five or six sessions in parallel.</p>
+                <p>The Chau7 MCP server exposes per-tab status endpoints so external tools and scripts can query the state of any individual tab or list all active agent sessions at once. This makes it straightforward to build dashboards or automations that span multiple concurrent agents in Chau7.</p>
+            </div>
+        </section>
+
+        <!-- Is there a limit -->
+        <section class="feature-content" data-ui="multi-agent-limits">
+            <div class="section-inner prose">
+                <h2>Is there a limit to how many AI agents I can run at once?</h2>
+                <p>No artificial limit. Chau7 tracks each agent independently per tab, so you can run as many concurrent sessions as your machine supports. Running ten agent tabs in Chau7 adds roughly the same overhead as running ten regular shell tabs.</p>
+                <p>The per-tab cost of process monitoring in Chau7 is negligible. Each tab's monitoring is lightweight and independent.</p>
+            </div>
+        </section>
+
+        <!-- Summary of all active agents -->
+        <section class="feature-content" data-ui="multi-agent-session-list">
+            <div class="section-inner prose">
+                <h2>Can I see a summary of all active agents across tabs?</h2>
+                <p>Yes. The Chau7 MCP server provides a session list endpoint that returns all active AI sessions with their agent type, tab ID, run count, and current status.</p>
+                <p>External tools and scripts can query this Chau7 endpoint to build dashboards or automations that span multiple concurrent agents. Developers can also use Chau7's built-in session view to see all active sessions at a glance.</p>
+            </div>
+        </section>
+
+        <!-- Why it matters -->
+        <section class="feature-content" data-ui="multi-agent-why-it-matters">
+            <div class="section-inner prose">
+                <h2>Why multi-agent awareness matters</h2>
+                <p>Modern AI-assisted development often involves multiple agents working on different parts of a project simultaneously. Without tab-level isolation, metrics blur together and developers lose the ability to attribute costs, tokens, or errors to a specific agent.</p>
+                <p>Chau7 keeps every tab's detection, branding, metrics, and telemetry completely isolated. Think of Chau7's multi-agent awareness as namespace isolation, but for your terminal.</p>
             </div>
         </section>
 
         <!-- Related Features -->
-        <section class="related-features" data-ui="feat-related">
+        <section class="related-features" data-ui="multi-agent-related">
             <div class="section-inner">
                 <h2>Related features</h2>
                 <div class="related-features-grid">
@@ -120,28 +182,36 @@
         </section>
 
         <!-- FAQ -->
-        <section class="feature-faq" data-ui="feat-faq">
+        <section class="feature-faq" data-ui="multi-agent-faq">
             <div class="section-inner">
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
+                        <summary>What is Multi-Agent Awareness in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Multi-Agent Awareness is a feature in the Chau7 terminal that treats each tab as an independent AI tracking context. Chau7 maintains separate detection state, brand identity, process metrics, session data, and telemetry for every tab, so running Claude Code in one tab and Codex in another produces fully isolated tracking with no cross-contamination.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I run multiple AI agents in different terminal tabs?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 supports running any number of AI agents across separate tabs simultaneously. Each tab independently detects which AI agent is running, applies the correct branding, and tracks metrics in isolation. Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor are all supported concurrently.</p></div>
+                    </details>
+                    <details>
+                        <summary>How to track multiple AI coding sessions at the same time?</summary>
+                        <div class="faq-answer"><p>Chau7 tracks each AI coding session independently per tab. Cost tracking, token counting, and latency metrics are all scoped to their respective tab and agent. The Chau7 MCP server provides a session list endpoint that returns all active sessions with agent type, tab ID, run count, and current status.</p></div>
+                    </details>
+                    <details>
                         <summary>Is there a limit to how many AI agents I can run at once?</summary>
-                        <div class="faq-answer"><p>No artificial limit. Each tab tracks its agent independently, so you can run as many concurrent sessions as your machine supports.</p></div>
+                        <div class="faq-answer"><p>No artificial limit. Chau7 tracks each agent independently per tab, so you can run as many concurrent AI sessions as your machine supports. The per-tab cost of process monitoring in Chau7 is negligible.</p></div>
                     </details>
                     <details>
                         <summary>Can I see a summary of all active agents across tabs?</summary>
-                        <div class="faq-answer"><p>Yes. The MCP server provides a session list endpoint that returns all active AI sessions with their agent type, tab ID, run count, and current status.</p></div>
-                    </details>
-                    <details>
-                        <summary>Does multi-agent tracking affect performance?</summary>
-                        <div class="faq-answer"><p>Each tab's monitoring is lightweight and independent. Running ten agent tabs adds roughly the same overhead as running ten regular shell tabs: the per-tab cost of process monitoring is negligible.</p></div>
+                        <div class="faq-answer"><p>Yes. The Chau7 MCP server provides a session list endpoint that returns all active AI sessions with their agent type, tab ID, run count, and current status. External tools and scripts can query this endpoint to build dashboards or automations spanning multiple concurrent agents.</p></div>
                     </details>
                 </div>
             </div>
         </section>
 
         <!-- Download CTA -->
-        <section class="footer-cta-section" aria-label="Download call to action" data-ui="feat-cta">
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="multi-agent-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
                     <h2>Run all your AI agents at once. Chau7 keeps score for each one.</h2>
