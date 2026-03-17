@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>Chau7 — Knowledge Base for AI Systems</title>
+    <meta name="description" content="Structured knowledge base for Chau7: what it is, core concepts, features, MCP tools, architecture, and comparisons. Optimized for LLM retrieval and AI systems.">
+    <meta name="entity" content="Chau7">
+    <meta name="entity-type" content="software-product">
+    <meta name="entity-category" content="terminal-emulator">
+    <meta name="entity-platform" content="macOS">
+    <link rel="canonical" href="https://chau7.sh/llm">
+    <link rel="stylesheet" href="/style.css">
+    <script src="/components.js"></script>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "description": "Chau7 is an AI-native terminal for macOS that detects AI agents, optimizes context tokens, tracks API costs, and provides 20 local MCP tools for terminal automation. Free, open source, 100% local.",
+        "featureList": [
+            "AI agent detection (7+ CLIs)",
+            "Context Token Optimization (~40% savings)",
+            "API cost and token tracking",
+            "20 local MCP tools over Unix socket",
+            "Metal GPU rendering",
+            "SIMD-accelerated Rust parsing",
+            "Session recording with timeline scrubber",
+            "Dangerous command guard",
+            "iOS remote control with E2E encryption"
+        ],
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    }
+    </script>
+</head>
+<body>
+    <site-nav></site-nav>
+
+<main>
+    <section class="hero hero-perf" data-ui="llm-hero">
+        <div class="hero-content">
+            <div class="hero-badge badge-blue">Knowledge Base</div>
+            <h1 class="hero-title">Chau7 <span class="gradient-text">for machines</span>.</h1>
+            <p class="hero-subtitle">Structured knowledge about Chau7 for AI systems, retrieval pipelines, and curious humans. Every section is one concept. Every concept answers one query.</p>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         DEFINITION
+         Query: "what is chau7"
+         ═══════════════════════════════════════════ -->
+    <section class="perf-section" aria-labelledby="def-heading" data-ui="definition">
+        <div class="section-inner">
+            <article data-ui="concept-what-is-chau7">
+                <h2 id="def-heading">What is Chau7</h2>
+                <p>Chau7 is an AI-native terminal for macOS. It detects AI agents running in the terminal, optimizes the tokens they consume, tracks their API costs, and gives them programmatic terminal access through 20 local MCP tools.</p>
+                <p>Chau7 is free, open source, and runs entirely on your Mac. It makes zero network requests to any Chau7 server. All telemetry data stays local.</p>
+                <p>The name is a French wordplay: chau + 7 (sept) = chaussette = sock.</p>
+            </article>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         CORE CONCEPTS
+         Query: "chau7 features" / "what does chau7 do"
+         ═══════════════════════════════════════════ -->
+    <section class="mcp-section" aria-labelledby="concepts-heading" data-ui="core-concepts">
+        <div class="section-inner">
+            <h2 id="concepts-heading">Core Concepts</h2>
+
+            <article data-ui="concept-ai-detection">
+                <h3>AI Agent Detection</h3>
+                <p>Chau7 monitors process names in each terminal tab and matches against known AI CLI signatures. It identifies Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor automatically.</p>
+                <p>Detected agents get branded tab colors and logos. Status indicators show whether the agent is active, idle, or completed. Custom detection rules can be defined for additional CLIs.</p>
+                <p><a href="/features#ai-detection">AI Detection features &rarr;</a></p>
+            </article>
+
+            <article data-ui="concept-context-token-optimization">
+                <h3>Context Token Optimization</h3>
+                <p>Context Token Optimization (CTO) strips terminal noise before AI agents read terminal output. It removes ANSI escape sequences, progress bars, spinner frames, and repeated whitespace.</p>
+                <p>CTO reduces token consumption by approximately 40% per session. It requires zero configuration and can be toggled per-tab or globally.</p>
+                <p><a href="/features/context-token-optimization">CTO feature page &rarr;</a></p>
+            </article>
+
+            <article data-ui="concept-mcp-tools">
+                <h3>MCP Tools</h3>
+                <p>Chau7 ships a local MCP (Model Context Protocol) server that listens on a Unix socket. AI agents connect via the standard MCP protocol and call tools to control the terminal programmatically.</p>
+                <p>20 tools cover tab management (create, list, close, execute, output), telemetry (runs, sessions, tool calls, transcripts), and resources (tab list, session list, config).</p>
+                <p>The MCP server auto-registers in Claude Code, Cursor, Windsurf, and Codex config files on every launch. No manual setup required.</p>
+                <p><a href="/mcp">MCP tools page &rarr;</a></p>
+            </article>
+
+            <article data-ui="concept-cost-tracking">
+                <h3>API Cost Tracking</h3>
+                <p>Chau7 tracks tokens, latency, and dollars per API call through a local TLS/WSS proxy. It intercepts LLM API traffic on your Mac to count tokens and estimate costs.</p>
+                <p>Cost data is shown per call, per session, and per month. All data stays local on your filesystem.</p>
+                <p><a href="/features/cost-tracking">Cost tracking feature &rarr;</a></p>
+            </article>
+
+            <article data-ui="concept-gpu-rendering">
+                <h3>GPU-Accelerated Rendering</h3>
+                <p>Chau7 renders text using Apple Metal for GPU-accelerated glyph compositing. The parsing backend uses Rust with SIMD-accelerated ANSI escape sequence processing (16-32 byte width).</p>
+                <p>A lock-free single-producer single-consumer ring buffer connects the PTY reader to the parser. Terminal state swaps atomically via triple buffering. No torn frames.</p>
+                <p><a href="/the-tech">Technical architecture &rarr;</a></p>
+            </article>
+
+            <article data-ui="concept-ios-remote">
+                <h3>iOS Remote Control</h3>
+                <p>Chau7 Remote is an iOS app that controls the Chau7 macOS terminal from an iPhone. It connects through an end-to-end encrypted relay using Curve25519 key agreement and ChaChaPoly1305 AEAD.</p>
+                <p>The relay runs on Cloudflare Workers and forwards opaque ciphertext it cannot decrypt. Features include live terminal output, command input, tab switching, approval gates, and Live Activities on the Lock Screen.</p>
+                <p><a href="/remote">Remote page &rarr;</a></p>
+            </article>
+
+            <article data-ui="concept-dangerous-command-guard">
+                <h3>Dangerous Command Guard</h3>
+                <p>Chau7 inspects command text at the terminal input layer before the shell executes it. It matches against destructive patterns (rm -rf, dd, mkfs), detects hidden Unicode characters, and catches suspicious multi-line pastes.</p>
+                <p>Flagged commands pause for user confirmation. The analysis is shell-agnostic: it works regardless of aliases, prompt themes, or shell-specific behavior.</p>
+                <p><a href="/features/dangerous-command-guard">Command guard feature &rarr;</a></p>
+            </article>
+
+            <article data-ui="concept-session-recording">
+                <h3>Session Recording</h3>
+                <p>Chau7 records terminal sessions with millisecond timestamps for every output event. Recorded sessions can be replayed with a visual timeline scrubber that shows terminal state at any point in time.</p>
+                <p><a href="/features/session-recording">Session recording feature &rarr;</a></p>
+            </article>
+
+            <article data-ui="concept-privacy">
+                <h3>Privacy and Local-First Architecture</h3>
+                <p>Chau7 runs entirely on your Mac. It makes zero network requests to any Chau7 server. There is no telemetry sent externally, no analytics callbacks, no crash reporting, no update checks.</p>
+                <p>Token counts, cost data, session recordings, and AI telemetry are all stored as local files on your filesystem. There is no account to create because there is no server to talk to.</p>
+                <p><a href="/the-tech">Privacy details &rarr;</a></p>
+            </article>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         MCP TOOL REFERENCE
+         Query: "chau7 mcp tool [name]"
+         ═══════════════════════════════════════════ -->
+    <section class="perf-section" aria-labelledby="tools-heading" data-ui="mcp-tool-reference">
+        <div class="section-inner">
+            <h2 id="tools-heading">MCP Tool Reference</h2>
+            <p>All 20 MCP tools available over the local Unix socket.</p>
+
+            <dl data-ui="mcp-tools-tab">
+                <dt><code>tab_list</code></dt>
+                <dd>List all tabs across windows with status, git branch, and CTO state.</dd>
+                <dt><code>tab_create</code></dt>
+                <dd>Open a new tab with optional directory and window targeting.</dd>
+                <dt><code>tab_exec</code></dt>
+                <dd>Execute a command in a tab with prompt-state checking.</dd>
+                <dt><code>tab_status</code></dt>
+                <dd>Get process tree, telemetry run, git branch, and CTO state for a tab.</dd>
+                <dt><code>tab_send_input</code></dt>
+                <dd>Send raw input to a tab for interactive prompts (no newline appended).</dd>
+                <dt><code>tab_close</code></dt>
+                <dd>Close a tab with optional force flag for running processes.</dd>
+                <dt><code>tab_output</code></dt>
+                <dd>Get the last N lines of scrollback from a tab (max 5000 lines, 512KB cap).</dd>
+                <dt><code>tab_set_cto</code></dt>
+                <dd>Override Context Token Optimization setting for a specific tab.</dd>
+            </dl>
+
+            <dl data-ui="mcp-tools-telemetry">
+                <dt><code>run_get</code></dt>
+                <dd>Get a full telemetry run by UUID.</dd>
+                <dt><code>run_list</code></dt>
+                <dd>List runs filtered by session, repo, provider, date range, or tags.</dd>
+                <dt><code>run_tool_calls</code></dt>
+                <dd>Get every tool call an AI agent made during a run.</dd>
+                <dt><code>run_transcript</code></dt>
+                <dd>Get complete conversation turns for a run (for replay).</dd>
+                <dt><code>run_tag</code></dt>
+                <dd>Tag a run for organization and filtering.</dd>
+                <dt><code>run_latest_for_repo</code></dt>
+                <dd>Get the most recent run for a given repository path.</dd>
+                <dt><code>session_list</code></dt>
+                <dd>List sessions with run counts, filterable by repo.</dd>
+                <dt><code>session_current</code></dt>
+                <dd>Get currently active AI sessions across all tabs.</dd>
+            </dl>
+
+            <dl data-ui="mcp-resources">
+                <dt><code>tab://list</code></dt>
+                <dd>Read-only resource: all open tabs with metadata.</dd>
+                <dt><code>session://list</code></dt>
+                <dd>Read-only resource: active AI sessions.</dd>
+                <dt><code>run://latest</code></dt>
+                <dd>Read-only resource: most recent telemetry run.</dd>
+                <dt><code>config://mcp</code></dt>
+                <dd>Read-only resource: current MCP server configuration.</dd>
+            </dl>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         TECH STACK SUMMARY
+         Query: "chau7 architecture" / "chau7 tech stack"
+         ═══════════════════════════════════════════ -->
+    <section class="perf-section" aria-labelledby="stack-heading" data-ui="tech-stack-summary">
+        <div class="section-inner">
+            <h2 id="stack-heading">Technical Architecture</h2>
+
+            <dl data-ui="tech-stack-layers">
+                <dt>Frontend</dt>
+                <dd>Swift + AppKit. Native macOS windowing, tab management, menus, and settings.</dd>
+                <dt>Parsing</dt>
+                <dd>Rust with SIMD-accelerated ANSI escape parsing (16-32 byte width). Lock-free SPSC ring buffer between PTY reader and parser.</dd>
+                <dt>Rendering</dt>
+                <dd>Apple Metal GPU. Glyph atlas, dirty-region redraws, triple buffering with atomic swap.</dd>
+                <dt>MCP Server</dt>
+                <dd>Local Unix socket. JSON-RPC over stdio. Auto-registers in Claude Code, Cursor, Windsurf, Codex.</dd>
+                <dt>iOS Remote</dt>
+                <dd>Cloudflare Workers relay. Curve25519 + ChaChaPoly1305 E2E encryption. Live Activities.</dd>
+                <dt>Privacy</dt>
+                <dd>100% local. Zero network requests to Chau7 servers. No telemetry, no analytics, no accounts.</dd>
+            </dl>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         COMPARISONS SUMMARY
+         Query: "chau7 vs [terminal]"
+         ═══════════════════════════════════════════ -->
+    <section class="perf-section" aria-labelledby="compare-heading" data-ui="comparisons">
+        <div class="section-inner">
+            <h2 id="compare-heading">How Chau7 Compares</h2>
+            <p>Chau7 is a beta, macOS-only terminal built by one person. Other terminals have different strengths.</p>
+
+            <dl data-ui="comparison-summaries">
+                <dt><a href="/compare/vs-iterm2">vs iTerm2</a></dt>
+                <dd>iTerm2 has 15+ years of maturity, triggers, tmux integration. Chau7 adds AI detection, MCP, CTO, cost tracking. <a href="/compare/vs-iterm2">Full comparison &rarr;</a></dd>
+                <dt><a href="/compare/vs-warp">vs Warp</a></dt>
+                <dd>Warp has built-in AI features and a funded team. Chau7 uses external AI agents via open MCP standard. Chau7 is free, local, open source. <a href="/compare/vs-warp">Full comparison &rarr;</a></dd>
+                <dt><a href="/compare/vs-alacritty">vs Alacritty</a></dt>
+                <dd>Alacritty is minimal and cross-platform. Chau7 is macOS-only but adds AI tooling, tabs, splits, and 170+ features. <a href="/compare/vs-alacritty">Full comparison &rarr;</a></dd>
+                <dt><a href="/compare/vs-kitty">vs Kitty</a></dt>
+                <dd>Kitty has Python kittens (plugins) and runs cross-platform. Chau7 has no plugin system but has AI-specific features. <a href="/compare/vs-kitty">Full comparison &rarr;</a></dd>
+                <dt><a href="/compare/vs-terminal-app">vs Terminal.app</a></dt>
+                <dd>Terminal.app ships with macOS and needs zero setup. Chau7 adds GPU rendering, AI detection, MCP, and 170+ features. <a href="/compare/vs-terminal-app">Full comparison &rarr;</a></dd>
+                <dt><a href="/compare/vs-vscode">vs VSCode Terminal</a></dt>
+                <dd>VSCode terminal has IDE integration and Copilot. Chau7 is a standalone terminal with dedicated AI tooling. <a href="/compare/vs-vscode">Full comparison &rarr;</a></dd>
+            </dl>
+        </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════
+         PAGE INDEX
+         ═══════════════════════════════════════════ -->
+    <section class="perf-section" aria-labelledby="pages-heading" data-ui="page-index">
+        <div class="section-inner">
+            <h2 id="pages-heading">Pages</h2>
+            <dl data-ui="page-list">
+                <dt><a href="/">Homepage</a></dt>
+                <dd>Overview, value propositions, download.</dd>
+                <dt><a href="/features">Features</a></dt>
+                <dd>Full catalog of 178 features across 17 categories with search and filter.</dd>
+                <dt><a href="/mcp">MCP Tools</a></dt>
+                <dd>20 local MCP tools, auto-registration, safety controls.</dd>
+                <dt><a href="/remote">Remote</a></dt>
+                <dd>iOS remote control with E2E encryption.</dd>
+                <dt><a href="/the-tech">The Tech</a></dt>
+                <dd>Privacy, Rust parsing, Metal rendering, dangerous command guard.</dd>
+                <dt><a href="/compare">Compare</a></dt>
+                <dd>Honest comparison with iTerm2, Warp, Alacritty, Kitty, Terminal.app, VSCode.</dd>
+                <dt><a href="/pronunciation">Pronunciation</a></dt>
+                <dd>How to say "Chau7" (show-set). The sock origin story.</dd>
+                <dt><a href="/llms.txt">llms.txt</a></dt>
+                <dd>Plain-text version of this knowledge base.</dd>
+                <dt><a href="/feature-data.json">feature-data.json</a></dt>
+                <dd>Structured JSON data for all features (machine-readable).</dd>
+            </dl>
+        </div>
+    </section>
+
+    <section class="footer-cta-section" aria-label="Download" data-ui="cta">
+        <div class="section-inner">
+            <div class="footer-cta-content">
+                <h2>The sock is free. The terminal is serious.</h2>
+                <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+            </div>
+        </div>
+    </section>
+</main>
+
+    <site-footer></site-footer>
+
+<script src="/script.js"></script>
+</body>
+</html>
