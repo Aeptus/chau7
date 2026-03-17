@@ -28,6 +28,13 @@ if [[ "$(git -C "${ROOT_DIR}" rev-parse --abbrev-ref HEAD 2>/dev/null || true)" 
   exit 1
 fi
 
+# Pre-deploy: regenerate sitemap and update stats
+echo "Generating sitemap..."
+"${ROOT_DIR}/generate-sitemap.sh"
+
+echo "Updating footer stats..."
+"${ROOT_DIR}/update-stats.sh"
+
 echo "Checking Cloudflare auth..."
 "${WRANGLER_BIN}" whoami >/dev/null
 
