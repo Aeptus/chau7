@@ -122,6 +122,7 @@
                 <div class="section-header reveal">
                     <h2 id="problem-heading" data-ui="problem-title">Why do developers need an AI-native terminal?</h2>
                     <p data-ui="problem-retrieval">Current terminals treat AI agents as ordinary processes. They don't detect them, don't track their costs, and don't give them terminal access. Chau7 is a macOS terminal built to fix that.</p>
+                    <p data-ui="problem-differentiation">No other terminal offers AI agent detection, Context Token Optimization, and local MCP automation together. Chau7 is the only terminal where your AI agents are visible, measurable, and controllable. <a href="/compare">See how Chau7 compares &rarr;</a></p>
                 </div>
 
                 <!-- Each carousel slide is a standalone article -->
@@ -133,7 +134,7 @@
                                 <img src="screenshots/02-tab-bar-ai-logos.png" alt="Chau7 tab bar showing branded AI agent logos with auto-renamed tabs" loading="lazy" width="1200" height="750">
                             </div>
                             <h3 class="sheet-value">AI agent identification</h3>
-                            <p class="sheet-desc">Chau7 detects AI agents and brands each tab with the agent's color and logo. Tabs auto-rename to show what's running.</p>
+                            <p class="sheet-desc">Chau7 monitors process names in each terminal tab and matches against known AI CLI signatures. When it detects Claude Code, Codex, or five other agents, the tab gets the agent's brand color and logo automatically.</p>
                         </article>
 
                         <article class="carousel-sheet" data-ui="problem-slide-token-optimization">
@@ -141,7 +142,7 @@
                                 <img src="screenshots/06-claude-session-active.png" alt="Claude session with Context Token Optimization active, showing token savings" loading="lazy" width="1200" height="750">
                             </div>
                             <h3 class="sheet-value">Context Token Optimization</h3>
-                            <p class="sheet-desc">Context Token Optimization strips terminal noise before your AI reads it. ~40% fewer tokens per session, zero configuration.</p>
+                            <p class="sheet-desc">Context Token Optimization strips ANSI escape sequences, progress bars, spinner frames, and repeated whitespace from terminal output before your AI reads it. ~40% fewer tokens per session, zero configuration.</p>
                         </article>
 
                         <article class="carousel-sheet" data-ui="problem-slide-mcp-control">
@@ -149,7 +150,7 @@
                                 <img src="screenshots/03-mcp-tab-demo.png" alt="MCP tools controlling terminal tabs via local Unix socket" loading="lazy" width="1200" height="750">
                             </div>
                             <h3 class="sheet-value">MCP terminal automation</h3>
-                            <p class="sheet-desc">20 local MCP tools over Unix socket. Your AI opens tabs, runs commands, reads output. A clean automation API, not screen scraping.</p>
+                            <p class="sheet-desc">The Chau7 MCP server listens on a local Unix socket. AI agents connect via the standard MCP protocol and call tools to create tabs, execute commands, and capture output. No plugins, no screen scraping.</p>
                         </article>
 
                         <article class="carousel-sheet" data-ui="problem-slide-cost-tracking">
@@ -249,7 +250,7 @@
                 <dl class="ai-value-stack stagger-children" data-ui="ai-value-stack">
                     <article class="ai-value-row" data-ui="ai-value-detection">
                         <dt>Chau7 detects and identifies AI agents automatically.</dt>
-                        <dd>Each tab shows the agent's identity and status. Eight agents running, one glance to see them all. AI detection works for Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor.</dd>
+                        <dd>Chau7 AI detection monitors process names in each tab and matches against known CLI signatures. It identifies Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor. Each tab shows the agent's identity and live status.</dd>
                     </article>
                     <article class="ai-value-row" data-ui="ai-value-cto">
                         <dt>Context Token Optimization reduces token usage by ~40%.</dt>

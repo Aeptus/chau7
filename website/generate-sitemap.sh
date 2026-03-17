@@ -1,78 +1,127 @@
 #!/usr/bin/env bash
-# generate-sitemap.sh — Builds sitemap.xml from all HTML files.
-# Run from the website/ directory. Called automatically by push2prod.
+# generate-sitemap.sh — Builds split sitemaps grouped by content type.
+# Generates: sitemap-core.xml, sitemap-features.xml, sitemap-compare.xml, sitemap.xml (index)
 
 set -euo pipefail
 
 SITE="https://chau7.sh"
 DIR="$(cd "$(dirname "$0")" && pwd)"
-OUT="$DIR/sitemap.xml"
+MIN_FEATURE_SIZE=3000
 
-# Start XML
-cat > "$OUT" <<'HEADER'
-<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-HEADER
+CORE="$DIR/sitemap-core.xml"
+FEATURES="$DIR/sitemap-features.xml"
+COMPARE="$DIR/sitemap-compare.xml"
+INDEX="$DIR/sitemap.xml"
 
-# Find all HTML files, convert to clean URLs
-find "$DIR" -name "*.html" -not -name "index-geo.html" -not -name "404.html" -not -path "*/.git/*" | sort | while read -r file; do
-    # Get path relative to website dir
+# Header
+header='<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+
+echo "$header" > "$CORE"
+echo "$header" > "$FEATURES"
+echo "$header" > "$COMPARE"
+
+core_count=0
+feature_count=0
+compare_count=0
+skipped=0
+
+# Collect all canonical .html files
+for file in $(find "$DIR" -name "*.html" -not -path "*/.git/*" | sort); do
     rel="${file#$DIR/}"
 
-    # Skip duplicate index.html inside subdirectories (the .html version is canonical)
-    # Exception: features/*/index.html (individual feature pages only exist as dirs)
-    if [[ "$rel" == */index.html ]] && [[ "$rel" != features/*/index.html ]]; then
-        # Check if a sibling .html exists at the parent level
+    # Skip non-content files
+    case "$rel" in
+        index-geo.html|404.html) continue ;;
+    esac
+
+    # Skip subdirectory index.html when a sibling .html exists (dedup)
+    if [[ "$rel" != "index.html" ]] && [[ "$rel" == */index.html ]]; then
         parent_dir="$(dirname "$rel")"
-        if [[ -f "$DIR/${parent_dir}.html" ]]; then
-            continue  # skip, the .html version is canonical
-        fi
+        base="$(basename "$parent_dir")"
+        grandparent="$(dirname "$parent_dir")"
+        [[ -f "$DIR/${parent_dir}.html" ]] && continue
+        [[ -f "$DIR/${grandparent}/${base}.html" ]] && continue
+        [[ -f "$DIR/${base}.html" ]] && continue
     fi
 
-    # Convert to URL path
+    # Build URL
     url="$rel"
-    # index.html → /
-    if [[ "$url" == "index.html" ]]; then
-        url=""
-    fi
-    # foo.html → foo
+    [[ "$url" == "index.html" ]] && url=""
     url="${url%.html}"
-    # foo/index → foo
     url="${url%/index}"
 
-    # Get last modified date
+    # Get lastmod
     mod=$(date -r "$file" "+%Y-%m-%d" 2>/dev/null || echo "2026-03-17")
 
-    # Determine priority
-    priority="0.5"
+    # Route to correct sitemap with proper priority
+    entry=""
     case "$url" in
-        "") priority="1.0" ;;           # homepage
-        features|mcp|remote|compare|the-tech) priority="0.8" ;;
-        features/*) priority="0.6" ;;    # individual feature pages
-        compare/*) priority="0.6" ;;     # comparison pages
-        pronunciation|legal|privacy) priority="0.3" ;;
+        "")
+            entry="  <url><loc>${SITE}/</loc><lastmod>${mod}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>"
+            echo "$entry" >> "$CORE"; ((core_count++)) ;;
+        mcp|remote|the-tech)
+            entry="  <url><loc>${SITE}/${url}</loc><lastmod>${mod}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>"
+            echo "$entry" >> "$CORE"; ((core_count++)) ;;
+        pronunciation)
+            entry="  <url><loc>${SITE}/${url}</loc><lastmod>${mod}</lastmod><changefreq>monthly</changefreq><priority>0.4</priority></url>"
+            echo "$entry" >> "$CORE"; ((core_count++)) ;;
+        legal|privacy|mentions-legales|politique-de-confidentialite)
+            entry="  <url><loc>${SITE}/${url}</loc><lastmod>${mod}</lastmod><changefreq>yearly</changefreq><priority>0.2</priority></url>"
+            echo "$entry" >> "$CORE"; ((core_count++)) ;;
+        golden-ratio|typography)
+            entry="  <url><loc>${SITE}/${url}</loc><lastmod>${mod}</lastmod><changefreq>monthly</changefreq><priority>0.3</priority></url>"
+            echo "$entry" >> "$CORE"; ((core_count++)) ;;
+        compare)
+            entry="  <url><loc>${SITE}/${url}</loc><lastmod>${mod}</lastmod><changefreq>monthly</changefreq><priority>0.8</priority></url>"
+            echo "$entry" >> "$COMPARE"; ((compare_count++)) ;;
+        compare/*)
+            entry="  <url><loc>${SITE}/${url}</loc><lastmod>${mod}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>"
+            echo "$entry" >> "$COMPARE"; ((compare_count++)) ;;
+        features)
+            entry="  <url><loc>${SITE}/${url}</loc><lastmod>${mod}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>"
+            echo "$entry" >> "$FEATURES"; ((feature_count++)) ;;
+        features/*)
+            filesize=$(wc -c < "$file" | tr -d ' ')
+            if [[ "$filesize" -lt "$MIN_FEATURE_SIZE" ]]; then
+                ((skipped++)); continue
+            fi
+            entry="  <url><loc>${SITE}/${url}</loc><lastmod>${mod}</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>"
+            echo "$entry" >> "$FEATURES"; ((feature_count++)) ;;
+        *)
+            entry="  <url><loc>${SITE}/${url}</loc><lastmod>${mod}</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>"
+            echo "$entry" >> "$CORE"; ((core_count++)) ;;
     esac
-
-    # Determine changefreq
-    changefreq="monthly"
-    case "$url" in
-        "") changefreq="weekly" ;;
-        features|mcp|remote) changefreq="weekly" ;;
-    esac
-
-    cat >> "$OUT" <<EOF
-  <url>
-    <loc>${SITE}/${url}</loc>
-    <lastmod>${mod}</lastmod>
-    <changefreq>${changefreq}</changefreq>
-    <priority>${priority}</priority>
-  </url>
-EOF
 done
 
-# Close XML
-echo "</urlset>" >> "$OUT"
+echo "</urlset>" >> "$CORE"
+echo "</urlset>" >> "$FEATURES"
+echo "</urlset>" >> "$COMPARE"
 
-# Count
-count=$(grep -c "<url>" "$OUT")
-echo "Generated sitemap.xml with ${count} URLs"
+# Sitemap index
+today=$(date "+%Y-%m-%d" 2>/dev/null || echo "2026-03-17")
+cat > "$INDEX" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap>
+    <loc>${SITE}/sitemap-core.xml</loc>
+    <lastmod>${today}</lastmod>
+  </sitemap>
+  <sitemap>
+    <loc>${SITE}/sitemap-features.xml</loc>
+    <lastmod>${today}</lastmod>
+  </sitemap>
+  <sitemap>
+    <loc>${SITE}/sitemap-compare.xml</loc>
+    <lastmod>${today}</lastmod>
+  </sitemap>
+</sitemapindex>
+EOF
+
+total=$((core_count + feature_count + compare_count))
+echo "Generated sitemap index with 3 sitemaps:"
+echo "  sitemap-core.xml:     ${core_count} URLs"
+echo "  sitemap-features.xml: ${feature_count} URLs"
+echo "  sitemap-compare.xml:  ${compare_count} URLs"
+echo "  Skipped thin pages:   ${skipped}"
+echo "  Total:                ${total} URLs"
