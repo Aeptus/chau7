@@ -280,6 +280,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Optional line timestamps (multiple formats).
 - Optional JSON pretty-print in terminal output.
 - Cursor blink rate (0.3–2.0s) and custom cursor color (hex).
+- Unicode ambiguous-width: treat East Asian ambiguous characters as 1 or 2 cells.
 - Menu bar only mode — hide from Dock and Cmd+Tab.
 - Floating window mode — keep terminal above other apps.
 

@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Interactive Remote Prompts**: iPhone remote clients now surface detected Claude and Codex terminal prompts in the Approvals tab and can reply with a mapped option directly to the originating tab. Destructive options require a second confirmation on iPhone.
 - **MCP `tab_output` source=pty_log**: New `source` param on `tab_output` reads the ANSI-stripped PTY output log instead of the terminal buffer. Captures full AI session output including alternate-screen content that TUI-based tools discard on exit. Works for all AI providers.
 - **MCP `wait_for_stable_ms`**: New param on `tab_output` polls the terminal buffer until content settles, fixing the race where `is_at_prompt` fires before the agent's final response finishes rendering
 - **PTY Log Fallback Transcript**: `run_transcript` now falls back to the ANSI-stripped PTY output log when provider-specific extraction fails, capturing full agent output including alternate-screen content from TUI-based tools
@@ -25,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **API Analytics Tab**: Debug console (Cmd+Shift+L) now shows per-provider cost, per-tab tokens, and aggregate totals
 - **Hyperlink Protocols**: Clickable links now detect file://, ssh://, ftp://, sftp:// in addition to http/https
 - **Clipboard Persistence + Search**: Clipboard history persists across restarts, supports substring search, cap raised to 1000 items
+- **Unicode Ambiguous-Width Config**: Per-profile setting for East Asian ambiguous character width (1=single, 2=double) with Rust FFI support
 - **Font Weight Setting**: Configurable NSFont weight (0=ultralight to 14=ultra-heavy)
 - **JSON-RPC API Complete**: All 7 stubbed methods (list_tabs, get_tab, run_command, get_output, create_tab, close_tab, run_snippet) now implemented
 - **Timeline Density Heatmap**: Minimap shows activity hotspots via bucketed opacity overlay

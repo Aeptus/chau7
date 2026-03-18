@@ -15,6 +15,7 @@ final class RemoteControlManager: ObservableObject {
     @Published private(set) var lastError: String?
     @Published private(set) var pairedDevices: [RemotePairedDevice] = []
     @Published private(set) var remoteActivity: RemoteActivityState?
+    @Published private(set) var interactivePrompts: [RemoteInteractivePrompt] = []
 
     private var process: Process?
     private var outputPipe: Pipe?
@@ -116,6 +117,11 @@ final class RemoteControlManager: ObservableObject {
     }
 
     func sendSnapshot(for tabID: UInt32) {
+        sendTextSnapshot(for: tabID)
+        sendGridSnapshot(for: tabID)
+    }
+
+    func sendTextSnapshot(for tabID: UInt32) {
         guard let overlayModel else { return }
         let targetTab: OverlayTab?
         if tabID == 0 {
@@ -128,6 +134,21 @@ final class RemoteControlManager: ObservableObject {
         guard let session = targetTab?.session,
               let snapshot = session.captureRemoteSnapshot() else { return }
         sendFrame(type: .snapshot, tabID: tabID, payload: RemoteOutputTuning.capSnapshot(snapshot))
+    }
+
+    func sendGridSnapshot(for tabID: UInt32) {
+        guard let overlayModel else { return }
+        let targetTab: OverlayTab?
+        if tabID == 0 {
+            targetTab = overlayModel.selectedTab
+        } else if let uuid = tabRegistry.uuid(for: tabID) {
+            targetTab = overlayModel.tabs.first { $0.id == uuid }
+        } else {
+            targetTab = nil
+        }
+        guard let session = targetTab?.session,
+              let snapshot = session.captureRemoteGridSnapshot() else { return }
+        sendFrame(type: .terminalGridSnapshot, tabID: tabID, payload: snapshot)
     }
 
     private func startAgent() {
@@ -199,7 +220,7 @@ final class RemoteControlManager: ObservableObject {
             self.process = process
             isAgentRunning = true
             lastError = nil
-            logger.info("Remote agent started")
+            logger.info("Remote agent started from \(binaryPath.path)")
             refreshPairedDevices()
         } catch {
             let errorMessage = "Failed to start remote agent: \(error.localizedDescription)"
@@ -386,6 +407,7 @@ final class RemoteControlManager: ObservableObject {
         sendSelectedTabSnapshot()
         scheduleBackgroundSnapshotPrefetch()
         sendRemoteActivity(force: true)
+        sendInteractivePrompts(force: true)
     }
 
     private func sendSelectedTabSnapshot() {
@@ -429,17 +451,32 @@ final class RemoteControlManager: ObservableObject {
 
     private func sendRemoteActivity(force: Bool = false) {
         let nextActivity = currentRemoteActivity()
-        guard force || nextActivity != remoteActivity else { return }
-
-        remoteActivity = nextActivity
-        guard isIPCConnected else { return }
-
-        if let nextActivity,
-           let payload = try? JSONEncoder().encode(nextActivity) {
-            sendFrame(type: .activityState, tabID: nextActivity.tabID, payload: payload)
-        } else {
-            sendFrame(type: .activityCleared, tabID: 0, payload: Data())
+        let activityChanged = force || nextActivity != remoteActivity
+        if activityChanged {
+            remoteActivity = nextActivity
         }
+
+        if isIPCConnected, activityChanged {
+            if let nextActivity,
+               let payload = try? JSONEncoder().encode(nextActivity) {
+                sendFrame(type: .activityState, tabID: nextActivity.tabID, payload: payload)
+            } else {
+                sendFrame(type: .activityCleared, tabID: 0, payload: Data())
+            }
+        }
+        sendInteractivePrompts(force: force)
+    }
+
+    private func sendInteractivePrompts(force: Bool = false) {
+        let nextPrompts = currentInteractivePrompts()
+        guard force || nextPrompts != interactivePrompts else { return }
+
+        interactivePrompts = nextPrompts
+        guard isIPCConnected,
+              let payload = try? JSONEncoder().encode(RemoteInteractivePromptListPayload(prompts: nextPrompts)) else {
+            return
+        }
+        sendFrame(type: .interactivePromptList, tabID: 0, payload: payload)
     }
 
     private func currentRemoteActivity(now: Date = Date()) -> RemoteActivityState? {
@@ -527,6 +564,37 @@ final class RemoteControlManager: ObservableObject {
         return RemoteActivityProjection.project(from: candidates)
     }
 
+    private func currentInteractivePrompts() -> [RemoteInteractivePrompt] {
+        guard let overlayModel else { return [] }
+
+        return remoteControllableTabs(from: overlayModel).compactMap { tab in
+            guard let tabID = tabRegistry.tabID(for: tab.id),
+                  let session = tab.session else {
+                return nil
+            }
+
+            guard session.effectiveStatus == .waitingForInput else { return nil }
+
+            let toolName = activityToolName(for: session, tab: tab)
+            guard let snapshot = session.captureRemoteSnapshot(),
+                  let text = String(data: snapshot, encoding: .utf8),
+                  let detected = InteractivePromptDetector.detect(in: text, toolName: toolName) else {
+                return nil
+            }
+
+            return RemoteInteractivePrompt(
+                id: "tab-\(tabID)-\(detected.signature)",
+                tabID: tabID,
+                tabTitle: activityTabTitle(for: tab),
+                toolName: toolName,
+                prompt: detected.prompt,
+                detail: detected.detail,
+                options: detected.options,
+                detectedAt: activityUpdatedAt(for: session, tab: tab, approval: nil)
+            )
+        }
+    }
+
     private func activityTabTitle(for tab: OverlayTab) -> String {
         let trimmedCustom = tab.customTitle?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !trimmedCustom.isEmpty {
@@ -596,8 +664,9 @@ final class RemoteControlManager: ObservableObject {
 
     private func sendTabList() {
         guard let overlayModel else { return }
+        let controllableTabs = remoteControllableTabs(from: overlayModel)
         let tabPayloads = tabRegistry.rebuild(
-            with: remoteControllableTabs(from: overlayModel).map { tab in
+            with: controllableTabs.map { tab in
                 RemoteTabRegistryEntry(
                     id: tab.id,
                     sessionIdentifier: tab.session?.tabIdentifier,
@@ -611,7 +680,9 @@ final class RemoteControlManager: ObservableObject {
         do {
             let payload = try JSONEncoder().encode(RemoteTabListPayload(tabs: tabPayloads))
             sendFrame(type: .tabList, tabID: 0, payload: payload)
+            logger.info("Remote: sent tab list with \(tabPayloads.count) tabs")
             sendRemoteActivity()
+            sendInteractivePrompts()
         } catch {
             logger.warning("Failed to encode tab list: \(error.localizedDescription)")
         }
@@ -664,15 +735,29 @@ final class RemoteControlManager: ObservableObject {
         outputFlushTask = nil
         guard isIPCConnected, !pendingOutputByTabID.isEmpty else { return }
 
+        let selectedRemoteTabID = overlayModel.flatMap { tabRegistry.tabID(for: $0.selectedTabID) }
+
         for (tabID, payload) in pendingOutputByTabID.drainAll(sortedByTabID: true) {
             let token = FeatureProfiler.shared.begin(.remoteOutput, bytes: payload.count)
             sendFrame(type: .output, tabID: tabID, payload: payload)
             FeatureProfiler.shared.end(token)
+            if tabID == selectedRemoteTabID {
+                sendGridSnapshot(for: tabID)
+            }
         }
     }
 
     private func remoteControllableTabs(from overlayModel: OverlayTabsModel) -> [OverlayTab] {
-        overlayModel.tabs.filter { $0.session != nil }
+        let tabs = overlayModel.tabs.filter { $0.session != nil }
+        if tabs.isEmpty {
+            logger.info(
+                """
+                Remote: no controllable tabs. overlay tabs=\(overlayModel.tabs.count) \
+                selected=\(overlayModel.selectedTabID.uuidString)
+                """
+            )
+        }
+        return tabs
     }
 
     private func sendFrame(type: RemoteFrameType, tabID: UInt32, payload: Data) {
@@ -913,29 +998,106 @@ final class RemoteControlManager: ObservableObject {
     }
 
     private func remoteBinaryPath() -> URL? {
-        if let bundlePath = bundledRemoteBinaryPath(),
-           FileManager.default.isExecutableFile(atPath: bundlePath.path) {
-            return bundlePath
-        }
+        let fileManager = FileManager.default
 
-        if let installedPath = installedRemoteBinaryPath(),
-           FileManager.default.isExecutableFile(atPath: installedPath.path) {
-            return installedPath
+        if let sourceURL = remoteAgentSourceURL(),
+           let installedPath = installedRemoteBinaryPath(),
+           shouldRefreshInstalledRemoteBinary(at: installedPath, from: sourceURL) {
+            if buildRemoteAgent(from: sourceURL, outputURL: installedPath),
+               FileManager.default.isExecutableFile(atPath: installedPath.path) {
+                return installedPath
+            }
         }
 
         if let devPath = devRemoteBinaryPath(),
-           FileManager.default.isExecutableFile(atPath: devPath.path) {
+           fileManager.isExecutableFile(atPath: devPath.path) {
             return devPath
+        }
+
+        if let installedPath = installedRemoteBinaryPath(),
+           fileManager.isExecutableFile(atPath: installedPath.path) {
+            return installedPath
+        }
+
+        if let bundlePath = bundledRemoteBinaryPath(),
+           fileManager.isExecutableFile(atPath: bundlePath.path) {
+            syncInstalledRemoteBinary(from: bundlePath)
+            if let installedPath = installedRemoteBinaryPath(),
+               fileManager.isExecutableFile(atPath: installedPath.path) {
+                return installedPath
+            }
+            return bundlePath
         }
 
         if let sourceURL = remoteAgentSourceURL(),
            let installedPath = installedRemoteBinaryPath(),
            buildRemoteAgent(from: sourceURL, outputURL: installedPath),
-           FileManager.default.isExecutableFile(atPath: installedPath.path) {
+           fileManager.isExecutableFile(atPath: installedPath.path) {
             return installedPath
         }
 
         return nil
+    }
+
+    private func syncInstalledRemoteBinary(from bundledPath: URL) {
+        guard let installedPath = installedRemoteBinaryPath() else { return }
+        let fileManager = FileManager.default
+
+        if fileManager.fileExists(atPath: installedPath.path),
+           !shouldReplaceInstalledRemoteBinary(at: installedPath, with: bundledPath) {
+            return
+        }
+
+        do {
+            try fileManager.createDirectory(
+                at: installedPath.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            if fileManager.fileExists(atPath: installedPath.path) {
+                try fileManager.removeItem(at: installedPath)
+            }
+            try fileManager.copyItem(at: bundledPath, to: installedPath)
+            try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: installedPath.path)
+        } catch {
+            logger.warning("Failed to sync bundled remote agent to App Support: \(error.localizedDescription)")
+        }
+    }
+
+    private func shouldReplaceInstalledRemoteBinary(at installedPath: URL, with bundledPath: URL) -> Bool {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: installedPath.path) else { return true }
+        guard fileManager.isExecutableFile(atPath: installedPath.path),
+              fileManager.isExecutableFile(atPath: bundledPath.path) else {
+            return true
+        }
+        return !fileManager.contentsEqual(atPath: installedPath.path, andPath: bundledPath.path)
+    }
+
+    private func shouldRefreshInstalledRemoteBinary(at binaryURL: URL, from sourceURL: URL) -> Bool {
+        guard let binaryDate = modificationDate(for: binaryURL) else {
+            return true
+        }
+
+        let fileManager = FileManager.default
+        guard let enumerator = fileManager.enumerator(
+            at: sourceURL,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return false
+        }
+
+        for case let candidate as URL in enumerator {
+            guard ["go", "mod", "sum"].contains(candidate.pathExtension) else { continue }
+            guard let sourceDate = modificationDate(for: candidate), sourceDate > binaryDate else { continue }
+            return true
+        }
+
+        return false
+    }
+
+    private func modificationDate(for url: URL) -> Date? {
+        (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
     }
 
     private func bundledRemoteBinaryPath() -> URL? {
@@ -959,15 +1121,21 @@ final class RemoteControlManager: ObservableObject {
 
     private func devRemoteBinaryPath() -> URL? {
         guard let projectRoot = projectRootURL() else { return nil }
+        let packagedBuildPath = projectRoot
+            .appendingPathComponent("apps/chau7-macos/build/remote-agent/chau7-remote")
+        if FileManager.default.isExecutableFile(atPath: packagedBuildPath.path) {
+            return packagedBuildPath
+        }
+
         let devPath = projectRoot
             .appendingPathComponent("services/chau7-remote/chau7-remote")
-        if FileManager.default.fileExists(atPath: devPath.path) {
+        if FileManager.default.isExecutableFile(atPath: devPath.path) {
             return devPath
         }
 
         let buildPath = projectRoot
             .appendingPathComponent("services/chau7-remote/cmd/chau7-remote/chau7-remote")
-        if FileManager.default.fileExists(atPath: buildPath.path) {
+        if FileManager.default.isExecutableFile(atPath: buildPath.path) {
             return buildPath
         }
 
