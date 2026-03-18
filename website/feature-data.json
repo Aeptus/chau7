@@ -518,11 +518,11 @@
       "features": [
         {
           "slug": "mcp-tools",
-          "title": "20 MCP Tools",
+          "title": "26 MCP Tools",
           "star": true,
           "short_desc": "Full terminal control via Model Context Protocol: tab lifecycle, command execution, output capture, telemetry.",
-          "meta_desc": "Chau7 exposes 20 MCP tools giving AI agents full terminal control: tab creation, command execution, output capture, and telemetry access.",
-          "tagline": "20 MCP tools. Full terminal control. Your AI agent just got its own command center.",
+          "meta_desc": "Chau7 exposes 26 MCP tools giving AI agents full terminal control: tab creation, command execution, output capture, and telemetry access.",
+          "tagline": "26 MCP tools. Full terminal control. Your AI agent just got its own command center.",
           "questions": [
             "How do I let AI agents control my terminal?",
             "Is there a terminal with a built-in MCP server?",

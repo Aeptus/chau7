@@ -1,10 +1,10 @@
 # Chau7
 
-> The AI-native terminal for macOS. GPU-accelerated with Rust+Metal. 20 MCP tools for AI agent control. Free and open source.
+> The AI-native terminal for macOS. GPU-accelerated with Rust+Metal. 26 MCP tools for AI agent control. Free and open source.
 
 ## Key Facts
 - 185 features across 30 categories
-- 20 MCP tools (8 tab management, 8 telemetry, 4 resources)
+- 26 MCP tools (8 tab management, 8 telemetry, 4 resources)
 - Auto-detects 7+ AI CLIs (Claude Code, Codex, Gemini, ChatGPT, Copilot, Aider, Cursor)
 - <10ms input-to-pixel latency (IOKit HID → SIMD Rust → Metal GPU → IOSurface)
 - Free, open source, macOS native
@@ -34,7 +34,7 @@
 
 ## Pages
 - [Home](index.html): Overview and download
-- [MCP Tools](mcp.html): 20 MCP tools, auto-registration, safety controls
+- [MCP Tools](mcp.html): 26 MCP tools, auto-registration, safety controls
 - [The Tech](the-tech.html): Rust parsing, dangerous-command guardrails, and the Metal rendering pipeline
 - [Features](features.html): Full 185-feature catalog
 - [Compare](compare.html): vs iTerm2, Warp, Alacritty, Kitty, Apple Terminal, VSCode
@@ -62,7 +62,7 @@
 - [Analytics Dashboard](features/analytics-dashboard.html): Visual dashboard showing token usage, costs, and latency trends over time.
 
 ### MCP Server
-- [20 MCP Tools](features/mcp-tools.html): Full terminal control via Model Context Protocol: tab lifecycle, command execution, output capture, telemetry. (differentiator)
+- [26 MCP Tools](features/mcp-tools.html): Full terminal control via Model Context Protocol: tab lifecycle, command execution, output capture, telemetry. (differentiator)
 - [Unix Socket Server](features/unix-socket-server.html): MCP server runs over a local Unix socket — no network exposure, no authentication needed.
 - [Auto-Registration](features/auto-registration.html): Registers in Claude Code, Cursor, Windsurf, and Codex config files on every launch. (differentiator)
 - [MCP Resources](features/mcp-resources.html): 4 resource endpoints (tab://list, session://list, run://latest, config://mcp) for read-only data access.

@@ -90,7 +90,7 @@
                 "name": "Can I set the override programmatically?",
                 "acceptedAnswer": {
                     "@type": "Answer",
-                    "text": "Yes. Chau7's MCP server exposes a tab_set_cto tool that accepts a tab ID and an override value (default, force_on, or force_off). AI agents and scripts can call this tool to control CTO per tab without manual interaction."
+                    "text": "Yes. Chau7's MCP server exposes a tab_set_cto tool that accepts a tab ID and an override value (default, forceOn, or forceOff). AI agents and scripts can call this tool to control CTO per tab without manual interaction."
                 }
             }
         ]
@@ -127,7 +127,7 @@
             <div class="section-inner prose">
                 <h2>What is CTO Per-Tab Override in Chau7 terminal?</h2>
                 <p>CTO Per-Tab Override is a feature in the Chau7 terminal that lets you enable or disable Context Token Optimization on individual tabs. Instead of a single global on/off switch, Chau7 gives each tab its own CTO setting.</p>
-                <p>Context Token Optimization strips terminal noise (ANSI escape sequences, progress bars, spinner frames) before AI agents read your output. Chau7's per-tab override lets you apply that stripping selectively, so each tab behaves exactly as you need it to.</p>
+                <p>Context Token Optimization installs wrapper scripts that optimize shell command output (removing ANSI escape sequences, progress bars, spinner frames) before AI agents read it. Chau7's per-tab override lets you apply that optimization selectively, so each tab behaves exactly as you need it to.</p>
             </div>
         </section>
 
@@ -155,7 +155,7 @@
                     <dt><strong>Force Off</strong></dt>
                     <dd>CTO is always inactive on this tab, regardless of the global setting in Chau7. Use Force Off when you need raw, unfiltered output on a tab even if CTO is on globally.</dd>
                 </dl>
-                <p>You set the override through the tab context menu or programmatically through Chau7's MCP server.</p>
+                <p>You set the override through the tab hover card or programmatically through Chau7's MCP server.</p>
             </div>
         </section>
 
@@ -164,7 +164,7 @@
             <div class="section-inner prose">
                 <h2>How CTO Per-Tab Override works in Chau7</h2>
                 <p>Each tab in Chau7 stores its own CTO override value. When Chau7 processes terminal output for a tab, it checks the tab-level override first. If the override is Default, Chau7 falls back to the global CTO setting. If the override is Force On or Force Off, Chau7 uses that value directly.</p>
-                <p>This means you can run multiple terminal sessions in Chau7 with different CTO behaviors at the same time. One tab can have CTO stripping ANSI noise for Claude Code while another tab shows full output for debugging.</p>
+                <p>This means you can run multiple terminal sessions in Chau7 with different CTO behaviors at the same time. One tab can have CTO optimizing command output for Claude Code while another tab shows full output for debugging.</p>
             </div>
         </section>
 
@@ -192,8 +192,8 @@
                 <h2>Can I set the override programmatically?</h2>
                 <p>Yes. Chau7's MCP server exposes a <code>tab_set_cto</code> tool that accepts a tab ID and an override value. AI agents and scripts can call <code>tab_set_cto</code> to control CTO on any tab without manual interaction.</p>
                 <pre><code>tool: tab_set_cto
-args: { "tab_id": "C1C4AB49-...", "override": "force_on" }</code></pre>
-                <p>The accepted override values are <code>default</code>, <code>force_on</code>, and <code>force_off</code>. This makes it straightforward to integrate Chau7's CTO control into automated workflows, CI pipelines, or AI agent scripts.</p>
+args: { "tab_id": "C1C4AB49-...", "override": "forceOn" }</code></pre>
+                <p>The accepted override values are <code>default</code>, <code>forceOn</code>, and <code>forceOff</code>. This makes it straightforward to integrate Chau7's CTO control into automated workflows, CI pipelines, or AI agent scripts.</p>
             </div>
         </section>
 
@@ -260,7 +260,7 @@ args: { "tab_id": "C1C4AB49-...", "override": "force_on" }</code></pre>
                     </details>
                     <details>
                         <summary>Can I set the override programmatically?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7's MCP server exposes a <code>tab_set_cto</code> tool that accepts a tab ID and an override value (<code>default</code>, <code>force_on</code>, or <code>force_off</code>). AI agents and scripts can call this tool to control CTO per tab without manual interaction.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7's MCP server exposes a <code>tab_set_cto</code> tool that accepts a tab ID and an override value (<code>default</code>, <code>forceOn</code>, or <code>forceOff</code>). AI agents and scripts can call this tool to control CTO per tab without manual interaction.</p></div>
                     </details>
                 </div>
             </div>

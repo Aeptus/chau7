@@ -34,10 +34,8 @@
         "featureList": [
             "Pattern-based detection of rm -rf, dd, mkfs, chmod 777",
             "Confirmation dialog before destructive execution",
-            "Hidden Unicode and ClickFix paste attack detection",
-            "Per-directory whitelisting",
-            "Per-tab guard disable for automated scripts",
-            "Configurable severity levels"
+            "Customizable rules and patterns",
+            "Global allowlist for trusted commands"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
@@ -56,10 +54,10 @@
         "@type": "FAQPage",
         "mainEntity": [
             {"@type":"Question","name":"What is Dangerous Command Guard in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Dangerous Command Guard is a safety feature in the Chau7 terminal that intercepts destructive commands like rm -rf, dd, and mkfs before the shell executes them. Chau7 pauses execution and shows a confirmation dialog describing what the command will do and which paths it affects."}},
-            {"@type":"Question","name":"How does Chau7's dangerous command guard compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals have no built-in protection against destructive commands. iTerm2, Warp, Alacritty, and Kitty rely on shell aliases or third-party tools. Chau7 is the only terminal that intercepts dangerous commands at the terminal input layer, catching them regardless of shell and including pasted commands with hidden characters."}},
+            {"@type":"Question","name":"How does Chau7's dangerous command guard compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals have no built-in protection against destructive commands. iTerm2, Warp, Alacritty, and Kitty rely on shell aliases or third-party tools. Chau7 intercepts dangerous commands at the terminal input layer, catching them regardless of shell."}},
             {"@type":"Question","name":"How do I prevent accidental rm -rf in the terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7's Dangerous Command Guard automatically detects rm with recursive or force flags and pauses execution before the shell sees the command. A confirmation dialog shows the exact paths affected and the potential consequences. No shell aliases or wrapper scripts are needed."}},
             {"@type":"Question","name":"Does the guard slow down normal commands?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7's pattern matching runs in microseconds on every command submission. Safe commands execute with no visible delay. Only when Chau7 detects a dangerous pattern does the confirmation dialog appear."}},
-            {"@type":"Question","name":"Can I disable the guard for specific directories?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 lets you whitelist directories, specific command patterns, or disable the guard entirely per-tab for automated scripts that need uninterrupted execution."}}
+            {"@type":"Question","name":"Can I customize the guard rules?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 lets you customize the command patterns and add specific commands to a global allowlist. You can add your own patterns to detect additional dangerous commands."}}
         ]
     }]
     </script>
@@ -98,7 +96,7 @@
                     <li class="question-item">How does Chau7's dangerous command guard compare to other terminals?</li>
                     <li class="question-item">How do I prevent accidental rm -rf in the terminal?</li>
                     <li class="question-item">Does the guard slow down normal commands?</li>
-                    <li class="question-item">Can I disable the guard for specific directories?</li>
+                    <li class="question-item">Can I customize the guard rules?</li>
                 </ul>
             </div>
         </section>
@@ -118,7 +116,7 @@
                 <h2>How do I prevent accidental rm -rf in the terminal?</h2>
                 <p>Chau7's Dangerous Command Guard automatically detects <code>rm</code> with recursive or force flags and pauses execution before the shell sees the command. No shell aliases, wrapper scripts, or third-party tools are needed.</p>
                 <p>Chau7's guard operates at the terminal input layer, not as a shell plugin. This means Chau7 catches dangerous commands regardless of which shell you use: zsh, bash, or fish.</p>
-                <p>Chau7 also catches commands pasted from the clipboard, including those containing hidden Unicode characters or embedded newlines used in ClickFix-style social engineering attacks that surged through 2025.</p>
+                <p>Chau7's guard catches dangerous commands whether they are typed or pasted from the clipboard.</p>
             </div>
         </section>
 
@@ -127,7 +125,7 @@
             <div class="section-inner prose">
                 <h2>How does Chau7's dangerous command guard compare to other terminals?</h2>
                 <p>Most terminals have no built-in protection against destructive commands. iTerm2, Warp, Alacritty, and Kitty rely on shell aliases or third-party tools like <code>safe-rm</code>. Those approaches are fragile and easy to bypass.</p>
-                <p>Chau7 is the only terminal that intercepts dangerous commands at the terminal input layer. Chau7's guard works regardless of shell, catches pasted commands with hidden characters, and distinguishes between high-risk operations (immediate data loss) and medium-risk ones (recoverable but disruptive).</p>
+                <p>Chau7 intercepts dangerous commands at the terminal input layer. Chau7's guard works regardless of shell and presents a confirmation dialog for all detected dangerous patterns.</p>
             </div>
         </section>
 
@@ -143,9 +141,9 @@
         <!-- Can I disable the guard for specific directories -->
         <section class="feature-content" data-ui="dangerous-command-guard-disable">
             <div class="section-inner prose">
-                <h2>Can I disable Chau7's guard for specific directories?</h2>
-                <p>Yes. Chau7 lets you whitelist directories, specific command patterns, or disable the guard entirely per-tab. This is useful for automated scripts that need uninterrupted execution.</p>
-                <p>Chau7's rules are fully configurable. You can add your own patterns, adjust severity levels, and set different confirmation requirements for high-risk versus medium-risk operations.</p>
+                <h2>Can I customize Chau7's guard rules?</h2>
+                <p>Yes. Chau7 lets you add specific commands to a global allowlist so they bypass the guard. You can also add your own patterns to detect additional dangerous commands.</p>
+                <p>Chau7's rules are customizable. All detected patterns trigger the same confirmation dialog. The allowlist is global and applies across all tabs.</p>
             </div>
         </section>
 
@@ -165,7 +163,7 @@
                 <div class="related-features-grid">
                     <a class="catalog-card" href="/features/process-exit-confirmation">
                         <h4>Process Exit Confirmation</h4>
-                        <p>Warns before closing tabs with running processes. Configurable per-process rules.</p>
+                        <p>Warns before closing tabs with running processes.</p>
                     </a>
                     <a class="catalog-card" href="/features/mcp-approval-gate">
                         <h4>MCP Approval Gate</h4>
@@ -189,7 +187,7 @@
                     </details>
                     <details>
                         <summary>How does Chau7's dangerous command guard compare to other terminals?</summary>
-                        <div class="faq-answer"><p>Most terminals have no built-in protection against destructive commands. iTerm2, Warp, Alacritty, and Kitty rely on shell aliases or third-party tools. Chau7 is the only terminal that intercepts dangerous commands at the terminal input layer, catching them regardless of shell and including pasted commands with hidden characters.</p></div>
+                        <div class="faq-answer"><p>Most terminals have no built-in protection against destructive commands. iTerm2, Warp, Alacritty, and Kitty rely on shell aliases or third-party tools. Chau7 intercepts dangerous commands at the terminal input layer, catching them regardless of shell.</p></div>
                     </details>
                     <details>
                         <summary>How do I prevent accidental rm -rf in the terminal?</summary>
@@ -200,8 +198,8 @@
                         <div class="faq-answer"><p>No. Chau7's pattern matching runs in microseconds on every command submission. Safe commands execute with no visible delay. Only when Chau7 detects a dangerous pattern does the confirmation dialog appear.</p></div>
                     </details>
                     <details>
-                        <summary>Can I disable the guard for specific directories?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7 lets you whitelist directories, specific command patterns, or disable the guard entirely per-tab for automated scripts that need uninterrupted execution.</p></div>
+                        <summary>Can I customize the guard rules?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 lets you add specific commands to a global allowlist and add your own patterns to detect additional dangerous commands. All detected patterns trigger the same confirmation dialog.</p></div>
                     </details>
                 </div>
             </div>

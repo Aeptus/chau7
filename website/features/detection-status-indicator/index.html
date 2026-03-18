@@ -6,7 +6,7 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Detection Status Indicator | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 shows a real-time status indicator on each tab revealing whether the AI agent inside is actively running, idle, or has completed its task.">
+    <meta name="description" content="Chau7 displays the AI agent logo on each tab at full opacity when the tool is actively running, and at reduced opacity for restored or inactive sessions.">
     <meta name="article:section" content="AI Detection">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="detection status indicator">
@@ -15,7 +15,7 @@
     <meta name="article:tag" content="Claude Code status">
     <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Detection Status Indicator | Chau7">
-    <meta property="og:description" content="Chau7 shows a real-time status indicator on each tab revealing whether the AI agent inside is actively running, idle, or has completed its task.">
+    <meta property="og:description" content="Chau7 displays the AI agent logo on each tab at full opacity when the tool is actively running, and at reduced opacity for restored or inactive sessions.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,12 +30,11 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS that shows a real-time status indicator on each tab revealing whether the AI agent is active, idle, or done.",
+        "description": "Chau7 is an AI-native terminal for macOS that displays the AI agent logo on each tab at full opacity when actively running, and at reduced opacity for restored or inactive sessions.",
         "featureList": [
-            "Real-time AI agent status badge per tab",
-            "Active, idle, and completed state detection",
-            "Process-state monitoring instead of output parsing",
-            "Background AI process tracking",
+            "AI agent logo indicator per tab",
+            "Full opacity for active sessions, reduced opacity for inactive",
+            "Command-line matching and output pattern detection",
             "Works across all supported AI agents",
             "Glanceable tab bar status"
         ],
@@ -55,11 +54,11 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Detection Status Indicator in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Detection Status Indicator is a feature in the Chau7 terminal that displays a real-time status badge on each tab containing an AI agent. Chau7 shows whether the agent is actively running, idle, or has completed its task, so you can monitor progress without switching tabs."}},
-            {"@type":"Question","name":"How does Chau7's detection status indicator compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"No other terminal shows AI agent status on the tab bar. iTerm2, Warp, Alacritty, and Kitty have no awareness of AI processes running inside them. Chau7 is the only terminal that monitors AI agent process state and displays it as a glanceable status badge per tab."}},
-            {"@type":"Question","name":"How do I know when Claude Code is done in my terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7 monitors the Claude Code process state in each tab and displays a status badge. When Claude Code finishes, Chau7 marks the tab as completed. No need to switch tabs and scroll through output to check."}},
-            {"@type":"Question","name":"What states does the indicator show?","acceptedAnswer":{"@type":"Answer","text":"Chau7's Detection Status Indicator shows three states: active (the agent process is running and consuming CPU), idle (the process is alive but waiting for input), and completed (the process has exited). Each state has a distinct visual treatment on the tab."}},
-            {"@type":"Question","name":"Does the indicator work with background AI processes?","acceptedAnswer":{"@type":"Answer","text":"Yes. As long as the AI process is a descendant of the tab's shell process, Chau7's indicator tracks it regardless of whether the process is in the foreground or background."}}
+            {"@type":"Question","name":"What is Detection Status Indicator in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Detection Status Indicator is a visual feature in the Chau7 terminal that displays the AI agent logo on each tab. The logo appears at full opacity when the AI tool is actively running, and at reduced opacity (35%) for restored or inactive sessions, so you can see session status at a glance."}},
+            {"@type":"Question","name":"How does Chau7's detection status indicator compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"No other terminal shows AI agent status on the tab bar. iTerm2, Warp, Alacritty, and Kitty have no awareness of AI tools running inside them. Chau7 is the only terminal that detects AI agents through command matching and output scanning, then displays their logo with opacity indicating session status."}},
+            {"@type":"Question","name":"How do I know when Claude Code is done in my terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7 displays the Claude Code logo on the tab. When Claude Code is actively running the logo appears at full opacity. When the session becomes inactive or is restored, the logo dims to 35% opacity, letting you see the status without switching tabs."}},
+            {"@type":"Question","name":"How does the indicator show session status?","acceptedAnswer":{"@type":"Answer","text":"Chau7's Detection Status Indicator uses the AI agent logo with two opacity levels: full opacity when the agent is actively running, and 35% opacity for restored or inactive sessions. This provides a clear visual distinction without cluttering the tab bar."}},
+            {"@type":"Question","name":"How does Chau7 detect AI agents for the indicator?","acceptedAnswer":{"@type":"Answer","text":"Chau7 detects AI agents through command-line matching (recognizing typed commands) and terminal output pattern matching (scanning output for known signatures). This detection drives the logo indicator on the tab bar."}}
         ]
     }]
     </script>
@@ -85,7 +84,7 @@
             <div class="hero-content">
                 <div class="section-badge badge-alt">AI DETECTION</div>
                 <h1 class="hero-title">Detection Status Indicator</h1>
-                <p class="hero-subtitle">Active, idle, or done. Chau7 shows it on the tab so you never have to switch to check.</p>
+                <p class="hero-subtitle">Full opacity means active. Dimmed means inactive. Chau7 shows it on the tab so you never have to switch to check.</p>
             </div>
         </section>
 
@@ -97,8 +96,8 @@
                     <li class="question-item">What is Detection Status Indicator in Chau7 terminal?</li>
                     <li class="question-item">How does Chau7's detection status indicator compare to other terminals?</li>
                     <li class="question-item">How do I know when Claude Code is done in my terminal?</li>
-                    <li class="question-item">What states does the indicator show?</li>
-                    <li class="question-item">Does the indicator work with background AI processes?</li>
+                    <li class="question-item">How does the indicator show session status?</li>
+                    <li class="question-item">How does Chau7 detect AI agents for the indicator?</li>
                 </ul>
             </div>
         </section>
@@ -107,8 +106,8 @@
         <section class="feature-content" data-ui="detection-status-what">
             <div class="section-inner prose">
                 <h2>What is Detection Status Indicator in Chau7?</h2>
-                <p>Detection Status Indicator is a feature in the Chau7 terminal that displays a real-time status badge on each tab containing a detected AI agent. Chau7 shows whether the agent is actively running, idle, or has completed its task.</p>
-                <p>Chau7 derives the status from process state monitoring rather than output parsing. This makes Chau7's indicator reliable across all agents regardless of their output format or verbosity settings.</p>
+                <p>Detection Status Indicator is a visual feature in the Chau7 terminal that displays the AI agent logo on each tab containing a detected AI tool. The logo appears at full opacity when the AI tool is actively running, and at reduced opacity (35%) for restored or inactive sessions.</p>
+                <p>Chau7 detects agents through command-line matching and terminal output pattern scanning. This makes Chau7's indicator reliable across all agents regardless of their output format or verbosity settings.</p>
             </div>
         </section>
 
@@ -116,7 +115,7 @@
         <section class="feature-content" data-ui="detection-status-claude-code-done">
             <div class="section-inner prose">
                 <h2>How do I know when Claude Code is done in my terminal?</h2>
-                <p>Chau7 monitors the Claude Code process state in each tab and displays a status badge directly on the tab bar. When Claude Code finishes, Chau7 marks the tab as completed with a distinct visual indicator.</p>
+                <p>Chau7 displays the Claude Code logo on each tab where it has been detected. When Claude Code is actively running, the logo appears at full opacity. When the session becomes inactive or is restored from a previous session, the logo dims to 35% opacity, providing a clear visual signal.</p>
                 <p>No need to switch tabs and scroll through output to check. Chau7 lets you glance at the tab bar and see the status of every AI agent at once.</p>
             </div>
         </section>
@@ -124,9 +123,9 @@
         <!-- What states does the indicator show -->
         <section class="feature-content" data-ui="detection-status-states">
             <div class="section-inner prose">
-                <h2>What states does Chau7's indicator show?</h2>
-                <p>Chau7's Detection Status Indicator shows three states. Active means the agent process is running and consuming CPU. Idle means the process is alive but waiting for input. Completed means the process has exited.</p>
-                <p>Each state has a distinct visual treatment on the tab in Chau7. The transitions happen in real time as Chau7 monitors the process state.</p>
+                <h2>How does Chau7's indicator show session status?</h2>
+                <p>Chau7's Detection Status Indicator uses the AI agent logo with two opacity levels. Full opacity means the agent is actively running in the tab. Reduced opacity (35%) means the session is restored from a previous session or the agent is no longer active.</p>
+                <p>The opacity transition happens automatically as Chau7 detects agent activity through command matching and output scanning.</p>
             </div>
         </section>
 
@@ -135,16 +134,16 @@
             <div class="section-inner prose">
                 <h2>How does Chau7's detection status indicator compare to other terminals?</h2>
                 <p>No other terminal shows AI agent status on the tab bar. iTerm2, Warp, Alacritty, and Kitty have no awareness of AI processes running inside them.</p>
-                <p>Chau7 is the only terminal that monitors AI agent process state and displays it as a glanceable status badge per tab. This saves exactly one context switch per check, which adds up to dozens per day when running multiple agents.</p>
+                <p>Chau7 is the only terminal that detects AI agents through command matching and output scanning, then displays their logo with opacity indicating session status. This saves exactly one context switch per check, which adds up to dozens per day when running multiple agents.</p>
             </div>
         </section>
 
-        <!-- Does it work with background processes -->
+        <!-- How does Chau7 detect AI agents -->
         <section class="feature-content" data-ui="detection-status-background">
             <div class="section-inner prose">
-                <h2>Does Chau7's indicator work with background AI processes?</h2>
-                <p>Yes. As long as the AI process is a descendant of the tab's shell process, Chau7's indicator tracks it regardless of whether the process is in the foreground or background.</p>
-                <p>Chau7 monitors the full process tree under each tab's shell. Background AI agents are detected and tracked with the same active, idle, and completed states as foreground agents.</p>
+                <h2>How does Chau7 detect AI agents for the indicator?</h2>
+                <p>Chau7 detects AI agents through two methods: command-line matching (recognizing typed commands like <code>claude</code>, <code>codex</code>, <code>gemini</code>) and terminal output pattern matching (scanning output for known agent signatures).</p>
+                <p>This detection drives the logo indicator on the tab bar. When an agent is detected and actively running, the logo appears at full opacity. For restored or inactive sessions, the logo appears at reduced opacity.</p>
             </div>
         </section>
 
@@ -153,7 +152,7 @@
             <div class="section-inner prose">
                 <h2>Why Chau7's Detection Status Indicator matters</h2>
                 <p>AI agents can run for minutes or hours. The current workflow for checking progress in other terminals: switch tab, scroll, squint, switch back.</p>
-                <p>Chau7's workflow: glance at the tab bar. A small status badge tells you whether each agent is actively working, waiting for input, or finished. Chau7 saves one context switch per check, which adds up to dozens per day.</p>
+                <p>Chau7's workflow: glance at the tab bar. The agent logo at full opacity means it is actively running; dimmed means the session is inactive or restored. Chau7 saves one context switch per check, which adds up to dozens per day.</p>
             </div>
         </section>
 
@@ -188,23 +187,23 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Detection Status Indicator in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Detection Status Indicator is a feature in the Chau7 terminal that displays a real-time status badge on each tab containing an AI agent. Chau7 shows whether the agent is actively running, idle, or has completed its task, so you can monitor progress without switching tabs.</p></div>
+                        <div class="faq-answer"><p>Detection Status Indicator is a visual feature in the Chau7 terminal that displays the AI agent logo on each tab. The logo appears at full opacity when the AI tool is actively running, and at reduced opacity (35%) for restored or inactive sessions, so you can see session status at a glance.</p></div>
                     </details>
                     <details>
                         <summary>How does Chau7's detection status indicator compare to other terminals?</summary>
-                        <div class="faq-answer"><p>No other terminal shows AI agent status on the tab bar. iTerm2, Warp, Alacritty, and Kitty have no awareness of AI processes running inside them. Chau7 is the only terminal that monitors AI agent process state and displays it as a glanceable status badge per tab.</p></div>
+                        <div class="faq-answer"><p>No other terminal shows AI agent status on the tab bar. iTerm2, Warp, Alacritty, and Kitty have no awareness of AI tools running inside them. Chau7 is the only terminal that detects AI agents through command matching and output scanning, then displays their logo with opacity indicating session status.</p></div>
                     </details>
                     <details>
                         <summary>How do I know when Claude Code is done in my terminal?</summary>
-                        <div class="faq-answer"><p>Chau7 monitors the Claude Code process state in each tab and displays a status badge. When Claude Code finishes, Chau7 marks the tab as completed. No need to switch tabs and scroll through output to check.</p></div>
+                        <div class="faq-answer"><p>Chau7 displays the Claude Code logo on the tab. When Claude Code is actively running the logo appears at full opacity. When the session becomes inactive or is restored, the logo dims to 35% opacity, letting you see the status without switching tabs.</p></div>
                     </details>
                     <details>
-                        <summary>What states does the indicator show?</summary>
-                        <div class="faq-answer"><p>Chau7's Detection Status Indicator shows three states: active (the agent process is running and consuming CPU), idle (the process is alive but waiting for input), and completed (the process has exited). Each state has a distinct visual treatment on the tab.</p></div>
+                        <summary>How does the indicator show session status?</summary>
+                        <div class="faq-answer"><p>Chau7's Detection Status Indicator uses the AI agent logo with two opacity levels: full opacity when the agent is actively running, and 35% opacity for restored or inactive sessions. This provides a clear visual distinction without cluttering the tab bar.</p></div>
                     </details>
                     <details>
-                        <summary>Does the indicator work with background AI processes?</summary>
-                        <div class="faq-answer"><p>Yes. As long as the AI process is a descendant of the tab's shell process, Chau7's indicator tracks it regardless of whether the process is in the foreground or background.</p></div>
+                        <summary>How does Chau7 detect AI agents for the indicator?</summary>
+                        <div class="faq-answer"><p>Chau7 detects AI agents through command-line matching (recognizing typed commands) and terminal output pattern matching (scanning output for known signatures). This detection drives the logo indicator on the tab bar.</p></div>
                     </details>
                 </div>
             </div>

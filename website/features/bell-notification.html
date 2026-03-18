@@ -6,10 +6,10 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Bell Notification | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 supports visual bell, audio bell, and Dock bounce notifications on the terminal bell character, configurable per profile.">
-    <meta name="keywords" content="Chau7, terminal bell, visual bell, audio bell, Dock bounce, macOS terminal, bell notification, terminal emulator">
+    <meta name="description" content="Chau7 supports bell notification modes (none, subtle, default) and Dock bounce on the terminal bell character. Bell settings are global.">
+    <meta name="keywords" content="Chau7, terminal bell, bell modes, Dock bounce, macOS terminal, bell notification, terminal emulator">
     <meta property="og:title" content="Bell Notification | Chau7">
-    <meta property="og:description" content="Chau7 supports visual bell, audio bell, and Dock bounce notifications on the terminal bell character, configurable per profile.">
+    <meta property="og:description" content="Chau7 supports bell notification modes (none, subtle, default) and Dock bounce on the terminal bell character. Bell settings are global.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -45,7 +45,7 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Can I use a custom sound for the terminal bell in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Chau7 uses the system alert sound by default. You can change the system alert sound in macOS System Settings &gt; Sound, which will also change the Chau7 bell sound."}},{"@type":"Question","name":"Does the Dock bounce work when Chau7 is in the foreground?","acceptedAnswer":{"@type":"Answer","text":"No. The Chau7 Dock bounce is specifically for background notification, when Chau7 is not the frontmost application. When Chau7 is in the foreground, the visual bell and audio bell provide the notification."}},{"@type":"Question","name":"How do I trigger a test bell in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Run printf &#x27;\\a&#x27; or echo -e &#x27;\\007&#x27; in your Chau7 terminal. If Chau7 bell notifications are configured correctly, you will see and/or hear the notification immediately."}},{"@type":"Question","name":"Why is the terminal bell not working in my terminal emulator?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, bell notifications require at least one bell mode (visual, audio, or Dock bounce) to be enabled in your profile settings. If bells stop appearing, Chau7 may be rate-limiting them because more than 5 BEL characters arrived within one second. Run printf &#x27;\\a&#x27; to test. If nothing happens, open Chau7 profile settings and verify that your preferred bell mode is enabled."}},{"@type":"Question","name":"How does Chau7 bell notification compare to other terminal emulators?","acceptedAnswer":{"@type":"Answer","text":"Chau7 offers three independent, combinable bell modes (visual flash, audio bell, Dock bounce) configured per profile, plus a built-in rate limiter. Most terminals offer only one or two modes. macOS Terminal.app supports audio and visual bell but not per-profile configuration. iTerm2 supports visual and audio bell with profile support but lacks a rate limiter. Alacritty supports only visual bell. Chau7 is the only macOS terminal that combines all three modes with per-profile control and automatic rate limiting."}}]
+        "mainEntity": [{"@type":"Question","name":"Can I use a custom sound for the terminal bell in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Chau7 uses the system alert sound by default. You can change the system alert sound in macOS System Settings &gt; Sound, which will also change the Chau7 bell sound."}},{"@type":"Question","name":"Does the Dock bounce work when Chau7 is in the foreground?","acceptedAnswer":{"@type":"Answer","text":"No. The Chau7 Dock bounce is specifically for background notification, when Chau7 is not the frontmost application. When Chau7 is in the foreground, the visual bell and audio bell provide the notification."}},{"@type":"Question","name":"How do I trigger a test bell in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Run printf &#x27;\\a&#x27; or echo -e &#x27;\\007&#x27; in your Chau7 terminal. If Chau7 bell notifications are configured correctly, you will see and/or hear the notification immediately."}},{"@type":"Question","name":"Why is the terminal bell not working in my terminal emulator?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, bell notifications require the bell mode to be set to something other than none in settings. Run printf &#x27;\\a&#x27; to test. If nothing happens, open Chau7 settings and verify that the bell mode is set to subtle or default."}},{"@type":"Question","name":"How does Chau7 bell notification compare to other terminal emulators?","acceptedAnswer":{"@type":"Answer","text":"Chau7 offers three mutually exclusive bell modes (none, subtle, default) plus a separate Dock bounce notification. macOS Terminal.app supports audio and visual bell. iTerm2 supports visual and audio bell with profile support. Alacritty supports only visual bell. Chau7's bell modes provide a simple way to control notification behavior."}}]
     }]
     </script>
 </head>
@@ -93,8 +93,8 @@
         <section class="feature-content" data-ui="bell-notification-overview">
             <div class="section-inner prose">
                 <h2>What is bell notification in Chau7 terminal</h2>
-                <p>Chau7 bell notification is the system that alerts you when a program writes the <code>BEL</code> character (<code>0x07</code>) to your terminal. When a build finishes, a long-running command completes, or a test suite reports results, the program sends a <code>BEL</code> character and Chau7 delivers a configurable notification.</p>
-                <p>Chau7 provides three independent bell notification modes: visual bell, audio bell, and Dock bounce. Each Chau7 bell mode can be enabled or disabled independently, and you can combine them in any combination per profile.</p>
+                <p>Chau7 bell notification is the system that alerts you when a program writes the <code>BEL</code> character (<code>0x07</code>) to your terminal. When a build finishes, a long-running command completes, or a test suite reports results, the program sends a <code>BEL</code> character and Chau7 delivers a notification.</p>
+                <p>Chau7 provides three mutually exclusive bell modes: none, subtle, and default. You select one mode in Chau7's settings. Dock bounce is a separate notification feature that works independently when Chau7 is in the background. Bell settings are global, not per-profile.</p>
             </div>
         </section>
 
@@ -102,8 +102,8 @@
         <section class="feature-content" data-ui="bell-visual-bell">
             <div class="section-inner prose">
                 <h2>How to enable visual bell in Chau7 on macOS</h2>
-                <p>Chau7 visual bell briefly flashes the terminal background when a <code>BEL</code> character arrives. To enable Chau7 visual bell, open the Chau7 profile settings for your active profile and toggle the visual bell option on.</p>
-                <p>Chau7 visual bell is useful when you want a silent notification. For example, you might enable Chau7 visual bell in a monitoring profile that tails logs, so you see the flash without hearing a sound.</p>
+                <p>Set the Chau7 bell mode to "subtle" for a quiet visual notification when a <code>BEL</code> character arrives. The "default" mode provides a more prominent notification.</p>
+                <p>The "subtle" mode is useful when you want a less intrusive notification. For example, when tailing logs, the subtle mode provides awareness without being distracting.</p>
             </div>
         </section>
 
@@ -111,8 +111,8 @@
         <section class="feature-content" data-ui="bell-audio-bell">
             <div class="section-inner prose">
                 <h2>How Chau7 audio bell works</h2>
-                <p>Chau7 audio bell plays the macOS system alert sound when a <code>BEL</code> character arrives. The sound Chau7 plays is the same sound configured in macOS System Settings under Sound. To change the Chau7 bell sound, change the macOS system alert sound.</p>
-                <p>Chau7 audio bell is configured per profile. You can have audio bell enabled in your main development profile but disabled in other Chau7 profiles where sound would be distracting.</p>
+                <p>When the bell mode is set to "default", Chau7 plays the macOS system alert sound when a <code>BEL</code> character arrives. The sound Chau7 plays is the same sound configured in macOS System Settings under Sound. To change the Chau7 bell sound, change the macOS system alert sound.</p>
+                <p>Bell settings are global across all tabs. Set the mode to "none" to silence bell notifications entirely, or "subtle" for a quieter notification.</p>
             </div>
         </section>
 
@@ -120,27 +120,26 @@
         <section class="feature-content" data-ui="bell-dock-bounce">
             <div class="section-inner prose">
                 <h2>How to make Chau7 bounce the Dock icon on bell</h2>
-                <p>Chau7 Dock bounce animates the Chau7 icon in the macOS Dock when a <code>BEL</code> character arrives and Chau7 is not the frontmost application. To enable Chau7 Dock bounce, open the Chau7 profile settings and toggle the Dock bounce option on.</p>
-                <p>Chau7 Dock bounce only activates when Chau7 is in the background. When Chau7 is the active application, the visual bell and audio bell handle the notification instead. This makes Chau7 Dock bounce ideal for long-running builds or commands where you switch to another application while waiting.</p>
+                <p>Chau7 Dock bounce animates the Chau7 icon in the macOS Dock when a <code>BEL</code> character arrives and Chau7 is not the frontmost application. Dock bounce is part of the notification system and works separately from the bell mode setting.</p>
+                <p>Chau7 Dock bounce only activates when Chau7 is in the background. When Chau7 is the active application, the selected bell mode handles the notification instead. This makes Dock bounce ideal for long-running builds or commands where you switch to another application while waiting.</p>
             </div>
         </section>
 
-        <!-- Per-profile configuration -->
-        <section class="feature-content" data-ui="bell-per-profile-config">
+        <!-- Global bell configuration -->
+        <section class="feature-content" data-ui="bell-global-config">
             <div class="section-inner prose">
-                <h2>Per-profile bell configuration in Chau7</h2>
-                <p>Chau7 bell behavior is configured per profile. Each Chau7 profile stores its own combination of visual bell, audio bell, and Dock bounce settings independently.</p>
-                <p>This per-profile control in Chau7 means you can have an audio bell in your main development profile, a silent visual-only bell in a log-monitoring profile, and a Dock-bounce-only bell in a background build profile. Each Chau7 profile's bell settings are completely independent.</p>
+                <h2>Bell configuration in Chau7</h2>
+                <p>Chau7 bell behavior is configured globally in settings. The three mutually exclusive modes are: none (no notification), subtle (quiet visual notification), and default (standard system alert sound).</p>
+                <p>Dock bounce is a separate setting that works independently from the bell mode. It activates when Chau7 is in the background and a BEL character arrives.</p>
             </div>
         </section>
 
-        <!-- Bell rate limiter / troubleshooting -->
-        <section class="feature-content" data-ui="bell-rate-limiter">
+        <!-- Bell troubleshooting -->
+        <section class="feature-content" data-ui="bell-troubleshooting">
             <div class="section-inner prose">
-                <h2>Terminal bell not working: Chau7 bell rate limiter</h2>
-                <p>Chau7 includes a bell rate limiter that prevents runaway programs from flooding the system with notifications. If more than 5 <code>BEL</code> characters arrive within one second, Chau7 suppresses further bell notifications until the rate drops.</p>
-                <p>If your terminal bell appears to stop working in Chau7, the rate limiter may be the cause. A script or program that triggers <code>BEL</code> in a tight loop will hit the Chau7 rate limit. Wait one second and run <code>printf '\a'</code> to confirm the Chau7 bell is still functional.</p>
-                <p>If running <code>printf '\a'</code> in Chau7 produces no notification at all, check your Chau7 profile settings to confirm that at least one bell mode (visual, audio, or Dock bounce) is enabled.</p>
+                <h2>Terminal bell not working in Chau7</h2>
+                <p>If the terminal bell is not working in Chau7, check that the bell mode is not set to "none" in settings. Run <code>printf '\a'</code> to test.</p>
+                <p>If running <code>printf '\a'</code> in Chau7 produces no notification at all, open Chau7 settings and verify that the bell mode is set to "subtle" or "default".</p>
             </div>
         </section>
 
@@ -148,9 +147,9 @@
         <section class="feature-content" data-ui="bell-comparison-other-terminals">
             <div class="section-inner prose">
                 <h2>How Chau7 bell notification compares to other terminals</h2>
-                <p>Chau7 offers three independent, combinable bell modes (visual flash, audio bell, Dock bounce) with per-profile configuration and a built-in rate limiter. Most macOS terminal emulators offer fewer bell options with less flexibility.</p>
-                <p>macOS Terminal.app supports audio bell and visual bell but does not allow per-profile bell configuration. iTerm2 supports visual bell and audio bell with per-profile settings but does not include a built-in bell rate limiter. Alacritty supports only visual bell with no audio bell or Dock bounce option.</p>
-                <p>Chau7 is the only macOS terminal emulator that combines all three bell notification modes with per-profile control and automatic rate limiting to prevent notification flooding.</p>
+                <p>Chau7 offers three mutually exclusive bell modes (none, subtle, default) plus a separate Dock bounce notification for background alerts.</p>
+                <p>macOS Terminal.app supports audio bell and visual bell. iTerm2 supports visual bell and audio bell with per-profile settings. Alacritty supports only visual bell with no audio bell or Dock bounce option.</p>
+                <p>Chau7's bell modes provide a simple way to control notification behavior with a clean interface.</p>
             </div>
         </section>
 
@@ -207,7 +206,7 @@
                     </details>
                     <details>
                         <summary>Why is the terminal bell not working in Chau7?</summary>
-                        <div class="faq-answer"><p>In Chau7, bell notifications require at least one bell mode (visual, audio, or Dock bounce) to be enabled in your profile settings. If bells stop appearing, Chau7 may be rate-limiting them because more than 5 <code>BEL</code> characters arrived within one second. Run <code>printf '\a'</code> to test. If nothing happens, open Chau7 profile settings and verify that your preferred bell mode is enabled.</p></div>
+                        <div class="faq-answer"><p>In Chau7, bell notifications require the bell mode to be set to something other than "none" in settings. Run <code>printf '\a'</code> to test. If nothing happens, open Chau7 settings and verify that the bell mode is set to "subtle" or "default".</p></div>
                     </details>
                 </div>
             </div>

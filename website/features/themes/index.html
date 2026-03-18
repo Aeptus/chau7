@@ -6,16 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Themes | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 includes built-in terminal themes with 256-color and 24-bit true color support. Import iTerm2 color schemes or create custom palettes with a live preview editor.">
+    <meta name="description" content="Chau7 includes 8 built-in terminal theme presets with 256-color and 24-bit true color support. Switch instantly with a live preview, no configuration files needed.">
     <meta name="article:section" content="Customization">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="terminal themes">
     <meta name="article:tag" content="color schemes">
-    <meta name="article:tag" content="iTerm2 color import">
+    <meta name="article:tag" content="theme presets">
     <meta name="article:tag" content="true color terminal">
     <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Themes | Chau7">
-    <meta property="og:description" content="Chau7 includes built-in terminal themes with 256-color and 24-bit true color support. Import iTerm2 color schemes or create custom palettes with a live preview editor.">
+    <meta property="og:description" content="Chau7 includes 8 built-in terminal theme presets with 256-color and 24-bit true color support. Switch instantly with a live preview, no configuration files needed.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,13 +30,11 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS with built-in themes, 24-bit true color rendering, iTerm2 color scheme import, and a live preview theme editor.",
+        "description": "Chau7 is an AI-native terminal for macOS with 8 built-in theme presets, 24-bit true color rendering, and instant live preview switching.",
         "featureList": [
-            "Curated built-in themes including Catppuccin, Dracula, Gruvbox, Nord, Solarized, Tokyo Night",
+            "8 built-in theme presets: Default, Solarized Dark, Solarized Light, Dracula, Nord, Monokai, Gruvbox Dark, Tokyo Night",
             "Full 256-color and 24-bit true color rendering",
-            "Native iTerm2 .itermcolors file import",
-            "Live preview theme editor with macOS color picker",
-            "Custom palette creation for all ANSI, background, foreground, cursor, and selection colors",
+            "Live preview of theme presets",
             "Instant theme switching without restart"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
@@ -55,10 +53,10 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Themes in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Themes in Chau7 is a built-in color scheme system that includes curated palettes like Catppuccin, Dracula, Gruvbox, Nord, Solarized, and Tokyo Night. Chau7 supports full 256-color and 24-bit true color rendering, iTerm2 color scheme import, and a live preview theme editor."}},
-            {"@type":"Question","name":"How to import iTerm2 color scheme into another terminal?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, drop an .itermcolors file onto the preferences window or use the import button. Chau7 reads iTerm2 color scheme files natively and converts them to Chau7 themes automatically. No manual hex value transcription is needed."}},
-            {"@type":"Question","name":"How to customize terminal colors beyond 16 ANSI?","acceptedAnswer":{"@type":"Answer","text":"Chau7 supports full 256-color and 24-bit true color rendering. Chau7's built-in theme editor provides a native macOS color picker for every slot in the palette, including all 16 ANSI colors, background, foreground, cursor, and selection colors. Changes preview in real time."}},
-            {"@type":"Question","name":"Can I import my existing iTerm2 color scheme?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 reads .itermcolors files natively. Import via the Chau7 preferences window and the color scheme converts automatically to a Chau7 theme."}},
+            {"@type":"Question","name":"What is Themes in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Themes in Chau7 is a built-in color scheme system with 8 curated presets: Default, Solarized Dark, Solarized Light, Dracula, Nord, Monokai, Gruvbox Dark, and Tokyo Night. Chau7 supports full 256-color and 24-bit true color rendering with instant live preview switching."}},
+            {"@type":"Question","name":"Which theme presets does Chau7 include?","acceptedAnswer":{"@type":"Answer","text":"Chau7 includes 8 theme presets: Default, Solarized Dark, Solarized Light, Dracula, Nord, Monokai, Gruvbox Dark, and Tokyo Night. You can switch between them instantly with a live preview."}},
+            {"@type":"Question","name":"How to customize terminal colors beyond 16 ANSI?","acceptedAnswer":{"@type":"Answer","text":"Chau7 supports full 256-color and 24-bit true color rendering. Applications that emit RGB escape sequences get accurate color reproduction in Chau7. Theme presets define the ANSI palette, background, foreground, cursor, and selection colors."}},
+            {"@type":"Question","name":"Can I switch themes without restarting?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 applies theme changes instantly with a live preview. Select a different preset and the change takes effect immediately across all open tabs."}},
             {"@type":"Question","name":"Does Chau7 support true color (24-bit)?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 renders full 24-bit RGB color. Applications like delta, bat, and modern Vim colorschemes display with accurate color reproduction in Chau7 rather than being quantized down to the nearest ANSI color."}}
         ]
     }]
@@ -85,7 +83,7 @@
             <div class="hero-content">
                 <div class="section-badge">CUSTOMIZATION</div>
                 <h1 class="hero-title">Themes</h1>
-                <p class="hero-subtitle">Chau7 ships with beautiful color schemes and a live preview editor. No YAML configuration headache.</p>
+                <p class="hero-subtitle">Chau7 ships with 8 beautiful theme presets and instant live preview switching. No YAML configuration headache.</p>
             </div>
         </section>
 
@@ -95,9 +93,9 @@
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
                     <li class="question-item">What is Themes in Chau7 terminal?</li>
-                    <li class="question-item">How to import iTerm2 color scheme into another terminal</li>
+                    <li class="question-item">Which theme presets does Chau7 include?</li>
                     <li class="question-item">How to customize terminal colors beyond 16 ANSI</li>
-                    <li class="question-item">Can I import my existing iTerm2 color scheme?</li>
+                    <li class="question-item">Can I switch themes without restarting?</li>
                     <li class="question-item">Does Chau7 support true color (24-bit)?</li>
                 </ul>
             </div>
@@ -107,17 +105,17 @@
         <section class="feature-content" data-ui="themes-what">
             <div class="section-inner prose">
                 <h2>What is Themes in Chau7?</h2>
-                <p>Themes in Chau7 is a built-in color scheme system that ships with a curated collection of popular palettes. Chau7 includes Catppuccin, Dracula, Gruvbox, Nord, Solarized, Tokyo Night, and more.</p>
-                <p>Each Chau7 theme defines the full 16 ANSI colors, background, foreground, cursor, and selection colors. Switching themes in Chau7 applies instantly with a live preview so developers can browse without committing to a choice.</p>
+                <p>Themes in Chau7 is a built-in color scheme system with 8 curated presets: Default, Solarized Dark, Solarized Light, Dracula, Nord, Monokai, Gruvbox Dark, and Tokyo Night.</p>
+                <p>Each Chau7 theme preset defines the ANSI palette, background, foreground, cursor, and selection colors. Switching presets in Chau7 applies instantly with a live preview so developers can browse without committing to a choice.</p>
             </div>
         </section>
 
-        <!-- How to import iTerm2 color schemes -->
-        <section class="feature-content" data-ui="themes-iterm2-import">
+        <!-- Which presets are included -->
+        <section class="feature-content" data-ui="themes-presets">
             <div class="section-inner prose">
-                <h2>How to import an iTerm2 color scheme into Chau7</h2>
-                <p>Chau7 reads <code>.itermcolors</code> files natively. Drop an iTerm2 color scheme file onto the Chau7 preferences window or use the import button.</p>
-                <p>Chau7 converts iTerm2 color schemes to native Chau7 themes automatically. No manual hex value transcription is needed. This gives Chau7 users access to the entire iTerm2 color scheme library.</p>
+                <h2>Which theme presets does Chau7 include?</h2>
+                <p>Chau7 ships with 8 theme presets: Default, Solarized Dark, Solarized Light, Dracula, Nord, Monokai, Gruvbox Dark, and Tokyo Night. These cover the most popular color scheme families used by developers.</p>
+                <p>Select any preset from Chau7's settings and the change applies instantly with a live preview. No configuration files to edit, no hex values to transcribe.</p>
             </div>
         </section>
 
@@ -126,7 +124,7 @@
             <div class="section-inner prose">
                 <h2>How to customize terminal colors beyond 16 ANSI in Chau7</h2>
                 <p>Chau7 supports full 256-color and 24-bit true color rendering. Applications that emit RGB escape sequences get accurate color reproduction in Chau7 rather than being quantized down to the nearest ANSI color.</p>
-                <p>Chau7's built-in theme editor provides a native macOS color picker for every slot in the palette. Developers can modify all 16 ANSI colors, background, foreground, cursor, and selection colors. Changes preview in real time so the result is visible before saving.</p>
+                <p>Theme presets define the ANSI palette, background, foreground, cursor, and selection colors. Select the preset that best matches your preference and Chau7 applies the full color scheme instantly.</p>
             </div>
         </section>
 
@@ -139,12 +137,12 @@
             </div>
         </section>
 
-        <!-- Creating custom themes -->
-        <section class="feature-content" data-ui="themes-custom-creation">
+        <!-- Switching themes -->
+        <section class="feature-content" data-ui="themes-switching">
             <div class="section-inner prose">
-                <h2>Can I create my own Chau7 theme from scratch?</h2>
-                <p>Yes. Chau7's built-in theme editor provides a color picker for every slot in the palette, including all ANSI colors, background, foreground, cursor, and selection.</p>
-                <p>The Chau7 theme editor shows changes in real time. Developers can experiment with colors and see the result immediately in the terminal, without editing configuration files or restarting.</p>
+                <h2>Can I switch themes without restarting Chau7?</h2>
+                <p>Yes. Chau7 applies theme changes instantly. Select a different preset from the settings and the change takes effect immediately across all open tabs using that profile.</p>
+                <p>The live preview lets developers browse presets and see how their terminal will look before committing to a choice, without editing configuration files or restarting.</p>
             </div>
         </section>
 
@@ -154,8 +152,8 @@
                 <h2>Related features</h2>
                 <div class="related-features-grid">
                     <a class="catalog-card" href="/features/fonts">
-                        <h4>100+ Fonts</h4>
-                        <p>Bundled monospace fonts plus system font support. Variable font weight and size configuration.</p>
+                        <h4>70+ Fonts</h4>
+                        <p>70+ recognized monospace font families via system font picker. Font family and size selection.</p>
                     </a>
                     <a class="catalog-card" href="/features/custom-keybindings">
                         <h4>Custom Keybindings</h4>
@@ -163,7 +161,7 @@
                     </a>
                     <a class="catalog-card" href="/features/cursor-styles">
                         <h4>Cursor Styles</h4>
-                        <p>Block, beam, and underline cursors with configurable blink rate and color.</p>
+                        <p>Block, beam, and underline cursors with blink toggle and per-profile settings.</p>
                     </a>
                 </div>
                 <div class="feature-random-row">
@@ -179,19 +177,19 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Themes in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Themes in Chau7 is a built-in color scheme system that includes curated palettes like Catppuccin, Dracula, Gruvbox, Nord, Solarized, and Tokyo Night. Chau7 supports full 256-color and 24-bit true color rendering, iTerm2 color scheme import, and a live preview theme editor.</p></div>
+                        <div class="faq-answer"><p>Themes in Chau7 is a built-in color scheme system with 8 curated presets: Default, Solarized Dark, Solarized Light, Dracula, Nord, Monokai, Gruvbox Dark, and Tokyo Night. Chau7 supports full 256-color and 24-bit true color rendering with instant live preview switching.</p></div>
                     </details>
                     <details>
-                        <summary>How to import iTerm2 color scheme into another terminal?</summary>
-                        <div class="faq-answer"><p>In Chau7, drop an .itermcolors file onto the preferences window or use the import button. Chau7 reads iTerm2 color scheme files natively and converts them to Chau7 themes automatically. No manual hex value transcription is needed.</p></div>
+                        <summary>Which theme presets does Chau7 include?</summary>
+                        <div class="faq-answer"><p>Chau7 includes 8 theme presets: Default, Solarized Dark, Solarized Light, Dracula, Nord, Monokai, Gruvbox Dark, and Tokyo Night. You can switch between them instantly with a live preview.</p></div>
                     </details>
                     <details>
                         <summary>How to customize terminal colors beyond 16 ANSI?</summary>
-                        <div class="faq-answer"><p>Chau7 supports full 256-color and 24-bit true color rendering. Chau7's built-in theme editor provides a native macOS color picker for every slot in the palette, including all 16 ANSI colors, background, foreground, cursor, and selection colors. Changes preview in real time.</p></div>
+                        <div class="faq-answer"><p>Chau7 supports full 256-color and 24-bit true color rendering. Applications that emit RGB escape sequences get accurate color reproduction in Chau7. Theme presets define the ANSI palette, background, foreground, cursor, and selection colors.</p></div>
                     </details>
                     <details>
-                        <summary>Can I import my existing iTerm2 color scheme?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7 reads .itermcolors files natively. Import via the Chau7 preferences window and the color scheme converts automatically to a Chau7 theme.</p></div>
+                        <summary>Can I switch themes without restarting?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 applies theme changes instantly with a live preview. Select a different preset and the change takes effect immediately across all open tabs.</p></div>
                     </details>
                     <details>
                         <summary>Does Chau7 support true color (24-bit)?</summary>

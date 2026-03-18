@@ -5,17 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
-    <title>Lock-Free SPSC Buffer | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 uses a lock-free single-producer single-consumer ring buffer for zero-contention PTY data transfer between threads.">
+    <title>Bounded Channel PTY Pipeline | Chau7 Terminal</title>
+    <meta name="description" content="Chau7 uses a crossbeam bounded channel in Rust for efficient PTY data transfer between the reader and parser threads, with natural backpressure when the channel is full.">
     <meta name="article:section" content="GPU Rendering">
     <meta name="article:tag" content="Chau7">
-    <meta name="article:tag" content="lock-free buffer">
-    <meta name="article:tag" content="SPSC ring buffer">
+    <meta name="article:tag" content="bounded channel">
+    <meta name="article:tag" content="crossbeam channel">
     <meta name="article:tag" content="PTY data transfer">
-    <meta name="article:tag" content="zero contention">
+    <meta name="article:tag" content="backpressure">
     <meta name="article:tag" content="terminal performance">
-    <meta property="og:title" content="Lock-Free SPSC Buffer | Chau7">
-    <meta property="og:description" content="Chau7 uses a lock-free single-producer single-consumer ring buffer for zero-contention PTY data transfer between threads.">
+    <meta property="og:title" content="Bounded Channel PTY Pipeline | Chau7">
+    <meta property="og:description" content="Chau7 uses a crossbeam bounded channel in Rust for efficient PTY data transfer between the reader and parser threads, with natural backpressure when the channel is full.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,14 +30,13 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS that uses a lock-free single-producer single-consumer ring buffer for zero-contention PTY data transfer between reader and parser threads.",
+        "description": "Chau7 is an AI-native terminal for macOS that uses a crossbeam bounded channel in Rust for efficient PTY data transfer between the reader and parser threads.",
         "featureList": [
-            "Lock-free SPSC ring buffer for PTY data",
-            "Zero-contention thread communication",
-            "Atomic cursor-based producer-consumer design",
-            "Cache-line padding to prevent false sharing",
-            "Power-of-two buffer sizing with bitwise wrap",
-            "POSIX backpressure on buffer full"
+            "crossbeam_channel::bounded with capacity of 256 messages",
+            "Each message is a Vec<u8> of up to 8,192 bytes",
+            "Internal atomics for efficient thread communication",
+            "Natural backpressure when channel is full",
+            "Production-quality Rust concurrency primitive"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
@@ -48,18 +47,18 @@
             { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://chau7.sh/" },
             { "@type": "ListItem", "position": 2, "name": "Features", "item": "https://chau7.sh/features" },
             { "@type": "ListItem", "position": 3, "name": "GPU Rendering", "item": "https://chau7.sh/features#rendering" },
-            { "@type": "ListItem", "position": 4, "name": "Lock-Free SPSC Buffer" }
+            { "@type": "ListItem", "position": 4, "name": "Bounded Channel PTY Pipeline" }
         ]
     },
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Lock-Free SPSC Buffer in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"The Lock-Free SPSC Buffer in Chau7 is a single-producer single-consumer ring buffer that transfers PTY data between the reader thread and the parser thread with zero contention. Chau7 uses atomic cursors instead of mutexes, eliminating kernel synchronization from the hottest data path in the terminal."}},
-            {"@type":"Question","name":"How does Chau7's lock-free SPSC buffer compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminal emulators use mutex-protected queues or pipe-based communication between their PTY reader and parser. Chau7 uses a lock-free SPSC ring buffer with atomic cursors and cache-line padding, eliminating all contention and kernel transitions from the PTY data path. This design is one reason Chau7 achieves higher throughput than terminals that use traditional synchronization."}},
-            {"@type":"Question","name":"How does Chau7 build a lock-free buffer for terminal PTY data?","acceptedAnswer":{"@type":"Answer","text":"Chau7's SPSC buffer uses two atomic cursors: a write cursor advanced by the PTY reader thread and a read cursor advanced by the parser thread. Each thread only writes its own cursor and reads the other. The buffer is sized to a power of two (256 KB), allowing index wrapping with a bitwise AND. Cache-line padding separates the cursors to prevent false sharing."}},
-            {"@type":"Question","name":"What happens if Chau7's ring buffer fills up?","acceptedAnswer":{"@type":"Answer","text":"If the parser falls behind the reader in Chau7, the reader detects a full buffer via the cursor positions and applies backpressure by pausing the PTY read. This signals the child process to slow down via standard POSIX flow control, preventing unbounded memory growth."}},
-            {"@type":"Question","name":"Why does Chau7 use SPSC instead of a multi-producer or multi-consumer buffer?","acceptedAnswer":{"@type":"Answer","text":"Chau7's PTY data path has exactly one producer (the reader thread) and one consumer (the parser thread). An SPSC buffer exploits this fixed topology to eliminate all atomic read-modify-write operations, using only atomic loads and stores. Multi-producer or multi-consumer queues require compare-and-swap loops that are strictly more expensive."}}
+            {"@type":"Question","name":"What is the Bounded Channel PTY Pipeline in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"The Bounded Channel PTY Pipeline in Chau7 uses a crossbeam bounded channel in Rust to transfer PTY data between the reader thread and the parser thread. The channel has a capacity of 256 messages, each containing up to 8,192 bytes of PTY data. The crossbeam channel uses internal atomics for efficient thread communication."}},
+            {"@type":"Question","name":"How does Chau7's PTY pipeline compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminal emulators use mutex-protected queues or pipe-based communication between their PTY reader and parser. Chau7 uses a crossbeam bounded channel, a proven production-quality concurrency primitive from the Rust ecosystem that uses internal atomics for efficient thread communication without manual lock management."}},
+            {"@type":"Question","name":"How does Chau7 transfer PTY data between threads?","acceptedAnswer":{"@type":"Answer","text":"Chau7 uses crossbeam_channel::bounded with a capacity of 256 messages. The PTY reader thread reads data from the PTY file descriptor into Vec<u8> buffers of up to 8,192 bytes and sends them through the channel. The parser thread receives messages from the channel and processes the terminal data."}},
+            {"@type":"Question","name":"What happens if Chau7's channel fills up?","acceptedAnswer":{"@type":"Answer","text":"When the channel is full (256 messages buffered), the sender blocks, providing natural backpressure. This signals the child process to slow down via standard POSIX flow control because the PTY read pauses, preventing unbounded memory growth."}},
+            {"@type":"Question","name":"Why does Chau7 use crossbeam channels?","acceptedAnswer":{"@type":"Answer","text":"Crossbeam channels are a proven, production-quality concurrency primitive from the Rust ecosystem. They use internal atomics for efficient thread communication and provide a clean API for bounded message passing. This avoids the complexity and risk of a custom implementation while delivering excellent performance."}}
         ]
     }]
     </script>
@@ -76,7 +75,7 @@
             <span class="breadcrumb-sep">/</span>
             <a href="/features#rendering">GPU Rendering</a>
             <span class="breadcrumb-sep">/</span>
-            <span class="breadcrumb-current">Lock-Free SPSC Buffer</span>
+            <span class="breadcrumb-current">Bounded Channel PTY Pipeline</span>
         </div>
 
         <!-- Hero -->
@@ -84,8 +83,8 @@
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge badge-purple">GPU RENDERING</div>
-                <h1 class="hero-title">Lock-Free SPSC Buffer</h1>
-                <p class="hero-subtitle">Chau7 connects reader and parser with one lock-free ring buffer. Zero contention.</p>
+                <h1 class="hero-title">Bounded Channel PTY Pipeline</h1>
+                <p class="hero-subtitle">Chau7 connects reader and parser with a crossbeam bounded channel. Efficient. Proven. Natural backpressure.</p>
             </div>
         </section>
 
@@ -94,57 +93,57 @@
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">What is Lock-Free SPSC Buffer in Chau7 terminal?</li>
-                    <li class="question-item">How does Chau7's lock-free SPSC buffer compare to other terminals?</li>
-                    <li class="question-item">How does Chau7 build a lock-free buffer for terminal PTY data?</li>
-                    <li class="question-item">What happens if Chau7's ring buffer fills up?</li>
-                    <li class="question-item">Why does Chau7 use SPSC instead of a multi-producer or multi-consumer buffer?</li>
+                    <li class="question-item">What is the Bounded Channel PTY Pipeline in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's PTY pipeline compare to other terminals?</li>
+                    <li class="question-item">How does Chau7 transfer PTY data between threads?</li>
+                    <li class="question-item">What happens if Chau7's channel fills up?</li>
+                    <li class="question-item">Why does Chau7 use crossbeam channels?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- What is Lock-Free SPSC Buffer -->
+        <!-- What is Bounded Channel PTY Pipeline -->
         <section class="feature-content" data-ui="spsc-buffer-what">
             <div class="section-inner prose">
-                <h2>What is Lock-Free SPSC Buffer in Chau7?</h2>
-                <p>The Lock-Free SPSC Buffer in Chau7 is a single-producer single-consumer ring buffer that transfers PTY data between the reader thread and the parser thread with zero contention. Chau7 uses atomic cursors instead of mutexes, eliminating kernel synchronization from the hottest data path in the terminal.</p>
-                <p>The PTY-to-parser pipeline is the path through which every byte of program output flows in Chau7. A mutex on this path would create contention between the PTY reader and the parser, adding latency on every I/O cycle. Chau7's lock-free design avoids this entirely.</p>
+                <h2>What is the Bounded Channel PTY Pipeline in Chau7?</h2>
+                <p>The Bounded Channel PTY Pipeline in Chau7 uses a <code>crossbeam_channel::bounded</code> channel in Rust to transfer PTY data between the reader thread and the parser thread. The channel has a capacity of 256 messages, each containing a <code>Vec&lt;u8&gt;</code> of up to 8,192 bytes of PTY data.</p>
+                <p>The PTY-to-parser pipeline is the path through which every byte of program output flows in Chau7. The crossbeam channel uses internal atomics for efficient thread communication, avoiding the overhead of manual lock management while providing a clean, well-tested API.</p>
             </div>
         </section>
 
-        <!-- How Chau7 builds the buffer -->
+        <!-- How Chau7 transfers data -->
         <section class="feature-content" data-ui="spsc-buffer-how">
             <div class="section-inner prose">
-                <h2>How does Chau7 build a lock-free buffer for terminal PTY data?</h2>
-                <p>Chau7's SPSC ring buffer uses two atomic cursors. A write cursor is advanced by the reader thread, and a read cursor is advanced by the parser thread. Each thread only writes its own cursor and reads the other, so there is no contention on any shared memory location.</p>
-                <p>The buffer in Chau7 is sized to a power of two (typically 256 KB), allowing index wrapping with a simple bitwise AND instead of a modulo operation. Cache-line padding separates the two cursors to prevent false sharing on ARM and x86 architectures, ensuring neither thread's writes invalidate the other's cached cursor value.</p>
+                <h2>How does Chau7 transfer PTY data between threads?</h2>
+                <p>Chau7's PTY reader thread reads data from the PTY file descriptor into <code>Vec&lt;u8&gt;</code> buffers of up to 8,192 bytes and sends them through the crossbeam bounded channel. The parser thread receives messages from the channel and processes the terminal data.</p>
+                <p>The bounded channel in Chau7 has a capacity of 256 messages. At 8,192 bytes per message, this provides up to 2 MB of buffering between the reader and parser. The crossbeam channel handles all the internal synchronization using atomics, so Chau7 does not need to manage any locks or condition variables on this path.</p>
             </div>
         </section>
 
-        <!-- Buffer full behavior -->
+        <!-- Channel full behavior -->
         <section class="feature-content" data-ui="spsc-buffer-full">
             <div class="section-inner prose">
-                <h2>What happens if Chau7's ring buffer fills up?</h2>
-                <p>If the parser falls behind the reader in Chau7, the reader detects a full buffer via the cursor positions and applies backpressure by pausing the PTY read. This is the correct behavior for a terminal emulator.</p>
-                <p>Pausing the PTY read in Chau7 signals the child process to slow down via standard POSIX flow control. This prevents unbounded memory growth and keeps the system stable under burst output. The buffer size of 256 KB provides roughly 3ms of buffering at 80 MB/s throughput, which is large enough to absorb normal scheduling jitter.</p>
+                <h2>What happens if Chau7's channel fills up?</h2>
+                <p>When the channel is full (256 messages buffered), the sender blocks, providing natural backpressure. This is the correct behavior for a terminal emulator.</p>
+                <p>Blocking the PTY read in Chau7 signals the child process to slow down via standard POSIX flow control. This prevents unbounded memory growth and keeps the system stable under burst output. The 256-message capacity provides enough buffering to absorb normal scheduling jitter without stalling the child process during typical usage.</p>
             </div>
         </section>
 
-        <!-- Why SPSC -->
+        <!-- Why crossbeam -->
         <section class="feature-content" data-ui="spsc-buffer-why-spsc">
             <div class="section-inner prose">
-                <h2>Why does Chau7 use SPSC instead of a multi-producer or multi-consumer buffer?</h2>
-                <p>Chau7's PTY data path has exactly one producer (the reader thread) and one consumer (the parser thread). An SPSC buffer exploits this fixed topology to eliminate all atomic read-modify-write operations, using only atomic loads and stores.</p>
-                <p>Multi-producer or multi-consumer queues require compare-and-swap loops that are strictly more expensive than atomic loads and stores. Since Chau7's PTY data path will always have exactly one reader and one parser, the SPSC design is the optimal choice for this topology.</p>
+                <h2>Why does Chau7 use crossbeam channels?</h2>
+                <p>Crossbeam channels are a proven, production-quality concurrency primitive from the Rust ecosystem. They use internal atomics for efficient thread communication and provide a clean API for bounded message passing.</p>
+                <p>Using a well-tested library like crossbeam avoids the complexity and risk of a custom implementation. The crossbeam bounded channel has been battle-tested across the Rust ecosystem and provides excellent performance characteristics for Chau7's producer-consumer PTY data path.</p>
             </div>
         </section>
 
         <!-- Comparison to other terminals -->
         <section class="feature-content" data-ui="spsc-buffer-comparison">
             <div class="section-inner prose">
-                <h2>How does Chau7's lock-free SPSC buffer compare to other terminals?</h2>
-                <p>Most terminal emulators use mutex-protected queues or pipe-based communication between their PTY reader and parser. These approaches introduce kernel transitions and contention on every I/O cycle.</p>
-                <p>Chau7 uses a lock-free SPSC ring buffer with atomic cursors and cache-line padding, eliminating all contention and kernel transitions from the PTY data path. This design is one reason Chau7 achieves higher throughput than terminals that use traditional synchronization primitives.</p>
+                <h2>How does Chau7's PTY pipeline compare to other terminals?</h2>
+                <p>Most terminal emulators use mutex-protected queues or pipe-based communication between their PTY reader and parser. These approaches can introduce contention or kernel transitions on every I/O cycle.</p>
+                <p>Chau7 uses a crossbeam bounded channel that handles synchronization internally with atomics. This provides efficient thread communication without the overhead of manual lock management, and the bounded capacity provides natural backpressure when the parser cannot keep up with incoming data.</p>
             </div>
         </section>
 
@@ -155,7 +154,7 @@
                 <div class="related-features-grid">
                     <a class="catalog-card" href="/features/metal-rendering">
                         <h4>Metal Rendering <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
-                        <p>Hardware-accelerated rendering via Apple Metal API with glyph atlas and dirty region tracking.</p>
+                        <p>Hardware-accelerated rendering via Apple Metal API with glyph atlas caching.</p>
                     </a>
                     <a class="catalog-card" href="/features/iosurface-display">
                         <h4>IOSurface Display <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
@@ -163,7 +162,7 @@
                     </a>
                     <a class="catalog-card" href="/features/simd-parsing">
                         <h4>SIMD Parsing <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
-                        <p>16-32 byte SIMD-accelerated ANSI escape parsing in Rust for cache-line-speed throughput.</p>
+                        <p>16-byte SIMD-accelerated ANSI escape parsing in Swift for fast throughput.</p>
                     </a>
                 </div>
                 <div class="feature-random-row">
@@ -178,24 +177,24 @@
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>What is Lock-Free SPSC Buffer in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>The Lock-Free SPSC Buffer in Chau7 is a single-producer single-consumer ring buffer that transfers PTY data between the reader thread and the parser thread with zero contention. Chau7 uses atomic cursors instead of mutexes, eliminating kernel synchronization from the hottest data path in the terminal.</p></div>
+                        <summary>What is the Bounded Channel PTY Pipeline in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>The Bounded Channel PTY Pipeline in Chau7 uses a crossbeam bounded channel in Rust to transfer PTY data between the reader thread and the parser thread. The channel has a capacity of 256 messages, each containing up to 8,192 bytes of PTY data. The crossbeam channel uses internal atomics for efficient thread communication.</p></div>
                     </details>
                     <details>
-                        <summary>How does Chau7's lock-free SPSC buffer compare to other terminals?</summary>
-                        <div class="faq-answer"><p>Most terminal emulators use mutex-protected queues or pipe-based communication between their PTY reader and parser. Chau7 uses a lock-free SPSC ring buffer with atomic cursors and cache-line padding, eliminating all contention and kernel transitions from the PTY data path.</p></div>
+                        <summary>How does Chau7's PTY pipeline compare to other terminals?</summary>
+                        <div class="faq-answer"><p>Most terminal emulators use mutex-protected queues or pipe-based communication between their PTY reader and parser. Chau7 uses a crossbeam bounded channel, a proven production-quality concurrency primitive from the Rust ecosystem that uses internal atomics for efficient thread communication.</p></div>
                     </details>
                     <details>
-                        <summary>How does Chau7 build a lock-free buffer for terminal PTY data?</summary>
-                        <div class="faq-answer"><p>Chau7's SPSC buffer uses two atomic cursors: a write cursor advanced by the PTY reader thread and a read cursor advanced by the parser thread. Each thread only writes its own cursor and reads the other. The buffer is sized to a power of two (256 KB), allowing index wrapping with a bitwise AND. Cache-line padding separates the cursors to prevent false sharing.</p></div>
+                        <summary>How does Chau7 transfer PTY data between threads?</summary>
+                        <div class="faq-answer"><p>Chau7 uses crossbeam_channel::bounded with a capacity of 256 messages. The PTY reader thread reads data into Vec&lt;u8&gt; buffers of up to 8,192 bytes and sends them through the channel. The parser thread receives messages and processes the terminal data.</p></div>
                     </details>
                     <details>
-                        <summary>What happens if Chau7's ring buffer fills up?</summary>
-                        <div class="faq-answer"><p>If the parser falls behind the reader in Chau7, the reader detects a full buffer via the cursor positions and applies backpressure by pausing the PTY read. This signals the child process to slow down via standard POSIX flow control, preventing unbounded memory growth.</p></div>
+                        <summary>What happens if Chau7's channel fills up?</summary>
+                        <div class="faq-answer"><p>When the channel is full (256 messages buffered), the sender blocks, providing natural backpressure. This signals the child process to slow down via standard POSIX flow control, preventing unbounded memory growth.</p></div>
                     </details>
                     <details>
-                        <summary>Why does Chau7 use SPSC instead of a multi-producer or multi-consumer buffer?</summary>
-                        <div class="faq-answer"><p>Chau7's PTY data path has exactly one producer (the reader thread) and one consumer (the parser thread). An SPSC buffer exploits this fixed topology to eliminate all atomic read-modify-write operations, using only atomic loads and stores. Multi-producer or multi-consumer queues require compare-and-swap loops that are strictly more expensive.</p></div>
+                        <summary>Why does Chau7 use crossbeam channels?</summary>
+                        <div class="faq-answer"><p>Crossbeam channels are a proven, production-quality concurrency primitive from the Rust ecosystem. They use internal atomics for efficient thread communication and provide a clean API for bounded message passing. This avoids the complexity and risk of a custom implementation while delivering excellent performance.</p></div>
                     </details>
                 </div>
             </div>
@@ -205,7 +204,7 @@
         <section class="footer-cta-section" aria-label="Download call to action" data-ui="spsc-buffer-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Lock-free data pipeline. Because mutexes are so last decade.</h2>
+                    <h2>Proven concurrency primitives. Because reinventing the wheel is overrated.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>

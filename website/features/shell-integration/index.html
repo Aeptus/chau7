@@ -57,9 +57,9 @@
         "mainEntity": [
             {"@type":"Question","name":"What is Shell Integration in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Shell Integration is a feature in the Chau7 terminal that installs lightweight hooks into zsh, bash, and fish to report command boundaries, working directories, and exit codes. Chau7 uses these signals to build a structured model of each command, enabling features like click-to-select output and scroll-to-previous-prompt."}},
             {"@type":"Question","name":"How does Chau7's shell integration compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"iTerm2 offers shell integration that requires manual script installation. Warp has built-in integration but only for zsh. Alacritty and Kitty have no shell integration. Chau7 auto-injects minimal hooks into zsh, bash, and fish at startup without modifying configuration files, providing command detection, directory tracking, and exit code reporting out of the box."}},
-            {"@type":"Question","name":"How does terminal shell integration work?","acceptedAnswer":{"@type":"Answer","text":"Chau7 injects lightweight shell hooks that emit invisible OSC 133 and OSC 7 escape sequences at key points in the command lifecycle. OSC 133 marks prompt, command input, and output boundaries. OSC 7 reports the current working directory. Chau7 reads these sequences to build a structured model of each command."}},
+            {"@type":"Question","name":"How does terminal shell integration work?","acceptedAnswer":{"@type":"Answer","text":"Chau7 injects lightweight shell hooks that emit invisible escape sequences at key points in the command lifecycle. OSC 7 reports the current working directory after directory changes. A proprietary OSC 9 sequence (\\e]9;chau7;exit=${code}\\a) reports exit codes. Chau7 reads these sequences to build a structured model of each command."}},
             {"@type":"Question","name":"Does shell integration modify my shell configuration files?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7 injects the integration hooks at shell startup via environment variables, without modifying .zshrc, .bashrc, or config.fish. Your configuration files remain untouched. You can disable auto-injection in Chau7's settings."}},
-            {"@type":"Question","name":"What happens if I use a shell that is not zsh, bash, or fish?","acceptedAnswer":{"@type":"Answer","text":"Chau7 still functions as a standard terminal emulator. Features that depend on shell integration like command detection and directory tracking will be unavailable, but all other Chau7 functionality works normally. You can manually emit OSC 133 and OSC 7 sequences from any shell to enable integration."}}
+            {"@type":"Question","name":"What happens if I use a shell that is not zsh, bash, or fish?","acceptedAnswer":{"@type":"Answer","text":"Chau7 still functions as a standard terminal emulator. Features that depend on shell integration like command detection and directory tracking will be unavailable, but all other Chau7 functionality works normally. You can manually emit OSC 7 and the proprietary OSC 9 sequences from any shell to enable integration."}}
         ]
     }]
     </script>
@@ -116,7 +116,7 @@
         <section class="feature-content" data-ui="shell-integration-how">
             <div class="section-inner prose">
                 <h2>How does Chau7's shell integration work?</h2>
-                <p>Chau7 installs lightweight shell hooks into zsh, bash, and fish that emit invisible escape sequences at key points in the command lifecycle. A precmd/preexec pair using OSC 133 marks the boundary between the prompt, the command input, and the command output. OSC 7 reports the current working directory after every directory change.</p>
+                <p>Chau7 installs lightweight shell hooks into zsh, bash, and fish that emit invisible escape sequences at key points in the command lifecycle. OSC 7 reports the current working directory after every directory change. A proprietary OSC 9 sequence (<code>\e]9;chau7;exit=${code}\a</code>) reports exit codes after each command completes.</p>
                 <p>Chau7's shell integration hooks are minimal, under 20 lines per shell. They do not modify shell behavior, aliases, or key bindings. Chau7 auto-injects these hooks when it detects a supported shell at startup.</p>
             </div>
         </section>
@@ -144,7 +144,7 @@
             <div class="section-inner prose">
                 <h2>What happens if you use a shell that is not zsh, bash, or fish?</h2>
                 <p>Chau7 still functions as a standard terminal emulator. Features that depend on Chau7's shell integration, like command detection and directory tracking, will be unavailable. All other Chau7 functionality works normally.</p>
-                <p>You can manually emit OSC 133 and OSC 7 sequences from any shell to enable Chau7's shell integration features. This makes Chau7's integration extensible to shells like nushell, elvish, or custom interpreters.</p>
+                <p>You can manually emit OSC 7 and the proprietary OSC 9 sequences from any shell to enable Chau7's shell integration features. This makes Chau7's integration extensible to shells like nushell, elvish, or custom interpreters.</p>
             </div>
         </section>
 
@@ -209,7 +209,7 @@
                     </details>
                     <details>
                         <summary>What happens if I use a shell that is not zsh, bash, or fish?</summary>
-                        <div class="faq-answer"><p>Chau7 still functions as a standard terminal emulator. Features that depend on Chau7's shell integration like command detection and directory tracking will be unavailable, but all other Chau7 functionality works normally. You can manually emit OSC 133 and OSC 7 sequences from any shell to enable integration.</p></div>
+                        <div class="faq-answer"><p>Chau7 still functions as a standard terminal emulator. Features that depend on Chau7's shell integration like command detection and directory tracking will be unavailable, but all other Chau7 functionality works normally. You can manually emit OSC 7 and the proprietary OSC 9 sequences from any shell to enable integration.</p></div>
                     </details>
                     <details>
                         <summary>Can I disable Chau7's shell integration?</summary>

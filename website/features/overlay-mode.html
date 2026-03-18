@@ -6,16 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Overlay Mode | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 overlay mode pins the terminal window above all other applications at the system level. Toggle with a configurable global hotkey for instant access while multitasking.">
+    <meta name="description" content="Chau7 overlay mode provides a dedicated terminal window with transparency and blur compositing. The window remembers its position per workspace for quick access while multitasking.">
     <meta name="article:section" content="Window Modes">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="overlay mode">
-    <meta name="article:tag" content="always on top">
-    <meta name="article:tag" content="floating terminal">
-    <meta name="article:tag" content="global hotkey">
+    <meta name="article:tag" content="transparency blur">
+    <meta name="article:tag" content="overlay window">
+    <meta name="article:tag" content="NSVisualEffectView">
     <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Overlay Mode | Chau7">
-    <meta property="og:description" content="Chau7 overlay mode pins the terminal window above all other applications at the system level. Toggle with a configurable global hotkey for instant access while multitasking.">
+    <meta property="og:description" content="Chau7 overlay mode provides a dedicated terminal window with transparency and blur compositing. The window remembers its position per workspace for quick access while multitasking.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,14 +30,13 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS with overlay mode that pins the terminal above all other windows, toggled by a configurable global hotkey.",
+        "description": "Chau7 is an AI-native terminal for macOS with overlay mode that provides a dedicated terminal window with transparency and blur compositing via NSVisualEffectView.",
         "featureList": [
-            "Always-on-top terminal window",
-            "Configurable global hotkey toggle",
+            "Dedicated overlay terminal window",
+            "Transparency and blur compositing via NSVisualEffectView",
             "Independent window size and position for overlay",
-            "Multi-monitor support",
-            "Transparency and blur compositing",
-            "Interactive overlay with click-through"
+            "Per-workspace position memory",
+            "Multi-monitor support"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
@@ -55,10 +54,10 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Overlay Mode in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Overlay Mode is a feature in the Chau7 terminal that pins the terminal window above all other applications at the system level. Chau7's overlay window stays visible regardless of which application has focus, and a configurable global hotkey toggles overlay mode on and off from anywhere."}},
-            {"@type":"Question","name":"Terminal stays above other windows hotkey toggle","acceptedAnswer":{"@type":"Answer","text":"Chau7's overlay mode keeps the terminal above all other windows at the macOS system level. A configurable global hotkey toggles Chau7's overlay on and off from any application, whether or not Chau7 has focus. A second press of the hotkey dismisses the overlay and returns to normal window layering."}},
-            {"@type":"Question","name":"Keep terminal window always on top macOS","acceptedAnswer":{"@type":"Answer","text":"Chau7's overlay mode pins the terminal window above all other macOS applications. Activate overlay mode in Chau7 with a global hotkey or from the Window menu. The terminal stays visible on top while you work in your editor, browser, or any other application."}},
-            {"@type":"Question","name":"Can I toggle overlay mode with a keyboard shortcut?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 provides a configurable global hotkey that toggles overlay mode from any application, whether or not Chau7 has focus. The hotkey can be changed in Chau7's settings to any key combination you prefer."}},
+            {"@type":"Question","name":"What is Overlay Mode in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Overlay Mode is a feature in the Chau7 terminal that provides a dedicated terminal window with transparency and blur compositing via NSVisualEffectView. The overlay window behaves as a regular macOS window (normal window level) and does not float above other applications at the system level. It remembers its position per workspace."}},
+            {"@type":"Question","name":"Does the overlay float above other apps?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7's overlay mode uses normal macOS window level, so it does not pin above other applications. It behaves as a regular window in the macOS window layering order. The overlay provides transparency and blur compositing and remembers its size and position independently from the main window."}},
+            {"@type":"Question","name":"What makes overlay mode different from a regular window?","acceptedAnswer":{"@type":"Answer","text":"Chau7's overlay mode provides a separate window with transparency and blur compositing via NSVisualEffectView. Window size and position are remembered independently per workspace, so toggling overlay mode restores your preferred layout. The overlay is ideal for keeping terminal output visible alongside other content."}},
+            {"@type":"Question","name":"Can I toggle overlay mode with a keyboard shortcut?","acceptedAnswer":{"@type":"Answer","text":"Chau7's overlay mode can be toggled from the Window menu. Localization strings reference a hotkey for this, but global hotkey registration (system-wide hotkey that works from other apps) is not currently implemented."}},
             {"@type":"Question","name":"Does overlay mode work with multiple monitors?","acceptedAnswer":{"@type":"Answer","text":"Yes. The Chau7 overlay window appears on whichever monitor it was last positioned on and remembers its size and location independently from the normal window. Each monitor can have its own overlay position in Chau7."}}
         ]
     }]
@@ -85,7 +84,7 @@
             <div class="hero-content">
                 <div class="section-badge">WINDOW MODES</div>
                 <h1 class="hero-title">Overlay Mode</h1>
-                <p class="hero-subtitle">Chau7 floats your terminal above everything else. Persistent, accessible, out of the way.</p>
+                <p class="hero-subtitle">Chau7 gives you a dedicated overlay window with transparency and blur. Persistent position, quick access.</p>
             </div>
         </section>
 
@@ -95,8 +94,8 @@
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
                     <li class="question-item">What is Overlay Mode in Chau7 terminal?</li>
-                    <li class="question-item">Terminal stays above other windows hotkey toggle</li>
-                    <li class="question-item">Keep terminal window always on top macOS</li>
+                    <li class="question-item">Does the overlay float above other apps?</li>
+                    <li class="question-item">What makes overlay mode different from a regular window?</li>
                     <li class="question-item">Can I toggle overlay mode with a keyboard shortcut?</li>
                     <li class="question-item">Does overlay mode work with multiple monitors?</li>
                 </ul>
@@ -107,26 +106,26 @@
         <section class="feature-content" data-ui="overlay-what">
             <div class="section-inner prose">
                 <h2>What is Overlay Mode in Chau7?</h2>
-                <p>Overlay Mode is a feature in the Chau7 terminal that pins the terminal window above all other applications at the system level. Chau7's overlay window stays visible regardless of which application has focus.</p>
-                <p>Activate Chau7's overlay mode with a global hotkey or from the Window menu, and the terminal stays on top while you work in your editor, browser, or any other application. This is ideal for keeping a log tail, server output, or command reference visible.</p>
+                <p>Overlay Mode is a feature in the Chau7 terminal that provides a dedicated window with transparency and blur compositing via NSVisualEffectView. The overlay window uses normal macOS window level and behaves as a regular window in the window layering order.</p>
+                <p>Activate Chau7's overlay mode from the Window menu. The overlay window remembers its size and position per workspace, making it easy to return to a consistent layout. This is ideal for keeping a log tail, server output, or command reference visible alongside other content.</p>
             </div>
         </section>
 
-        <!-- Terminal stays above other windows -->
+        <!-- Overlay window behavior -->
         <section class="feature-content" data-ui="overlay-always-on-top">
             <div class="section-inner prose">
-                <h2>How Chau7 keeps the terminal above other windows</h2>
-                <p>Chau7's overlay mode keeps the terminal above all other windows at the macOS system level. A configurable global hotkey toggles Chau7's overlay on and off from any application, whether or not Chau7 has focus.</p>
-                <p>The Chau7 overlay window remains interactive. Click into it to type commands, then click back to your other application, and the terminal stays visible in front. A second press of the global hotkey dismisses the overlay, returning to normal window layering.</p>
+                <h2>Does the overlay float above other apps?</h2>
+                <p>No. Chau7's overlay window uses normal macOS window level (<code>.normal</code>), so it participates in the standard window layering order. It does not pin above other applications at the system level. When you click another app, that app's windows come to the front as usual.</p>
+                <p>The Chau7 overlay window remains interactive and remembers its position independently from the main terminal window. Toggle overlay mode from the Window menu to switch between your regular and overlay layouts.</p>
             </div>
         </section>
 
-        <!-- Always on top macOS -->
+        <!-- Overlay compositing -->
         <section class="feature-content" data-ui="overlay-macos-integration">
             <div class="section-inner prose">
-                <h2>Keep terminal window always on top on macOS</h2>
-                <p>Chau7 uses macOS system-level window management to pin the overlay above all other applications. Window size and position are remembered independently for Chau7's overlay mode, so toggling in and out restores your preferred layout.</p>
-                <p>Chau7's overlay mode combines naturally with transparency and blur. A semi-transparent overlay floating above your editor gives you terminal visibility without fully obscuring the content underneath, creating an efficient layered workspace on a single monitor.</p>
+                <h2>What makes overlay mode different from a regular window?</h2>
+                <p>Chau7's overlay mode provides a separate window with its own remembered size and position per workspace. Toggling in and out restores your preferred layout without rearranging your main terminal window.</p>
+                <p>Chau7's overlay mode combines naturally with transparency and blur via NSVisualEffectView. A semi-transparent overlay window gives you terminal visibility without fully obscuring the content underneath, creating an efficient layered workspace on a single monitor.</p>
             </div>
         </section>
 
@@ -134,8 +133,8 @@
         <section class="feature-content" data-ui="overlay-hotkey">
             <div class="section-inner prose">
                 <h2>Can I toggle overlay mode with a keyboard shortcut?</h2>
-                <p>Yes. Chau7 provides a configurable global hotkey that toggles overlay mode from any application, whether or not Chau7 has focus. The hotkey can be changed in Chau7's settings to any key combination you prefer.</p>
-                <p>The global hotkey in Chau7 works system-wide, so you can summon or dismiss the terminal overlay from your editor, browser, or any other application without switching to Chau7 first.</p>
+                <p>Chau7's overlay mode can be toggled from the Window menu. Localization strings reference a hotkey for this feature, but global hotkey registration (a system-wide hotkey that works from other apps without Chau7 having focus) is not currently implemented in the codebase.</p>
+                <p>When Chau7 is the active application, you can use the Window menu or any custom keybinding you assign to toggle overlay mode.</p>
             </div>
         </section>
 
@@ -152,8 +151,8 @@
         <section class="feature-content" data-ui="overlay-why-it-matters">
             <div class="section-inner prose">
                 <h2>Why overlay mode matters</h2>
-                <p>Developers constantly switch between terminal and editor. Chau7's overlay mode eliminates that context switch by keeping the terminal visible as a floating window above other applications.</p>
-                <p>You can reference terminal output while writing code in Chau7's overlay, or monitor a running process while working in another app. Chau7's overlay mode turns the terminal from a hidden background tool into a persistent companion.</p>
+                <p>Developers constantly switch between terminal and editor. Chau7's overlay mode provides a dedicated window with transparency and blur that you can position alongside your editor for quick reference.</p>
+                <p>You can reference terminal output while writing code by placing Chau7's overlay window beside your editor, or use the per-workspace position memory to maintain consistent layouts across different workspaces. The overlay window remembers where you put it.</p>
             </div>
         </section>
 
@@ -171,8 +170,8 @@
                         <p>Native macOS fullscreen with menu bar hiding and Space integration.</p>
                     </a>
                     <a class="catalog-card" href="/features/menu-bar-only">
-                        <h4>Menu Bar Only</h4>
-                        <p>Run Chau7 as a menu bar app with no Dock icon. Access via menu bar icon or hotkey.</p>
+                        <h4>Menu Bar Status Item</h4>
+                        <p>Persistent menu bar icon with a popover panel for notifications and quick actions.</p>
                     </a>
                 </div>
                 <div class="feature-random-row">
@@ -188,19 +187,19 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Overlay Mode in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Overlay Mode is a feature in the Chau7 terminal that pins the terminal window above all other applications at the system level. Chau7's overlay window stays visible regardless of which application has focus, and a configurable global hotkey toggles overlay mode on and off from anywhere.</p></div>
+                        <div class="faq-answer"><p>Overlay Mode is a feature in the Chau7 terminal that provides a dedicated window with transparency and blur compositing via NSVisualEffectView. The overlay window uses normal macOS window level and does not float above other applications at the system level. It remembers its position per workspace.</p></div>
                     </details>
                     <details>
-                        <summary>Terminal stays above other windows hotkey toggle</summary>
-                        <div class="faq-answer"><p>Chau7's overlay mode keeps the terminal above all other windows at the macOS system level. A configurable global hotkey toggles Chau7's overlay on and off from any application, whether or not Chau7 has focus. A second press of the hotkey dismisses the overlay and returns to normal window layering.</p></div>
+                        <summary>Does the overlay float above other apps?</summary>
+                        <div class="faq-answer"><p>No. Chau7's overlay mode uses normal macOS window level, so it does not pin above other applications. It behaves as a regular window in the macOS window layering order. The overlay provides transparency and blur compositing and remembers its size and position independently from the main window.</p></div>
                     </details>
                     <details>
-                        <summary>Keep terminal window always on top macOS</summary>
-                        <div class="faq-answer"><p>Chau7's overlay mode pins the terminal window above all other macOS applications. Activate overlay mode in Chau7 with a global hotkey or from the Window menu. The terminal stays visible on top while you work in your editor, browser, or any other application.</p></div>
+                        <summary>What makes overlay mode different from a regular window?</summary>
+                        <div class="faq-answer"><p>Chau7's overlay mode provides a separate window with transparency and blur compositing via NSVisualEffectView. Window size and position are remembered independently per workspace, so toggling overlay mode restores your preferred layout. The overlay is ideal for keeping terminal output visible alongside other content.</p></div>
                     </details>
                     <details>
                         <summary>Can I toggle overlay mode with a keyboard shortcut?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7 provides a configurable global hotkey that toggles overlay mode from any application, whether or not Chau7 has focus. The hotkey can be changed in Chau7's settings to any key combination you prefer.</p></div>
+                        <div class="faq-answer"><p>Chau7's overlay mode can be toggled from the Window menu. Localization strings reference a hotkey for this, but global hotkey registration (system-wide hotkey that works from other apps) is not currently implemented.</p></div>
                     </details>
                     <details>
                         <summary>Does overlay mode work with multiple monitors?</summary>

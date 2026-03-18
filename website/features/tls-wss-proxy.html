@@ -6,7 +6,7 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>TLS/WSS Proxy | Chau7 Terminal</title>
-    <meta name="description" content="Chau7's transparent TLS/WSS proxy intercepts LLM API calls to OpenAI, Anthropic, and other providers locally. Enables token counting, cost tracking, and latency analysis.">
+    <meta name="description" content="Chau7's local TLS/WSS proxy intercepts LLM API calls to OpenAI, Anthropic, and Gemini by redirecting API base URLs. Enables token counting, cost tracking, and latency analysis. Requires enabling API Analytics in settings.">
     <meta name="article:section" content="API Analytics">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="TLS proxy">
@@ -15,7 +15,7 @@
     <meta name="article:tag" content="API traffic analysis">
     <meta name="article:tag" content="terminal">
     <meta property="og:title" content="TLS/WSS Proxy | Chau7">
-    <meta property="og:description" content="Chau7's transparent TLS/WSS proxy intercepts LLM API calls to OpenAI, Anthropic, and other providers locally. Enables token counting, cost tracking, and latency analysis.">
+    <meta property="og:description" content="Chau7's local TLS/WSS proxy intercepts LLM API calls to OpenAI, Anthropic, and Gemini by redirecting API base URLs. Enables token counting, cost tracking, and latency analysis.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,14 +30,13 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS with a built-in transparent TLS/WSS proxy that intercepts LLM API calls to OpenAI, Anthropic, and other providers for token counting, cost tracking, and latency analysis.",
+        "description": "Chau7 is an AI-native terminal for macOS with a built-in local TLS/WSS proxy that intercepts LLM API calls to OpenAI, Anthropic, and Gemini by redirecting API base URL environment variables, for token counting, cost tracking, and latency analysis.",
         "featureList": [
-            "Transparent HTTPS and WebSocket proxy for LLM API traffic",
+            "Local HTTPS and WebSocket proxy for LLM API traffic",
             "Local-only interception with no data sent externally",
-            "Selective interception of recognized LLM API endpoints only",
+            "Interception via API base URL environment variable redirection",
             "Per-tab and per-session API call association",
-            "Sub-millisecond proxy latency with async inspection",
-            "Support for OpenAI, Anthropic, Google Gemini, and custom providers"
+            "Support for OpenAI, Anthropic, and Google Gemini"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
@@ -55,11 +54,11 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is TLS/WSS Proxy in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"The TLS/WSS Proxy in Chau7 is a transparent local proxy that intercepts HTTPS and WebSocket traffic between AI agents and LLM API endpoints. Chau7's proxy captures API calls to OpenAI, Anthropic, Google Gemini, and other providers, then feeds parsed data into Chau7's token counting, cost tracking, and latency analysis features."}},
-            {"@type":"Question","name":"How does Chau7's TLS/WSS proxy compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"No other terminal includes a built-in TLS proxy for intercepting LLM API traffic. iTerm2, Warp, Alacritty, and Kitty have no API interception capability. External tools like mitmproxy require manual setup and do not integrate with terminal sessions. Chau7's proxy runs automatically, associates each API call with its originating tab, and feeds data into built-in analytics."}},
-            {"@type":"Question","name":"How to intercept LLM API calls from terminal AI agents?","acceptedAnswer":{"@type":"Answer","text":"Chau7 intercepts LLM API calls automatically through its built-in TLS/WSS proxy. The proxy uses a locally generated certificate authority to decrypt, inspect, and re-encrypt traffic to known LLM provider domains. No manual proxy configuration or external tools are needed."}},
-            {"@type":"Question","name":"Is the proxy secure? Does it send data externally?","acceptedAnswer":{"@type":"Answer","text":"Chau7's proxy runs entirely on the local machine. No API traffic, tokens, or request content is sent to Chau7 servers or any third party. The locally generated CA certificate is scoped to LLM API domains only, and all other traffic passes through untouched."}},
-            {"@type":"Question","name":"Does the proxy add latency to API calls?","acceptedAnswer":{"@type":"Answer","text":"Chau7's proxy adds negligible latency, typically under one millisecond per request. The inspection and logging in Chau7 happen asynchronously so they do not block the request-response cycle."}}
+            {"@type":"Question","name":"What is TLS/WSS Proxy in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"The TLS/WSS Proxy in Chau7 is a local proxy that intercepts HTTPS and WebSocket traffic between AI agents and LLM API endpoints by redirecting API base URL environment variables. Chau7's proxy captures API calls to OpenAI, Anthropic, and Google Gemini, then feeds parsed data into Chau7's token counting, cost tracking, and latency analysis features. It requires enabling API Analytics in settings."}},
+            {"@type":"Question","name":"How does Chau7's TLS/WSS proxy compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"No other terminal includes a built-in TLS proxy for intercepting LLM API traffic. iTerm2, Warp, Alacritty, and Kitty have no API interception capability. External tools like mitmproxy require manual setup and do not integrate with terminal sessions. Chau7's proxy associates each API call with its originating tab and feeds data into built-in analytics."}},
+            {"@type":"Question","name":"How to intercept LLM API calls from terminal AI agents?","acceptedAnswer":{"@type":"Answer","text":"Chau7 intercepts LLM API calls through its built-in TLS/WSS proxy. The proxy works by redirecting API base URL environment variables (e.g., ANTHROPIC_BASE_URL, OPENAI_BASE_URL) to a local endpoint with a self-signed certificate for localhost. Enable API Analytics in Chau7's settings to activate the proxy."}},
+            {"@type":"Question","name":"Is the proxy secure? Does it send data externally?","acceptedAnswer":{"@type":"Answer","text":"Chau7's proxy runs entirely on the local machine. No API traffic, tokens, or request content is sent to Chau7 servers or any third party. The locally generated self-signed certificate is scoped to localhost (127.0.0.1)."}},
+            {"@type":"Question","name":"Does the proxy add latency to API calls?","acceptedAnswer":{"@type":"Answer","text":"Chau7's proxy adds some latency because it buffers the full response body synchronously for inspection. The overhead is generally small relative to LLM API response times."}}
         ]
     }]
     </script>
@@ -85,7 +84,7 @@
             <div class="hero-content">
                 <div class="section-badge badge-blue">API ANALYTICS</div>
                 <h1 class="hero-title">TLS/WSS Proxy</h1>
-                <p class="hero-subtitle">Chau7 runs a transparent proxy that captures every API call your AI agent makes. You will finally know what is happening on the wire.</p>
+                <p class="hero-subtitle">Chau7 runs a local proxy that captures every API call your AI agent makes. You will finally know what is happening on the wire.</p>
             </div>
         </section>
 
@@ -107,8 +106,8 @@
         <section class="feature-content" data-ui="tls-proxy-what">
             <div class="section-inner prose">
                 <h2>What is TLS/WSS Proxy in Chau7?</h2>
-                <p>The TLS/WSS Proxy in Chau7 is a transparent local proxy that intercepts HTTPS and WebSocket traffic between AI agents and LLM API endpoints. Chau7's proxy captures API calls to OpenAI, Anthropic, Google Gemini, and other providers without modifying the agent's behavior.</p>
-                <p>Captured API calls in Chau7 are parsed and fed into downstream analytics features: token counting, cost tracking, and latency measurement. Each call is associated with its originating tab and session, creating a complete per-agent audit trail of API usage.</p>
+                <p>The TLS/WSS Proxy in Chau7 is a local proxy that intercepts HTTPS and WebSocket traffic between AI agents and LLM API endpoints. It works by redirecting API base URL environment variables (e.g., <code>ANTHROPIC_BASE_URL</code>, <code>OPENAI_BASE_URL</code>) to a local endpoint. Chau7's proxy captures API calls to OpenAI, Anthropic, and Google Gemini.</p>
+                <p>Captured API calls in Chau7 are parsed and fed into downstream analytics features: token counting, cost tracking, and latency measurement. Each call is associated with its originating tab and session, creating a complete per-agent audit trail of API usage. The proxy requires enabling "API Analytics" in Chau7's settings (it defaults to off).</p>
             </div>
         </section>
 
@@ -116,8 +115,8 @@
         <section class="feature-content" data-ui="tls-proxy-how-to-intercept">
             <div class="section-inner prose">
                 <h2>How to intercept LLM API calls from terminal AI agents</h2>
-                <p>Chau7 intercepts LLM API calls automatically through its built-in TLS/WSS proxy. The proxy uses a locally generated certificate authority to decrypt, inspect, and re-encrypt traffic to known LLM provider domains. No manual proxy configuration or external tools are needed.</p>
-                <p>Chau7's proxy is selective. It only intercepts traffic to recognized LLM API endpoints like <code>api.openai.com</code>, <code>api.anthropic.com</code>, and <code>generativelanguage.googleapis.com</code>. All other traffic passes through Chau7 untouched.</p>
+                <p>Chau7 intercepts LLM API calls through its built-in TLS/WSS proxy. The proxy works by redirecting API base URL environment variables to a local endpoint with a locally generated self-signed certificate for localhost (127.0.0.1). Enable "API Analytics" in Chau7's settings to activate the proxy.</p>
+                <p>Chau7's proxy supports OpenAI, Anthropic, and Google Gemini. It redirects the relevant <code>*_BASE_URL</code> environment variables so that API traffic flows through the local proxy for inspection.</p>
             </div>
         </section>
 
@@ -126,7 +125,7 @@
             <div class="section-inner prose">
                 <h2>How does Chau7's TLS/WSS proxy compare to other terminals?</h2>
                 <p>No other terminal includes a built-in TLS proxy for intercepting LLM API traffic. iTerm2, Warp, Alacritty, and Kitty have no API interception capability.</p>
-                <p>External tools like mitmproxy require manual setup and do not integrate with terminal sessions. Chau7's proxy runs automatically, associates each API call with its originating tab, and feeds data into Chau7's built-in token counting, cost tracking, and latency analysis.</p>
+                <p>External tools like mitmproxy require manual setup and do not integrate with terminal sessions. Chau7's proxy associates each API call with its originating tab and feeds data into Chau7's built-in token counting, cost tracking, and latency analysis.</p>
             </div>
         </section>
 
@@ -135,7 +134,7 @@
             <div class="section-inner prose">
                 <h2>Is the Chau7 proxy secure? Does it send data externally?</h2>
                 <p>Chau7's proxy runs entirely on the local machine. No API traffic, tokens, or request content is sent to Chau7 servers or any third party.</p>
-                <p>The locally generated CA certificate in Chau7 is scoped to LLM API domains only. All non-LLM traffic passes through untouched. Chau7 does not modify request or response payloads. The proxy only reads the data for analytics purposes.</p>
+                <p>The locally generated self-signed certificate in Chau7 is scoped to localhost (127.0.0.1). Chau7 does not modify request or response payloads. The proxy only reads the data for analytics purposes.</p>
             </div>
         </section>
 
@@ -143,8 +142,8 @@
         <section class="feature-content" data-ui="tls-proxy-latency">
             <div class="section-inner prose">
                 <h2>Does the Chau7 proxy add latency to API calls?</h2>
-                <p>Chau7's proxy adds negligible latency, typically under one millisecond per request. The inspection and logging in Chau7 happen asynchronously so they do not block the request-response cycle.</p>
-                <p>The proxy overhead in Chau7 is minimal because interception is selective. Only traffic to recognized LLM API endpoints passes through the inspection path. All other network traffic bypasses the proxy entirely.</p>
+                <p>Chau7's proxy adds some latency because it buffers the full response body synchronously for inspection and analytics. The overhead is generally small relative to LLM API response times, which typically take seconds.</p>
+                <p>Only API traffic redirected via the base URL environment variables passes through the proxy. All other network traffic is unaffected.</p>
             </div>
         </section>
 
@@ -155,7 +154,7 @@
                 <div class="related-features-grid">
                     <a class="catalog-card" href="/features/token-counting">
                         <h4>Token Counting</h4>
-                        <p>Track input and output tokens per API call with provider-specific tokenization.</p>
+                        <p>Read input and output token counts from API response metadata per call.</p>
                     </a>
                     <a class="catalog-card" href="/features/cost-tracking">
                         <h4>Cost Tracking <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
@@ -163,7 +162,7 @@
                     </a>
                     <a class="catalog-card" href="/features/latency-tracking">
                         <h4>Latency Tracking</h4>
-                        <p>Measure time-to-first-token and total request duration for every API call.</p>
+                        <p>Measure total request duration for every API call.</p>
                     </a>
                 </div>
                 <div class="feature-random-row">
@@ -179,23 +178,23 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is TLS/WSS Proxy in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>The TLS/WSS Proxy in Chau7 is a transparent local proxy that intercepts HTTPS and WebSocket traffic between AI agents and LLM API endpoints. Chau7's proxy captures API calls to OpenAI, Anthropic, Google Gemini, and other providers, then feeds parsed data into Chau7's token counting, cost tracking, and latency analysis features.</p></div>
+                        <div class="faq-answer"><p>The TLS/WSS Proxy in Chau7 is a local proxy that intercepts HTTPS and WebSocket traffic between AI agents and LLM API endpoints by redirecting API base URL environment variables. Chau7's proxy captures API calls to OpenAI, Anthropic, and Google Gemini, then feeds parsed data into Chau7's token counting, cost tracking, and latency analysis features. It requires enabling API Analytics in settings.</p></div>
                     </details>
                     <details>
                         <summary>How does Chau7's TLS/WSS proxy compare to other terminals?</summary>
-                        <div class="faq-answer"><p>No other terminal includes a built-in TLS proxy for intercepting LLM API traffic. iTerm2, Warp, Alacritty, and Kitty have no API interception capability. External tools like mitmproxy require manual setup and do not integrate with terminal sessions. Chau7's proxy runs automatically, associates each API call with its originating tab, and feeds data into built-in analytics.</p></div>
+                        <div class="faq-answer"><p>No other terminal includes a built-in TLS proxy for intercepting LLM API traffic. iTerm2, Warp, Alacritty, and Kitty have no API interception capability. External tools like mitmproxy require manual setup and do not integrate with terminal sessions. Chau7's proxy associates each API call with its originating tab and feeds data into built-in analytics.</p></div>
                     </details>
                     <details>
                         <summary>How to intercept LLM API calls from terminal AI agents?</summary>
-                        <div class="faq-answer"><p>Chau7 intercepts LLM API calls automatically through its built-in TLS/WSS proxy. The proxy uses a locally generated certificate authority to decrypt, inspect, and re-encrypt traffic to known LLM provider domains. No manual proxy configuration or external tools are needed.</p></div>
+                        <div class="faq-answer"><p>Chau7 intercepts LLM API calls through its built-in TLS/WSS proxy. The proxy works by redirecting API base URL environment variables to a local endpoint with a self-signed certificate for localhost. Enable API Analytics in Chau7's settings to activate the proxy.</p></div>
                     </details>
                     <details>
                         <summary>Is the proxy secure? Does it send data externally?</summary>
-                        <div class="faq-answer"><p>Chau7's proxy runs entirely on the local machine. No API traffic, tokens, or request content is sent to Chau7 servers or any third party. The locally generated CA certificate is scoped to LLM API domains only, and all other traffic passes through untouched.</p></div>
+                        <div class="faq-answer"><p>Chau7's proxy runs entirely on the local machine. No API traffic, tokens, or request content is sent to Chau7 servers or any third party. The locally generated self-signed certificate is scoped to localhost (127.0.0.1).</p></div>
                     </details>
                     <details>
                         <summary>Does the proxy add latency to API calls?</summary>
-                        <div class="faq-answer"><p>Chau7's proxy adds negligible latency, typically under one millisecond per request. The inspection and logging in Chau7 happen asynchronously so they do not block the request-response cycle.</p></div>
+                        <div class="faq-answer"><p>Chau7's proxy adds some latency because it buffers the full response body synchronously for inspection. The overhead is generally small relative to LLM API response times.</p></div>
                     </details>
                 </div>
             </div>

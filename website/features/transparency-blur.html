@@ -34,7 +34,7 @@
         "featureList": [
             "Per-profile opacity slider from fully opaque to heavily transparent",
             "Native macOS vibrancy background blur",
-            "Text stays at full opacity regardless of background transparency",
+            "Window-level opacity affects both text and background together",
             "Real-time preview while adjusting opacity",
             "Theme-aware transparency for dark and light modes",
             "GPU-composited blur with no frame rate impact"
@@ -55,10 +55,10 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Transparency & Blur in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Transparency & Blur is a feature in the Chau7 terminal that lets developers adjust window opacity per profile and apply a native macOS vibrancy blur effect behind the transparent background. Text stays at full opacity, so terminal content remains readable at any transparency level."}},
-            {"@type":"Question","name":"How does Chau7's transparency & blur compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals offer basic transparency but lack background blur. Chau7 combines adjustable per-profile opacity with native macOS vibrancy blur, so the background is visible but text stays crisp. iTerm2 offers transparency but without native vibrancy blur. Alacritty supports opacity but has no blur on macOS."}},
+            {"@type":"Question","name":"What is Transparency & Blur in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Transparency & Blur is a feature in the Chau7 terminal that lets developers adjust window opacity per profile and apply a native macOS vibrancy blur effect behind the transparent background. Transparency uses window-level opacity, so both text and background become semi-transparent together. The blur effect helps maintain readability."}},
+            {"@type":"Question","name":"How does Chau7's transparency & blur compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals offer basic transparency but lack background blur. Chau7 combines adjustable per-profile opacity with native macOS vibrancy blur. iTerm2 offers transparency but without native vibrancy blur. Alacritty supports opacity but has no blur on macOS."}},
             {"@type":"Question","name":"Terminal transparency macOS how to enable","acceptedAnswer":{"@type":"Answer","text":"In Chau7, open a profile's settings and drag the opacity slider. Chau7 previews the transparency change in real time. Background blur activates automatically when transparency is enabled, using the native macOS compositor."}},
-            {"@type":"Question","name":"Does transparency affect text readability?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7 keeps text at full opacity regardless of background transparency. Only the terminal background becomes transparent. The native macOS vibrancy blur effect also diffuses background content so it does not compete with terminal text."}},
+            {"@type":"Question","name":"Does transparency affect text readability?","acceptedAnswer":{"@type":"Answer","text":"Chau7 uses window-level opacity, which means both text and background become semi-transparent together. At moderate transparency levels (70-100%), text remains easily readable. The native macOS vibrancy blur effect diffuses background content to help maintain readability."}},
             {"@type":"Question","name":"Is there a performance impact from transparency and blur?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7's blur effect uses the native macOS compositor, which runs on the GPU with negligible performance cost. There is no frame rate impact during normal terminal use."}}
         ]
     }]
@@ -108,7 +108,7 @@
             <div class="section-inner prose">
                 <h2>What is Transparency & Blur in Chau7?</h2>
                 <p>Transparency & Blur is a feature in the Chau7 terminal that lets developers adjust window opacity per profile and apply a native macOS vibrancy blur behind the transparent background.</p>
-                <p>Chau7 keeps text at full opacity regardless of background transparency. Only the terminal background becomes see-through, so command output remains sharp and legible at any transparency level.</p>
+                <p>Chau7 uses window-level opacity (window.alphaValue), which means both text and background become semi-transparent together. The vibrancy blur effect helps maintain readability by diffusing the content behind the window. At moderate transparency levels, terminal output remains legible.</p>
             </div>
         </section>
 
@@ -125,8 +125,8 @@
         <section class="feature-content" data-ui="transparency-readability">
             <div class="section-inner prose">
                 <h2>Does Chau7's transparency affect text readability?</h2>
-                <p>No. Chau7 keeps text at full opacity regardless of background transparency. Only the terminal background becomes transparent.</p>
-                <p>The native macOS vibrancy blur effect also diffuses background content, so it does not compete with terminal text. Chau7's transparency respects the current theme colors, meaning dark and light themes both produce a natural layered appearance.</p>
+                <p>Chau7 uses window-level opacity, which means both text and background become semi-transparent together. At moderate transparency levels (70-100%), text remains easily readable.</p>
+                <p>The native macOS vibrancy blur effect diffuses background content, helping maintain readability even at lower opacity values. Chau7's transparency respects the current theme colors, meaning dark and light themes both produce a natural layered appearance.</p>
             </div>
         </section>
 
@@ -136,7 +136,7 @@
                 <h2>How does Chau7's transparency & blur compare to other terminals?</h2>
                 <p>Most terminals offer basic transparency but lack background blur. Without blur, transparent terminals produce an unreadable mess of overlapping text and images.</p>
                 <p>iTerm2 offers transparency but does not use native macOS vibrancy blur. Alacritty supports opacity but has no blur on macOS. Hyper supports transparency with limited blur options.</p>
-                <p>Chau7 combines adjustable per-profile opacity with native macOS vibrancy blur. Chau7's blur runs on the GPU compositor with no frame rate impact, and each profile stores its own opacity value so developers can mix opaque and transparent terminals.</p>
+                <p>Chau7 combines adjustable per-profile opacity with native macOS vibrancy blur. The blur runs on the GPU compositor with no frame rate impact, and each profile stores its own opacity value so developers can mix opaque and transparent terminals.</p>
             </div>
         </section>
 
@@ -155,12 +155,12 @@
                 <h2>Related features</h2>
                 <div class="related-features-grid">
                     <a class="catalog-card" href="/features/fonts">
-                        <h4>100+ Fonts</h4>
-                        <p>Bundled monospace fonts plus system font support. Variable font weight and size configuration.</p>
+                        <h4>70+ Fonts</h4>
+                        <p>70+ recognized monospace font families via system font picker. Font family and size selection.</p>
                     </a>
                     <a class="catalog-card" href="/features/themes">
                         <h4>Themes</h4>
-                        <p>Built-in themes with full 256-color and true color customization. Import iTerm2 color schemes.</p>
+                        <p>8 built-in theme presets with full 256-color and true color support. Instant switching with live preview.</p>
                     </a>
                     <a class="catalog-card" href="/features/custom-keybindings">
                         <h4>Custom Keybindings</h4>
@@ -180,11 +180,11 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Transparency & Blur in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Transparency & Blur is a feature in the Chau7 terminal that lets developers adjust window opacity per profile and apply a native macOS vibrancy blur effect behind the transparent background. Text stays at full opacity, so terminal content remains readable at any transparency level.</p></div>
+                        <div class="faq-answer"><p>Transparency & Blur is a feature in the Chau7 terminal that lets developers adjust window opacity per profile and apply a native macOS vibrancy blur effect behind the transparent background. Transparency uses window-level opacity, so both text and background become semi-transparent together. The blur effect helps maintain readability.</p></div>
                     </details>
                     <details>
                         <summary>How does Chau7's transparency & blur compare to other terminals?</summary>
-                        <div class="faq-answer"><p>Most terminals offer basic transparency but lack background blur. Chau7 combines adjustable per-profile opacity with native macOS vibrancy blur, so the background is visible but text stays crisp. iTerm2 offers transparency but without native vibrancy blur. Alacritty supports opacity but has no blur on macOS.</p></div>
+                        <div class="faq-answer"><p>Most terminals offer basic transparency but lack background blur. Chau7 combines adjustable per-profile opacity with native macOS vibrancy blur. iTerm2 offers transparency but without native vibrancy blur. Alacritty supports opacity but has no blur on macOS.</p></div>
                     </details>
                     <details>
                         <summary>Terminal transparency macOS how to enable</summary>
@@ -192,7 +192,7 @@
                     </details>
                     <details>
                         <summary>Does transparency affect text readability?</summary>
-                        <div class="faq-answer"><p>No. Chau7 keeps text at full opacity regardless of background transparency. Only the terminal background becomes transparent. The native macOS vibrancy blur effect also diffuses background content so it does not compete with terminal text.</p></div>
+                        <div class="faq-answer"><p>Chau7 uses window-level opacity, which means both text and background become semi-transparent together. At moderate transparency levels (70-100%), text remains easily readable. The native macOS vibrancy blur effect diffuses background content to help maintain readability.</p></div>
                     </details>
                     <details>
                         <summary>Is there a performance impact from transparency and blur?</summary>

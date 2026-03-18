@@ -6,16 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Tab Watchdog | Chau7 Terminal</title>
-    <meta name="description" content="Chau7's tab watchdog monitors terminal health and auto-refreshes stale tabs. The watchdog resets after timeout instead of giving up, keeping every tab alive.">
+    <meta name="description" content="Chau7's tab watchdog monitors tab bar UI rendering health and auto-recovers when SwiftUI toolbar bugs cause stale or missing tab chips. Resets after timeout instead of giving up.">
     <meta name="article:section" content="Tab Management">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="tab watchdog">
-    <meta name="article:tag" content="frozen terminal tab">
-    <meta name="article:tag" content="stale tab recovery">
-    <meta name="article:tag" content="terminal health monitoring">
+    <meta name="article:tag" content="tab bar rendering">
+    <meta name="article:tag" content="SwiftUI toolbar recovery">
+    <meta name="article:tag" content="UI health monitoring">
     <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Tab Watchdog | Chau7">
-    <meta property="og:description" content="Chau7's tab watchdog monitors terminal health and auto-refreshes stale tabs. The watchdog resets after timeout instead of giving up, keeping every tab alive.">
+    <meta property="og:description" content="Chau7's tab watchdog monitors tab bar UI rendering health and auto-recovers when SwiftUI toolbar bugs cause stale or missing tab chips. Resets after timeout instead of giving up.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,14 +30,14 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS with a built-in tab watchdog that monitors terminal health and auto-refreshes stale or frozen tabs.",
+        "description": "Chau7 is an AI-native terminal for macOS with a built-in tab watchdog that monitors tab bar UI rendering health and auto-recovers when SwiftUI toolbar bugs cause stale or missing tab chips.",
         "featureList": [
-            "Background health monitoring for every open tab",
-            "Automatic refresh of stale or frozen tabs",
-            "Reset-after-timeout strategy instead of give-up-after-failure",
-            "Lightweight health checks with negligible overhead",
-            "Process state and output activity monitoring",
-            "Internal consistency checks between backend and frontend"
+            "Tab bar UI rendering health monitoring",
+            "Automatic recovery from SwiftUI toolbar rendering bugs",
+            "Tab chip count verification against expected tab count",
+            "Tab bar width dimension validation",
+            "Stale preference update detection within threshold",
+            "Reset-after-timeout strategy: 3 attempts then 60-second pause then retry"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
@@ -55,11 +55,11 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Tab Watchdog in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Tab Watchdog is a background health monitor in the Chau7 terminal that periodically checks every open tab for signs of staleness. When Chau7's watchdog detects a stale or frozen tab, it automatically refreshes the tab to restore it to a working state without user intervention."}},
-            {"@type":"Question","name":"How does Chau7's tab watchdog compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals have no automatic recovery for frozen or stale tabs. iTerm2, Warp, Alacritty, and Kitty require the user to manually close and reopen a stuck tab. Chau7's tab watchdog detects the problem automatically and refreshes the tab in the background, making Chau7 the only terminal with built-in tab health monitoring."}},
-            {"@type":"Question","name":"How to fix a frozen terminal tab without closing it?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, frozen terminal tabs are fixed automatically by the tab watchdog. Chau7's watchdog detects when a tab stops responding and triggers an automatic refresh that restores the tab without losing the session. No manual intervention is needed."}},
-            {"@type":"Question","name":"Can I configure the watchdog timeout?","acceptedAnswer":{"@type":"Answer","text":"Chau7's tab watchdog uses sensible defaults that work for most workflows. The retry interval and timeout thresholds are tuned to balance responsiveness with avoiding unnecessary refreshes."}},
-            {"@type":"Question","name":"Does the watchdog affect terminal performance?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7's watchdog health checks are extremely lightweight. They inspect process status and internal state flags without touching the render pipeline or scrollback buffer. The overhead is negligible even with dozens of tabs open in Chau7."}}
+            {"@type":"Question","name":"What is Tab Watchdog in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Tab Watchdog is a background monitor in the Chau7 terminal that checks whether the SwiftUI tab bar rendered the expected number of tab chips and whether the tab bar has acceptable width dimensions. When the watchdog detects a rendering discrepancy or stale tab bar, it recovers by refreshing the tab bar or recreating the NSToolbar."}},
+            {"@type":"Question","name":"Why does a terminal need a tab bar watchdog?","acceptedAnswer":{"@type":"Answer","text":"SwiftUI toolbar rendering can occasionally produce bugs where tab chips go missing, the tab bar renders at incorrect dimensions, or preference updates stop propagating. Chau7's watchdog detects these UI rendering issues and auto-recovers, so the tab bar always reflects the actual tab state."}},
+            {"@type":"Question","name":"How does the watchdog recovery strategy work?","acceptedAnswer":{"@type":"Answer","text":"Chau7's watchdog uses a reset-after-timeout strategy. It makes up to 3 recovery attempts (refreshing the tab bar or recreating the NSToolbar), then pauses for 60 seconds before retrying. This avoids infinite recovery loops while ensuring transient SwiftUI rendering bugs are resolved automatically."}},
+            {"@type":"Question","name":"What does the watchdog check?","acceptedAnswer":{"@type":"Answer","text":"The watchdog checks three things: whether the tab bar rendered the expected number of tab chips, whether the tab bar has acceptable width dimensions, and whether the tab bar view has received preference updates within a staleness threshold. It does not monitor shell processes or terminal output."}},
+            {"@type":"Question","name":"Does the watchdog affect terminal performance?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7's watchdog checks are extremely lightweight. They inspect tab bar rendering state and preference update timestamps without touching the terminal render pipeline, scrollback buffer, or shell processes. The overhead is negligible even with dozens of tabs open."}}
         ]
     }]
     </script>
@@ -85,7 +85,7 @@
             <div class="hero-content">
                 <div class="section-badge">TAB MANAGEMENT</div>
                 <h1 class="hero-title">Tab Watchdog</h1>
-                <p class="hero-subtitle">Chau7 runs a background watchdog that notices when tabs go stale and fixes them before you do.</p>
+                <p class="hero-subtitle">Chau7 runs a background watchdog that notices when the tab bar UI goes stale and fixes it before you do.</p>
             </div>
         </section>
 
@@ -95,9 +95,9 @@
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
                     <li class="question-item">What is Tab Watchdog in Chau7 terminal?</li>
-                    <li class="question-item">How does Chau7's tab watchdog compare to other terminals?</li>
-                    <li class="question-item">How to fix a frozen terminal tab without closing it?</li>
-                    <li class="question-item">Can I configure the watchdog timeout?</li>
+                    <li class="question-item">Why does a terminal need a tab bar watchdog?</li>
+                    <li class="question-item">How does the watchdog recovery strategy work?</li>
+                    <li class="question-item">What does the watchdog check?</li>
                     <li class="question-item">Does the watchdog affect terminal performance?</li>
                 </ul>
             </div>
@@ -107,27 +107,26 @@
         <section class="feature-content" data-ui="tab-watchdog-what">
             <div class="section-inner prose">
                 <h2>What is Tab Watchdog in Chau7?</h2>
-                <p>Tab Watchdog is a background health monitor in the Chau7 terminal that periodically checks every open tab for signs of staleness. Chau7's watchdog monitors process state, output activity, and internal consistency between the terminal backend and frontend.</p>
-                <p>When Chau7's tab watchdog detects a stale tab, it automatically triggers a refresh that restores the tab to a working state. No manual intervention is needed. The developer never has to close and reopen a stuck session.</p>
+                <p>Tab Watchdog is a background monitor in the Chau7 terminal that checks whether the SwiftUI tab bar rendered the expected number of tab chips, whether the tab bar has acceptable width dimensions, and whether preference updates are still propagating within a staleness threshold.</p>
+                <p>When Chau7's watchdog detects a rendering discrepancy or stale tab bar, it recovers by refreshing the tab bar view or recreating the NSToolbar entirely. No manual intervention is needed. The developer never sees a tab bar that is out of sync with the actual tab state.</p>
             </div>
         </section>
 
-        <!-- How to fix a frozen tab -->
-        <section class="feature-content" data-ui="tab-watchdog-fix-frozen">
+        <!-- Why a tab bar watchdog -->
+        <section class="feature-content" data-ui="tab-watchdog-why">
             <div class="section-inner prose">
-                <h2>How to fix a frozen terminal tab without closing it</h2>
-                <p>In Chau7, frozen terminal tabs are fixed automatically. Chau7's tab watchdog detects when a tab stops responding and triggers a refresh that restores the tab without losing the session context.</p>
-                <p>Common triggers for a Chau7 watchdog refresh include a shell process that exited unexpectedly, a terminal view that stopped receiving updates despite an active process, or internal state inconsistencies between the backend and frontend.</p>
-                <p>The Chau7 watchdog uses a reset-after-timeout strategy rather than a give-up-after-failure approach. If a refresh does not resolve the issue immediately, the watchdog backs off and tries again after an interval. Transient issues like a brief system overload are recovered automatically, while persistent problems get retried rather than silently abandoned.</p>
+                <h2>Why does a terminal need a tab bar watchdog?</h2>
+                <p>SwiftUI toolbar rendering can occasionally produce bugs where tab chips go missing, the tab bar renders at incorrect dimensions, or preference updates stop propagating. These are rare but real issues that leave the tab bar out of sync with the actual tab state.</p>
+                <p>Chau7's watchdog detects these UI rendering issues automatically and recovers by refreshing the tab bar or recreating the NSToolbar. Without the watchdog, a developer might see fewer tabs than they actually have open, or a tab bar that has gone visually stale.</p>
             </div>
         </section>
 
-        <!-- Comparison to other terminals -->
-        <section class="feature-content" data-ui="tab-watchdog-comparison">
+        <!-- Recovery strategy -->
+        <section class="feature-content" data-ui="tab-watchdog-recovery">
             <div class="section-inner prose">
-                <h2>How does Chau7's tab watchdog compare to other terminals?</h2>
-                <p>Most terminals have no automatic recovery for frozen or stale tabs. iTerm2, Warp, Alacritty, and Kitty all require the user to manually close and reopen a stuck tab.</p>
-                <p>Chau7 is the only terminal with a built-in tab watchdog that detects staleness and refreshes tabs automatically. Chau7's watchdog runs in the background, checks every open tab, and restores broken tabs without any user action.</p>
+                <h2>How does the watchdog recovery strategy work?</h2>
+                <p>Chau7's watchdog uses a reset-after-timeout strategy. When it detects a tab bar rendering issue, it makes up to 3 recovery attempts, which may include refreshing the tab bar view or recreating the NSToolbar entirely.</p>
+                <p>If 3 attempts do not resolve the issue, the watchdog pauses for 60 seconds before starting a new cycle. This avoids infinite recovery loops while ensuring transient SwiftUI rendering bugs are resolved automatically. The watchdog never permanently gives up.</p>
             </div>
         </section>
 
@@ -135,17 +134,17 @@
         <section class="feature-content" data-ui="tab-watchdog-performance">
             <div class="section-inner prose">
                 <h2>Does the Chau7 tab watchdog affect terminal performance?</h2>
-                <p>No. Chau7's watchdog health checks are extremely lightweight. They inspect process status and internal state flags without touching the render pipeline or scrollback buffer.</p>
+                <p>No. Chau7's watchdog checks are extremely lightweight. They inspect tab bar rendering state and preference update timestamps without touching the terminal render pipeline, scrollback buffer, or shell processes.</p>
                 <p>The overhead of Chau7's tab watchdog is negligible even with dozens of tabs open. The watchdog runs on a background timer and does not block the main thread or the GPU rendering pipeline.</p>
             </div>
         </section>
 
-        <!-- Configuring the watchdog -->
-        <section class="feature-content" data-ui="tab-watchdog-configuration">
+        <!-- What does the watchdog check -->
+        <section class="feature-content" data-ui="tab-watchdog-checks">
             <div class="section-inner prose">
-                <h2>Can I configure the Chau7 watchdog timeout?</h2>
-                <p>Chau7's tab watchdog uses sensible defaults that work for most workflows. The retry interval and timeout thresholds are tuned to balance responsiveness with avoiding unnecessary refreshes.</p>
-                <p>The watchdog resets its state after each timeout cycle rather than permanently giving up. This design means Chau7 keeps trying to recover tabs even after repeated failures, because terminals are supposed to be resilient.</p>
+                <h2>What does the Chau7 tab watchdog check?</h2>
+                <p>The watchdog checks three things: whether the SwiftUI tab bar rendered the expected number of tab chips, whether the tab bar has acceptable width dimensions, and whether the tab bar view has received preference updates within a staleness threshold.</p>
+                <p>The watchdog does not monitor shell process state, terminal output activity, or session health. It is focused entirely on the tab bar UI rendering layer, ensuring the visual tab bar stays in sync with the underlying tab model managed by <code>OverlayTabsModel</code>.</p>
             </div>
         </section>
 
@@ -156,7 +155,7 @@
                 <div class="related-features-grid">
                     <a class="catalog-card" href="/features/multi-tab">
                         <h4>Multi-Tab</h4>
-                        <p>Unlimited tabs with drag-to-reorder, tab pinning, and tab-specific titles.</p>
+                        <p>Unlimited tabs with drag-to-reorder, custom titles, and background suspension.</p>
                     </a>
                     <a class="catalog-card" href="/features/split-panes">
                         <h4>Split Panes</h4>
@@ -164,7 +163,7 @@
                     </a>
                     <a class="catalog-card" href="/features/tab-drag-drop">
                         <h4>Tab Drag &amp; Drop</h4>
-                        <p>Drag tabs between windows or within the tab bar. Snap positioning with smooth animations.</p>
+                        <p>Reorder tabs within the tab bar. Snap positioning with smooth SwiftUI spring animations.</p>
                     </a>
                 </div>
                 <div class="feature-random-row">
@@ -180,23 +179,23 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Tab Watchdog in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Tab Watchdog is a background health monitor in the Chau7 terminal that periodically checks every open tab for signs of staleness. When Chau7's watchdog detects a stale or frozen tab, it automatically refreshes the tab to restore it to a working state without user intervention.</p></div>
+                        <div class="faq-answer"><p>Tab Watchdog is a background monitor in the Chau7 terminal that checks whether the SwiftUI tab bar rendered the expected number of tab chips and whether the tab bar has acceptable width dimensions. When the watchdog detects a rendering discrepancy or stale tab bar, it recovers by refreshing the tab bar or recreating the NSToolbar.</p></div>
                     </details>
                     <details>
-                        <summary>How does Chau7's tab watchdog compare to other terminals?</summary>
-                        <div class="faq-answer"><p>Most terminals have no automatic recovery for frozen or stale tabs. iTerm2, Warp, Alacritty, and Kitty require the user to manually close and reopen a stuck tab. Chau7's tab watchdog detects the problem automatically and refreshes the tab in the background, making Chau7 the only terminal with built-in tab health monitoring.</p></div>
+                        <summary>Why does a terminal need a tab bar watchdog?</summary>
+                        <div class="faq-answer"><p>SwiftUI toolbar rendering can occasionally produce bugs where tab chips go missing, the tab bar renders at incorrect dimensions, or preference updates stop propagating. Chau7's watchdog detects these UI rendering issues and auto-recovers, so the tab bar always reflects the actual tab state.</p></div>
                     </details>
                     <details>
-                        <summary>How to fix a frozen terminal tab without closing it?</summary>
-                        <div class="faq-answer"><p>In Chau7, frozen terminal tabs are fixed automatically by the tab watchdog. Chau7's watchdog detects when a tab stops responding and triggers an automatic refresh that restores the tab without losing the session. No manual intervention is needed.</p></div>
+                        <summary>How does the watchdog recovery strategy work?</summary>
+                        <div class="faq-answer"><p>Chau7's watchdog uses a reset-after-timeout strategy. It makes up to 3 recovery attempts (refreshing the tab bar or recreating the NSToolbar), then pauses for 60 seconds before retrying. This avoids infinite recovery loops while ensuring transient SwiftUI rendering bugs are resolved automatically.</p></div>
                     </details>
                     <details>
-                        <summary>Can I configure the watchdog timeout?</summary>
-                        <div class="faq-answer"><p>Chau7's tab watchdog uses sensible defaults that work for most workflows. The retry interval and timeout thresholds are tuned to balance responsiveness with avoiding unnecessary refreshes.</p></div>
+                        <summary>What does the watchdog check?</summary>
+                        <div class="faq-answer"><p>The watchdog checks three things: whether the tab bar rendered the expected number of tab chips, whether the tab bar has acceptable width dimensions, and whether the tab bar view has received preference updates within a staleness threshold. It does not monitor shell processes or terminal output.</p></div>
                     </details>
                     <details>
                         <summary>Does the watchdog affect terminal performance?</summary>
-                        <div class="faq-answer"><p>No. Chau7's watchdog health checks are extremely lightweight. They inspect process status and internal state flags without touching the render pipeline or scrollback buffer. The overhead is negligible even with dozens of tabs open in Chau7.</p></div>
+                        <div class="faq-answer"><p>No. Chau7's watchdog checks are extremely lightweight. They inspect tab bar rendering state and preference update timestamps without touching the terminal render pipeline, scrollback buffer, or shell processes. The overhead is negligible even with dozens of tabs open.</p></div>
                     </details>
                 </div>
             </div>
@@ -206,7 +205,7 @@
         <section class="footer-cta-section" aria-label="Download call to action" data-ui="tab-watchdog-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Tabs that heal themselves. Like Wolverine, but for your terminal.</h2>
+                    <h2>A tab bar that fixes itself. Because SwiftUI toolbars need supervision.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>

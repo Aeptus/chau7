@@ -6,7 +6,7 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Cost Tracking | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 calculates the dollar cost of every LLM API call based on current provider pricing. View costs per call, per session, or cumulatively to control AI spending.">
+    <meta name="description" content="Chau7 calculates the dollar cost of every LLM API call based on built-in provider pricing. View costs per call or per session to control AI spending.">
     <meta name="article:section" content="API Analytics">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="cost tracking">
@@ -15,7 +15,7 @@
     <meta name="article:tag" content="token pricing">
     <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Cost Tracking | Chau7">
-    <meta property="og:description" content="Chau7 calculates the dollar cost of every LLM API call based on current provider pricing. View costs per call, per session, or cumulatively to control AI spending.">
+    <meta property="og:description" content="Chau7 calculates the dollar cost of every LLM API call based on built-in provider pricing. View costs per call or per session to control AI spending.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -34,10 +34,8 @@
         "featureList": [
             "Per-call cost calculation",
             "Per-session cost rollup",
-            "Built-in pricing table for major LLM providers",
-            "Input and output token rate separation",
-            "Cumulative spending trends",
-            "Analytics Dashboard integration"
+            "Built-in hardcoded pricing table for major LLM providers",
+            "Input and output token rate separation"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
@@ -57,9 +55,9 @@
         "mainEntity": [
             {"@type":"Question","name":"What is Cost Tracking in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Cost Tracking is a feature in the Chau7 terminal that calculates the dollar cost of every LLM API call by multiplying token counts by current provider pricing. Chau7 displays costs per call, per session, and cumulatively so developers can see exactly where their AI budget goes."}},
             {"@type":"Question","name":"How does Chau7's cost tracking compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals do not track AI costs at all. iTerm2, Warp, Alacritty, and Kitty have no built-in cost tracking. Provider dashboards show only aggregate totals. Chau7 is the only terminal that calculates per-call dollar costs using a built-in pricing table, then rolls them up per session and per period."}},
-            {"@type":"Question","name":"How to see dollar cost of AI agent API calls?","acceptedAnswer":{"@type":"Answer","text":"Chau7 intercepts every LLM API call through its TLS/WSS proxy, reads the token counts from the response, and multiplies them by the per-token price for that model. The dollar cost appears in Chau7's tab overlay, session view, and Analytics Dashboard."}},
-            {"@type":"Question","name":"How does Chau7 know the pricing for each model?","acceptedAnswer":{"@type":"Answer","text":"Chau7 ships with a built-in pricing table for major providers and models, including different rates for input and output tokens. The pricing table is updated with each Chau7 release to reflect current provider pricing."}},
-            {"@type":"Question","name":"Can I set a cost alert or budget limit?","acceptedAnswer":{"@type":"Answer","text":"Budget alerts and spending limits are planned for a future Chau7 release. Currently, Chau7 lets you monitor costs in real time and review cumulative spending through the MCP server and Analytics Dashboard."}}
+            {"@type":"Question","name":"How to see dollar cost of AI agent API calls?","acceptedAnswer":{"@type":"Answer","text":"Chau7 intercepts every LLM API call through its TLS/WSS proxy, reads the token counts from the response, and multiplies them by the per-token price for that model. The dollar cost appears in Chau7's tab overlay and session view."}},
+            {"@type":"Question","name":"How does Chau7 know the pricing for each model?","acceptedAnswer":{"@type":"Answer","text":"Chau7 ships with a hardcoded pricing table for major providers and models, including different rates for input and output tokens. The pricing table is updated with each Chau7 release to reflect current provider pricing."}},
+            {"@type":"Question","name":"Can I review costs through the MCP server?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 exposes run telemetry through its MCP server, which includes cost data per run. Developers can query this data to review costs programmatically."}}
         ]
     }]
     </script>
@@ -85,7 +83,7 @@
             <div class="hero-content">
                 <div class="section-badge badge-blue">API ANALYTICS</div>
                 <h1 class="hero-title">Cost Tracking</h1>
-                <p class="hero-subtitle">Chau7 shows your AI spending in dollars and cents. Per call, per session, per month. No more surprises.</p>
+                <p class="hero-subtitle">Chau7 shows your AI spending in dollars and cents. Per call, per session. No more surprises.</p>
             </div>
         </section>
 
@@ -98,7 +96,7 @@
                     <li class="question-item">How does Chau7's cost tracking compare to other terminals?</li>
                     <li class="question-item">How to see dollar cost of AI agent API calls?</li>
                     <li class="question-item">How does Chau7 know the pricing for each model?</li>
-                    <li class="question-item">Can I set a cost alert or budget limit?</li>
+                    <li class="question-item">Can I review costs through the MCP server?</li>
                 </ul>
             </div>
         </section>
@@ -108,7 +106,7 @@
             <div class="section-inner prose">
                 <h2>What is Cost Tracking in Chau7?</h2>
                 <p>Cost Tracking is a feature in the Chau7 terminal that calculates the dollar cost of every LLM API call. Chau7 reads the token counts from each API response and multiplies them by the per-token price for the model used.</p>
-                <p>Chau7 displays costs at multiple levels: per individual API call, per run (a single agent invocation), per session (all runs in a tab), and cumulatively across all tabs and sessions.</p>
+                <p>Chau7 displays costs at multiple levels: per individual API call, per run (a single agent invocation), and per session (all runs in a tab).</p>
             </div>
         </section>
 
@@ -117,8 +115,8 @@
             <div class="section-inner prose">
                 <h2>How to see dollar cost of AI agent API calls</h2>
                 <p>Chau7 intercepts every LLM API call through its built-in TLS/WSS proxy. When the response comes back, Chau7 extracts the model name and token counts, then looks up the per-token price in its pricing table.</p>
-                <p>The dollar cost for each API call appears in Chau7's tab overlay. Cumulative costs for the entire session appear in the session view. Aggregate costs across all sessions appear in Chau7's Analytics Dashboard.</p>
-                <p>This hierarchical view in Chau7 lets developers find expensive operations at any granularity, from a single API call to a full month of AI coding.</p>
+                <p>The dollar cost for each API call appears in Chau7's tab overlay. Cumulative costs for the entire session appear in the session view.</p>
+                <p>This hierarchical view in Chau7 lets developers find expensive operations at any granularity, from a single API call to a full session.</p>
             </div>
         </section>
 
@@ -126,8 +124,8 @@
         <section class="feature-content" data-ui="cost-tracking-pricing-table">
             <div class="section-inner prose">
                 <h2>How does Chau7 know the pricing for each model?</h2>
-                <p>Chau7 ships with a built-in pricing table that covers major LLM providers and models. The pricing table includes separate rates for input tokens and output tokens.</p>
-                <p>The Chau7 pricing table is updated with each release to reflect current provider pricing from OpenAI, Anthropic, Google, and other providers. Custom model pricing can be added through Chau7's settings.</p>
+                <p>Chau7 ships with a hardcoded pricing table that covers major LLM providers and models. The pricing table includes separate rates for input tokens and output tokens.</p>
+                <p>The Chau7 pricing table is updated with each release to reflect current provider pricing from OpenAI, Anthropic, and Google.</p>
             </div>
         </section>
 
@@ -137,7 +135,7 @@
                 <h2>How does Chau7's cost tracking compare to other terminals?</h2>
                 <p>Most terminals do not track AI costs at all. iTerm2, Warp, Alacritty, and Kitty have no built-in cost tracking for LLM API calls.</p>
                 <p>Provider dashboards from OpenAI and Anthropic show only aggregate totals across all usage. They do not break costs down per session, per coding task, or per terminal tab.</p>
-                <p>Chau7 is the only terminal that calculates per-call dollar costs using a built-in pricing table, then rolls those costs up per session and per period. Chau7's cost tracking lets developers answer "how much did that refactor cost?" for any individual task.</p>
+                <p>Chau7 is the only terminal that calculates per-call dollar costs using a built-in pricing table, then rolls those costs up per session. Chau7's cost tracking lets developers answer "how much did that refactor cost?" for any individual task.</p>
             </div>
         </section>
 
@@ -146,16 +144,16 @@
             <div class="section-inner prose">
                 <h2>Why cost tracking matters</h2>
                 <p>Developers report AI coding costs exceeding five thousand dollars per month with no breakdown of where the money goes. Activity Monitor does not help. Provider dashboards show only aggregate numbers.</p>
-                <p>Chau7's cost tracking calculates cost per API call using current provider pricing tables, then rolls costs up per session and per period. For teams and heavy users, Chau7's cost trends over time reveal whether spending is stable, growing, or spiking.</p>
+                <p>Chau7's cost tracking calculates cost per API call using the built-in pricing table, then rolls costs up per session. Developers can see exactly how much each AI coding session costs as it happens.</p>
             </div>
         </section>
 
         <!-- Budget alerts -->
         <section class="feature-content" data-ui="cost-tracking-budget-alerts">
             <div class="section-inner prose">
-                <h2>Can I set a cost alert or budget limit?</h2>
-                <p>Budget alerts and spending limits are planned for a future Chau7 release. This feature will let developers set per-session or per-day spending caps directly in Chau7.</p>
-                <p>Currently, Chau7 lets developers monitor costs in real time and review cumulative spending through the MCP server and Analytics Dashboard. Chau7's real-time cost display makes it easy to notice when a session is becoming expensive.</p>
+                <h2>Can I review costs through the MCP server?</h2>
+                <p>Yes. Chau7 exposes run telemetry through its MCP server, which includes cost data per run. Developers can query this data to review costs programmatically.</p>
+                <p>Chau7's real-time cost display in the tab overlay makes it easy to notice when a session is becoming expensive.</p>
             </div>
         </section>
 
@@ -166,15 +164,15 @@
                 <div class="related-features-grid">
                     <a class="catalog-card" href="/features/tls-wss-proxy">
                         <h4>TLS/WSS Proxy <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
-                        <p>Transparent proxy captures API calls to OpenAI, Anthropic, and other LLM providers for analysis.</p>
+                        <p>Local proxy captures API calls to OpenAI, Anthropic, and Gemini for analysis.</p>
                     </a>
                     <a class="catalog-card" href="/features/token-counting">
                         <h4>Token Counting</h4>
-                        <p>Track input and output tokens per API call with provider-specific tokenization.</p>
+                        <p>Read input and output token counts from API response metadata per call.</p>
                     </a>
                     <a class="catalog-card" href="/features/latency-tracking">
                         <h4>Latency Tracking</h4>
-                        <p>Measure time-to-first-token and total request duration for every API call.</p>
+                        <p>Measure total request duration for every API call.</p>
                     </a>
                 </div>
                 <div class="feature-random-row">
@@ -190,27 +188,27 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Cost Tracking in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Cost Tracking is a feature in the Chau7 terminal that calculates the dollar cost of every LLM API call by multiplying token counts by current provider pricing. Chau7 displays costs per call, per session, and cumulatively so developers can see exactly where their AI budget goes.</p></div>
+                        <div class="faq-answer"><p>Cost Tracking is a feature in the Chau7 terminal that calculates the dollar cost of every LLM API call by multiplying token counts by the built-in pricing table. Chau7 displays costs per call and per session so developers can see exactly where their AI budget goes.</p></div>
                     </details>
                     <details>
                         <summary>How does Chau7's cost tracking compare to other terminals?</summary>
-                        <div class="faq-answer"><p>Most terminals do not track AI costs at all. iTerm2, Warp, Alacritty, and Kitty have no built-in cost tracking. Provider dashboards show only aggregate totals. Chau7 is the only terminal that calculates per-call dollar costs using a built-in pricing table, then rolls them up per session and per period.</p></div>
+                        <div class="faq-answer"><p>Most terminals do not track AI costs at all. iTerm2, Warp, Alacritty, and Kitty have no built-in cost tracking. Provider dashboards show only aggregate totals. Chau7 is the only terminal that calculates per-call dollar costs using a built-in pricing table, then rolls them up per session.</p></div>
                     </details>
                     <details>
                         <summary>How to see dollar cost of AI agent API calls?</summary>
-                        <div class="faq-answer"><p>Chau7 intercepts every LLM API call through its TLS/WSS proxy, reads the token counts from the response, and multiplies them by the per-token price for that model. The dollar cost appears in Chau7's tab overlay, session view, and Analytics Dashboard.</p></div>
+                        <div class="faq-answer"><p>Chau7 intercepts every LLM API call through its TLS/WSS proxy, reads the token counts from the response, and multiplies them by the per-token price for that model. The dollar cost appears in Chau7's tab overlay and session view.</p></div>
                     </details>
                     <details>
                         <summary>How does Chau7 know the pricing for each model?</summary>
                         <div class="faq-answer"><p>Chau7 ships with a built-in pricing table for major providers and models, including different rates for input and output tokens. The pricing table is updated with each Chau7 release to reflect current provider pricing.</p></div>
                     </details>
                     <details>
-                        <summary>Can I set a cost alert or budget limit?</summary>
-                        <div class="faq-answer"><p>Budget alerts and spending limits are planned for a future Chau7 release. Currently, Chau7 lets you monitor costs in real time and review cumulative spending through the MCP server and Analytics Dashboard.</p></div>
+                        <summary>Can I review costs through the MCP server?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 exposes run telemetry through its MCP server, which includes cost data per run. Developers can query this data to review costs programmatically.</p></div>
                     </details>
                     <details>
                         <summary>Does cost tracking work with self-hosted or custom models?</summary>
-                        <div class="faq-answer"><p>If the API response includes model name and token counts, Chau7 can calculate costs as long as the model's pricing is configured. Custom model pricing can be added through Chau7's settings.</p></div>
+                        <div class="faq-answer"><p>Cost tracking works for models included in Chau7's hardcoded pricing table. The pricing table covers major providers (OpenAI, Anthropic, Google) and is updated with each Chau7 release. Models not in the pricing table will have token counts tracked but no cost calculated.</p></div>
                     </details>
                 </div>
             </div>

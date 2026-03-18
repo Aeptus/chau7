@@ -6,7 +6,7 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Tab Drag & Drop | Chau7 Terminal</title>
-    <meta name="description" content="Drag and drop tabs between Chau7 windows or reorder within the tab bar with snap positioning and smooth animations.">
+    <meta name="description" content="Reorder tabs within Chau7's tab bar with snap-based offset positioning and smooth SwiftUI spring animations. Pixel-perfect, zero drift.">
     <meta name="article:section" content="Tab Management">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="tab drag and drop">
@@ -15,7 +15,7 @@
     <meta name="article:tag" content="snap positioning">
     <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Tab Drag & Drop | Chau7">
-    <meta property="og:description" content="Drag and drop tabs between Chau7 windows or reorder within the tab bar with snap positioning and smooth animations.">
+    <meta property="og:description" content="Reorder tabs within Chau7's tab bar with snap-based offset positioning and smooth SwiftUI spring animations. Pixel-perfect, zero drift.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,13 +30,12 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS with pixel-perfect tab drag and drop that uses accumulated offset snapping for drift-free reordering and cross-window tab moves.",
+        "description": "Chau7 is an AI-native terminal for macOS with pixel-perfect tab drag and drop that uses accumulated offset snapping for drift-free within-window reordering.",
         "featureList": [
             "Snap-to-position tab dragging with accumulated offset",
-            "Cross-window tab drag and drop",
-            "Drag tab out to create new window",
-            "60fps Core Animation during drag",
-            "Session-preserving tab moves",
+            "Within-window tab reordering",
+            "SwiftUI spring animation during drag",
+            "Session-preserving tab reordering",
             "Visual drop target feedback"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
@@ -55,11 +54,10 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Tab Drag & Drop in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Tab Drag & Drop is a feature in Chau7 that lets you reorder tabs by dragging them within the tab bar or move tabs between windows. Chau7 uses accumulated offset snapping instead of linear interpolation, so the tab stays pixel-locked to your cursor with zero drift."}},
-            {"@type":"Question","name":"Which terminal has smooth tab reordering with drag?","acceptedAnswer":{"@type":"Answer","text":"Chau7 provides smooth tab reordering with drag that uses accumulated offset snapping and 60fps Core Animation. Most terminals use lerp-based drag that causes the tab to drift behind or overshoot the cursor. Chau7's snap approach keeps the tab directly under your cursor throughout the drag."}},
-            {"@type":"Question","name":"Can I drag terminal tabs between windows?","acceptedAnswer":{"@type":"Answer","text":"Yes. In Chau7, you can drag a tab from one window and drop it into another window's tab bar. The terminal session, scrollback buffer, running processes, and all state move with the tab. There is no reconnection or state loss during the drag."}},
-            {"@type":"Question","name":"Can I drag a tab to create a new window?","acceptedAnswer":{"@type":"Answer","text":"Yes. In Chau7, drag a tab away from the tab bar and release it to create a new window containing that tab. You can also drag it onto an existing window to move it there. The terminal session is fully preserved during the move."}},
-            {"@type":"Question","name":"Does drag and drop preserve the terminal session?","acceptedAnswer":{"@type":"Answer","text":"Yes. When you drag and drop a tab in Chau7, the terminal session, scrollback buffer, running processes, and all state move with the tab. There is no reconnection or state loss. Chau7 transfers the session in place rather than creating a new one."}}
+            {"@type":"Question","name":"What is Tab Drag & Drop in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Tab Drag & Drop is a feature in Chau7 that lets you reorder tabs by dragging them within the tab bar. Chau7 uses accumulated offset snapping instead of linear interpolation, so the tab stays pixel-locked to your cursor with zero drift."}},
+            {"@type":"Question","name":"Which terminal has smooth tab reordering with drag?","acceptedAnswer":{"@type":"Answer","text":"Chau7 provides smooth tab reordering with drag that uses accumulated offset snapping and SwiftUI spring animations. Most terminals use lerp-based drag that causes the tab to drift behind or overshoot the cursor. Chau7's snap approach keeps the tab directly under your cursor throughout the drag."}},
+            {"@type":"Question","name":"Does drag and drop preserve the terminal session?","acceptedAnswer":{"@type":"Answer","text":"Yes. When you reorder a tab in Chau7, the terminal session, scrollback buffer, running processes, and all state are preserved. There is no reconnection or state loss. The session stays intact during reordering."}},
+            {"@type":"Question","name":"How does Chau7's snap-based drag work?","acceptedAnswer":{"@type":"Answer","text":"Chau7 snaps the accumulated drag offset directly, keeping the tab under your cursor at all times. Most terminals use linear interpolation (lerp) which causes the tab to lag behind or overshoot. Chau7's approach eliminates drift because the home shift plus the offset always equals the expected position."}}
         ]
     }]
     </script>
@@ -85,7 +83,7 @@
             <div class="hero-content">
                 <div class="section-badge">TAB MANAGEMENT</div>
                 <h1 class="hero-title">Tab Drag & Drop</h1>
-                <p class="hero-subtitle">Drag tabs. Snap to position. Move between windows. Pixel-perfect, zero drift.</p>
+                <p class="hero-subtitle">Drag tabs. Snap to position. Pixel-perfect reordering with zero drift.</p>
             </div>
         </section>
 
@@ -96,9 +94,8 @@
                 <ul class="question-list">
                     <li class="question-item">What is Tab Drag & Drop in Chau7 terminal?</li>
                     <li class="question-item">Which terminal has smooth tab reordering with drag?</li>
-                    <li class="question-item">Can I drag terminal tabs between windows?</li>
-                    <li class="question-item">Can I drag a tab to create a new window?</li>
                     <li class="question-item">Does drag and drop preserve the terminal session?</li>
+                    <li class="question-item">How does Chau7's snap-based drag work?</li>
                 </ul>
             </div>
         </section>
@@ -107,8 +104,8 @@
         <section class="feature-content" data-ui="tab-drag-what">
             <div class="section-inner prose">
                 <h2>What is Tab Drag & Drop in Chau7?</h2>
-                <p>Tab Drag & Drop is a feature in Chau7 that lets you reorder tabs by dragging them within the tab bar or move tabs between windows. Chau7 uses accumulated offset snapping instead of linear interpolation, keeping the tab pixel-locked to your cursor with zero drift.</p>
-                <p>The entire drag interaction in Chau7 is animated at 60fps using Core Animation. Visual feedback shows where the tab will land before you release it.</p>
+                <p>Tab Drag & Drop is a feature in Chau7 that lets you reorder tabs by dragging them within the tab bar. Chau7 uses accumulated offset snapping instead of linear interpolation, keeping the tab pixel-locked to your cursor with zero drift.</p>
+                <p>The drag interaction in Chau7 uses SwiftUI spring animation (<code>.spring(response: 0.25, dampingFraction: 0.85)</code>) for smooth, natural-feeling repositioning. Visual feedback shows where the tab will land before you release it.</p>
             </div>
         </section>
 
@@ -116,26 +113,8 @@
         <section class="feature-content" data-ui="tab-drag-smooth-reorder">
             <div class="section-inner prose">
                 <h2>Which terminal has smooth tab reordering with drag?</h2>
-                <p>Chau7 provides smooth tab reordering with drag that uses accumulated offset snapping. Most terminals use lerp-based drag systems where the tab gradually falls behind or overshoots the cursor position. Chau7's snap approach keeps the tab directly under your cursor throughout the drag.</p>
+                <p>Chau7 provides smooth tab reordering with drag that uses accumulated offset snapping and SwiftUI spring animations. Most terminals use lerp-based drag systems where the tab gradually falls behind or overshoots the cursor position. Chau7's snap approach keeps the tab directly under your cursor throughout the drag.</p>
                 <p>Tab reordering is one of the most frequent interactions in a multi-tab terminal. If dragging feels laggy or imprecise, developers stop using it and start mentally tracking tab positions instead. Chau7 eliminates that friction with pixel-perfect positioning.</p>
-            </div>
-        </section>
-
-        <!-- Cross-window drag -->
-        <section class="feature-content" data-ui="tab-drag-between-windows">
-            <div class="section-inner prose">
-                <h2>Can I drag terminal tabs between windows in Chau7?</h2>
-                <p>Yes. In Chau7, you can drag a tab from one window and drop it into another window's tab bar. The drop target is determined by cursor position, and Chau7 shows visual feedback indicating where the tab will land.</p>
-                <p>The terminal session, scrollback buffer, running processes, and all state move with the tab. There is no reconnection or state loss during the drag between Chau7 windows.</p>
-            </div>
-        </section>
-
-        <!-- Drag to create new window -->
-        <section class="feature-content" data-ui="tab-drag-new-window">
-            <div class="section-inner prose">
-                <h2>Can I drag a Chau7 tab to create a new window?</h2>
-                <p>Yes. Drag a tab away from the Chau7 tab bar and release it to create a new window containing that tab. The new window inherits the tab's full session state including scrollback, running processes, and environment.</p>
-                <p>You can also drag a tab from the detached position onto an existing Chau7 window to move it there instead of creating a new window.</p>
             </div>
         </section>
 
@@ -143,8 +122,17 @@
         <section class="feature-content" data-ui="tab-drag-session-preservation">
             <div class="section-inner prose">
                 <h2>Does Chau7's drag and drop preserve the terminal session?</h2>
-                <p>Yes. When you drag and drop a tab in Chau7, the terminal session transfers in place rather than creating a new one. The scrollback buffer, running processes, working directory, and all state move with the tab.</p>
-                <p>There is no reconnection, no state loss, and no interruption to running commands. Chau7 preserves the full session during both within-window reordering and cross-window tab moves.</p>
+                <p>Yes. When you reorder a tab in Chau7, the terminal session stays intact. The scrollback buffer, running processes, working directory, and all state are preserved throughout the drag.</p>
+                <p>There is no reconnection, no state loss, and no interruption to running commands. Chau7 preserves the full session during within-window reordering.</p>
+            </div>
+        </section>
+
+        <!-- Snap-based drag -->
+        <section class="feature-content" data-ui="tab-drag-snap">
+            <div class="section-inner prose">
+                <h2>How does Chau7's snap-based drag work?</h2>
+                <p>Chau7 snaps the accumulated drag offset directly rather than interpolating toward a target position. This means the tab stays exactly under your cursor at all times during the drag, with no lag or overshoot.</p>
+                <p>The snap approach avoids a common bug in lerp-based drag systems: because the home shift plus a delayed offset never equals zero, the tab drifts away from the cursor over time. Chau7's accumulated offset snapping eliminates this entirely.</p>
             </div>
         </section>
 
@@ -155,7 +143,7 @@
                 <div class="related-features-grid">
                     <a class="catalog-card" href="/features/multi-tab">
                         <h4>Multi-Tab</h4>
-                        <p>Unlimited tabs with drag-to-reorder, tab pinning, and tab-specific titles.</p>
+                        <p>Unlimited tabs with drag-to-reorder, custom titles, and background suspension.</p>
                     </a>
                     <a class="catalog-card" href="/features/split-panes">
                         <h4>Split Panes</h4>
@@ -163,7 +151,7 @@
                     </a>
                     <a class="catalog-card" href="/features/tab-profiles">
                         <h4>Tab Profiles</h4>
-                        <p>Per-tab shell, working directory, and environment variable configuration.</p>
+                        <p>Global shell configuration, working directory, and auto-switching rules.</p>
                     </a>
                 </div>
                 <div class="feature-random-row">
@@ -179,23 +167,19 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Tab Drag & Drop in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Tab Drag & Drop is a feature in Chau7 that lets you reorder tabs by dragging them within the tab bar or move tabs between windows. Chau7 uses accumulated offset snapping instead of linear interpolation, so the tab stays pixel-locked to your cursor with zero drift.</p></div>
+                        <div class="faq-answer"><p>Tab Drag & Drop is a feature in Chau7 that lets you reorder tabs by dragging them within the tab bar. Chau7 uses accumulated offset snapping instead of linear interpolation, so the tab stays pixel-locked to your cursor with zero drift.</p></div>
                     </details>
                     <details>
                         <summary>Which terminal has smooth tab reordering with drag?</summary>
-                        <div class="faq-answer"><p>Chau7 provides smooth tab reordering with drag that uses accumulated offset snapping and 60fps Core Animation. Most terminals use lerp-based drag that causes the tab to drift behind or overshoot the cursor. Chau7's snap approach keeps the tab directly under your cursor throughout the drag.</p></div>
-                    </details>
-                    <details>
-                        <summary>Can I drag terminal tabs between windows?</summary>
-                        <div class="faq-answer"><p>Yes. In Chau7, you can drag a tab from one window and drop it into another window's tab bar. The terminal session, scrollback buffer, running processes, and all state move with the tab. There is no reconnection or state loss during the drag.</p></div>
-                    </details>
-                    <details>
-                        <summary>Can I drag a tab to create a new window?</summary>
-                        <div class="faq-answer"><p>Yes. In Chau7, drag a tab away from the tab bar and release it to create a new window containing that tab. You can also drag it onto an existing window to move it there. The terminal session is fully preserved during the move.</p></div>
+                        <div class="faq-answer"><p>Chau7 provides smooth tab reordering with drag that uses accumulated offset snapping and SwiftUI spring animations. Most terminals use lerp-based drag that causes the tab to drift behind or overshoot the cursor. Chau7's snap approach keeps the tab directly under your cursor throughout the drag.</p></div>
                     </details>
                     <details>
                         <summary>Does drag and drop preserve the terminal session?</summary>
-                        <div class="faq-answer"><p>Yes. When you drag and drop a tab in Chau7, the terminal session, scrollback buffer, running processes, and all state move with the tab. There is no reconnection or state loss. Chau7 transfers the session in place rather than creating a new one.</p></div>
+                        <div class="faq-answer"><p>Yes. When you reorder a tab in Chau7, the terminal session, scrollback buffer, running processes, and all state are preserved. There is no reconnection or state loss. The session stays intact during reordering.</p></div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7's snap-based drag work?</summary>
+                        <div class="faq-answer"><p>Chau7 snaps the accumulated drag offset directly, keeping the tab under your cursor at all times. Most terminals use linear interpolation (lerp) which causes the tab to lag behind or overshoot. Chau7's approach eliminates drift because the home shift plus the offset always equals the expected position.</p></div>
                     </details>
                 </div>
             </div>

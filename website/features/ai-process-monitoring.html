@@ -45,7 +45,7 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"Does process monitoring add significant overhead?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7 reads standard system metrics on a throttled interval. The overhead is comparable to running a lightweight top query and is imperceptible during normal use."}},{"@type":"Question","name":"Can I see historical resource usage for a session?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 captures process metrics as part of its telemetry run data. You can query past sessions through the Chau7 MCP server to review resource consumption over time, giving you a historical view of CPU and memory usage across your AI coding sessions."}}]
+        "mainEntity": [{"@type":"Question","name":"Does process monitoring add significant overhead?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7 reads standard system metrics on a throttled interval. The overhead is comparable to running a lightweight top query and is imperceptible during normal use."}},{"@type":"Question","name":"Can I see historical resource usage for a session?","acceptedAnswer":{"@type":"Answer","text":"Process metrics are shown live when the tab hover card is visible and are not persisted to disk. Chau7 does not store historical CPU or memory data for past sessions. For live sessions, you can query current process metrics through the MCP server&#x27;s tab_status tool."}}]
     }]
     </script>
 </head>
@@ -70,7 +70,7 @@
             <div class="hero-content">
                 <div class="section-badge badge-alt">AI DETECTION</div>
                 <h1 class="hero-title">What is AI Process Monitoring in Chau7?</h1>
-                <p class="hero-subtitle">Chau7 tracks CPU, memory, and PID for every AI coding agent in every tab. No more guessing which AI ate your RAM.</p>
+                <p class="hero-subtitle">Chau7 shows CPU, memory, and PID for AI coding agents when you hover over a tab. No more guessing which AI ate your RAM.</p>
             </div>
         </section>
 
@@ -92,7 +92,7 @@
         <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How does Chau7 track process stats for AI CLI tools?</h2>
-                <p>AI Process Monitoring in Chau7 is the system that ties process-level metrics directly to the AI agent detected in each terminal tab. Once Chau7 identifies an agent, it tracks the agent's PID along with CPU percentage and resident memory usage. Chau7 samples these metrics on a throttled interval and surfaces them in the tab status panel, accessible through the MCP server or the Chau7 UI.</p>
+                <p>AI Process Monitoring in Chau7 is the system that ties process-level metrics directly to the AI agent detected in each terminal tab. Once Chau7 identifies an agent, it tracks the agent's PID along with CPU percentage and resident memory usage. Chau7 samples these metrics on demand when the tab hover card is visible and surfaces them in the tab status panel, accessible through the MCP server's <code>tab_status</code> tool or the Chau7 UI.</p>
                 <p>Chau7 detection supports Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor. Each detected agent reports its own independent resource metrics scoped to its tab, with no cross-contamination between tabs.</p>
             </div>
         </section>
@@ -102,7 +102,7 @@
             <div class="section-inner prose">
                 <h2>Which AI coding tool is using the most resources?</h2>
                 <p>Chau7 makes it easy to find out which AI coding tool is using the most resources. Because Chau7 scopes process monitoring per tab, you can compare CPU and memory usage across agents side by side. A Claude Code session in one tab and a Codex session in another each show their own metrics independently. Chau7 lets you spot the resource-heavy agent at a glance without digging through Activity Monitor.</p>
-                <p>The resource data from Chau7 feeds into the broader telemetry system, so you can correlate resource spikes with specific AI operations, prompts, or tool-call bursts after the fact.</p>
+                <p>Process metrics are shown live while the tab hover card is visible and are not persisted to disk. This on-demand approach keeps overhead minimal while giving you instant visibility when you need it.</p>
             </div>
         </section>
 
@@ -151,7 +151,7 @@
                     </details>
                     <details>
                         <summary>Can I see historical resource usage for a session?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7 captures process metrics as part of its telemetry run data. You can query past sessions through the Chau7 MCP server to review resource consumption over time, giving you a historical view of CPU and memory usage across your AI coding sessions.</p></div>
+                        <div class="faq-answer"><p>Process metrics are shown live when the tab hover card is visible and are not persisted to disk. Chau7 does not store historical CPU or memory data for past sessions. For live sessions, you can query current process metrics through the MCP server's <code>tab_status</code> tool.</p></div>
                     </details>
                 </div>
             </div>

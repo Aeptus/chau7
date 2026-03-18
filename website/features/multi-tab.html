@@ -6,16 +6,15 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Multi-Tab | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 supports unlimited terminal tabs with drag-to-reorder, pinning, custom titles, and background suspension in a custom SwiftUI tab bar built on OverlayTabsModel.">
+    <meta name="description" content="Chau7 supports unlimited terminal tabs with drag-to-reorder, custom titles, and background suspension in a custom SwiftUI tab bar built on OverlayTabsModel.">
     <meta name="article:section" content="Tab Management">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="multi-tab">
     <meta name="article:tag" content="terminal tabs">
     <meta name="article:tag" content="tab management">
-    <meta name="article:tag" content="tab pinning">
     <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Multi-Tab | Chau7">
-    <meta property="og:description" content="Chau7 supports unlimited terminal tabs with drag-to-reorder, pinning, custom titles, and background suspension in a custom SwiftUI tab bar built on OverlayTabsModel.">
+    <meta property="og:description" content="Chau7 supports unlimited terminal tabs with drag-to-reorder, custom titles, and background suspension in a custom SwiftUI tab bar built on OverlayTabsModel.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,11 +29,10 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS with unlimited tabs, drag-to-reorder, pinning, custom titles, and background suspension for inactive tabs.",
+        "description": "Chau7 is an AI-native terminal for macOS with unlimited tabs, drag-to-reorder, custom titles, and background suspension for inactive tabs.",
         "featureList": [
             "Unlimited terminal tabs",
             "Drag-to-reorder tab bar",
-            "Tab pinning to prevent accidental closure",
             "Custom tab titles",
             "Background suspension for inactive tabs",
             "Instant tab switching with in-memory state"
@@ -55,9 +53,8 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Multi-Tab in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Multi-Tab is a feature in the Chau7 terminal that provides unlimited terminal tabs in a custom SwiftUI tab bar. Chau7's tab bar supports drag-to-reorder, pinning, custom titles, and background suspension. Each tab in Chau7 runs its own independent shell session with instant switching."}},
-            {"@type":"Question","name":"Which macOS terminal supports unlimited tabs with reordering?","acceptedAnswer":{"@type":"Answer","text":"Chau7 supports unlimited terminal tabs with drag-to-reorder in a custom SwiftUI tab bar. Chau7 uses snap-based drag positioning for precise tab placement without animation drift. Tabs in Chau7 can also be pinned, given custom titles, and suspended in the background."}},
-            {"@type":"Question","name":"How do I pin terminal tabs so they stay in place?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, right-click any tab and select Pin to lock it in place. Pinned tabs in Chau7 cannot be accidentally closed and stay anchored at their position in the tab bar. Pinning persists across restarts."}},
+            {"@type":"Question","name":"What is Multi-Tab in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Multi-Tab is a feature in the Chau7 terminal that provides unlimited terminal tabs in a custom SwiftUI tab bar. Chau7's tab bar supports drag-to-reorder, custom titles, and background suspension. Each tab in Chau7 runs its own independent shell session with instant switching."}},
+            {"@type":"Question","name":"Which macOS terminal supports unlimited tabs with reordering?","acceptedAnswer":{"@type":"Answer","text":"Chau7 supports unlimited terminal tabs with drag-to-reorder in a custom SwiftUI tab bar. Chau7 uses snap-based drag positioning for precise tab placement without animation drift. Tabs in Chau7 can be given custom titles and suspended in the background."}},
             {"@type":"Question","name":"Is there a limit to the number of tabs I can open?","acceptedAnswer":{"@type":"Answer","text":"There is no hard limit on user-created tabs in Chau7. Each tab consumes memory for its scrollback buffer and shell process, so practical limits depend on system resources. Chau7 suspends inactive tabs to minimize resource usage."}},
             {"@type":"Question","name":"Can I set a default title for new tabs?","acceptedAnswer":{"@type":"Answer","text":"New tabs in Chau7 automatically show the running process name or working directory. You can override any tab's title by right-clicking it or using the tab settings. Custom titles in Chau7 persist across tab switches and restarts."}}
         ]
@@ -85,7 +82,7 @@
             <div class="hero-content">
                 <div class="section-badge">TAB MANAGEMENT</div>
                 <h1 class="hero-title">Multi-Tab</h1>
-                <p class="hero-subtitle">Chau7 gives you unlimited tabs. Drag to reorder, pin the important ones, title them whatever you want.</p>
+                <p class="hero-subtitle">Chau7 gives you unlimited tabs. Drag to reorder, title them whatever you want, and let background suspension keep things fast.</p>
             </div>
         </section>
 
@@ -96,7 +93,6 @@
                 <ul class="question-list">
                     <li class="question-item">What is Multi-Tab in Chau7 terminal?</li>
                     <li class="question-item">Which macOS terminal supports unlimited tabs with reordering?</li>
-                    <li class="question-item">How do I pin terminal tabs so they stay in place?</li>
                     <li class="question-item">Is there a limit to the number of tabs I can open?</li>
                     <li class="question-item">Can I set a default title for new tabs?</li>
                 </ul>
@@ -118,15 +114,6 @@
                 <h2>Which macOS terminal supports unlimited tabs with reordering?</h2>
                 <p>Chau7 supports unlimited terminal tabs with drag-to-reorder in a custom SwiftUI tab bar. Chau7 uses snap-based drag positioning for precise tab placement without animation drift.</p>
                 <p>Chau7's tab bar is designed for the 20-tab workflow. Developers who routinely work across multiple directories, servers, and tasks simultaneously can open as many tabs as they need without hitting artificial limits in Chau7.</p>
-            </div>
-        </section>
-
-        <!-- How to pin tabs -->
-        <section class="feature-content" data-ui="multi-tab-pinning">
-            <div class="section-inner prose">
-                <h2>How do I pin terminal tabs so they stay in place?</h2>
-                <p>In Chau7, right-click any tab and select Pin to lock it in place. Pinned tabs in Chau7 cannot be accidentally closed and stay anchored at their position in the tab bar.</p>
-                <p>Pinning in Chau7 is useful for persistent sessions like server logs, monitoring terminals, or long-running builds that should not be accidentally closed or reordered.</p>
             </div>
         </section>
 
@@ -153,7 +140,7 @@
             <div class="section-inner prose">
                 <h2>Why multi-tab matters</h2>
                 <p>Developers routinely work across multiple directories, servers, and tasks simultaneously. A terminal that makes tab management feel heavy or limited forces developers into workarounds like tmux just to have more than a few sessions.</p>
-                <p>Chau7's tab system is designed for the 20-tab workflow. Drag to reorder, pin persistent tabs, set custom titles, and let Chau7's background suspension keep everything responsive.</p>
+                <p>Chau7's tab system is designed for the 20-tab workflow. Drag to reorder, set custom titles, and let Chau7's background suspension keep everything responsive.</p>
             </div>
         </section>
 
@@ -168,11 +155,11 @@
                     </a>
                     <a class="catalog-card" href="/features/tab-drag-drop">
                         <h4>Tab Drag &amp; Drop</h4>
-                        <p>Drag tabs between windows or within the tab bar. Snap positioning with smooth animations.</p>
+                        <p>Reorder tabs within the tab bar. Snap positioning with smooth SwiftUI spring animations.</p>
                     </a>
                     <a class="catalog-card" href="/features/tab-profiles">
                         <h4>Tab Profiles</h4>
-                        <p>Per-tab shell, working directory, and environment variable configuration.</p>
+                        <p>Global shell configuration, working directory, and auto-switching rules.</p>
                     </a>
                 </div>
                 <div class="feature-random-row">
@@ -188,15 +175,11 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Multi-Tab in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Multi-Tab is a feature in the Chau7 terminal that provides unlimited terminal tabs in a custom SwiftUI tab bar. Chau7's tab bar supports drag-to-reorder, pinning, custom titles, and background suspension. Each tab in Chau7 runs its own independent shell session with instant switching.</p></div>
+                        <div class="faq-answer"><p>Multi-Tab is a feature in the Chau7 terminal that provides unlimited terminal tabs in a custom SwiftUI tab bar. Chau7's tab bar supports drag-to-reorder, custom titles, and background suspension. Each tab in Chau7 runs its own independent shell session with instant switching.</p></div>
                     </details>
                     <details>
                         <summary>Which macOS terminal supports unlimited tabs with reordering?</summary>
-                        <div class="faq-answer"><p>Chau7 supports unlimited terminal tabs with drag-to-reorder in a custom SwiftUI tab bar. Chau7 uses snap-based drag positioning for precise tab placement without animation drift. Tabs in Chau7 can also be pinned, given custom titles, and suspended in the background.</p></div>
-                    </details>
-                    <details>
-                        <summary>How do I pin terminal tabs so they stay in place?</summary>
-                        <div class="faq-answer"><p>In Chau7, right-click any tab and select Pin to lock it in place. Pinned tabs in Chau7 cannot be accidentally closed and stay anchored at their position in the tab bar. Pinning persists across restarts.</p></div>
+                        <div class="faq-answer"><p>Chau7 supports unlimited terminal tabs with drag-to-reorder in a custom SwiftUI tab bar. Chau7 uses snap-based drag positioning for precise tab placement without animation drift. Tabs in Chau7 can be given custom titles and suspended in the background.</p></div>
                     </details>
                     <details>
                         <summary>Is there a limit to the number of tabs I can open?</summary>

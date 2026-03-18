@@ -6,16 +6,16 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Latency Tracking | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 measures time-to-first-token and total duration for every LLM API call. Identify slow requests and provider performance issues across your AI agent sessions.">
+    <meta name="description" content="Chau7 measures total request duration for every LLM API call. Identify slow requests and provider performance issues across your AI agent sessions.">
     <meta name="article:section" content="API Analytics">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="latency tracking">
-    <meta name="article:tag" content="time-to-first-token">
+    <meta name="article:tag" content="request duration">
     <meta name="article:tag" content="LLM API latency">
     <meta name="article:tag" content="AI agent performance">
     <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Latency Tracking | Chau7">
-    <meta property="og:description" content="Chau7 measures time-to-first-token and total duration for every LLM API call. Identify slow requests and provider performance issues across your AI agent sessions.">
+    <meta property="og:description" content="Chau7 measures total request duration for every LLM API call. Identify slow requests and provider performance issues across your AI agent sessions.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,14 +30,11 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS that measures time-to-first-token and total duration for every LLM API call to identify slow requests and provider performance issues.",
+        "description": "Chau7 is an AI-native terminal for macOS that measures total request duration for every LLM API call to identify slow requests and provider performance issues.",
         "featureList": [
-            "Time-to-first-token (TTFT) measurement",
             "Total request duration tracking",
             "Per-call provider and model metadata",
-            "Session and run association",
-            "Cross-provider latency comparison",
-            "Latency spike detection"
+            "Session and run association"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
@@ -55,11 +52,11 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Latency Tracking in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Latency Tracking is a feature in the Chau7 terminal that records two key timestamps for every intercepted LLM API call: time-to-first-token (TTFT) and total request duration. Chau7 associates each measurement with the originating tab, session, and run so developers can identify slow calls and compare provider performance."}},
-            {"@type":"Question","name":"Which terminal emulators offer latency tracking?","acceptedAnswer":{"@type":"Answer","text":"Chau7 is the only terminal emulator that offers built-in latency tracking for LLM API calls. iTerm2, Warp, Alacritty, and Kitty have no API latency measurement. Provider dashboards show aggregate statistics but not per-call timing tied to specific coding sessions. Chau7 records TTFT and total duration for every individual API call."}},
-            {"@type":"Question","name":"How to measure LLM API latency in terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7 measures LLM API latency automatically through its built-in TLS/WSS proxy. For every intercepted API call, Chau7 records the time-to-first-token (when the first response byte arrives) and the total duration (from request sent to response complete). Both metrics are stored per call with provider and model metadata."}},
-            {"@type":"Question","name":"What is time-to-first-token and why does it matter?","acceptedAnswer":{"@type":"Answer","text":"Time-to-first-token (TTFT) measures the delay between sending a request and receiving the first piece of the response. It directly determines how responsive an AI agent feels. Chau7 records TTFT for every API call so developers can identify which models and providers deliver the fastest initial response."}},
-            {"@type":"Question","name":"Can I compare latency across different providers?","acceptedAnswer":{"@type":"Answer","text":"Yes. Since Chau7 tracks latency per call with provider and model metadata, you can filter and compare performance across providers, models, and time periods through the MCP server or Chau7's Analytics Dashboard."}}
+            {"@type":"Question","name":"What is Latency Tracking in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Latency Tracking is a feature in the Chau7 terminal that records total request duration for every intercepted LLM API call. Chau7 associates each measurement with the originating tab, session, and run so developers can identify slow calls."}},
+            {"@type":"Question","name":"Which terminal emulators offer latency tracking?","acceptedAnswer":{"@type":"Answer","text":"Chau7 is the only terminal emulator that offers built-in latency tracking for LLM API calls. iTerm2, Warp, Alacritty, and Kitty have no API latency measurement. Provider dashboards show aggregate statistics but not per-call timing tied to specific coding sessions. Chau7 records total request duration for every individual API call."}},
+            {"@type":"Question","name":"How to measure LLM API latency in terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7 measures LLM API latency automatically through its built-in TLS/WSS proxy. For every intercepted API call, Chau7 records the total request duration (from request sent to response complete). The metric is stored per call with provider and model metadata."}},
+            {"@type":"Question","name":"What latency data does Chau7 record?","acceptedAnswer":{"@type":"Answer","text":"Chau7 records total request duration for every API call, measuring the full round-trip time from request sent to response complete. Each measurement includes provider and model metadata so developers can compare performance across different models."}},
+            {"@type":"Question","name":"Can I review latency data through the MCP server?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 exposes run telemetry through its MCP server, which includes latency data per API call with provider and model metadata."}}
         ]
     }]
     </script>
@@ -85,7 +82,7 @@
             <div class="hero-content">
                 <div class="section-badge badge-blue">API ANALYTICS</div>
                 <h1 class="hero-title">Latency Tracking</h1>
-                <p class="hero-subtitle">Chau7 measures time-to-first-token and total duration for every API call. Because "it feels slow" is not a metric.</p>
+                <p class="hero-subtitle">Chau7 measures total request duration for every API call. Because "it feels slow" is not a metric.</p>
             </div>
         </section>
 
@@ -97,8 +94,8 @@
                     <li class="question-item">What is Latency Tracking in Chau7 terminal?</li>
                     <li class="question-item">Which terminal emulators offer latency tracking?</li>
                     <li class="question-item">How to measure LLM API latency in terminal?</li>
-                    <li class="question-item">What is time-to-first-token and why does it matter?</li>
-                    <li class="question-item">Can I compare latency across different providers?</li>
+                    <li class="question-item">What latency data does Chau7 record?</li>
+                    <li class="question-item">Can I review latency data through the MCP server?</li>
                 </ul>
             </div>
         </section>
@@ -107,8 +104,8 @@
         <section class="feature-content" data-ui="latency-what">
             <div class="section-inner prose">
                 <h2>What is Latency Tracking in Chau7?</h2>
-                <p>Latency Tracking is a feature in the Chau7 terminal that records two key timestamps for every intercepted LLM API call: time-to-first-token (TTFT) and total request duration. TTFT measures how long it takes for the first byte of the response to arrive. Total duration captures the full round-trip time from request sent to response complete.</p>
-                <p>Chau7 associates each latency measurement with the originating tab, session, and run. This lets developers identify slow calls, compare provider performance across sessions, and spot patterns like latency spikes during peak hours or degradation on large context windows.</p>
+                <p>Latency Tracking is a feature in the Chau7 terminal that records total request duration for every intercepted LLM API call. Total duration captures the full round-trip time from request sent to response complete.</p>
+                <p>Chau7 associates each latency measurement with the originating tab, session, and run. This lets developers identify slow calls and understand API performance per provider and model.</p>
             </div>
         </section>
 
@@ -116,8 +113,8 @@
         <section class="feature-content" data-ui="latency-how-to-measure">
             <div class="section-inner prose">
                 <h2>How to measure LLM API latency in Chau7</h2>
-                <p>Chau7 measures LLM API latency automatically through its built-in TLS/WSS proxy. For every intercepted API call, Chau7 records the time-to-first-token (when the first response byte arrives) and the total duration (from request sent to response complete). For streaming responses, TTFT reflects when the first streamed chunk arrives.</p>
-                <p>Both metrics in Chau7 are stored per call with provider and model metadata. Developers can review latency data through Chau7's tab overlay, the MCP server, or the Analytics Dashboard.</p>
+                <p>Chau7 measures LLM API latency automatically through its built-in TLS/WSS proxy. For every intercepted API call, Chau7 records the total request duration (from request sent to response complete).</p>
+                <p>Duration data in Chau7 is stored per call with provider and model metadata. Developers can review latency data through Chau7's MCP server.</p>
             </div>
         </section>
 
@@ -126,25 +123,25 @@
             <div class="section-inner prose">
                 <h2>Which terminal emulators offer latency tracking?</h2>
                 <p>Chau7 is the only terminal emulator that offers built-in latency tracking for LLM API calls. iTerm2, Warp, Alacritty, and Kitty have no API latency measurement features.</p>
-                <p>Provider dashboards from OpenAI and Anthropic show aggregate statistics but not per-call timing tied to specific coding sessions or terminal tabs. Chau7 records TTFT and total duration for every individual API call, associated with the specific tab and session where the call originated.</p>
+                <p>Provider dashboards from OpenAI and Anthropic show aggregate statistics but not per-call timing tied to specific coding sessions or terminal tabs. Chau7 records total request duration for every individual API call, associated with the specific tab and session where the call originated.</p>
             </div>
         </section>
 
-        <!-- What is TTFT -->
-        <section class="feature-content" data-ui="latency-ttft">
+        <!-- What latency data -->
+        <section class="feature-content" data-ui="latency-data">
             <div class="section-inner prose">
-                <h2>What is time-to-first-token and why does it matter?</h2>
-                <p>Time-to-first-token (TTFT) measures the delay between sending a request and receiving the first piece of the response. TTFT directly determines how responsive an AI agent feels. A low TTFT means the agent starts producing output quickly even if the full response takes longer.</p>
-                <p>Chau7 records TTFT for every API call so developers can identify which models and providers deliver the fastest initial response. This data helps developers make informed decisions about model selection for latency-sensitive workflows.</p>
+                <h2>What latency data does Chau7 record?</h2>
+                <p>Chau7 records total request duration for every API call, measuring the full round-trip time from request sent to response complete. Each measurement includes provider and model metadata so developers can compare performance across different models.</p>
+                <p>This data is stored per call and associated with the originating tab, session, and run. Developers can use it to identify slow calls and understand API performance characteristics.</p>
             </div>
         </section>
 
-        <!-- Cross-provider comparison -->
-        <section class="feature-content" data-ui="latency-cross-provider">
+        <!-- MCP server access -->
+        <section class="feature-content" data-ui="latency-mcp">
             <div class="section-inner prose">
-                <h2>Can I compare latency across different providers in Chau7?</h2>
-                <p>Yes. Since Chau7 tracks latency per call with provider and model metadata, developers can filter and compare performance across providers, models, and time periods through the MCP server or Chau7's Analytics Dashboard.</p>
-                <p>Chau7's latency data reveals patterns that aggregate provider dashboards hide. Developers can see whether latency varies by time of day, prompt size, or specific model version. This granularity in Chau7 helps teams choose the right provider and model for each use case.</p>
+                <h2>Can I review latency data through the MCP server?</h2>
+                <p>Yes. Chau7 exposes run telemetry through its MCP server, which includes latency data per API call with provider and model metadata. Developers can query this data programmatically.</p>
+                <p>Since each measurement includes provider and model information, developers can compare performance across different models by reviewing the telemetry data.</p>
             </div>
         </section>
 
@@ -153,7 +150,7 @@
             <div class="section-inner prose">
                 <h2>Why latency tracking matters</h2>
                 <p>AI agent responsiveness depends on API latency, and latency varies wildly by provider, model, time of day, and prompt size. Without measurements, developers are stuck with subjective impressions.</p>
-                <p>Chau7 records time-to-first-token and total request duration for every API call. With this data, developers can make data-driven decisions about which model to use and when. Chau7's latency tracking turns "it feels slow" into actionable numbers.</p>
+                <p>Chau7 records total request duration for every API call. With this data, developers can make data-driven decisions about which model to use and when. Chau7's latency tracking turns "it feels slow" into actionable numbers.</p>
             </div>
         </section>
 
@@ -164,11 +161,11 @@
                 <div class="related-features-grid">
                     <a class="catalog-card" href="/features/tls-wss-proxy">
                         <h4>TLS/WSS Proxy <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
-                        <p>Transparent proxy captures API calls to OpenAI, Anthropic, and other LLM providers for analysis.</p>
+                        <p>Local proxy captures API calls to OpenAI, Anthropic, and Gemini for analysis.</p>
                     </a>
                     <a class="catalog-card" href="/features/token-counting">
                         <h4>Token Counting</h4>
-                        <p>Track input and output tokens per API call with provider-specific tokenization.</p>
+                        <p>Read input and output token counts from API response metadata per call.</p>
                     </a>
                     <a class="catalog-card" href="/features/cost-tracking">
                         <h4>Cost Tracking <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
@@ -188,23 +185,23 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Latency Tracking in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Latency Tracking is a feature in the Chau7 terminal that records two key timestamps for every intercepted LLM API call: time-to-first-token (TTFT) and total request duration. Chau7 associates each measurement with the originating tab, session, and run so developers can identify slow calls and compare provider performance.</p></div>
+                        <div class="faq-answer"><p>Latency Tracking is a feature in the Chau7 terminal that records total request duration for every intercepted LLM API call. Chau7 associates each measurement with the originating tab, session, and run so developers can identify slow calls.</p></div>
                     </details>
                     <details>
                         <summary>Which terminal emulators offer latency tracking?</summary>
-                        <div class="faq-answer"><p>Chau7 is the only terminal emulator that offers built-in latency tracking for LLM API calls. iTerm2, Warp, Alacritty, and Kitty have no API latency measurement. Provider dashboards show aggregate statistics but not per-call timing tied to specific coding sessions. Chau7 records TTFT and total duration for every individual API call.</p></div>
+                        <div class="faq-answer"><p>Chau7 is the only terminal emulator that offers built-in latency tracking for LLM API calls. iTerm2, Warp, Alacritty, and Kitty have no API latency measurement. Provider dashboards show aggregate statistics but not per-call timing tied to specific coding sessions. Chau7 records total request duration for every individual API call.</p></div>
                     </details>
                     <details>
                         <summary>How to measure LLM API latency in terminal?</summary>
-                        <div class="faq-answer"><p>Chau7 measures LLM API latency automatically through its built-in TLS/WSS proxy. For every intercepted API call, Chau7 records the time-to-first-token (when the first response byte arrives) and the total duration (from request sent to response complete). Both metrics are stored per call with provider and model metadata.</p></div>
+                        <div class="faq-answer"><p>Chau7 measures LLM API latency automatically through its built-in TLS/WSS proxy. For every intercepted API call, Chau7 records the total request duration (from request sent to response complete). The metric is stored per call with provider and model metadata.</p></div>
                     </details>
                     <details>
-                        <summary>What is time-to-first-token and why does it matter?</summary>
-                        <div class="faq-answer"><p>Time-to-first-token (TTFT) measures the delay between sending a request and receiving the first piece of the response. It directly determines how responsive an AI agent feels. Chau7 records TTFT for every API call so developers can identify which models and providers deliver the fastest initial response.</p></div>
+                        <summary>What latency data does Chau7 record?</summary>
+                        <div class="faq-answer"><p>Chau7 records total request duration for every API call, measuring the full round-trip time from request sent to response complete. Each measurement includes provider and model metadata so developers can compare performance across different models.</p></div>
                     </details>
                     <details>
-                        <summary>Can I compare latency across different providers?</summary>
-                        <div class="faq-answer"><p>Yes. Since Chau7 tracks latency per call with provider and model metadata, you can filter and compare performance across providers, models, and time periods through the MCP server or Chau7's Analytics Dashboard.</p></div>
+                        <summary>Can I review latency data through the MCP server?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 exposes run telemetry through its MCP server, which includes latency data per API call with provider and model metadata.</p></div>
                     </details>
                 </div>
             </div>

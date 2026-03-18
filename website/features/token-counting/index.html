@@ -6,7 +6,7 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Token Counting | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 counts input and output tokens for every LLM API call using provider-specific tokenization. Track token usage per call, per session, and across your entire workflow.">
+    <meta name="description" content="Chau7 reads input and output token counts from LLM API response metadata for every intercepted call. Track token usage per call, per session, and across your entire workflow.">
     <meta name="article:section" content="API Analytics">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="token counting">
@@ -15,7 +15,7 @@
     <meta name="article:tag" content="API analytics">
     <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Token Counting | Chau7">
-    <meta property="og:description" content="Chau7 counts input and output tokens for every LLM API call using provider-specific tokenization. Track token usage per call, per session, and across your entire workflow.">
+    <meta property="og:description" content="Chau7 reads input and output token counts from LLM API response metadata for every intercepted call. Track token usage per call, per session, and across your entire workflow.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,14 +30,12 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS that counts input and output tokens for every LLM API call using provider-specific tokenization.",
+        "description": "Chau7 is an AI-native terminal for macOS that reads input and output token counts from API response metadata for every intercepted LLM API call.",
         "featureList": [
             "Per-call input and output token counts",
-            "Provider-specific tokenization (OpenAI, Anthropic, Google)",
+            "Token counts read from API response JSON metadata",
             "Per-session and per-run token aggregation",
-            "Exact counts from provider response metadata",
-            "Fallback tokenizer estimation for unsupported providers",
-            "MCP server access to token data"
+            "MCP server access to run telemetry data"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
@@ -55,11 +53,11 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Token Counting in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Token Counting is a feature in the Chau7 terminal that extracts input and output token counts from every intercepted LLM API call. Chau7 reads exact counts from provider response metadata when available (OpenAI and Anthropic), and applies provider-matched tokenizers for other providers."}},
+            {"@type":"Question","name":"What is Token Counting in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Token Counting is a feature in the Chau7 terminal that reads input and output token counts from the JSON metadata of every intercepted LLM API response. Chau7 extracts the token counts that providers like OpenAI and Anthropic include in their API responses."}},
             {"@type":"Question","name":"How to measure input vs output tokens for Claude Code?","acceptedAnswer":{"@type":"Answer","text":"Chau7 intercepts Claude Code's API calls through its built-in TLS/WSS proxy and reads the token counts directly from Anthropic's response metadata. Chau7 displays input tokens (prompt and context) and output tokens (completion) separately for every call."}},
-            {"@type":"Question","name":"How many tokens does my AI coding agent use per request?","acceptedAnswer":{"@type":"Answer","text":"Chau7 tracks every API call individually and shows the exact input and output token counts for each request. Developers can drill into any run to see per-call breakdowns through Chau7's MCP server or review aggregate totals per session."}},
-            {"@type":"Question","name":"How accurate are the token counts?","acceptedAnswer":{"@type":"Answer","text":"When the LLM provider includes token counts in the API response (OpenAI and Anthropic both do), Chau7's numbers are exact. For providers that do not report counts, Chau7 uses provider-matched tokenizers that are accurate to within a few percent."}},
-            {"@type":"Question","name":"Can I see token counts for individual tool calls within a run?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 tracks each API call individually with its own input and output token counts. Developers can drill into any run to see the per-call breakdown through Chau7's MCP server."}}
+            {"@type":"Question","name":"How many tokens does my AI coding agent use per request?","acceptedAnswer":{"@type":"Answer","text":"Chau7 tracks every API call individually and shows the input and output token counts for each request as reported by the provider. Developers can review run telemetry through Chau7's MCP server or review aggregate totals per session."}},
+            {"@type":"Question","name":"How accurate are the token counts?","acceptedAnswer":{"@type":"Answer","text":"Chau7 reads token counts directly from the API response JSON metadata. When the LLM provider includes token counts in the response (OpenAI and Anthropic both do), Chau7's numbers are exact because they come straight from the provider."}},
+            {"@type":"Question","name":"Can I see token counts for individual tool calls within a run?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 tracks each API call individually with its own input and output token counts. Developers can review run telemetry through Chau7's MCP server to see per-call breakdowns."}}
         ]
     }]
     </script>
@@ -85,7 +83,7 @@
             <div class="hero-content">
                 <div class="section-badge badge-blue">API ANALYTICS</div>
                 <h1 class="hero-title">Token Counting</h1>
-                <p class="hero-subtitle">Chau7 counts input tokens, output tokens, per call. The numbers your provider charges you but never shows you.</p>
+                <p class="hero-subtitle">Chau7 reads input and output token counts from every API response. The numbers your provider charges you but never shows you in context.</p>
             </div>
         </section>
 
@@ -107,8 +105,8 @@
         <section class="feature-content" data-ui="token-counting-what">
             <div class="section-inner prose">
                 <h2>What is Token Counting in Chau7?</h2>
-                <p>Token Counting is a feature in the Chau7 terminal that extracts token usage data from every intercepted LLM API call. Chau7 reads the input and output token counts from each API response and associates them with the originating tab, session, and run.</p>
-                <p>For providers that include token counts in their response metadata (OpenAI and Anthropic both do), Chau7 reads those values directly. For providers that do not report counts, Chau7 applies provider-matched tokenizers to estimate usage accurately.</p>
+                <p>Token Counting is a feature in the Chau7 terminal that reads token usage data from the JSON metadata of every intercepted LLM API response. Chau7 extracts the input and output token counts from each API response and associates them with the originating tab, session, and run.</p>
+                <p>Providers like OpenAI and Anthropic include token counts in their response metadata, and Chau7 reads those values directly. The counts are exact because they come straight from the provider.</p>
             </div>
         </section>
 
@@ -125,7 +123,7 @@
         <section class="feature-content" data-ui="token-counting-per-request">
             <div class="section-inner prose">
                 <h2>How many tokens does my AI coding agent use per request?</h2>
-                <p>Chau7 tracks every API call individually and shows the exact input and output token counts for each request. Developers can drill into any run to see per-call breakdowns through Chau7's MCP server.</p>
+                <p>Chau7 tracks every API call individually and shows the input and output token counts for each request as reported by the provider. Developers can review run telemetry through Chau7's MCP server.</p>
                 <p>All token data in Chau7 is associated with the originating tab, session, and run. Developers can aggregate at any level: per call, per run, per session, or globally across all tabs.</p>
             </div>
         </section>
@@ -134,8 +132,7 @@
         <section class="feature-content" data-ui="token-counting-accuracy">
             <div class="section-inner prose">
                 <h2>How accurate are Chau7's token counts?</h2>
-                <p>When the LLM provider includes token counts in the API response, Chau7's numbers are exact. OpenAI and Anthropic both report token counts in their response metadata, so Chau7 reads those values directly with no estimation.</p>
-                <p>For providers that do not report counts, Chau7 uses provider-matched tokenizers. These tokenizers are accurate to within a few percent of the actual count. Chau7 selects the correct tokenizer automatically based on the provider and model.</p>
+                <p>Chau7 reads token counts directly from the API response JSON metadata. OpenAI and Anthropic both report token counts in their response metadata, so Chau7's numbers are exact because they come straight from the provider with no estimation involved.</p>
             </div>
         </section>
 
@@ -144,7 +141,7 @@
             <div class="section-inner prose">
                 <h2>Can I see token counts for individual tool calls within a run?</h2>
                 <p>Yes. Chau7 tracks each API call individually with its own input and output token counts. Each tool call that triggers an API request gets its own entry in Chau7's token log.</p>
-                <p>Developers can drill into any run through Chau7's MCP server to see the per-call breakdown. This granularity helps identify which tool calls consume the most tokens within a single agent invocation.</p>
+                <p>Developers can review run telemetry through Chau7's MCP server to see per-call breakdowns. This granularity helps identify which tool calls consume the most tokens within a single agent invocation.</p>
             </div>
         </section>
 
@@ -155,7 +152,7 @@
                 <div class="related-features-grid">
                     <a class="catalog-card" href="/features/tls-wss-proxy">
                         <h4>TLS/WSS Proxy <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
-                        <p>Transparent proxy captures API calls to OpenAI, Anthropic, and other LLM providers for analysis.</p>
+                        <p>Local proxy captures API calls to OpenAI, Anthropic, and Gemini for analysis.</p>
                     </a>
                     <a class="catalog-card" href="/features/cost-tracking">
                         <h4>Cost Tracking <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
@@ -163,7 +160,7 @@
                     </a>
                     <a class="catalog-card" href="/features/latency-tracking">
                         <h4>Latency Tracking</h4>
-                        <p>Measure time-to-first-token and total request duration for every API call.</p>
+                        <p>Measure total request duration for every API call.</p>
                     </a>
                 </div>
                 <div class="feature-random-row">
@@ -179,7 +176,7 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Token Counting in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Token Counting is a feature in the Chau7 terminal that extracts input and output token counts from every intercepted LLM API call. Chau7 reads exact counts from provider response metadata when available (OpenAI and Anthropic), and applies provider-matched tokenizers for other providers.</p></div>
+                        <div class="faq-answer"><p>Token Counting is a feature in the Chau7 terminal that reads input and output token counts from the JSON metadata of every intercepted LLM API response. Chau7 extracts the token counts that providers like OpenAI and Anthropic include in their API responses.</p></div>
                     </details>
                     <details>
                         <summary>How to measure input vs output tokens for Claude Code?</summary>
@@ -187,19 +184,19 @@
                     </details>
                     <details>
                         <summary>How many tokens does my AI coding agent use per request?</summary>
-                        <div class="faq-answer"><p>Chau7 tracks every API call individually and shows the exact input and output token counts for each request. Developers can drill into any run to see per-call breakdowns through Chau7's MCP server or review aggregate totals per session.</p></div>
+                        <div class="faq-answer"><p>Chau7 tracks every API call individually and shows the input and output token counts for each request as reported by the provider. Developers can review run telemetry through Chau7's MCP server or review aggregate totals per session.</p></div>
                     </details>
                     <details>
                         <summary>How accurate are the token counts?</summary>
-                        <div class="faq-answer"><p>When the LLM provider includes token counts in the API response (OpenAI and Anthropic both do), Chau7's numbers are exact. For providers that do not report counts, Chau7 uses provider-matched tokenizers that are accurate to within a few percent.</p></div>
+                        <div class="faq-answer"><p>Chau7 reads token counts directly from the API response JSON metadata. When the LLM provider includes token counts in the response (OpenAI and Anthropic both do), Chau7's numbers are exact because they come straight from the provider.</p></div>
                     </details>
                     <details>
                         <summary>Can I see token counts for individual tool calls within a run?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7 tracks each API call individually with its own input and output token counts. Developers can drill into any run to see the per-call breakdown through Chau7's MCP server.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7 tracks each API call individually with its own input and output token counts. Developers can review run telemetry through Chau7's MCP server to see per-call breakdowns.</p></div>
                     </details>
                     <details>
                         <summary>Does Chau7 count tokens for self-hosted or custom models?</summary>
-                        <div class="faq-answer"><p>If the API response includes token counts in its metadata, Chau7 reads them directly regardless of provider. For responses without metadata, Chau7 applies a tokenizer if the model is recognized. Custom or unknown models may require manual tokenizer configuration.</p></div>
+                        <div class="faq-answer"><p>If the API response includes token counts in its JSON metadata, Chau7 reads them directly regardless of provider. For responses that do not include token counts in metadata, Chau7 cannot report token usage.</p></div>
                     </details>
                 </div>
             </div>

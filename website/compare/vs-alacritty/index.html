@@ -55,7 +55,7 @@
         "mainEntity": [
             {"@type":"Question","name":"What is the difference between Chau7 and Alacritty?","acceptedAnswer":{"@type":"Answer","text":"Alacritty is intentionally minimal: fast GPU rendering, cross-platform (macOS, Linux, Windows), config-file-only, no tabs, no split panes. Chau7 is intentionally maximal: 170+ features, AI-native with MCP server and agent detection, macOS-only, built-in tabs, split panes, session recording, and cost tracking. Alacritty delegates features to external tools. Chau7 builds everything into one app."}},
             {"@type":"Question","name":"Is Chau7 or Alacritty faster for terminal rendering?","acceptedAnswer":{"@type":"Answer","text":"Both use GPU rendering and care deeply about performance. Chau7 uses Metal (macOS native) with SIMD parsing and a lock-free ring buffer. Alacritty uses OpenGL. In practice, both are fast terminals. Alacritty's simplicity means fewer things competing for resources, which can be an advantage in raw throughput scenarios."}},
-            {"@type":"Question","name":"Does Alacritty support AI coding agent detection like Chau7?","acceptedAnswer":{"@type":"Answer","text":"No. Alacritty does not detect AI coding agents, does not have an MCP server, and does not track tokens or costs. Alacritty's philosophy excludes features beyond core terminal rendering. Chau7 detects 7+ AI CLIs (Claude Code, Codex, Gemini CLI, Aider, and more), brands tabs per agent, and exposes 20 MCP tools for AI-driven terminal control."}},
+            {"@type":"Question","name":"Does Alacritty support AI coding agent detection like Chau7?","acceptedAnswer":{"@type":"Answer","text":"No. Alacritty does not detect AI coding agents, does not have an MCP server, and does not track tokens or costs. Alacritty's philosophy excludes features beyond core terminal rendering. Chau7 detects 7+ AI CLIs (Claude Code, Codex, Gemini CLI, Aider, and more), brands tabs per agent, and exposes 26 MCP tools for AI-driven terminal control."}},
             {"@type":"Question","name":"Can Alacritty do split panes and tabs?","acceptedAnswer":{"@type":"Answer","text":"No. Alacritty deliberately excludes tabs and split panes. The philosophy is that your window manager or tmux should handle multiplexing. Chau7 includes built-in tabs with drag reorder, split panes, and AI branding per tab. These are different design philosophies for different workflows."}},
             {"@type":"Question","name":"Should I switch from Alacritty to Chau7?","acceptedAnswer":{"@type":"Answer","text":"If you run AI coding agents daily and want MCP control, AI detection, session recording, and cost tracking built into your terminal, Chau7 adds value that Alacritty cannot provide. If you prefer minimal software, use a tiling window manager, work across multiple operating systems, or do not need AI features, Alacritty remains an excellent choice. Chau7 is macOS only."}}
         ]
@@ -160,7 +160,7 @@
                     </div>
                     <div class="safety-item" data-ui="compare-alacritty-ai-mcp">
                         <h4>AI detection and MCP</h4>
-                        <p>Chau7 recognizes 7+ AI coding tools, brands tabs per agent, and exposes 20 MCP tools for AI-driven terminal control. This is the part that does not map to Alacritty at all, because Alacritty's philosophy would not include it.</p>
+                        <p>Chau7 recognizes 7+ AI coding tools, brands tabs per agent, and exposes 26 MCP tools for AI-driven terminal control. This is the part that does not map to Alacritty at all, because Alacritty's philosophy would not include it.</p>
                     </div>
                     <div class="safety-item" data-ui="compare-alacritty-session-recording">
                         <h4>Session recording</h4>
@@ -196,7 +196,7 @@
                     <h2 id="ai-detection-heading">Does Alacritty support AI coding agent detection like Chau7?</h2>
                 </div>
                 <p class="prose" style="max-width:72ch;margin:0 auto 1.5rem;">No. Alacritty does not detect AI coding agents, does not have an MCP server, and does not track tokens or costs. Alacritty's philosophy excludes features beyond core terminal rendering.</p>
-                <p class="prose" style="max-width:72ch;margin:0 auto 1.5rem;">Chau7 detects 7+ AI CLIs including Claude Code, Codex, Gemini CLI, Aider, and more. Chau7 brands tabs per agent, exposes 20 MCP tools, and tracks token usage and dollar costs per session.</p>
+                <p class="prose" style="max-width:72ch;margin:0 auto 1.5rem;">Chau7 detects 7+ AI CLIs including Claude Code, Codex, Gemini CLI, Aider, and more. Chau7 brands tabs per agent, exposes 26 MCP tools, and tracks token usage and dollar costs per session.</p>
             </div>
         </section>
 
@@ -305,7 +305,7 @@
                     <details>
                         <summary>Does Alacritty support AI coding agent detection like Chau7?</summary>
                         <div class="faq-answer">
-                            <p>No. Alacritty does not detect AI coding agents, does not have an MCP server, and does not track tokens or costs. Chau7 detects 7+ AI CLIs, brands tabs per agent, and exposes 20 MCP tools for AI-driven terminal control.</p>
+                            <p>No. Alacritty does not detect AI coding agents, does not have an MCP server, and does not track tokens or costs. Chau7 detects 7+ AI CLIs, brands tabs per agent, and exposes 26 MCP tools for AI-driven terminal control.</p>
                         </div>
                     </details>
                     <details>

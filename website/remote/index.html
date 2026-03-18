@@ -230,8 +230,8 @@
                     </div>
                     <div class="perf-layer" style="--delay: 3">
                         <div class="perf-label">Store</div>
-                        <div class="perf-tech">Keychain + Machine UUID</div>
-                        <div class="perf-desc">On iOS, Chau7 stores keys in the Secure Enclave via Keychain. On macOS, Chau7 wraps private keys with AES-GCM derived from the machine UUID. Move the disk to another Mac, the keys are useless.</div>
+                        <div class="perf-tech">Keychain</div>
+                        <div class="perf-desc">On iOS, Chau7 stores keys in the regular Keychain (kSecClassGenericPassword), not the Secure Enclave. On macOS, keys are also stored in the Keychain. The Keychain's own device-level protections secure the keys at rest.</div>
                     </div>
                 </div>
             </div>

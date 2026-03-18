@@ -6,7 +6,7 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Find & Replace | Chau7 Terminal</title>
-    <meta name="description" content="Find and replace text in Chau7's built-in editor with regex support, match highlighting, and incremental search for fast in-terminal editing.">
+    <meta name="description" content="Find and replace in Chau7's built-in editor uses macOS NSTextFinder with regex support, match highlighting, and incremental search.">
     <meta name="article:section" content="Built-in Editor">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="find and replace">
@@ -15,7 +15,7 @@
     <meta name="article:tag" content="search and replace">
     <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Find & Replace | Chau7">
-    <meta property="og:description" content="Find and replace text in Chau7's built-in editor with regex support, match highlighting, and incremental search for fast in-terminal editing.">
+    <meta property="og:description" content="Find and replace in Chau7's built-in editor uses macOS NSTextFinder with regex support, match highlighting, and incremental search.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,7 +30,7 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS with a built-in editor that includes find and replace with regex support, match highlighting, and incremental search.",
+        "description": "Chau7 is an AI-native terminal for macOS with a built-in editor that delegates find and replace to macOS NSTextFinder, providing regex support, match highlighting, and incremental search.",
         "featureList": [
             "Incremental search with live match highlighting",
             "Full regular expression support with capture groups",
@@ -59,7 +59,7 @@
             {"@type":"Question","name":"How does Chau7's find & replace compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminal editors require memorizing obscure keybindings for search. Chau7 provides a standard find bar with Cmd+F, incremental highlighting, regex toggle, and one-click replace-all. Chau7's find and replace works the way every modern text editor works."}},
             {"@type":"Question","name":"Find and replace in terminal text editor","acceptedAnswer":{"@type":"Answer","text":"Chau7's built-in editor includes find and replace with regex support. Open the find bar with Cmd+F, type a query, and matches highlight across the document. Toggle regex mode for pattern matching with capture groups. Replace one match or all matches with a single click."}},
             {"@type":"Question","name":"Does find and replace support regular expressions?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7's find bar includes a regex toggle that enables full regular expression syntax with capture groups. The replace field supports backreferences ($1, $2) for capture group substitution."}},
-            {"@type":"Question","name":"Can I replace all occurrences at once?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7's replace-all button applies the replacement to every match in the document. Chau7 shows a confirmation with the total number of replacements before applying."}}
+            {"@type":"Question","name":"Can I replace all occurrences at once?","acceptedAnswer":{"@type":"Answer","text":"Yes. The replace-all button applies the replacement to every match in the document. The operation is handled by macOS NSTextFinder."}}
         ]
     }]
     </script>
@@ -107,7 +107,7 @@
         <section class="feature-content" data-ui="find-replace-what">
             <div class="section-inner prose">
                 <h2>What is Find & Replace in Chau7?</h2>
-                <p>Find & Replace is a feature in Chau7's built-in terminal editor. Chau7 provides a find bar activated with <code>Cmd+F</code> that highlights matches incrementally as you type.</p>
+                <p>Find & Replace in Chau7's built-in terminal editor delegates to macOS NSTextFinder. Chau7 provides the standard find bar activated with <code>Cmd+F</code> that highlights matches incrementally as you type.</p>
                 <p>A match counter in Chau7 shows total results and the current match index. Arrow keys or <code>Enter</code>/<code>Shift+Enter</code> cycle through matches, with the viewport scrolling to keep the current match centered.</p>
             </div>
         </section>
@@ -134,8 +134,8 @@
         <section class="feature-content" data-ui="find-replace-replace-all">
             <div class="section-inner prose">
                 <h2>Can I replace all occurrences at once in Chau7?</h2>
-                <p>Yes. Chau7's replace-all button applies the replacement to every match in the document. Chau7 shows a confirmation with the total number of replacements before applying.</p>
-                <p>Chau7 also provides a replace-one button for stepping through matches individually. Both replace-one and replace-all work with plain text and regex patterns.</p>
+                <p>Yes. The replace-all button applies the replacement to every match in the document. The operation executes immediately through macOS NSTextFinder.</p>
+                <p>A replace-one button is also available for stepping through matches individually. Both replace-one and replace-all work with plain text and regex patterns.</p>
             </div>
         </section>
 
@@ -164,15 +164,15 @@
                 <div class="related-features-grid">
                     <a class="catalog-card" href="/features/syntax-highlighting">
                         <h4>Syntax Highlighting</h4>
-                        <p>Language-aware syntax highlighting for 50+ languages in the built-in editor.</p>
+                        <p>Regex-based syntax highlighting for 12 languages in the built-in editor.</p>
                     </a>
                     <a class="catalog-card" href="/features/bracket-matching">
                         <h4>Bracket Matching</h4>
-                        <p>Automatic bracket, brace, and parenthesis matching with jump-to-match.</p>
+                        <p>Automatic bracket, brace, and parenthesis matching with visual highlighting.</p>
                     </a>
                     <a class="catalog-card" href="/features/line-numbers">
                         <h4>Line Numbers</h4>
-                        <p>Configurable line number gutter with relative line numbers option.</p>
+                        <p>Line number gutter in the built-in editor with toggle option.</p>
                     </a>
                 </div>
                 <div class="feature-random-row">
@@ -204,7 +204,7 @@
                     </details>
                     <details>
                         <summary>Can I replace all occurrences at once?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7's replace-all button applies the replacement to every match in the document. Chau7 shows a confirmation with the total number of replacements before applying.</p></div>
+                        <div class="faq-answer"><p>Yes. The replace-all button applies the replacement to every match in the document. The operation executes immediately through macOS NSTextFinder.</p></div>
                     </details>
                 </div>
             </div>

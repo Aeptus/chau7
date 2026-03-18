@@ -6,15 +6,15 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Command Palette | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 brings a VS Code-style command palette to the terminal. Press Cmd+Shift+P to fuzzy-search every action, setting, and shortcut in Chau7.">
+    <meta name="description" content="Chau7 brings a VS Code-style command palette to the terminal. Press Cmd+Shift+P to search across ~60 categorized commands with keyboard shortcut display.">
     <meta property="og:title" content="Command Palette | Chau7">
-    <meta property="og:description" content="Chau7 brings a VS Code-style command palette to the terminal. Press Cmd+Shift+P to fuzzy-search every action, setting, and shortcut in Chau7.">
+    <meta property="og:description" content="Chau7 brings a VS Code-style command palette to the terminal. Press Cmd+Shift+P to search across ~60 categorized commands with keyboard shortcut display.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
     <meta property="article:section" content="Search">
     <meta property="article:tag" content="command palette">
-    <meta property="article:tag" content="fuzzy search">
+    <meta property="article:tag" content="substring search">
     <meta property="article:tag" content="keyboard shortcuts">
     <meta property="article:tag" content="terminal discoverability">
     <meta property="article:tag" content="macOS terminal">
@@ -29,16 +29,12 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS with a built-in command palette, fuzzy search, and keyboard shortcut discovery.",
+        "description": "Chau7 is an AI-native terminal for macOS with a built-in command palette, substring search, and keyboard shortcut display.",
         "featureList": [
-            "Command palette with fuzzy search",
-            "Keyboard shortcut discovery",
-            "Custom shortcut assignment",
-            "Settings search",
-            "Frecency ranking",
-            "SSH profile search",
-            "Snippet search",
-            "MCP tool search"
+            "Command palette with substring search",
+            "~60 categorized commands",
+            "Keyboard shortcut display",
+            "Cmd+Shift+P activation"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
@@ -61,7 +57,7 @@
                 "name": "What is Command Palette in Chau7 terminal?",
                 "acceptedAnswer": {
                     "@type": "Answer",
-                    "text": "Command Palette in Chau7 is a fuzzy-search overlay that lets you find and run every action, setting, and feature in the terminal. Press Cmd+Shift+P to open it."
+                    "text": "Command Palette in Chau7 is a search overlay that lets you find and run commands in the terminal using substring matching. Press Cmd+Shift+P to open it. Chau7 includes ~60 categorized commands with keyboard shortcut display."
                 }
             },
             {
@@ -69,7 +65,7 @@
                 "name": "Is there a terminal with a command palette like VS Code?",
                 "acceptedAnswer": {
                     "@type": "Answer",
-                    "text": "Yes. Chau7 is a macOS terminal that includes a VS Code-style command palette. Press Cmd+Shift+P to open the palette and fuzzy-search across commands, settings, SSH profiles, snippets, and MCP tools."
+                    "text": "Yes. Chau7 is a macOS terminal that includes a VS Code-style command palette. Press Cmd+Shift+P to open the palette and search across ~60 categorized commands using substring matching."
                 }
             },
             {
@@ -82,26 +78,10 @@
             },
             {
                 "@type": "Question",
-                "name": "Can I assign custom keyboard shortcuts through the palette?",
+                "name": "How many commands does the Chau7 Command Palette include?",
                 "acceptedAnswer": {
                     "@type": "Answer",
-                    "text": "Yes. Right-click any command in the Chau7 Command Palette to assign or change its keyboard shortcut. The new binding takes effect immediately and persists across sessions."
-                }
-            },
-            {
-                "@type": "Question",
-                "name": "Does it search settings as well as commands?",
-                "acceptedAnswer": {
-                    "@type": "Answer",
-                    "text": "Yes. The Chau7 Command Palette searches across commands, settings, SSH profiles, snippets, and recently used actions. Prefix your query with a category name to narrow results."
-                }
-            },
-            {
-                "@type": "Question",
-                "name": "Is the palette customizable?",
-                "acceptedAnswer": {
-                    "@type": "Answer",
-                    "text": "You can pin frequently used commands so they appear at the top, hide commands you never use, and create command aliases for faster access. The Chau7 Command Palette adapts to your workflow over time through frecency ranking."
+                    "text": "The Chau7 Command Palette includes approximately 60 commands organized into categories. Commands are statically ordered and each displays its keyboard shortcut when available."
                 }
             }
         ]
@@ -129,7 +109,7 @@
             <div class="hero-content">
                 <div class="section-badge">SEARCH</div>
                 <h1 class="hero-title">Command Palette</h1>
-                <p class="hero-subtitle">Chau7 Command Palette puts every feature, action, and setting one fuzzy search away. Press <code>Cmd+Shift+P</code> to open it.</p>
+                <p class="hero-subtitle">Chau7 Command Palette puts ~60 commands one search away. Press <code>Cmd+Shift+P</code> to open it.</p>
             </div>
         </section>
 
@@ -141,8 +121,7 @@
                     <li class="question-item">What is Command Palette in Chau7 terminal?</li>
                     <li class="question-item">Is there a terminal with a command palette like VS Code?</li>
                     <li class="question-item">How do I find terminal features without memorizing keyboard shortcuts?</li>
-                    <li class="question-item">Can I assign custom keyboard shortcuts through the palette?</li>
-                    <li class="question-item">Does it search settings as well as commands?</li>
+                    <li class="question-item">How many commands does the Chau7 Command Palette include?</li>
                 </ul>
             </div>
         </section>
@@ -151,9 +130,9 @@
         <section class="feature-content" data-ui="command-palette-definition">
             <div class="section-inner prose">
                 <h2>What is Command Palette in Chau7 terminal?</h2>
-                <p>Command Palette in Chau7 is a fuzzy-search overlay that lets you find and run every action, setting, and feature in the terminal. Press <code>Cmd+Shift+P</code> to open the Chau7 Command Palette from any tab.</p>
-                <p>Chau7 Command Palette indexes every action the terminal offers. Splitting tabs, changing themes, connecting to SSH hosts, opening snippets, toggling settings, and running MCP tools are all searchable from one place.</p>
-                <p>Results in the Chau7 Command Palette rank by relevance and recency. Your most-used actions float to the top over time through frecency ranking.</p>
+                <p>Command Palette in Chau7 is a search overlay that lets you find and run commands in the terminal using substring matching. Press <code>Cmd+Shift+P</code> to open the Chau7 Command Palette from any tab.</p>
+                <p>Chau7 Command Palette includes approximately 60 commands organized into categories. Each command displays its keyboard shortcut when available, making the palette useful for both executing actions and discovering keybindings.</p>
+                <p>Commands are statically ordered in the Chau7 Command Palette. Type to filter results by substring matching.</p>
             </div>
         </section>
 
@@ -162,7 +141,7 @@
             <div class="section-inner prose">
                 <h2>Is there a terminal with a command palette like VS Code?</h2>
                 <p>Chau7 is a macOS terminal that includes a VS Code-style command palette. The Chau7 Command Palette uses the same <code>Cmd+Shift+P</code> shortcut that VS Code users already know.</p>
-                <p>Like the VS Code command palette, the Chau7 Command Palette supports fuzzy matching. Type a few characters from any part of a command name, and Chau7 Command Palette narrows the results instantly.</p>
+                <p>Like the VS Code command palette, the Chau7 Command Palette lets you type to filter commands by name. Chau7 uses substring matching to narrow the results as you type.</p>
             </div>
         </section>
 
@@ -175,21 +154,12 @@
             </div>
         </section>
 
-        <!-- Custom keyboard shortcuts -->
-        <section class="feature-content" data-ui="command-palette-custom-shortcuts">
+        <!-- Command count and categories -->
+        <section class="feature-content" data-ui="command-palette-categories">
             <div class="section-inner prose">
-                <h2>Can I assign custom keyboard shortcuts through the palette?</h2>
-                <p>Yes. Right-click any command in the Chau7 Command Palette to assign or change its keyboard shortcut. The new binding takes effect immediately and persists across sessions.</p>
-                <p>Chau7 Command Palette also lets you pin frequently used commands to the top, hide commands you never use, and create command aliases for faster access.</p>
-            </div>
-        </section>
-
-        <!-- Settings search -->
-        <section class="feature-content" data-ui="command-palette-settings-search">
-            <div class="section-inner prose">
-                <h2>Does the Chau7 Command Palette search settings as well as commands?</h2>
-                <p>Yes. The Chau7 Command Palette searches across commands, settings, SSH profiles, snippets, and recently used actions. Everything that exists in Chau7 is searchable from the palette.</p>
-                <p>Prefix your query with a category name to narrow results. For example, type "ssh" to see only SSH-related actions, or type "theme" to see only appearance settings.</p>
+                <h2>How many commands does the Chau7 Command Palette include?</h2>
+                <p>The Chau7 Command Palette includes approximately 60 commands organized into categories. Commands cover tab management, appearance, session operations, and other built-in actions.</p>
+                <p>Each command displays its keyboard shortcut when available, so developers can learn keybindings by browsing the palette.</p>
             </div>
         </section>
 
@@ -198,7 +168,7 @@
             <div class="section-inner prose">
                 <h2>Why the Chau7 Command Palette matters for discoverability</h2>
                 <p>Terminal emulators accumulate features over time, but discoverability stalls at the menu bar. Most users never find half the features available to them.</p>
-                <p>Chau7 Command Palette makes the full feature set searchable. If a feature exists in Chau7, you can find it with <code>Cmd+Shift+P</code>. Custom commands from snippets, SSH profiles, and MCP tools all appear in the Chau7 Command Palette alongside built-in actions.</p>
+                <p>Chau7 Command Palette makes the built-in command set searchable. Press <code>Cmd+Shift+P</code> and type to find any of the ~60 built-in commands by name.</p>
             </div>
         </section>
 
@@ -212,8 +182,8 @@
                         <p>Search within terminal output with regex support, case sensitivity, and match navigation.</p>
                     </a>
                     <a class="catalog-card" href="/features/command-history-search">
-                        <h4>Command History Search</h4>
-                        <p>Fuzzy search through command history with frecency ranking.</p>
+                        <h4>Command History</h4>
+                        <p>Arrow-key-based command history navigation with persistent SQLite storage.</p>
                     </a>
                     <a class="catalog-card" href="/features/custom-keybindings">
                         <h4>Custom Keybindings</h4>
@@ -233,27 +203,19 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Command Palette in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Command Palette in Chau7 is a fuzzy-search overlay that lets you find and run every action, setting, and feature in the terminal. Press <code>Cmd+Shift+P</code> to open it.</p></div>
+                        <div class="faq-answer"><p>Command Palette in Chau7 is a search overlay that lets you find and run commands in the terminal using substring matching. Press <code>Cmd+Shift+P</code> to open it. Chau7 includes ~60 categorized commands with keyboard shortcut display.</p></div>
                     </details>
                     <details>
                         <summary>Is there a terminal with a command palette like VS Code?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7 is a macOS terminal that includes a VS Code-style command palette. Press <code>Cmd+Shift+P</code> to open the palette and fuzzy-search across commands, settings, SSH profiles, snippets, and MCP tools.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7 is a macOS terminal that includes a VS Code-style command palette. Press <code>Cmd+Shift+P</code> to open the palette and search across ~60 categorized commands using substring matching.</p></div>
                     </details>
                     <details>
                         <summary>How do I find terminal features without memorizing keyboard shortcuts?</summary>
-                        <div class="faq-answer"><p>Chau7 Command Palette shows every available action alongside its keyboard shortcut. You can search by description instead of memorizing bindings, and learn shortcuts organically as you use the palette.</p></div>
+                        <div class="faq-answer"><p>Chau7 Command Palette shows every available command alongside its keyboard shortcut. You can search by name instead of memorizing bindings, and learn shortcuts organically as you use the palette.</p></div>
                     </details>
                     <details>
-                        <summary>Can I assign custom keyboard shortcuts through the palette?</summary>
-                        <div class="faq-answer"><p>Yes. Right-click any command in the Chau7 Command Palette to assign or change its keyboard shortcut. The new binding takes effect immediately and persists across sessions.</p></div>
-                    </details>
-                    <details>
-                        <summary>Does it search settings as well as commands?</summary>
-                        <div class="faq-answer"><p>Yes. The Chau7 Command Palette searches across commands, settings, SSH profiles, snippets, and recently used actions. Prefix your query with a category name to narrow results.</p></div>
-                    </details>
-                    <details>
-                        <summary>Is the palette customizable?</summary>
-                        <div class="faq-answer"><p>You can pin frequently used commands so they appear at the top, hide commands you never use, and create command aliases for faster access. The Chau7 Command Palette adapts to your workflow over time through frecency ranking.</p></div>
+                        <summary>How many commands does the Chau7 Command Palette include?</summary>
+                        <div class="faq-answer"><p>The Chau7 Command Palette includes approximately 60 commands organized into categories. Commands are statically ordered and each displays its keyboard shortcut when available.</p></div>
                     </details>
                 </div>
             </div>

@@ -6,7 +6,7 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>MCP Resources | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 exposes 4 MCP resource endpoints for read-only access to tabs, sessions, runs, and server configuration. AI agents can inspect terminal state without side effects.">
+    <meta name="description" content="Chau7 exposes 3 MCP resource endpoints for read-only access to telemetry runs and sessions. AI agents can inspect terminal state without side effects.">
     <meta name="article:section" content="MCP Server">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="MCP resources">
@@ -15,7 +15,7 @@
     <meta name="article:tag" content="Model Context Protocol">
     <meta name="article:tag" content="terminal">
     <meta property="og:title" content="MCP Resources | Chau7">
-    <meta property="og:description" content="Chau7 exposes 4 MCP resource endpoints for read-only access to tabs, sessions, runs, and server configuration. AI agents can inspect terminal state without side effects.">
+    <meta property="og:description" content="Chau7 exposes 3 MCP resource endpoints for read-only access to telemetry runs and sessions. AI agents can inspect terminal state without side effects.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,12 +30,12 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS that exposes read-only MCP resource endpoints so AI agents can inspect terminal state without side effects.",
+        "description": "Chau7 is an AI-native terminal for macOS that exposes 3 read-only MCP resource endpoints so AI agents can inspect telemetry runs and sessions without side effects.",
         "featureList": [
-            "tab://list resource for open tab metadata",
-            "session://list resource for active AI sessions",
-            "run://latest resource for recent telemetry",
-            "config://mcp resource for server configuration",
+            "chau7://telemetry/runs resource for telemetry run data",
+            "chau7://telemetry/sessions resource for active AI sessions",
+            "chau7://telemetry/sessions/current resource for the current session",
+            "Dynamic chau7://telemetry/runs/<run_id> for individual run details",
             "Read-only access with no side effects",
             "Unix socket transport for all resources"
         ],
@@ -55,11 +55,11 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is MCP Resources in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"MCP Resources in Chau7 are four read-only endpoints that let AI agents inspect terminal state without executing commands or causing side effects. Chau7 exposes tab://list, session://list, run://latest, and config://mcp as MCP resource URIs over a local Unix socket."}},
+            {"@type":"Question","name":"What is MCP Resources in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"MCP Resources in Chau7 are three read-only endpoints that let AI agents inspect telemetry state without executing commands or causing side effects. Chau7 exposes chau7://telemetry/runs, chau7://telemetry/sessions, and chau7://telemetry/sessions/current as MCP resource URIs over a local Unix socket. Dynamic resources like chau7://telemetry/runs/<run_id> are also supported."}},
             {"@type":"Question","name":"Which terminal emulators offer MCP resources?","acceptedAnswer":{"@type":"Answer","text":"Chau7 is the only terminal emulator that exposes MCP resource endpoints. Other terminals like iTerm2, Warp, Alacritty, and Kitty do not implement the Model Context Protocol and have no resource endpoints for AI agents."}},
-            {"@type":"Question","name":"How can AI agents read terminal state without running commands?","acceptedAnswer":{"@type":"Answer","text":"AI agents read terminal state in Chau7 by querying MCP resource URIs. The tab://list resource returns all open tabs with their status. The session://list resource returns active AI sessions. These resources are read-only, so agents can inspect state without any side effects."}},
+            {"@type":"Question","name":"How can AI agents read terminal state without running commands?","acceptedAnswer":{"@type":"Answer","text":"AI agents read terminal state in Chau7 by querying MCP resource URIs. The chau7://telemetry/runs resource returns telemetry run data. The chau7://telemetry/sessions resource returns active AI sessions. The chau7://telemetry/sessions/current resource returns the current session. These resources are read-only, so agents can inspect state without any side effects."}},
             {"@type":"Question","name":"Are resources faster than the equivalent tool calls?","acceptedAnswer":{"@type":"Answer","text":"Chau7's MCP resources and tools have similar performance since both use the same Unix socket transport. The distinction is semantic: resources in Chau7 guarantee no side effects, which matters for agent planning and safety frameworks."}},
-            {"@type":"Question","name":"Can I add custom resources?","acceptedAnswer":{"@type":"Answer","text":"Chau7's four built-in MCP resources cover the primary use cases for terminal state inspection. Custom resource support is not currently available, but Chau7's tool endpoints provide equivalent data access for cases the built-in resources do not cover."}}
+            {"@type":"Question","name":"Can I add custom resources?","acceptedAnswer":{"@type":"Answer","text":"Chau7's three built-in MCP resources cover the primary use cases for telemetry state inspection. Custom resource support is not currently available, but Chau7's tool endpoints provide equivalent data access for cases the built-in resources do not cover."}}
         ]
     }]
     </script>
@@ -107,8 +107,8 @@
         <section class="feature-content" data-ui="mcp-resources-what">
             <div class="section-inner prose">
                 <h2>What is MCP Resources in Chau7?</h2>
-                <p>MCP Resources in Chau7 are four read-only endpoints that let AI agents inspect terminal state without executing commands or causing side effects. Chau7 exposes these resources as URI-based endpoints through its local MCP server.</p>
-                <p>The four Chau7 MCP resources are: <code>tab://list</code> returns all open tabs with their status and metadata, <code>session://list</code> returns active AI sessions with run counts, <code>run://latest</code> returns the most recent telemetry run for a repository, and <code>config://mcp</code> returns the current MCP server configuration.</p>
+                <p>MCP Resources in Chau7 are three read-only endpoints that let AI agents inspect telemetry state without executing commands or causing side effects. Chau7 exposes these resources as URI-based endpoints through its local MCP server.</p>
+                <p>The three Chau7 MCP resources are: <code>chau7://telemetry/runs</code> returns telemetry run data, <code>chau7://telemetry/sessions</code> returns active AI sessions, and <code>chau7://telemetry/sessions/current</code> returns the current session. Chau7 also supports dynamic resources like <code>chau7://telemetry/runs/&lt;run_id&gt;</code> for individual run details.</p>
             </div>
         </section>
 
@@ -116,8 +116,8 @@
         <section class="feature-content" data-ui="mcp-resources-read-state">
             <div class="section-inner prose">
                 <h2>How can AI agents read terminal state without running commands?</h2>
-                <p>AI agents read terminal state in Chau7 by querying MCP resource URIs over the local Unix socket. An agent can read <code>tab://list</code> to see which tabs exist, check <code>session://list</code> to understand concurrent activity, and inspect <code>run://latest</code> to review what happened in the last interaction.</p>
-                <p>Chau7's MCP resources are strictly read-only. Unlike MCP tools, which can create tabs, execute commands, and modify state, Chau7's resources only return data. An agent planning a multi-step workflow can check current tab count, review active sessions, and read the latest run data before deciding what to do next.</p>
+                <p>AI agents read terminal state in Chau7 by querying MCP resource URIs over the local Unix socket. An agent can read <code>chau7://telemetry/runs</code> to see telemetry run data, check <code>chau7://telemetry/sessions</code> to understand concurrent activity, and inspect <code>chau7://telemetry/sessions/current</code> to review the current session.</p>
+                <p>Chau7's MCP resources are strictly read-only. Unlike MCP tools, which can create tabs, execute commands, and modify state, Chau7's resources only return data. An agent planning a multi-step workflow can review active sessions and read run data before deciding what to do next.</p>
             </div>
         </section>
 
@@ -143,8 +143,8 @@
         <section class="feature-content" data-ui="mcp-resources-custom">
             <div class="section-inner prose">
                 <h2>Can I add custom resources to Chau7?</h2>
-                <p>Chau7's four built-in MCP resources cover the primary use cases for terminal state inspection. Custom resource support is not currently available in Chau7.</p>
-                <p>For data that Chau7's built-in resources do not cover, Chau7's 20 MCP tool endpoints provide equivalent data access. Agents can combine Chau7's resources for state inspection with Chau7's tools for actions that require more specific queries.</p>
+                <p>Chau7's three built-in MCP resources cover the primary use cases for telemetry state inspection. Custom resource support is not currently available in Chau7.</p>
+                <p>For data that Chau7's built-in resources do not cover, Chau7's 26 MCP tool endpoints provide equivalent data access. Agents can combine Chau7's resources for state inspection with Chau7's tools for actions that require more specific queries.</p>
             </div>
         </section>
 
@@ -154,7 +154,7 @@
                 <h2>Related features</h2>
                 <div class="related-features-grid">
                     <a class="catalog-card" href="/features/mcp-tools">
-                        <h4>20 MCP Tools <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <h4>26 MCP Tools <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
                         <p>Full terminal control via Model Context Protocol: tab lifecycle, command execution, output capture, telemetry.</p>
                     </a>
                     <a class="catalog-card" href="/features/unix-socket-server">
@@ -179,7 +179,7 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is MCP Resources in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>MCP Resources in Chau7 are four read-only endpoints that let AI agents inspect terminal state without executing commands or causing side effects. Chau7 exposes tab://list, session://list, run://latest, and config://mcp as MCP resource URIs over a local Unix socket.</p></div>
+                        <div class="faq-answer"><p>MCP Resources in Chau7 are three read-only endpoints that let AI agents inspect telemetry state without executing commands or causing side effects. Chau7 exposes chau7://telemetry/runs, chau7://telemetry/sessions, and chau7://telemetry/sessions/current as MCP resource URIs over a local Unix socket. Dynamic resources like chau7://telemetry/runs/&lt;run_id&gt; are also supported.</p></div>
                     </details>
                     <details>
                         <summary>Which terminal emulators offer MCP resources?</summary>
@@ -187,7 +187,7 @@
                     </details>
                     <details>
                         <summary>How can AI agents read terminal state without running commands?</summary>
-                        <div class="faq-answer"><p>AI agents read terminal state in Chau7 by querying MCP resource URIs. The tab://list resource returns all open tabs with their status. The session://list resource returns active AI sessions. These resources are read-only, so agents can inspect state without any side effects.</p></div>
+                        <div class="faq-answer"><p>AI agents read terminal state in Chau7 by querying MCP resource URIs. The chau7://telemetry/runs resource returns telemetry run data. The chau7://telemetry/sessions resource returns active AI sessions. The chau7://telemetry/sessions/current resource returns the current session. These resources are read-only, so agents can inspect state without any side effects.</p></div>
                     </details>
                     <details>
                         <summary>Are resources faster than the equivalent tool calls?</summary>
@@ -195,7 +195,7 @@
                     </details>
                     <details>
                         <summary>Can I add custom resources?</summary>
-                        <div class="faq-answer"><p>Chau7's four built-in MCP resources cover the primary use cases for terminal state inspection. Custom resource support is not currently available, but Chau7's tool endpoints provide equivalent data access for cases the built-in resources do not cover.</p></div>
+                        <div class="faq-answer"><p>Chau7's three built-in MCP resources cover the primary use cases for telemetry state inspection. Custom resource support is not currently available, but Chau7's tool endpoints provide equivalent data access for cases the built-in resources do not cover.</p></div>
                     </details>
                 </div>
             </div>

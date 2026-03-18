@@ -6,7 +6,7 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>JSON-RPC API | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 exposes a Unix socket JSON-RPC API for terminal automation. Script tab management, commands, history, and settings from any language.">
+    <meta name="description" content="Chau7 exposes a Unix socket JSON-RPC API for terminal automation. Query command history and modify settings from any language. Tab and command methods are in development.">
     <meta name="article:section" content="Scripting API">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="JSON-RPC">
@@ -15,7 +15,7 @@
     <meta name="article:tag" content="scripting">
     <meta name="article:tag" content="terminal">
     <meta property="og:title" content="JSON-RPC API | Chau7">
-    <meta property="og:description" content="Chau7 exposes a Unix socket JSON-RPC API for terminal automation. Script tab management, commands, history, and settings from any language.">
+    <meta property="og:description" content="Chau7 exposes a Unix socket JSON-RPC API for terminal automation. Query command history and modify settings from any language. Tab and command methods are in development.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,14 +30,13 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS that exposes a JSON-RPC 2.0 API over a Unix domain socket for complete terminal automation.",
+        "description": "Chau7 is an AI-native terminal for macOS that exposes a JSON-RPC 2.0 API over a Unix domain socket. History queries and basic settings work today; tab management and command execution methods are scaffolded but not yet implemented.",
         "featureList": [
             "JSON-RPC 2.0 over Unix domain socket",
-            "Tab management (create, close, list, focus, rename)",
-            "Command execution and output reading",
-            "History search and export",
-            "Snippet CRUD operations",
-            "Real-time event notifications"
+            "History search and retrieval via get_history",
+            "Settings read/write via get_settings and set_setting",
+            "API framework with method routing and error codes",
+            "Tab and command methods scaffolded (not yet implemented)"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
@@ -55,11 +54,11 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is JSON-RPC API in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"The JSON-RPC API is a scripting interface in the Chau7 terminal that exposes terminal automation over a Unix domain socket using the JSON-RPC 2.0 protocol. Any programming language that can open a socket and send JSON can create tabs, run commands, read output, manage history, and modify settings in Chau7."}},
-            {"@type":"Question","name":"iTerm2 Python API automate terminal alternative","acceptedAnswer":{"@type":"Answer","text":"Chau7's JSON-RPC API is a language-agnostic alternative to iTerm2's Python API. Where iTerm2 requires Python and its proprietary library, Chau7 accepts standard JSON-RPC calls over a Unix socket from any language. A simple socat or netcat command can interact with Chau7's API for quick scripting."}},
-            {"@type":"Question","name":"Programmatically open terminal tabs macOS","acceptedAnswer":{"@type":"Answer","text":"Chau7 lets you programmatically open terminal tabs on macOS through its JSON-RPC API. Send a tab_create request over the Unix domain socket to open a new tab, optionally specifying the working directory and a command to execute. No AppleScript or osascript hacks are needed."}},
-            {"@type":"Question","name":"What protocol does the API use?","acceptedAnswer":{"@type":"Answer","text":"Chau7's API uses JSON-RPC 2.0 over a Unix domain socket. The socket path follows a predictable convention in the user's runtime directory. Any language or tool that can open a Unix socket and send JSON can interact with the API. No SDK or library is required."}},
-            {"@type":"Question","name":"Can I automate tab creation and command execution?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7's JSON-RPC API supports creating tabs, running commands, reading output, managing history and snippets, and modifying settings. You can build complete terminal automation workflows in any language that can send JSON over a Unix socket."}}
+            {"@type":"Question","name":"What is JSON-RPC API in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"The JSON-RPC API is a scripting interface in the Chau7 terminal that accepts JSON-RPC 2.0 requests over a Unix domain socket at ~/Library/Application Support/Chau7/scripting.sock. Currently, history queries (get_history) and basic settings (get_settings, set_setting) are fully implemented. Tab management and command execution methods exist in the API framework but return not_implemented. The foundation is in place for future expansion."}},
+            {"@type":"Question","name":"iTerm2 Python API automate terminal alternative","acceptedAnswer":{"@type":"Answer","text":"Chau7's JSON-RPC API is a language-agnostic alternative to iTerm2's Python API. Where iTerm2 requires Python and its proprietary library, Chau7 accepts standard JSON-RPC calls over a Unix socket from any language. Currently, history queries and settings are fully working. Tab and command automation methods are defined but not yet implemented."}},
+            {"@type":"Question","name":"What methods are currently working?","acceptedAnswer":{"@type":"Answer","text":"The get_history method is fully implemented via PersistentHistoryStore with search and limit parameters. The get_settings and set_setting methods work but only expose three settings: feature.scriptingAPI, feature.persistentHistory, and history.maxRecords. Tab methods (list_tabs, create_tab, close_tab, get_tab) and command methods (run_command, get_output) are defined but return not_implemented."}},
+            {"@type":"Question","name":"What protocol does the API use?","acceptedAnswer":{"@type":"Answer","text":"Chau7's API uses JSON-RPC 2.0 over a Unix domain socket located at ~/Library/Application Support/Chau7/scripting.sock. Any language or tool that can open a Unix socket and send JSON can interact with the API. No SDK or library is required."}},
+            {"@type":"Question","name":"Will more API methods be implemented?","acceptedAnswer":{"@type":"Answer","text":"The API framework is in place with method routing, error codes, and typed results. Tab management, command execution, and snippet operations are scaffolded as methods that currently return not_implemented. Event subscriptions are not yet defined. The working methods (history and settings) demonstrate the pattern that future methods will follow."}}
         ]
     }]
     </script>
@@ -85,7 +84,7 @@
             <div class="hero-content">
                 <div class="section-badge">SCRIPTING API</div>
                 <h1 class="hero-title">JSON-RPC API</h1>
-                <p class="hero-subtitle">Chau7 exposes a real API for your terminal. JSON-RPC 2.0 over a Unix socket. Automate anything from any language.</p>
+                <p class="hero-subtitle">Chau7 exposes a JSON-RPC 2.0 API over a Unix socket. History queries and settings work today. Tab and command methods are coming.</p>
             </div>
         </section>
 
@@ -96,9 +95,9 @@
                 <ul class="question-list">
                     <li class="question-item">What is JSON-RPC API in Chau7 terminal?</li>
                     <li class="question-item">iTerm2 Python API automate terminal alternative</li>
-                    <li class="question-item">Programmatically open terminal tabs macOS</li>
+                    <li class="question-item">What methods are currently working?</li>
                     <li class="question-item">What protocol does the API use?</li>
-                    <li class="question-item">Can I automate tab creation and command execution?</li>
+                    <li class="question-item">Will more API methods be implemented?</li>
                 </ul>
             </div>
         </section>
@@ -107,8 +106,8 @@
         <section class="feature-content" data-ui="json-rpc-what">
             <div class="section-inner prose">
                 <h2>What is JSON-RPC API in Chau7?</h2>
-                <p>The JSON-RPC API is a scripting interface in the Chau7 terminal that exposes terminal automation over a Unix domain socket. Chau7 uses the JSON-RPC 2.0 protocol with standard request/response framing, full error codes, and typed result objects.</p>
-                <p>Any programming language that can open a socket and send JSON can interact with Chau7's API. No SDK, library, or special tooling is required. A simple <code>socat</code> or <code>netcat</code> command is enough for quick scripting against Chau7.</p>
+                <p>The JSON-RPC API is a scripting interface in the Chau7 terminal that accepts requests over a Unix domain socket at <code>~/Library/Application Support/Chau7/scripting.sock</code>. Chau7 uses the JSON-RPC 2.0 protocol with standard request/response framing, error codes, and typed result objects.</p>
+                <p>The API framework is in place and two areas are fully working: history queries via <code>get_history</code> (backed by PersistentHistoryStore with search and limit parameters) and settings via <code>get_settings</code> / <code>set_setting</code> (currently exposing three settings: <code>feature.scriptingAPI</code>, <code>feature.persistentHistory</code>, and <code>history.maxRecords</code>). Tab management and command execution methods are defined in the router but return <code>not_implemented</code> today.</p>
             </div>
         </section>
 
@@ -116,8 +115,8 @@
         <section class="feature-content" data-ui="json-rpc-protocol">
             <div class="section-inner prose">
                 <h2>What protocol does Chau7's API use?</h2>
-                <p>Chau7's API uses JSON-RPC 2.0 over a Unix domain socket. The socket path follows a predictable convention in the user's runtime directory, making it easy to locate from scripts and external tools.</p>
-                <p>The API surface in Chau7 covers tab management (create, close, list, focus, rename), command execution (send keystrokes, run commands, read output), history access (search, retrieve, export), snippet management (CRUD operations on saved commands), and settings modification (read and write preferences programmatically). Each method is documented with parameter types, return types, and error conditions.</p>
+                <p>Chau7's API uses JSON-RPC 2.0 over a Unix domain socket at <code>~/Library/Application Support/Chau7/scripting.sock</code>. Any language or tool that can open a Unix socket and send JSON can interact with the API.</p>
+                <p>Currently working: <code>get_history</code> for searching and retrieving command history with configurable limits, and <code>get_settings</code> / <code>set_setting</code> for reading and writing a small set of preferences. Stubbed but not yet implemented: <code>list_tabs</code>, <code>create_tab</code>, <code>close_tab</code>, <code>get_tab</code>, <code>run_command</code>, <code>get_output</code>, and <code>run_snippet</code>. Event subscriptions and methods like <code>focus_tab</code> or <code>rename_tab</code> do not exist yet.</p>
             </div>
         </section>
 
@@ -125,17 +124,17 @@
         <section class="feature-content" data-ui="json-rpc-iterm2-alternative">
             <div class="section-inner prose">
                 <h2>Chau7 as an iTerm2 Python API alternative</h2>
-                <p>iTerm2 offers a Python API for terminal automation, but it requires Python and iTerm2's proprietary library. Chau7's JSON-RPC API is language-agnostic. Any language that can write JSON to a Unix socket can automate Chau7.</p>
-                <p>Most terminal emulators provide no automation API at all, forcing developers to use AppleScript, osascript hacks, or fragile keybinding simulation. Chau7's JSON-RPC API lets any programming language create tabs, run commands, read output, and manage sessions programmatically. If you can send JSON, you can control Chau7.</p>
+                <p>iTerm2 offers a Python API for terminal automation, but it requires Python and iTerm2's proprietary library. Chau7's JSON-RPC API is language-agnostic. Any language that can write JSON to a Unix socket can interact with Chau7.</p>
+                <p>Most terminal emulators provide no automation API at all, forcing developers to use AppleScript, osascript hacks, or fragile keybinding simulation. Chau7's API currently supports history queries and settings modification. Tab management and command execution are planned but not yet implemented. The API framework and socket are in place, so expanding the method surface is incremental.</p>
             </div>
         </section>
 
-        <!-- Programmatically open tabs -->
-        <section class="feature-content" data-ui="json-rpc-open-tabs">
+        <!-- What methods are currently working -->
+        <section class="feature-content" data-ui="json-rpc-working-methods">
             <div class="section-inner prose">
-                <h2>Programmatically open terminal tabs on macOS</h2>
-                <p>Chau7 lets you programmatically open terminal tabs on macOS through its JSON-RPC API. Send a <code>tab_create</code> request over the Unix domain socket to open a new tab, optionally specifying the working directory and a command to execute.</p>
-                <p>Chau7 also supports event notifications via JSON-RPC notification messages. Subscribe to events like tab creation, command completion, directory change, or bell ring to build reactive automation. A single persistent socket connection can issue commands and receive notifications simultaneously, enabling real-time terminal orchestration from external tools.</p>
+                <h2>What methods are currently working?</h2>
+                <p>The <code>get_history</code> method is fully implemented. It queries PersistentHistoryStore and supports search terms and result limits, returning command history with timestamps and metadata.</p>
+                <p>The <code>get_settings</code> and <code>set_setting</code> methods work but currently expose only three settings: <code>feature.scriptingAPI</code>, <code>feature.persistentHistory</code>, and <code>history.maxRecords</code>. Tab methods (<code>list_tabs</code>, <code>create_tab</code>, <code>close_tab</code>, <code>get_tab</code>) and command methods (<code>run_command</code>, <code>get_output</code>) are routed but return <code>not_implemented</code>. The <code>list_snippets</code> method returns an empty array and <code>run_snippet</code> returns <code>not_implemented</code>. Event subscriptions are not yet defined.</p>
             </div>
         </section>
 
@@ -144,7 +143,7 @@
             <div class="section-inner prose">
                 <h2>Why Chau7's JSON-RPC API matters</h2>
                 <p>Most terminal emulators provide no automation API. Developers are forced to use AppleScript, osascript hacks, or fragile keybinding simulation to automate terminal workflows on macOS.</p>
-                <p>Chau7 solves this with a proper JSON-RPC 2.0 API over a Unix domain socket. The API covers tab management, command execution, history access, snippet management, and settings modification. For teams building custom developer tooling, Chau7's API provides a stable, documented interface for terminal automation.</p>
+                <p>Chau7 is building a proper JSON-RPC 2.0 API over a Unix domain socket. The framework is in place with method routing, error handling, and typed results. History queries and settings are fully working today. Tab management, command execution, and snippet operations are defined as methods and will be implemented incrementally. For teams building custom developer tooling, the API socket and protocol are stable.</p>
             </div>
         </section>
 
@@ -155,7 +154,7 @@
                 <div class="related-features-grid">
                     <a class="catalog-card" href="/features/shell-hooks">
                         <h4>Shell Hooks</h4>
-                        <p>Pre/post command hooks for custom automation. Trigger actions on command entry or exit.</p>
+                        <p>Post-command hooks and directory change hooks for custom automation. Trigger actions on command completion or directory change.</p>
                     </a>
                 </div>
                 <div class="feature-random-row">
@@ -171,23 +170,23 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is JSON-RPC API in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>The JSON-RPC API is a scripting interface in the Chau7 terminal that exposes terminal automation over a Unix domain socket using the JSON-RPC 2.0 protocol. Any programming language that can open a socket and send JSON can create tabs, run commands, read output, manage history, and modify settings in Chau7.</p></div>
+                        <div class="faq-answer"><p>The JSON-RPC API is a scripting interface in the Chau7 terminal that accepts JSON-RPC 2.0 requests over a Unix domain socket at ~/Library/Application Support/Chau7/scripting.sock. Currently, history queries (get_history) and basic settings (get_settings, set_setting) are fully implemented. Tab management and command execution methods exist in the API framework but return not_implemented. The foundation is in place for future expansion.</p></div>
                     </details>
                     <details>
                         <summary>iTerm2 Python API automate terminal alternative</summary>
-                        <div class="faq-answer"><p>Chau7's JSON-RPC API is a language-agnostic alternative to iTerm2's Python API. Where iTerm2 requires Python and its proprietary library, Chau7 accepts standard JSON-RPC calls over a Unix socket from any language. A simple socat or netcat command can interact with Chau7's API for quick scripting.</p></div>
+                        <div class="faq-answer"><p>Chau7's JSON-RPC API is a language-agnostic alternative to iTerm2's Python API. Where iTerm2 requires Python and its proprietary library, Chau7 accepts standard JSON-RPC calls over a Unix socket from any language. Currently, history queries and settings are fully working. Tab and command automation methods are defined but not yet implemented.</p></div>
                     </details>
                     <details>
-                        <summary>Programmatically open terminal tabs macOS</summary>
-                        <div class="faq-answer"><p>Chau7 lets you programmatically open terminal tabs on macOS through its JSON-RPC API. Send a tab_create request over the Unix domain socket to open a new tab, optionally specifying the working directory and a command to execute. No AppleScript or osascript hacks are needed.</p></div>
+                        <summary>What methods are currently working?</summary>
+                        <div class="faq-answer"><p>The get_history method is fully implemented via PersistentHistoryStore with search and limit parameters. The get_settings and set_setting methods work but only expose three settings: feature.scriptingAPI, feature.persistentHistory, and history.maxRecords. Tab methods (list_tabs, create_tab, close_tab, get_tab) and command methods (run_command, get_output) are defined but return not_implemented.</p></div>
                     </details>
                     <details>
                         <summary>What protocol does the API use?</summary>
-                        <div class="faq-answer"><p>Chau7's API uses JSON-RPC 2.0 over a Unix domain socket. The socket path follows a predictable convention in the user's runtime directory. Any language or tool that can open a Unix socket and send JSON can interact with the API. No SDK or library is required.</p></div>
+                        <div class="faq-answer"><p>Chau7's API uses JSON-RPC 2.0 over a Unix domain socket located at ~/Library/Application Support/Chau7/scripting.sock. Any language or tool that can open a Unix socket and send JSON can interact with the API. No SDK or library is required.</p></div>
                     </details>
                     <details>
-                        <summary>Can I automate tab creation and command execution?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7's JSON-RPC API supports creating tabs, running commands, reading output, managing history and snippets, and modifying settings. You can build complete terminal automation workflows in any language that can send JSON over a Unix socket.</p></div>
+                        <summary>Will more API methods be implemented?</summary>
+                        <div class="faq-answer"><p>The API framework is in place with method routing, error codes, and typed results. Tab management, command execution, and snippet operations are scaffolded as methods that currently return not_implemented. Event subscriptions are not yet defined. The working methods (history and settings) demonstrate the pattern that future methods will follow.</p></div>
                     </details>
                 </div>
             </div>

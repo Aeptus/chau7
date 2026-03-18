@@ -5,17 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
-    <title>Menu Bar Only | Chau7 Terminal</title>
-    <meta name="description" content="Run Chau7 as a menu bar only app with no Dock icon. Access your terminal instantly via the menu bar icon or a global hotkey on macOS.">
+    <title>Menu Bar Status Item | Chau7 Terminal</title>
+    <meta name="description" content="Chau7 provides a persistent menu bar status item with a popover panel for notifications and quick actions, alongside the regular Dock icon on macOS.">
     <meta name="article:section" content="Window Modes">
     <meta name="article:tag" content="Chau7">
-    <meta name="article:tag" content="menu bar only">
-    <meta name="article:tag" content="no Dock icon">
-    <meta name="article:tag" content="menu bar terminal">
+    <meta name="article:tag" content="menu bar status item">
+    <meta name="article:tag" content="status bar">
+    <meta name="article:tag" content="menu bar popover">
     <meta name="article:tag" content="macOS">
     <meta name="article:tag" content="terminal">
-    <meta property="og:title" content="Menu Bar Only | Chau7">
-    <meta property="og:description" content="Run Chau7 as a menu bar only app with no Dock icon. Access your terminal instantly via the menu bar icon or a global hotkey on macOS.">
+    <meta property="og:title" content="Menu Bar Status Item | Chau7">
+    <meta property="og:description" content="Chau7 provides a persistent menu bar status item with a popover panel for notifications and quick actions, alongside the regular Dock icon on macOS.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,14 +30,13 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS that can run as a menu bar only app with no Dock icon, accessible via a global hotkey or menu bar click.",
+        "description": "Chau7 is an AI-native terminal for macOS with a persistent menu bar status item (NSStatusItem) that opens an NSPopover with a Command Center for notifications and quick actions. The app runs as a regular macOS application with Dock presence.",
         "featureList": [
-            "Menu bar only mode with no Dock icon",
-            "Global hotkey to reveal terminal",
-            "Background process persistence",
-            "Menu bar status indicator",
-            "Combinable with Quake-style dropdown",
-            "Toggle between Dock and menu bar mode without restart"
+            "Persistent menu bar status item via NSStatusItem",
+            "NSPopover with Command Center panel",
+            "Notifications and quick actions from menu bar",
+            "Runs alongside regular Dock icon",
+            "Background process persistence"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
@@ -48,18 +47,18 @@
             { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://chau7.sh/" },
             { "@type": "ListItem", "position": 2, "name": "Features", "item": "https://chau7.sh/features" },
             { "@type": "ListItem", "position": 3, "name": "Window Modes", "item": "https://chau7.sh/features#window" },
-            { "@type": "ListItem", "position": 4, "name": "Menu Bar Only" }
+            { "@type": "ListItem", "position": 4, "name": "Menu Bar Status Item" }
         ]
     },
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Menu Bar Only in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Menu Bar Only is a window mode in Chau7 that removes the app from the macOS Dock entirely and places a small icon in the menu bar instead. Chau7 stays running in the background and appears instantly when you click the menu bar icon or press a global hotkey."}},
-            {"@type":"Question","name":"Which terminal emulators offer menu bar only?","acceptedAnswer":{"@type":"Answer","text":"Chau7 offers a native menu bar only mode on macOS. iTerm2 has a similar option. Alacritty, Kitty, and Warp do not support running as a menu bar only app. Chau7's menu bar mode combines with its Quake-style dropdown and overlay mode for maximum flexibility."}},
-            {"@type":"Question","name":"Run terminal as menu bar app macOS no Dock icon","acceptedAnswer":{"@type":"Answer","text":"Enable menu bar only mode in Chau7's preferences. Chau7 immediately disappears from the Dock and appears as a menu bar icon. Click the icon or press a global hotkey to reveal Chau7's terminal window. All terminal sessions continue running in the background."}},
-            {"@type":"Question","name":"Does Chau7 still run processes when hidden in the menu bar?","acceptedAnswer":{"@type":"Answer","text":"Yes. All terminal sessions in Chau7 persist in the background when the window is hidden. Running processes, SSH connections, and shell state are maintained whether Chau7's window is visible or not."}},
-            {"@type":"Question","name":"Can I combine menu bar mode with the dropdown terminal?","acceptedAnswer":{"@type":"Answer","text":"Yes. This is a popular combination in Chau7: Chau7 lives in the menu bar with no Dock presence, and a global hotkey triggers the Quake-style dropdown when you need it. Chau7 stays invisible until summoned."}}
+            {"@type":"Question","name":"What is the menu bar status item in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Chau7 has a persistent menu bar status item (NSStatusItem) that is always present alongside the regular Dock icon. Clicking it opens an NSPopover with a Command Center showing notifications and quick actions. This is not a menu-bar-only mode; the app uses regular activation policy and remains in the Dock and Cmd+Tab."}},
+            {"@type":"Question","name":"Does Chau7 have a menu-bar-only mode?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7 uses a regular activation policy (.regular), so it always appears in the Dock and Cmd+Tab. The menu bar status item is an additional access point that works alongside the normal Dock icon, not a replacement for it."}},
+            {"@type":"Question","name":"What does the menu bar popover show?","acceptedAnswer":{"@type":"Answer","text":"Clicking the Chau7 menu bar icon opens an NSPopover with a Command Center panel. This popover shows notifications and provides quick actions. It is not a right-click context menu for sessions or tabs."}},
+            {"@type":"Question","name":"Does Chau7 still run processes when the window is hidden?","acceptedAnswer":{"@type":"Answer","text":"Yes. All terminal sessions in Chau7 persist in the background when the window is hidden. Running processes, SSH connections, and shell state are maintained whether Chau7's window is visible or not."}},
+            {"@type":"Question","name":"Can I use the menu bar status item with the dropdown terminal?","acceptedAnswer":{"@type":"Answer","text":"Yes. The menu bar status item is always present and works alongside other window modes like the Quake-style dropdown. The status item provides notifications and quick actions while the dropdown provides terminal access."}}
         ]
     }]
     </script>
@@ -76,7 +75,7 @@
             <span class="breadcrumb-sep">/</span>
             <a href="/features#window">Window Modes</a>
             <span class="breadcrumb-sep">/</span>
-            <span class="breadcrumb-current">Menu Bar Only</span>
+            <span class="breadcrumb-current">Menu Bar Status Item</span>
         </div>
 
         <!-- Hero -->
@@ -84,8 +83,8 @@
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">WINDOW MODES</div>
-                <h1 class="hero-title">Menu Bar Only</h1>
-                <p class="hero-subtitle">Chau7 hides from the Dock and lives in the menu bar. One hotkey away. Always available, never in the way.</p>
+                <h1 class="hero-title">Menu Bar Status Item</h1>
+                <p class="hero-subtitle">Chau7 puts a persistent status icon in your menu bar. Notifications and quick actions, one click away.</p>
             </div>
         </section>
 
@@ -94,11 +93,11 @@
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">What is Menu Bar Only in Chau7 terminal?</li>
-                    <li class="question-item">Which terminal emulators offer menu bar only?</li>
-                    <li class="question-item">Run terminal as menu bar app macOS no Dock icon</li>
-                    <li class="question-item">Does Chau7 still run processes when hidden in the menu bar?</li>
-                    <li class="question-item">Can I combine menu bar mode with the dropdown terminal?</li>
+                    <li class="question-item">What is the menu bar status item in Chau7?</li>
+                    <li class="question-item">Does Chau7 have a menu-bar-only mode?</li>
+                    <li class="question-item">What does the menu bar popover show?</li>
+                    <li class="question-item">Does Chau7 still run processes when the window is hidden?</li>
+                    <li class="question-item">Can I use the menu bar status item with the dropdown terminal?</li>
                 </ul>
             </div>
         </section>
@@ -106,45 +105,45 @@
         <!-- What is Menu Bar Only -->
         <section class="feature-content" data-ui="menu-bar-what">
             <div class="section-inner prose">
-                <h2>What is Menu Bar Only in Chau7?</h2>
-                <p>Menu Bar Only is a window mode in Chau7 that removes the app from the macOS Dock entirely and places a small icon in the menu bar instead. Clicking the Chau7 menu bar icon or pressing a global hotkey reveals the terminal window.</p>
-                <p>When Chau7 is in menu bar only mode, the application stays running in the background with zero visual footprint beyond the menu bar icon. Chau7 does not appear in Cmd+Tab or the Dock. All terminal sessions persist while the window is hidden.</p>
+                <h2>What is the menu bar status item in Chau7?</h2>
+                <p>Chau7 has a persistent menu bar status item (NSStatusItem) that is always present in the macOS menu bar. Clicking it opens an NSPopover with a Command Center showing notifications and quick actions.</p>
+                <p>The status item works alongside the regular Dock icon. Chau7 uses a regular activation policy (<code>.regular</code>), so it always appears in the Dock and Cmd+Tab. There is no menu-bar-only mode that hides the app from the Dock. All terminal sessions persist whether the window is visible or not.</p>
             </div>
         </section>
 
         <!-- How to run terminal as menu bar app -->
         <section class="feature-content" data-ui="menu-bar-how-to">
             <div class="section-inner prose">
-                <h2>How to run Chau7 as a menu bar app with no Dock icon</h2>
-                <p>Enable menu bar only mode in Chau7's preferences. Chau7 immediately disappears from the Dock and appears as a menu bar icon. No restart is required.</p>
-                <p>The Chau7 menu bar icon shows a subtle status indicator when commands are running or when terminal bell notifications fire. Right-clicking the Chau7 menu bar icon provides quick access to recent sessions, new tab creation, and preferences.</p>
+                <h2>What does the menu bar popover show?</h2>
+                <p>Clicking the Chau7 menu bar icon opens an NSPopover with a Command Center panel. This panel shows notifications and provides quick actions for your terminal workflow.</p>
+                <p>The popover is not a right-click context menu for sessions or tabs. It is a dedicated panel managed by Chau7's StatusBarController that opens on click and provides a centralized view of notifications and actions.</p>
             </div>
         </section>
 
         <!-- Which terminals offer menu bar only -->
         <section class="feature-content" data-ui="menu-bar-comparison">
             <div class="section-inner prose">
-                <h2>Which terminal emulators offer menu bar only mode?</h2>
-                <p>Chau7 offers a native menu bar only mode on macOS. iTerm2 has a similar option. Alacritty, Kitty, and Warp do not support running as a menu bar only app.</p>
-                <p>Chau7's menu bar mode is unique because it combines with Chau7's Quake-style dropdown and overlay mode. Developers can run Chau7 in the menu bar and summon the terminal with a global hotkey that triggers a dropdown from the top of the screen.</p>
+                <h2>Does Chau7 have a menu-bar-only mode?</h2>
+                <p>No. Chau7 does not have a menu-bar-only mode. The app uses a regular activation policy (<code>.regular</code>), so it always appears in the Dock and Cmd+Tab. Some terminals like iTerm2 support hiding from the Dock; Chau7 does not offer this.</p>
+                <p>What Chau7 does provide is a persistent menu bar status item that works alongside the normal Dock icon. The status item gives you an additional access point for notifications and quick actions without replacing the standard macOS app presence.</p>
             </div>
         </section>
 
         <!-- Background processes -->
         <section class="feature-content" data-ui="menu-bar-background">
             <div class="section-inner prose">
-                <h2>Does Chau7 still run processes when hidden in the menu bar?</h2>
+                <h2>Does Chau7 still run processes when the window is hidden?</h2>
                 <p>Yes. All terminal sessions in Chau7 persist in the background when the window is hidden. Running processes, SSH connections, and shell state are maintained whether Chau7's window is visible or not.</p>
-                <p>Chau7's menu bar only mode does not affect terminal functionality. Long-running builds, SSH tunnels, and background tasks continue without interruption. Chau7 only hides the window, not the terminal sessions.</p>
+                <p>The menu bar status item remains available even when the main window is closed or minimized. Long-running builds, SSH tunnels, and background tasks continue without interruption.</p>
             </div>
         </section>
 
         <!-- Combine with dropdown -->
         <section class="feature-content" data-ui="menu-bar-dropdown-combo">
             <div class="section-inner prose">
-                <h2>Can I combine Chau7's menu bar mode with the dropdown terminal?</h2>
-                <p>Yes. This is a popular combination in Chau7: Chau7 lives in the menu bar with no Dock presence, and a global hotkey triggers the Quake-style dropdown when you need it. Chau7 stays invisible until summoned.</p>
-                <p>To set up this combination in Chau7, enable both menu bar only mode and dropdown mode in preferences, then assign a global hotkey. Chau7 will have no Dock icon, no Cmd+Tab entry, and a one-keystroke dropdown terminal available from any application.</p>
+                <h2>Can I use the menu bar status item with the dropdown terminal?</h2>
+                <p>Yes. The menu bar status item is always present and works alongside other window modes like the Quake-style dropdown. The status item provides notifications and quick actions, while the dropdown provides terminal access.</p>
+                <p>The menu bar status item and the dropdown terminal serve different purposes and complement each other. The status item shows you what is happening; the dropdown lets you act on it.</p>
             </div>
         </section>
 
@@ -155,7 +154,7 @@
                 <div class="related-features-grid">
                     <a class="catalog-card" href="/features/overlay-mode">
                         <h4>Overlay Mode</h4>
-                        <p>Floating terminal window above all other apps. Toggle with a global hotkey.</p>
+                        <p>Dedicated overlay window with transparency and blur compositing. Per-workspace position memory.</p>
                     </a>
                     <a class="catalog-card" href="/features/dropdown-quake-style">
                         <h4>Dropdown (Quake-style)</h4>
@@ -178,24 +177,24 @@
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>What is Menu Bar Only in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Menu Bar Only is a window mode in Chau7 that removes the app from the macOS Dock entirely and places a small icon in the menu bar instead. Chau7 stays running in the background and appears instantly when you click the menu bar icon or press a global hotkey.</p></div>
+                        <summary>What is the menu bar status item in Chau7?</summary>
+                        <div class="faq-answer"><p>Chau7 has a persistent menu bar status item (NSStatusItem) that is always present alongside the regular Dock icon. Clicking it opens an NSPopover with a Command Center showing notifications and quick actions. This is not a menu-bar-only mode; the app uses regular activation policy and remains in the Dock and Cmd+Tab.</p></div>
                     </details>
                     <details>
-                        <summary>Which terminal emulators offer menu bar only?</summary>
-                        <div class="faq-answer"><p>Chau7 offers a native menu bar only mode on macOS. iTerm2 has a similar option. Alacritty, Kitty, and Warp do not support running as a menu bar only app. Chau7's menu bar mode combines with its Quake-style dropdown and overlay mode for maximum flexibility.</p></div>
+                        <summary>Does Chau7 have a menu-bar-only mode?</summary>
+                        <div class="faq-answer"><p>No. Chau7 uses a regular activation policy (.regular), so it always appears in the Dock and Cmd+Tab. The menu bar status item is an additional access point that works alongside the normal Dock icon, not a replacement for it.</p></div>
                     </details>
                     <details>
-                        <summary>Run terminal as menu bar app macOS no Dock icon</summary>
-                        <div class="faq-answer"><p>Enable menu bar only mode in Chau7's preferences. Chau7 immediately disappears from the Dock and appears as a menu bar icon. Click the icon or press a global hotkey to reveal Chau7's terminal window. All terminal sessions continue running in the background.</p></div>
+                        <summary>What does the menu bar popover show?</summary>
+                        <div class="faq-answer"><p>Clicking the Chau7 menu bar icon opens an NSPopover with a Command Center panel. This panel shows notifications and provides quick actions. It is not a right-click context menu for sessions or tabs.</p></div>
                     </details>
                     <details>
-                        <summary>Does Chau7 still run processes when hidden in the menu bar?</summary>
+                        <summary>Does Chau7 still run processes when the window is hidden?</summary>
                         <div class="faq-answer"><p>Yes. All terminal sessions in Chau7 persist in the background when the window is hidden. Running processes, SSH connections, and shell state are maintained whether Chau7's window is visible or not.</p></div>
                     </details>
                     <details>
-                        <summary>Can I combine menu bar mode with the dropdown terminal?</summary>
-                        <div class="faq-answer"><p>Yes. This is a popular combination in Chau7: Chau7 lives in the menu bar with no Dock presence, and a global hotkey triggers the Quake-style dropdown when you need it. Chau7 stays invisible until summoned.</p></div>
+                        <summary>Can I use the menu bar status item with the dropdown terminal?</summary>
+                        <div class="faq-answer"><p>Yes. The menu bar status item is always present and works alongside other window modes like the Quake-style dropdown. The status item provides notifications and quick actions while the dropdown provides terminal access.</p></div>
                     </details>
                 </div>
             </div>
@@ -205,7 +204,7 @@
         <section class="footer-cta-section" aria-label="Download call to action" data-ui="menu-bar-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Hide your terminal from the Dock. It'll still be there when you need it.</h2>
+                    <h2>Notifications in the menu bar. Terminal in the window. Both always ready.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>

@@ -6,9 +6,9 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Context-Aware Switching | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 auto-switches terminal profiles, colors, and settings when you SSH into different hosts, giving instant visual context.">
+    <meta name="description" content="Chau7 includes a profile auto-switching rule engine with triggers for directory, git repo, SSH host, process, and environment variable. Integration with the terminal session lifecycle is in progress.">
     <meta property="og:title" content="Context-Aware Switching | Chau7">
-    <meta property="og:description" content="Chau7 auto-switches terminal profiles, colors, and settings when you SSH into different hosts, giving instant visual context.">
+    <meta property="og:description" content="Chau7 includes a profile auto-switching rule engine with triggers for directory, git repo, SSH host, process, and environment variable. Integration with the terminal session lifecycle is in progress.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -46,12 +46,10 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Context-Aware Switching in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Context-Aware Switching is a Chau7 feature that automatically detects SSH connections and switches the terminal profile for that tab to match the remote host. Chau7 changes colors, fonts, opacity, and other settings so each server has a distinct visual identity."}},
-            {"@type":"Question","name":"How do I visually distinguish terminal sessions on different servers?","acceptedAnswer":{"@type":"Answer","text":"Chau7 lets you assign a unique profile to each hostname or hostname pattern. Production servers can use a red background, staging can use yellow, and development can keep the default theme. Chau7 applies the profile switch instantly when an SSH connection is detected."}},
-            {"@type":"Question","name":"Is there a terminal that detects SSH connections and switches profiles?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 monitors the process tree in each tab to detect SSH connections automatically. When Chau7 detects a connection to a recognized host, the tab switches to the profile assigned to that host without any manual action."}},
-            {"@type":"Question","name":"Does it work with SSH connections I start manually?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 context detection monitors the process tree, so it works whether you connect through the SSH connection manager, type ssh manually, or use a script that initiates the connection. Any SSH session to a recognized host triggers the Chau7 profile switch."}},
-            {"@type":"Question","name":"Can I set different rules for different hosts?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 context rules can match exact hostnames, wildcard patterns (*.prod.example.com), or SSH config host aliases. Each rule maps to a specific Chau7 profile, and you can create as many rules as you need."}},
-            {"@type":"Question","name":"What happens when I disconnect from SSH?","acceptedAnswer":{"@type":"Answer","text":"The Chau7 tab reverts to its previous profile within a second of the SSH session ending. If you have nested SSH sessions (jumped from one server to another), the Chau7 profile follows the innermost active connection."}}
+            {"@type":"Question","name":"What is Context-Aware Switching in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Context-Aware Switching in Chau7 is a rule engine for profile auto-switching. The ProfileAutoSwitcher data model supports rules with triggers for directory, git repository, SSH host, running process, and environment variable. The rule engine can be configured in settings. Integration with the terminal session lifecycle is in progress."}},
+            {"@type":"Question","name":"What rule triggers does Chau7 support?","acceptedAnswer":{"@type":"Answer","text":"Chau7's ProfileSwitchRule supports triggers for: current directory, git repository, SSH host, running process name, and environment variable. Each rule maps to a specific Chau7 profile. Rules can be created and configured in settings."}},
+            {"@type":"Question","name":"Is the auto-switching feature active?","acceptedAnswer":{"@type":"Answer","text":"The rule engine data model and configuration UI exist in Chau7, but the auto-switcher is not yet connected to the terminal session lifecycle. Profile auto-switching rules can be configured in settings, and integration is in progress."}},
+            {"@type":"Question","name":"Can I configure rules in Chau7 settings?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7's settings panel lets you create ProfileSwitchRule entries with triggers for directory, git repository, SSH host, running process, and environment variable. Each rule maps to a target profile."}}
         ]
     }]
     </script>
@@ -77,7 +75,7 @@
             <div class="hero-content">
                 <div class="section-badge">SSH & REMOTE</div>
                 <h1 class="hero-title">Context-Aware Switching</h1>
-                <p class="hero-subtitle">SSH into production and your Chau7 terminal turns red. Because visual context prevents disasters.</p>
+                <p class="hero-subtitle">Profile auto-switching rules for directory, git repo, SSH host, and more. Rule engine configured, integration in progress.</p>
             </div>
         </section>
 
@@ -87,10 +85,9 @@
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
                     <li class="question-item">What is Context-Aware Switching in Chau7 terminal?</li>
-                    <li class="question-item">How do I visually distinguish terminal sessions on different servers?</li>
-                    <li class="question-item">Is there a terminal that detects SSH connections and switches profiles?</li>
-                    <li class="question-item">Does it work with SSH connections I start manually?</li>
-                    <li class="question-item">Can I set different rules for different hosts?</li>
+                    <li class="question-item">What rule triggers does Chau7 support?</li>
+                    <li class="question-item">Is the auto-switching feature active?</li>
+                    <li class="question-item">Can I configure rules in Chau7 settings?</li>
                 </ul>
             </div>
         </section>
@@ -99,44 +96,35 @@
         <section class="feature-content" data-ui="context-switching-definition">
             <div class="section-inner prose">
                 <h2>What is Context-Aware Switching in Chau7?</h2>
-                <p>Context-Aware Switching is a Chau7 feature that automatically changes terminal profiles when you SSH into different hosts. Chau7 monitors the process tree in each tab to detect SSH connections. When Chau7 detects a connection to a recognized host, the tab switches to the profile assigned to that host.</p>
-                <p>The Chau7 profile switch changes the color scheme, font size, background opacity, and any other profile-specific settings. When the SSH session ends, Chau7 reverts the tab to its original profile.</p>
+                <p>Context-Aware Switching in Chau7 is a rule engine for automatic profile switching. The <code>ProfileAutoSwitcher</code> data model supports rules with triggers for directory, git repository, SSH host, running process, and environment variable. Each rule maps to a target profile.</p>
+                <p>Profile auto-switching rules can be configured in settings. The rule engine supports the data model and configuration, but integration with the terminal session lifecycle is in progress.</p>
             </div>
         </section>
 
-        <!-- How do I visually distinguish sessions -->
-        <section class="feature-content" data-ui="context-switching-visual-distinction">
+        <!-- What rule triggers does Chau7 support -->
+        <section class="feature-content" data-ui="context-switching-triggers">
             <div class="section-inner prose">
-                <h2>How do I visually distinguish terminal sessions on different servers?</h2>
-                <p>Chau7 lets you assign a unique profile to each hostname or hostname pattern. Production servers can use a red-tinted background, staging servers can use yellow, and development servers can keep the default Chau7 theme.</p>
-                <p>The Chau7 visual switch is instant and unmistakable. The color change provides a constant reminder of which environment you are operating in, so you never have to check the hostname manually.</p>
+                <h2>What rule triggers does Chau7 support?</h2>
+                <p>Chau7's <code>ProfileSwitchRule</code> supports five trigger types: current directory, git repository, SSH host, running process name, and environment variable. Each rule maps to a specific Chau7 profile.</p>
+                <p>Rules can be created and configured in the settings panel. You can define rules that would switch profiles based on any of these context signals.</p>
             </div>
         </section>
 
-        <!-- Does Chau7 detect SSH connections -->
-        <section class="feature-content" data-ui="context-switching-ssh-detection">
+        <!-- Is the auto-switching feature active -->
+        <section class="feature-content" data-ui="context-switching-status">
             <div class="section-inner prose">
-                <h2>Is there a terminal that detects SSH connections and switches profiles?</h2>
-                <p>Yes. Chau7 monitors the process tree and terminal output in each tab to detect SSH connections automatically. When Chau7 detects a connection to a recognized host, the tab switches to the assigned profile without any manual action.</p>
-                <p>Chau7 context detection works with connections started from the SSH connection manager, typed manually in the terminal, or initiated by a script. Any SSH session to a recognized host triggers the Chau7 profile switch.</p>
+                <h2>Is the auto-switching feature active?</h2>
+                <p>The rule engine data model and configuration UI exist in Chau7. The <code>ProfileAutoSwitcher</code> contains an <code>evaluateRules()</code> method, but it is not yet connected to the terminal session or tab lifecycle.</p>
+                <p>This means rules can be configured in settings but are not yet evaluated automatically when context changes. Integration with the session lifecycle is in progress.</p>
             </div>
         </section>
 
-        <!-- Host-specific rules -->
-        <section class="feature-content" data-ui="context-switching-host-rules">
+        <!-- Configure rules -->
+        <section class="feature-content" data-ui="context-switching-configure">
             <div class="section-inner prose">
-                <h2>Can I set different rules for different hosts?</h2>
-                <p>Yes. Chau7 context rules can match exact hostnames, wildcard patterns (such as <code>*.prod.example.com</code>), or SSH config host aliases. Each Chau7 context rule maps to a specific profile.</p>
-                <p>You can create as many Chau7 context rules as you need. Each rule independently maps a host pattern to a Chau7 profile, so production, staging, and development servers each get their own visual identity.</p>
-            </div>
-        </section>
-
-        <!-- Beyond visual changes -->
-        <section class="feature-content" data-ui="context-switching-non-visual">
-            <div class="section-inner prose">
-                <h2>What else can Chau7 change when switching context?</h2>
-                <p>Beyond visual changes, Chau7 context switching can trigger other profile settings: different shell integrations, environment variables, or keybinding overrides.</p>
-                <p>This means your Chau7 production connections can disable dangerous-command shortcuts or enable additional confirmation steps automatically. Chau7 applies all profile settings as a bundle when the SSH connection is detected.</p>
+                <h2>Can I configure rules in Chau7 settings?</h2>
+                <p>Yes. Chau7's settings panel lets you create <code>ProfileSwitchRule</code> entries. Each rule specifies a trigger type (directory, git repo, SSH host, process, or environment variable) and a target profile.</p>
+                <p>The configuration is stored and ready for when the auto-switcher is connected to the terminal session lifecycle.</p>
             </div>
         </section>
 
@@ -144,8 +132,8 @@
         <section class="feature-content" data-ui="context-switching-why-it-matters">
             <div class="section-inner prose">
                 <h2>Why does Context-Aware Switching matter?</h2>
-                <p>Running a destructive command on the wrong server is one of the most expensive mistakes in operations. Chau7 Context-Aware Switching eliminates that risk by making each environment visually distinct.</p>
-                <p>With Chau7, production looks different from staging, which looks different from development. The visual cue fires before your brain has to think about which server you are on.</p>
+                <p>Running a destructive command on the wrong server is one of the most expensive mistakes in operations. Automatic profile switching based on context can make each environment visually distinct, reducing the risk of mistakes.</p>
+                <p>Chau7's rule engine lays the foundation for this capability. Once integration with the session lifecycle is complete, rules configured in settings will trigger automatic profile switches based on directory, git repo, SSH host, process, or environment variable.</p>
             </div>
         </section>
 
@@ -160,11 +148,11 @@
                     </a>
                     <a class="catalog-card" href="/features/auto-import-ssh-config">
                         <h4>Auto-Import SSH Config</h4>
-                        <p>Imports hosts from ~/.ssh/config automatically. Stays in sync with config file changes.</p>
+                        <p>Reads hosts from ~/.ssh/config for manual import into the connection manager.</p>
                     </a>
                     <a class="catalog-card" href="/features/jump-host-support">
                         <h4>Jump Host Support</h4>
-                        <p>Multi-hop SSH connections through bastion/jump hosts with ProxyJump support.</p>
+                        <p>SSH through bastion hosts with a jump host field and -J flag generation.</p>
                     </a>
                 </div>
                 <div class="feature-random-row">
@@ -180,19 +168,19 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Context-Aware Switching in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Context-Aware Switching is a Chau7 feature that automatically detects SSH connections and switches the terminal profile for that tab to match the remote host. Chau7 changes colors, fonts, opacity, and other settings so each server has a distinct visual identity.</p></div>
+                        <div class="faq-answer"><p>Context-Aware Switching in Chau7 is a rule engine for profile auto-switching. The ProfileAutoSwitcher data model supports rules with triggers for directory, git repository, SSH host, running process, and environment variable. The rule engine can be configured in settings. Integration with the terminal session lifecycle is in progress.</p></div>
                     </details>
                     <details>
-                        <summary>Does it work with SSH connections I start manually?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7 context detection monitors the process tree, so it works whether you connect through the Chau7 SSH connection manager, type <code>ssh</code> manually, or use a script that initiates the connection. Any SSH session to a recognized host triggers the Chau7 profile switch.</p></div>
+                        <summary>What rule triggers does Chau7 support?</summary>
+                        <div class="faq-answer"><p>Chau7's ProfileSwitchRule supports triggers for: current directory, git repository, SSH host, running process name, and environment variable. Each rule maps to a specific Chau7 profile. Rules can be created and configured in settings.</p></div>
                     </details>
                     <details>
-                        <summary>Can I set different rules for different hosts?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7 context rules can match exact hostnames, wildcard patterns (<code>*.prod.example.com</code>), or SSH config host aliases. Each rule maps to a specific Chau7 profile, and you can create as many rules as you need.</p></div>
+                        <summary>Is the auto-switching feature active?</summary>
+                        <div class="faq-answer"><p>The rule engine data model and configuration UI exist in Chau7, but the auto-switcher is not yet connected to the terminal session lifecycle. Rules can be configured in settings, and integration is in progress.</p></div>
                     </details>
                     <details>
-                        <summary>What happens when I disconnect from SSH?</summary>
-                        <div class="faq-answer"><p>The Chau7 tab reverts to its previous profile within a second of the SSH session ending. If you have nested SSH sessions (jumped from one server to another), the Chau7 profile follows the innermost active connection.</p></div>
+                        <summary>Can I configure rules in Chau7 settings?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7's settings panel lets you create ProfileSwitchRule entries with triggers for directory, git repository, SSH host, running process, and environment variable. Each rule maps to a target profile.</p></div>
                     </details>
                 </div>
             </div>
@@ -202,7 +190,7 @@
         <section class="footer-cta-section" aria-label="Download call to action" data-ui="context-switching-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Never mistake prod for staging again. Colors don't lie.</h2>
+                    <h2>Configure profile switching rules. Integration coming soon.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>

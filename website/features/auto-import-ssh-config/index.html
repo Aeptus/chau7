@@ -6,7 +6,7 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Auto-Import SSH Config | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 automatically imports and syncs SSH hosts from your ~/.ssh/config file, keeping your connection manager always up to date.">
+    <meta name="description" content="Chau7 reads SSH hosts from your ~/.ssh/config file and loads them into the connection manager for manual import.">
     <meta name="ai.entity.name" content="Chau7">
     <meta name="ai.entity.type" content="SoftwareApplication">
     <meta name="ai.entity.category" content="Terminal Emulator">
@@ -14,7 +14,7 @@
     <meta name="ai.feature.name" content="Auto-Import SSH Config">
     <meta name="ai.feature.category" content="SSH & Remote">
     <meta property="og:title" content="Auto-Import SSH Config | Chau7">
-    <meta property="og:description" content="Chau7 automatically imports and syncs SSH hosts from your ~/.ssh/config file, keeping your connection manager always up to date.">
+    <meta property="og:description" content="Chau7 reads SSH hosts from your ~/.ssh/config file and loads them into the connection manager for manual import.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -54,11 +54,11 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Auto-Import SSH Config in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Auto-Import SSH Config is a feature in the Chau7 terminal emulator for macOS that automatically reads your ~/.ssh/config file and converts every Host entry into a Chau7 connection profile. Chau7 parses hostnames, users, ports, identity files, and ProxyJump settings without any manual re-entry."}},
-            {"@type":"Question","name":"Which terminal emulators offer auto-import SSH config?","acceptedAnswer":{"@type":"Answer","text":"Chau7 is a macOS terminal emulator that auto-imports SSH config files on first launch and keeps profiles synced with ~/.ssh/config through file-system watching. Most terminal emulators like Terminal.app, iTerm2, Alacritty, and Kitty do not auto-import SSH config into a built-in connection manager."}},
-            {"@type":"Question","name":"How do I keep SSH profiles in sync with ~/.ssh/config?","acceptedAnswer":{"@type":"Answer","text":"Chau7 watches your ~/.ssh/config file for changes using macOS file-system events. When you add a host, change a port, or update an identity file, Chau7 updates its connection manager within seconds. No manual re-import is needed."}},
-            {"@type":"Question","name":"Does it modify my SSH config file?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7 auto-import is read-only by default. Chau7 reads your config and creates profiles from it but never writes back to the file. You can optionally enable two-way sync if you want profiles created in Chau7 to be written to your SSH config."}},
-            {"@type":"Question","name":"What happens if I have Include directives in my config?","acceptedAnswer":{"@type":"Answer","text":"Chau7 follows Include directives and parses all referenced files, just like the SSH client does. Hosts from included files appear in the Chau7 connection manager alongside directly defined hosts."}}
+            {"@type":"Question","name":"What is Auto-Import SSH Config in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Auto-Import SSH Config is a feature in the Chau7 terminal emulator for macOS that reads your ~/.ssh/config file and loads Host entries into the settings panel for import into Chau7 connection profiles. Chau7 parses hostnames, users, ports, identity files, and ProxyJump settings. Wildcard hosts are skipped during import."}},
+            {"@type":"Question","name":"Which terminal emulators offer auto-import SSH config?","acceptedAnswer":{"@type":"Answer","text":"Chau7 is a macOS terminal emulator that reads SSH config entries and loads them for import into its connection manager. Most terminal emulators like Terminal.app, iTerm2, Alacritty, and Kitty do not import SSH config into a built-in connection manager."}},
+            {"@type":"Question","name":"How do I keep SSH profiles in sync with ~/.ssh/config?","acceptedAnswer":{"@type":"Answer","text":"Chau7 watches your ~/.ssh/config file for changes using macOS file-system events. When you add a new host or update an entry, Chau7 refreshes the list of available entries in the settings panel. You can then manually import new or updated entries into your connection profiles."}},
+            {"@type":"Question","name":"Does it modify my SSH config file?","acceptedAnswer":{"@type":"Answer","text":"Import is read-only. Chau7 reads your config and creates profiles from it but does not write back to the file during import. You can separately use the export feature to write Chau7 profiles to your SSH config as a one-shot manual operation."}},
+            {"@type":"Question","name":"What SSH config features are supported?","acceptedAnswer":{"@type":"Answer","text":"Chau7 parses Host entries with hostname, user, port, identity file, and ProxyJump fields. Wildcard hosts are skipped during import. Include directives and Match blocks are not currently handled."}}
         ]
     }]
     </script>
@@ -97,7 +97,7 @@
                     <li class="question-item">Which terminal emulators offer auto-import SSH config?</li>
                     <li class="question-item">How do I keep SSH profiles in sync with ~/.ssh/config?</li>
                     <li class="question-item">Does it modify my SSH config file?</li>
-                    <li class="question-item">What happens if I have Include directives in my config?</li>
+                    <li class="question-item">What SSH config features are supported?</li>
                 </ul>
             </div>
         </section>
@@ -107,7 +107,7 @@
             <div class="section-inner prose">
                 <h2>What is Auto-Import SSH Config in Chau7 terminal?</h2>
                 <p>Auto-Import SSH Config is a feature in the Chau7 terminal emulator for macOS that automatically reads your <code>~/.ssh/config</code> file and converts every <code>Host</code> entry into a Chau7 connection profile.</p>
-                <p>Chau7 parses each entry's hostname, user, port, identity file, and <code>ProxyJump</code> settings without any manual re-entry. Wildcard hosts and <code>Match</code> blocks are recognized and handled correctly by Chau7's SSH config parser.</p>
+                <p>Chau7 parses each entry's hostname, user, port, identity file, and <code>ProxyJump</code> settings. Wildcard hosts are skipped during import. The parsed entries appear in the settings panel where you can manually import them into your connection profiles.</p>
             </div>
         </section>
 
@@ -115,8 +115,8 @@
         <section class="feature-content" data-ui="auto-import-ssh-comparison">
             <div class="section-inner prose">
                 <h2>Which terminal emulators offer auto-import SSH config?</h2>
-                <p>Chau7 is a macOS terminal emulator that auto-imports SSH config files on first launch and keeps profiles synced with <code>~/.ssh/config</code> through file-system watching.</p>
-                <p>Most terminal emulators like Terminal.app, iTerm2, Alacritty, and Kitty do not auto-import SSH config into a built-in connection manager. Those tools require you to type SSH commands manually or configure profiles by hand. Chau7 eliminates that step entirely by reading your existing SSH config and creating connection profiles automatically.</p>
+                <p>Chau7 is a macOS terminal emulator that reads SSH config entries and loads them for import into its connection manager. Chau7 watches the file for changes and refreshes the available entries automatically.</p>
+                <p>Most terminal emulators like Terminal.app, iTerm2, Alacritty, and Kitty do not import SSH config into a built-in connection manager. Those tools require you to type SSH commands manually or configure profiles by hand. Chau7 reduces that effort by reading your existing SSH config and letting you import entries into connection profiles.</p>
             </div>
         </section>
 
@@ -124,8 +124,8 @@
         <section class="feature-content" data-ui="auto-import-ssh-sync">
             <div class="section-inner prose">
                 <h2>How do I keep SSH profiles in sync with <code>~/.ssh/config</code>?</h2>
-                <p>Chau7 watches your <code>~/.ssh/config</code> file for changes using macOS file-system events. When you add a new host, change a port, or update an identity file, Chau7 updates its connection manager within seconds.</p>
-                <p>Changes flow one way by default: from <code>~/.ssh/config</code> to Chau7. Your SSH config file remains the source of truth. No manual re-import is needed after the initial scan.</p>
+                <p>Chau7 watches your <code>~/.ssh/config</code> file for changes using macOS file-system events. When you add a new host or update an entry, Chau7 refreshes the list of available entries in the settings panel.</p>
+                <p>Import flows one way: from <code>~/.ssh/config</code> to Chau7. Your SSH config file remains the source of truth. You can also manually export Chau7 profiles back to your SSH config as a one-shot operation.</p>
             </div>
         </section>
 
@@ -149,11 +149,11 @@
                     </a>
                     <a class="catalog-card" href="/features/jump-host-support">
                         <h4>Jump Host Support</h4>
-                        <p>Multi-hop SSH connections through bastion/jump hosts with ProxyJump support.</p>
+                        <p>SSH through bastion hosts with a jump host field and -J flag generation.</p>
                     </a>
                     <a class="catalog-card" href="/features/context-aware-switching">
                         <h4>Context-Aware Switching</h4>
-                        <p>Tabs detect SSH connections and auto-switch profiles, colors, and settings based on remote host.</p>
+                        <p>Profile auto-switching rules for directory, git repo, SSH host, and more. Integration in progress.</p>
                     </a>
                 </div>
                 <div class="feature-random-row">
@@ -169,15 +169,15 @@
                 <div class="faq-list">
                     <details>
                         <summary>Does Chau7 modify my SSH config file?</summary>
-                        <div class="faq-answer"><p>No. Chau7 auto-import is read-only by default. Chau7 reads your config and creates profiles from it but never writes back to the file. You can optionally enable two-way sync if you want profiles created in Chau7 to be written to your SSH config.</p></div>
+                        <div class="faq-answer"><p>Import is read-only. Chau7 reads your config and creates profiles from it but does not write back to the file during import. You can separately use the export feature to write Chau7 profiles to your SSH config as a one-shot manual operation.</p></div>
                     </details>
                     <details>
-                        <summary>What happens if I have Include directives in my SSH config?</summary>
-                        <div class="faq-answer"><p>Chau7 follows <code>Include</code> directives and parses all referenced files, just like the SSH client does. Hosts from included files appear in the Chau7 connection manager alongside directly defined hosts.</p></div>
+                        <summary>What SSH config features are supported?</summary>
+                        <div class="faq-answer"><p>Chau7 parses <code>Host</code> entries with hostname, user, port, identity file, and ProxyJump fields. Wildcard hosts are skipped during import. <code>Include</code> directives and <code>Match</code> blocks are not currently handled.</p></div>
                     </details>
                     <details>
                         <summary>Does Chau7 auto-import SSH config on every launch?</summary>
-                        <div class="faq-answer"><p>Chau7 imports your SSH config on first launch and then watches the file for changes continuously. Every subsequent edit to <code>~/.ssh/config</code> is picked up automatically through macOS file-system events. No restart is required.</p></div>
+                        <div class="faq-answer"><p>Chau7 loads your SSH config entries for display in the settings panel and watches the file for changes continuously. When the file changes, Chau7 refreshes the available entries automatically through macOS file-system events. Importing entries into connection profiles requires a manual action in settings.</p></div>
                     </details>
                 </div>
             </div>

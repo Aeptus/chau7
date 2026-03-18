@@ -5,17 +5,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
-    <title>Paste Confirmation | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 shows a confirmation dialog before pasting multi-line content into the terminal. Review, edit, or cancel pastes before they execute, with protection independent of bracketed paste mode.">
+    <title>Bracketed Paste Mode | Chau7 Terminal</title>
+    <meta name="description" content="Chau7 supports bracketed paste mode, sending paste sequences to applications that handle them. Pastes go directly to the terminal with no confirmation dialog.">
     <meta name="article:section" content="Clipboard">
     <meta name="article:tag" content="Chau7">
-    <meta name="article:tag" content="paste confirmation">
-    <meta name="article:tag" content="multi-line paste">
+    <meta name="article:tag" content="bracketed paste mode">
+    <meta name="article:tag" content="paste">
     <meta name="article:tag" content="clipboard safety">
-    <meta name="article:tag" content="bracketed paste">
     <meta name="article:tag" content="terminal">
-    <meta property="og:title" content="Paste Confirmation | Chau7">
-    <meta property="og:description" content="Chau7 shows a confirmation dialog before pasting multi-line content into the terminal. Review, edit, or cancel pastes before they execute, with protection independent of bracketed paste mode.">
+    <meta property="og:title" content="Bracketed Paste Mode | Chau7">
+    <meta property="og:description" content="Chau7 supports bracketed paste mode, sending paste sequences to applications that handle them. Pastes go directly to the terminal with no confirmation dialog.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,14 +29,11 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS with paste confirmation that shows a dialog before multi-line pastes execute, providing protection independent of bracketed paste mode.",
+        "description": "Chau7 is an AI-native terminal for macOS with bracketed paste mode support. Pastes are sent directly to the terminal with bracketed paste sequences when the running application supports them.",
         "featureList": [
-            "Multi-line paste confirmation dialog",
-            "Syntax-highlighted paste preview",
-            "Inline paste editing before execution",
-            "Configurable character-count threshold",
-            "Independent of bracketed paste mode",
-            "ClickFix attack protection"
+            "Bracketed paste mode support",
+            "Direct paste to terminal",
+            "Standard paste sequence handling"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
@@ -48,18 +44,18 @@
             { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://chau7.sh/" },
             { "@type": "ListItem", "position": 2, "name": "Features", "item": "https://chau7.sh/features" },
             { "@type": "ListItem", "position": 3, "name": "Clipboard", "item": "https://chau7.sh/features#clipboard" },
-            { "@type": "ListItem", "position": 4, "name": "Paste Confirmation" }
+            { "@type": "ListItem", "position": 4, "name": "Bracketed Paste Mode" }
         ]
     },
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Paste Confirmation in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Paste Confirmation is a feature in the Chau7 terminal that shows a confirmation dialog before pasting multi-line content. Chau7 displays the full paste content with syntax highlighting and line numbers so you can review, edit, or cancel before anything executes. Chau7's paste confirmation operates at the terminal emulator level, independent of bracketed paste mode."}},
-            {"@type":"Question","name":"How does Chau7's paste confirmation compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals rely solely on bracketed paste mode, which depends on the running application handling paste sequences correctly. Many programs do not. iTerm2 offers a basic paste warning but with no inline editing. Chau7's paste confirmation provides a syntax-highlighted preview with line numbers, inline editing, and protection that works regardless of what is running in the session."}},
-            {"@type":"Question","name":"How do I prevent pasting multi-line commands that execute immediately?","acceptedAnswer":{"@type":"Answer","text":"Chau7 automatically shows a confirmation dialog when you paste text containing newline characters. Each line is displayed with a line number so you can review exactly what will be sent to the shell. You can edit the content inline, strip trailing newlines, or cancel the paste entirely in Chau7."}},
-            {"@type":"Question","name":"Can I disable paste confirmation for single-line pastes?","acceptedAnswer":{"@type":"Answer","text":"Yes. By default in Chau7, only multi-line pastes trigger confirmation. You can also configure a character-count threshold in Chau7 so that very long single-line pastes, like base64 blobs, are also checked before execution."}},
-            {"@type":"Question","name":"Does this replace bracketed paste mode?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7's paste confirmation complements bracketed paste mode. Chau7 still sends bracketed paste sequences for applications that support them, but the confirmation dialog provides a second layer of protection that works even when the application ignores or mishandles bracketed paste."}}
+            {"@type":"Question","name":"What is Bracketed Paste Mode in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Bracketed Paste Mode is a terminal feature where Chau7 wraps pasted text in special escape sequences so the running application can distinguish pasted text from typed text. When an application enables bracketed paste mode, Chau7 sends the appropriate sequences. Pastes go directly to the terminal without a confirmation dialog."}},
+            {"@type":"Question","name":"How does pasting work in Chau7?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, pasting sends clipboard content directly to the active terminal. When the running application has enabled bracketed paste mode, Chau7 wraps the content in the standard escape sequences. There is no intermediate confirmation dialog or preview."}},
+            {"@type":"Question","name":"Does Chau7 have a paste confirmation dialog?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7 currently sends pastes directly to the terminal without a confirmation dialog. Bracketed paste mode provides some protection by letting applications distinguish pasted text from typed text, but there is no visual confirmation step before the paste is sent."}},
+            {"@type":"Question","name":"What is bracketed paste mode?","acceptedAnswer":{"@type":"Answer","text":"Bracketed paste mode is a terminal protocol where the terminal emulator wraps pasted text in escape sequences (ESC[200~ before and ESC[201~ after). Applications that support this protocol can detect pasted text and handle it differently from typed input, for example by not executing newlines immediately."}},
+            {"@type":"Question","name":"Does bracketed paste mode prevent accidental command execution?","acceptedAnswer":{"@type":"Answer","text":"Bracketed paste mode helps applications distinguish pasted text from typed text, but protection depends on the running application handling the sequences correctly. Many programs do not support bracketed paste mode, in which case pasted text is treated the same as typed input."}}
         ]
     }]
     </script>
@@ -76,7 +72,7 @@
             <span class="breadcrumb-sep">/</span>
             <a href="/features#clipboard">Clipboard</a>
             <span class="breadcrumb-sep">/</span>
-            <span class="breadcrumb-current">Paste Confirmation</span>
+            <span class="breadcrumb-current">Bracketed Paste Mode</span>
         </div>
 
         <!-- Hero -->
@@ -84,8 +80,8 @@
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">CLIPBOARD</div>
-                <h1 class="hero-title">Paste Confirmation</h1>
-                <p class="hero-subtitle">Chau7 shows you exactly what you are about to paste before it executes. Multi-line paste gets a safety check.</p>
+                <h1 class="hero-title">Bracketed Paste Mode</h1>
+                <p class="hero-subtitle">Chau7 supports bracketed paste mode, wrapping pasted text in escape sequences so applications can distinguish pastes from typed input.</p>
             </div>
         </section>
 
@@ -94,66 +90,57 @@
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
                 <ul class="question-list">
-                    <li class="question-item">What is Paste Confirmation in Chau7 terminal?</li>
-                    <li class="question-item">How does Chau7's paste confirmation compare to other terminals?</li>
-                    <li class="question-item">How do I prevent pasting multi-line commands that execute immediately?</li>
-                    <li class="question-item">Can I disable paste confirmation for single-line pastes?</li>
-                    <li class="question-item">Does this replace bracketed paste mode?</li>
+                    <li class="question-item">What is Bracketed Paste Mode in Chau7 terminal?</li>
+                    <li class="question-item">How does pasting work in Chau7?</li>
+                    <li class="question-item">Does Chau7 have a paste confirmation dialog?</li>
+                    <li class="question-item">What is bracketed paste mode?</li>
+                    <li class="question-item">Does bracketed paste mode prevent accidental command execution?</li>
                 </ul>
             </div>
         </section>
 
-        <!-- What is Paste Confirmation -->
+        <!-- What is Bracketed Paste Mode -->
         <section class="feature-content" data-ui="paste-what">
             <div class="section-inner prose">
-                <h2>What is Paste Confirmation in Chau7?</h2>
-                <p>Paste Confirmation is a feature in the Chau7 terminal that shows a confirmation dialog before pasting multi-line content. Chau7 displays the full paste content with syntax highlighting and line numbers so you can review exactly what will be sent to the shell.</p>
-                <p>Chau7's paste confirmation operates at the terminal emulator level, before bytes reach the shell. This means the protection works regardless of what application is running in the session.</p>
+                <h2>What is Bracketed Paste Mode in Chau7?</h2>
+                <p>Bracketed Paste Mode is a terminal protocol where Chau7 wraps pasted text in special escape sequences. When the running application has enabled bracketed paste mode, Chau7 sends the standard escape sequences (ESC[200~ before and ESC[201~ after the pasted content) so the application can distinguish pasted text from typed text.</p>
+                <p>This lets applications like zsh, vim, and other programs handle pasted content appropriately, for example by not executing newlines immediately.</p>
             </div>
         </section>
 
-        <!-- Comparison to other terminals -->
-        <section class="feature-content" data-ui="paste-comparison">
+        <!-- How pasting works -->
+        <section class="feature-content" data-ui="paste-how">
             <div class="section-inner prose">
-                <h2>How does Chau7's paste confirmation compare to other terminals?</h2>
-                <p>Most terminals rely solely on bracketed paste mode, which depends on the running application handling paste sequences correctly. Many programs do not handle bracketed paste, leaving users unprotected.</p>
-                <p>iTerm2 offers a basic paste warning but with no inline editing. Alacritty and Kitty have no paste confirmation at all. Chau7's paste confirmation provides a syntax-highlighted preview with line numbers, inline editing, and protection that works regardless of the running application.</p>
+                <h2>How does pasting work in Chau7?</h2>
+                <p>In Chau7, pasting sends clipboard content directly to the active terminal. There is no intermediate confirmation dialog or preview step. The paste is sent immediately to the running application.</p>
+                <p>When the running application has enabled bracketed paste mode, Chau7 wraps the pasted content in the standard escape sequences. When bracketed paste mode is not enabled, the content is sent as-is, just like typed input.</p>
             </div>
         </section>
 
-        <!-- Prevent multi-line paste execution -->
-        <section class="feature-content" data-ui="paste-prevent-execution">
+        <!-- Does Chau7 have a confirmation dialog -->
+        <section class="feature-content" data-ui="paste-confirmation">
             <div class="section-inner prose">
-                <h2>How do I prevent pasting multi-line commands that execute immediately?</h2>
-                <p>Chau7 automatically shows a confirmation dialog when you paste text containing newline characters. Each line is displayed with a line number so you can review exactly what will be sent to the shell.</p>
-                <p>You can edit the content inline in Chau7's paste dialog, strip trailing newlines, or cancel the paste entirely. This prevents accidental execution of commands from clipboard content, including ClickFix attacks that embed hidden commands in seemingly innocent text.</p>
+                <h2>Does Chau7 have a paste confirmation dialog?</h2>
+                <p>No. Chau7 currently sends pastes directly to the terminal without a confirmation dialog. Paste content goes straight to the running application.</p>
+                <p>Bracketed paste mode provides some protection by letting applications distinguish pasted text from typed text, but there is no visual confirmation step before the paste is sent by Chau7.</p>
             </div>
         </section>
 
-        <!-- Single-line paste threshold -->
-        <section class="feature-content" data-ui="paste-single-line">
-            <div class="section-inner prose">
-                <h2>Can I disable paste confirmation for single-line pastes?</h2>
-                <p>Yes. By default in Chau7, only multi-line pastes trigger confirmation. Single-line pastes go through immediately without a dialog.</p>
-                <p>You can also configure a character-count threshold in Chau7 so that very long single-line pastes, like base64 blobs or long URLs, are also checked before execution. This gives you fine-grained control over when Chau7's paste confirmation appears.</p>
-            </div>
-        </section>
-
-        <!-- Bracketed paste mode -->
+        <!-- What is bracketed paste mode -->
         <section class="feature-content" data-ui="paste-bracketed-mode">
             <div class="section-inner prose">
-                <h2>Does Chau7's paste confirmation replace bracketed paste mode?</h2>
-                <p>No. Chau7's paste confirmation complements bracketed paste mode. Chau7 still sends bracketed paste sequences for applications that support them.</p>
-                <p>The confirmation dialog in Chau7 provides a second layer of protection that works even when the running application ignores or mishandles bracketed paste sequences. Together, bracketed paste mode and Chau7's confirmation dialog provide two independent layers of paste safety.</p>
+                <h2>What is bracketed paste mode?</h2>
+                <p>Bracketed paste mode is a terminal protocol where the terminal emulator wraps pasted text in escape sequences. Applications that support this protocol can detect pasted text and handle it differently from typed input.</p>
+                <p>Modern shells like zsh enable bracketed paste mode by default, which prevents pasted newlines from executing commands immediately. However, many programs do not support bracketed paste mode, in which case pasted text is treated the same as typed input.</p>
             </div>
         </section>
 
-        <!-- Why it matters -->
-        <section class="feature-content" data-ui="paste-why-it-matters">
+        <!-- Limitations -->
+        <section class="feature-content" data-ui="paste-limitations">
             <div class="section-inner prose">
-                <h2>Why paste confirmation matters</h2>
-                <p>Pasting from the clipboard is one of the most dangerous terminal actions. A single newline in copied text can execute commands before you see them. ClickFix attacks exploit this by embedding hidden commands in seemingly innocent clipboard content.</p>
-                <p>Chau7's paste confirmation shows a preview of multi-line pastes and warns about content containing newlines or control characters before anything executes. This protection in Chau7 works at the terminal emulator level, so it cannot be bypassed by the running application.</p>
+                <h2>Does bracketed paste mode prevent accidental command execution?</h2>
+                <p>Bracketed paste mode helps, but protection depends entirely on the running application handling the escape sequences correctly. Many programs ignore bracketed paste sequences, in which case pasted text with newlines can execute commands immediately.</p>
+                <p>For applications that do support bracketed paste mode, the protection is effective. Zsh, for example, will not execute pasted content until you press Enter, giving you a chance to review what was pasted.</p>
             </div>
         </section>
 
@@ -164,7 +151,7 @@
                 <div class="related-features-grid">
                     <a class="catalog-card" href="/features/clipboard-history">
                         <h4>Clipboard History</h4>
-                        <p>Searchable clipboard history with pinning. Persists across sessions.</p>
+                        <p>Built-in clipboard history with pinning and timestamps.</p>
                     </a>
                     <a class="catalog-card" href="/features/snippets">
                         <h4>Snippets</h4>
@@ -187,24 +174,24 @@
                 <h2>Frequently asked questions</h2>
                 <div class="faq-list">
                     <details>
-                        <summary>What is Paste Confirmation in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Paste Confirmation is a feature in the Chau7 terminal that shows a confirmation dialog before pasting multi-line content. Chau7 displays the full paste content with syntax highlighting and line numbers so you can review, edit, or cancel before anything executes. Chau7's paste confirmation operates at the terminal emulator level, independent of bracketed paste mode.</p></div>
+                        <summary>What is Bracketed Paste Mode in Chau7 terminal?</summary>
+                        <div class="faq-answer"><p>Bracketed Paste Mode is a terminal protocol where Chau7 wraps pasted text in escape sequences so the running application can distinguish pasted text from typed text. When an application enables bracketed paste mode, Chau7 sends the appropriate sequences.</p></div>
                     </details>
                     <details>
-                        <summary>How does Chau7's paste confirmation compare to other terminals?</summary>
-                        <div class="faq-answer"><p>Most terminals rely solely on bracketed paste mode, which depends on the running application handling paste sequences correctly. Many programs do not. iTerm2 offers a basic paste warning but with no inline editing. Chau7's paste confirmation provides a syntax-highlighted preview with line numbers, inline editing, and protection that works regardless of what is running in the session.</p></div>
+                        <summary>How does pasting work in Chau7?</summary>
+                        <div class="faq-answer"><p>In Chau7, pasting sends clipboard content directly to the active terminal. When the running application has enabled bracketed paste mode, Chau7 wraps the content in the standard escape sequences. There is no intermediate confirmation dialog or preview.</p></div>
                     </details>
                     <details>
-                        <summary>How do I prevent pasting multi-line commands that execute immediately?</summary>
-                        <div class="faq-answer"><p>Chau7 automatically shows a confirmation dialog when you paste text containing newline characters. Each line is displayed with a line number so you can review exactly what will be sent to the shell. You can edit the content inline, strip trailing newlines, or cancel the paste entirely in Chau7.</p></div>
+                        <summary>Does Chau7 have a paste confirmation dialog?</summary>
+                        <div class="faq-answer"><p>No. Chau7 currently sends pastes directly to the terminal without a confirmation dialog. Bracketed paste mode provides some protection by letting applications distinguish pasted text from typed text, but there is no visual confirmation step before the paste is sent.</p></div>
                     </details>
                     <details>
-                        <summary>Can I disable paste confirmation for single-line pastes?</summary>
-                        <div class="faq-answer"><p>Yes. By default in Chau7, only multi-line pastes trigger confirmation. You can also configure a character-count threshold in Chau7 so that very long single-line pastes, like base64 blobs, are also checked before execution.</p></div>
+                        <summary>What is bracketed paste mode?</summary>
+                        <div class="faq-answer"><p>Bracketed paste mode is a terminal protocol where the terminal emulator wraps pasted text in escape sequences (ESC[200~ before and ESC[201~ after). Applications that support this protocol can detect pasted text and handle it differently from typed input, for example by not executing newlines immediately.</p></div>
                     </details>
                     <details>
-                        <summary>Does this replace bracketed paste mode?</summary>
-                        <div class="faq-answer"><p>No. Chau7's paste confirmation complements bracketed paste mode. Chau7 still sends bracketed paste sequences for applications that support them, but the confirmation dialog provides a second layer of protection that works even when the application ignores or mishandles bracketed paste.</p></div>
+                        <summary>Does bracketed paste mode prevent accidental command execution?</summary>
+                        <div class="faq-answer"><p>Bracketed paste mode helps applications distinguish pasted text from typed text, but protection depends on the running application handling the sequences correctly. Many programs do not support bracketed paste mode, in which case pasted text is treated the same as typed input.</p></div>
                     </details>
                 </div>
             </div>
@@ -214,7 +201,7 @@
         <section class="footer-cta-section" aria-label="Download call to action" data-ui="paste-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Paste with confidence. Or at least with a preview.</h2>
+                    <h2>A terminal that handles paste sequences correctly.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>

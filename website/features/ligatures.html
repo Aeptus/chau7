@@ -108,7 +108,7 @@
             <div class="section-inner prose">
                 <h2>What is Ligatures in Chau7?</h2>
                 <p>Ligatures is a rendering feature in the Chau7 terminal that detects OpenType ligature substitutions in programming fonts and renders the combined glyphs across the correct number of character cells. Programming fonts like Fira Code, JetBrains Mono, Cascadia Code, and Iosevka include ligature tables that replace multi-character sequences (like <code>-></code>, <code>==</code>, <code>!=</code>, <code>|></code>) with single typographic glyphs.</p>
-                <p>Chau7 detects these ligature substitutions by running Core Text layout on each visible line and checking for glyph replacements that span multiple character cells. When a ligature is detected, Chau7 renders the substituted glyph across the spanned cells while maintaining correct cursor positioning.</p>
+                <p>Chau7 has a ligature setting that can be toggled per profile. Note that ligature support is currently in early/partial implementation: the renderer rasterizes glyphs one codepoint at a time, so multi-character ligature substitution may not render as expected with all fonts. This is an area of active development.</p>
             </div>
         </section>
 
@@ -117,7 +117,7 @@
             <div class="section-inner prose">
                 <h2>How to enable font ligatures in Chau7 on macOS</h2>
                 <p>In Chau7, select a programming font with ligature tables (such as Fira Code or JetBrains Mono) in your profile settings. Chau7 detects and renders ligatures automatically. No additional configuration is needed.</p>
-                <p>Ligature rendering in Chau7 can be toggled per profile. This lets developers enable ligatures in a coding profile while keeping them disabled in a profile used for log viewing where character-exact rendering is preferred. The ligature detection cache in Chau7 is shared with the glyph atlas, so enabling ligatures adds no measurable overhead to the render path.</p>
+                <p>Ligature rendering in Chau7 can be toggled per profile. This lets developers enable ligatures in a coding profile while keeping them disabled in a profile used for log viewing where character-exact rendering is preferred. Note that ligature support is currently in early/partial implementation and may not produce full ligature rendering with all fonts.</p>
             </div>
         </section>
 
@@ -153,7 +153,7 @@
             <div class="section-inner prose">
                 <h2>Why ligature support matters</h2>
                 <p>Programming ligatures improve code readability by rendering compound operators as distinct visual symbols. But most terminals cannot render them because their text engines treat each character independently.</p>
-                <p>Chau7's Metal-based renderer handles ligature substitution correctly, so your Fira Code or JetBrains Mono investment actually pays off in the terminal too. For developers who chose a programming font specifically for its ligatures, Chau7 delivers on that promise.</p>
+                <p>Chau7 includes a ligature setting that can be toggled per profile. Ligature support is currently in early/partial implementation -- the renderer rasterizes glyphs one codepoint at a time, so full multi-character ligature substitution is a work in progress.</p>
             </div>
         </section>
 

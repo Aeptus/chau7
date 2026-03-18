@@ -58,7 +58,7 @@
             {"@type":"Question","name":"What is MCP Tab Indicator in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"MCP Tab Indicator is a feature in Chau7 that adds a visual badge to any tab created by an AI agent through the MCP server. Chau7 marks these tabs so developers can instantly distinguish agent-created tabs from tabs they opened themselves."}},
             {"@type":"Question","name":"How can I tell which tabs were created by AI agents?","acceptedAnswer":{"@type":"Answer","text":"Chau7 displays a visual indicator on every tab created through its MCP server. When an AI agent like Claude Code or Cursor calls tab_create, Chau7 tags that tab with an MCP origin marker that appears in the tab bar for the lifetime of the tab."}},
             {"@type":"Question","name":"How do I track what my AI agent is doing in the terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7 provides MCP Tab Indicator to see which tabs an agent created, AI Detection to identify which tabs have AI processes running, and Session Tracking to monitor agent activity over time. Together, these Chau7 features give full visibility into agent behavior."}},
-            {"@type":"Question","name":"Can I remove the MCP indicator from a tab?","acceptedAnswer":{"@type":"Answer","text":"The MCP indicator in Chau7 reflects the tab's origin and cannot be manually toggled. The indicator persists for the lifetime of the tab, even after the agent disconnects. To get a tab without the indicator, create it through Chau7's UI rather than through MCP."}},
+            {"@type":"Question","name":"Can I toggle the MCP indicator visibility?","acceptedAnswer":{"@type":"Answer","text":"The per-tab isMCPControlled flag reflects the tab's origin and cannot be changed, but the global indicator display can be toggled on or off via the mcpShowTabIndicator setting in MCP settings. When hidden, MCP-created tabs still track their origin internally but the visual badge is not shown."}},
             {"@type":"Question","name":"Does the indicator affect tab behavior?","acceptedAnswer":{"@type":"Answer","text":"No. MCP-created tabs in Chau7 function identically to user-created tabs. The indicator is purely visual and does not restrict commands, output, or any other tab functionality in Chau7."}}
         ]
     }]
@@ -97,7 +97,7 @@
                     <li class="question-item">What is MCP Tab Indicator in Chau7 terminal?</li>
                     <li class="question-item">How can I tell which tabs were created by AI agents?</li>
                     <li class="question-item">How do I track what my AI agent is doing in the terminal?</li>
-                    <li class="question-item">Can I remove the MCP indicator from a tab?</li>
+                    <li class="question-item">Can I toggle the MCP indicator visibility?</li>
                     <li class="question-item">Does the indicator affect tab behavior?</li>
                 </ul>
             </div>
@@ -133,9 +133,9 @@
         <!-- Can I remove the indicator -->
         <section class="feature-content" data-ui="mcp-tab-indicator-remove">
             <div class="section-inner prose">
-                <h2>Can I remove the MCP indicator from a Chau7 tab?</h2>
-                <p>The MCP indicator in Chau7 reflects the tab's origin and cannot be manually toggled. Chau7 preserves this indicator for the full lifetime of the tab to maintain a reliable record of how the tab was created.</p>
-                <p>To get a tab without the Chau7 MCP indicator, create it through Chau7's UI rather than through MCP. User-created tabs in Chau7 never show the MCP origin badge.</p>
+                <h2>Can I toggle the MCP indicator visibility in Chau7?</h2>
+                <p>The per-tab <code>isMCPControlled</code> flag reflects the tab's origin and cannot be changed, but the global indicator display can be toggled on or off via the <code>mcpShowTabIndicator</code> setting in MCP settings.</p>
+                <p>When hidden, MCP-created tabs in Chau7 still track their origin internally but the visual badge is not shown. User-created tabs in Chau7 never have the MCP origin flag regardless of the indicator setting.</p>
             </div>
         </section>
 
@@ -154,7 +154,7 @@
                 <h2>Related features</h2>
                 <div class="related-features-grid">
                     <a class="catalog-card" href="/features/mcp-tools">
-                        <h4>20 MCP Tools <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
+                        <h4>26 MCP Tools <span class="differentiator-star" title="Differentiator">&#9733;</span></h4>
                         <p>Full terminal control via Model Context Protocol: tab lifecycle, command execution, output capture, telemetry.</p>
                     </a>
                     <a class="catalog-card" href="/features/unix-socket-server">
@@ -190,8 +190,8 @@
                         <div class="faq-answer"><p>Chau7 provides MCP Tab Indicator to see which tabs an agent created, AI Detection to identify which tabs have AI processes running, and Session Tracking to monitor agent activity over time. Together, these Chau7 features give full visibility into agent behavior.</p></div>
                     </details>
                     <details>
-                        <summary>Can I remove the MCP indicator from a tab?</summary>
-                        <div class="faq-answer"><p>The MCP indicator in Chau7 reflects the tab's origin and cannot be manually toggled. The indicator persists for the lifetime of the tab, even after the agent disconnects. To get a tab without the indicator, create it through Chau7's UI rather than through MCP.</p></div>
+                        <summary>Can I toggle the MCP indicator visibility?</summary>
+                        <div class="faq-answer"><p>The per-tab isMCPControlled flag reflects the tab's origin and cannot be changed, but the global indicator display can be toggled on or off via the mcpShowTabIndicator setting in MCP settings. When hidden, MCP-created tabs still track their origin internally but the visual badge is not shown.</p></div>
                     </details>
                     <details>
                         <summary>Does the indicator affect tab behavior?</summary>
