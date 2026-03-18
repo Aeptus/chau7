@@ -212,42 +212,58 @@ final class ScriptingAPI: ObservableObject {
     // MARK: - Handlers
 
     private func handleListTabs() async -> [String: Any] {
-        return ["error": "not_implemented", "message": "list_tabs requires AppModel wiring"]
+        let json = TerminalControlService.shared.listTabs()
+        return parseJSONResponse(json) ?? ["tabs": []]
     }
 
     private func handleGetTab(_ params: [String: Any]) async -> [String: Any] {
-        guard params["id"] is String else {
+        guard let tabID = params["id"] as? String else {
             return ["error": "missing param: id"]
         }
-        return ["error": "not_implemented", "message": "get_tab requires AppModel wiring"]
+        let json = TerminalControlService.shared.tabStatus(tabID: tabID)
+        return parseJSONResponse(json) ?? ["error": "tab not found"]
     }
 
     private func handleRunCommand(_ params: [String: Any]) async -> [String: Any] {
-        guard params["tab_id"] is String else {
+        guard let tabID = params["tab_id"] as? String else {
             return ["error": "missing param: tab_id"]
         }
-        guard params["command"] is String else {
+        guard let command = params["command"] as? String else {
             return ["error": "missing param: command"]
         }
-        return ["error": "not_implemented", "message": "run_command requires terminal wiring"]
+        let json = TerminalControlService.shared.execInTab(tabID: tabID, command: command)
+        return parseJSONResponse(json) ?? ["error": "exec failed"]
     }
 
     private func handleGetOutput(_ params: [String: Any]) async -> [String: Any] {
-        guard params["tab_id"] is String else {
+        guard let tabID = params["tab_id"] as? String else {
             return ["error": "missing param: tab_id"]
         }
-        return ["error": "not_implemented", "message": "get_output requires terminal wiring"]
+        let lines = params["lines"] as? Int ?? 50
+        let json = TerminalControlService.shared.tabOutput(tabID: tabID, lines: lines)
+        return parseJSONResponse(json) ?? ["error": "output failed"]
     }
 
     private func handleCreateTab(_ params: [String: Any]) async -> [String: Any] {
-        return ["error": "not_implemented", "message": "create_tab requires AppModel wiring"]
+        let directory = params["directory"] as? String
+        let json = TerminalControlService.shared.createTab(directory: directory, windowID: nil)
+        return parseJSONResponse(json) ?? ["error": "create failed"]
     }
 
     private func handleCloseTab(_ params: [String: Any]) async -> [String: Any] {
-        guard params["id"] is String else {
+        guard let tabID = params["id"] as? String else {
             return ["error": "missing param: id"]
         }
-        return ["error": "not_implemented", "message": "close_tab requires AppModel wiring"]
+        let json = TerminalControlService.shared.closeTab(tabID: tabID, force: true)
+        return parseJSONResponse(json) ?? ["error": "close failed"]
+    }
+
+    private func parseJSONResponse(_ json: String) -> [String: Any]? {
+        guard let data = json.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return obj
     }
 
     private func handleGetHistory(_ params: [String: Any]) -> [String: Any] {
@@ -323,10 +339,14 @@ final class ScriptingAPI: ObservableObject {
     }
 
     private func handleRunSnippet(_ params: [String: Any]) async -> [String: Any] {
-        guard params["name"] is String else {
+        guard let name = params["name"] as? String else {
             return ["error": "missing param: name"]
         }
-        return ["error": "not_implemented", "message": "run_snippet requires SnippetManager wiring"]
+        let entries = SnippetManager.shared.entries
+        guard let entry = entries.first(where: { $0.snippet.title == name }) else {
+            return ["error": "snippet_not_found", "message": "No snippet named '\(name)'"]
+        }
+        return ["ok": true, "snippet": entry.snippet.title, "body": entry.snippet.body]
     }
 
     private func handleGetStatus() -> [String: Any] {
