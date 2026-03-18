@@ -952,6 +952,21 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
+    /// Export keybindings to JSON data (for save-to-file workflows).
+    func exportKeybindings() -> Data? {
+        JSONOperations.encode(customShortcuts, context: "keybindings export")
+    }
+
+    /// Import keybindings from JSON data. Returns true on success.
+    @discardableResult
+    func importKeybindings(from data: Data) -> Bool {
+        guard let shortcuts = JSONOperations.decode([KeyboardShortcut].self, from: data, context: "keybindings import") else {
+            return false
+        }
+        customShortcuts = shortcuts
+        return true
+    }
+
     func resetShortcutsToDefaults() {
         customShortcuts = KeyboardShortcut.shortcuts(for: keybindingPreset)
     }
