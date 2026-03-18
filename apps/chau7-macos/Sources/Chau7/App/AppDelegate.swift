@@ -1062,7 +1062,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         window.backgroundColor = .clear
         window.hasShadow = true
         window.alphaValue = FeatureSettings.shared.windowOpacity
-        window.level = .normal
+        window.level = FeatureSettings.shared.windowFloating ? .floating : .normal
         // collectionBehavior is set by OverlayWindow.setupFullscreenBehavior()
         // to [.fullScreenPrimary, .managed] — don't overwrite it here.
         window.isMovableByWindowBackground = false
