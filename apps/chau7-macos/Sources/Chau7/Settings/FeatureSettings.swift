@@ -504,6 +504,16 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
+    /// NSFont weight value (0=ultralight, 5=regular, 9=bold, 14=ultra-heavy).
+    /// Maps to NSFontManager weight parameter.
+    @Published var fontWeight: Int {
+        didSet {
+            let clamped = max(0, min(fontWeight, 14))
+            if fontWeight != clamped { fontWeight = clamped; return }
+            UserDefaults.standard.set(fontWeight, forKey: "terminal.fontWeight")
+        }
+    }
+
     @Published var fontSize: Int {
         didSet {
             let clamped = max(8, min(fontSize, 72))
@@ -2093,6 +2103,7 @@ final class FeatureSettings: ObservableObject {
 
         // Font Settings (NEW)
         self.fontFamily = defaults.string(forKey: Keys.fontFamily) ?? "SF Mono"
+        self.fontWeight = defaults.object(forKey: "terminal.fontWeight") as? Int ?? 5
         self.fontSize = defaults.object(forKey: Keys.fontSize) as? Int ?? 11
         self.customFontFamily = defaults.string(forKey: Keys.customFontFamily) ?? ""
         self.defaultZoomPercent = defaults.object(forKey: Keys.defaultZoomPercent) as? Int ?? 100
@@ -2991,6 +3002,7 @@ final class FeatureSettings: ObservableObject {
 
         // Font
         fontFamily = "SF Mono"
+        fontWeight = 5
         fontSize = 11
         customFontFamily = ""
         defaultZoomPercent = 100
@@ -3110,6 +3122,7 @@ final class FeatureSettings: ObservableObject {
 
     func resetAppearanceToDefaults() {
         fontFamily = "SF Mono"
+        fontWeight = 5
         fontSize = 11
         customFontFamily = ""
         defaultZoomPercent = 100
