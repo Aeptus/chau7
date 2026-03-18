@@ -1,4 +1,5 @@
 import AppKit
+import CommonCrypto
 import Foundation
 import Chau7Core
 
@@ -313,8 +314,50 @@ final class TerminalControlService {
         }
     }
 
-    func tabOutput(tabID: String, lines: Int) -> String {
-        onMain {
+    func tabOutput(tabID: String, lines: Int, waitForStableMs: Int? = nil) -> String {
+        // If wait_for_stable_ms is requested, poll the buffer on the calling (MCP background)
+        // thread, only briefly grabbing main for each snapshot. This avoids blocking the UI.
+        if let waitMs = waitForStableMs, waitMs > 0 {
+            let maxWaitMs = min(waitMs, 30_000)
+            // Content must be unchanged for this long to be considered stable.
+            // The caller's wait_for_stable_ms is the total budget; we use a shorter
+            // inner threshold so we return as soon as content settles.
+            let stabilityThresholdMs = min(maxWaitMs, 500)
+            let pollIntervalMs = 250
+            let deadline = DispatchTime.now() + .milliseconds(maxWaitMs)
+            var previousFingerprint: (Int, Data)? = nil
+            var stableSince: DispatchTime? = nil
+
+            while DispatchTime.now() < deadline {
+                let fingerprint: (Int, Data)? = onMain {
+                    guard let (_, session) = self.resolveTab(tabID) else { return nil }
+                    guard let data = session.captureRemoteSnapshot() else { return nil }
+                    return Self.bufferFingerprint(data)
+                }
+
+                // Tab closed or view detached — return what we have
+                guard let fp = fingerprint else { break }
+
+                if let prev = previousFingerprint,
+                   fp.0 == prev.0 && fp.1 == prev.1 {
+                    // Content unchanged since last poll
+                    if stableSince == nil { stableSince = DispatchTime.now() }
+                    let stableMs = Int((DispatchTime.now().uptimeNanoseconds - stableSince!.uptimeNanoseconds) / 1_000_000)
+                    if stableMs >= stabilityThresholdMs {
+                        break // Buffer has been stable long enough
+                    }
+                } else {
+                    // Content changed — reset stability timer
+                    stableSince = nil
+                    previousFingerprint = fp
+                }
+
+                Thread.sleep(forTimeInterval: Double(pollIntervalMs) / 1000.0)
+            }
+        }
+
+        // Final capture and format
+        return onMain {
             guard let (_, session) = self.resolveTab(tabID) else {
                 return self.jsonError("Tab not found: \(tabID)")
             }
@@ -352,6 +395,21 @@ final class TerminalControlService {
                 "lines": outputLines.count
             ])
         }
+    }
+
+    /// Lightweight fingerprint of buffer content: (byteCount, SHA256 of last 4KB).
+    /// Avoids retaining full buffer strings between stability polls.
+    private static func bufferFingerprint(_ data: Data) -> (Int, Data) {
+        let count = data.count
+        let tailSize = min(count, 4096)
+        let tail = data.suffix(tailSize)
+        var hash = Data(count: Int(CC_SHA256_DIGEST_LENGTH))
+        tail.withUnsafeBytes { ptr in
+            hash.withUnsafeMutableBytes { hashPtr in
+                _ = CC_SHA256(ptr.baseAddress, CC_LONG(tail.count), hashPtr.bindMemory(to: UInt8.self).baseAddress)
+            }
+        }
+        return (count, hash)
     }
 
     func setCTO(tabID: String, override overrideStr: String) -> String {
@@ -465,15 +523,24 @@ final class TerminalControlService {
         var result: [String: Any] = [
             "tab_id": tab.id.uuidString,
             "title": tab.displayTitle,
-            "status": session?.status.rawValue ?? "unknown",
+            "status": session?.effectiveStatus.rawValue ?? session?.status.rawValue ?? "unknown",
             "cwd": session?.currentDirectory ?? "",
-            "is_at_prompt": session?.isAtPrompt ?? false,
+            "is_at_prompt": session?.effectiveIsAtPrompt ?? session?.isAtPrompt ?? false,
             "is_mcp_controlled": tab.isMCPControlled,
             "cto_active": tab.isTokenOptActive,
             "cto_override": tab.tokenOptOverride.rawValue
         ]
-        if let app = session?.activeAppName {
+        if let rawStatus = session?.status.rawValue {
+            result["raw_status"] = rawStatus
+        }
+        if let rawPrompt = session?.isAtPrompt {
+            result["raw_is_at_prompt"] = rawPrompt
+        }
+        if let app = session?.aiDisplayAppName ?? session?.activeAppName {
             result["active_app"] = app
+        }
+        if let rawApp = session?.activeAppName {
+            result["raw_active_app"] = rawApp
         }
         if let branch = session?.gitBranch {
             result["git_branch"] = branch

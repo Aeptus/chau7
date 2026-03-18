@@ -1990,6 +1990,7 @@ final class OverlayTabsModel: ObservableObject {
             focusSelected()
             updateSnippetContextForSelection()
         } else {
+            tab.session?.setAutoFocusOnAttach(false)
             Log.trace("newTab: created background tab \(tab.id)")
         }
         updateSuspensionState()
@@ -2039,6 +2040,7 @@ final class OverlayTabsModel: ObservableObject {
             focusSelected()
             updateSnippetContextForSelection()
         } else {
+            tab.session?.setAutoFocusOnAttach(false)
             Log.trace("newTab(at:): created background tab \(tab.id) at \(directory)")
         }
         updateSuspensionState()
@@ -3356,6 +3358,22 @@ final class OverlayTabsModel: ObservableObject {
 
     func isTabSuspended(_ id: UUID) -> Bool {
         suspendedTabIDs.contains(id)
+    }
+
+    /// Fresh MCP tabs need a real terminal view at least once so background
+    /// exec/input requests have a PTY to land on. Once a terminal view has
+    /// attached, the retained Rust view keeps the session alive even if the tab
+    /// later drops out of the visible hierarchy.
+    func shouldKeepTabInLiveHierarchy(tab: OverlayTab, index: Int) -> Bool {
+        let selectedIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) ?? 0
+        let isNearCurrent = abs(index - selectedIndex) <= 1
+        let isNearPrevious = abs(index - previousTabIndex) <= 1
+        if isNearCurrent || isNearPrevious {
+            return true
+        }
+
+        guard tab.isMCPControlled else { return false }
+        return tab.session?.existingRustTerminalView == nil
     }
 
     private func updateSuspensionState() {

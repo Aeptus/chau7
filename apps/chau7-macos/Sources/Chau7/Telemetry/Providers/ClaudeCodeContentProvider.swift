@@ -26,11 +26,19 @@ final class ClaudeCodeContentProvider: RunContentProvider {
               let sessionDir = findSessionDir(projectDir: projectDir, sessionID: sessionID)
         else { return nil }
 
-        // Parse all subagent JSONL files in the session
+        // Parse JSONL files: try subagents/ first, then session root.
+        // Claude Code versions differ in where they write conversation data.
         let subagentsDir = sessionDir.appendingPathComponent("subagents")
-        guard let jsonlFiles = try? FileManager.default.contentsOfDirectory(
+        var jsonlFiles = (try? FileManager.default.contentsOfDirectory(
             at: subagentsDir, includingPropertiesForKeys: nil
-        ).filter({ $0.pathExtension == "jsonl" }) else { return nil }
+        ).filter({ $0.pathExtension == "jsonl" })) ?? []
+
+        // Fallback: check for JSONL files directly in the session directory
+        if jsonlFiles.isEmpty {
+            jsonlFiles = (try? FileManager.default.contentsOfDirectory(
+                at: sessionDir, includingPropertiesForKeys: nil
+            ).filter({ $0.pathExtension == "jsonl" })) ?? []
+        }
 
         if jsonlFiles.isEmpty { return nil }
 

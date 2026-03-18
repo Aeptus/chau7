@@ -519,6 +519,15 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         retainedRustTerminalView
     }
 
+    /// Exposed for background-tab coordination and tests.
+    var autoFocusOnAttachEnabled: Bool {
+        shouldAutoFocusOnAttach
+    }
+
+    func setAutoFocusOnAttach(_ enabled: Bool) {
+        shouldAutoFocusOnAttach = enabled
+    }
+
     /// Accessor for the active terminal view
     private var activeTerminalView: (any TerminalViewLike)? {
         rustTerminalView ?? retainedRustTerminalView
@@ -626,13 +635,16 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         lastInputAt = Date()
         let sanitizedText = sanitizeInputForBuffer(text)
         guard !sanitizedText.isEmpty else { return }
+        let echoDisabled = activeTerminalView?.isPtyEchoDisabled ?? false
 
         if !sanitizedText.isEmpty {
             markInputLatencyStart()
         }
         inputBuffer.append(sanitizedText)
-        aiLogQueue.sync {
-            aiLogSession?.recordInput(sanitizedText)
+        if SensitiveInputGuard.shouldPersistInput(sanitizedText, echoDisabled: echoDisabled) {
+            aiLogQueue.sync {
+                aiLogSession?.recordInput(sanitizedText)
+            }
         }
         if sanitizedText.contains("\n") || sanitizedText.contains("\r") {
             processInputBuffer()
@@ -864,7 +876,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             guard aiLogSession == nil else { return }
             let logPath = terminalLogPath(for: toolName)
             aiLogSession = AITerminalLogSession(toolName: toolName, logPath: logPath)
-            let trimmedCommand = commandLine?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedCommand = commandLine.flatMap { SensitiveInputGuard.sanitizedCommandForPersistence($0) }
             aiLogContext = AILogContext(toolName: toolName, commandLine: trimmedCommand, logPath: logPath)
             aiLogPrefixBuffer.removeAll(keepingCapacity: true)
 
@@ -885,8 +897,26 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     }
 
     private func finishAILogging(exitCode: Int?) {
-        // Telemetry: record run end
-        TelemetryRecorder.shared.runEnded(tabID: tabIdentifier, exitStatus: exitCode)
+        // Capture terminal buffer snapshot for telemetry fallback transcript.
+        // Prefer a fresh capture (runs on main where the view is accessible),
+        // but fall back to the cached buffer if the view was already detached.
+        let bufferSnapshot = captureRemoteSnapshot() ?? cachedBufferData
+
+        // Grab the PTY log path and flush pending writes before reading.
+        // For TUI-based AI tools (alternate screen), the terminal buffer will be
+        // nearly empty — the PTY log is the only source of the agent's output.
+        let ptyLogPath: String? = aiLogQueue.sync {
+            aiLogSession?.close() // drain write queue so readPTYLogTail sees all data
+            return aiLogContext?.logPath
+        }
+
+        // Telemetry: record run end (with fallback sources)
+        TelemetryRecorder.shared.runEnded(
+            tabID: tabIdentifier,
+            exitStatus: exitCode,
+            terminalBuffer: bufferSnapshot,
+            ptyLogPath: ptyLogPath
+        )
 
         // Notify shell event detector (outside lock to avoid potential deadlock)
         commandFinishedNotified = true
@@ -1405,16 +1435,23 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             commandFinishedNotified = false
             return
         }
-        pendingCommandLine = trimmed
-        promptSeenForPendingCommand = false
-        commandFinishedNotified = false
-        isAtPrompt = false
 
         // Security: check if the PTY has echo disabled (password prompt, passphrase, etc.)
         // If so, mark as sensitive to prevent recording in history.
         let echoDisabled = activeTerminalView?.isPtyEchoDisabled ?? false
         CommandHistoryManager.shared.recordCommand(trimmed, tabID: tabIdentifier, isSensitive: echoDisabled)
-        shellEventDetector.commandStarted(command: trimmed, in: currentDirectory)
+        guard !echoDisabled else {
+            Log.trace("Skipping echo-disabled input from persistence and shell event tracking")
+            return
+        }
+
+        let persistedCommand = SensitiveInputGuard.sanitizedCommandForPersistence(trimmed)
+        pendingCommandLine = persistedCommand
+        promptSeenForPendingCommand = false
+        commandFinishedNotified = false
+        isAtPrompt = false
+
+        shellEventDetector.commandStarted(command: persistedCommand, in: currentDirectory)
         trackAIResumeMetadata(from: trimmed)
         updateActiveAppName(from: trimmed)
         noteAIInputTimingIfNeeded(for: trimmed)
@@ -1503,6 +1540,9 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     }
 
     private func updateActiveAppName(from commandLine: String) {
+        let persistedCommand = SensitiveInputGuard.sanitizedCommandForPersistence(commandLine)
+        let loggedCommand = persistedCommand ?? SensitiveInputGuard.redactedPlaceholder
+
         if let match = CommandDetection.detectLaunchableApp(
             from: commandLine,
             currentDirectory: currentDirectory,
@@ -1511,14 +1551,14 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             aiDetection.handleCommand(appName: match)
             activeAppName = match
             updateLastDetectedApp(match)
-            Log.info("AI detected: \(match) from command '\(commandLine.prefix(50))'")
-            startAILoggingIfNeeded(toolName: match, commandLine: commandLine)
+            Log.info("AI detected: \(match) from command '\(loggedCommand.prefix(50))'")
+            startAILoggingIfNeeded(toolName: match, commandLine: persistedCommand)
             return
         }
 
         // Check for dev server command
         if let devServerName = CommandDetection.detectDevServer(from: commandLine) {
-            Log.trace("Dev server command detected: \(devServerName) from '\(commandLine.prefix(50))'")
+            Log.trace("Dev server command detected: \(devServerName) from '\(loggedCommand.prefix(50))'")
             devServerMonitor.setCommandHint(devServerName)
         }
 
@@ -1533,7 +1573,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                 aiDetection.handleCommand(appName: displayName)
                 activeAppName = displayName
                 updateLastDetectedApp(displayName)
-                startAILoggingIfNeeded(toolName: displayName, commandLine: commandLine)
+                startAILoggingIfNeeded(toolName: displayName, commandLine: persistedCommand)
                 return
             }
         }
@@ -1782,7 +1822,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private func trackSemanticCommand(_ command: String) {
         guard FeatureSettings.shared.isSemanticSearchEnabled else { return }
         guard let row = currentBufferRow() else { return }
-        semanticDetector.commandStarted(command, atRow: row)
+        let persistedCommand = SensitiveInputGuard.sanitizedCommandForPersistence(command) ?? command
+        semanticDetector.commandStarted(persistedCommand, atRow: row)
     }
 
     private func currentBufferRow() -> Int? {
