@@ -3497,6 +3497,18 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         }
         refreshGitStatus(path: normalized)
         SnippetManager.shared.updateContextPath(normalized)
+
+        // Evaluate profile auto-switch rules on directory change
+        let dir = normalized
+        let branch = gitBranch
+        let procs = processGroup?.children.map(\.name)
+        Task { @MainActor in
+            ProfileAutoSwitcher.shared.evaluateRules(
+                directory: dir,
+                gitBranch: branch,
+                processes: procs
+            )
+        }
     }
 
     private func refreshGitStatus(path: String) {
