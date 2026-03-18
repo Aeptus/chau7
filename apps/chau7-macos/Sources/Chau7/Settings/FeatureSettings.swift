@@ -1218,6 +1218,12 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(alwaysWarnOnTabClose, forKey: Keys.alwaysWarnOnTabClose) }
     }
 
+    // MARK: - Menu Bar Only Mode
+
+    @Published var menuBarOnlyMode: Bool {
+        didSet { UserDefaults.standard.set(menuBarOnlyMode, forKey: "window.menuBarOnlyMode") }
+    }
+
     // MARK: - Window Transparency
 
     @Published var windowOpacity: Double {
@@ -2175,6 +2181,9 @@ final class FeatureSettings: ObservableObject {
         self.warnOnCloseWithRunningProcess = defaults.object(forKey: Keys.warnOnCloseWithProcess) as? Bool ?? true
         self.alwaysWarnOnTabClose = defaults.object(forKey: Keys.alwaysWarnOnTabClose) as? Bool ?? false
 
+        // Menu Bar Only Mode
+        self.menuBarOnlyMode = defaults.bool(forKey: "window.menuBarOnlyMode")
+
         // Window Opacity
         self.windowOpacity = defaults.object(forKey: Keys.windowOpacity) as? Double ?? 1.0
 
@@ -2959,6 +2968,7 @@ final class FeatureSettings: ObservableObject {
         appLanguage = .system
 
         // Window
+        menuBarOnlyMode = false
         windowOpacity = 1.0
         appTheme = .system
 
@@ -3044,6 +3054,7 @@ final class FeatureSettings: ObservableObject {
         defaultZoomPercent = 100
         colorSchemeName = "Default"
         customColorScheme = nil
+        menuBarOnlyMode = false
         windowOpacity = 1.0
         appTheme = .system
         isAutoTabThemeEnabled = true
