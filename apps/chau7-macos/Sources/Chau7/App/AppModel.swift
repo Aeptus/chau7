@@ -1067,9 +1067,19 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         syncClaudeCodeSessions()
     }
 
+    private var pendingSyncWork: DispatchWorkItem?
+
+    /// Coalesced session sync — multiple rapid events within 100ms share a single sync.
     private func syncClaudeCodeSessions() {
-        let monitor = ClaudeCodeMonitor.shared
-        claudeCodeSessions = Array(monitor.activeSessions.values).sorted { $0.lastActivity > $1.lastActivity }
+        pendingSyncWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let monitor = ClaudeCodeMonitor.shared
+            claudeCodeSessions = Array(monitor.activeSessions.values).sorted { $0.lastActivity > $1.lastActivity }
+            pendingSyncWork = nil
+        }
+        pendingSyncWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
     }
 
     /// Get transcript messages for a Claude Code session

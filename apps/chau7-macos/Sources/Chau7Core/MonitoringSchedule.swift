@@ -44,18 +44,31 @@ public enum MonitoringSchedule {
     ///   - staleSeconds: Seconds of inactivity before a session is considered stale
     ///   - lastSeen: Map of session ID to last-seen timestamp
     /// - Returns: Delay in seconds, or nil if no sessions need monitoring
+    /// Set of session IDs that have already been notified as idle.
+    /// Passed in so the scheduler can use exponential backoff for known-idle sessions.
     public static func nextHistoryCheckDelay(
         now: Date,
         minimumCheckInterval: TimeInterval,
         idleSeconds: TimeInterval,
         staleSeconds: TimeInterval,
-        lastSeen: [String: Date]
+        lastSeen: [String: Date],
+        idleNotified: Set<String> = []
     ) -> TimeInterval? {
         let safeIdleSeconds = max(minimumCheckInterval, idleSeconds)
         let safeStaleSeconds = max(safeIdleSeconds + 1.0, staleSeconds)
 
         var nextDeadline = Date.distantFuture
-        for (_, lastSeenAt) in lastSeen {
+        for (sessionId, lastSeenAt) in lastSeen {
+            // Sessions already notified as idle don't need frequent checking —
+            // use exponential backoff toward the stale deadline instead.
+            if idleNotified.contains(sessionId) {
+                let nextStale = lastSeenAt.addingTimeInterval(safeStaleSeconds)
+                if nextStale < nextDeadline {
+                    nextDeadline = nextStale
+                }
+                continue
+            }
+
             let nextIdle = lastSeenAt.addingTimeInterval(safeIdleSeconds)
             if nextIdle < nextDeadline {
                 nextDeadline = nextIdle

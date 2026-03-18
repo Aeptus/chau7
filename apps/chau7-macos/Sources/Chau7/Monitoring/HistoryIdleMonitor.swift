@@ -20,6 +20,9 @@ final class HistoryIdleMonitor {
     private var lastSeen: [String: Date] = [:]
     private var lastNotified: [String: Date] = [:]
     private var lastEntry: [String: HistoryEntry] = [:]
+    /// Sessions that have been notified as idle and haven't had real user activity since.
+    /// Prevents re-firing idle callbacks on heartbeat/status entries.
+    private var idleNotified: Set<String> = []
     private var closedSessions = BoundedSet<String>(maxCount: AppConstants.Limits.maxClosedSessions)
     private let queue = DispatchQueue(label: "com.chau7.historyIdle")
     private let minimumCheckInterval: TimeInterval = 1.0
@@ -63,6 +66,7 @@ final class HistoryIdleMonitor {
         lastSeen.removeAll()
         lastNotified.removeAll()
         lastEntry.removeAll()
+        idleNotified.removeAll()
         closedSessions.removeAll(keepingCapacity: false)
         Log.trace("Idle monitor stop. path=\(fileURL.path)")
     }
@@ -75,6 +79,7 @@ final class HistoryIdleMonitor {
                 self.lastSeen.removeValue(forKey: entry.sessionId)
                 self.lastEntry.removeValue(forKey: entry.sessionId)
                 self.lastNotified.removeValue(forKey: entry.sessionId)
+                self.idleNotified.remove(entry.sessionId)
                 self.onStateChange?(entry.sessionId, .closed, now, nil)
                 Log.trace("Idle monitor closed by exit marker. session=\(entry.sessionId)")
                 self.scheduleNextCheck(now: now)
@@ -87,9 +92,17 @@ final class HistoryIdleMonitor {
 
             self.lastSeen[entry.sessionId] = now
             self.lastEntry[entry.sessionId] = entry
-            self.lastNotified.removeValue(forKey: entry.sessionId)
+
+            // Only clear idle dedup for entries with meaningful content (user activity).
+            // Heartbeat/status entries have empty summaries and shouldn't re-trigger
+            // idle notifications — the session hasn't actually become active again.
+            let isUserActivity = !entry.summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if isUserActivity {
+                self.idleNotified.remove(entry.sessionId)
+                self.lastNotified.removeValue(forKey: entry.sessionId)
+            }
             self.onStateChange?(entry.sessionId, .active, now, nil)
-            Log.trace("Idle monitor record. session=\(entry.sessionId)")
+            Log.trace("Idle monitor record. session=\(entry.sessionId) userActivity=\(isUserActivity)")
             self.scheduleNextCheck(now: now)
         }
     }
@@ -111,9 +124,9 @@ final class HistoryIdleMonitor {
                 continue
             }
 
-            if let lastNotifiedAt = lastNotified[sessionId], lastNotifiedAt >= lastSeenAt {
-                continue
-            }
+            // Already notified idle for this session — don't re-fire until
+            // real user activity clears the flag in record(entry:).
+            if idleNotified.contains(sessionId) { continue }
 
             let entry = lastEntry[sessionId] ?? HistoryEntry(
                 sessionId: sessionId,
@@ -122,6 +135,7 @@ final class HistoryIdleMonitor {
                 isExit: false
             )
             onIdle(entry, idleFor)
+            idleNotified.insert(sessionId)
             lastNotified[sessionId] = now
             onStateChange?(sessionId, .idle, lastSeenAt, idleFor)
             Log.trace("Idle monitor notify. session=\(sessionId) idleFor=\(Int(idleFor))")
@@ -136,6 +150,7 @@ final class HistoryIdleMonitor {
             lastSeen.removeValue(forKey: sessionId)
             lastNotified.removeValue(forKey: sessionId)
             lastEntry.removeValue(forKey: sessionId)
+            idleNotified.remove(sessionId)
         }
 
         scheduleNextCheck(now: now)
@@ -153,7 +168,8 @@ final class HistoryIdleMonitor {
             minimumCheckInterval: minimumCheckInterval,
             idleSeconds: idleSecondsProvider(),
             staleSeconds: staleSecondsProvider(),
-            lastSeen: lastSeen
+            lastSeen: lastSeen,
+            idleNotified: idleNotified
         ) else {
             return
         }

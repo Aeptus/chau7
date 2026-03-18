@@ -237,6 +237,9 @@ final class NotificationActionExecutor {
         }
     }
 
+    /// Tracks the last style preset applied per tab to avoid redundant re-applies.
+    private var lastAppliedPreset: [UUID: String] = [:]
+
     private func executeStyleTab(_ ctx: ActionContext) {
         let stylePreset = ctx.configValue("style") ?? "waiting"
         let config = ctx.config.config // Pass all config to handler
@@ -247,10 +250,27 @@ final class NotificationActionExecutor {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
 
+            // Suppress redundant style re-applies: if the tab already has this style
+            // and an auto-clear timer is running, don't re-set and restart the timer.
+            // This prevents idle re-notifications from resetting the 30s clear countdown.
+            if stylePreset != "clear",
+               let existingTabID = target.tabID,
+               lastAppliedPreset[existingTabID] == stylePreset,
+               pendingStyleClears[existingTabID] != nil {
+                Log.trace("Skipping redundant style '\(stylePreset)' for tab \(existingTabID)")
+                return
+            }
+
             let resolvedTabID = delegate?.styleTab(for: target, preset: stylePreset, config: config)
 
             // Key timers by resolved tab ID so different tabs running the same tool don't collide
             guard let resolvedTabID else { return }
+
+            if stylePreset == "clear" {
+                lastAppliedPreset.removeValue(forKey: resolvedTabID)
+            } else {
+                lastAppliedPreset[resolvedTabID] = stylePreset
+            }
 
             // Cancel any pending auto-clear for this specific tab
             pendingStyleClears[resolvedTabID]?.cancel()
@@ -261,6 +281,7 @@ final class NotificationActionExecutor {
                 let clearTarget = TabTarget(tool: target.tool, directory: target.directory, tabID: resolvedTabID)
                 let workItem = DispatchWorkItem { [weak self] in
                     self?.pendingStyleClears.removeValue(forKey: resolvedTabID)
+                    self?.lastAppliedPreset.removeValue(forKey: resolvedTabID)
                     self?.delegate?.styleTab(for: clearTarget, preset: "clear", config: [:])
                 }
                 pendingStyleClears[resolvedTabID] = workItem
