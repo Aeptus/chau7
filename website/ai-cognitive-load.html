@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>Lower Cognitive Load | Chau7 Terminal</title>
+    <meta name="description" content="Chau7 reduces cognitive load by auto-detecting AI agents, branding tabs with colors and logos, showing live status, and organizing everything so you manage more AI with less attention.">
+    <meta property="og:title" content="Lower Cognitive Load | Chau7 Terminal">
+    <meta property="og:description" content="Your terminal should tell you things, not make you figure them out. Chau7 auto-detects AI agents, brands tabs, shows status, and organizes everything.">
+    <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="article">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta property="article:section" content="Use Cases">
+    <meta property="article:tag" content="cognitive load">
+    <meta property="article:tag" content="AI detection">
+    <meta property="article:tag" content="tab management">
+    <meta property="article:tag" content="terminal organization">
+    <meta property="article:tag" content="Chau7">
+    <meta property="article:tag" content="macOS terminal">
+    <meta name="entity" content="Chau7 Cognitive Load Reduction">
+    <meta name="entity-type" content="use-case">
+    <link rel="canonical" href="https://chau7.sh/ai-cognitive-load">
+    <link rel="stylesheet" href="/style.css">
+    <script src="/components.js"></script>
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "description": "AI-native terminal for macOS that reduces cognitive load with automatic AI agent detection, tab branding, status indicators, and intelligent organization",
+        "featureList": [
+            "Auto AI CLI detection",
+            "AI tab branding",
+            "Detection status indicator",
+            "Multi-tab management",
+            "Tab drag and drop",
+            "Session restore",
+            "Command palette",
+            "Terminal search",
+            "Command history search"
+        ],
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "What does lower cognitive load mean in a terminal?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Lower cognitive load means the terminal shows you what matters without you asking. Chau7 auto-detects AI agents, brands tabs with colors and logos, displays live status indicators, and organizes sessions so you spend attention on your work instead of on figuring out which tab is which." }
+            },
+            {
+                "@type": "Question",
+                "name": "How does Chau7 detect AI agents automatically?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 monitors process names in each tab and matches against known AI CLI patterns. It detects Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they launch. No configuration needed. You can also add custom detection rules for tools not in the built-in list." }
+            },
+            {
+                "@type": "Question",
+                "name": "Can Chau7 manage multiple AI agents at once?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Chau7 tracks each AI agent independently across tabs. Each tab gets the agent's brand color and logo, a live status indicator (active, idle, or done), and an auto-generated title. You can run eight agents and manage none of them manually because Chau7 manages the presentation for you." }
+            },
+            {
+                "@type": "Question",
+                "name": "Does Chau7 restore my tabs after restart?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Chau7 session restore brings back every tab, directory, and terminal state exactly as you left them. Quit and relaunch whenever you want. Your workspace survives restarts without you doing anything." }
+            },
+            {
+                "@type": "Question",
+                "name": "How is Chau7's approach to cognitive load different from other terminals?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Other terminals show you tabs and text. Chau7 shows you meaning. AI agent detection, brand colors, status indicators, auto-renaming, command palette, and session restore are all features no other terminal offers in combination. Chau7 is the only terminal designed to reduce the mental overhead of working with multiple AI agents." }
+            }
+        ]
+    }]
+    </script>
+</head>
+<body>
+    <site-nav></site-nav>
+
+<main>
+        <!-- Hero -->
+        <section class="hero hero-mcp" data-ui="cognitive-load-hero">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="hero-badge badge-alt">01 — Lower Cognitive Load</div>
+                <h1 class="hero-title">
+                    Your terminal should tell you things,<br><span class="gradient-text">not make you figure them out.</span>
+                </h1>
+                <p class="hero-subtitle">
+                    Chau7 auto-detects AI agents, brands tabs with colors and logos, shows live status, and organizes your workspace so you manage more AI with less attention. The terminal that does the noticing for you.
+                </p>
+            </div>
+        </section>
+
+        <!-- What does lower cognitive load mean? -->
+        <section class="perf-section" aria-labelledby="definition-heading" data-ui="cognitive-load-definition">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="definition-heading">What does lower cognitive load mean in a terminal?</h2>
+                    <p>Cognitive load is the mental effort you spend figuring out what is happening instead of doing your actual work.</p>
+                </div>
+                <div class="steps-grid">
+                    <div class="step-card">
+                        <div class="step-num">1</div>
+                        <h4>Traditional terminals are blind</h4>
+                        <p>Most terminals show you tabs with process names. That is all. You switch to each tab, read the output, figure out what is running, remember which tab is which, and repeat. Every context switch costs you attention.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">2</div>
+                        <h4>AI agents multiply the problem</h4>
+                        <p>Running multiple AI agents means multiple tabs doing things you cannot see. Which agent is in which tab? Is it still running? Did it finish? Did it fail? Other terminals cannot answer any of these questions. You have to look.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">3</div>
+                        <h4>Chau7 does the looking for you</h4>
+                        <p>Chau7 detects AI agents automatically, brands each tab with the agent's color and logo, shows live status, and auto-renames tabs with meaningful titles. Your peripheral vision does the work your focused attention used to do.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- How does Chau7 reduce cognitive load? -->
+        <section class="mcp-section" aria-labelledby="approach-heading" data-ui="cognitive-load-approach">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="approach-heading">How does Chau7 reduce cognitive load?</h2>
+                    <p>Chau7 reduces cognitive load through six systems that work together: AI detection, tab branding, status indicators, organization, search, and session management. Each one removes a question you would otherwise have to answer yourself.</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- AI Detection -->
+        <section class="perf-section" aria-labelledby="detection-heading" data-ui="cognitive-load-ai-detection">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="detection-heading">How does Chau7 detect AI agents automatically?</h2>
+                    <p>Chau7 monitors process names in each tab and matches against known AI CLI patterns. Detection is instant, automatic, and requires zero configuration.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>7+ AI CLIs detected</h4>
+                        <p>Chau7 detects <a href="/features/auto-ai-cli-detection">Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor</a> the moment they launch. The detection system monitors process trees continuously so nothing slips through.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Brand colors and logos</h4>
+                        <p>Each detected AI agent gets its own brand treatment on the tab. <a href="/features/ai-tab-branding">Claude is orange. Codex is green.</a> You know what is running before you read a single word of output.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Custom detection rules</h4>
+                        <p>Running a tool not in the built-in list? <a href="/features/custom-detection-rules">Custom detection rules</a> let you define process name patterns for any CLI. Chau7 learns to recognize whatever you throw at it.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Multi-agent awareness</h4>
+                        <p><a href="/features/multi-agent-awareness">Multi-agent awareness</a> tracks each agent independently across all tabs. Run eight agents in eight tabs. Chau7 tracks all of them. You track none of them manually.</p>
+                    </div>
+                </div>
+                <p style="color: var(--text-muted); font-style: italic; font-size: var(--text-sm); margin-top: var(--space-xs); text-align: center;">Other terminals show you a process name. Chau7 shows you a color-coded, status-tagged, auto-titled tab with the agent's logo. Bit of a difference.</p>
+            </div>
+        </section>
+
+        <!-- Tab Organization -->
+        <section class="mcp-section" aria-labelledby="tabs-heading" data-ui="cognitive-load-tab-organization">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="tabs-heading">How does Chau7 organize tabs to reduce clutter?</h2>
+                    <p>Tabs are where cognitive load accumulates fastest. Chau7 gives you tools to keep your tab bar organized without thinking about it.</p>
+                </div>
+                <div class="steps-grid">
+                    <div class="step-card">
+                        <div class="step-num">1</div>
+                        <h4>Auto-rename</h4>
+                        <p>Chau7 auto-renames tabs based on what is running. An AI agent gets the agent name. A directory gets the folder name. No more "zsh" repeated twelve times.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">2</div>
+                        <h4>Drag and drop</h4>
+                        <p><a href="/features/tab-drag-drop">Tab drag and drop</a> with snap-to-position. Rearrange your workspace in a flick. Tabs go where you put them and stay there.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">3</div>
+                        <h4>Status at a glance</h4>
+                        <p><a href="/features/detection-status-indicator">Detection status indicators</a> show active, idle, or done on every tab. Your eyes scan the tab bar once and know the state of everything.</p>
+                    </div>
+                </div>
+                <div class="safety-grid" style="margin-top: 2rem;">
+                    <div class="safety-item">
+                        <h4>Multi-tab</h4>
+                        <p><a href="/features/multi-tab">Unlimited tabs</a> with pinning and custom titles. For people who run 12 things at once and still want to find the right one.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Tab profiles</h4>
+                        <p><a href="/features/tab-profiles">Tab profiles</a> set per-tab shell, working directory, and environment variables. Each tab can be its own world, pre-configured exactly how you want it.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Split panes</h4>
+                        <p><a href="/features/split-panes">Horizontal and vertical splits</a> within any tab. See two things at once without switching tabs at all.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Tab watchdog</h4>
+                        <p><a href="/features/tab-watchdog">Tab watchdog</a> monitors tab health and auto-refreshes stale state. If something gets stuck, Chau7 unsticks it so you do not have to notice.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Search & Discovery -->
+        <section class="perf-section" aria-labelledby="search-heading" data-ui="cognitive-load-search-discovery">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="search-heading">How does Chau7 help you find things faster?</h2>
+                    <p>Cognitive load is not just about what you see. It is also about what you cannot find. Chau7 puts every feature, every command, and every piece of terminal output within reach of a single search.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>Command palette</h4>
+                        <p><a href="/features/command-palette">Cmd+Shift+P</a>. Every Chau7 feature, every action, one fuzzy search away. Stop hunting through menus. The command palette is the fastest path to anything in Chau7.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Terminal search</h4>
+                        <p><a href="/features/terminal-search">Regex search through terminal output</a> with match-by-match navigation. That error from 3,000 lines ago? Found it.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Command history search</h4>
+                        <p><a href="/features/command-history-search">Fuzzy command history search</a> with frecency ranking. Your most-used commands float to the top. Chau7 learns what you reach for.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Clipboard history</h4>
+                        <p><a href="/features/clipboard-history">Searchable clipboard history</a> with pinning. That command you copied 20 minutes ago? Still there, still searchable.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Session Management -->
+        <section class="mcp-section" aria-labelledby="session-heading" data-ui="cognitive-load-session-management">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="session-heading">How does Chau7 manage sessions so you do not have to?</h2>
+                    <p>The worst cognitive load is the one you did not plan for: rebuilding your workspace after a restart. Chau7 handles session continuity automatically.</p>
+                </div>
+                <div class="steps-grid">
+                    <div class="step-card">
+                        <div class="step-num">1</div>
+                        <h4>Session restore</h4>
+                        <p><a href="/features/session-restore">Quit and relaunch</a>. Every tab, every directory, every piece of terminal state comes back exactly as you left it. Your workspace survives restarts without you doing anything.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">2</div>
+                        <h4>Tab profiles</h4>
+                        <p><a href="/features/tab-profiles">Tab profiles</a> let you define reusable tab configurations with specific shells, directories, and environment variables. Open your "backend dev" profile and everything is ready.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">3</div>
+                        <h4>Background suspension</h4>
+                        <p><a href="/features/background-suspension">Inactive tabs use zero render cycles</a>. Switch back and they wake instantly. Chau7 keeps dozens of tabs alive without burning your battery or your CPU.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Feature Links -->
+        <section class="perf-section" aria-labelledby="features-heading" data-ui="cognitive-load-feature-links">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="features-heading">Every Chau7 feature that lowers cognitive load</h2>
+                    <p>Explore the individual features that make Chau7 the lowest-effort way to work with AI agents in a terminal.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item"><h4><a href="/features/auto-ai-cli-detection">Auto AI CLI Detection</a></h4><p>Detects 7+ AI CLIs instantly, no configuration.</p></div>
+                    <div class="safety-item"><h4><a href="/features/ai-tab-branding">AI Tab Branding</a></h4><p>Brand colors and logos per AI agent, per tab.</p></div>
+                    <div class="safety-item"><h4><a href="/features/detection-status-indicator">Detection Status Indicator</a></h4><p>Active, idle, or done visible on every tab.</p></div>
+                    <div class="safety-item"><h4><a href="/features/multi-agent-awareness">Multi-Agent Awareness</a></h4><p>Track every agent independently, across all tabs.</p></div>
+                    <div class="safety-item"><h4><a href="/features/custom-detection-rules">Custom Detection Rules</a></h4><p>Add your own AI CLI patterns to the detection list.</p></div>
+                    <div class="safety-item"><h4><a href="/features/multi-tab">Multi-Tab</a></h4><p>Unlimited tabs with pinning and custom titles.</p></div>
+                    <div class="safety-item"><h4><a href="/features/tab-drag-drop">Tab Drag and Drop</a></h4><p>Snap-to-position reordering with zero drift.</p></div>
+                    <div class="safety-item"><h4><a href="/features/tab-profiles">Tab Profiles</a></h4><p>Per-tab shell, directory, and environment presets.</p></div>
+                    <div class="safety-item"><h4><a href="/features/split-panes">Split Panes</a></h4><p>See two things at once without switching tabs.</p></div>
+                    <div class="safety-item"><h4><a href="/features/command-palette">Command Palette</a></h4><p>Cmd+Shift+P for every Chau7 feature and action.</p></div>
+                    <div class="safety-item"><h4><a href="/features/terminal-search">Terminal Search</a></h4><p>Regex search through terminal output, match by match.</p></div>
+                    <div class="safety-item"><h4><a href="/features/command-history-search">Command History Search</a></h4><p>Fuzzy search with frecency ranking.</p></div>
+                    <div class="safety-item"><h4><a href="/features/clipboard-history">Clipboard History</a></h4><p>Searchable clipboard with pinning.</p></div>
+                    <div class="safety-item"><h4><a href="/features/session-restore">Session Restore</a></h4><p>Every tab and directory survives restarts.</p></div>
+                    <div class="safety-item"><h4><a href="/features/tab-watchdog">Tab Watchdog</a></h4><p>Auto-refreshes stale tab state silently.</p></div>
+                    <div class="safety-item"><h4><a href="/features/background-suspension">Background Suspension</a></h4><p>Inactive tabs use zero render cycles.</p></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="faq-section" aria-labelledby="faq-heading" data-ui="cognitive-load-faq">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="faq-heading">Frequently asked questions about cognitive load in Chau7</h2>
+                </div>
+                <div class="faq-list">
+                    <details>
+                        <summary>What does lower cognitive load mean in a terminal?</summary>
+                        <div class="faq-answer">
+                            <p>Lower cognitive load means the terminal shows you what matters without you asking. Chau7 auto-detects AI agents, brands tabs with colors and logos, displays live status indicators, and organizes sessions so you spend attention on your work instead of on figuring out which tab is which.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7 detect AI agents automatically?</summary>
+                        <div class="faq-answer">
+                            <p>Chau7 monitors process names in each tab and matches against known AI CLI patterns. Chau7 detects Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they launch. No configuration needed. You can also add <a href="/features/custom-detection-rules">custom detection rules</a> for tools not in the built-in list.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Can Chau7 manage multiple AI agents at once?</summary>
+                        <div class="faq-answer">
+                            <p>Yes. Chau7 tracks each AI agent independently across tabs. Each tab gets the agent's brand color and logo, a live status indicator (active, idle, or done), and an auto-generated title. Run eight agents in eight tabs and manage none of them manually because Chau7 manages the presentation for you.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7 restore my tabs after restart?</summary>
+                        <div class="faq-answer">
+                            <p>Yes. Chau7 <a href="/features/session-restore">session restore</a> brings back every tab, directory, and terminal state exactly as you left them. Quit and relaunch whenever you want. Your workspace survives restarts without you doing anything.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>How is Chau7's approach to cognitive load different from other terminals?</summary>
+                        <div class="faq-answer">
+                            <p>Other terminals show you tabs and text. Chau7 shows you meaning. AI agent detection, brand colors, status indicators, auto-renaming, command palette, and session restore are all features no other terminal offers in combination. Chau7 is the only terminal designed to reduce the mental overhead of working with multiple AI agents.</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="cognitive-load-cta">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Less thinking about your terminal. More thinking about your work.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+
+    <site-footer></site-footer>
+
+<script src="/script.js"></script>
+</body>
+</html>

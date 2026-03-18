@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>Visibility & Control | Chau7 Terminal</title>
+    <meta name="description" content="Chau7 gives your AI agents power and keeps you in control. 20 MCP tools, approval gate, dangerous command guard, session recording, JSON-RPC API, and iOS remote. Your AI proposes. You dispose.">
+    <meta property="og:title" content="Visibility & Control | Chau7 Terminal">
+    <meta property="og:description" content="Your AI agents get power. You keep oversight. MCP tools, safety guardrails, session recording, and scripting APIs.">
+    <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="article">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta property="article:section" content="Use Cases">
+    <meta property="article:tag" content="visibility and control">
+    <meta property="article:tag" content="MCP tools">
+    <meta property="article:tag" content="terminal safety">
+    <meta property="article:tag" content="session recording">
+    <meta property="article:tag" content="Chau7">
+    <meta property="article:tag" content="macOS terminal">
+    <meta name="entity" content="Chau7 Visibility and Control">
+    <meta name="entity-type" content="use-case">
+    <link rel="canonical" href="https://chau7.sh/ai-visibility-control">
+    <link rel="stylesheet" href="/style.css">
+    <script src="/components.js"></script>
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "description": "AI-native terminal for macOS with 20 MCP tools, approval gate, dangerous command guard, session recording, JSON-RPC API, shell hooks, and iOS remote control",
+        "featureList": [
+            "20 MCP tools",
+            "MCP approval gate",
+            "Dangerous command guard",
+            "Tab limits",
+            "MCP tab indicator",
+            "Session recording",
+            "Timeline scrubber",
+            "JSON-RPC API",
+            "Shell hooks",
+            "iOS remote control"
+        ],
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "What does visibility and control mean for AI terminals?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Visibility means you can see exactly what your AI agents are doing in the terminal: which tabs they created, which commands they ran, what output they produced. Control means you can approve, deny, limit, and audit every action. Chau7 provides both through MCP tools, an approval gate, session recording, and a scripting API." }
+            },
+            {
+                "@type": "Question",
+                "name": "How do Chau7's MCP tools work?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 ships a local MCP server over Unix socket with 20 tools for terminal automation. AI agents use MCP tools to open tabs, run commands, read output, and query telemetry. The server auto-registers in Claude Code, Cursor, Windsurf, and Codex on launch. No configuration needed." }
+            },
+            {
+                "@type": "Question",
+                "name": "How does Chau7 keep AI agents safe?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 provides four safety layers: an MCP approval gate that requires explicit approval before tool calls execute, configurable tab limits to prevent runaway agents, a dangerous command guard that pauses destructive commands like rm -rf, and MCP tab indicators so you always know which tabs an AI agent created." }
+            },
+            {
+                "@type": "Question",
+                "name": "Can I record and replay terminal sessions in Chau7?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Chau7 session recording captures every keystroke and output with millisecond timestamps. The timeline scrubber lets you jump to any point in a recorded session and see the terminal state at that moment. It is a flight recorder for your shell and an audit trail for your AI agents." }
+            },
+            {
+                "@type": "Question",
+                "name": "Can I control Chau7 from my iPhone?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Chau7 iOS remote lets you view output, send commands, switch tabs, and approve dangerous actions from your phone. The connection is end-to-end encrypted with Curve25519 and ChaChaPoly1305. Live Activities show AI status on your Lock Screen and Dynamic Island." }
+            }
+        ]
+    }]
+    </script>
+</head>
+<body>
+    <site-nav></site-nav>
+
+<main>
+        <!-- Hero -->
+        <section class="hero hero-mcp" data-ui="visibility-control-hero">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="hero-badge badge-alt">03 — Visibility & Control</div>
+                <h1 class="hero-title">
+                    Your AI gets power.<br><span class="gradient-text-alt">You keep oversight.</span>
+                </h1>
+                <p class="hero-subtitle">
+                    Chau7 gives AI agents 20 MCP tools to drive your terminal. You keep an approval gate, safety guardrails, session recording, and a scripting API. Power to the AI. Oversight to you.
+                </p>
+            </div>
+        </section>
+
+        <!-- What does visibility and control mean? -->
+        <section class="perf-section" aria-labelledby="definition-heading" data-ui="visibility-control-definition">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="definition-heading">What does visibility and control mean for AI terminals?</h2>
+                    <p>AI agents in your terminal can open tabs, run commands, read output, and make decisions. That is powerful. It is also a bit terrifying if you cannot see what they are doing or stop them when they go wrong.</p>
+                </div>
+                <div class="steps-grid">
+                    <div class="step-card">
+                        <div class="step-num">1</div>
+                        <h4>Visibility: see everything</h4>
+                        <p>Chau7 shows you which tabs your AI created, which commands it ran, what output it produced, how long it took, and what it cost. Session recording captures every millisecond. Nothing happens without a trace.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">2</div>
+                        <h4>Control: approve everything</h4>
+                        <p>Chau7 lets you approve or deny every MCP tool call, set tab creation limits, guard against dangerous commands, and identify MCP-created tabs visually. Your AI proposes. You dispose.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">3</div>
+                        <h4>Automation: script everything</h4>
+                        <p>Chau7 provides a JSON-RPC API and shell hooks so you can build your own tools on top of the terminal. The same interface your AI uses, available to your scripts.</p>
+                    </div>
+                </div>
+                <p style="color: var(--text-muted); font-style: italic; font-size: var(--text-sm); margin-top: var(--space-xs); text-align: center;">Trust, but verify. Then record. Then script. Then approve from your phone. We may have overdone the guardrails. We sleep well, though.</p>
+            </div>
+        </section>
+
+        <!-- MCP Tools -->
+        <section class="mcp-section" aria-labelledby="mcp-heading" data-ui="visibility-control-mcp-tools">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="mcp-heading">How do Chau7's 20 MCP tools give AI agents terminal access?</h2>
+                    <p>Chau7 ships a local <a href="/mcp">MCP server</a> over Unix socket with <a href="/features/mcp-tools">20 tools</a> for full terminal automation. AI agents use these tools to open tabs, run commands, read output, and query telemetry. No screen scraping. No brittle parsing. A proper API.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>Tab management (8 tools)</h4>
+                        <p>Chau7 MCP tools include <code>tab_list</code>, <code>tab_create</code>, <code>tab_exec</code>, <code>tab_status</code>, <code>tab_send_input</code>, <code>tab_close</code>, <code>tab_output</code>, and <code>tab_set_cto</code>. Your AI can manage tabs exactly the way you would, through a clean interface.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Telemetry and analytics (8 tools)</h4>
+                        <p>Chau7 MCP tools include <code>run_get</code>, <code>run_list</code>, <code>run_tool_calls</code>, <code>run_transcript</code>, <code>run_tag</code>, <code>run_latest_for_repo</code>, <code>session_list</code>, and <code>session_current</code>. Your AI can query its own history and performance.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>4 MCP resources</h4>
+                        <p>Chau7 provides four read-only <a href="/features/mcp-resources">MCP resource endpoints</a>: <code>tab://list</code>, <code>session://list</code>, <code>run://latest</code>, and <code>config://mcp</code>. Data without side effects.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Auto-registration</h4>
+                        <p>Chau7 <a href="/features/auto-registration">auto-registers</a> its MCP server in Claude Code, Cursor, Windsurf, and Codex configuration files on every launch. Zero manual setup. Your AI tools find Chau7 without you touching a file.</p>
+                    </div>
+                </div>
+                <div class="steps-grid" style="margin-top: 2rem;">
+                    <div class="step-card">
+                        <div class="step-num">+</div>
+                        <h4>Local Unix socket</h4>
+                        <p>The Chau7 MCP server listens on a <a href="/features/unix-socket-server">local Unix socket</a>. No TCP, no port, no network exposure. Only processes on your Mac can reach it. The security model is filesystem permissions, not network auth.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Safety -->
+        <section class="perf-section" aria-labelledby="safety-heading" data-ui="visibility-control-safety">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="safety-heading">How does Chau7 keep AI agents safe?</h2>
+                    <p>Power without guardrails is just a fancier way to break things. Chau7 provides four safety layers that work together to keep your AI productive and your system intact.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>MCP approval gate</h4>
+                        <p>Chau7 <a href="/features/mcp-approval-gate">MCP approval gate</a> lets you review every MCP tool call before it executes. Enable it per-tool or globally. Your AI proposes an action, you see what it wants to do, and you approve or deny. No surprises.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Tab limits</h4>
+                        <p>Chau7 <a href="/features/tab-limits">tab limits</a> cap how many tabs your AI can create via MCP. Set a maximum and Chau7 enforces it. Prevents runaway agents from spawning unlimited sessions at 3am while you sleep.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Dangerous command guard</h4>
+                        <p>Chau7 <a href="/features/dangerous-command-guard">dangerous command guard</a> pauses destructive commands for confirmation. <code>rm -rf</code>, <code>dd</code>, <code>mkfs</code>, and anything else that could ruin your afternoon. Because undo does not exist in terminals.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>MCP tab indicator</h4>
+                        <p>Chau7 <a href="/features/mcp-tab-indicator">MCP tab indicator</a> visually tags every tab created by an AI agent via MCP. You always know which tabs are yours and which ones your AI conjured. No mysteries in your tab bar.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Session Recording -->
+        <section class="mcp-section" aria-labelledby="recording-heading" data-ui="visibility-control-session-recording">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="recording-heading">How does Chau7 record terminal sessions?</h2>
+                    <p>Chau7 <a href="/features/session-recording">session recording</a> captures every keystroke and output with millisecond timestamps. A flight recorder for your shell and an audit trail for your AI agents.</p>
+                </div>
+                <div class="steps-grid">
+                    <div class="step-card">
+                        <div class="step-num">1</div>
+                        <h4>Automatic capture</h4>
+                        <p>Chau7 session recording captures terminal input and output automatically. Every keystroke, every response, every error message. Millisecond-precision timestamps on everything.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">2</div>
+                        <h4>Timeline scrubber</h4>
+                        <p>Chau7 <a href="/features/timeline-scrubber">timeline scrubber</a> lets you jump to any point in a recorded session and see the terminal state at that exact moment. Scrub forward, scrub back. Time travel for your shell.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">3</div>
+                        <h4>Audit and replay</h4>
+                        <p>What did your AI agent do at 2:47am? Chau7 session recording knows. Replay the session from any point. See every command, every output, every decision. The terminal equivalent of a security camera.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Scripting -->
+        <section class="perf-section" aria-labelledby="scripting-heading" data-ui="visibility-control-scripting">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="scripting-heading">How does Chau7 support terminal scripting and automation?</h2>
+                    <p>Chau7 is not just a terminal you use. It is a terminal you program. The same interface AI agents use is available to your scripts, your workflows, and your tooling.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>JSON-RPC API</h4>
+                        <p>Chau7 <a href="/features/json-rpc-api">JSON-RPC API</a> lets you automate tabs, commands, history, snippets, and settings from any programming language that can talk to a Unix socket. Not AppleScript. A real API.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Shell hooks</h4>
+                        <p>Chau7 <a href="/features/shell-hooks">shell hooks</a> trigger custom actions before and after commands run. Pre-command hooks for setup. Post-command hooks for notifications, logging, or cleanup. Your terminal becomes event-driven.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- iOS Remote -->
+        <section class="mcp-section" aria-labelledby="remote-heading" data-ui="visibility-control-ios-remote">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="remote-heading">How does Chau7 iOS remote give you control from your phone?</h2>
+                    <p>Your AI agents run on your Mac. You might not be sitting in front of it. Chau7 <a href="/remote">iOS remote</a> puts terminal control in your pocket so you can see what is happening and approve actions from anywhere.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>View output, send commands</h4>
+                        <p>Chau7 iOS remote shows live terminal output on your phone. Switch tabs, read logs, send commands. The same terminal, smaller screen, same control.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Remote approvals</h4>
+                        <p>Dangerous commands push to your phone as notifications. Approve or deny from the notification. Your AI waits for you. You respond from wherever you are.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Live Activities</h4>
+                        <p>Your AI's status shows on your Lock Screen and Dynamic Island. See which agent is running, how long it has been active, and what it is doing without opening the app.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>End-to-end encrypted</h4>
+                        <p>Chau7 iOS remote uses Curve25519 key agreement and ChaChaPoly1305 AEAD. The relay server is a dumb pipe that forwards ciphertext it cannot read. One-time 6-digit pairing code, then key fingerprint recognition forever.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Feature Links -->
+        <section class="perf-section" aria-labelledby="features-heading" data-ui="visibility-control-feature-links">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="features-heading">Every Chau7 feature for visibility and control</h2>
+                    <p>Explore the individual features that make Chau7 the most transparent and controllable AI terminal.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item"><h4><a href="/features/mcp-tools">20 MCP Tools</a></h4><p>Full terminal control via local MCP server.</p></div>
+                    <div class="safety-item"><h4><a href="/features/unix-socket-server">Unix Socket Server</a></h4><p>Local socket, no network, no attack surface.</p></div>
+                    <div class="safety-item"><h4><a href="/features/auto-registration">Auto-Registration</a></h4><p>Zero-config discovery for AI tools.</p></div>
+                    <div class="safety-item"><h4><a href="/features/mcp-resources">MCP Resources</a></h4><p>4 read-only resource endpoints.</p></div>
+                    <div class="safety-item"><h4><a href="/features/mcp-approval-gate">MCP Approval Gate</a></h4><p>Review and approve every MCP tool call.</p></div>
+                    <div class="safety-item"><h4><a href="/features/tab-limits">Tab Limits</a></h4><p>Cap MCP-created tabs to prevent runaway agents.</p></div>
+                    <div class="safety-item"><h4><a href="/features/dangerous-command-guard">Dangerous Command Guard</a></h4><p>Pause destructive commands for confirmation.</p></div>
+                    <div class="safety-item"><h4><a href="/features/mcp-tab-indicator">MCP Tab Indicator</a></h4><p>Visual tag on every AI-created tab.</p></div>
+                    <div class="safety-item"><h4><a href="/features/session-recording">Session Recording</a></h4><p>Millisecond-precision flight recorder.</p></div>
+                    <div class="safety-item"><h4><a href="/features/timeline-scrubber">Timeline Scrubber</a></h4><p>Jump to any point in a recorded session.</p></div>
+                    <div class="safety-item"><h4><a href="/features/json-rpc-api">JSON-RPC API</a></h4><p>Script your terminal from any language.</p></div>
+                    <div class="safety-item"><h4><a href="/features/shell-hooks">Shell Hooks</a></h4><p>Pre/post command triggers for automation.</p></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="faq-section" aria-labelledby="faq-heading" data-ui="visibility-control-faq">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="faq-heading">Frequently asked questions about Chau7 visibility and control</h2>
+                </div>
+                <div class="faq-list">
+                    <details>
+                        <summary>What does visibility and control mean for AI terminals?</summary>
+                        <div class="faq-answer">
+                            <p>Visibility means you can see exactly what your AI agents are doing in the terminal: which tabs they created, which commands they ran, what output they produced. Control means you can approve, deny, limit, and audit every action. Chau7 provides both through <a href="/features/mcp-tools">MCP tools</a>, an <a href="/features/mcp-approval-gate">approval gate</a>, <a href="/features/session-recording">session recording</a>, and a <a href="/features/json-rpc-api">scripting API</a>.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>How do Chau7's MCP tools work?</summary>
+                        <div class="faq-answer">
+                            <p>Chau7 ships a local <a href="/mcp">MCP server</a> over Unix socket with <a href="/features/mcp-tools">20 tools</a> for terminal automation. AI agents use MCP tools to open tabs, run commands, read output, and query telemetry. The server <a href="/features/auto-registration">auto-registers</a> in Claude Code, Cursor, Windsurf, and Codex on launch. No configuration needed.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7 keep AI agents safe?</summary>
+                        <div class="faq-answer">
+                            <p>Chau7 provides four safety layers: an <a href="/features/mcp-approval-gate">MCP approval gate</a> that requires explicit approval before tool calls execute, configurable <a href="/features/tab-limits">tab limits</a> to prevent runaway agents, a <a href="/features/dangerous-command-guard">dangerous command guard</a> that pauses destructive commands like <code>rm -rf</code>, and <a href="/features/mcp-tab-indicator">MCP tab indicators</a> so you always know which tabs an AI agent created.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Can I record and replay terminal sessions in Chau7?</summary>
+                        <div class="faq-answer">
+                            <p>Yes. Chau7 <a href="/features/session-recording">session recording</a> captures every keystroke and output with millisecond timestamps. The <a href="/features/timeline-scrubber">timeline scrubber</a> lets you jump to any point in a recorded session and see the terminal state at that moment. It is a flight recorder for your shell and an audit trail for your AI agents.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Can I control Chau7 from my iPhone?</summary>
+                        <div class="faq-answer">
+                            <p>Yes. Chau7 <a href="/remote">iOS remote</a> lets you view output, send commands, switch tabs, and approve dangerous actions from your phone. The connection is end-to-end encrypted with Curve25519 and ChaChaPoly1305. Live Activities show AI status on your Lock Screen and Dynamic Island.</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="visibility-control-cta">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Full power to the AI. Full oversight to you. Fair deal.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+
+    <site-footer></site-footer>
+
+<script src="/script.js"></script>
+</body>
+</html>

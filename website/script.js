@@ -335,11 +335,14 @@
 
         const phrases = [
             'notices your AI.',
+            'optimizes your token usage.',
             'renames tabs for you.',
-            'talks to your AI.',
-            'watches your processes.',
-            'pings you when it matters.',
+            'lets your AI drive the terminal.',
+            'lets you drive it from your phone.',
+            'guards against dangerous commands.',
+            'records your sessions.',
             'runs at GPU speed.',
+            'restores your tabs on relaunch.',
             'is named after a sock.',
         ];
 
@@ -499,6 +502,72 @@
         panels.forEach(p => io.observe(p));
     }
 
+    /* ── Ask AI footnotes ─────────────────────────── */
+    /* Note: All markup below is hardcoded (no user input), so DOM construction is safe. */
+    function initAskAI() {
+        var triggers = document.querySelectorAll('.ask-ai-trigger');
+        if (!triggers.length) return;
+
+        var providers = [
+            { name: 'Claude', url: 'https://claude.ai/new?q=', color: '#cc7832' },
+            { name: 'ChatGPT', url: 'https://chatgpt.com/?q=', color: '#10a37f' },
+            { name: 'Gemini', url: 'https://gemini.google.com/app?q=', color: '#4285f4' },
+            { name: 'Le Chat', url: 'https://chat.mistral.ai/chat?q=', color: '#ff7000' }
+        ];
+
+        triggers.forEach(function(trigger) {
+            var term = trigger.getAttribute('data-term');
+            if (!term) return;
+
+            var prompt = 'On Chau7.sh I read about "' + term + '". Explain what it is, what it means, and what it brings to an AI-optimized terminal like Chau7.';
+            var encoded = encodeURIComponent(prompt);
+
+            // Build popup using safe DOM methods
+            var popup = document.createElement('div');
+            popup.className = 'ask-ai-popup';
+
+            var label = document.createElement('span');
+            label.className = 'ask-ai-popup-label';
+            label.textContent = 'Ask an AI about this';
+            popup.appendChild(label);
+
+            providers.forEach(function(p) {
+                var link = document.createElement('a');
+                link.href = p.url + encoded;
+                link.target = '_blank';
+                link.rel = 'noopener';
+
+                var dot = document.createElement('span');
+                dot.style.cssText = 'width:10px;height:10px;border-radius:50%;background:' + p.color + ';flex-shrink:0;';
+                link.appendChild(dot);
+
+                var nameSpan = document.createElement('span');
+                nameSpan.textContent = p.name;
+                link.appendChild(nameSpan);
+
+                popup.appendChild(link);
+            });
+
+            trigger.parentNode.style.position = 'relative';
+            trigger.parentNode.appendChild(popup);
+
+            trigger.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var isOpen = popup.classList.contains('open');
+                document.querySelectorAll('.ask-ai-popup.open').forEach(function(p) {
+                    p.classList.remove('open');
+                });
+                if (!isOpen) popup.classList.add('open');
+            });
+        });
+
+        document.addEventListener('click', function() {
+            document.querySelectorAll('.ask-ai-popup.open').forEach(function(p) {
+                p.classList.remove('open');
+            });
+        });
+    }
+
     /* ── Init ────────────────────────────────────── */
     document.addEventListener('DOMContentLoaded', () => {
         addRevealClass();
@@ -521,5 +590,6 @@
         initHeroRotator();
         initCarousel();
         initPillarCarousel();
+        initAskAI();
     });
 })();

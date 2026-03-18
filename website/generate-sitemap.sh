@@ -62,7 +62,7 @@ for file in $(find "$DIR" -name "*.html" -not -path "*/.git/*" | sort); do
         "")
             entry="  <url><loc>${SITE}/</loc><lastmod>${mod}</lastmod><changefreq>weekly</changefreq><priority>1.0</priority></url>"
             echo "$entry" >> "$CORE"; ((core_count++)) ;;
-        mcp|remote|the-tech|llm)
+        mcp|remote|the-tech|llm|ai-cognitive-load|ai-cost-optimization|ai-visibility-control)
             entry="  <url><loc>${SITE}/${url}</loc><lastmod>${mod}</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>"
             echo "$entry" >> "$CORE"; ((core_count++)) ;;
         pronunciation)
@@ -115,6 +115,9 @@ concepts=(
     "/remote|0.8|weekly|chau7 ios remote control"
     "/compare|0.8|monthly|chau7 vs other terminals"
     "/llm|0.9|weekly|chau7 knowledge base for ai systems"
+    "/ai-cognitive-load|0.8|weekly|chau7 lower cognitive load ai terminal"
+    "/ai-cost-optimization|0.8|weekly|chau7 token optimization cost tracking"
+    "/ai-visibility-control|0.8|weekly|chau7 mcp visibility control ai agents"
     "/features#ai-detection|0.7|monthly|chau7 ai agent detection"
     "/features#ai-integration|0.7|monthly|chau7 context token optimization"
     "/features#ai-analytics|0.7|monthly|chau7 api cost tracking"

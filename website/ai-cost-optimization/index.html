@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="/logo.png">
+    <link rel="apple-touch-icon" href="/logo.png">
+    <title>Optimize Cost & Context | Chau7 Terminal</title>
+    <meta name="description" content="Chau7 optimizes AI terminal costs with Context Token Optimization (~40% savings), per-session cost tracking, token counting, latency tracking, and a local API cost proxy. Numbers instead of vibes.">
+    <meta property="og:title" content="Optimize Cost & Context | Chau7 Terminal">
+    <meta property="og:description" content="Know what your AI agents spend. Context Token Optimization saves ~40% on tokens. Cost tracking shows dollars per call, per session, per month.">
+    <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
+    <meta property="og:type" content="article">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta property="article:section" content="Use Cases">
+    <meta property="article:tag" content="cost optimization">
+    <meta property="article:tag" content="Context Token Optimization">
+    <meta property="article:tag" content="token counting">
+    <meta property="article:tag" content="API cost tracking">
+    <meta property="article:tag" content="Chau7">
+    <meta property="article:tag" content="macOS terminal">
+    <meta name="entity" content="Chau7 Cost and Context Optimization">
+    <meta name="entity-type" content="use-case">
+    <link rel="canonical" href="https://chau7.sh/ai-cost-optimization">
+    <link rel="stylesheet" href="/style.css">
+    <script src="/components.js"></script>
+    <script type="application/ld+json">
+    [{
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Chau7",
+        "operatingSystem": "macOS",
+        "applicationCategory": "DeveloperApplication",
+        "description": "AI-native terminal for macOS with Context Token Optimization, cost tracking, token counting, latency tracking, analytics dashboard, and local API cost proxy",
+        "featureList": [
+            "Context Token Optimization",
+            "Cost tracking",
+            "Token counting",
+            "Latency tracking",
+            "Analytics dashboard",
+            "API cost proxy",
+            "CTO per-tab override",
+            "AI session tracking"
+        ],
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    },
+    {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": "Why does AI terminal cost optimization matter?",
+                "acceptedAnswer": { "@type": "Answer", "text": "AI agents consume LLM API tokens every time they read terminal output. Terminal output is full of noise: ANSI escape codes, progress bars, spinner frames, repeated whitespace. Without optimization, your AI pays for garbage. Chau7 Context Token Optimization strips that noise before the AI reads it, saving approximately 40% on context tokens per session." }
+            },
+            {
+                "@type": "Question",
+                "name": "How does Context Token Optimization work in Chau7?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 Context Token Optimization intercepts terminal output before it reaches your AI agent and strips ANSI escape sequences, progress bar frames, spinner animations, and redundant whitespace. The result is clean text that conveys the same meaning in fewer tokens. CTO saves approximately 40% on context tokens with zero configuration." }
+            },
+            {
+                "@type": "Question",
+                "name": "How does Chau7 track AI costs?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 runs a local TLS/WSS proxy that intercepts LLM API traffic to count tokens and estimate costs. Chau7 shows dollars per API call, per session, and per month. Input tokens, output tokens, and model-specific pricing are all tracked locally. No data leaves your machine." }
+            },
+            {
+                "@type": "Question",
+                "name": "Can I disable Context Token Optimization for specific tabs?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes. Chau7 CTO per-tab override lets you toggle Context Token Optimization on or off for individual tabs. Run full optimization on your Claude Code tab and raw unfiltered output on your debug session. Each tab gets exactly the behavior you want." }
+            },
+            {
+                "@type": "Question",
+                "name": "Does Chau7 cost tracking work with all AI providers?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Chau7 cost tracking works with any AI provider that uses standard HTTPS API calls, including Anthropic, OpenAI, Google, and others. The local API cost proxy intercepts traffic locally and applies model-specific token pricing. Chau7 supports pricing tables for all major models." }
+            }
+        ]
+    }]
+    </script>
+</head>
+<body>
+    <site-nav></site-nav>
+
+<main>
+        <!-- Hero -->
+        <section class="hero hero-mcp" data-ui="cost-optimization-hero">
+            <div class="hero-glow"></div>
+            <div class="hero-content">
+                <div class="hero-badge badge-alt">02 — Optimize Cost & Context</div>
+                <h1 class="hero-title">
+                    Know what your AI spends.<br><span class="gradient-text-alt">Before the invoice tells you.</span>
+                </h1>
+                <p class="hero-subtitle">
+                    Chau7 tracks what your AI agents spend, what tokens they burn, and where the money goes. Context Token Optimization strips terminal noise before your AI reads it, saving ~40% on tokens. Numbers instead of vibes.
+                </p>
+            </div>
+        </section>
+
+        <!-- Why does cost optimization matter? -->
+        <section class="perf-section" aria-labelledby="why-heading" data-ui="cost-optimization-why">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="why-heading">Why does AI terminal cost optimization matter?</h2>
+                    <p>Every time an AI agent reads your terminal output, it consumes tokens. Every token costs money. And terminal output is full of garbage your AI pays for but cannot use.</p>
+                </div>
+                <div class="steps-grid">
+                    <div class="step-card">
+                        <div class="step-num">1</div>
+                        <h4>Terminal output is noisy</h4>
+                        <p>ANSI escape codes for colors. Progress bar frames that update 60 times per second. Spinner animations. Repeated whitespace. Your AI reads all of it, pays for all of it, and learns nothing from most of it.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">2</div>
+                        <h4>Tokens add up fast</h4>
+                        <p>A single AI coding session can consume thousands of tokens just reading terminal output. Multiply that by sessions per day, days per month, and team members. The bill gets large while the waste stays invisible.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">3</div>
+                        <h4>Chau7 optimizes both sides</h4>
+                        <p>Chau7 reduces what goes in (Context Token Optimization strips noise) and shows what comes out (cost tracking, token counting, latency tracking). You manage less. Your AI wastes less. Your bill shrinks.</p>
+                    </div>
+                </div>
+                <p style="color: var(--text-muted); font-style: italic; font-size: var(--text-sm); margin-top: var(--space-xs); text-align: center;">We could have called it "AI Context Efficiency Orchestration." But we named our terminal after a sock, so honestly we are not qualified to name things. We went with CTO.</p>
+            </div>
+        </section>
+
+        <!-- Context Token Optimization -->
+        <section class="mcp-section" aria-labelledby="cto-heading" data-ui="cost-optimization-cto">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="cto-heading">How does Chau7 Context Token Optimization work?</h2>
+                    <p>Chau7 <a href="/features/context-token-optimization">Context Token Optimization</a> intercepts terminal output before it reaches your AI agent and strips everything that wastes tokens without conveying meaning.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>ANSI escape codes</h4>
+                        <p>Color codes, cursor movement, scroll regions, text formatting. All of these are escape sequences that AI models parse as literal characters. Chau7 CTO removes them so your AI reads clean text instead of encoded noise.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Progress bars and spinners</h4>
+                        <p>Progress bars rewrite the same line hundreds of times. Spinner frames cycle through characters at 60fps. Chau7 CTO collapses these into a single meaningful line: the final state.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Redundant whitespace</h4>
+                        <p>Trailing spaces, blank line runs, tab padding for visual alignment. Chau7 CTO normalizes whitespace so your AI gets content, not formatting artifacts.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>~40% savings, zero config</h4>
+                        <p>Chau7 CTO saves approximately 40% on context tokens per session. It is enabled by default and requires no configuration. The savings appear immediately in your token counts and your costs.</p>
+                    </div>
+                </div>
+                <div class="steps-grid" style="margin-top: 2rem;">
+                    <div class="step-card">
+                        <div class="step-num">+</div>
+                        <h4>Per-tab override</h4>
+                        <p><a href="/features/cto-per-tab-override">CTO per-tab override</a> lets you toggle Context Token Optimization on or off for individual tabs. Full optimization on your Claude Code tab. Raw output on your debug session. Each tab gets exactly the behavior you want.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Cost Tracking -->
+        <section class="perf-section" aria-labelledby="cost-heading" data-ui="cost-optimization-cost-tracking">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="cost-heading">How does Chau7 track AI costs?</h2>
+                    <p>Chau7 <a href="/features/cost-tracking">cost tracking</a> shows you dollars and cents for every AI interaction. Per call, per session, per month. The numbers your AI provider charges but never shows you in real time.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>Dollars per API call</h4>
+                        <p>Every API call shows its cost in dollars based on model-specific token pricing. Chau7 cost tracking applies the correct rate for the model your agent is using, whether that is Claude, GPT, Gemini, or another provider.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Session totals</h4>
+                        <p>Chau7 aggregates costs per AI session so you see exactly how much a coding task cost from start to finish. No more wondering whether that refactoring session was worth $2 or $20.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Monthly rollups</h4>
+                        <p>Chau7 cost tracking provides monthly spend visibility so you know where the budget is going before the invoice arrives. Spot trends. Set expectations. Avoid surprises.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>All local</h4>
+                        <p>Cost data is computed and stored locally on your Mac. No data leaves your machine. No cloud analytics. No third-party dashboard. Just your numbers, on your hardware.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Token Counting -->
+        <section class="mcp-section" aria-labelledby="tokens-heading" data-ui="cost-optimization-token-counting">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="tokens-heading">How does Chau7 count tokens?</h2>
+                    <p>Chau7 <a href="/features/token-counting">token counting</a> shows input tokens and output tokens for every API call. The raw numbers behind the dollar amounts, visible in real time as your AI works.</p>
+                </div>
+                <div class="steps-grid">
+                    <div class="step-card">
+                        <div class="step-num">In</div>
+                        <h4>Input tokens per call</h4>
+                        <p>See exactly how many tokens your AI consumes reading context, terminal output, and conversation history on every API call. Chau7 token counting breaks down what goes into each request.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">Out</div>
+                        <h4>Output tokens per call</h4>
+                        <p>See exactly how many tokens your AI generates in each response. Chau7 token counting shows the output side so you understand both halves of the cost equation.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">Sum</div>
+                        <h4>Session and run totals</h4>
+                        <p>Chau7 totals tokens per session and per run so you can compare the token cost of different tasks, models, and workflows. Spot the sessions that burn budget.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Latency Tracking -->
+        <section class="perf-section" aria-labelledby="latency-heading" data-ui="cost-optimization-latency-tracking">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="latency-heading">How does Chau7 track AI latency?</h2>
+                    <p>Cost is not just money. It is also time. Chau7 <a href="/features/latency-tracking">latency tracking</a> measures both sides of every API call so you know how fast your AI actually responds.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>Time to first token (TTFT)</h4>
+                        <p>Chau7 latency tracking measures the time between sending a request and receiving the first token of the response. TTFT tells you how long you wait before your AI starts working.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Total duration</h4>
+                        <p>Chau7 measures the complete duration of every API call from request to final token. Compare models, compare providers, compare times of day. Find the fastest path to results.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Analytics Dashboard -->
+        <section class="mcp-section" aria-labelledby="analytics-heading" data-ui="cost-optimization-analytics">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="analytics-heading">How does Chau7's analytics dashboard show trends?</h2>
+                    <p>Individual numbers are useful. Trends are powerful. Chau7 <a href="/features/analytics-dashboard">analytics dashboard</a> charts tokens, costs, and latency over time so you can spot patterns and make decisions.</p>
+                </div>
+                <div class="steps-grid">
+                    <div class="step-card">
+                        <div class="step-num">1</div>
+                        <h4>Token trends</h4>
+                        <p>Chau7 analytics dashboard shows token consumption over time. See whether your sessions are getting more or less expensive. Spot the days and tasks that drive costs.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">2</div>
+                        <h4>Cost trends</h4>
+                        <p>Chau7 analytics dashboard tracks dollar spend over time. Weekly trends, model breakdowns, session comparisons. The chart your finance team wishes they had.</p>
+                    </div>
+                    <div class="step-card">
+                        <div class="step-num">3</div>
+                        <h4>Latency trends</h4>
+                        <p>Chau7 analytics dashboard plots TTFT and duration over time. Spot when your provider slows down. Compare model performance across different timeframes.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- API Cost Proxy -->
+        <section class="perf-section" aria-labelledby="proxy-heading" data-ui="cost-optimization-api-proxy">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="proxy-heading">How does Chau7's API cost proxy work?</h2>
+                    <p>Chau7 <a href="/features/tls-wss-proxy">API cost proxy</a> is a local TLS/WSS proxy that intercepts LLM API traffic to count tokens and estimate costs. It runs on your machine, sees the raw requests and responses, and computes everything locally.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item">
+                        <h4>Local interception</h4>
+                        <p>The Chau7 API cost proxy runs locally on your Mac. It intercepts HTTPS and WebSocket traffic between your AI agent and the API provider. No cloud relay. No remote analytics. Everything stays on your machine.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>TLS and WSS support</h4>
+                        <p>Chau7 API cost proxy handles both standard HTTPS API calls and WebSocket streaming connections. It works with Anthropic, OpenAI, Google, and any provider that uses standard HTTPS or WSS endpoints.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Token extraction</h4>
+                        <p>The proxy reads token counts from API response headers and bodies. It applies model-specific pricing tables to convert token counts into dollar amounts. Numbers you can trust because they come from the actual API responses.</p>
+                    </div>
+                    <div class="safety-item">
+                        <h4>Zero configuration</h4>
+                        <p>Chau7 sets up the proxy automatically. No manual certificate installation. No environment variable changes. No proxy configuration files. It works the moment you launch Chau7.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Feature Links -->
+        <section class="mcp-section" aria-labelledby="features-heading" data-ui="cost-optimization-feature-links">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="features-heading">Every Chau7 feature that optimizes cost and context</h2>
+                    <p>Explore the individual features that make Chau7 the most cost-aware terminal for AI development.</p>
+                </div>
+                <div class="safety-grid">
+                    <div class="safety-item"><h4><a href="/features/context-token-optimization">Context Token Optimization</a></h4><p>Strips terminal noise, saves ~40% on tokens.</p></div>
+                    <div class="safety-item"><h4><a href="/features/cto-per-tab-override">CTO Per-Tab Override</a></h4><p>Toggle CTO on or off for individual tabs.</p></div>
+                    <div class="safety-item"><h4><a href="/features/cost-tracking">Cost Tracking</a></h4><p>Dollars per API call, per session, per month.</p></div>
+                    <div class="safety-item"><h4><a href="/features/token-counting">Token Counting</a></h4><p>Input and output tokens for every API call.</p></div>
+                    <div class="safety-item"><h4><a href="/features/latency-tracking">Latency Tracking</a></h4><p>TTFT and total duration per call.</p></div>
+                    <div class="safety-item"><h4><a href="/features/analytics-dashboard">Analytics Dashboard</a></h4><p>Tokens, costs, and latency trends over time.</p></div>
+                    <div class="safety-item"><h4><a href="/features/tls-wss-proxy">API Cost Proxy</a></h4><p>Local TLS/WSS interception for cost data.</p></div>
+                    <div class="safety-item"><h4><a href="/features/ai-session-tracking">AI Session Tracking</a></h4><p>Every session tracked from first prompt to last.</p></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- FAQ -->
+        <section class="faq-section" aria-labelledby="faq-heading" data-ui="cost-optimization-faq">
+            <div class="section-inner">
+                <div class="section-header">
+                    <h2 id="faq-heading">Frequently asked questions about Chau7 cost optimization</h2>
+                </div>
+                <div class="faq-list">
+                    <details>
+                        <summary>Why does AI terminal cost optimization matter?</summary>
+                        <div class="faq-answer">
+                            <p>AI agents consume LLM API tokens every time they read terminal output. Terminal output is full of noise: ANSI escape codes, progress bars, spinner frames, repeated whitespace. Without optimization, your AI pays for garbage. Chau7 <a href="/features/context-token-optimization">Context Token Optimization</a> strips that noise before the AI reads it, saving approximately 40% on context tokens per session.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>How does Context Token Optimization work in Chau7?</summary>
+                        <div class="faq-answer">
+                            <p>Chau7 Context Token Optimization intercepts terminal output before it reaches your AI agent and strips ANSI escape sequences, progress bar frames, spinner animations, and redundant whitespace. The result is clean text that conveys the same meaning in fewer tokens. CTO saves approximately 40% on context tokens with zero configuration.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>How does Chau7 track AI costs?</summary>
+                        <div class="faq-answer">
+                            <p>Chau7 runs a local TLS/WSS proxy that intercepts LLM API traffic to count tokens and estimate costs. Chau7 <a href="/features/cost-tracking">cost tracking</a> shows dollars per API call, per session, and per month. Input tokens, output tokens, and model-specific pricing are all tracked locally. No data leaves your machine.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Can I disable Context Token Optimization for specific tabs?</summary>
+                        <div class="faq-answer">
+                            <p>Yes. Chau7 <a href="/features/cto-per-tab-override">CTO per-tab override</a> lets you toggle Context Token Optimization on or off for individual tabs. Run full optimization on your Claude Code tab and raw unfiltered output on your debug session. Each tab gets exactly the behavior you want.</p>
+                        </div>
+                    </details>
+                    <details>
+                        <summary>Does Chau7 cost tracking work with all AI providers?</summary>
+                        <div class="faq-answer">
+                            <p>Chau7 cost tracking works with any AI provider that uses standard HTTPS API calls, including Anthropic, OpenAI, Google, and others. The local <a href="/features/tls-wss-proxy">API cost proxy</a> intercepts traffic locally and applies model-specific token pricing. Chau7 supports pricing tables for all major models.</p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer CTA -->
+        <section class="footer-cta-section" aria-label="Download call to action" data-ui="cost-optimization-cta">
+            <div class="section-inner">
+                <div class="footer-cta-content">
+                    <h2>Your AI's spending report. Locally computed. Brutally honest.</h2>
+                    <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+
+    <site-footer></site-footer>
+
+<script src="/script.js"></script>
+</body>
+</html>

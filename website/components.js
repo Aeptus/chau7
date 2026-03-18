@@ -57,6 +57,12 @@ class SiteFooter extends HTMLElement {
                     <a href="/compare">Compare</a>
                 </div>
                 <div class="footer-nav-col">
+                    <h4>Use Cases</h4>
+                    <a href="/ai-cognitive-load">Lower Cognitive Load</a>
+                    <a href="/ai-cost-optimization">Cost &amp; Context</a>
+                    <a href="/ai-visibility-control">Visibility &amp; Control</a>
+                </div>
+                <div class="footer-nav-col">
                     <h4>Resources</h4>
                     <a href="https://github.com/nicmusic/chau7" target="_blank" rel="noopener">GitHub</a>
                     <a href="https://github.com/nicmusic/chau7/releases" target="_blank" rel="noopener">Releases</a>
@@ -77,7 +83,7 @@ class SiteFooter extends HTMLElement {
                 </div>
             </div>
             <div class="footer-bottom">
-                <span>253 Swift files &middot; Rust backend &middot; Metal GPU &middot; 1537 tests</span>
+                <span>253 Swift files &middot; Rust backend &middot; Metal GPU &middot; 1541 tests</span>
             </div>
         </div>
     </footer>`;
