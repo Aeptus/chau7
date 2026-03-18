@@ -3213,6 +3213,11 @@ a.catalog-card:hover::after { opacity: 1; }
 }
 
 /* ── Features hero: outcome-driven layout ────────── */
+.pillar-cta {
+    text-align: center;
+    padding: var(--space-lg) var(--space-xl) var(--space-xl);
+}
+
 .hero-features .hero-screenshot {
     margin-top: var(--space-xl);
 }
