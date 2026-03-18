@@ -12,6 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MCP `wait_for_stable_ms`**: New param on `tab_output` polls the terminal buffer until content settles, fixing the race where `is_at_prompt` fires before the agent's final response finishes rendering
 - **PTY Log Fallback Transcript**: `run_transcript` now falls back to the ANSI-stripped PTY output log when provider-specific extraction fails, capturing full agent output including alternate-screen content from TUI-based tools
 - **Terminal Buffer Fallback Transcript**: Secondary fallback captures the terminal scrollback at run-end time for non-TUI agents
+- **Menu Bar Only Mode**: New setting hides Chau7 from Dock and Cmd+Tab (activation policy `.accessory`)
+- **Floating Window Mode**: New setting keeps the terminal window above other apps (`.floating` window level)
+- **Angle Bracket Matching**: Editor now matches `<>` pairs and supports jump-to-matching-bracket
+- **Whole-Word Terminal Search**: New toggle wraps search query in `\b` word boundaries
+- **Relative/Hybrid Line Numbers**: Editor gutter supports absolute, relative, and hybrid line number modes with dynamic width
+- **Cursor Blink Rate**: Configurable blink interval (0.3–2.0s) and custom cursor color (hex)
+- **Visual Bell + Rate Limiting**: Bell can flash the screen (combinable with audible), with configurable minimum interval
+- **Keybindings JSON Export/Import**: Standalone export/import methods for keybindings separate from full settings
+- **Custom API Pricing**: `~/.chau7/pricing.json` overrides the built-in model pricing table
+- **Profile Auto-Switch Wired Up**: `evaluateRules()` now fires on directory change with git branch and process context
 - **Remote Live Activity State**: Chau7 now projects one authoritative remote AI activity over the remote-control channel so the iPhone client can render a native Live Activity / Dynamic Island state for the most relevant task
 - **Isolated Test App Builder**: Added a dedicated isolated app build that runs with its own bundle ID, home root, keychain prefix, logs, and app support directories for safe manual testing alongside the main app
 - **MCP Terminal Key Tools**: Added `tab_press_key` for real terminal key events and `tab_submit_prompt` as an Enter-key convenience for interactive TUIs like Claude Code
@@ -21,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **AI Tool Detection**: Fixed false positive detecting "Cline" on Claude Code sessions — bare `cline` pattern matched substrings. Command-based detection now gates output pattern scanning to prevent race conditions.
+- **Process Exit Confirmation**: Cmd+Q now lists running process names and asks for confirmation before quitting
 - **Idle Tab Event Spam**: `HistoryIdleMonitor` now fires idle exactly once per session — heartbeat entries no longer reset the dedup flag. Scheduler backs off to the stale deadline for already-idle sessions.
 - **Redundant Tab Highlights**: Notification executor tracks applied presets per tab and skips re-applies when the same style is already active with a pending auto-clear timer.
 - **MCP `tab_output` Line Cap**: Raised from 5000 to 10000 to match default scrollback depth

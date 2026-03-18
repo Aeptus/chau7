@@ -264,7 +264,10 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Configurable sounds (Glass, Purr, etc.) with volume control.
 - Command idle detection with configurable threshold. Fires once per session, resets only on real user activity.
 - Auto tab styling on events with auto-clear timeout. Deduplicates redundant re-applies.
+- Visual bell mode (screen flash), combinable with audible bell.
+- Bell rate limiting with configurable minimum interval.
 - Rate limiting and per-trigger enable/disable.
+- Process exit confirmation on Cmd+Q with running process name listing.
 - Isolated test mode disables notification-center integration to keep side effects out of the test app.
 
 ## Appearance & Theming
@@ -276,6 +279,9 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Command blocks — colored left-border gutter (green success, red fail, blue running).
 - Optional line timestamps (multiple formats).
 - Optional JSON pretty-print in terminal output.
+- Cursor blink rate (0.3–2.0s) and custom cursor color (hex).
+- Menu bar only mode — hide from Dock and Cmd+Tab.
+- Floating window mode — keep terminal above other apps.
 
 ## Settings & Configuration
 
