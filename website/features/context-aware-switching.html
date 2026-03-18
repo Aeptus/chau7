@@ -6,9 +6,9 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Context-Aware Switching | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 includes a profile auto-switching rule engine with triggers for directory, git repo, SSH host, process, and environment variable. Integration with the terminal session lifecycle is in progress.">
+    <meta name="description" content="Chau7 automatically switches profiles based on directory, git branch, running processes, SSH host, and environment variable. The rule engine fires on every directory change.">
     <meta property="og:title" content="Context-Aware Switching | Chau7">
-    <meta property="og:description" content="Chau7 includes a profile auto-switching rule engine with triggers for directory, git repo, SSH host, process, and environment variable. Integration with the terminal session lifecycle is in progress.">
+    <meta property="og:description" content="Chau7 automatically switches profiles based on directory, git branch, running processes, SSH host, and environment variable. The rule engine fires on every directory change.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -46,10 +46,10 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Context-Aware Switching in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Context-Aware Switching in Chau7 is a rule engine for profile auto-switching. The ProfileAutoSwitcher data model supports rules with triggers for directory, git repository, SSH host, running process, and environment variable. The rule engine can be configured in settings. Integration with the terminal session lifecycle is in progress."}},
-            {"@type":"Question","name":"What rule triggers does Chau7 support?","acceptedAnswer":{"@type":"Answer","text":"Chau7's ProfileSwitchRule supports triggers for: current directory, git repository, SSH host, running process name, and environment variable. Each rule maps to a specific Chau7 profile. Rules can be created and configured in settings."}},
-            {"@type":"Question","name":"Is the auto-switching feature active?","acceptedAnswer":{"@type":"Answer","text":"The rule engine data model and configuration UI exist in Chau7, but the auto-switcher is not yet connected to the terminal session lifecycle. Profile auto-switching rules can be configured in settings, and integration is in progress."}},
-            {"@type":"Question","name":"Can I configure rules in Chau7 settings?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7's settings panel lets you create ProfileSwitchRule entries with triggers for directory, git repository, SSH host, running process, and environment variable. Each rule maps to a target profile."}}
+            {"@type":"Question","name":"What is Context-Aware Switching in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Context-Aware Switching in Chau7 is a rule engine for automatic profile switching. The ProfileAutoSwitcher evaluates rules on every directory change from TerminalSessionModel, using directory, git branch, and running processes as context. Each rule maps to a specific Chau7 profile."}},
+            {"@type":"Question","name":"What rule triggers does Chau7 support?","acceptedAnswer":{"@type":"Answer","text":"Chau7's ProfileSwitchRule supports triggers for: current directory, git branch, SSH host, running process name, and environment variable. The evaluateRules() method fires on every directory change with the current directory, git branch, and running processes as context."}},
+            {"@type":"Question","name":"Is the auto-switching feature active?","acceptedAnswer":{"@type":"Answer","text":"Yes. The ProfileAutoSwitcher is a shared singleton whose evaluateRules() method fires on every directory change from TerminalSessionModel. Rules configured in settings are evaluated automatically with directory, git branch, and running processes as context."}},
+            {"@type":"Question","name":"Can I configure rules in Chau7 settings?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7's settings panel lets you create ProfileSwitchRule entries with triggers for directory, git branch, SSH host, running process, and environment variable. Each rule maps to a target profile and is evaluated automatically on every directory change."}}
         ]
     }]
     </script>
@@ -75,7 +75,7 @@
             <div class="hero-content">
                 <div class="section-badge">SSH & REMOTE</div>
                 <h1 class="hero-title">Context-Aware Switching</h1>
-                <p class="hero-subtitle">Profile auto-switching rules for directory, git repo, SSH host, and more. Rule engine configured, integration in progress.</p>
+                <p class="hero-subtitle">Chau7 automatically switches profiles based on directory, git branch, and running processes. Rules fire on every directory change.</p>
             </div>
         </section>
 
@@ -96,8 +96,8 @@
         <section class="feature-content" data-ui="context-switching-definition">
             <div class="section-inner prose">
                 <h2>What is Context-Aware Switching in Chau7?</h2>
-                <p>Context-Aware Switching in Chau7 is a rule engine for automatic profile switching. The <code>ProfileAutoSwitcher</code> data model supports rules with triggers for directory, git repository, SSH host, running process, and environment variable. Each rule maps to a target profile.</p>
-                <p>Profile auto-switching rules can be configured in settings. The rule engine supports the data model and configuration, but integration with the terminal session lifecycle is in progress.</p>
+                <p>Context-Aware Switching in Chau7 is a rule engine for automatic profile switching. The <code>ProfileAutoSwitcher</code> is a shared singleton whose <code>evaluateRules()</code> method fires on every directory change from <code>TerminalSessionModel</code>. Each rule maps to a target profile.</p>
+                <p>Rules are evaluated with the current directory, git branch, and running processes as context. Profile auto-switching rules can be configured in the settings panel.</p>
             </div>
         </section>
 
@@ -105,8 +105,8 @@
         <section class="feature-content" data-ui="context-switching-triggers">
             <div class="section-inner prose">
                 <h2>What rule triggers does Chau7 support?</h2>
-                <p>Chau7's <code>ProfileSwitchRule</code> supports five trigger types: current directory, git repository, SSH host, running process name, and environment variable. Each rule maps to a specific Chau7 profile.</p>
-                <p>Rules can be created and configured in the settings panel. You can define rules that would switch profiles based on any of these context signals.</p>
+                <p>Chau7's <code>ProfileSwitchRule</code> supports five trigger types: current directory, git branch, SSH host, running process name, and environment variable. Each rule maps to a specific Chau7 profile.</p>
+                <p>The <code>evaluateRules()</code> method fires on every directory change with the current directory, git branch, and running processes as context. Rules can be created and configured in the settings panel.</p>
             </div>
         </section>
 
@@ -114,8 +114,8 @@
         <section class="feature-content" data-ui="context-switching-status">
             <div class="section-inner prose">
                 <h2>Is the auto-switching feature active?</h2>
-                <p>The rule engine data model and configuration UI exist in Chau7. The <code>ProfileAutoSwitcher</code> contains an <code>evaluateRules()</code> method, but it is not yet connected to the terminal session or tab lifecycle.</p>
-                <p>This means rules can be configured in settings but are not yet evaluated automatically when context changes. Integration with the session lifecycle is in progress.</p>
+                <p>Yes. The <code>ProfileAutoSwitcher</code> is a shared singleton whose <code>evaluateRules()</code> method fires on every directory change from <code>TerminalSessionModel</code>. Rules configured in settings are evaluated automatically with directory, git branch, and running processes as context.</p>
+                <p>When a rule matches, Chau7 switches to the target profile automatically. This makes each environment visually distinct, reducing the risk of running the wrong command in the wrong context.</p>
             </div>
         </section>
 
@@ -123,8 +123,8 @@
         <section class="feature-content" data-ui="context-switching-configure">
             <div class="section-inner prose">
                 <h2>Can I configure rules in Chau7 settings?</h2>
-                <p>Yes. Chau7's settings panel lets you create <code>ProfileSwitchRule</code> entries. Each rule specifies a trigger type (directory, git repo, SSH host, process, or environment variable) and a target profile.</p>
-                <p>The configuration is stored and ready for when the auto-switcher is connected to the terminal session lifecycle.</p>
+                <p>Yes. Chau7's settings panel lets you create <code>ProfileSwitchRule</code> entries. Each rule specifies a trigger type (directory, git branch, SSH host, process, or environment variable) and a target profile.</p>
+                <p>Rules are evaluated automatically on every directory change. The <code>ProfileAutoSwitcher</code> singleton uses the current directory, git branch, and running processes as context for rule matching.</p>
             </div>
         </section>
 
@@ -132,8 +132,8 @@
         <section class="feature-content" data-ui="context-switching-why-it-matters">
             <div class="section-inner prose">
                 <h2>Why does Context-Aware Switching matter?</h2>
-                <p>Running a destructive command on the wrong server is one of the most expensive mistakes in operations. Automatic profile switching based on context can make each environment visually distinct, reducing the risk of mistakes.</p>
-                <p>Chau7's rule engine lays the foundation for this capability. Once integration with the session lifecycle is complete, rules configured in settings will trigger automatic profile switches based on directory, git repo, SSH host, process, or environment variable.</p>
+                <p>Running a destructive command on the wrong server is one of the most expensive mistakes in operations. Automatic profile switching based on context makes each environment visually distinct, reducing the risk of mistakes.</p>
+                <p>Chau7's <code>ProfileAutoSwitcher</code> evaluates rules on every directory change, using the current directory, git branch, and running processes as context. When a rule matches, Chau7 switches to the target profile automatically, giving you instant visual feedback about your current environment.</p>
             </div>
         </section>
 
@@ -168,19 +168,19 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Context-Aware Switching in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Context-Aware Switching in Chau7 is a rule engine for profile auto-switching. The ProfileAutoSwitcher data model supports rules with triggers for directory, git repository, SSH host, running process, and environment variable. The rule engine can be configured in settings. Integration with the terminal session lifecycle is in progress.</p></div>
+                        <div class="faq-answer"><p>Context-Aware Switching in Chau7 is a rule engine for automatic profile switching. The ProfileAutoSwitcher evaluates rules on every directory change from TerminalSessionModel, using directory, git branch, and running processes as context. Each rule maps to a specific Chau7 profile.</p></div>
                     </details>
                     <details>
                         <summary>What rule triggers does Chau7 support?</summary>
-                        <div class="faq-answer"><p>Chau7's ProfileSwitchRule supports triggers for: current directory, git repository, SSH host, running process name, and environment variable. Each rule maps to a specific Chau7 profile. Rules can be created and configured in settings.</p></div>
+                        <div class="faq-answer"><p>Chau7's ProfileSwitchRule supports triggers for: current directory, git branch, SSH host, running process name, and environment variable. The evaluateRules() method fires on every directory change with the current directory, git branch, and running processes as context.</p></div>
                     </details>
                     <details>
                         <summary>Is the auto-switching feature active?</summary>
-                        <div class="faq-answer"><p>The rule engine data model and configuration UI exist in Chau7, but the auto-switcher is not yet connected to the terminal session lifecycle. Rules can be configured in settings, and integration is in progress.</p></div>
+                        <div class="faq-answer"><p>Yes. The ProfileAutoSwitcher is a shared singleton whose evaluateRules() method fires on every directory change from TerminalSessionModel. Rules configured in settings are evaluated automatically with directory, git branch, and running processes as context.</p></div>
                     </details>
                     <details>
                         <summary>Can I configure rules in Chau7 settings?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7's settings panel lets you create ProfileSwitchRule entries with triggers for directory, git repository, SSH host, running process, and environment variable. Each rule maps to a target profile.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7's settings panel lets you create ProfileSwitchRule entries with triggers for directory, git branch, SSH host, running process, and environment variable. Each rule maps to a target profile and is evaluated automatically on every directory change.</p></div>
                     </details>
                 </div>
             </div>
@@ -190,7 +190,7 @@
         <section class="footer-cta-section" aria-label="Download call to action" data-ui="context-switching-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Configure profile switching rules. Integration coming soon.</h2>
+                    <h2>Your terminal knows where you are. Let it dress the part.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>

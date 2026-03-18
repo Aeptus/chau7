@@ -33,6 +33,9 @@
         "description": "Chau7 is an AI-native terminal for macOS that intercepts destructive commands like rm -rf with a confirmation dialog before the shell executes them.",
         "featureList": [
             "Pattern-based detection of rm -rf, dd, mkfs, chmod 777",
+            "Unicode homoglyph detection for Cyrillic and fullwidth character attacks",
+            "Multiline paste protection for dangerous patterns",
+            "Per-directory allowlists scoped by exact or child path match",
             "Confirmation dialog before destructive execution",
             "Customizable rules and patterns",
             "Global allowlist for trusted commands"
@@ -53,11 +56,11 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Dangerous Command Guard in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Dangerous Command Guard is a safety feature in the Chau7 terminal that intercepts destructive commands like rm -rf, dd, and mkfs before the shell executes them. Chau7 pauses execution and shows a confirmation dialog describing what the command will do and which paths it affects."}},
+            {"@type":"Question","name":"What is Dangerous Command Guard in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Dangerous Command Guard is a safety feature in the Chau7 terminal that intercepts destructive commands like rm -rf, dd, and mkfs before the shell executes them. Chau7 also detects Unicode homoglyph attacks where Cyrillic or fullwidth characters masquerade as ASCII in commands, and checks pasted multi-line content for dangerous patterns. Chau7 pauses execution and shows a confirmation dialog describing what the command will do and which paths it affects."}},
             {"@type":"Question","name":"How does Chau7's dangerous command guard compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals have no built-in protection against destructive commands. iTerm2, Warp, Alacritty, and Kitty rely on shell aliases or third-party tools. Chau7 intercepts dangerous commands at the terminal input layer, catching them regardless of shell."}},
             {"@type":"Question","name":"How do I prevent accidental rm -rf in the terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7's Dangerous Command Guard automatically detects rm with recursive or force flags and pauses execution before the shell sees the command. A confirmation dialog shows the exact paths affected and the potential consequences. No shell aliases or wrapper scripts are needed."}},
             {"@type":"Question","name":"Does the guard slow down normal commands?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7's pattern matching runs in microseconds on every command submission. Safe commands execute with no visible delay. Only when Chau7 detects a dangerous pattern does the confirmation dialog appear."}},
-            {"@type":"Question","name":"Can I customize the guard rules?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 lets you customize the command patterns and add specific commands to a global allowlist. You can add your own patterns to detect additional dangerous commands."}}
+            {"@type":"Question","name":"Can I customize the guard rules?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 lets you customize the command patterns and add specific commands to per-directory allowlists scoped by exact or child path match, plus a global allowlist. You can add your own patterns to detect additional dangerous commands."}}
         ]
     }]
     </script>
@@ -106,6 +109,7 @@
             <div class="section-inner prose">
                 <h2>What is Dangerous Command Guard in Chau7?</h2>
                 <p>Dangerous Command Guard is a safety feature in the Chau7 terminal that intercepts destructive commands before the shell executes them. Chau7 maintains a curated ruleset of dangerous command patterns: <code>rm</code> with recursive or force flags, <code>dd</code> targeting block devices, <code>mkfs</code>, <code>chmod 777</code> on root paths, and more.</p>
+                <p>Chau7 also detects Unicode homoglyph attacks where Cyrillic or fullwidth characters masquerade as ASCII in commands. The guard checks pasted multi-line content for dangerous patterns as well.</p>
                 <p>When Chau7 detects a match, execution is paused and a confirmation dialog appears. The dialog shows exactly what the command will do, which paths it affects, and the potential consequences.</p>
             </div>
         </section>
@@ -116,7 +120,7 @@
                 <h2>How do I prevent accidental rm -rf in the terminal?</h2>
                 <p>Chau7's Dangerous Command Guard automatically detects <code>rm</code> with recursive or force flags and pauses execution before the shell sees the command. No shell aliases, wrapper scripts, or third-party tools are needed.</p>
                 <p>Chau7's guard operates at the terminal input layer, not as a shell plugin. This means Chau7 catches dangerous commands regardless of which shell you use: zsh, bash, or fish.</p>
-                <p>Chau7's guard catches dangerous commands whether they are typed or pasted from the clipboard.</p>
+                <p>Chau7's guard catches dangerous commands whether they are typed or pasted from the clipboard. Multi-line pastes are also checked for dangerous patterns across all lines.</p>
             </div>
         </section>
 
@@ -142,8 +146,8 @@
         <section class="feature-content" data-ui="dangerous-command-guard-disable">
             <div class="section-inner prose">
                 <h2>Can I customize Chau7's guard rules?</h2>
-                <p>Yes. Chau7 lets you add specific commands to a global allowlist so they bypass the guard. You can also add your own patterns to detect additional dangerous commands.</p>
-                <p>Chau7's rules are customizable. All detected patterns trigger the same confirmation dialog. The allowlist is global and applies across all tabs.</p>
+                <p>Yes. Chau7 supports per-directory allowlists scoped by exact or child path match, plus a global allowlist. Commands on the allowlist bypass the guard. You can also add your own patterns to detect additional dangerous commands.</p>
+                <p>Chau7's rules are customizable. All detected patterns trigger the same confirmation dialog. The check() function accepts an optional directory parameter to apply the correct per-directory allowlist.</p>
             </div>
         </section>
 
@@ -152,7 +156,7 @@
             <div class="section-inner prose">
                 <h2>Why Chau7's Dangerous Command Guard matters</h2>
                 <p>Every developer has a horror story about a misplaced <code>rm -rf</code> or a <code>dd</code> that targeted the wrong device. Shell aliases and confirmation functions are fragile and easy to bypass.</p>
-                <p>Chau7's Dangerous Command Guard intercepts known destructive commands at the terminal level, before the shell sees them, and presents a confirmation dialog. It is a seatbelt, not a cage: experienced drivers still wear them.</p>
+                <p>Chau7's Dangerous Command Guard intercepts known destructive commands at the terminal level, before the shell sees them, and presents a confirmation dialog. It also detects Unicode homoglyph attacks and checks multi-line pastes. It is a seatbelt, not a cage: experienced drivers still wear them.</p>
             </div>
         </section>
 
@@ -183,7 +187,7 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Dangerous Command Guard in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Dangerous Command Guard is a safety feature in the Chau7 terminal that intercepts destructive commands like rm -rf, dd, and mkfs before the shell executes them. Chau7 pauses execution and shows a confirmation dialog describing what the command will do and which paths it affects.</p></div>
+                        <div class="faq-answer"><p>Dangerous Command Guard is a safety feature in the Chau7 terminal that intercepts destructive commands like rm -rf, dd, and mkfs before the shell executes them. Chau7 also detects Unicode homoglyph attacks where Cyrillic or fullwidth characters masquerade as ASCII, and checks pasted multi-line content for dangerous patterns. Chau7 pauses execution and shows a confirmation dialog describing what the command will do and which paths it affects.</p></div>
                     </details>
                     <details>
                         <summary>How does Chau7's dangerous command guard compare to other terminals?</summary>
@@ -199,7 +203,7 @@
                     </details>
                     <details>
                         <summary>Can I customize the guard rules?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7 lets you add specific commands to a global allowlist and add your own patterns to detect additional dangerous commands. All detected patterns trigger the same confirmation dialog.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7 supports per-directory allowlists scoped by exact or child path match, plus a global allowlist. You can add your own patterns to detect additional dangerous commands. All detected patterns trigger the same confirmation dialog.</p></div>
                     </details>
                 </div>
             </div>

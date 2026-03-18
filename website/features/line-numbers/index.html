@@ -6,7 +6,7 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Line Numbers | Chau7 Terminal</title>
-    <meta name="description" content="Chau7's built-in editor shows line numbers in a fixed-width gutter. Toggle line numbers on or off in the editor preferences.">
+    <meta name="description" content="Chau7's built-in editor shows line numbers in an adaptive-width gutter with absolute, relative, and hybrid modes. Toggle line numbers on or off in the editor preferences.">
     <meta name="article:section" content="Built-in Editor">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="line numbers">
@@ -15,7 +15,7 @@
     <meta name="article:tag" content="code navigation">
     <meta name="article:tag" content="gutter">
     <meta property="og:title" content="Line Numbers | Chau7">
-    <meta property="og:description" content="Chau7's built-in editor shows line numbers in a fixed-width gutter. Toggle line numbers on or off in the editor preferences.">
+    <meta property="og:description" content="Chau7's built-in editor shows line numbers in an adaptive-width gutter with absolute, relative, and hybrid modes. Toggle line numbers on or off in the editor preferences.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,12 +30,14 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS with a built-in editor that shows absolute line numbers in a fixed-width gutter.",
+        "description": "Chau7 is an AI-native terminal for macOS with a built-in editor that shows line numbers in an adaptive-width gutter with absolute, relative, and hybrid modes.",
         "featureList": [
-            "Absolute line numbers in the editor gutter",
-            "Fixed 40px gutter width",
+            "Absolute, relative, and hybrid line number modes via LineNumberMode enum",
+            "Adaptive gutter width based on total line count",
             "Current line highlighting",
-            "Toggleable line number gutter"
+            "Toggleable line number gutter",
+            "Relative mode shows distance from current line",
+            "Hybrid mode shows absolute on current line, relative on all others"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
@@ -53,9 +55,9 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Line Numbers in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Line Numbers is a feature in the Chau7 terminal's built-in editor that displays a line number gutter along the left edge of the editing area. Chau7 shows absolute line numbers in a fixed-width gutter."}},
-            {"@type":"Question","name":"How does Chau7's line numbers compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminal emulators do not include a built-in editor, so line numbers are not relevant. Terminals like iTerm2, Alacritty, and Kitty rely on external editors. Chau7 includes a built-in editor with line numbers so developers can navigate error references without leaving the terminal."}},
-            {"@type":"Question","name":"How does Chau7 display line numbers in its terminal editor?","acceptedAnswer":{"@type":"Answer","text":"Chau7 displays a line number gutter along the left edge of the built-in editor with a fixed width of 40 pixels. The current line is highlighted, and numbers update dynamically as you scroll."}},
+            {"@type":"Question","name":"What is Line Numbers in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Line Numbers is a feature in the Chau7 terminal's built-in editor that displays a line number gutter along the left edge of the editing area. Chau7 supports absolute, relative, and hybrid line number modes via a LineNumberMode enum. The gutter width adapts to the total line count."}},
+            {"@type":"Question","name":"How does Chau7's line numbers compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminal emulators do not include a built-in editor, so line numbers are not relevant. Terminals like iTerm2, Alacritty, and Kitty rely on external editors. Chau7 includes a built-in editor with absolute, relative, and hybrid line number modes so developers can navigate error references without leaving the terminal."}},
+            {"@type":"Question","name":"How does Chau7 display line numbers in its terminal editor?","acceptedAnswer":{"@type":"Answer","text":"Chau7 displays a line number gutter along the left edge of the built-in editor with an adaptive width that adjusts based on the total line count digit width. The current line is highlighted, and numbers update dynamically as you scroll. Choose between absolute, relative, or hybrid modes."}},
             {"@type":"Question","name":"Can I hide line numbers entirely in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Yes. The line number gutter in Chau7's built-in editor is fully optional. You can toggle line numbers off in the editor preferences for a minimal editing view."}}
         ]
     }]
@@ -103,8 +105,8 @@
         <section class="feature-content" data-ui="line-numbers-what">
             <div class="section-inner prose">
                 <h2>What is Line Numbers in Chau7?</h2>
-                <p>Line Numbers is a feature in the Chau7 terminal's built-in editor that displays a line number gutter along the left edge of the editing area. Chau7 shows absolute line numbers in a fixed-width gutter.</p>
-                <p>The line number gutter in Chau7 uses a fixed width of 40 pixels. Numbers update dynamically as you scroll.</p>
+                <p>Line Numbers is a feature in the Chau7 terminal's built-in editor that displays a line number gutter along the left edge of the editing area. Chau7 supports three line number modes via the <code>LineNumberMode</code> enum: absolute, relative, and hybrid.</p>
+                <p>The line number gutter in Chau7 uses an adaptive width that adjusts based on the total line count digit width. Numbers update dynamically as you scroll.</p>
             </div>
         </section>
 
@@ -112,8 +114,8 @@
         <section class="feature-content" data-ui="line-numbers-display">
             <div class="section-inner prose">
                 <h2>How does Chau7 display line numbers in its terminal editor?</h2>
-                <p>Chau7's built-in editor renders a line number gutter along the left edge of the editing area. The current line is highlighted for easy orientation. The gutter uses a fixed width of 40 pixels.</p>
-                <p>Chau7 displays absolute line numbers showing standard sequential numbers starting from 1.</p>
+                <p>Chau7's built-in editor renders a line number gutter along the left edge of the editing area. The current line is highlighted for easy orientation. The gutter uses an adaptive width that adjusts based on the total line count digit width.</p>
+                <p>Chau7 supports three line number modes. Absolute mode shows standard sequential numbers starting from 1. Relative mode shows the distance from the current line, which is useful for Vim-style motion commands. Hybrid mode shows the absolute line number on the current line and relative numbers on all other lines.</p>
             </div>
         </section>
 
@@ -166,15 +168,15 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Line Numbers in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Line Numbers is a feature in the Chau7 terminal's built-in editor that displays a line number gutter along the left edge of the editing area. Chau7 shows absolute line numbers in a fixed-width gutter.</p></div>
+                        <div class="faq-answer"><p>Line Numbers is a feature in the Chau7 terminal's built-in editor that displays a line number gutter along the left edge of the editing area. Chau7 supports absolute, relative, and hybrid line number modes via a LineNumberMode enum. The gutter width adapts to the total line count.</p></div>
                     </details>
                     <details>
                         <summary>How does Chau7's line numbers compare to other terminals?</summary>
-                        <div class="faq-answer"><p>Most terminal emulators do not include a built-in editor, so line numbers are not relevant. Terminals like iTerm2, Alacritty, and Kitty rely on external editors. Chau7 includes a built-in editor with line numbers so developers can navigate error references without leaving the terminal.</p></div>
+                        <div class="faq-answer"><p>Most terminal emulators do not include a built-in editor, so line numbers are not relevant. Terminals like iTerm2, Alacritty, and Kitty rely on external editors. Chau7 includes a built-in editor with absolute, relative, and hybrid line number modes so developers can navigate error references without leaving the terminal.</p></div>
                     </details>
                     <details>
                         <summary>How does Chau7 display line numbers in its terminal editor?</summary>
-                        <div class="faq-answer"><p>Chau7 displays a line number gutter along the left edge of the built-in editor with a fixed width of 40 pixels. The current line is highlighted, and numbers update dynamically as you scroll.</p></div>
+                        <div class="faq-answer"><p>Chau7 displays a line number gutter along the left edge of the built-in editor with an adaptive width that adjusts based on the total line count digit width. The current line is highlighted, and numbers update dynamically as you scroll. Choose between absolute, relative, or hybrid modes.</p></div>
                     </details>
                     <details>
                         <summary>Can I hide line numbers entirely in Chau7?</summary>

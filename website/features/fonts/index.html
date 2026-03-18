@@ -34,6 +34,7 @@
         "featureList": [
             "70+ monospace font families recognized by the font picker",
             "Nerd Font variants appear in the picker when installed on the system",
+            "Font weight adjustment (0-14 scale)",
             "Font family and font size selection",
             "Live font preview in font picker",
             "Per-profile font configuration",
@@ -55,7 +56,7 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is font support in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7 recognizes over 70 monospace font families available on your system, including popular choices like JetBrains Mono, Fira Code, Cascadia Code, Iosevka, and Hack. Nerd Font variants appear in the picker when installed on your system. Chau7 supports live preview, font family and size selection, and per-profile font configuration."}},
+            {"@type":"Question","name":"What is font support in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7 recognizes over 70 monospace font families available on your system, including popular choices like JetBrains Mono, Fira Code, Cascadia Code, Iosevka, and Hack. Nerd Font variants appear in the picker when installed on your system. Chau7 supports live preview, font family, size, and weight selection, and per-profile font configuration. The font weight setting (0-14 on the NSFontManager weight scale, default 5 = Regular) lets you adjust weight without changing font family."}},
             {"@type":"Question","name":"How does Chau7's font support compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals require manual font configuration via config files. iTerm2, Alacritty, and Kitty rely on system-installed fonts with no live preview. Chau7 recognizes 70+ monospace font families via NSFontManager, offers a live preview font picker, and supports font family and size selection with keyboard zoom (Cmd+/Cmd-)."}},
             {"@type":"Question","name":"How do I use Nerd Fonts in my terminal?","acceptedAnswer":{"@type":"Answer","text":"Install the Nerd Font you want on your system, then select it in Chau7's font picker. Chau7 recognizes Nerd Font variants when they are installed and makes them available for selection. Powerline symbols, devicons, and other special glyphs render correctly once the font is active."}},
             {"@type":"Question","name":"Can I use my own custom fonts?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 detects any monospace font installed on your system via NSFontManager and makes it available in the font picker alongside the 70+ recognized font families."}},
@@ -108,7 +109,7 @@
             <div class="section-inner prose">
                 <h2>What is font support in Chau7?</h2>
                 <p>Chau7 recognizes over 70 monospace font families available on your system, filtered by NSFontManager availability. Popular choices include JetBrains Mono, Fira Code, Cascadia Code, Iosevka, and Hack. Fonts are not embedded in the app -- they are system fonts that the user must have installed.</p>
-                <p>Nerd Font variants appear in the picker when installed on the system, so powerline symbols, file icons, and dev glyphs render correctly once you install and select a Nerd Font. The font picker in Chau7 shows a live preview of each font at your current size settings.</p>
+                <p>Chau7 includes a font weight setting (0-14 on the NSFontManager weight scale, default 5 = Regular) that lets you adjust weight without changing font family. Nerd Font variants appear in the picker when installed on the system, so powerline symbols, file icons, and dev glyphs render correctly once you install and select a Nerd Font. The font picker in Chau7 shows a live preview of each font at your current size settings.</p>
             </div>
         </section>
 
@@ -126,7 +127,7 @@
             <div class="section-inner prose">
                 <h2>Can I use my own custom fonts in Chau7?</h2>
                 <p>Yes. Chau7 detects any monospace font installed on your system via NSFontManager and makes it available in the font picker alongside the 70+ recognized font families.</p>
-                <p>Chau7 supports font family and font size selection. You can choose your preferred family from the picker and adjust the size using the stepper control or keyboard zoom (Cmd+/Cmd-).</p>
+                <p>Chau7 supports font family, font size, and font weight selection. You can choose your preferred family from the picker, adjust the size using the stepper control or keyboard zoom (Cmd+/Cmd-), and fine-tune the weight on a 0-14 scale (default 5 = Regular).</p>
             </div>
         </section>
 
@@ -144,7 +145,7 @@
             <div class="section-inner prose">
                 <h2>How does Chau7's font support compare to other terminals?</h2>
                 <p>Most terminals require you to configure fonts via text-based configuration files. iTerm2, Alacritty, and Kitty rely on system-installed fonts with no live preview.</p>
-                <p>Chau7 recognizes 70+ monospace font families via NSFontManager, offers a live preview font picker, and supports font family and size selection. Font size adjusts with keyboard shortcuts (Cmd+/Cmd-). Per-profile font configuration in Chau7 lets you use different typefaces for different workflows.</p>
+                <p>Chau7 recognizes 70+ monospace font families via NSFontManager, offers a live preview font picker, and supports font family, size, and weight selection. The font weight setting uses the NSFontManager 0-14 scale. Font size adjusts with keyboard shortcuts (Cmd+/Cmd-). Per-profile font configuration in Chau7 lets you use different typefaces for different workflows.</p>
             </div>
         </section>
 
@@ -188,11 +189,11 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is font support in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Chau7 recognizes over 70 monospace font families available on your system, including JetBrains Mono, Fira Code, Cascadia Code, Iosevka, and Hack. Nerd Font variants appear in the picker when installed on your system. Chau7 supports live preview, font family and size selection, and per-profile font configuration.</p></div>
+                        <div class="faq-answer"><p>Chau7 recognizes over 70 monospace font families available on your system, including JetBrains Mono, Fira Code, Cascadia Code, Iosevka, and Hack. Nerd Font variants appear in the picker when installed on your system. Chau7 supports live preview, font family, size, and weight selection, and per-profile font configuration. The font weight setting (0-14 on the NSFontManager scale, default 5 = Regular) lets you adjust weight without changing font family.</p></div>
                     </details>
                     <details>
                         <summary>How does Chau7's font support compare to other terminals?</summary>
-                        <div class="faq-answer"><p>Most terminals require manual font configuration via config files. iTerm2, Alacritty, and Kitty rely on system-installed fonts with no live preview. Chau7 recognizes 70+ monospace font families, offers a live preview font picker, and supports font family and size selection with keyboard zoom (Cmd+/Cmd-).</p></div>
+                        <div class="faq-answer"><p>Most terminals require manual font configuration via config files. iTerm2, Alacritty, and Kitty rely on system-installed fonts with no live preview. Chau7 recognizes 70+ monospace font families, offers a live preview font picker, and supports font family, size, and weight selection with keyboard zoom (Cmd+/Cmd-).</p></div>
                     </details>
                     <details>
                         <summary>How do I use Nerd Fonts in Chau7?</summary>

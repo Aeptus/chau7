@@ -6,7 +6,7 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Hyperlinks | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 auto-detects clickable URLs and supports the OSC 8 hyperlink protocol for rich terminal links with custom text.">
+    <meta name="description" content="Chau7 auto-detects clickable http, https, file, ssh, ftp, and sftp URLs and supports the OSC 8 hyperlink protocol for rich terminal links with custom text.">
     <meta name="article:section" content="Terminal Core">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="hyperlinks">
@@ -15,7 +15,7 @@
     <meta name="article:tag" content="terminal links">
     <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Hyperlinks | Chau7">
-    <meta property="og:description" content="Chau7 auto-detects clickable URLs and supports the OSC 8 hyperlink protocol for rich terminal links with custom text.">
+    <meta property="og:description" content="Chau7 auto-detects clickable http, https, file, ssh, ftp, and sftp URLs and supports the OSC 8 hyperlink protocol for rich terminal links with custom text.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,11 +30,12 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS that auto-detects clickable URLs in terminal output and supports the OSC 8 hyperlink protocol for rich links with custom display text.",
+        "description": "Chau7 is an AI-native terminal for macOS that auto-detects clickable http, https, file, ssh, ftp, and sftp URLs in terminal output and supports the OSC 8 hyperlink protocol for rich links with custom display text.",
         "featureList": [
-            "Real-time URL auto-detection for http and https URLs",
+            "Real-time URL auto-detection for http, https, file, ssh, ftp, and sftp URLs",
             "OSC 8 hyperlink protocol support",
-            "Cmd+click to open URLs in default browser"
+            "Cmd+click to open URLs via NSWorkspace",
+            "Native handling of file, ssh, ftp, and sftp schemes"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
@@ -52,10 +53,10 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Hyperlinks in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Hyperlinks in Chau7 combines two features: real-time URL auto-detection that makes plain http and https URLs clickable in terminal output, and OSC 8 hyperlink protocol support that lets CLI tools emit links with custom display text. Chau7 renders both types with a subtle underline and opens them on Cmd+click."}},
+            {"@type":"Question","name":"What is Hyperlinks in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Hyperlinks in Chau7 combines two features: real-time URL auto-detection that makes http, https, file, ssh, ftp, and sftp URLs clickable in terminal output, and OSC 8 hyperlink protocol support that lets CLI tools emit links with custom display text. Chau7 renders both types with a subtle underline and opens them on Cmd+click via NSWorkspace."}},
             {"@type":"Question","name":"How does Chau7's hyperlinks compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Many terminals support basic URL detection but lack OSC 8 protocol support. Chau7 supports both auto-detected URLs and OSC 8 hyperlinks."}},
-            {"@type":"Question","name":"How to make terminal URLs clickable on macOS","acceptedAnswer":{"@type":"Answer","text":"Chau7 automatically detects http and https URLs in terminal output and makes them clickable. Cmd+click opens the URL in your default browser."}},
-            {"@type":"Question","name":"Which URL schemes does Chau7 auto-detection recognize?","acceptedAnswer":{"@type":"Answer","text":"Chau7 detects http and https URLs. For programs that want richer control over links, Chau7 supports the OSC 8 hyperlink protocol which can associate any URL with custom display text."}},
+            {"@type":"Question","name":"How to make terminal URLs clickable on macOS","acceptedAnswer":{"@type":"Answer","text":"Chau7 automatically detects http, https, file, ssh, ftp, and sftp URLs in terminal output and makes them clickable. Cmd+click opens the URL via NSWorkspace natively."}},
+            {"@type":"Question","name":"Which URL schemes does Chau7 auto-detection recognize?","acceptedAnswer":{"@type":"Answer","text":"Chau7 detects http, https, file, ssh, ftp, and sftp URLs. For programs that want richer control over links, Chau7 supports the OSC 8 hyperlink protocol which can associate any URL with custom display text."}},
             {"@type":"Question","name":"Do OSC 8 hyperlinks work inside tmux with Chau7?","acceptedAnswer":{"@type":"Answer","text":"Yes, provided your tmux version supports OSC 8 passthrough (tmux 3.4+). Chau7 correctly renders hyperlinks passed through tmux, screen, and other multiplexers that forward OSC 8 sequences."}}
         ]
     }]
@@ -104,8 +105,8 @@
         <section class="feature-content" data-ui="hyperlinks-what">
             <div class="section-inner prose">
                 <h2>What is Hyperlinks in Chau7?</h2>
-                <p>Hyperlinks in Chau7 combines two features. First, Chau7 runs a URL detection regex over terminal output in real time, identifying plain URLs and making them clickable. Second, Chau7 supports the OSC 8 hyperlink protocol, which lets CLI tools emit escape sequences that associate a URL with custom display text.</p>
-                <p>Chau7 renders both auto-detected URLs and OSC 8 hyperlinks with a subtle underline. Cmd+click opens the URL in your default browser.</p>
+                <p>Hyperlinks in Chau7 combines two features. First, Chau7 runs a URL detection regex over terminal output in real time, identifying http, https, file, ssh, ftp, and sftp URLs and making them clickable. Second, Chau7 supports the OSC 8 hyperlink protocol, which lets CLI tools emit escape sequences that associate a URL with custom display text.</p>
+                <p>Chau7 renders both auto-detected URLs and OSC 8 hyperlinks with a subtle underline. Cmd+click opens the URL natively via NSWorkspace, which handles all six schemes without requiring a browser for non-web protocols.</p>
             </div>
         </section>
 
@@ -113,8 +114,8 @@
         <section class="feature-content" data-ui="hyperlinks-how-to-click">
             <div class="section-inner prose">
                 <h2>How to make terminal URLs clickable on macOS</h2>
-                <p>Chau7 automatically detects http and https URLs in terminal output and makes them clickable. No configuration is needed. When Chau7 identifies a URL, it renders the text with an underline.</p>
-                <p>Cmd+click on any detected URL in Chau7 opens it in your default browser.</p>
+                <p>Chau7 automatically detects http, https, file, ssh, ftp, and sftp URLs in terminal output and makes them clickable. No configuration is needed. When Chau7 identifies a URL, it renders the text with an underline.</p>
+                <p>Cmd+click on any detected URL in Chau7 opens it natively via NSWorkspace. Web URLs open in your default browser, while file, ssh, ftp, and sftp URLs are handled by the appropriate system application.</p>
             </div>
         </section>
 
@@ -122,7 +123,7 @@
         <section class="feature-content" data-ui="hyperlinks-url-schemes">
             <div class="section-inner prose">
                 <h2>Which URL schemes does Chau7 auto-detection recognize?</h2>
-                <p>Chau7 detects http and https URLs in terminal output.</p>
+                <p>Chau7 detects six URL schemes in terminal output: http, https, file, ssh, ftp, and sftp. All six are matched by the URL detection regex and rendered as clickable links. NSWorkspace opens each scheme natively.</p>
                 <p>For programs that want richer control over hyperlinks, Chau7 supports the OSC 8 hyperlink protocol. This allows CLI tools to emit escape sequences that associate a URL with arbitrary display text, similar to an HTML anchor tag.</p>
             </div>
         </section>
@@ -176,7 +177,7 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Hyperlinks in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Hyperlinks in Chau7 combines two features: real-time URL auto-detection that makes http and https URLs clickable in terminal output, and OSC 8 hyperlink protocol support that lets CLI tools emit links with custom display text. Chau7 renders both types with a subtle underline and opens them on Cmd+click.</p></div>
+                        <div class="faq-answer"><p>Hyperlinks in Chau7 combines two features: real-time URL auto-detection that makes http, https, file, ssh, ftp, and sftp URLs clickable in terminal output, and OSC 8 hyperlink protocol support that lets CLI tools emit links with custom display text. Chau7 renders both types with a subtle underline and opens them on Cmd+click via NSWorkspace.</p></div>
                     </details>
                     <details>
                         <summary>How does Chau7's hyperlinks compare to other terminals?</summary>
@@ -184,11 +185,11 @@
                     </details>
                     <details>
                         <summary>How to make terminal URLs clickable on macOS</summary>
-                        <div class="faq-answer"><p>Chau7 automatically detects http and https URLs in terminal output and makes them clickable. Cmd+click opens the URL in your default browser.</p></div>
+                        <div class="faq-answer"><p>Chau7 automatically detects http, https, file, ssh, ftp, and sftp URLs in terminal output and makes them clickable. Cmd+click opens the URL via NSWorkspace natively.</p></div>
                     </details>
                     <details>
                         <summary>Which URL schemes does Chau7 auto-detection recognize?</summary>
-                        <div class="faq-answer"><p>Chau7 detects http and https URLs. For richer control over links, Chau7 supports the OSC 8 hyperlink protocol which can associate any URL with custom display text.</p></div>
+                        <div class="faq-answer"><p>Chau7 detects http, https, file, ssh, ftp, and sftp URLs. NSWorkspace opens all six schemes natively. For richer control over links, Chau7 supports the OSC 8 hyperlink protocol which can associate any URL with custom display text.</p></div>
                     </details>
                     <details>
                         <summary>Do OSC 8 hyperlinks work inside tmux with Chau7?</summary>

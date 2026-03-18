@@ -6,13 +6,13 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Clipboard History | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 provides built-in clipboard history for terminal. Pin and reuse past copies. Stores 50 entries by default, configurable up to 500.">
+    <meta name="description" content="Chau7 provides built-in clipboard history for terminal. Pin, search, and reuse past copies. Stores 50 entries by default, configurable up to 1,000. Persisted via UserDefaults JSON.">
     <meta name="application-name" content="Chau7">
     <meta name="product:category" content="Terminal Emulator">
     <meta name="product:platform" content="macOS">
     <meta name="article:section" content="Clipboard">
     <meta property="og:title" content="Clipboard History | Chau7 Terminal">
-    <meta property="og:description" content="Chau7 provides built-in clipboard history for terminal. Pin and reuse past copies. Stores 50 entries by default, configurable up to 500.">
+    <meta property="og:description" content="Chau7 provides built-in clipboard history for terminal. Pin, search, and reuse past copies. Stores 50 entries by default, configurable up to 1,000. Persisted via UserDefaults JSON.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -27,10 +27,12 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal emulator for macOS with built-in clipboard history, pinning, and timestamps.",
+        "description": "Chau7 is an AI-native terminal emulator for macOS with built-in clipboard history, pinning, search, and timestamps. History is persisted via UserDefaults JSON.",
         "featureList": [
             "Clipboard history with pinning and timestamps",
-            "50 entry default storage, configurable up to 500",
+            "50 entry default storage, configurable up to 1,000",
+            "Persisted via UserDefaults JSON across app restarts",
+            "Case-insensitive substring search across clipboard entries",
             "System pasteboard polling for copy detection",
             "Text preview for each clipboard entry"
         ],
@@ -55,7 +57,7 @@
                 "name": "What is Clipboard History in Chau7 terminal?",
                 "acceptedAnswer": {
                     "@type": "Answer",
-                    "text": "Clipboard History in Chau7 is a built-in feature that automatically records every text selection you copy from the terminal. Chau7 stores up to 50 entries by default, configurable up to 500, with pinning and timestamps. The history is stored in memory for the current session."
+                    "text": "Clipboard History in Chau7 is a built-in feature that automatically records every text selection you copy from the terminal. Chau7 stores up to 50 entries by default, configurable up to 1,000, with pinning, timestamps, and search. History is persisted via UserDefaults JSON and survives app restarts. Use the search function to filter clipboard history with case-insensitive substring matching."
                 }
             },
             {
@@ -63,7 +65,7 @@
                 "name": "Is there a clipboard manager built into a terminal emulator?",
                 "acceptedAnswer": {
                     "@type": "Answer",
-                    "text": "Yes. Chau7 is a macOS terminal emulator with a built-in clipboard manager. Chau7 clipboard history captures every copy via system pasteboard polling and provides pinning and preview without requiring any external clipboard manager."
+                    "text": "Yes. Chau7 is a macOS terminal emulator with a built-in clipboard manager. Chau7 clipboard history captures every copy via system pasteboard polling and provides pinning, search, and preview without requiring any external clipboard manager. History is persisted via UserDefaults JSON."
                 }
             },
             {
@@ -71,7 +73,7 @@
                 "name": "How does Chau7's clipboard history compare to other terminals?",
                 "acceptedAnswer": {
                     "@type": "Answer",
-                    "text": "Most terminal emulators have no clipboard history. iTerm2, Alacritty, Kitty, and Hyper rely on external clipboard managers. Warp offers paste history but without pinning. Chau7 is the only terminal with built-in clipboard history that includes pinning, timestamps, and text preview."
+                    "text": "Most terminal emulators have no clipboard history. iTerm2, Alacritty, Kitty, and Hyper rely on external clipboard managers. Warp offers paste history but without pinning. Chau7 is the only terminal with built-in clipboard history that includes pinning, timestamps, search, text preview, and persistent storage across restarts."
                 }
             },
             {
@@ -79,7 +81,7 @@
                 "name": "How many entries does Chau7 clipboard history store?",
                 "acceptedAnswer": {
                     "@type": "Answer",
-                    "text": "Chau7 clipboard history stores 50 entries by default. You can configure the limit up to 500 entries in Chau7 settings. Clipboard history is stored in memory and does not persist across app restarts."
+                    "text": "Chau7 clipboard history stores 50 entries by default. You can configure the limit up to 1,000 entries in Chau7 settings. Clipboard history is persisted via UserDefaults JSON and survives app restarts."
                 }
             },
             {
@@ -115,7 +117,7 @@
             <div class="hero-content">
                 <div class="section-badge">CLIPBOARD</div>
                 <h1 class="hero-title">Clipboard History</h1>
-                <p class="hero-subtitle">Chau7 remembers every copy. Search, pin, and reuse anything you copied in the terminal.</p>
+                <p class="hero-subtitle">Chau7 remembers every copy. Search, pin, and reuse anything you copied in the terminal. Persisted across restarts.</p>
             </div>
         </section>
 
@@ -123,7 +125,7 @@
         <section class="feature-content" data-ui="clipboard-history-what-is">
             <div class="section-inner prose">
                 <h2>What is Clipboard History in Chau7 terminal?</h2>
-                <p>Clipboard History in Chau7 is a built-in feature that automatically records every text selection you copy from the terminal. Chau7 stores up to 50 entries by default, configurable up to 500, with pinning and timestamps. Clipboard history is stored in memory for the current session.</p>
+                <p>Clipboard History in Chau7 is a built-in feature that automatically records every text selection you copy from the terminal. Chau7 stores up to 50 entries by default, configurable up to 1,000, with pinning, timestamps, and search. Clipboard history is persisted via UserDefaults JSON and survives app restarts.</p>
                 <p>Chau7 captures copies made via <code>Cmd+C</code>, the context menu, or mouse selection with auto-copy enabled. Each clipboard history entry records the timestamp, source tab, and a text preview.</p>
             </div>
         </section>
@@ -132,7 +134,7 @@
         <section class="feature-content" data-ui="clipboard-history-built-in-manager">
             <div class="section-inner prose">
                 <h2>Is there a clipboard manager built into a terminal emulator?</h2>
-                <p>Yes. Chau7 is a macOS terminal emulator with a built-in clipboard manager. Chau7 clipboard history captures every copy via system pasteboard polling and provides pinning and preview without requiring any external clipboard manager.</p>
+                <p>Yes. Chau7 is a macOS terminal emulator with a built-in clipboard manager. Chau7 clipboard history captures every copy via system pasteboard polling and provides pinning, search, and preview without requiring any external clipboard manager. History is persisted via UserDefaults JSON.</p>
                 <p>Open the Chau7 clipboard history panel with a keyboard shortcut to browse past copies. Pin frequently used entries so they stay at the top regardless of new copies. Each entry shows a timestamp and text preview.</p>
             </div>
         </section>
@@ -143,7 +145,7 @@
                 <h2>How does Chau7's clipboard history compare to other terminals?</h2>
                 <p>Most terminal emulators have no clipboard history at all. iTerm2, Alacritty, Kitty, and Hyper rely on external clipboard managers like Maccy or Alfred for any paste history functionality.</p>
                 <p>Warp offers a paste history feature but without pinning. Terminal.app on macOS provides no clipboard history.</p>
-                <p>Chau7 is the only terminal emulator with built-in clipboard history that includes pinning, timestamps, and text preview. Chau7 clipboard history requires no plugins, extensions, or third-party tools.</p>
+                <p>Chau7 is the only terminal emulator with built-in clipboard history that includes pinning, timestamps, search, text preview, and persistent storage across restarts. Chau7 clipboard history requires no plugins, extensions, or third-party tools.</p>
             </div>
         </section>
 
@@ -151,8 +153,8 @@
         <section class="feature-content" data-ui="clipboard-history-storage-capacity">
             <div class="section-inner prose">
                 <h2>How many entries does Chau7 clipboard history store?</h2>
-                <p>Chau7 clipboard history stores 50 entries by default. You can configure the limit up to 500 entries in Chau7 settings.</p>
-                <p>Clipboard history entries are stored in memory. They are available for the duration of the current app session but do not persist across app restarts.</p>
+                <p>Chau7 clipboard history stores 50 entries by default. You can configure the limit up to 1,000 entries in Chau7 settings.</p>
+                <p>Clipboard history entries are persisted via UserDefaults JSON and survive app restarts. Use the search function to filter clipboard history with case-insensitive substring matching.</p>
             </div>
         </section>
 
@@ -161,7 +163,7 @@
             <div class="section-inner prose">
                 <h2>Why terminal clipboard has been broken until Chau7</h2>
                 <p>The terminal clipboard experience has been broken for decades. <code>Ctrl+C</code> sends SIGINT instead of copying. Selections vanish when you click elsewhere. There is no history.</p>
-                <p>Chau7 provides a proper clipboard with history, search, and pinned items. Chau7 handles the <code>Ctrl+C</code> ambiguity correctly and remembers everything you copy. Chau7 clipboard history replaces the need for any external clipboard manager when working in the terminal.</p>
+                <p>Chau7 provides a proper clipboard with history, search, and pinned items. Use the search function to filter clipboard history with case-insensitive substring matching. Chau7 handles the <code>Ctrl+C</code> ambiguity correctly and remembers everything you copy. Clipboard history is persisted via UserDefaults JSON and survives app restarts, so nothing is lost.</p>
             </div>
         </section>
 
@@ -207,7 +209,7 @@
                 <div class="faq-list">
                     <details>
                         <summary>How many entries does Chau7 clipboard history store?</summary>
-                        <div class="faq-answer"><p>Chau7 clipboard history stores 50 entries by default, configurable up to 500 in settings. Entries are stored in memory and do not persist across app restarts.</p></div>
+                        <div class="faq-answer"><p>Chau7 clipboard history stores 50 entries by default, configurable up to 1,000 in settings. History is persisted via UserDefaults JSON and survives app restarts.</p></div>
                     </details>
                     <details>
                         <summary>Does Chau7 clipboard history sync with the system clipboard?</summary>

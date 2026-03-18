@@ -37,6 +37,7 @@
             "Drag-to-scrub playhead with real-time terminal state reconstruction",
             "Variable-speed playback with 0.5x, 1x, 2x, and 4x speeds",
             "Command block visualization with colored segments",
+            "Activity density heatmap overlay on minimap",
             "Full terminal state reconstruction at any timestamp"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
@@ -55,11 +56,11 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Timeline Scrubber in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Timeline Scrubber is a visual navigation tool in Chau7 for recorded terminal sessions. Chau7's scrubber displays command blocks as colored segments on a timeline, lets developers click to seek any moment, and reconstructs the exact terminal state at that timestamp."}},
+            {"@type":"Question","name":"What is Timeline Scrubber in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Timeline Scrubber is a visual navigation tool in Chau7 for recorded terminal sessions. Chau7's scrubber displays command blocks as colored segments on a timeline, lets developers click to seek any moment, and reconstructs the exact terminal state at that timestamp. The timeline minimap includes an activity density overlay that buckets command blocks into 4px columns and varies the accent color opacity by event count, showing activity hotspots at a glance."}},
             {"@type":"Question","name":"How does Chau7's timeline scrubber compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals do not record sessions at all, and those that do (like asciinema) offer only linear playback. Chau7's timeline scrubber provides visual navigation with click-to-seek, drag-to-scrub, variable-speed playback, and full terminal state reconstruction at any point. No other terminal offers this level of session navigation."}},
             {"@type":"Question","name":"How do I replay a terminal session at a specific point in time?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, open a recorded session and click anywhere on the timeline scrubber to jump to that moment. Chau7 reconstructs the exact terminal state, including every character, color, and cursor position, from the recording data. You can also drag the playhead to scrub through the session."}},
             {"@type":"Question","name":"Can I search within a recorded session?","acceptedAnswer":{"@type":"Answer","text":"Chau7's timeline scrubber provides visual navigation through recorded sessions. The timeline shows command blocks as colored segments that help developers quickly identify different command executions and navigate between them."}},
-            {"@type":"Question","name":"Does the timeline show command boundaries?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7's timeline scrubber shows command blocks as colored segments on the timeline, making it easy to identify individual command executions and navigate between them by clicking on any segment."}}
+            {"@type":"Question","name":"Does the timeline show command boundaries?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7's timeline scrubber shows command blocks as colored segments on the timeline, making it easy to identify individual command executions and navigate between them by clicking on any segment. The activity density heatmap overlay on the minimap also highlights which time ranges had the most activity."}}
         ]
     }]
     </script>
@@ -108,6 +109,7 @@
             <div class="section-inner prose">
                 <h2>What is Timeline Scrubber in Chau7?</h2>
                 <p>Timeline Scrubber is a visual navigation tool in Chau7 for recorded terminal sessions. Chau7's scrubber displays command blocks as colored segments on a timeline, making it easy to see where different commands were executed.</p>
+                <p>The timeline minimap now includes an activity density overlay that buckets command blocks into 4px columns and varies the accent color opacity by event count, showing activity hotspots at a glance.</p>
                 <p>Developers can click anywhere on Chau7's timeline to jump to that moment, or drag the playhead to scrub through the session and watch the terminal state change in real time. At any point, Chau7 reconstructs the exact terminal state from the recording data.</p>
             </div>
         </section>
@@ -175,7 +177,7 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Timeline Scrubber in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Timeline Scrubber is a visual navigation tool in Chau7 for recorded terminal sessions. Chau7's scrubber displays command blocks as colored segments on a timeline, lets developers click to seek any moment, and reconstructs the exact terminal state at that timestamp.</p></div>
+                        <div class="faq-answer"><p>Timeline Scrubber is a visual navigation tool in Chau7 for recorded terminal sessions. Chau7's scrubber displays command blocks as colored segments on a timeline, lets developers click to seek any moment, and reconstructs the exact terminal state at that timestamp. The minimap includes an activity density heatmap overlay that shows activity hotspots at a glance.</p></div>
                     </details>
                     <details>
                         <summary>How does Chau7's timeline scrubber compare to other terminals?</summary>
@@ -191,7 +193,7 @@
                     </details>
                     <details>
                         <summary>Does the timeline show command boundaries?</summary>
-                        <div class="faq-answer"><p>Yes. Chau7's timeline scrubber shows command blocks as colored segments on the timeline, making it easy to identify individual command executions and navigate between them by clicking on any segment.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7's timeline scrubber shows command blocks as colored segments on the timeline, making it easy to identify individual command executions and navigate between them by clicking on any segment. The activity density heatmap overlay on the minimap also highlights which time ranges had the most activity.</p></div>
                     </details>
                 </div>
             </div>

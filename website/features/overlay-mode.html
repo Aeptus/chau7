@@ -34,6 +34,7 @@
         "featureList": [
             "Dedicated overlay terminal window",
             "Transparency and blur compositing via NSVisualEffectView",
+            "Optional floating window via windowFloating setting",
             "Independent window size and position for overlay",
             "Per-workspace position memory",
             "Multi-monitor support"
@@ -54,8 +55,8 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Overlay Mode in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Overlay Mode is a feature in the Chau7 terminal that provides a dedicated terminal window with transparency and blur compositing via NSVisualEffectView. The overlay window behaves as a regular macOS window (normal window level) and does not float above other applications at the system level. It remembers its position per workspace."}},
-            {"@type":"Question","name":"Does the overlay float above other apps?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7's overlay mode uses normal macOS window level, so it does not pin above other applications. It behaves as a regular window in the macOS window layering order. The overlay provides transparency and blur compositing and remembers its size and position independently from the main window."}},
+            {"@type":"Question","name":"What is Overlay Mode in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Overlay Mode is a feature in the Chau7 terminal that provides a dedicated terminal window with transparency and blur compositing via NSVisualEffectView. The overlay can optionally float above other applications when the windowFloating setting is enabled. It remembers its position per workspace."}},
+            {"@type":"Question","name":"Does the overlay float above other apps?","acceptedAnswer":{"@type":"Answer","text":"Yes, when the floating window setting is enabled. Chau7's windowFloating setting sets the window level to .floating, keeping the overlay above other windows. When disabled, the overlay uses normal macOS window level. The overlay provides transparency and blur compositing and remembers its size and position independently from the main window."}},
             {"@type":"Question","name":"What makes overlay mode different from a regular window?","acceptedAnswer":{"@type":"Answer","text":"Chau7's overlay mode provides a separate window with transparency and blur compositing via NSVisualEffectView. Window size and position are remembered independently per workspace, so toggling overlay mode restores your preferred layout. The overlay is ideal for keeping terminal output visible alongside other content."}},
             {"@type":"Question","name":"Can I toggle overlay mode with a keyboard shortcut?","acceptedAnswer":{"@type":"Answer","text":"Chau7's overlay mode can be toggled from the Window menu. Localization strings reference a hotkey for this, but global hotkey registration (system-wide hotkey that works from other apps) is not currently implemented."}},
             {"@type":"Question","name":"Does overlay mode work with multiple monitors?","acceptedAnswer":{"@type":"Answer","text":"Yes. The Chau7 overlay window appears on whichever monitor it was last positioned on and remembers its size and location independently from the normal window. Each monitor can have its own overlay position in Chau7."}}
@@ -84,7 +85,7 @@
             <div class="hero-content">
                 <div class="section-badge">WINDOW MODES</div>
                 <h1 class="hero-title">Overlay Mode</h1>
-                <p class="hero-subtitle">Chau7 gives you a dedicated overlay window with transparency and blur. Persistent position, quick access.</p>
+                <p class="hero-subtitle">Chau7 gives you a dedicated overlay window with transparency, blur, and an optional floating mode to stay above other apps.</p>
             </div>
         </section>
 
@@ -106,7 +107,7 @@
         <section class="feature-content" data-ui="overlay-what">
             <div class="section-inner prose">
                 <h2>What is Overlay Mode in Chau7?</h2>
-                <p>Overlay Mode is a feature in the Chau7 terminal that provides a dedicated window with transparency and blur compositing via NSVisualEffectView. The overlay window uses normal macOS window level and behaves as a regular window in the window layering order.</p>
+                <p>Overlay Mode is a feature in the Chau7 terminal that provides a dedicated window with transparency and blur compositing via NSVisualEffectView. The overlay can optionally float above other applications when the <code>windowFloating</code> setting is enabled.</p>
                 <p>Activate Chau7's overlay mode from the Window menu. The overlay window remembers its size and position per workspace, making it easy to return to a consistent layout. This is ideal for keeping a log tail, server output, or command reference visible alongside other content.</p>
             </div>
         </section>
@@ -115,8 +116,8 @@
         <section class="feature-content" data-ui="overlay-always-on-top">
             <div class="section-inner prose">
                 <h2>Does the overlay float above other apps?</h2>
-                <p>No. Chau7's overlay window uses normal macOS window level (<code>.normal</code>), so it participates in the standard window layering order. It does not pin above other applications at the system level. When you click another app, that app's windows come to the front as usual.</p>
-                <p>The Chau7 overlay window remains interactive and remembers its position independently from the main terminal window. Toggle overlay mode from the Window menu to switch between your regular and overlay layouts.</p>
+                <p>Yes, when the floating window setting is enabled. Chau7's <code>windowFloating</code> setting sets the window level to <code>.floating</code>, keeping the overlay above other windows. When disabled, the overlay uses normal macOS window level (<code>.normal</code>) and participates in the standard window layering order.</p>
+                <p>Changing the <code>windowFloating</code> setting posts a notification so existing windows update their level at runtime. The Chau7 overlay window remains interactive and remembers its position independently from the main terminal window.</p>
             </div>
         </section>
 
@@ -187,15 +188,15 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Overlay Mode in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Overlay Mode is a feature in the Chau7 terminal that provides a dedicated window with transparency and blur compositing via NSVisualEffectView. The overlay window uses normal macOS window level and does not float above other applications at the system level. It remembers its position per workspace.</p></div>
+                        <div class="faq-answer"><p>Overlay Mode is a feature in the Chau7 terminal that provides a dedicated window with transparency and blur compositing via NSVisualEffectView. The overlay can optionally float above other applications when the windowFloating setting is enabled. It remembers its position per workspace.</p></div>
                     </details>
                     <details>
                         <summary>Does the overlay float above other apps?</summary>
-                        <div class="faq-answer"><p>No. Chau7's overlay mode uses normal macOS window level, so it does not pin above other applications. It behaves as a regular window in the macOS window layering order. The overlay provides transparency and blur compositing and remembers its size and position independently from the main window.</p></div>
+                        <div class="faq-answer"><p>Yes, when the floating window setting is enabled. Chau7's windowFloating setting sets the window level to .floating, keeping the overlay above other windows. When disabled, the overlay uses normal macOS window level. The overlay provides transparency and blur compositing and remembers its size and position independently from the main window.</p></div>
                     </details>
                     <details>
                         <summary>What makes overlay mode different from a regular window?</summary>
-                        <div class="faq-answer"><p>Chau7's overlay mode provides a separate window with transparency and blur compositing via NSVisualEffectView. Window size and position are remembered independently per workspace, so toggling overlay mode restores your preferred layout. The overlay is ideal for keeping terminal output visible alongside other content.</p></div>
+                        <div class="faq-answer"><p>Chau7's overlay mode provides a separate window with transparency and blur compositing via NSVisualEffectView. Window size and position are remembered independently per workspace, so toggling overlay mode restores your preferred layout. With the windowFloating setting enabled, the overlay stays above other windows. The overlay is ideal for keeping terminal output visible alongside other content.</p></div>
                     </details>
                     <details>
                         <summary>Can I toggle overlay mode with a keyboard shortcut?</summary>

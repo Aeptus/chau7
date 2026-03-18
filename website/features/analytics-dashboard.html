@@ -6,9 +6,9 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Analytics Dashboard | Chau7 Terminal</title>
-    <meta name="description" content="Chau7's Analytics Dashboard shows terminal command statistics: total commands run, success rate, average duration, and most-used commands. Understand your shell usage at a glance.">
+    <meta name="description" content="Chau7's Analytics Dashboard shows terminal command statistics and API analytics: per-provider cost and token breakdown, per-tab breakdown, aggregate totals, success rate, average duration, and most-used commands.">
     <meta property="og:title" content="Analytics Dashboard | Chau7">
-    <meta property="og:description" content="Chau7's Analytics Dashboard shows terminal command statistics: total commands run, success rate, average duration, and most-used commands.">
+    <meta property="og:description" content="Chau7's Analytics Dashboard shows terminal command statistics and API analytics: per-provider cost/token breakdown, per-tab breakdown, aggregate totals, and most-used commands.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -25,8 +25,8 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "AI-native terminal for macOS with a built-in analytics dashboard that shows terminal command statistics including total commands, success rate, average duration, and most-used commands",
-        "featureList": ["Analytics Dashboard", "Total Commands Run", "Command Success Rate", "Average Command Duration", "Most-Used Commands Chart"],
+        "description": "AI-native terminal for macOS with a built-in analytics dashboard that shows terminal command statistics and API analytics including per-provider cost/token breakdown, per-tab breakdown, aggregate totals, success rate, average duration, and most-used commands",
+        "featureList": ["Analytics Dashboard", "API Analytics tab with per-provider cost and token breakdown", "Per-tab API usage breakdown", "Aggregate API cost totals via TelemetryStore", "Total Commands Run", "Command Success Rate", "Average Command Duration", "Most-Used Commands Chart"],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
     {
@@ -42,7 +42,7 @@
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
-        "mainEntity": [{"@type":"Question","name":"What is the Analytics Dashboard in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7's Analytics Dashboard is a built-in visual interface that shows terminal command statistics: total commands run, success rate, average command duration, and a bar chart of most-used commands. It helps developers understand their shell usage patterns at a glance."}},{"@type":"Question","name":"How does Chau7's analytics dashboard compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals do not provide analytics on shell command usage. Chau7 is the only terminal that tracks command statistics and presents them in a built-in dashboard with success rates, average durations, and usage frequency charts."}},{"@type":"Question","name":"What metrics does the Analytics Dashboard show?","acceptedAnswer":{"@type":"Answer","text":"Chau7's Analytics Dashboard shows four key metrics: total commands run, command success rate, average command duration, and a bar chart of most-used commands. These help developers understand their shell workflow patterns."}},{"@type":"Question","name":"Does the dashboard show API costs or token usage?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7's Analytics Dashboard shows terminal command statistics only. API costs appear in the tab overlay and session view. Token counts are available through the MCP server's run telemetry."}},{"@type":"Question","name":"Can I view command statistics across all tabs?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7's Analytics Dashboard aggregates command statistics across all terminal tabs, giving you a unified view of your shell usage."}}]
+        "mainEntity": [{"@type":"Question","name":"What is the Analytics Dashboard in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Chau7's Analytics Dashboard is a built-in visual interface that shows terminal command statistics and API analytics. The command stats tab shows total commands run, success rate, average duration, and most-used commands. The API Analytics tab (accessible via Cmd+Shift+L in the debug console) shows per-provider cost and token breakdown, per-tab breakdown, and aggregate totals via TelemetryStore."}},{"@type":"Question","name":"How does Chau7's analytics dashboard compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminals do not provide analytics on shell command usage or API costs. Chau7 is the only terminal that tracks both command statistics and API analytics, presenting them in a built-in dashboard with success rates, average durations, usage frequency charts, and per-provider cost/token breakdowns."}},{"@type":"Question","name":"What metrics does the Analytics Dashboard show?","acceptedAnswer":{"@type":"Answer","text":"Chau7's Analytics Dashboard shows shell command metrics (total commands run, success rate, average duration, most-used commands) and API analytics (per-provider cost and token breakdown, per-tab breakdown, aggregate totals). Data comes from TelemetryStore queries."}},{"@type":"Question","name":"Does the dashboard show API costs or token usage?","acceptedAnswer":{"@type":"Answer","text":"Yes. The new API Analytics tab in the debug console (Cmd+Shift+L) shows per-provider cost and token breakdown, per-tab breakdown, and aggregate totals. Data comes from TelemetryStore's existing queries. The dashboard now covers both shell command stats and API analytics."}},{"@type":"Question","name":"Can I view command statistics across all tabs?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7's Analytics Dashboard aggregates command statistics across all terminal tabs, giving you a unified view of your shell usage."}}]
     }]
     </script>
 </head>
@@ -67,7 +67,7 @@
             <div class="hero-content">
                 <div class="section-badge badge-blue">API ANALYTICS</div>
                 <h1 class="hero-title">Analytics Dashboard</h1>
-                <p class="hero-subtitle">Chau7's Analytics Dashboard shows terminal command statistics: total commands, success rate, average duration, and most-used commands. Finally, a chart that matters.</p>
+                <p class="hero-subtitle">Chau7's Analytics Dashboard shows terminal command statistics and API analytics: per-provider costs, token breakdowns, success rate, and most-used commands. Finally, charts that matter.</p>
             </div>
         </section>
 
@@ -90,8 +90,8 @@
         <section class="feature-content" data-ui="feat-what-is">
             <div class="section-inner prose">
                 <h2>What is the Analytics Dashboard in Chau7?</h2>
-                <p>Chau7's Analytics Dashboard is a built-in visual interface that shows terminal command statistics. The dashboard presents key metrics so developers can understand their shell usage patterns without leaving the terminal.</p>
-                <p>Chau7's Analytics Dashboard shows total commands run, command success rate, average command duration, and a bar chart of most-used commands.</p>
+                <p>Chau7's Analytics Dashboard is a built-in visual interface that shows terminal command statistics and API analytics. The dashboard presents key metrics so developers can understand their shell usage patterns and API spending without leaving the terminal.</p>
+                <p>The command stats view shows total commands run, command success rate, average command duration, and a bar chart of most-used commands. The new API Analytics tab, accessible via Cmd+Shift+L in the debug console, shows per-provider cost and token breakdown, per-tab breakdown, and aggregate totals. Data comes from TelemetryStore's existing queries.</p>
             </div>
         </section>
 
@@ -99,8 +99,8 @@
         <section class="feature-content" data-ui="feat-costs-over-time">
             <div class="section-inner prose">
                 <h2>What metrics does the Analytics Dashboard show?</h2>
-                <p>Chau7's Analytics Dashboard presents four key metrics: total commands run across all tabs, the success rate of those commands (based on exit codes), the average command duration, and a bar chart showing the most frequently used commands.</p>
-                <p>These statistics help developers understand their shell workflow patterns and identify commands that fail frequently or take unusually long.</p>
+                <p>Chau7's Analytics Dashboard presents shell command metrics (total commands run, success rate, average duration, most-used commands chart) and API analytics (per-provider cost and token breakdown, per-tab breakdown, aggregate totals).</p>
+                <p>These statistics help developers understand their shell workflow patterns, identify commands that fail frequently or take unusually long, and track API spending across providers and tabs.</p>
             </div>
         </section>
 
@@ -108,8 +108,8 @@
         <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How does Chau7's Analytics Dashboard work?</h2>
-                <p>Chau7 tracks every shell command executed in its terminal tabs, recording the command name, exit code, and duration. The Analytics Dashboard aggregates this data and presents it as summary statistics and a bar chart.</p>
-                <p>The dashboard is accessible from within Chau7 and updates as new commands are executed across your terminal tabs.</p>
+                <p>Chau7 tracks every shell command executed in its terminal tabs, recording the command name, exit code, and duration. It also tracks API usage via TelemetryStore, recording per-provider cost and token counts. The Analytics Dashboard aggregates this data and presents it as summary statistics, charts, and breakdowns.</p>
+                <p>The dashboard is accessible from within Chau7 and updates as new commands are executed. The API Analytics tab is accessible via Cmd+Shift+L in the debug console and shows per-provider cost/token breakdown, per-tab breakdown, and aggregate totals.</p>
             </div>
         </section>
 
@@ -117,7 +117,7 @@
         <section class="feature-content" data-ui="feat-key-metrics">
             <div class="section-inner prose">
                 <h2>Does the dashboard show API costs or token usage?</h2>
-                <p>No. Chau7's Analytics Dashboard shows terminal command statistics only. API costs appear in the tab overlay and session view. Token counts are available through the MCP server's run telemetry. The dashboard focuses on shell command analytics: how many commands you run, how often they succeed, how long they take, and which ones you use most.</p>
+                <p>Yes. The new API Analytics tab in the debug console (Cmd+Shift+L) shows per-provider cost and token breakdown, per-tab breakdown, and aggregate totals. Data comes from TelemetryStore's existing queries. The dashboard now covers both shell command stats and API analytics in one place.</p>
             </div>
         </section>
 
@@ -125,8 +125,8 @@
         <section class="feature-content" data-ui="feat-compare">
             <div class="section-inner prose">
                 <h2>How does Chau7's analytics dashboard compare to other terminals?</h2>
-                <p>Most terminals do not provide analytics on shell command usage. iTerm2, Alacritty, Kitty, and the default macOS Terminal have no built-in command statistics.</p>
-                <p>Chau7 is the only terminal that tracks command execution statistics and presents them in a built-in dashboard with success rates, average durations, and a most-used commands chart. No external tools needed. The data stays on your machine.</p>
+                <p>Most terminals do not provide analytics on shell command usage or API costs. iTerm2, Alacritty, Kitty, and the default macOS Terminal have no built-in command statistics or API analytics.</p>
+                <p>Chau7 is the only terminal that tracks both command execution statistics and API analytics, presenting them in a built-in dashboard with success rates, average durations, a most-used commands chart, and per-provider cost/token breakdowns. No external tools needed. The data stays on your machine.</p>
             </div>
         </section>
 
@@ -134,8 +134,8 @@
         <section class="feature-content" data-ui="feat-why-matters">
             <div class="section-inner prose">
                 <h2>Why Chau7's Analytics Dashboard matters</h2>
-                <p>Understanding your shell workflow patterns helps identify inefficiencies. Chau7's Analytics Dashboard shows which commands you run most, how often they succeed, and how long they take on average.</p>
-                <p>This visibility helps developers spot failing commands, identify slow build steps, and understand their day-to-day terminal usage.</p>
+                <p>Understanding your shell workflow patterns and API spending helps identify inefficiencies. Chau7's Analytics Dashboard shows which commands you run most, how often they succeed, how long they take, and how much you spend on API calls across providers.</p>
+                <p>This visibility helps developers spot failing commands, identify slow build steps, track API costs per provider and per tab, and understand their day-to-day terminal and AI usage.</p>
             </div>
         </section>
 
@@ -170,19 +170,19 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is the Analytics Dashboard in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Chau7's Analytics Dashboard is a built-in visual interface that shows terminal command statistics: total commands run, success rate, average command duration, and a bar chart of most-used commands. It helps developers understand their shell usage patterns at a glance.</p></div>
+                        <div class="faq-answer"><p>Chau7's Analytics Dashboard is a built-in visual interface that shows terminal command statistics and API analytics. The command stats tab shows total commands, success rate, average duration, and most-used commands. The API Analytics tab (Cmd+Shift+L) shows per-provider cost/token breakdown, per-tab breakdown, and aggregate totals via TelemetryStore.</p></div>
                     </details>
                     <details>
                         <summary>How does Chau7's analytics dashboard compare to other terminals?</summary>
-                        <div class="faq-answer"><p>Most terminals do not provide analytics on shell command usage. Chau7 is the only terminal that tracks command statistics and presents them in a built-in dashboard with success rates, average durations, and usage frequency charts.</p></div>
+                        <div class="faq-answer"><p>Most terminals do not provide analytics on shell command usage or API costs. Chau7 is the only terminal that tracks both command statistics and API analytics, presenting them in a built-in dashboard with success rates, average durations, usage frequency charts, and per-provider cost/token breakdowns.</p></div>
                     </details>
                     <details>
                         <summary>What metrics does the Analytics Dashboard show?</summary>
-                        <div class="faq-answer"><p>Chau7's Analytics Dashboard shows four key metrics: total commands run, command success rate, average command duration, and a bar chart of most-used commands.</p></div>
+                        <div class="faq-answer"><p>Chau7's Analytics Dashboard shows shell command metrics (total commands run, success rate, average duration, most-used commands) and API analytics (per-provider cost/token breakdown, per-tab breakdown, aggregate totals via TelemetryStore).</p></div>
                     </details>
                     <details>
                         <summary>Does the dashboard show API costs or token usage?</summary>
-                        <div class="faq-answer"><p>No. Chau7's Analytics Dashboard shows terminal command statistics only. API costs appear in the tab overlay and session view. Token counts are available through the MCP server's run telemetry.</p></div>
+                        <div class="faq-answer"><p>Yes. The new API Analytics tab in the debug console (Cmd+Shift+L) shows per-provider cost and token breakdown, per-tab breakdown, and aggregate totals. Data comes from TelemetryStore's existing queries.</p></div>
                     </details>
                     <details>
                         <summary>Can I view command statistics across all tabs?</summary>

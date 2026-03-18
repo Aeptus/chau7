@@ -38,7 +38,8 @@
             "ZWJ emoji sequence rendering as single glyphs",
             "Core Text complex script shaping for Arabic, Devanagari, Thai",
             "Automatic font fallback for CJK and other scripts",
-            "Nerd Font and Powerline symbol support"
+            "Nerd Font and Powerline symbol support",
+            "Configurable ambiguous-width character treatment (single or double width)"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
     },
@@ -60,7 +61,8 @@
             {"@type":"Question","name":"How does Chau7's unicode & emoji support compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Many terminals misalign CJK characters, break emoji sequences, or fail to render combining marks correctly. Chau7 implements Unicode 15.1 width calculation, Extended Grapheme Cluster grouping, and Core Text shaping for complex scripts. Chau7 also has automatic font fallback for CJK and other scripts."}},
             {"@type":"Question","name":"How to fix broken Unicode rendering in my terminal","acceptedAnswer":{"@type":"Answer","text":"Broken Unicode rendering in terminals typically comes from incorrect character width calculation or missing grapheme cluster grouping. Chau7 solves both by implementing Unicode 15.1 East Asian Width properties and Extended Grapheme Cluster boundaries. Switching to Chau7 fixes CJK alignment, combining mark rendering, and emoji display."}},
             {"@type":"Question","name":"Does Chau7 support Nerd Fonts and Powerline symbols?","acceptedAnswer":{"@type":"Answer","text":"Yes. Nerd Font symbols are Private Use Area code points that Chau7 renders at the correct single-cell width. Powerline-patched fonts work in Chau7 without any special configuration."}},
-            {"@type":"Question","name":"How does Chau7 handle emoji that are wider than two cells?","acceptedAnswer":{"@type":"Answer","text":"No standard emoji exceeds two terminal cells. Chau7 renders ZWJ sequences (like family emoji composed of multiple people) as a single glyph within two cells. If the font does not support a particular ZWJ sequence, Chau7 falls back to rendering the component emoji sequentially."}}
+            {"@type":"Question","name":"How does Chau7 handle emoji that are wider than two cells?","acceptedAnswer":{"@type":"Answer","text":"No standard emoji exceeds two terminal cells. Chau7 renders ZWJ sequences (like family emoji composed of multiple people) as a single glyph within two cells. If the font does not support a particular ZWJ sequence, Chau7 falls back to rendering the component emoji sequentially."}},
+            {"@type":"Question","name":"Can I configure how ambiguous-width characters are displayed?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7 includes a unicodeAmbiguousWidth setting that controls whether Unicode characters with ambiguous East Asian Width are treated as single-width (1) or double-width (2). The default is single-width. The setting is bridged to the Rust terminal backend via FFI; grid layout integration is in progress."}}
         ]
     }]
     </script>
@@ -110,6 +112,7 @@
                 <h2>What is Unicode & Emoji Support in Chau7?</h2>
                 <p>Unicode & Emoji Support in Chau7 means the terminal correctly renders the full Unicode character set. Chau7 implements Unicode 15.1 character width calculation using the East Asian Width property and emoji presentation selector rules.</p>
                 <p>CJK ideographs, fullwidth forms, and emoji with presentation selectors are correctly assigned double-width cells in Chau7.</p>
+                <p>Chau7 also includes a configurable ambiguous-width setting (<code>unicodeAmbiguousWidth</code>) that controls whether Unicode characters with ambiguous East Asian Width are treated as single-width (1) or double-width (2). This setting is exposed to the Rust terminal backend via FFI. Grid layout integration for this setting is in progress.</p>
             </div>
         </section>
 
@@ -201,6 +204,10 @@
                     <details>
                         <summary>Does Chau7 handle CJK fonts automatically?</summary>
                         <div class="faq-answer"><p>Yes. Chau7 has automatic font fallback for CJK and other scripts. When the primary font does not contain a glyph, Chau7 falls back to a system font that does. This is not user-configurable but works automatically.</p></div>
+                    </details>
+                    <details>
+                        <summary>Can I configure how ambiguous-width characters are displayed?</summary>
+                        <div class="faq-answer"><p>Yes. Chau7 includes a <code>unicodeAmbiguousWidth</code> setting that controls whether Unicode characters with ambiguous East Asian Width are treated as single-width (1) or double-width (2). The default is single-width. The setting is bridged to the Rust terminal backend via FFI; grid layout integration is in progress.</p></div>
                     </details>
                 </div>
             </div>

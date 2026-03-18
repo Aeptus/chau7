@@ -6,7 +6,7 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Process Exit Confirmation | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 warns before closing terminal tabs with running processes, preventing accidental kills of SSH sessions, builds, and servers.">
+    <meta name="description" content="Chau7 warns before closing tabs or quitting the app when running processes are active, displaying process names in the confirmation dialog to prevent accidental kills.">
     <meta name="article:section" content="Safety">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="process exit confirmation">
@@ -15,7 +15,7 @@
     <meta name="article:tag" content="running process protection">
     <meta name="article:tag" content="terminal">
     <meta property="og:title" content="Process Exit Confirmation | Chau7">
-    <meta property="og:description" content="Chau7 warns before closing terminal tabs with running processes, preventing accidental kills of SSH sessions, builds, and servers.">
+    <meta property="og:description" content="Chau7 warns before closing tabs or quitting the app when running processes are active, displaying process names in the confirmation dialog to prevent accidental kills.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,10 +30,11 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS that warns before closing tabs with running processes, preventing accidental kills of SSH sessions, builds, and servers.",
+        "description": "Chau7 is an AI-native terminal for macOS that warns before closing tabs or quitting the app when running processes are active, displaying process names in the confirmation dialog.",
         "featureList": [
             "Tab close confirmation dialog when processes are running",
-            "Process count display in confirmation dialog",
+            "App quit confirmation via applicationShouldTerminate",
+            "Process names displayed in confirmation dialog",
             "Two global boolean settings for confirmation behavior"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
@@ -52,9 +53,9 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is Process Exit Confirmation in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Process Exit Confirmation is a safety feature in the Chau7 terminal that warns before closing a tab with running processes. Chau7 inspects the process tree of the terminal session and displays a confirmation dialog showing the count of active processes, giving you the chance to cancel before anything is killed."}},
-            {"@type":"Question","name":"Which terminal emulators offer process exit confirmation?","acceptedAnswer":{"@type":"Answer","text":"iTerm2 offers a basic close-tab warning. Kitty shows a confirmation when processes are running. Chau7 shows a confirmation dialog with the count of running processes when closing a tab. The feature is controlled by two global boolean settings."}},
-            {"@type":"Question","name":"How do I prevent accidentally closing a terminal tab with a running process?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, process exit confirmation is enabled by default. When you close a tab (Cmd+W), Chau7 inspects the process tree. If processes are still running, Chau7 shows a dialog with the process count so you can cancel the close."}},
+            {"@type":"Question","name":"What is Process Exit Confirmation in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Process Exit Confirmation is a safety feature in the Chau7 terminal that warns before closing a tab or quitting the app when running processes are active. Chau7 inspects the process tree and displays a confirmation dialog listing the unique names of active processes, giving you the chance to cancel before anything is killed."}},
+            {"@type":"Question","name":"Which terminal emulators offer process exit confirmation?","acceptedAnswer":{"@type":"Answer","text":"iTerm2 offers a basic close-tab warning. Kitty shows a confirmation when processes are running. Chau7 shows a confirmation dialog listing the names of running processes when closing a tab or quitting the app via Cmd+Q. The feature is controlled by two global boolean settings."}},
+            {"@type":"Question","name":"How do I prevent accidentally closing a terminal tab with a running process?","acceptedAnswer":{"@type":"Answer","text":"In Chau7, process exit confirmation is enabled by default. When you close a tab (Cmd+W) or quit the app (Cmd+Q), Chau7 inspects the process tree across all tabs. If processes are still running, Chau7 shows a dialog listing the unique process names so you can cancel."}},
             {"@type":"Question","name":"How do I configure the confirmation behavior?","acceptedAnswer":{"@type":"Answer","text":"Chau7 provides two global boolean settings that control when the confirmation dialog appears. These settings apply to all tabs uniformly."}}
         ]
     }]
@@ -81,7 +82,7 @@
             <div class="hero-content">
                 <div class="section-badge">SAFETY</div>
                 <h1 class="hero-title">Process Exit Confirmation</h1>
-                <p class="hero-subtitle">Chau7 warns before closing a tab with running processes. No more accidental Cmd+W kills.</p>
+                <p class="hero-subtitle">Chau7 warns before closing a tab or quitting the app with running processes. No more accidental Cmd+W or Cmd+Q kills.</p>
             </div>
         </section>
 
@@ -102,8 +103,8 @@
         <section class="feature-content" data-ui="process-exit-what">
             <div class="section-inner prose">
                 <h2>What is Process Exit Confirmation in Chau7?</h2>
-                <p>Process Exit Confirmation is a safety feature in the Chau7 terminal that warns before closing a tab with running processes. When you press Cmd+W, Chau7 inspects the process tree of the terminal session.</p>
-                <p>If processes are still running, Chau7 displays a confirmation dialog showing the count of active processes. This dialog gives you the chance to cancel the close before anything is killed.</p>
+                <p>Process Exit Confirmation is a safety feature in the Chau7 terminal that warns before closing a tab or quitting the app when running processes are active. When you press Cmd+W to close a tab, Chau7 inspects the process tree of the terminal session. When you press Cmd+Q to quit, <code>applicationShouldTerminate</code> enumerates all tabs for running child processes.</p>
+                <p>If processes are still running, Chau7 displays an NSAlert listing the unique names of active processes. This dialog gives you the chance to cancel before anything is killed.</p>
             </div>
         </section>
 
@@ -111,8 +112,8 @@
         <section class="feature-content" data-ui="process-exit-how-to-prevent">
             <div class="section-inner prose">
                 <h2>How do I prevent accidentally closing a terminal tab with a running process?</h2>
-                <p>In Chau7, process exit confirmation is enabled by default. When you close a tab, Chau7 inspects the process tree of the terminal session automatically.</p>
-                <p>If SSH connections, development servers, compilers, database clients, or any other processes are still running, Chau7 shows a confirmation dialog with the process count. You can cancel the close, or proceed if you intended to close the tab.</p>
+                <p>In Chau7, process exit confirmation is enabled by default. When you close a tab (Cmd+W) or quit the app (Cmd+Q), Chau7 inspects the process tree across all relevant tabs automatically.</p>
+                <p>If SSH connections, development servers, compilers, database clients, or any other processes are still running, Chau7 shows a confirmation dialog listing the unique process names. You can cancel the action, or proceed if you intended to close.</p>
             </div>
         </section>
 
@@ -130,7 +131,7 @@
             <div class="section-inner prose">
                 <h2>Which terminal emulators offer process exit confirmation?</h2>
                 <p>iTerm2 offers a basic close-tab warning when processes are running. Kitty shows a confirmation dialog in similar situations.</p>
-                <p>Chau7 shows a confirmation dialog with the count of running processes when closing a tab. The confirmation behavior is controlled by two global boolean settings.</p>
+                <p>Chau7 shows a confirmation dialog listing the names of running processes when closing a tab or quitting the app. The confirmation behavior is controlled by two global boolean settings.</p>
             </div>
         </section>
 
@@ -138,8 +139,8 @@
         <section class="feature-content" data-ui="process-exit-why-it-matters">
             <div class="section-inner prose">
                 <h2>Why process exit confirmation matters</h2>
-                <p>Losing a running process to an accidental Cmd+W is one of the most common terminal frustrations. A half-finished database migration, a running dev server, an SSH session to production: gone in a single keystroke.</p>
-                <p>Chau7 warns before closing a tab with active processes. The confirmation dialog shows the process count so you know what you would be terminating.</p>
+                <p>Losing a running process to an accidental Cmd+W or Cmd+Q is one of the most common terminal frustrations. A half-finished database migration, a running dev server, an SSH session to production: gone in a single keystroke.</p>
+                <p>Chau7 warns before closing a tab or quitting the app with active processes. The confirmation dialog lists the unique process names so you know exactly what you would be terminating.</p>
             </div>
         </section>
 
@@ -170,15 +171,15 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Process Exit Confirmation in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Process Exit Confirmation is a safety feature in the Chau7 terminal that warns before closing a tab with running processes. Chau7 inspects the process tree and displays a confirmation dialog showing the count of active processes, giving you the chance to cancel before anything is killed.</p></div>
+                        <div class="faq-answer"><p>Process Exit Confirmation is a safety feature in the Chau7 terminal that warns before closing a tab or quitting the app when running processes are active. Chau7 inspects the process tree and displays a confirmation dialog listing the unique names of active processes, giving you the chance to cancel before anything is killed.</p></div>
                     </details>
                     <details>
                         <summary>Which terminal emulators offer process exit confirmation?</summary>
-                        <div class="faq-answer"><p>iTerm2 offers a basic close-tab warning. Kitty shows a confirmation when processes are running. Chau7 shows a confirmation dialog with the count of running processes when closing a tab.</p></div>
+                        <div class="faq-answer"><p>iTerm2 offers a basic close-tab warning. Kitty shows a confirmation when processes are running. Chau7 shows a confirmation dialog listing the names of running processes when closing a tab or quitting the app via Cmd+Q.</p></div>
                     </details>
                     <details>
                         <summary>How do I prevent accidentally closing a terminal tab with a running process?</summary>
-                        <div class="faq-answer"><p>In Chau7, process exit confirmation is enabled by default. When you close a tab (Cmd+W), Chau7 inspects the process tree. If processes are still running, Chau7 shows a dialog with the process count so you can cancel the close.</p></div>
+                        <div class="faq-answer"><p>In Chau7, process exit confirmation is enabled by default. When you close a tab (Cmd+W) or quit the app (Cmd+Q), Chau7 inspects the process tree across all tabs. If processes are still running, Chau7 shows a dialog listing the unique process names so you can cancel.</p></div>
                     </details>
                     <details>
                         <summary>How do I configure the confirmation behavior?</summary>
@@ -192,7 +193,7 @@
         <section class="footer-cta-section" aria-label="Download call to action" data-ui="process-exit-cta">
             <div class="section-inner">
                 <div class="footer-cta-content">
-                    <h2>Protect your running processes from accidental Cmd+W.</h2>
+                    <h2>Protect your running processes from accidental Cmd+W and Cmd+Q.</h2>
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary btn-lg">Download for macOS</a>
                     <p class="cta-nudge">Free. Open source. Named after a sock.</p>
                 </div>

@@ -6,7 +6,7 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>MCP Approval Gate | Chau7 Terminal</title>
-    <meta name="description" content="Chau7's MCP Approval Gate lets you review and approve AI tool calls before execution, keeping you in control of automated actions.">
+    <meta name="description" content="Chau7's MCP Approval Gate lets you review and approve AI tool calls before execution. Includes Audit Only mode, per-agent profiles, and flexible approval options.">
     <meta name="article:section" content="Safety">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="MCP approval gate">
@@ -15,7 +15,7 @@
     <meta name="article:tag" content="agent control">
     <meta name="article:tag" content="terminal safety">
     <meta property="og:title" content="MCP Approval Gate | Chau7">
-    <meta property="og:description" content="Chau7's MCP Approval Gate lets you review and approve AI tool calls before execution, keeping you in control of automated actions.">
+    <meta property="og:description" content="Chau7's MCP Approval Gate lets you review and approve AI tool calls before execution. Includes Audit Only mode, per-agent profiles, and flexible approval options.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,10 +30,12 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS with an MCP Approval Gate that lets you review and approve AI tool calls before execution.",
+        "description": "Chau7 is an AI-native terminal for macOS with an MCP Approval Gate that lets you review and approve AI tool calls before execution. Includes Audit Only mode and per-agent approval profiles.",
         "featureList": [
             "Review and approve MCP tool calls before execution",
-            "Accept, Deny, or Always Allow options",
+            "Accept, Deny, Always Allow, or Audit Only options",
+            "Audit Only mode for execution with full action logging",
+            "MCPProfile.agentAllowlist to scope profiles to specific AI agents",
             "Context-based approval rules (directory, git repo, etc.)",
             "Flat command-name allowlist for remembered approvals",
             "Works with any MCP-connected agent"
@@ -54,9 +56,9 @@
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is MCP Approval Gate in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"The MCP Approval Gate in Chau7 is a safety feature that intercepts AI tool calls made through the MCP protocol and presents them for your review before execution. Chau7 shows the tool name and parameters, letting you Accept, Deny, or Always Allow each request."}},
-            {"@type":"Question","name":"How do I control which MCP actions AI can execute in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Chau7's MCP Approval Gate uses context-based approval rules (directory, git repo, etc.) rather than agent-identity-based rules. You can Always Allow specific tool calls, which adds them to a flat command-name allowlist that persists across sessions."}},
-            {"@type":"Question","name":"Can I approve MCP tool calls before they run in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Yes. When an AI agent requests a tool action through MCP, Chau7 intercepts the request and presents an approval dialog showing the tool name and parameters. You can Accept, Deny, or Always Allow the request."}},
+            {"@type":"Question","name":"What is MCP Approval Gate in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"The MCP Approval Gate in Chau7 is a safety feature that intercepts AI tool calls made through the MCP protocol and presents them for your review before execution. Chau7 shows the tool name and parameters, letting you Accept, Deny, Always Allow, or Audit Only each request. A new Audit Only mode allows tool calls to execute while logging every action for review."}},
+            {"@type":"Question","name":"How do I control which MCP actions AI can execute in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Chau7's MCP Approval Gate uses context-based approval rules (directory, git repo, etc.) and MCPProfile.agentAllowlist to scope profiles to specific AI agents, so different agents can have different permission levels. You can Always Allow specific tool calls, which adds them to a flat command-name allowlist that persists across sessions."}},
+            {"@type":"Question","name":"Can I approve MCP tool calls before they run in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Yes. When an AI agent requests a tool action through MCP, Chau7 intercepts the request and presents an approval dialog showing the tool name and parameters. You can Accept, Deny, Always Allow, or Audit Only the request."}},
             {"@type":"Question","name":"Does Chau7's approval gate slow down AI workflows?","acceptedAnswer":{"@type":"Answer","text":"Chau7's approval gate only pauses execution for tools that match your approval rules. Read-only operations and pre-approved tools execute instantly in Chau7. Trusted workflows run at full speed because you control exactly which actions require review."}},
             {"@type":"Question","name":"Can I approve tools once and remember the decision in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Yes. When approving a tool call in Chau7, you can choose Always Allow to add the command name to the allowlist. The allowlist is a flat list of command names that persists across sessions."}}
         ]
@@ -84,7 +86,7 @@
             <div class="hero-content">
                 <div class="section-badge">SAFETY</div>
                 <h1 class="hero-title">MCP Approval Gate</h1>
-                <p class="hero-subtitle">Your AI agent wants to run a command. Chau7 lets you say yes or no first.</p>
+                <p class="hero-subtitle">Your AI agent wants to run a command. Chau7 lets you accept, deny, audit, or scope permissions per agent.</p>
             </div>
         </section>
 
@@ -106,7 +108,8 @@
         <section class="feature-content" data-ui="mcp-approval-what">
             <div class="section-inner prose">
                 <h2>What is MCP Approval Gate in Chau7?</h2>
-                <p>The MCP Approval Gate in Chau7 is a safety feature that intercepts AI tool calls made through the MCP protocol and presents them for your review before execution. Chau7 shows the tool name and parameters in an approval dialog with Accept, Deny, and Always Allow options.</p>
+                <p>The MCP Approval Gate in Chau7 is a safety feature that intercepts AI tool calls made through the MCP protocol and presents them for your review before execution. Chau7 shows the tool name and parameters in an approval dialog with Accept, Deny, Always Allow, and Audit Only options.</p>
+                <p>A new Audit Only mode allows tool calls to execute while logging every action for review. MCPProfile.agentAllowlist lets you scope approval profiles to specific AI agents, so different agents can have different permission levels.</p>
                 <p>The Chau7 approval gate operates at the MCP protocol layer, so it works with any agent that connects through MCP. Whether you use Claude, custom agents, or any future MCP-compatible assistant, Chau7 gates the tool calls the same way.</p>
             </div>
         </section>
@@ -115,7 +118,7 @@
         <section class="feature-content" data-ui="mcp-approval-control">
             <div class="section-inner prose">
                 <h2>How do I control which MCP actions AI can execute in Chau7?</h2>
-                <p>Chau7's MCP Approval Gate uses context-based approval rules (directory, git repo, etc.) rather than agent-identity-based rules. When you choose Always Allow for a tool call, the command name is added to a flat allowlist.</p>
+                <p>Chau7's MCP Approval Gate uses context-based approval rules (directory, git repo, etc.) combined with MCPProfile.agentAllowlist to scope profiles to specific AI agents. Different agents can have different permission levels. When you choose Always Allow for a tool call, the command name is added to a flat allowlist.</p>
                 <p>The allowlist persists across sessions, so you build up trusted commands over time without repeated prompts. Chau7 gives you control over what MCP tool calls can execute in your terminal.</p>
             </div>
         </section>
@@ -125,7 +128,7 @@
             <div class="section-inner prose">
                 <h2>Can I approve MCP tool calls before they run in Chau7?</h2>
                 <p>Yes. When an AI agent connected via MCP requests a tool action in Chau7, the approval gate intercepts the request and presents it for your review. The approval dialog in Chau7 shows the tool name and parameters.</p>
-                <p>You can Accept, Deny, or Always Allow the request. Chau7 does not execute any gated tool call until you explicitly approve it.</p>
+                <p>You can Accept, Deny, Always Allow, or Audit Only the request. Chau7 does not execute any gated tool call until you explicitly approve it. Audit Only allows execution while logging the action for later review.</p>
             </div>
         </section>
 
@@ -174,15 +177,15 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is MCP Approval Gate in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>The MCP Approval Gate in Chau7 is a safety feature that intercepts AI tool calls made through the MCP protocol and presents them for your review before execution. Chau7 shows the tool name and parameters, letting you Accept, Deny, or Always Allow each request.</p></div>
+                        <div class="faq-answer"><p>The MCP Approval Gate in Chau7 is a safety feature that intercepts AI tool calls made through the MCP protocol and presents them for your review before execution. Chau7 shows the tool name and parameters, letting you Accept, Deny, Always Allow, or Audit Only each request. Audit Only allows execution while logging every action for review.</p></div>
                     </details>
                     <details>
                         <summary>How do I control which MCP actions AI can execute in Chau7?</summary>
-                        <div class="faq-answer"><p>Chau7's MCP Approval Gate uses context-based approval rules (directory, git repo, etc.) rather than agent-identity-based rules. When you choose Always Allow, the command name is added to a flat allowlist that persists across sessions.</p></div>
+                        <div class="faq-answer"><p>Chau7's MCP Approval Gate uses context-based approval rules (directory, git repo, etc.) and MCPProfile.agentAllowlist to scope profiles to specific AI agents. Different agents can have different permission levels. When you choose Always Allow, the command name is added to a flat allowlist that persists across sessions.</p></div>
                     </details>
                     <details>
                         <summary>Can I approve MCP tool calls before they run in Chau7?</summary>
-                        <div class="faq-answer"><p>Yes. When an AI agent requests a tool action through MCP, Chau7 intercepts the request and presents an approval dialog showing the tool name and parameters. You can Accept, Deny, or Always Allow the request.</p></div>
+                        <div class="faq-answer"><p>Yes. When an AI agent requests a tool action through MCP, Chau7 intercepts the request and presents an approval dialog showing the tool name and parameters. You can Accept, Deny, Always Allow, or Audit Only the request.</p></div>
                     </details>
                     <details>
                         <summary>Does Chau7's approval gate slow down AI workflows?</summary>
