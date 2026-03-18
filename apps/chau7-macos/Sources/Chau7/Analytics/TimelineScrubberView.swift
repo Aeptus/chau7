@@ -161,6 +161,10 @@ struct TimelineScrubberView: View {
                     .fill(Color(nsColor: .separatorColor).opacity(0.3))
                     .cornerRadius(2)
 
+                // Activity density heatmap: bucket command blocks into columns
+                // and vary opacity by how many overlap in each bucket
+                activityDensityOverlay(width: geometry.size.width)
+
                 // Command blocks in mini-map
                 ForEach(commandBlocks) { block in
                     let startFrac = blockStartFraction(block)
@@ -183,6 +187,31 @@ struct TimelineScrubberView: View {
             }
         }
         .accessibilityHidden(true)
+    }
+
+    /// Renders a density heatmap showing activity hotspots across the timeline.
+    /// Divides the timeline into buckets and varies opacity by command count.
+    private func activityDensityOverlay(width: CGFloat) -> some View {
+        let bucketCount = max(1, Int(width / 4))
+        var buckets = [Int](repeating: 0, count: bucketCount)
+
+        for block in commandBlocks {
+            let startBucket = Int(blockStartFraction(block) * Double(bucketCount))
+            let endBucket = min(bucketCount - 1, Int((blockStartFraction(block) + blockWidthFraction(block)) * Double(bucketCount)))
+            for i in max(0, startBucket)...max(0, endBucket) {
+                buckets[i] += 1
+            }
+        }
+
+        let maxDensity = max(1, buckets.max() ?? 1)
+
+        return HStack(spacing: 0) {
+            ForEach(0..<bucketCount, id: \.self) { i in
+                Rectangle()
+                    .fill(Color.accentColor.opacity(Double(buckets[i]) / Double(maxDensity) * 0.3))
+                    .frame(width: width / CGFloat(bucketCount), height: 8)
+            }
+        }
     }
 
     private func commandBlockSegments(in totalWidth: CGFloat) -> some View {
