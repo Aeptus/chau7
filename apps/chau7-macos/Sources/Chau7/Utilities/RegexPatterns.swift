@@ -15,9 +15,9 @@ private func makeRegex(_ pattern: String, options: NSRegularExpression.Options =
 }
 
 enum RegexPatterns {
-    /// URL pattern for detecting clickable links
+    /// URL pattern for detecting clickable links (http, https, file, ssh, ftp, sftp)
     static let url: NSRegularExpression = makeRegex(
-        #"https?://[^\s<>\[\]{}|\\^`"']+"#,
+        #"(?:https?|file|ssh|ftp|sftp)://[^\s<>\[\]{}|\\^`"']+"#,
         options: [.caseInsensitive],
         name: "url"
     )
