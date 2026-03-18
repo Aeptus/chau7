@@ -154,6 +154,7 @@ Remote & Collaboration,Cloudflare Relay,Cloudflare Workers relay — no port for
 Remote & Collaboration,Tmux Integration,Map tmux windows and panes to Chau7 tabs seamlessly,Experimental,Yes
 Remote & Collaboration,Remote Activity Projection,macOS reduces AI event streams into one remote activity state for clients,Shipped,Yes
 Remote & Collaboration,iPhone Live Activity Support,Chau7 Remote renders the current AI task in a native Live Activity and Dynamic Island,Shipped,Yes
+Remote & Collaboration,Interactive Remote Prompts,"Detected Claude and Codex terminal prompts appear in the iPhone Approvals tab with option buttons that reply to the correct tab. Destructive options require a second confirmation before sending.",Shipped,Yes
 Remote & Collaboration,Session Recording,Record terminal sessions with timestamps for replay,Shipped,No
 Remote & Collaboration,Timeline Scrubber,Scrub through recorded sessions like a video,Shipped,No
 Appearance,Full Color Schemes,"16 ANSI colors + background, foreground, cursor, selection — fully customizable",Shipped,No
