@@ -1614,6 +1614,16 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(cursorColor, forKey: "terminal.cursorColor") }
     }
 
+    /// Unicode ambiguous-width treatment: 1 = single-width (Western), 2 = double-width (East Asian).
+    /// Affects terminal grid layout for characters in the Unicode Ambiguous width category.
+    @Published var unicodeAmbiguousWidth: Int {
+        didSet {
+            let clamped = (unicodeAmbiguousWidth == 2) ? 2 : 1
+            if unicodeAmbiguousWidth != clamped { unicodeAmbiguousWidth = clamped; return }
+            UserDefaults.standard.set(unicodeAmbiguousWidth, forKey: "terminal.unicodeAmbiguousWidth")
+        }
+    }
+
     @Published var scrollbackLines: Int {
         didSet {
             let clamped = max(100, min(scrollbackLines, 100_000))
@@ -2370,6 +2380,7 @@ final class FeatureSettings: ObservableObject {
         self.cursorBlink = defaults.object(forKey: Keys.cursorBlink) as? Bool ?? true
         self.cursorBlinkRate = defaults.object(forKey: "terminal.cursorBlinkRate") as? Double ?? 0.6
         self.cursorColor = defaults.string(forKey: "terminal.cursorColor") ?? ""
+        self.unicodeAmbiguousWidth = defaults.object(forKey: "terminal.unicodeAmbiguousWidth") as? Int ?? 1
         self.scrollbackLines = defaults.object(forKey: Keys.scrollbackLines) as? Int ?? 10000
         self.restoredScrollbackLines = defaults.object(forKey: Keys.restoredScrollbackLines) as? Int ?? 500
         self.bellEnabled = defaults.object(forKey: Keys.bellEnabled) as? Bool ?? true
@@ -3049,6 +3060,7 @@ final class FeatureSettings: ObservableObject {
         cursorBlink = true
         cursorBlinkRate = 0.6
         cursorColor = ""
+        unicodeAmbiguousWidth = 1
         scrollbackLines = 10000
         restoredScrollbackLines = 500
         bellEnabled = true
@@ -3140,6 +3152,7 @@ final class FeatureSettings: ObservableObject {
         cursorBlink = true
         cursorBlinkRate = 0.6
         cursorColor = ""
+        unicodeAmbiguousWidth = 1
         scrollbackLines = 10000
         restoredScrollbackLines = 500
         bellEnabled = true

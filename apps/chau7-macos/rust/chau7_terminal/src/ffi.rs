@@ -87,6 +87,38 @@ pub unsafe extern "C" fn chau7_terminal_create(
     }
 }
 
+/// Create a new headless terminal for remote playback.
+///
+/// # Safety
+/// - Returns null on failure
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_create_headless(
+    cols: u16,
+    rows: u16,
+) -> *mut Chau7Terminal {
+    init_logging();
+
+    info!(
+        "chau7_terminal_create_headless(cols={}, rows={})",
+        cols, rows
+    );
+
+    match Chau7Terminal::new_headless(cols, rows) {
+        Ok(terminal) => {
+            let ptr = Box::into_raw(Box::new(terminal));
+            info!(
+                "chau7_terminal_create_headless: Success, returning {:p}",
+                ptr
+            );
+            ptr
+        }
+        Err(e) => {
+            error!("chau7_terminal_create_headless: Failed: {}", e);
+            std::ptr::null_mut()
+        }
+    }
+}
+
 /// Create a new terminal with environment variables
 ///
 /// # Safety
@@ -845,6 +877,23 @@ pub unsafe extern "C" fn chau7_terminal_clear_scrollback(term: *mut Chau7Termina
         }
         let terminal = &*term;
         terminal.clear_scrollback();
+    }
+}
+
+/// Set Unicode ambiguous-width treatment (1 = single, 2 = double).
+///
+/// # Safety
+/// - `term` must be a valid pointer
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_set_ambiguous_width(term: *mut Chau7Terminal, width: u8) {
+    unsafe {
+        trace!("chau7_terminal_set_ambiguous_width({:p}, {})", term, width);
+        if term.is_null() {
+            warn!("chau7_terminal_set_ambiguous_width: term is null");
+            return;
+        }
+        let terminal = &*term;
+        terminal.set_ambiguous_width(width);
     }
 }
 
