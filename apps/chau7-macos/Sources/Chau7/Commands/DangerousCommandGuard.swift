@@ -31,6 +31,13 @@ final class DangerousCommandGuard: ObservableObject {
         didSet { saveBlockList() }
     }
 
+    /// Per-directory allowlists: directory path → set of allowed commands.
+    /// Commands in a directory allowlist are only allowed when the terminal's
+    /// working directory matches (or is a child of) the allowlist key.
+    private var directoryAllowLists: [String: Set<String>] {
+        didSet { saveDirectoryAllowLists() }
+    }
+
     /// Custom patterns beyond the defaults
     var patterns: [String] {
         FeatureSettings.shared.dangerousCommandPatterns
@@ -49,7 +56,14 @@ final class DangerousCommandGuard: ObservableObject {
         self.isEnabled = defaults.object(forKey: "feature.dangerousCommandGuard") as? Bool ?? true
         self.allowList = Set(defaults.stringArray(forKey: "dangerousGuard.allowList") ?? [])
         self.blockList = Set(defaults.stringArray(forKey: "dangerousGuard.blockList") ?? [])
-        Log.info("DangerousCommandGuard initialized: enabled=\(isEnabled) allow=\(allowList.count) block=\(blockList.count)")
+        // Load per-directory allowlists
+        if let data = defaults.data(forKey: "dangerousGuard.directoryAllowLists"),
+           let decoded = try? JSONDecoder().decode([String: [String]].self, from: data) {
+            self.directoryAllowLists = decoded.mapValues { Set($0) }
+        } else {
+            self.directoryAllowLists = [:]
+        }
+        Log.info("DangerousCommandGuard initialized: enabled=\(isEnabled) allow=\(allowList.count) block=\(blockList.count) dirAllow=\(directoryAllowLists.count)")
     }
 
     // Initializer for testing only — bypasses UserDefaults.
@@ -59,6 +73,7 @@ final class DangerousCommandGuard: ObservableObject {
         self.isEnabled = enabled
         self.allowList = allowList
         self.blockList = blockList
+        self.directoryAllowLists = [:]
         self._testPatterns = testPatterns
     }
     #endif
@@ -74,10 +89,26 @@ final class DangerousCommandGuard: ObservableObject {
     // MARK: - Check
 
     /// Checks whether a command needs confirmation.
-    func check(commandLine: String) -> CheckResult {
+    /// - Parameters:
+    ///   - commandLine: The command to check
+    ///   - directory: Current working directory (for per-directory allowlist matching)
+    func check(commandLine: String, directory: String? = nil) -> CheckResult {
         guard isEnabled else { return .safe }
         let trimmed = commandLine.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .safe }
+
+        // Unicode homoglyph detection: flag commands containing non-ASCII lookalikes
+        // of common shell characters (e.g. Cyrillic а/о/е that look like Latin a/o/e)
+        if containsHomoglyphs(trimmed) {
+            Log.warn("DangerousCommandGuard: homoglyph detected '\(trimmed.prefix(60))'")
+            return .needsConfirmation(command: trimmed, matchedPattern: "Unicode homoglyph characters detected")
+        }
+
+        // Multiline paste protection: flag pasted commands spanning multiple lines
+        if trimmed.contains("\n") {
+            Log.warn("DangerousCommandGuard: multiline paste '\(trimmed.prefix(60))'")
+            return .needsConfirmation(command: trimmed, matchedPattern: "Multiline paste detected")
+        }
 
         // Check block list first
         if blockList.contains(trimmed) {
@@ -85,7 +116,17 @@ final class DangerousCommandGuard: ObservableObject {
             return .blocked
         }
 
-        // Check allow list
+        // Check per-directory allowlist
+        if let dir = directory {
+            for (allowedDir, commands) in directoryAllowLists {
+                if (dir == allowedDir || dir.hasPrefix(allowedDir + "/")) && commands.contains(trimmed) {
+                    Log.trace("DangerousCommandGuard: allowed (directory '\(allowedDir)') '\(trimmed)'")
+                    return .allowed
+                }
+            }
+        }
+
+        // Check global allow list
         if allowList.contains(trimmed) {
             Log.trace("DangerousCommandGuard: allowed (allowlist) '\(trimmed)'")
             return .allowed
@@ -99,6 +140,24 @@ final class DangerousCommandGuard: ObservableObject {
         }
 
         return .safe
+    }
+
+    /// Detects Unicode homoglyphs — characters that visually resemble ASCII but are
+    /// from different Unicode blocks (Cyrillic, Greek, etc.). Attackers use these to
+    /// disguise malicious commands as safe-looking ones.
+    private func containsHomoglyphs(_ text: String) -> Bool {
+        for scalar in text.unicodeScalars {
+            // Skip ASCII range entirely
+            if scalar.value < 0x80 { continue }
+            // Common Cyrillic lookalikes: а(0x430) е(0x435) о(0x43E) р(0x440) с(0x441) х(0x445)
+            // Common fullwidth: ！(FF01) ～(FF5E)
+            let v = scalar.value
+            if (v >= 0x0400 && v <= 0x04FF) || // Cyrillic block
+               (v >= 0xFF01 && v <= 0xFF5E) {   // Fullwidth forms
+                return true
+            }
+        }
+        return false
     }
 
     // MARK: - Confirmation
@@ -194,5 +253,28 @@ final class DangerousCommandGuard: ObservableObject {
 
     private func saveBlockList() {
         UserDefaults.standard.set(Array(blockList), forKey: "dangerousGuard.blockList")
+    }
+
+    // MARK: - Per-Directory Allowlist
+
+    func addToDirectoryAllowList(command: String, directory: String) {
+        var commands = directoryAllowLists[directory] ?? []
+        commands.insert(command)
+        directoryAllowLists[directory] = commands
+        Log.info("DangerousCommandGuard: added to directory allowlist '\(command)' for '\(directory)'")
+    }
+
+    func removeFromDirectoryAllowList(command: String, directory: String) {
+        directoryAllowLists[directory]?.remove(command)
+        if directoryAllowLists[directory]?.isEmpty == true {
+            directoryAllowLists.removeValue(forKey: directory)
+        }
+    }
+
+    private func saveDirectoryAllowLists() {
+        let serializable = directoryAllowLists.mapValues { Array($0) }
+        if let data = try? JSONEncoder().encode(serializable) {
+            UserDefaults.standard.set(data, forKey: "dangerousGuard.directoryAllowLists")
+        }
     }
 }
