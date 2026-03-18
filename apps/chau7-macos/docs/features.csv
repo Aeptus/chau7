@@ -206,6 +206,17 @@ Profiles,Context-Aware Auto-Switch,Auto-switch settings profile on directory cha
 Settings,Keybindings JSON Export/Import,Standalone export/import for keybindings separate from full settings,Shipped,No
 Networking,Custom API Pricing,~/.chau7/pricing.json overrides built-in model pricing table,Shipped,No
 Safety,Process Exit Confirmation,Cmd+Q lists running process names and confirms before quitting,Shipped,No
+Safety,Unicode Homoglyph Detection,Flags Cyrillic/fullwidth lookalike characters in commands,Shipped,No
+Safety,Multiline Paste Protection,Flags pasted commands spanning multiple lines,Shipped,No
+Safety,Per-Directory Command Allowlist,Scope allowed dangerous commands to specific directories,Shipped,No
+MCP Permissions,Audit-Only Mode,Allow execution but log unlisted commands for review,Shipped,No
+MCP Permissions,Per-Agent Profile Scoping,Restrict MCP profiles to specific AI agents via agentAllowlist,Shipped,No
+Clipboard,Clipboard Persistence,History persists across restarts via UserDefaults JSON,Shipped,No
+Clipboard,Clipboard Search,Case-insensitive substring search across clipboard history,Shipped,No
+Terminal,Hyperlink Protocols,"Detect file://, ssh://, ftp://, sftp:// in addition to http/https",Shipped,No
+Scripting,Complete JSON-RPC API,"All 12 methods implemented: tabs, commands, output, snippets, history, settings, status",Shipped,No
+Debug,API Analytics Tab,"Per-provider cost, per-tab tokens, aggregate totals in debug console",Shipped,No
+Timeline,Activity Density Heatmap,Minimap shows command activity hotspots via bucketed opacity overlay,Shipped,No
 Networking,TLS/WSS Proxy Support,TLS and WebSocket proxy for Codex OpenAI API capture,Shipped,Yes
 Networking,API Proxy Interception,Transparent HTTP/HTTPS proxy for API call capture and analysis,Shipped,Yes
 Networking,Configurable Proxy Endpoints,Set custom proxy host and port for API interception,Shipped,No
