@@ -426,6 +426,13 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     /// so MCP tools (tab_output source=pty_log, tab_last_response) can read it.
     private(set) var lastPTYLogPath: String?
 
+    /// When true, output-based AI detection is suppressed to give command-based
+    /// detection priority. Set when input containing a newline is sent (a command
+    /// is being submitted), cleared when handleInputLine processes it.
+    /// Prevents false positives where output pattern matching (e.g. "cline" in
+    /// "decline") fires before command tokenization (e.g. "claude") runs.
+    private var commandPendingDetection = false
+
     private var notificationTabName: String {
         if let override = tabTitleOverride?.trimmingCharacters(in: .whitespacesAndNewlines),
            !override.isEmpty {
@@ -737,8 +744,10 @@ final class TerminalSessionModel: NSObject, ObservableObject {
                 let sawPromptUpdate = maybeHandlePromptUpdate(data)
                 FeatureProfiler.shared.end(promptToken)
 
-                // AI app detection
-                if !sawPromptUpdate {
+                // AI app detection — skip while a command is pending detection
+                // (handleInputLine hasn't run yet), so command-based detection
+                // gets priority over output pattern matching.
+                if !sawPromptUpdate, !commandPendingDetection {
                     maybeDetectAppFromOutput(data)
                 }
 
@@ -1440,6 +1449,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             pendingCommandLine = nil
             promptSeenForPendingCommand = false
             commandFinishedNotified = false
+            commandPendingDetection = false
             return
         }
 
@@ -1461,6 +1471,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         shellEventDetector.commandStarted(command: persistedCommand, in: currentDirectory)
         trackAIResumeMetadata(from: trimmed)
         updateActiveAppName(from: trimmed)
+        // Command-based detection has had its chance — release the output detection gate.
+        commandPendingDetection = false
         noteAIInputTimingIfNeeded(for: trimmed)
         recordInputLineIfNeeded()
         trackSemanticCommand(trimmed)
@@ -2386,6 +2398,13 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     /// Sends text input to the terminal (used for broadcast mode)
     func sendInput(_ text: String) {
         guard !text.isEmpty else { return }
+        // If this input contains a newline (command submission), suppress output-based
+        // AI detection until handleInputLine processes the echoed command. This gives
+        // command-based detection (which tokenizes the exact command name) priority
+        // over output pattern matching (which can false-positive on substrings).
+        if text.contains("\n") || text.contains("\r") {
+            commandPendingDetection = true
+        }
         guard let activeTerminalView else {
             enqueuePendingTerminalAction(.text(text))
             return
@@ -2993,6 +3012,10 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         bufferNeedsRefresh = false
         if let data { updateBufferLineCount(from: data) }
         return data
+    }
+
+    func captureRemoteGridSnapshot() -> Data? {
+        activeTerminalView?.captureRemoteGridSnapshotPayload()
     }
 
     private func updateBufferLineCount(from bufferData: Data) {

@@ -71,8 +71,8 @@ Chau7 recognizes AI CLIs the moment they launch — no configuration required:
 - **Aider**, **Cursor**, and custom-defined tools
 
 Detection methods:
-- Command line tokenization with wrapper skipping (env, sudo, npx, bunx, pnpm).
-- Output banner matching for all supported CLIs.
+- Command line tokenization with wrapper skipping (env, sudo, npx, bunx, pnpm). Command detection gates output scanning to prevent false positives.
+- Output banner matching for all supported CLIs. Patterns require tool-specific context to avoid substring collisions.
 - Custom detection rules with display name, tab color, and logo.
 
 ### AI Features
