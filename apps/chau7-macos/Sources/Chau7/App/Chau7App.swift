@@ -49,7 +49,8 @@ struct Chau7App: App {
         _overlayModel = StateObject(wrappedValue: overlayModel)
         _ = SnippetManager.shared
         AppIcon.apply()
-        NSApplication.shared.setActivationPolicy(.regular)
+        let policy: NSApplication.ActivationPolicy = FeatureSettings.shared.menuBarOnlyMode ? .accessory : .regular
+        NSApplication.shared.setActivationPolicy(policy)
         appDelegate.configureModels(model: model, overlayModel: overlayModel)
         RemoteControlManager.shared.configure(overlayModel: overlayModel)
     }
