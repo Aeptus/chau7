@@ -195,6 +195,17 @@ Monitoring,Directory Change Detection,Notify on working directory changes,Shippe
 Monitoring,Output Pattern Watching,Define custom output patterns to trigger actions,Shipped,No
 Status Bar,Menu Bar Status Item,Quick access icon with active/paused indicator,Shipped,No
 Status Bar,Popover Panel,"Recent events, active sessions, and quick toggles in a popover",Shipped,No
+Window,Menu Bar Only Mode,Hide from Dock and Cmd+Tab — activation policy .accessory,Shipped,No
+Window,Floating Window Mode,Keep terminal above other apps — .floating window level,Shipped,No
+Terminal,Cursor Blink Rate,Configurable blink interval (0.3–2.0s) and custom cursor color (hex),Shipped,No
+Terminal,Whole-Word Search,Terminal search toggle wraps query in word boundary anchors,Shipped,No
+Terminal,Visual Bell + Rate Limiting,Screen flash on bell with configurable minimum interval between triggers,Shipped,No
+Editor,Angle Bracket Matching,"Match <> pairs and jump-to-matching-bracket",Shipped,No
+Editor,Relative/Hybrid Line Numbers,"Absolute, relative, or hybrid line numbers with dynamic gutter width",Shipped,No
+Profiles,Context-Aware Auto-Switch,Auto-switch settings profile on directory change based on configured rules,Shipped,No
+Settings,Keybindings JSON Export/Import,Standalone export/import for keybindings separate from full settings,Shipped,No
+Networking,Custom API Pricing,~/.chau7/pricing.json overrides built-in model pricing table,Shipped,No
+Safety,Process Exit Confirmation,Cmd+Q lists running process names and confirms before quitting,Shipped,No
 Networking,TLS/WSS Proxy Support,TLS and WebSocket proxy for Codex OpenAI API capture,Shipped,Yes
 Networking,API Proxy Interception,Transparent HTTP/HTTPS proxy for API call capture and analysis,Shipped,Yes
 Networking,Configurable Proxy Endpoints,Set custom proxy host and port for API interception,Shipped,No
