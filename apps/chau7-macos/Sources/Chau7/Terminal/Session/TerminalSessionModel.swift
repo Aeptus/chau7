@@ -2990,6 +2990,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
     private var searchCaseSensitive = false
     private var searchRegexEnabled = false
+    private var searchWholeWord = false
 
     /// Returns cached buffer data or fetches fresh data if needed (memory optimization).
     private func getBufferData() -> Data? {
@@ -3025,13 +3026,14 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         bufferLineCount = max(1, newlineCount + 1)
     }
 
-    func updateSearch(query: String, maxMatches: Int, maxPreviewLines: Int, caseSensitive: Bool = false, regexEnabled: Bool = false) -> SearchSummary {
+    func updateSearch(query: String, maxMatches: Int, maxPreviewLines: Int, caseSensitive: Bool = false, regexEnabled: Bool = false, wholeWord: Bool = false) -> SearchSummary {
         let previousQuery = searchQuery
         let previousCaseSensitive = searchCaseSensitive
         let previousRegex = searchRegexEnabled
         searchQuery = query
         searchCaseSensitive = caseSensitive
         searchRegexEnabled = regexEnabled
+        searchWholeWord = wholeWord
 
         guard let bufferData = getBufferData() else {
             searchMatches = []
@@ -3041,9 +3043,21 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
         // Use cached buffer data (refreshed only when new output arrives)
         let computed: (matches: [SearchMatch], previewLines: [String], error: String?)
-        if regexEnabled {
+        // Whole-word mode: promote to regex with \b boundaries.
+        // For plain text, escape the query to avoid regex metacharacter issues.
+        let effectiveRegex = regexEnabled || wholeWord
+        let effectivePattern: String
+        if wholeWord && !regexEnabled {
+            effectivePattern = "\\b" + NSRegularExpression.escapedPattern(for: query) + "\\b"
+        } else if wholeWord {
+            effectivePattern = "\\b(?:" + query + ")\\b"
+        } else {
+            effectivePattern = query
+        }
+
+        if effectiveRegex {
             let options: NSRegularExpression.Options = caseSensitive ? [] : [.caseInsensitive]
-            guard let regex = try? NSRegularExpression(pattern: query, options: options) else {
+            guard let regex = try? NSRegularExpression(pattern: effectivePattern, options: options) else {
                 searchMatches = []
                 activeSearchIndex = 0
                 return SearchSummary(count: 0, previewLines: [], error: "Invalid regex")
