@@ -48,6 +48,10 @@ public struct MCPProfile: Codable, Identifiable, Equatable, Sendable {
     public var allowedCommands: [String]
     public var blockedCommands: [String]
     public var priority: Int
+    /// Optional list of agent names this profile applies to. When non-empty,
+    /// the profile only matches tabs running one of these agents (e.g. "Claude", "Codex").
+    /// When empty, the profile matches all agents.
+    public var agentAllowlist: [String]
 
     public init(
         id: UUID = UUID(),
@@ -57,7 +61,8 @@ public struct MCPProfile: Codable, Identifiable, Equatable, Sendable {
         permissionMode: MCPPermissionMode = .askUnlisted,
         allowedCommands: [String] = [],
         blockedCommands: [String] = [],
-        priority: Int = 0
+        priority: Int = 0,
+        agentAllowlist: [String] = []
     ) {
         self.id = id
         self.name = name
@@ -67,6 +72,7 @@ public struct MCPProfile: Codable, Identifiable, Equatable, Sendable {
         self.allowedCommands = allowedCommands
         self.blockedCommands = blockedCommands
         self.priority = priority
+        self.agentAllowlist = agentAllowlist
     }
 }
 

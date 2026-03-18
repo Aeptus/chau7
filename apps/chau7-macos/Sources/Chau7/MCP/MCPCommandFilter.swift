@@ -102,6 +102,10 @@ enum MCPCommandFilter {
                 return (.blocked(command: base), permissions)
             case .askUnlisted:
                 return (.needsApproval(command: base), permissions)
+            case .auditOnly:
+                // Allow execution but log for audit review
+                Log.info("MCP audit: command '\(base)' allowed under audit-only mode (\(permissions.sourceName))")
+                continue
             }
         }
 
