@@ -1607,6 +1607,20 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(bellSound, forKey: Keys.bellSound) }
     }
 
+    /// Visual flash on bell (combinable with audible bell)
+    @Published var bellVisual: Bool {
+        didSet { UserDefaults.standard.set(bellVisual, forKey: "terminal.bellVisual") }
+    }
+
+    /// Minimum seconds between bell triggers (rate limiting to prevent spam)
+    @Published var bellRateLimitSeconds: Double {
+        didSet {
+            let clamped = max(0, min(bellRateLimitSeconds, 60))
+            if bellRateLimitSeconds != clamped { bellRateLimitSeconds = clamped; return }
+            UserDefaults.standard.set(bellRateLimitSeconds, forKey: "terminal.bellRateLimitSeconds")
+        }
+    }
+
     @Published var dangerousCommandHighlightScope: DangerousCommandHighlightScope {
         didSet {
             UserDefaults.standard.set(dangerousCommandHighlightScope.rawValue, forKey: Keys.dangerousCommandHighlightScope)
@@ -2318,6 +2332,8 @@ final class FeatureSettings: ObservableObject {
         self.restoredScrollbackLines = defaults.object(forKey: Keys.restoredScrollbackLines) as? Int ?? 500
         self.bellEnabled = defaults.object(forKey: Keys.bellEnabled) as? Bool ?? true
         self.bellSound = defaults.string(forKey: Keys.bellSound) ?? "default"
+        self.bellVisual = defaults.object(forKey: "terminal.bellVisual") as? Bool ?? false
+        self.bellRateLimitSeconds = defaults.object(forKey: "terminal.bellRateLimitSeconds") as? Double ?? 0.1
         if let raw = defaults.string(forKey: Keys.dangerousCommandHighlightScope),
            let scope = DangerousCommandHighlightScope(rawValue: raw) {
             self.dangerousCommandHighlightScope = scope
@@ -2992,6 +3008,8 @@ final class FeatureSettings: ObservableObject {
         restoredScrollbackLines = 500
         bellEnabled = true
         bellSound = "default"
+        bellVisual = false
+        bellRateLimitSeconds = 0.1
         dangerousCommandHighlightScope = .allOutputs
         dangerousCommandPatterns = Self.defaultDangerousCommandPatterns
         dangerousOutputHighlightIdleDelayMs = 500
@@ -3078,6 +3096,8 @@ final class FeatureSettings: ObservableObject {
         restoredScrollbackLines = 500
         bellEnabled = true
         bellSound = "default"
+        bellVisual = false
+        bellRateLimitSeconds = 0.1
         dangerousCommandHighlightScope = .allOutputs
         dangerousCommandPatterns = Self.defaultDangerousCommandPatterns
         dangerousOutputHighlightIdleDelayMs = 500
