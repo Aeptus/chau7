@@ -93,13 +93,9 @@
                     178 features.<br><span class="gradient-text">One terminal named after a sock.</span>
                 </h1>
                 <p class="hero-subtitle">
-                    Chau7 terminal ships 178 features across 17 categories. AI agent detection, MCP terminal control, GPU-accelerated rendering, Context Token Optimization, split panes, SSH management, session recording, and everything else a developer actually needs.
-                </p>
-                <p class="hero-subtitle">
+                    AI detection, MCP terminal control, GPU rendering, Context Token Optimization, and everything else a developer actually needs.
                     Pick a pillar or <a href="#catalog" class="hero-catalog-link">search the full catalog</a>.
-                </p>
-                <p class="hero-comparison" data-ui="features-hero-comparison">
-                    Chau7 includes features no other terminal offers: automatic AI agent detection, a built-in MCP server with 20 tools, Context Token Optimization that saves ~40% on tokens, and per-session cost tracking. Terminals like iTerm2, Alacritty, Kitty, and Warp have none of these. Features marked with <span class="differentiator-star" title="Differentiator">★</span> below are unique to Chau7.
+                    Features marked with <span class="differentiator-star" title="Differentiator">★</span> are unique to Chau7.
                 </p>
                 <div class="hero-ctas" data-ui="features-hero-ctas">
                     <a href="https://github.com/nicmusic/chau7/releases" class="btn-primary" data-ui="features-hero-download">Download for macOS</a>
@@ -132,8 +128,9 @@
                 <div class="pillar-panel active" id="cognitive-load" data-ui="features-pillar-cognitive">
                     <div class="pillar-panel-header">
                         <div class="pillar-number">01</div>
-                        <h2>What AI detection features does Chau7 offer?</h2>
-                        <p class="pillar-subtitle">Chau7 automatically detects AI agents like Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they launch. Each agent gets its own brand color and logo on the tab bar, plus live status indicators showing active, idle, or done. Your terminal tells you things instead of making you figure them out.</p>
+                        <h2>Lower Cognitive Load</h2>
+                        <p class="sr-only">What AI detection features does Chau7 offer?</p>
+                        <p class="pillar-subtitle">Your terminal tells you things instead of making you figure them out. AI detection, branded tabs, live status, and search that works.</p>
                     </div>
 
                     <figure class="pillar-screenshot reveal">
@@ -182,14 +179,16 @@
                             <p>Cmd+Shift+P. Every feature, every action, one fuzzy search away.</p>
                         </a>
                     </div>
+                    <p class="section-cta-text"><a href="/ai-cognitive-load">Deep dive into Cognitive Load &rarr;</a></p>
                 </div>
 
                 <!-- ── Pillar 02: Optimize Cost & Context ─────── -->
                 <div class="pillar-panel" id="cost-context" data-ui="features-pillar-cost">
                     <div class="pillar-panel-header">
                         <div class="pillar-number">02</div>
-                        <h2>How does Chau7 optimize AI cost and context?</h2>
-                        <p class="pillar-subtitle">Chau7 tracks what your AI agents spend, what tokens they burn, and where the money goes. Context Token Optimization strips terminal noise before your AI reads it, saving ~40% on tokens. Chau7 shows dollars per API call, per session, and per month. Numbers instead of vibes.</p>
+                        <h2>Optimize Cost &amp; Context</h2>
+                        <p class="sr-only">How does Chau7 optimize AI cost and context?</p>
+                        <p class="pillar-subtitle">Less context is better context. ~40% token savings, cost per call, latency tracking. Numbers instead of vibes.</p>
                     </div>
 
                     <figure class="pillar-screenshot reveal">
@@ -230,14 +229,16 @@
                             <p>Every AI session tracked from first prompt to last. Run counts, duration, cost attribution.</p>
                         </a>
                     </div>
+                    <p class="section-cta-text"><a href="/ai-cost-optimization">Deep dive into Cost &amp; Context &rarr;</a></p>
                 </div>
 
                 <!-- ── Pillar 03: Visibility & Control ────────── -->
                 <div class="pillar-panel" id="visibility-control" data-ui="features-pillar-control">
                     <div class="pillar-panel-header">
                         <div class="pillar-number">03</div>
-                        <h2>How does Chau7 give you control over AI agents?</h2>
-                        <p class="pillar-subtitle">Chau7 includes a built-in MCP server with 20 tools that let AI agents open tabs, run commands, and read output. You keep oversight with an approval gate, tab limits, and dangerous command guards. Chau7 also provides a JSON-RPC API and session recording for full scripting and audit capabilities.</p>
+                        <h2>Visibility &amp; Control</h2>
+                        <p class="sr-only">How does Chau7 give you control over AI agents?</p>
+                        <p class="pillar-subtitle">Your AI agents get power. You keep oversight. 20 MCP tools, approval gates, session recording, and scripting.</p>
                     </div>
 
                     <figure class="pillar-screenshot reveal">
@@ -286,6 +287,7 @@
                             <p>Know which tabs are yours and which ones your AI conjured.</p>
                         </a>
                     </div>
+                    <p class="section-cta-text"><a href="/ai-visibility-control">Deep dive into Visibility &amp; Control &rarr;</a></p>
                 </div>
             </div>
         </div>
@@ -294,8 +296,9 @@
         <section class="features-section" id="catalog" aria-labelledby="catalog-heading" data-ui="features-full-catalog">
             <div class="section-inner">
                 <div class="section-header">
-                    <h2 id="catalog-heading">What features does the Chau7 terminal have?</h2>
-                    <p>Chau7 includes 178 features across 17 categories. Search or filter by category to browse the full Chau7 feature catalog.</p>
+                    <h2 id="catalog-heading">The full catalog</h2>
+                    <p class="sr-only">What features does the Chau7 terminal have?</p>
+                    <p>All 178 features. Search or filter by category.</p>
                 </div>
                 <div class="catalog-random-row">
                     <button type="button" class="btn-outline filter-random-btn">Discover a new feature at random</button>
@@ -727,6 +730,12 @@
                         <div class="faq-answer">
                             <p>Yes. The Chau7 MCP server runs over a local Unix socket with no network exposure. You can enable an approval gate that requires your confirmation before any MCP tool call executes.</p>
                             <p>Chau7 tab limits prevent runaway agents from creating too many tabs. You can also disable the Chau7 MCP server entirely from Settings.</p>
+                        </div>
+                    </details>
+                    <details data-ui="faq-emacs">
+                        <summary>And what about Emacs?</summary>
+                        <div class="faq-answer">
+                            <p>I took a side a very long time ago, and it's Vim. It's always been Vim. Any disagreement will require that we meet over food and drinks to have that debate one more time. You bring the arguments, I'll bring the keybindings.</p>
                         </div>
                     </details>
                 </div>
