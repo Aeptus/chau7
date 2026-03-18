@@ -41,9 +41,16 @@ class EditorScrollView: NSScrollView {
 
 // MARK: - Line Number Gutter View
 
+enum LineNumberMode: String {
+    case absolute   // 1, 2, 3, 4, ...
+    case relative   // distance from cursor line
+    case hybrid     // current line absolute, others relative
+}
+
 /// Draws line numbers in the editor gutter as a vertical ruler view.
 class LineNumberGutterView: NSRulerView {
     private weak var textView: NSTextView?
+    var lineNumberMode: LineNumberMode = .absolute { didSet { needsDisplay = true } }
 
     init(textView: NSTextView, scrollView: NSScrollView) {
         self.textView = textView
@@ -78,7 +85,19 @@ class LineNumberGutterView: NSRulerView {
     }
 
     @objc private func textDidChange(_ notification: Notification) {
+        updateGutterWidth()
         needsDisplay = true
+    }
+
+    /// Adapt gutter width to the digit count of the total line count.
+    private func updateGutterWidth() {
+        guard let textView else {
+            ruleThickness = 40
+            return
+        }
+        let lineCount = max(1, textView.string.components(separatedBy: "\n").count)
+        let digits = max(3, String(lineCount).count)
+        ruleThickness = CGFloat(digits) * 8 + 16
     }
 
     @objc private func boundsDidChange(_ notification: Notification) {
@@ -116,6 +135,16 @@ class LineNumberGutterView: NSRulerView {
         let text = textView.string as NSString
         var lineNumber = 1
 
+        // Compute current cursor line for relative/hybrid modes
+        let cursorPos = textView.selectedRange().location
+        var cursorLine = 1
+        text.enumerateSubstrings(
+            in: NSRange(location: 0, length: min(cursorPos, text.length)),
+            options: [.byLines, .substringNotRequired]
+        ) { _, _, _, _ in
+            cursorLine += 1
+        }
+
         // Count lines before visible range
         text.enumerateSubstrings(
             in: NSRange(location: 0, length: visibleCharRange.location),
@@ -143,7 +172,17 @@ class LineNumberGutterView: NSRulerView {
                 in: textContainer
             )
 
-            let numStr = "\(lineNumber)" as NSString
+            let displayNumber: Int
+            switch self.lineNumberMode {
+            case .absolute:
+                displayNumber = lineNumber
+            case .relative:
+                displayNumber = abs(lineNumber - cursorLine)
+            case .hybrid:
+                displayNumber = lineNumber == cursorLine ? lineNumber : abs(lineNumber - cursorLine)
+            }
+
+            let numStr = "\(displayNumber)" as NSString
             let size = numStr.size(withAttributes: attrs)
             let x = self.ruleThickness - size.width - 4
             let y = lineRect.origin.y
