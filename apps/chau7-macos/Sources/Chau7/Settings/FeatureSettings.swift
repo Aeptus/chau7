@@ -1224,6 +1224,14 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(menuBarOnlyMode, forKey: "window.menuBarOnlyMode") }
     }
 
+    /// When true, the terminal window floats above other apps (.floating level).
+    @Published var windowFloating: Bool {
+        didSet {
+            UserDefaults.standard.set(windowFloating, forKey: "window.floating")
+            NotificationCenter.default.post(name: .init("windowFloatingChanged"), object: nil)
+        }
+    }
+
     // MARK: - Window Transparency
 
     @Published var windowOpacity: Double {
@@ -2183,6 +2191,7 @@ final class FeatureSettings: ObservableObject {
 
         // Menu Bar Only Mode
         self.menuBarOnlyMode = defaults.bool(forKey: "window.menuBarOnlyMode")
+        self.windowFloating = defaults.bool(forKey: "window.floating")
 
         // Window Opacity
         self.windowOpacity = defaults.object(forKey: Keys.windowOpacity) as? Double ?? 1.0
@@ -2969,6 +2978,7 @@ final class FeatureSettings: ObservableObject {
 
         // Window
         menuBarOnlyMode = false
+        windowFloating = false
         windowOpacity = 1.0
         appTheme = .system
 
@@ -3055,6 +3065,7 @@ final class FeatureSettings: ObservableObject {
         colorSchemeName = "Default"
         customColorScheme = nil
         menuBarOnlyMode = false
+        windowFloating = false
         windowOpacity = 1.0
         appTheme = .system
         isAutoTabThemeEnabled = true
