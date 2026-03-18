@@ -137,7 +137,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | `tab_press_key` | Send terminal key presses for interactive TUIs — Enter, Escape, arrows, backspace, delete, paging keys, and ctrl/alt combos |
 | `tab_submit_prompt` | Submit the current interactive prompt by sending Enter as a key press |
 | `tab_close` | Close a tab with optional force flag — checks for running processes |
-| `tab_output` | Get recent terminal output (last N lines, max 5000) with 512KB cap |
+| `tab_output` | Get recent terminal output (last N lines, max 10000) with 512KB cap. Optional `wait_for_stable_ms` polls until buffer settles. |
 | `tab_set_cto` | Set per-tab CTO override (default/forceOn/forceOff) — recalculates flag files |
 
 ### Telemetry (8 tools)
@@ -147,7 +147,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | `run_get` | Get a single telemetry run by ID (active or from store) |
 | `run_list` | List runs with filters: session_id, repo_path, provider, date range, tags, limit/offset |
 | `run_tool_calls` | Get all tool calls for a run — see exactly what an AI agent did |
-| `run_transcript` | Full conversation transcript for a run — complete AI session replay |
+| `run_transcript` | Full conversation transcript for a run — falls back to ANSI-stripped PTY log for TUI tools, then terminal buffer |
 | `run_tag` | Set tags on a run for organization and filtering |
 | `run_latest_for_repo` | Most recent run for a repository — optionally filter by provider |
 | `session_list` | List AI sessions with run counts — filter by repo_path, active_only |

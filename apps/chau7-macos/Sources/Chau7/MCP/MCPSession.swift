@@ -292,12 +292,13 @@ final class MCPSession {
             ],
             [
                 "name": "tab_output",
-                "description": "Get recent terminal output from a tab. Returns the last N lines of the scrollback buffer.",
+                "description": "Get recent terminal output from a tab. Returns the last N lines of the scrollback buffer. Use wait_for_stable_ms after an agent finishes to ensure all output has been flushed to the buffer.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
                         "tab_id": ["type": "string", "description": "Tab UUID"],
-                        "lines": ["type": "integer", "description": "Number of lines to return (default 50, max 5000)"]
+                        "lines": ["type": "integer", "description": "Number of lines to return (default 50, max 10000)"],
+                        "wait_for_stable_ms": ["type": "integer", "description": "Wait until buffer content is stable for this many ms before returning (max 30000). Useful after agent completion to ensure output is fully flushed."]
                     ],
                     "required": ["tab_id"]
                 ]
@@ -526,8 +527,9 @@ final class MCPSession {
             guard let tabID = arguments["tab_id"] as? String else {
                 return jsonError("tab_id is required")
             }
-            let lines = max(1, min(arguments["lines"] as? Int ?? 50, 5000))
-            return controlService.tabOutput(tabID: tabID, lines: lines)
+            let lines = max(1, min(arguments["lines"] as? Int ?? 50, 10000))
+            let waitForStableMs = arguments["wait_for_stable_ms"] as? Int
+            return controlService.tabOutput(tabID: tabID, lines: lines, waitForStableMs: waitForStableMs)
 
         case "tab_set_cto":
             guard let tabID = arguments["tab_id"] as? String,
