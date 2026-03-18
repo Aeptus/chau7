@@ -87,14 +87,14 @@ pub struct Chau7Terminal {
     pub(crate) term: Mutex<Term<Chau7EventListener>>,
     /// VTE processor for parsing escape sequences
     pub(crate) processor: Mutex<Processor>,
-    /// PTY handle for writing input
-    pub(crate) pty_handle: Mutex<PtyHandle>,
+    /// PTY handle for writing input when backed by a live shell.
+    pub(crate) pty_handle: Mutex<Option<PtyHandle>>,
     /// Child process handle (to avoid zombies)
     pub(crate) child: Mutex<Option<Box<dyn portable_pty::Child + Send + Sync>>>,
     /// Shell process ID (for dev server monitoring)
     pub(crate) shell_pid: AtomicU64,
-    /// Channel receiver for PTY output data
-    pub(crate) pty_rx: Receiver<PtyMessage>,
+    /// Channel receiver for PTY output data when backed by a live shell.
+    pub(crate) pty_rx: Option<Receiver<PtyMessage>>,
     /// Flag to signal the reader thread to stop
     pub(crate) running: Arc<AtomicBool>,
     /// Reader thread handle
@@ -153,6 +153,10 @@ pub struct Chau7Terminal {
     /// Dirty row tracker for partial updates
     pub(crate) dirty_rows: DirtyRowTracker,
 
+    /// Unicode ambiguous-width treatment: 1 = single-width (Western default),
+    /// 2 = double-width (East Asian). Stored for future grid layout integration.
+    pub(crate) ambiguous_width: AtomicU64,
+
     // Graphics protocol support
     /// Pre-filter that intercepts image escape sequences before VTE processing
     pub(crate) graphics_interceptor: Mutex<graphics::GraphicsInterceptor>,
@@ -170,6 +174,77 @@ impl Chau7Terminal {
     /// Create a new terminal with the specified dimensions and shell
     pub fn new(cols: u16, rows: u16, shell: &str) -> Result<Self, TerminalError> {
         Self::new_with_env(cols, rows, shell, &[])
+    }
+
+    /// Create a headless terminal suitable for remote playback.
+    ///
+    /// This does not spawn a PTY or child process. Callers are expected to feed
+    /// output through `inject_output()` and query state through the existing grid
+    /// snapshot APIs.
+    pub fn new_headless(cols: u16, rows: u16) -> Result<Self, TerminalError> {
+        let id = TERMINAL_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let created_at = Instant::now();
+
+        info!(
+            "[terminal-{}] Creating new headless terminal: {}x{}",
+            id, cols, rows
+        );
+
+        if cols == 0 || rows == 0 {
+            error!("[terminal-{}] Invalid dimensions: {}x{}", id, cols, rows);
+            return Err(TerminalError::InvalidDimensions { cols, rows });
+        }
+
+        let (event_tx, event_rx) = bounded::<Event>(100);
+        let bell_pending = Arc::new(AtomicBool::new(false));
+        let listener = Chau7EventListener {
+            sender: event_tx,
+            terminal_id: id,
+            bell_pending: bell_pending.clone(),
+        };
+
+        let size = SizeInfo::new(cols as usize, rows as usize);
+        let config = TermConfig::default();
+        let term = Term::new(config, &size, listener);
+
+        Ok(Chau7Terminal {
+            id,
+            term: Mutex::new(term),
+            processor: Mutex::new(Processor::new()),
+            pty_handle: Mutex::new(None),
+            child: Mutex::new(None),
+            shell_pid: AtomicU64::new(0),
+            pty_rx: None,
+            running: Arc::new(AtomicBool::new(false)),
+            reader_thread: None,
+            event_rx,
+            grid_dirty: AtomicBool::new(true),
+            cols,
+            rows,
+            created_at,
+            bytes_received: AtomicU64::new(0),
+            bytes_sent: AtomicU64::new(0),
+            write_errors: AtomicU64::new(0),
+            theme_colors: RwLock::new(ThemeColors::default()),
+            last_output: Mutex::new(Vec::new()),
+            bell_pending,
+            metrics: PerformanceMetrics::default(),
+            pending_title: Mutex::new(None),
+            has_pending_title: AtomicBool::new(false),
+            pending_exit_code: Mutex::new(None),
+            pty_closed: AtomicBool::new(true),
+            link_urls: Mutex::new(vec![String::new()]),
+            pending_clipboard_store: Mutex::new(None),
+            has_pending_clipboard_store: AtomicBool::new(false),
+            pending_clipboard_load: Mutex::new(None),
+            has_pending_clipboard_load: AtomicBool::new(false),
+            adaptive_poller: AdaptivePoller::new(),
+            dirty_rows: DirtyRowTracker::new(rows as usize),
+            ambiguous_width: AtomicU64::new(1),
+            graphics_interceptor: Mutex::new(graphics::GraphicsInterceptor::new()),
+            image_store: Mutex::new(graphics::ImageStore::new()),
+            kitty_accumulator: Mutex::new(graphics::KittyAccumulator::new()),
+        })
     }
 
     /// Create a new terminal with the specified dimensions, shell, and environment variables
@@ -423,10 +498,10 @@ impl Chau7Terminal {
             id,
             term: Mutex::new(term),
             processor: Mutex::new(Processor::new()),
-            pty_handle: Mutex::new(pty_handle),
+            pty_handle: Mutex::new(Some(pty_handle)),
             child: Mutex::new(Some(child)),
             shell_pid: AtomicU64::new(shell_pid as u64),
-            pty_rx,
+            pty_rx: Some(pty_rx),
             running,
             reader_thread: Some(reader_thread),
             event_rx,
@@ -455,6 +530,8 @@ impl Chau7Terminal {
             // Performance optimizations
             adaptive_poller: AdaptivePoller::new(),
             dirty_rows: DirtyRowTracker::new(rows as usize),
+            // Unicode width config
+            ambiguous_width: AtomicU64::new(1),
             // Graphics protocol support
             graphics_interceptor: Mutex::new(graphics::GraphicsInterceptor::new()),
             image_store: Mutex::new(graphics::ImageStore::new()),
@@ -489,6 +566,9 @@ impl Chau7Terminal {
     /// Returns true if ECHO is disabled (password/secret input mode).
     pub fn is_echo_disabled(&self) -> bool {
         let handle = self.pty_handle.lock();
+        let Some(handle) = handle.as_ref() else {
+            return false;
+        };
         if handle.master_fd < 0 {
             // fd capture failed at creation time, can't check
             return false;
@@ -569,6 +649,13 @@ impl Chau7Terminal {
                 response.len()
             );
             let mut handle = self.pty_handle.lock();
+            let Some(handle) = handle.as_mut() else {
+                trace!(
+                    "[terminal-{}] Ignoring clipboard load response for headless terminal",
+                    self.id
+                );
+                return;
+            };
             if let Err(e) = handle.writer.write_all(response.as_bytes()) {
                 warn!(
                     "[terminal-{}] Failed to write OSC 52 response: {}",
@@ -587,6 +674,13 @@ impl Chau7Terminal {
     pub fn send_bytes(&self, data: &[u8]) {
         trace!("[terminal-{}] Sending {} bytes to PTY", self.id, data.len());
         let mut handle = self.pty_handle.lock();
+        let Some(handle) = handle.as_mut() else {
+            trace!(
+                "[terminal-{}] Ignoring send_bytes on headless terminal",
+                self.id
+            );
+            return;
+        };
         match handle.write_all(data) {
             Ok(()) => {
                 self.bytes_sent
@@ -634,13 +728,13 @@ impl Chau7Terminal {
             pixel_width: 0,
             pixel_height: 0,
         };
-        let handle = self.pty_handle.lock();
-        if let Err(e) = handle.resize(pty_size) {
-            error!("[terminal-{}] Failed to resize PTY: {}", self.id, e);
-        } else {
-            debug!("[terminal-{}] PTY resized successfully", self.id);
+        if let Some(handle) = self.pty_handle.lock().as_ref() {
+            if let Err(e) = handle.resize(pty_size) {
+                error!("[terminal-{}] Failed to resize PTY: {}", self.id, e);
+            } else {
+                debug!("[terminal-{}] PTY resized successfully", self.id);
+            }
         }
-        drop(handle);
 
         // Resize terminal
         let mut term = self.term.lock();
@@ -672,31 +766,9 @@ impl Chau7Terminal {
         // Accumulate all data locally, then lock last_output once at the end
         let mut local_output = Vec::new();
 
-        // Try to receive data with timeout for the first message
-        match self.pty_rx.recv_timeout(timeout) {
-            Ok(PtyMessage::Data(data)) => {
-                bytes_this_poll += data.len();
-                local_output.extend_from_slice(&data);
-                self.process_pty_data(&data);
-                had_data = true;
-            }
-            Ok(PtyMessage::Closed) => {
-                info!("[terminal-{}] PTY closed message received in poll", self.id);
-                self.pty_closed.store(true, Ordering::Release);
-                return false;
-            }
-            Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
-                trace!("[terminal-{}] poll timeout (no data)", self.id);
-            }
-            Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
-                warn!("[terminal-{}] PTY channel disconnected", self.id);
-                self.pty_closed.store(true, Ordering::Release);
-            }
-        }
-
-        // Drain any additional pending data without blocking
-        loop {
-            match self.pty_rx.try_recv() {
+        if let Some(pty_rx) = self.pty_rx.as_ref() {
+            // Try to receive data with timeout for the first message
+            match pty_rx.recv_timeout(timeout) {
                 Ok(PtyMessage::Data(data)) => {
                     bytes_this_poll += data.len();
                     local_output.extend_from_slice(&data);
@@ -704,21 +776,45 @@ impl Chau7Terminal {
                     had_data = true;
                 }
                 Ok(PtyMessage::Closed) => {
-                    info!(
-                        "[terminal-{}] PTY closed message received while draining",
-                        self.id
-                    );
+                    info!("[terminal-{}] PTY closed message received in poll", self.id);
                     self.pty_closed.store(true, Ordering::Release);
-                    break;
+                    return false;
                 }
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => {
-                    warn!(
-                        "[terminal-{}] PTY channel disconnected while draining",
-                        self.id
-                    );
+                Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                    trace!("[terminal-{}] poll timeout (no data)", self.id);
+                }
+                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                    warn!("[terminal-{}] PTY channel disconnected", self.id);
                     self.pty_closed.store(true, Ordering::Release);
-                    break;
+                }
+            }
+
+            // Drain any additional pending data without blocking
+            loop {
+                match pty_rx.try_recv() {
+                    Ok(PtyMessage::Data(data)) => {
+                        bytes_this_poll += data.len();
+                        local_output.extend_from_slice(&data);
+                        self.process_pty_data(&data);
+                        had_data = true;
+                    }
+                    Ok(PtyMessage::Closed) => {
+                        info!(
+                            "[terminal-{}] PTY closed message received while draining",
+                            self.id
+                        );
+                        self.pty_closed.store(true, Ordering::Release);
+                        break;
+                    }
+                    Err(TryRecvError::Empty) => break,
+                    Err(TryRecvError::Disconnected) => {
+                        warn!(
+                            "[terminal-{}] PTY channel disconnected while draining",
+                            self.id
+                        );
+                        self.pty_closed.store(true, Ordering::Release);
+                        break;
+                    }
                 }
             }
         }
@@ -745,6 +841,13 @@ impl Chau7Terminal {
                         bytes.len()
                     );
                     let mut handle = self.pty_handle.lock();
+                    let Some(handle) = handle.as_mut() else {
+                        trace!(
+                            "[terminal-{}] Dropping PtyWrite event for headless terminal",
+                            self.id
+                        );
+                        continue;
+                    };
                     if let Err(e) = handle.writer.write_all(bytes) {
                         warn!(
                             "[terminal-{}] Failed to write PtyWrite response: {}",
@@ -1360,6 +1463,15 @@ impl Chau7Terminal {
         );
     }
 
+    /// Set Unicode ambiguous-width treatment.
+    /// - `width = 1`: single-width (Western default)
+    /// - `width = 2`: double-width (East Asian)
+    pub fn set_ambiguous_width(&self, width: u8) {
+        let w = if width == 2 { 2u64 } else { 1u64 };
+        self.ambiguous_width.store(w, Ordering::Release);
+        info!("[terminal-{}] set_ambiguous_width: {}", self.id, w);
+    }
+
     /// Get the current display offset
     pub fn display_offset(&self) -> usize {
         let term = self.term.lock();
@@ -1729,17 +1841,17 @@ impl Drop for Chau7Terminal {
         );
 
         // Close the duplicated master fd used for echo detection
-        let handle = self.pty_handle.lock();
-        if handle.master_fd >= 0 {
-            unsafe {
-                libc::close(handle.master_fd);
+        if let Some(handle) = self.pty_handle.lock().as_ref() {
+            if handle.master_fd >= 0 {
+                unsafe {
+                    libc::close(handle.master_fd);
+                }
+                debug!(
+                    "[terminal-{}] Closed echo detection fd {}",
+                    self.id, handle.master_fd
+                );
             }
-            debug!(
-                "[terminal-{}] Closed echo detection fd {}",
-                self.id, handle.master_fd
-            );
         }
-        drop(handle);
 
         // Signal the reader thread to stop
         self.running.store(false, Ordering::Release);
