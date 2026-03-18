@@ -3228,25 +3228,29 @@ a.catalog-card:hover::after { opacity: 1; }
     cursor: pointer;
 }
 .ask-ai-trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.15em;
-    font-size: 0.7em;
+    display: inline;
+    font-size: 0.55em;
     vertical-align: super;
-    color: var(--accent);
     cursor: pointer;
-    opacity: 0.7;
-    transition: opacity 0.2s;
-    background: none;
+    background: linear-gradient(135deg, var(--accent), var(--electric));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
     border: none;
     padding: 0;
-    font-family: inherit;
+    font-family: var(--sans);
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    margin-left: 0.1em;
+    transition: opacity 0.15s;
+    white-space: nowrap;
+    line-height: 1;
 }
-.ask-ai-trigger:hover { opacity: 1; }
-.ask-ai-trigger svg {
-    width: 0.9em;
-    height: 0.9em;
+.ask-ai-trigger:hover {
+    opacity: 0.7;
 }
+.ask-ai-trigger svg { display: none; }
+.ask-ai-trigger::before { content: '✦ ask ai'; }
 .ask-ai-popup {
     display: none;
     position: absolute;

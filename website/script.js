@@ -519,7 +519,11 @@
             var term = trigger.getAttribute('data-term');
             if (!term) return;
 
-            var prompt = 'On Chau7.sh I read about "' + term + '". Explain what it is, what it means, and what it brings to an AI-optimized terminal like Chau7.';
+            var parent = trigger.closest('.ask-ai');
+            var definition = parent ? parent.getAttribute('data-definition') : '';
+            var prompt = 'On Chau7.sh I read about "' + term + '".'
+                + (definition ? ' The site defines it as: "' + definition + '".' : '')
+                + ' Explain what it is, what it means, and what it brings to an AI-optimized terminal like Chau7.';
             var encoded = encodeURIComponent(prompt);
 
             // Build popup using safe DOM methods

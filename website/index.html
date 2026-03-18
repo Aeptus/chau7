@@ -252,7 +252,7 @@
                         <dd>Every tab surfaces what matters: which agent is running, its live status, child processes, and previous session IDs. Quit and relaunch. Your tabs and AI sessions come back exactly where you left them.</dd>
                     </article>
                     <article class="ai-value-row" data-ui="ai-value-cto">
-                        <dt><span class="ask-ai">Context Token Optimization<button class="ask-ai-trigger" data-term="Context Token Optimization" aria-label="Ask AI about Context Token Optimization"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1zm0 3a1 1 0 00-.867 1.5L8 7.5l.867-2A1 1 0 008 4zM7 9v3h2V9H7z"/></svg></button></span> reduces token usage by ~40%.</dt>
+                        <dt><span class="ask-ai" data-entity="feature" data-name="context-token-optimization" data-definition="Strips terminal noise before AI reads output, reducing token usage by approximately 40%">Context Token Optimization<button class="ask-ai-trigger" data-term="Context Token Optimization" aria-label="Ask AI about Context Token Optimization"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1zm0 3a1 1 0 00-.867 1.5L8 7.5l.867-2A1 1 0 008 4zM7 9v3h2V9H7z"/></svg></button></span> reduces token usage by ~40%.</dt>
                         <dd>Context Token Optimization strips ANSI escape sequences, progress bars, and terminal noise before your AI reads the output. Cleaner context in, better output out, lower bill at the end.</dd>
                     </article>
                     <article class="ai-value-row" data-ui="ai-value-cost">
@@ -290,8 +290,8 @@
                     <h2 id="proof-heading" data-ui="proof-title">Not Electron. Not a wrapper. <span class="gradient-text">Not sorry.</span></h2>
                     <p data-ui="proof-retrieval">Chau7 is a native macOS terminal application built with Swift, Rust, and Metal.</p>
                     <p data-ui="proof-detail-swift">The frontend uses Swift and AppKit for native macOS windowing, tabs, and menus.</p>
-                    <p data-ui="proof-detail-rust">The parsing backend uses Rust with SIMD-accelerated ANSI escape sequence parsing and a lock-free ring buffer between the PTY reader and the parser.</p>
-                    <p data-ui="proof-detail-metal">The renderer uses Apple Metal for GPU-accelerated glyph compositing and dirty-region redraws.</p>
+                    <p data-ui="proof-detail-rust">The parsing backend uses Rust with <span class="ask-ai" data-entity="technology" data-name="simd-parsing" data-definition="Processes 16-32 bytes of ANSI escape sequences simultaneously using CPU vector instructions for near cache-line-speed throughput">SIMD-accelerated ANSI escape sequence parsing<button class="ask-ai-trigger" data-term="SIMD-accelerated ANSI escape sequence parsing" aria-label="Ask AI about SIMD parsing"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1z"/></svg></button></span> and a <span class="ask-ai" data-entity="technology" data-name="lock-free-spsc" data-definition="Single-producer single-consumer ring buffer that passes data between threads without mutex locks or contention">lock-free ring buffer<button class="ask-ai-trigger" data-term="lock-free SPSC ring buffer" aria-label="Ask AI about lock-free ring buffer"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1z"/></svg></button></span> between the PTY reader and the parser.</p>
+                    <p data-ui="proof-detail-metal">The renderer uses Apple <span class="ask-ai" data-entity="technology" data-name="metal-rendering" data-definition="Apple's native GPU framework used for hardware-accelerated text rendering with glyph atlas and dirty-region tracking">Metal<button class="ask-ai-trigger" data-term="Apple Metal GPU rendering in a terminal" aria-label="Ask AI about Metal rendering"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1z"/></svg></button></span> for GPU-accelerated glyph compositing and dirty-region redraws.</p>
                     <p data-ui="proof-detail-privacy">Privacy-first by architecture, not by promise. Zero network requests to any Chau7 server. Your data never leaves your Mac.</p>
                     <!-- Humor after anchors -->
                     <p data-ui="proof-personality">We did all of this for a terminal named after a sock. It's fine. We're fine. Mostly.</p>
@@ -308,7 +308,7 @@
             <div class="section-inner">
                 <div class="section-header reveal">
                     <div class="section-badge badge-alt" data-ui="mcp-badge">Local MCP Server</div>
-                    <h2 id="mcp-heading" data-ui="mcp-title">20 <span class="ask-ai">MCP tools<button class="ask-ai-trigger" data-term="MCP (Model Context Protocol) tools" aria-label="Ask AI about MCP tools"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1zm0 3a1 1 0 00-.867 1.5L8 7.5l.867-2A1 1 0 008 4zM7 9v3h2V9H7z"/></svg></button></span>. Local Unix socket. Zero config.</h2>
+                    <h2 id="mcp-heading" data-ui="mcp-title">20 <span class="ask-ai" data-entity="feature" data-name="mcp-tools" data-definition="Local MCP server over Unix socket providing 20 tools for AI agents to control terminal tabs, commands, output, and telemetry">MCP tools<button class="ask-ai-trigger" data-term="MCP (Model Context Protocol) tools" aria-label="Ask AI about MCP tools"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1zm0 3a1 1 0 00-.867 1.5L8 7.5l.867-2A1 1 0 008 4zM7 9v3h2V9H7z"/></svg></button></span>. Local Unix socket. Zero config.</h2>
                     <p data-ui="mcp-retrieval">Chau7 MCP tools allow AI agents to control the terminal programmatically. Chau7 ships a local MCP server over Unix socket that lets AI agents and scripts automate tab management, command execution, and output capture. No network, no cloud, no API keys.</p>
                 </div>
                 <ul data-ui="mcp-capabilities">
@@ -331,7 +331,7 @@
                 <div class="section-header reveal">
                     <div class="section-badge badge-alt" data-ui="remote-badge">iOS Remote</div>
                     <h2 id="remote-heading" data-ui="remote-title">Your terminal. Your pocket.</h2>
-                    <p data-ui="remote-retrieval">Chau7 Remote is an iOS app that lets you control the Chau7 macOS terminal from your iPhone. It connects through an end-to-end encrypted relay using Curve25519 key agreement and ChaChaPoly1305 AEAD. The relay never sees your data.</p>
+                    <p data-ui="remote-retrieval">Chau7 Remote is an iOS app that lets you control the Chau7 macOS terminal from your iPhone. It connects through an end-to-end encrypted relay using <span class="ask-ai" data-entity="technology" data-name="e2e-encryption" data-definition="Curve25519 key agreement combined with ChaChaPoly1305 authenticated encryption ensures only your Mac and iPhone can read the data">Curve25519 + ChaChaPoly1305<button class="ask-ai-trigger" data-term="Curve25519 key agreement and ChaChaPoly1305 AEAD encryption" aria-label="Ask AI about E2E encryption"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1z"/></svg></button></span>. The relay never sees your data.</p>
                 </div>
                 <div class="steps-grid stagger-children">
                     <article class="step-card" data-ui="remote-step-pair">
