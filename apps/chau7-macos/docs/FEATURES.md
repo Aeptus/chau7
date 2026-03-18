@@ -137,7 +137,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 | `tab_press_key` | Send terminal key presses for interactive TUIs — Enter, Escape, arrows, backspace, delete, paging keys, and ctrl/alt combos |
 | `tab_submit_prompt` | Submit the current interactive prompt by sending Enter as a key press |
 | `tab_close` | Close a tab with optional force flag — checks for running processes |
-| `tab_output` | Get recent terminal output (last N lines, max 10000) with 512KB cap. Optional `wait_for_stable_ms` polls until buffer settles. |
+| `tab_output` | Get recent terminal output (last N lines, max 10000) with 512KB cap. `source='pty_log'` returns ANSI-stripped PTY log (full AI session). `wait_for_stable_ms` polls buffer until stable. |
 | `tab_set_cto` | Set per-tab CTO override (default/forceOn/forceOff) — recalculates flag files |
 
 ### Telemetry (8 tools)

@@ -292,13 +292,14 @@ final class MCPSession {
             ],
             [
                 "name": "tab_output",
-                "description": "Get recent terminal output from a tab. Returns the last N lines of the scrollback buffer. Use wait_for_stable_ms after an agent finishes to ensure all output has been flushed to the buffer.",
+                "description": "Get recent terminal output from a tab. By default reads the terminal scrollback buffer. Use source='pty_log' to get the full ANSI-stripped PTY output log — this captures everything including content from TUI alternate screens that is no longer in the scrollback.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
                         "tab_id": ["type": "string", "description": "Tab UUID"],
                         "lines": ["type": "integer", "description": "Number of lines to return (default 50, max 10000)"],
-                        "wait_for_stable_ms": ["type": "integer", "description": "Wait until buffer content is stable for this many ms before returning (max 30000). Useful after agent completion to ensure output is fully flushed."]
+                        "wait_for_stable_ms": ["type": "integer", "description": "Wait until buffer content is stable for this many ms before returning (max 30000). Only applies to source='buffer'."],
+                        "source": ["type": "string", "description": "Data source: 'buffer' (default, terminal scrollback) or 'pty_log' (ANSI-stripped raw PTY output — captures full AI session including alternate screen content)"]
                     ],
                     "required": ["tab_id"]
                 ]
@@ -529,7 +530,8 @@ final class MCPSession {
             }
             let lines = max(1, min(arguments["lines"] as? Int ?? 50, 10000))
             let waitForStableMs = arguments["wait_for_stable_ms"] as? Int
-            return controlService.tabOutput(tabID: tabID, lines: lines, waitForStableMs: waitForStableMs)
+            let source = arguments["source"] as? String
+            return controlService.tabOutput(tabID: tabID, lines: lines, waitForStableMs: waitForStableMs, source: source)
 
         case "tab_set_cto":
             guard let tabID = arguments["tab_id"] as? String,

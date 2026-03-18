@@ -422,6 +422,10 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     private var aiLogContext: AILogContext?
     private var aiLogPrefixBuffer = Data()
 
+    /// Path to the most recent AI session's PTY log. Preserved after the session ends
+    /// so MCP tools (tab_output source=pty_log, tab_last_response) can read it.
+    private(set) var lastPTYLogPath: String?
+
     private var notificationTabName: String {
         if let override = tabTitleOverride?.trimmingCharacters(in: .whitespacesAndNewlines),
            !override.isEmpty {
@@ -876,6 +880,7 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             guard aiLogSession == nil else { return }
             let logPath = terminalLogPath(for: toolName)
             aiLogSession = AITerminalLogSession(toolName: toolName, logPath: logPath)
+            lastPTYLogPath = logPath
             let trimmedCommand = commandLine.flatMap { SensitiveInputGuard.sanitizedCommandForPersistence($0) }
             aiLogContext = AILogContext(toolName: toolName, commandLine: trimmedCommand, logPath: logPath)
             aiLogPrefixBuffer.removeAll(keepingCapacity: true)
@@ -909,6 +914,8 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             aiLogSession?.close() // drain write queue so readPTYLogTail sees all data
             return aiLogContext?.logPath
         }
+        // Preserve for MCP tools that need the PTY log after the session ends
+        lastPTYLogPath = ptyLogPath
 
         // Telemetry: record run end (with fallback sources)
         TelemetryRecorder.shared.runEnded(
