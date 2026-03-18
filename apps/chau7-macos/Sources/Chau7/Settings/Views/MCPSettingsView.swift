@@ -82,6 +82,10 @@ struct MCPSettingsView: View {
                 Text("Commands not in either list will prompt for approval.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            case .auditOnly:
+                Text("All commands run but unlisted ones are logged for audit review.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             // MARK: - MCP Profiles
