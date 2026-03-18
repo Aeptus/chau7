@@ -66,7 +66,8 @@ public enum AIToolRegistry {
             commandNames: ["claude", "claude-code", "claude-cli", "claude-pty", "claude-wrapper"],
             outputPatterns: [
                 "╭─ claude", "╰─ claude", "powered by anthropic",
-                "claude.ai/", "claude.ai", "claude code", "anthropic's claude"
+                "claude.ai/", "claude.ai", "claude code", "anthropic's claude",
+                "claude --"  // matches command echo: claude --dangerously-skip-permissions, claude --model, etc.
             ],
             resumeProviderKey: "claude",
             resumeFormat: .dashFlag(command: "claude", flag: "--resume"),
@@ -157,10 +158,12 @@ public enum AIToolRegistry {
             eventSourceRawValue: "windsurf"
         ),
         // — Cline —
+        // Output patterns must be specific — bare "cline" matches common substrings
+        // like "decline", "client", "incline" in any AI tool's output.
         AIToolDefinition(
             displayName: "Cline",
             commandNames: ["cline"],
-            outputPatterns: ["cline", "cline.bot"],
+            outputPatterns: ["cline v", "cline cli", "cline.bot", "cline agent"],
             resumeProviderKey: nil,
             resumeFormat: nil,
             logoAssetName: nil,

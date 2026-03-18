@@ -28,7 +28,7 @@ AI Detection,Branded Tab Logos,Each detected AI agent gets its branded logo disp
 AI Detection,Auto Tab Theming,Tabs automatically adopt the brand color of the active AI agent,Shipped,Yes
 AI Detection,Custom Detection Rules,Define custom patterns to detect and theme any CLI tool with display name and tab color,Shipped,Yes
 AI Detection,Command Line Tokenization,"Smart detection with wrapper skipping (env, sudo, npx, bunx, pnpm)",Shipped,Yes
-AI Detection,Output Banner Detection,"Detect AI tools from their output banners (Claude, Codex, Gemini, ChatGPT, Copilot)",Shipped,Yes
+AI Detection,Output Banner Detection,"Detect AI tools from output banners — command-based detection gates output scanning to prevent false positives",Shipped,Yes
 AI Integration,LLM Error Explanation,"One-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoint — plain-language root cause and fix suggestions",Shipped,Yes
 AI Integration,Claude Code Deep Integration,"Monitor Claude Code hook events: prompts, tools, permissions, responses — first-class agentic workflow support",Shipped,Yes
 AI Integration,AI Event Notifications,"Notifications for finished, failed, needs_validation, permission, tool_complete, session_end, idle events",Shipped,Yes
