@@ -1590,6 +1590,20 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(cursorBlink, forKey: Keys.cursorBlink) }
     }
 
+    /// Cursor blink interval in seconds (0.3–2.0). Only applies when cursorBlink is true.
+    @Published var cursorBlinkRate: Double {
+        didSet {
+            let clamped = max(0.3, min(cursorBlinkRate, 2.0))
+            if cursorBlinkRate != clamped { cursorBlinkRate = clamped; return }
+            UserDefaults.standard.set(cursorBlinkRate, forKey: "terminal.cursorBlinkRate")
+        }
+    }
+
+    /// Custom cursor color as hex string (e.g. "#FF6600"). Empty = use theme default.
+    @Published var cursorColor: String {
+        didSet { UserDefaults.standard.set(cursorColor, forKey: "terminal.cursorColor") }
+    }
+
     @Published var scrollbackLines: Int {
         didSet {
             let clamped = max(100, min(scrollbackLines, 100_000))
@@ -2343,6 +2357,8 @@ final class FeatureSettings: ObservableObject {
         // General Terminal Settings
         self.cursorStyle = defaults.string(forKey: Keys.cursorStyle) ?? "block"
         self.cursorBlink = defaults.object(forKey: Keys.cursorBlink) as? Bool ?? true
+        self.cursorBlinkRate = defaults.object(forKey: "terminal.cursorBlinkRate") as? Double ?? 0.6
+        self.cursorColor = defaults.string(forKey: "terminal.cursorColor") ?? ""
         self.scrollbackLines = defaults.object(forKey: Keys.scrollbackLines) as? Int ?? 10000
         self.restoredScrollbackLines = defaults.object(forKey: Keys.restoredScrollbackLines) as? Int ?? 500
         self.bellEnabled = defaults.object(forKey: Keys.bellEnabled) as? Bool ?? true
@@ -3019,6 +3035,8 @@ final class FeatureSettings: ObservableObject {
         // Terminal
         cursorStyle = "block"
         cursorBlink = true
+        cursorBlinkRate = 0.6
+        cursorColor = ""
         scrollbackLines = 10000
         restoredScrollbackLines = 500
         bellEnabled = true
@@ -3107,6 +3125,8 @@ final class FeatureSettings: ObservableObject {
     func resetTerminalToDefaults() {
         cursorStyle = "block"
         cursorBlink = true
+        cursorBlinkRate = 0.6
+        cursorColor = ""
         scrollbackLines = 10000
         restoredScrollbackLines = 500
         bellEnabled = true
