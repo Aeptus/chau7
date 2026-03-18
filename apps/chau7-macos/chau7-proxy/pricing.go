@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -22,6 +25,9 @@ func (p ModelPricing) CalculateCost(inputTokens, outputTokens int) float64 {
 // This should be periodically updated or loaded from a config file
 var PricingTable = map[string]ModelPricing{
 	// Anthropic models
+	"claude-opus-4-6":            {InputPerMillion: 15.00, OutputPerMillion: 75.00},
+	"claude-sonnet-4-6":          {InputPerMillion: 3.00, OutputPerMillion: 15.00},
+	"claude-haiku-4-5":           {InputPerMillion: 0.80, OutputPerMillion: 4.00},
 	"claude-opus-4":              {InputPerMillion: 15.00, OutputPerMillion: 75.00},
 	"claude-opus-4-20250514":     {InputPerMillion: 15.00, OutputPerMillion: 75.00},
 	"claude-sonnet-4":            {InputPerMillion: 3.00, OutputPerMillion: 15.00},
@@ -62,8 +68,38 @@ var PricingTable = map[string]ModelPricing{
 	"gemini-pro":              {InputPerMillion: 0.50, OutputPerMillion: 1.50},
 }
 
-// GetPricing returns the pricing for a model, with fallback to estimated pricing
+// CustomPricingOverrides loaded from ~/.chau7/pricing.json at startup.
+// Keys are model names, values are {input_per_million, output_per_million}.
+var CustomPricingOverrides map[string]ModelPricing
+
+// LoadCustomPricing reads user-defined pricing overrides from ~/.chau7/pricing.json.
+// The file is optional — if missing or malformed, no overrides are applied.
+func LoadCustomPricing() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	path := filepath.Join(home, ".chau7", "pricing.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var overrides map[string]ModelPricing
+	if err := json.Unmarshal(data, &overrides); err != nil {
+		return
+	}
+	CustomPricingOverrides = overrides
+}
+
+// GetPricing returns the pricing for a model, with fallback to estimated pricing.
+// Custom overrides from ~/.chau7/pricing.json take precedence over the built-in table.
 func GetPricing(provider Provider, model string) ModelPricing {
+	// Try custom overrides first
+	if CustomPricingOverrides != nil {
+		if pricing, ok := CustomPricingOverrides[model]; ok {
+			return pricing
+		}
+	}
 	// Try exact match first
 	if pricing, ok := PricingTable[model]; ok {
 		return pricing
