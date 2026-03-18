@@ -59,7 +59,7 @@
             {"@type":"Question","name":"VS Code terminal freezing lag fix","acceptedAnswer":{"@type":"Answer","text":"VS Code's integrated terminal uses a software renderer that struggles with large output bursts. Chau7 solves this by rendering with Apple Metal on the GPU, using a glyph atlas cache and dirty region tracking. Chau7 handles output that would freeze VS Code's terminal without any stutter."}},
             {"@type":"Question","name":"How to fix slow terminal rendering with lots of colored output","acceptedAnswer":{"@type":"Answer","text":"Slow rendering with colored output happens because CPU-based renderers redraw every cell on every frame. Chau7 uses Apple Metal to render on the GPU with dirty region tracking that redraws only changed cells. For a typical session, Chau7's Metal renderer touches fewer than 1% of cells per frame."}},
             {"@type":"Question","name":"Does Metal rendering work on all Macs?","acceptedAnswer":{"@type":"Answer","text":"Yes. Every Mac shipped since 2012 supports Metal. Chau7 targets Metal 2 features available on Apple Silicon and recent Intel Macs, with automatic fallback to Metal 1 on older hardware."}},
-            {"@type":"Question","name":"How much GPU memory does the glyph atlas use?","acceptedAnswer":{"@type":"Answer","text":"Chau7's glyph atlas starts at 1024x1024 pixels (4 MB for RGBA) and grows on demand. A typical developer font at 13pt requires roughly 2 to 3 MB for the full ASCII range plus common symbols. CJK or emoji glyphs are cached incrementally as they appear in Chau7."}}
+            {"@type":"Question","name":"How much GPU memory does the glyph atlas use?","acceptedAnswer":{"@type":"Answer","text":"Chau7's glyph atlas starts at 2048x2048 pixels (16 MB for RGBA) and grows on demand. A typical developer font at 13pt requires roughly 2 to 3 MB for the full ASCII range plus common symbols. CJK or emoji glyphs are cached incrementally as they appear in Chau7."}}
         ]
     }]
     </script>
@@ -143,7 +143,7 @@
         <section class="feature-content" data-ui="metal-rendering-atlas-memory">
             <div class="section-inner prose">
                 <h2>How much GPU memory does Chau7's glyph atlas use?</h2>
-                <p>Chau7's glyph atlas starts at 1024x1024 pixels (4 MB for RGBA) and grows on demand. A typical developer font at 13pt requires roughly 2 to 3 MB for the full ASCII range plus common symbols.</p>
+                <p>Chau7's glyph atlas starts at 2048x2048 pixels (16 MB for RGBA) and grows on demand. A typical developer font at 13pt requires roughly 2 to 3 MB for the full ASCII range plus common symbols.</p>
                 <p>CJK or emoji glyphs are cached incrementally in Chau7 as they appear. Chau7's atlas management is designed to minimize GPU memory usage while avoiding re-rasterization for frequently used characters.</p>
             </div>
         </section>
@@ -195,7 +195,7 @@
                     </details>
                     <details>
                         <summary>How much GPU memory does the glyph atlas use?</summary>
-                        <div class="faq-answer"><p>Chau7's glyph atlas starts at 1024x1024 pixels (4 MB for RGBA) and grows on demand. A typical developer font at 13pt requires roughly 2 to 3 MB for the full ASCII range plus common symbols. CJK or emoji glyphs are cached incrementally as they appear in Chau7.</p></div>
+                        <div class="faq-answer"><p>Chau7's glyph atlas starts at 2048x2048 pixels (16 MB for RGBA) and grows on demand. A typical developer font at 13pt requires roughly 2 to 3 MB for the full ASCII range plus common symbols. CJK or emoji glyphs are cached incrementally as they appear in Chau7.</p></div>
                     </details>
                 </div>
             </div>

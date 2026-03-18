@@ -1047,7 +1047,7 @@
             ],
             [
               "How much GPU memory does the glyph atlas use?",
-              "The atlas starts at 1024x1024 pixels (4 MB for RGBA) and grows on demand. A typical developer font at 13pt requires roughly 2-3 MB for the full ASCII range plus common symbols. CJK or emoji glyphs are cached incrementally as they appear."
+              "The atlas starts at 2048x2048 pixels (16 MB for RGBA) and grows on demand. A typical developer font at 13pt requires roughly 2-3 MB for the full ASCII range plus common symbols. CJK or emoji glyphs are cached incrementally as they appear."
             ],
             [
               "Can I disable GPU rendering?",
