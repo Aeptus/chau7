@@ -320,6 +320,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Session recording with timestamps and timeline scrubber.
 - Remote activity projection — macOS reduces AI event streams into one authoritative activity state for remote clients.
 - iPhone Live Activity / Dynamic Island support via the Chau7 Remote app for running, waiting-input, completed, and failed states.
+- Interactive remote prompts — detected Claude and Codex terminal prompts appear in the iPhone Approvals tab with option buttons that reply to the correct tab. Destructive options require a second confirmation before sending.
 
 ### Isolated Testing
 
