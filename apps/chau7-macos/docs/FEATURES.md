@@ -262,8 +262,8 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Native macOS desktop notifications for task completion, failures, permissions.
 - Dock badge and bounce (critical/non-critical).
 - Configurable sounds (Glass, Purr, etc.) with volume control.
-- Command idle detection with configurable threshold.
-- Auto tab styling on events with auto-clear timeout.
+- Command idle detection with configurable threshold. Fires once per session, resets only on real user activity.
+- Auto tab styling on events with auto-clear timeout. Deduplicates redundant re-applies.
 - Rate limiting and per-trigger enable/disable.
 - Isolated test mode disables notification-center integration to keep side effects out of the test app.
 

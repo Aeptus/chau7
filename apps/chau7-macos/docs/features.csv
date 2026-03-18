@@ -139,7 +139,7 @@ History & Bookmarks,Terminal Bookmarks,Pin important positions in your terminal 
 Notifications,Desktop Notifications,"Native macOS notifications for task completion, failures, permission requests",Shipped,No
 Notifications,Dock Badge & Bounce,Animated dock badge and critical/non-critical bounce for key events,Shipped,No
 Notifications,Configurable Sounds,"Alert sounds (Glass, Purr, etc.) with volume control",Shipped,No
-Notifications,Command Idle Detection,Notify when a command has been idle beyond configurable threshold,Shipped,No
+Notifications,Command Idle Detection,"Notify when a command has been idle beyond configurable threshold. Fires once per session, resets only on real user activity.",Shipped,No
 Notifications,Auto Tab Styling,Tabs change color on events — auto-clear after configurable timeout,Shipped,No
 Notifications,Rate Limiting,Prevent notification spam with configurable thresholds,Shipped,No
 Notifications,Per-Trigger Control,Enable/disable and customize actions for each event type individually,Shipped,No
