@@ -7,6 +7,8 @@ import Chau7Core
 /// switches the active settings profile when a match is found.
 @MainActor
 final class ProfileAutoSwitcher: ObservableObject {
+    static let shared = ProfileAutoSwitcher()
+
     @Published private(set) var isActive = false
     @Published private(set) var currentMatchedRule: ProfileSwitchRule?
 
