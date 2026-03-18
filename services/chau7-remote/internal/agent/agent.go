@@ -341,6 +341,8 @@ func (a *Agent) readRelay(ctx context.Context, conn *websocket.Conn) {
 func (a *Agent) handleIPCFrame(frame *protocol.Frame) {
 	switch frame.Type {
 	case protocol.TypeTabList, protocol.TypeOutput, protocol.TypeSnapshot,
+		protocol.TypeTerminalGridSnapshot,
+		protocol.TypeInteractivePromptList,
 		protocol.TypeApprovalRequest:
 		a.sendEncryptedToRelay(frame)
 	case protocol.TypeCachedTabList:

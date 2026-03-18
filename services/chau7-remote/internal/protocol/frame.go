@@ -21,9 +21,11 @@ const (
 	TypeActivityState   = 0x12
 	TypeActivityCleared = 0x13
 	TypeCachedTabList   = 0x14
+	TypeInteractivePromptList = 0x15
 	TypeOutput          = 0x20
 	TypeInput           = 0x21
 	TypeSnapshot        = 0x22
+	TypeTerminalGridSnapshot = 0x23
 	TypePing            = 0x30
 	TypePong            = 0x31
 	TypePairingInfo     = 0x40

@@ -1,18 +1,42 @@
 import SwiftUI
+import Chau7Core
 
 struct ApprovalsView: View {
     var client: RemoteClient
     @State private var hapticTrigger = false
+    @State private var pendingPromptConfirmation: PendingInteractivePromptConfirmation?
 
     var body: some View {
         NavigationStack {
             List {
-                if client.pendingApprovals.isEmpty && client.approvalHistory.isEmpty {
+                if client.pendingApprovals.isEmpty &&
+                    client.pendingInteractivePrompts.isEmpty &&
+                    client.approvalHistory.isEmpty {
                     ContentUnavailableView(
                         "No Approvals",
                         systemImage: "checkmark.shield",
-                        description: Text("Protected remote actions and command approvals will appear here.")
+                        description: Text("Protected remote actions, command approvals, and detected Claude/Codex prompts will appear here.")
                     )
+                }
+
+                if !client.pendingInteractivePrompts.isEmpty {
+                    Section("Interactive Prompts") {
+                        ForEach(client.pendingInteractivePrompts) { prompt in
+                            InteractivePromptCard(prompt: prompt) { option in
+                                if option.isDestructive {
+                                    pendingPromptConfirmation = PendingInteractivePromptConfirmation(
+                                        promptID: prompt.id,
+                                        promptText: prompt.prompt,
+                                        toolName: prompt.toolName,
+                                        tabTitle: prompt.tabTitle,
+                                        option: option
+                                    )
+                                } else if client.respondToInteractivePrompt(promptID: prompt.id, optionID: option.id) {
+                                    hapticTrigger.toggle()
+                                }
+                            }
+                        }
+                    }
                 }
 
                 if !client.pendingApprovals.isEmpty {
@@ -37,7 +61,105 @@ struct ApprovalsView: View {
             .listStyle(.insetGrouped)
             .navigationTitle("Approvals")
             .sensoryFeedback(.success, trigger: hapticTrigger)
+            .alert(
+                pendingPromptConfirmation?.title ?? "Confirm Prompt Response",
+                isPresented: pendingPromptConfirmationBinding
+            ) {
+                Button("Cancel", role: .cancel) {
+                    pendingPromptConfirmation = nil
+                }
+                Button(
+                    pendingPromptConfirmation?.confirmationLabel ?? "Confirm",
+                    role: .destructive
+                ) {
+                    guard let pendingPromptConfirmation else { return }
+                    if client.respondToInteractivePrompt(
+                        promptID: pendingPromptConfirmation.promptID,
+                        optionID: pendingPromptConfirmation.option.id
+                    ) {
+                        hapticTrigger.toggle()
+                    }
+                    self.pendingPromptConfirmation = nil
+                }
+            } message: {
+                Text(pendingPromptConfirmation?.message ?? "")
+            }
         }
+    }
+
+    private var pendingPromptConfirmationBinding: Binding<Bool> {
+        Binding(
+            get: { pendingPromptConfirmation != nil },
+            set: { isPresented in
+                if !isPresented {
+                    pendingPromptConfirmation = nil
+                }
+            }
+        )
+    }
+}
+
+private struct PendingInteractivePromptConfirmation: Equatable {
+    let promptID: String
+    let promptText: String
+    let toolName: String
+    let tabTitle: String
+    let option: RemoteInteractivePromptOption
+
+    var title: String { "Confirm Destructive Prompt" }
+    var confirmationLabel: String { option.label }
+    var message: String {
+        "\(toolName) on \(tabTitle) is asking:\n\n\(promptText)\n\nThis will send `\(option.response.trimmingCharacters(in: .whitespacesAndNewlines))` back to the terminal."
+    }
+}
+
+struct InteractivePromptCard: View {
+    let prompt: RemoteInteractivePrompt
+    let onRespond: (RemoteInteractivePromptOption) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Label("Interactive Prompt", systemImage: "text.bubble")
+                        .font(.headline)
+                    Text("\(prompt.toolName) · \(prompt.tabTitle)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(prompt.detectedAt, style: .relative)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(prompt.prompt)
+                .font(.body.weight(.semibold))
+
+            if let detail = prompt.detail, !detail.isEmpty {
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(prompt.options) { option in
+                Button {
+                    onRespond(option)
+                } label: {
+                    HStack {
+                        Text(option.label)
+                        Spacer()
+                        Text(option.response.trimmingCharacters(in: .whitespacesAndNewlines))
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(option.isDestructive ? .red : .blue)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 

@@ -98,6 +98,10 @@ struct RemoteRootView: View {
 
     enum Tab { case terminal, approvals, settings }
 
+    private var approvalsBadgeCount: Int {
+        client.pendingApprovals.count + client.pendingInteractivePrompts.count
+    }
+
     var body: some View {
         TabView(selection: $selectedTab) {
             TerminalView(client: client, isPairingPresented: $isPairingPresented)
@@ -107,13 +111,13 @@ struct RemoteRootView: View {
             ApprovalsView(client: client)
                 .tabItem { Label("Approvals", systemImage: "lock.shield") }
                 .tag(Tab.approvals)
-                .badge(client.pendingApprovals.count)
+                .badge(approvalsBadgeCount)
 
             SettingsView(client: client, isPairingPresented: $isPairingPresented)
                 .tabItem { Label("Settings", systemImage: "gearshape") }
                 .tag(Tab.settings)
         }
-        .onChange(of: client.pendingApprovals.count) { oldCount, newCount in
+        .onChange(of: approvalsBadgeCount) { oldCount, newCount in
             if newCount > oldCount { selectedTab = .approvals }
         }
         .sheet(isPresented: $isPairingPresented) {

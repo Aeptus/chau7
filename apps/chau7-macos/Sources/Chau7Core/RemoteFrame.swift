@@ -128,9 +128,11 @@ public enum RemoteFrameType: UInt8, CaseIterable, Sendable {
     case activityState = 0x12
     case activityCleared = 0x13
     case cachedTabList = 0x14
+    case interactivePromptList = 0x15
     case output = 0x20
     case input = 0x21
     case snapshot = 0x22
+    case terminalGridSnapshot = 0x23
     case approvalRequest = 0x50
     case approvalResponse = 0x51
     case ping = 0x30

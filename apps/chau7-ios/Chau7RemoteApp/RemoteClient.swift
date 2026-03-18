@@ -21,6 +21,7 @@ final class RemoteClient {
     var activeTabID: UInt32 = 0
     var lastError: String?
     var pendingApprovals: [ApprovalRequest] = []
+    var pendingInteractivePrompts: [RemoteInteractivePrompt] = []
     var approvalHistory: [ApprovalHistoryEntry] = []
     private(set) var liveActivityState: RemoteActivityState?
 
@@ -52,6 +53,7 @@ final class RemoteClient {
     private var remoteSessionID: String?
     private var bufferedTelemetryEvents: [RemoteClientTelemetryEvent] = []
     private var pendingURLActions: [RemoteActivityURLAction] = []
+    let terminalRenderer = RemoteTerminalRendererStore()
 
     private static let maxHistory = 50
     private static let maxReconnectAttempts = 5
@@ -60,6 +62,10 @@ final class RemoteClient {
     private static let handshakeTimeoutSeconds = 12.0
     private static let repairFallbackAttempt = 3
     static let appVersion = "1.1.0"
+
+    var canSendInput: Bool {
+        canSendInput(to: activeTabID)
+    }
 
     // MARK: - Init
 
@@ -138,12 +144,14 @@ final class RemoteClient {
         connectionGeneration &+= 1
         tabs = []
         outputStore.reset()
+        terminalRenderer.reset()
         outputFlushTask?.cancel()
         outputFlushTask = nil
         bufferedTelemetryEvents.removeAll(keepingCapacity: true)
         liveActivityState = nil
         outputText = ""
         strippedOutputText = ""
+        pendingInteractivePrompts = []
         if #available(iOS 16.1, *) {
             RemoteLiveActivityManager.shared.update(with: nil)
         }
@@ -156,17 +164,16 @@ final class RemoteClient {
 
     // MARK: - Input
 
-    func sendInput(_ text: String, appendNewline: Bool) {
-        guard !text.isEmpty else { return }
-        var data = Data(text.utf8)
-        if appendNewline { data.append(0x0A) }
-        sendEncrypted(type: .input, tabID: activeTabID, payload: data)
+    @discardableResult
+    func sendInput(_ text: String, appendNewline: Bool) -> Bool {
+        sendInput(text, appendNewline: appendNewline, to: activeTabID)
     }
 
     func switchTab(_ tabID: UInt32) {
         activeTabID = tabID
         flushPendingOutput(for: tabID)
         refreshVisibleOutput()
+        terminalRenderer.setActiveTab(tabID, fallbackText: outputText)
         emitTelemetry(type: .tabSwitched, tabID: tabID, tabTitle: tabTitle(for: tabID))
         sendJSON(TabSwitchPayload(tabID: tabID), type: .tabSwitch)
     }
@@ -195,6 +202,28 @@ final class RemoteClient {
             metadata: ["request_id": requestID]
         )
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [requestID])
+    }
+
+    @discardableResult
+    func respondToInteractivePrompt(promptID: String, optionID: String) -> Bool {
+        guard let promptIndex = pendingInteractivePrompts.firstIndex(where: { $0.id == promptID }) else {
+            return false
+        }
+        let prompt = pendingInteractivePrompts[promptIndex]
+        guard let option = prompt.options.first(where: { $0.id == optionID }) else {
+            return false
+        }
+
+        if tabs.contains(where: { $0.tabID == prompt.tabID }) {
+            switchTab(prompt.tabID)
+        }
+
+        guard sendInput(option.response, appendNewline: false, to: prompt.tabID) else {
+            return false
+        }
+
+        pendingInteractivePrompts.remove(at: promptIndex)
+        return true
     }
 
     func handle(url: URL) {
@@ -367,10 +396,14 @@ final class RemoteClient {
             cancelHandshakeTasks()
             flushPendingURLActions()
         case .tabList:         handleTabList(payload)
+        case .cachedTabList:   handleCachedTabList(payload)
         case .activityState:   handleActivityState(payload)
         case .activityCleared: clearActivityState()
+        case .interactivePromptList: handleInteractivePromptList(payload)
         case .output:          appendOutput(payload, tabID: frame.tabID)
         case .snapshot:        storeSnapshot(payload, tabID: frame.tabID)
+        case .terminalGridSnapshot:
+            storeGridSnapshot(payload, tabID: frame.tabID)
         case .approvalRequest: handleApprovalRequest(payload)
         case .ping:            sendEncrypted(type: .pong, tabID: frame.tabID, payload: payload)
         case .error:           handleError(payload)
@@ -445,6 +478,16 @@ final class RemoteClient {
 
     private func handleTabList(_ data: Data) {
         guard let msg: TabListPayload = decodePayload(data, as: TabListPayload.self, context: "handleTabList") else { return }
+        applyTabListPayload(msg)
+        flushPendingURLActions()
+    }
+
+    private func handleCachedTabList(_ data: Data) {
+        guard let msg: TabListPayload = decodePayload(data, as: TabListPayload.self, context: "handleCachedTabList") else { return }
+        applyTabListPayload(msg)
+    }
+
+    private func applyTabListPayload(_ msg: TabListPayload) {
         tabs = msg.tabs
         if let active = msg.tabs.first(where: { $0.isActive }) {
             activeTabID = active.tabID
@@ -455,8 +498,10 @@ final class RemoteClient {
         }
         let visibleTabIDs = Set(msg.tabs.map(\.tabID))
         outputStore.retainVisibleTabs(visibleTabIDs)
+        terminalRenderer.retainVisibleTabs(visibleTabIDs)
+        pendingInteractivePrompts.removeAll { !visibleTabIDs.contains($0.tabID) }
         refreshVisibleOutput()
-        flushPendingURLActions()
+        terminalRenderer.setActiveTab(activeTabID, fallbackText: outputText)
     }
 
     private func handleActivityState(_ data: Data) {
@@ -478,9 +523,21 @@ final class RemoteClient {
         }
     }
 
+    private func handleInteractivePromptList(_ data: Data) {
+        guard let payload: RemoteInteractivePromptListPayload = decodePayload(
+            data,
+            as: RemoteInteractivePromptListPayload.self,
+            context: "handleInteractivePromptList"
+        ) else {
+            return
+        }
+        pendingInteractivePrompts = payload.prompts
+    }
+
     private func appendOutput(_ data: Data, tabID: UInt32) {
         let resolvedTabID = resolvedTabID(for: tabID)
         outputStore.append(data, to: resolvedTabID)
+        terminalRenderer.appendOutput(data, for: resolvedTabID)
 
         if outputStore.pendingByteCount(for: resolvedTabID) >= RemoteOutputTuning.maxPendingBytesPerTab {
             flushPendingOutput(for: resolvedTabID)
@@ -492,9 +549,18 @@ final class RemoteClient {
     private func storeSnapshot(_ data: Data, tabID: UInt32) {
         let resolvedTabID = resolvedTabID(for: tabID)
         outputStore.replaceSnapshot(data, for: resolvedTabID)
+        terminalRenderer.replaceSnapshot(data, for: resolvedTabID)
         if resolvedTabID == activeTabID || activeTabID == 0 {
             refreshVisibleOutput()
         }
+    }
+
+    private func storeGridSnapshot(_ data: Data, tabID: UInt32) {
+        let resolvedTabID = resolvedTabID(for: tabID)
+        guard let renderState = RemoteTerminalRenderStateDecoder.decodeGridSnapshot(data) else {
+            return
+        }
+        terminalRenderer.replaceGridSnapshot(renderState, for: resolvedTabID)
     }
 
     private func handleApprovalRequest(_ data: Data) {
@@ -592,23 +658,26 @@ final class RemoteClient {
             return
         }
         if encrypt {
-            sendEncrypted(type: type, tabID: 0, payload: data)
+            _ = sendEncrypted(type: type, tabID: 0, payload: data)
         } else {
-            send(RemoteFrame(type: type.rawValue, tabID: 0, seq: nextSeq(), payload: data))
+            _ = send(RemoteFrame(type: type.rawValue, tabID: 0, seq: nextSeq(), payload: data))
         }
     }
 
-    private func sendEncrypted(type: RemoteFrameType, tabID: UInt32, payload: Data) {
-        guard let crypto else { return }
+    @discardableResult
+    private func sendEncrypted(type: RemoteFrameType, tabID: UInt32, payload: Data) -> Bool {
+        guard let crypto else { return false }
         let frame = RemoteFrame(type: type.rawValue, tabID: tabID, seq: nextSeq(), payload: payload)
         guard let encrypted = try? crypto.encrypt(frame: frame) else {
             log.error("Encryption failed for frame type \(type.rawValue)")
-            return
+            return false
         }
-        send(encrypted)
+        return send(encrypted)
     }
 
-    private func send(_ frame: RemoteFrame) {
+    @discardableResult
+    private func send(_ frame: RemoteFrame) -> Bool {
+        guard webSocket != nil else { return false }
         webSocket?.send(.data(frame.encode())) { error in
             if let error {
                 log.error("WebSocket send failed: \(error.localizedDescription)")
@@ -617,6 +686,7 @@ final class RemoteClient {
                 }
             }
         }
+        return true
     }
 
     private func nextSeq() -> UInt64 {
@@ -673,6 +743,30 @@ final class RemoteClient {
     private func loadStoredMacKey() -> Curve25519.KeyAgreement.PublicKey? {
         guard let data = KeychainStore.load(key: "mac_public_key") else { return nil }
         return try? Curve25519.KeyAgreement.PublicKey(rawRepresentation: data)
+    }
+
+    private func canSendInput(to tabID: UInt32) -> Bool {
+        crypto != nil && webSocket != nil && tabID != 0 && tabs.contains(where: { $0.tabID == tabID })
+    }
+
+    @discardableResult
+    private func sendInput(_ text: String, appendNewline: Bool, to tabID: UInt32) -> Bool {
+        guard !text.isEmpty else { return false }
+        guard crypto != nil, webSocket != nil else {
+            reportBlockedInput("Input not sent because the encrypted session is not ready yet.")
+            return false
+        }
+        guard canSendInput(to: tabID) else {
+            reportBlockedInput("Input not sent because the target remote tab is no longer available.")
+            return false
+        }
+        var data = Data(text.utf8)
+        if appendNewline { data.append(0x0A) }
+        guard sendEncrypted(type: .input, tabID: tabID, payload: data) else {
+            reportBlockedInput("Input could not be encrypted for the current remote session.")
+            return false
+        }
+        return true
     }
 
     private func shouldSendPairRequest(for pairing: PairingInfo, attempt: Int) -> Bool {
@@ -774,6 +868,18 @@ final class RemoteClient {
     private func refreshVisibleOutput() {
         outputText = outputStore.visibleOutput(for: activeTabID)
         strippedOutputText = ANSIStripper.strip(outputText)
+        terminalRenderer.updateActiveFallbackText(outputText)
+    }
+
+    private func reportBlockedInput(_ message: String) {
+        lastError = message
+        emitTelemetry(
+            type: .sendFailed,
+            status: "send_blocked",
+            message: message,
+            tabID: activeTabID,
+            tabTitle: tabTitle(for: activeTabID)
+        )
     }
 
     private func scheduleOutputFlush() {

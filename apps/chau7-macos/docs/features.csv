@@ -217,6 +217,7 @@ Terminal,Hyperlink Protocols,"Detect file://, ssh://, ftp://, sftp:// in additio
 Scripting,Complete JSON-RPC API,"All 12 methods implemented: tabs, commands, output, snippets, history, settings, status",Shipped,No
 Debug,API Analytics Tab,"Per-provider cost, per-tab tokens, aggregate totals in debug console",Shipped,No
 Timeline,Activity Density Heatmap,Minimap shows command activity hotspots via bucketed opacity overlay,Shipped,No
+Terminal,Unicode Ambiguous-Width,"Per-profile toggle: treat Unicode ambiguous-width chars as 1 or 2 cells (Swift + Rust FFI)",Shipped,No
 Networking,TLS/WSS Proxy Support,TLS and WebSocket proxy for Codex OpenAI API capture,Shipped,Yes
 Networking,API Proxy Interception,Transparent HTTP/HTTPS proxy for API call capture and analysis,Shipped,Yes
 Networking,Configurable Proxy Endpoints,Set custom proxy host and port for API interception,Shipped,No
