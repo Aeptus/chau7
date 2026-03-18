@@ -6,7 +6,7 @@
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
     <title>Image Protocol | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 displays inline images in the terminal via the iTerm2 image protocol and Sixel graphics for visual CLI workflows.">
+    <meta name="description" content="Chau7 displays inline images in the terminal via iTerm2, Sixel, and Kitty graphics protocols for visual CLI workflows.">
     <meta name="article:section" content="Terminal Core">
     <meta name="article:tag" content="Chau7">
     <meta name="article:tag" content="image protocol">
@@ -109,6 +109,7 @@
                 <h2>What is Image Protocol in Chau7?</h2>
                 <p>Image Protocol in Chau7 lets you display inline images directly in the terminal. Chau7 supports the iTerm2 image protocol (OSC 1337) for transmitting base64-encoded images that render inline at the cursor position.</p>
                 <p>Chau7 also supports Sixel graphics, which allows programs that output Sixel-encoded raster data to render images directly in the terminal grid. Chau7 decodes the Sixel color registers and pixel data into an RGBA bitmap.</p>
+                <p>Chau7 also supports the Kitty graphics protocol, which provides a modern, efficient way to transmit and display images. The Kitty protocol supports chunked transmission, image placement at specific cursor positions, and is used by tools like <code>icat</code> and terminal-based image viewers.</p>
             </div>
         </section>
 
