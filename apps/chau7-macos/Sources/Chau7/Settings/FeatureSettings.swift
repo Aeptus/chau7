@@ -1447,7 +1447,7 @@ final class FeatureSettings: ObservableObject {
 
     @Published var clipboardHistoryMaxItems: Int {
         didSet {
-            let clamped = max(1, min(clipboardHistoryMaxItems, 500))
+            let clamped = max(1, min(clipboardHistoryMaxItems, 1000))
             if clipboardHistoryMaxItems != clamped {
                 clipboardHistoryMaxItems = clamped
                 return
