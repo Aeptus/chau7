@@ -192,6 +192,33 @@ private final class OverlayBlurView: NSVisualEffectView {
         false
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Collect running process names across all tabs
+        var runningProcessNames: [String] = []
+        for host in overlayHosts {
+            for tab in host.model.tabs {
+                guard let session = tab.session else { continue }
+                if let children = session.processGroup?.children {
+                    for proc in children where !proc.name.isEmpty {
+                        runningProcessNames.append(proc.name)
+                    }
+                }
+            }
+        }
+
+        guard !runningProcessNames.isEmpty else { return .terminateNow }
+
+        let unique = Array(Set(runningProcessNames)).sorted()
+        let processList = unique.joined(separator: ", ")
+        let alert = NSAlert()
+        alert.messageText = "Quit Chau7?"
+        alert.informativeText = "\(unique.count) running process\(unique.count == 1 ? "" : "es") will be terminated: \(processList)"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         // Save tab state for restoration on next launch
         for host in overlayHosts {
