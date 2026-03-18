@@ -58,6 +58,7 @@ struct DebugConsoleView: View {
                 Text(L("debug.perfTab", "Perf")).tag(4)
                 Text(L("Logs", "Logs")).tag(5)
                 Text(L("Report", "Report")).tag(6)
+                Text("API Analytics").tag(7)
             }
             .pickerStyle(.segmented)
             .padding(8)
@@ -74,6 +75,7 @@ struct DebugConsoleView: View {
                 case 4: performanceView
                 case 5: logsView
                 case 6: reportView
+                case 7: apiAnalyticsView
                 default: stateView
                 }
             }
@@ -1416,6 +1418,78 @@ struct DebugConsoleView: View {
     }
 
     // MARK: - Report View
+
+    // MARK: - API Analytics Tab
+
+    private var apiAnalyticsView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // Per-provider summary
+                GroupBox("Cost by Provider") {
+                    if providerStats.isEmpty {
+                        Text("No API usage data yet.").foregroundStyle(.secondary)
+                    } else {
+                        ForEach(providerStats, id: \.provider) { stat in
+                            HStack {
+                                Text(stat.provider).bold()
+                                Spacer()
+                                Text("\(stat.runCount) runs")
+                                    .foregroundStyle(.secondary)
+                                Text("\(stat.totalInputTokens + stat.totalOutputTokens) tokens")
+                                    .foregroundStyle(.secondary)
+                                Text(String(format: "$%.4f", stat.totalCostUSD))
+                                    .monospaced()
+                            }
+                        }
+                    }
+                }
+
+                // Per-tab token consumption
+                GroupBox("Tokens by Tab") {
+                    if aiPerTabStats.isEmpty {
+                        Text("No per-tab data yet.").foregroundStyle(.secondary)
+                    } else {
+                        ForEach(aiPerTabStats.prefix(20), id: \.tabID) { stat in
+                            HStack {
+                                Text(stat.tabID.prefix(8)).monospaced()
+                                if let provider = stat.lastProvider {
+                                    Text(provider)
+                                        .foregroundStyle(.secondary)
+                                        .font(.caption)
+                                }
+                                Spacer()
+                                Text("in: \(stat.totalInputTokens)")
+                                    .foregroundStyle(.blue)
+                                Text("out: \(stat.totalOutputTokens)")
+                                    .foregroundStyle(.green)
+                                Text(String(format: "$%.4f", stat.totalCostUSD))
+                                    .monospaced()
+                            }
+                        }
+                    }
+                }
+
+                // Total runs count
+                GroupBox("Summary") {
+                    let totalRuns = TelemetryStore.shared.runCount()
+                    let totalCost = providerStats.reduce(0.0) { $0 + $1.totalCostUSD }
+                    let totalTokens = providerStats.reduce(0) { $0 + $1.totalInputTokens + $1.totalOutputTokens }
+                    HStack {
+                        Text("Total runs: \(totalRuns)")
+                        Spacer()
+                        Text("Total tokens: \(totalTokens)")
+                        Spacer()
+                        Text(String(format: "Total cost: $%.4f", totalCost)).bold()
+                    }
+                }
+            }
+            .padding()
+        }
+        .onAppear {
+            aiPerTabStats = TelemetryStore.shared.tokenUsagePerTab()
+            providerStats = TelemetryStore.shared.consumptionPerProvider()
+        }
+    }
 
     private var reportView: some View {
         VStack(spacing: 16) {
