@@ -14,11 +14,18 @@ final class ClipboardHistoryManager: ObservableObject {
     private var lastChangeCount = 0
     private var pollTimer: DispatchSourceTimer?
 
-    struct ClipboardItem: Identifiable, Equatable {
-        let id = UUID()
+    struct ClipboardItem: Identifiable, Equatable, Codable {
+        let id: UUID
         let text: String
         let timestamp: Date
         var isPinned = false
+
+        init(text: String, timestamp: Date, isPinned: Bool = false) {
+            self.id = UUID()
+            self.text = text
+            self.timestamp = timestamp
+            self.isPinned = isPinned
+        }
 
         var preview: String {
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -29,8 +36,11 @@ final class ClipboardHistoryManager: ObservableObject {
         }
     }
 
+    private static let persistenceKey = "clipboard.history"
+
     private init() {
         self.lastChangeCount = NSPasteboard.general.changeCount
+        loadFromDisk()
         startPolling()
     }
 
@@ -97,6 +107,7 @@ final class ClipboardHistoryManager: ObservableObject {
         // Trim to max efficiently (in-place removal from end)
         let maxItems = FeatureSettings.shared.clipboardHistoryMaxItems
         trimToMaxItems(maxItems)
+        persistToDisk()
     }
 
     /// Single-pass trimming: collects unpinned indices, removes excess from the end
@@ -145,13 +156,36 @@ final class ClipboardHistoryManager: ObservableObject {
     func togglePin(_ item: ClipboardItem) {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
         items[index].isPinned.toggle()
+        persistToDisk()
     }
 
     func remove(_ item: ClipboardItem) {
         items.removeAll { $0.id == item.id }
+        persistToDisk()
     }
 
     func clear() {
         items.removeAll { !$0.isPinned }
+        persistToDisk()
+    }
+
+    // MARK: - Search
+
+    func search(query: String) -> [ClipboardItem] {
+        let lowered = query.lowercased()
+        return items.filter { $0.text.lowercased().contains(lowered) }
+    }
+
+    // MARK: - Persistence
+
+    private func persistToDisk() {
+        guard let data = try? JSONEncoder().encode(items) else { return }
+        UserDefaults.standard.set(data, forKey: Self.persistenceKey)
+    }
+
+    private func loadFromDisk() {
+        guard let data = UserDefaults.standard.data(forKey: Self.persistenceKey),
+              let saved = try? JSONDecoder().decode([ClipboardItem].self, from: data) else { return }
+        items = saved
     }
 }
