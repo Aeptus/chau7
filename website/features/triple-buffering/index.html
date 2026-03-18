@@ -58,7 +58,7 @@
             {"@type":"Question","name":"What is Triple Buffering in Chau7 terminal?","acceptedAnswer":{"@type":"Answer","text":"Triple Buffering in Chau7 is a rendering architecture that maintains three screen buffers rotated between the terminal parser and the Metal GPU renderer using atomic pointer swaps. Chau7's triple buffering prevents tearing and render stalls without any mutexes or locks."}},
             {"@type":"Question","name":"How does Chau7's triple buffering compare to other terminals?","acceptedAnswer":{"@type":"Answer","text":"Most terminal emulators use double buffering with mutex locks, which causes the parser to stall while the GPU reads the buffer. Chau7 uses three buffers with atomic swaps, so the parser and GPU never block each other. This lock-free design eliminates both tearing and render stalls."}},
             {"@type":"Question","name":"How to prevent screen tearing in terminal applications","acceptedAnswer":{"@type":"Answer","text":"Chau7 prevents screen tearing by maintaining three screen buffers rotated with atomic pointer swaps. The parser writes into one buffer while the Metal renderer reads a different completed buffer. Because there are three buffers, neither thread ever waits for the other, and the renderer always draws a complete frame."}},
-            {"@type":"Question","name":"Does triple buffering increase memory usage significantly?","acceptedAnswer":{"@type":"Answer","text":"No. Each buffer in Chau7 holds the visible terminal grid, typically 80x24 to 240x80 cells. At roughly 32 bytes per cell, three buffers consume under 2 MB even for a large terminal. The memory cost is negligible compared to the performance benefit."}},
+            {"@type":"Question","name":"Does triple buffering increase memory usage significantly?","acceptedAnswer":{"@type":"Answer","text":"No. Each buffer in Chau7 holds the visible terminal grid, typically 80x24 to 240x80 cells. At roughly 40 bytes per cell, three buffers consume under 3 MB even for a large terminal. The memory cost is negligible compared to the performance benefit."}},
             {"@type":"Question","name":"How does triple buffering interact with ProMotion 120Hz displays?","acceptedAnswer":{"@type":"Answer","text":"Chau7's triple buffering is refresh-rate independent. On a 120Hz ProMotion display, the Metal renderer picks up the latest buffer 120 times per second. The parser continues writing at PTY speed regardless. The extra buffer ensures the renderer always has a complete frame even at twice the standard swap rate."}}
         ]
     }]
@@ -135,7 +135,7 @@
         <section class="feature-content" data-ui="triple-buffer-memory">
             <div class="section-inner prose">
                 <h2>Does Chau7's triple buffering increase memory usage significantly?</h2>
-                <p>No. Each buffer in Chau7 holds the visible terminal grid, typically 80x24 to 240x80 cells. At roughly 32 bytes per cell, three buffers consume under 2 MB even for a large terminal.</p>
+                <p>No. Each buffer in Chau7 holds the visible terminal grid, typically 80x24 to 240x80 cells. At roughly 40 bytes per cell, three buffers consume under 3 MB even for a large terminal.</p>
                 <p>The memory cost of Chau7's triple buffering is negligible compared to the performance benefit. Eliminating all mutex contention between parser and renderer is worth 2 MB of memory.</p>
             </div>
         </section>
@@ -192,7 +192,7 @@
                     </details>
                     <details>
                         <summary>Does triple buffering increase memory usage significantly?</summary>
-                        <div class="faq-answer"><p>No. Each buffer in Chau7 holds the visible terminal grid, typically 80x24 to 240x80 cells. At roughly 32 bytes per cell, three buffers consume under 2 MB even for a large terminal. The memory cost is negligible compared to the performance benefit.</p></div>
+                        <div class="faq-answer"><p>No. Each buffer in Chau7 holds the visible terminal grid, typically 80x24 to 240x80 cells. At roughly 40 bytes per cell, three buffers consume under 3 MB even for a large terminal. The memory cost is negligible compared to the performance benefit.</p></div>
                     </details>
                     <details>
                         <summary>How does triple buffering interact with ProMotion 120Hz displays?</summary>

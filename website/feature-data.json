@@ -1180,7 +1180,7 @@
           "faqs": [
             [
               "Does triple buffering increase memory usage significantly?",
-              "Each buffer holds the visible terminal grid, typically 80x24 to 240x80 cells. At roughly 32 bytes per cell, three buffers consume under 2 MB even for a large terminal. The memory cost is negligible compared to the performance benefit."
+              "Each buffer holds the visible terminal grid, typically 80x24 to 240x80 cells. At roughly 40 bytes per cell, three buffers consume under 3 MB even for a large terminal. The memory cost is negligible compared to the performance benefit."
             ],
             [
               "How does triple buffering interact with ProMotion 120Hz displays?",
