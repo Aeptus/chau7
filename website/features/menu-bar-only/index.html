@@ -5,17 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/png" href="/logo.png">
     <link rel="apple-touch-icon" href="/logo.png">
-    <title>Menu Bar Status Item | Chau7 Terminal</title>
-    <meta name="description" content="Chau7 provides a persistent menu bar status item with a popover panel for notifications and quick actions, alongside the regular Dock icon on macOS.">
+    <title>Menu Bar Only | Chau7 Terminal</title>
+    <meta name="description" content="Chau7 supports a menu-bar-only mode that hides the app from the Dock and Cmd+Tab, with a persistent status item and popover panel for notifications and quick actions on macOS.">
     <meta name="article:section" content="Window Modes">
     <meta name="article:tag" content="Chau7">
-    <meta name="article:tag" content="menu bar status item">
+    <meta name="article:tag" content="menu bar only mode">
     <meta name="article:tag" content="status bar">
     <meta name="article:tag" content="menu bar popover">
+    <meta name="article:tag" content="hide from dock">
     <meta name="article:tag" content="macOS">
     <meta name="article:tag" content="terminal">
-    <meta property="og:title" content="Menu Bar Status Item | Chau7">
-    <meta property="og:description" content="Chau7 provides a persistent menu bar status item with a popover panel for notifications and quick actions, alongside the regular Dock icon on macOS.">
+    <meta property="og:title" content="Menu Bar Only | Chau7">
+    <meta property="og:description" content="Chau7 supports a menu-bar-only mode that hides the app from the Dock and Cmd+Tab, with a persistent status item and popover panel for notifications and quick actions on macOS.">
     <meta property="og:image" content="/screenshots/07-six-tabs-overview.png">
     <meta property="og:type" content="website">
     <meta name="twitter:card" content="summary_large_image">
@@ -30,12 +31,13 @@
         "name": "Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
-        "description": "Chau7 is an AI-native terminal for macOS with a persistent menu bar status item (NSStatusItem) that opens an NSPopover with a Command Center for notifications and quick actions. The app runs as a regular macOS application with Dock presence.",
+        "description": "Chau7 is an AI-native terminal for macOS with a menu-bar-only mode that sets activation policy to .accessory, hiding the app from the Dock and Cmd+Tab. A persistent NSStatusItem opens an NSPopover with a Command Center for notifications and quick actions.",
         "featureList": [
+            "Menu-bar-only mode via menuBarOnlyMode setting",
+            "Activation policy set to .accessory to hide from Dock and Cmd+Tab",
             "Persistent menu bar status item via NSStatusItem",
             "NSPopover with Command Center panel",
             "Notifications and quick actions from menu bar",
-            "Runs alongside regular Dock icon",
             "Background process persistence"
         ],
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
@@ -47,17 +49,17 @@
             { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://chau7.sh/" },
             { "@type": "ListItem", "position": 2, "name": "Features", "item": "https://chau7.sh/features" },
             { "@type": "ListItem", "position": 3, "name": "Window Modes", "item": "https://chau7.sh/features#window" },
-            { "@type": "ListItem", "position": 4, "name": "Menu Bar Status Item" }
+            { "@type": "ListItem", "position": 4, "name": "Menu Bar Only" }
         ]
     },
     {
         "@context": "https://schema.org",
         "@type": "FAQPage",
         "mainEntity": [
-            {"@type":"Question","name":"What is the menu bar status item in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Chau7 has a persistent menu bar status item (NSStatusItem) that is always present alongside the regular Dock icon. Clicking it opens an NSPopover with a Command Center showing notifications and quick actions. This is not a menu-bar-only mode; the app uses regular activation policy and remains in the Dock and Cmd+Tab."}},
-            {"@type":"Question","name":"Does Chau7 have a menu-bar-only mode?","acceptedAnswer":{"@type":"Answer","text":"No. Chau7 uses a regular activation policy (.regular), so it always appears in the Dock and Cmd+Tab. The menu bar status item is an additional access point that works alongside the normal Dock icon, not a replacement for it."}},
-            {"@type":"Question","name":"What does the menu bar popover show?","acceptedAnswer":{"@type":"Answer","text":"Clicking the Chau7 menu bar icon opens an NSPopover with a Command Center panel. This popover shows notifications and provides quick actions. It is not a right-click context menu for sessions or tabs."}},
-            {"@type":"Question","name":"Does Chau7 still run processes when the window is hidden?","acceptedAnswer":{"@type":"Answer","text":"Yes. All terminal sessions in Chau7 persist in the background when the window is hidden. Running processes, SSH connections, and shell state are maintained whether Chau7's window is visible or not."}},
+            {"@type":"Question","name":"What is the menu bar status item in Chau7?","acceptedAnswer":{"@type":"Answer","text":"Chau7 has a persistent menu bar status item (NSStatusItem) that is always present in the macOS menu bar. Clicking it opens an NSPopover with a Command Center showing notifications and quick actions. When menuBarOnlyMode is enabled, the app hides from the Dock and Cmd+Tab, making the status item the primary access point."}},
+            {"@type":"Question","name":"Does Chau7 have a menu-bar-only mode?","acceptedAnswer":{"@type":"Answer","text":"Yes. Chau7's menuBarOnlyMode setting sets the activation policy to .accessory, removing the app from the Dock and Cmd+Tab. The persistent menu bar status item and its popover remain fully functional in this mode, providing notifications and quick actions."}},
+            {"@type":"Question","name":"What does the menu bar popover show?","acceptedAnswer":{"@type":"Answer","text":"Clicking the Chau7 menu bar icon opens an NSPopover with a Command Center panel. This popover shows notifications and provides quick actions. It is not a right-click context menu for sessions or tabs. The popover works in both regular and menu-bar-only modes."}},
+            {"@type":"Question","name":"Does Chau7 still run processes when the window is hidden?","acceptedAnswer":{"@type":"Answer","text":"Yes. All terminal sessions in Chau7 persist in the background when the window is hidden. Running processes, SSH connections, and shell state are maintained whether Chau7's window is visible or not, including in menu-bar-only mode."}},
             {"@type":"Question","name":"Can I use the menu bar status item with the dropdown terminal?","acceptedAnswer":{"@type":"Answer","text":"Yes. The menu bar status item is always present and works alongside other window modes like the Quake-style dropdown. The status item provides notifications and quick actions while the dropdown provides terminal access."}}
         ]
     }]
@@ -75,7 +77,7 @@
             <span class="breadcrumb-sep">/</span>
             <a href="/features#window">Window Modes</a>
             <span class="breadcrumb-sep">/</span>
-            <span class="breadcrumb-current">Menu Bar Status Item</span>
+            <span class="breadcrumb-current">Menu Bar Only</span>
         </div>
 
         <!-- Hero -->
@@ -83,8 +85,8 @@
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">WINDOW MODES</div>
-                <h1 class="hero-title">Menu Bar Status Item</h1>
-                <p class="hero-subtitle">Chau7 puts a persistent status icon in your menu bar. Notifications and quick actions, one click away.</p>
+                <h1 class="hero-title">Menu Bar Only</h1>
+                <p class="hero-subtitle">Chau7 can hide from the Dock and Cmd+Tab entirely. Just a menu bar icon, notifications, and quick actions.</p>
             </div>
         </section>
 
@@ -107,7 +109,7 @@
             <div class="section-inner prose">
                 <h2>What is the menu bar status item in Chau7?</h2>
                 <p>Chau7 has a persistent menu bar status item (NSStatusItem) that is always present in the macOS menu bar. Clicking it opens an NSPopover with a Command Center showing notifications and quick actions.</p>
-                <p>The status item works alongside the regular Dock icon. Chau7 uses a regular activation policy (<code>.regular</code>), so it always appears in the Dock and Cmd+Tab. There is no menu-bar-only mode that hides the app from the Dock. All terminal sessions persist whether the window is visible or not.</p>
+                <p>By default, the status item works alongside the regular Dock icon. When the <code>menuBarOnlyMode</code> setting is enabled, Chau7 sets <code>NSApplication.ActivationPolicy</code> to <code>.accessory</code>, removing the app from the Dock and Cmd+Tab. The menu bar status item becomes the primary access point, while the popover and all terminal sessions continue to work normally.</p>
             </div>
         </section>
 
@@ -124,8 +126,8 @@
         <section class="feature-content" data-ui="menu-bar-comparison">
             <div class="section-inner prose">
                 <h2>Does Chau7 have a menu-bar-only mode?</h2>
-                <p>No. Chau7 does not have a menu-bar-only mode. The app uses a regular activation policy (<code>.regular</code>), so it always appears in the Dock and Cmd+Tab. Some terminals like iTerm2 support hiding from the Dock; Chau7 does not offer this.</p>
-                <p>What Chau7 does provide is a persistent menu bar status item that works alongside the normal Dock icon. The status item gives you an additional access point for notifications and quick actions without replacing the standard macOS app presence.</p>
+                <p>Yes. Chau7's <code>menuBarOnlyMode</code> setting sets the activation policy to <code>.accessory</code>, removing the app from the Dock and Cmd+Tab. The persistent menu bar status item and its popover remain fully functional in this mode.</p>
+                <p>When menu-bar-only mode is disabled (the default), Chau7 uses a regular activation policy (<code>.regular</code>) and appears in the Dock and Cmd+Tab as usual. The menu bar status item is always present regardless of which mode is active.</p>
             </div>
         </section>
 
@@ -178,11 +180,11 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is the menu bar status item in Chau7?</summary>
-                        <div class="faq-answer"><p>Chau7 has a persistent menu bar status item (NSStatusItem) that is always present alongside the regular Dock icon. Clicking it opens an NSPopover with a Command Center showing notifications and quick actions. This is not a menu-bar-only mode; the app uses regular activation policy and remains in the Dock and Cmd+Tab.</p></div>
+                        <div class="faq-answer"><p>Chau7 has a persistent menu bar status item (NSStatusItem) that is always present in the macOS menu bar. Clicking it opens an NSPopover with a Command Center showing notifications and quick actions. When menuBarOnlyMode is enabled, the app hides from the Dock and Cmd+Tab, making the status item the primary access point.</p></div>
                     </details>
                     <details>
                         <summary>Does Chau7 have a menu-bar-only mode?</summary>
-                        <div class="faq-answer"><p>No. Chau7 uses a regular activation policy (.regular), so it always appears in the Dock and Cmd+Tab. The menu bar status item is an additional access point that works alongside the normal Dock icon, not a replacement for it.</p></div>
+                        <div class="faq-answer"><p>Yes. Chau7's menuBarOnlyMode setting sets the activation policy to .accessory, removing the app from the Dock and Cmd+Tab. The persistent menu bar status item and its popover remain fully functional in this mode, providing notifications and quick actions.</p></div>
                     </details>
                     <details>
                         <summary>What does the menu bar popover show?</summary>

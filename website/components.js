@@ -73,6 +73,7 @@ class SiteFooter extends HTMLElement {
                     <a href="/golden-ratio">The Golden Ratio</a>
                     <a href="/typography">Typography</a>
                     <a href="/pronunciation">How to Say It</a>
+                    <a href="/chau7-fr">The Other Chau7</a>
                 </div>
                 <div class="footer-nav-col">
                     <h4>Legal</h4>

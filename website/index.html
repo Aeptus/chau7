@@ -311,14 +311,26 @@
                     <h2 id="mcp-heading" data-ui="mcp-title">20 <span class="ask-ai" data-entity="feature" data-name="mcp-tools" data-definition="Local MCP server over Unix socket providing 20 tools for AI agents to control terminal tabs, commands, output, and telemetry">MCP tools<button class="ask-ai-trigger" data-term="MCP (Model Context Protocol) tools" aria-label="Ask AI about MCP tools"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1zm0 3a1 1 0 00-.867 1.5L8 7.5l.867-2A1 1 0 008 4zM7 9v3h2V9H7z"/></svg></button></span>. Local Unix socket. Zero config.</h2>
                     <p data-ui="mcp-retrieval">Chau7 MCP tools allow AI agents to control the terminal programmatically. Chau7 ships a local MCP server over Unix socket that lets AI agents and scripts automate tab management, command execution, and output capture. No network, no cloud, no API keys.</p>
                 </div>
-                <ul data-ui="mcp-capabilities">
-                    <li>Tab lifecycle: create, list, close, switch</li>
-                    <li>Command execution with prompt-state checking</li>
-                    <li>Terminal output capture (last N lines)</li>
-                    <li>AI session telemetry, run history, tool call logs</li>
-                    <li>Approval gates, tab limits, enable/disable toggle</li>
-                </ul>
-                <p class="section-cta-text"><a href="/mcp" data-ui="mcp-link">See all 26 MCP tools &rarr;</a></p>
+                <div class="mcp-demo" data-ui="mcp-code-example">
+                    <div class="demo-header">
+                        <span class="demo-dot red"></span>
+                        <span class="demo-dot yellow"></span>
+                        <span class="demo-dot green"></span>
+                        <span class="demo-title">tab_exec call + response</span>
+                    </div>
+                    <pre class="demo-code"><code><span class="json-key">tool</span>: <span class="json-str">tab_exec</span>
+<span class="json-key">args</span>: {
+  <span class="json-key">"tab_id"</span>: <span class="json-str">"C1C4AB49-DA22-46F6"</span>,
+  <span class="json-key">"command"</span>: <span class="json-str">"npm test"</span>
+}
+
+<span class="json-key">result</span>: {
+  <span class="json-key">"status"</span>: <span class="json-str">"executed"</span>,
+  <span class="json-key">"prompt_ready"</span>: <span class="json-bool">true</span>,
+  <span class="json-key">"pid"</span>: <span class="json-num">48291</span>
+}</code></pre>
+                </div>
+                <p class="section-cta-text"><a href="/mcp" data-ui="mcp-link">Understand what Chau7 MCP can do &rarr;</a></p>
             </div>
         </section>
 
