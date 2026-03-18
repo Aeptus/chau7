@@ -314,7 +314,13 @@ final class TerminalControlService {
         }
     }
 
-    func tabOutput(tabID: String, lines: Int, waitForStableMs: Int? = nil) -> String {
+    func tabOutput(tabID: String, lines: Int, waitForStableMs: Int? = nil, source: String? = nil) -> String {
+        // source=pty_log: return ANSI-stripped PTY log instead of terminal buffer.
+        // Works for all AI tools regardless of alternate screen usage.
+        if source == "pty_log" {
+            return ptyLogOutput(tabID: tabID, lines: lines)
+        }
+
         // If wait_for_stable_ms is requested, poll the buffer on the calling (MCP background)
         // thread, only briefly grabbing main for each snapshot. This avoids blocking the UI.
         if let waitMs = waitForStableMs, waitMs > 0 {
@@ -356,7 +362,7 @@ final class TerminalControlService {
             }
         }
 
-        // Final capture and format
+        // Final capture and format from terminal buffer
         return onMain {
             guard let (_, session) = self.resolveTab(tabID) else {
                 return self.jsonError("Tab not found: \(tabID)")
@@ -368,33 +374,78 @@ final class TerminalControlService {
                 return self.encodeAny(["tab_id": tabID, "output": "", "lines": 0])
             }
 
-            let text = String(decoding: data, as: UTF8.self)
-            var outputLines = text.components(separatedBy: "\n")
-
-            // Strip trailing empty lines (terminal buffer pads below cursor)
-            while let last = outputLines.last,
-                  last.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                outputLines.removeLast()
-            }
-
-            if outputLines.count > clampedLines {
-                outputLines = Array(outputLines.suffix(clampedLines))
-            }
-
-            var output = outputLines.joined(separator: "\n")
-
-            // Cap total size — re-slice and update outputLines so count stays accurate
-            if output.utf8.count > Self.maxOutputBytes {
-                outputLines = Array(outputLines.suffix(max(1, clampedLines / 2)))
-                output = outputLines.joined(separator: "\n")
-            }
-
-            return self.encodeAny([
-                "tab_id": tabID,
-                "output": output,
-                "lines": outputLines.count
-            ])
+            return self.formatBufferOutput(tabID: tabID, data: data, lines: clampedLines)
         }
+    }
+
+    /// Returns the ANSI-stripped PTY log output for an AI session in a tab.
+    /// This captures everything written to the terminal including alternate-screen
+    /// content that TUI-based AI tools discard on exit.
+    private func ptyLogOutput(tabID: String, lines: Int) -> String {
+        let result: (path: String?, error: String?) = onMain {
+            guard let (_, session) = self.resolveTab(tabID) else {
+                return (nil, self.jsonError("Tab not found: \(tabID)"))
+            }
+            return (session.lastPTYLogPath, nil)
+        }
+        if let error = result.error { return error }
+        guard let path = result.path else {
+            return jsonError("No PTY log available for tab \(tabID). The tab may not have run an AI tool.")
+        }
+
+        guard let text = TelemetryRecorder.readPTYLogTail(path: path) else {
+            return encodeAny(["tab_id": tabID, "output": "", "lines": 0, "source": "pty_log"])
+        }
+
+        let clampedLines = max(1, lines)
+        var outputLines = text.components(separatedBy: "\n")
+        if outputLines.count > clampedLines {
+            outputLines = Array(outputLines.suffix(clampedLines))
+        }
+
+        var output = outputLines.joined(separator: "\n")
+        if output.utf8.count > Self.maxOutputBytes {
+            outputLines = Array(outputLines.suffix(max(1, clampedLines / 2)))
+            output = outputLines.joined(separator: "\n")
+        }
+
+        return encodeAny([
+            "tab_id": tabID,
+            "output": output,
+            "lines": outputLines.count,
+            "source": "pty_log"
+        ])
+    }
+
+    /// Formats buffer data into the standard tab_output response.
+    private func formatBufferOutput(tabID: String, data: Data, lines: Int) -> String {
+        let text = String(decoding: data, as: UTF8.self)
+        var outputLines = text.components(separatedBy: "\n")
+
+        // Strip trailing empty lines (terminal buffer pads below cursor)
+        while let last = outputLines.last,
+              last.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            outputLines.removeLast()
+        }
+
+        if outputLines.count > lines {
+            outputLines = Array(outputLines.suffix(lines))
+        }
+
+        var output = outputLines.joined(separator: "\n")
+
+        // Cap total size — re-slice and update outputLines so count stays accurate
+        if output.utf8.count > Self.maxOutputBytes {
+            outputLines = Array(outputLines.suffix(max(1, lines / 2)))
+            output = outputLines.joined(separator: "\n")
+        }
+
+        return encodeAny([
+            "tab_id": tabID,
+            "output": output,
+            "lines": outputLines.count,
+            "source": "buffer"
+        ])
     }
 
     /// Lightweight fingerprint of buffer content: (byteCount, SHA256 of last 4KB).

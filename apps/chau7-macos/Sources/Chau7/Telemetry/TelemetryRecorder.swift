@@ -220,7 +220,9 @@ final class TelemetryRecorder {
     /// TUI-based AI tools (Claude Code, Codex, etc.) render on the alternate screen, which
     /// has no scrollback. The PTY log captures the raw bytes before terminal interpretation,
     /// so it contains everything — including alternate screen content that's been discarded.
-    private static func readPTYLogTail(path: String, maxBytes: Int) -> String? {
+    ///
+    /// Used by both the telemetry fallback (run_transcript) and MCP tools (tab_output source=pty_log).
+    static func readPTYLogTail(path: String, maxBytes: Int = 1_024_000) -> String? {
         let url = URL(fileURLWithPath: path)
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
