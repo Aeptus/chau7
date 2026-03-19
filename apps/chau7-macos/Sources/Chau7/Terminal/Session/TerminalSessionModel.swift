@@ -404,6 +404,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
     private let devServerMonitor = DevServerMonitor()
     private let processResourceMonitor = ProcessResourceMonitor()
     private lazy var shellEventDetector = ShellEventDetector(appModel: appModel)
+    private let gitDiffTracker = GitDiffTracker()
     private static let osc7Prefix = Data([0x1B, 0x5D, 0x37, 0x3B])
     private static let aiExitMarkerPrefix = Data("\u{001b}]9;chau7;exit=".utf8)
     private static let aiExitMarkerSuffix = Data([0x07])
@@ -587,11 +588,29 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
             switch event {
             case .promptStart: handlePromptDetected()
             case .commandStart: isAtPrompt = false
-            case .commandExecuted: shellEventDetector.commandStarted(command: pendingCommandLine, in: currentDirectory)
+            case .commandExecuted:
+                shellEventDetector.commandStarted(command: pendingCommandLine, in: currentDirectory)
+                if isGitRepo {
+                    let dir = currentDirectory
+                    let tracker = gitDiffTracker
+                    DispatchQueue.global(qos: .utility).async { tracker.snapshot(directory: dir) }
+                }
             case .commandFinished(let exitCode):
                 guard !commandFinishedNotified else { return }
                 commandFinishedNotified = true
                 shellEventDetector.commandFinished(exitCode: Int(exitCode), command: pendingCommandLine)
+                if isGitRepo {
+                    let dir = currentDirectory
+                    let tabID = ownerTabID?.uuidString
+                    let tracker = gitDiffTracker
+                    DispatchQueue.global(qos: .utility).async {
+                        let changed = tracker.changedFiles(directory: dir)
+                        guard !changed.isEmpty, let tabID else { return }
+                        DispatchQueue.main.async {
+                            CommandBlockManager.shared.setChangedFiles(changed, forLastBlockIn: tabID)
+                        }
+                    }
+                }
             }
         }
 

@@ -75,6 +75,22 @@ final class CommandBlockManager: ObservableObject {
         Log.info("CommandBlock finished: '\(block.command)' exit=\(exitCode) duration=\(durationStr) in tab \(tabID)")
     }
 
+    /// Attach the list of changed files to the most recently finished block in a tab.
+    func setChangedFiles(_ files: [String], forLastBlockIn tabID: String) {
+        guard var blocks = blocksByTab[tabID],
+              let index = blocks.lastIndex(where: { !$0.isRunning }) else { return }
+        blocks[index].changedFiles = files
+        blocksByTab[tabID] = blocks
+        Log.info("CommandBlock: \(files.count) files changed in '\(blocks[index].command.prefix(40))' (tab \(tabID.prefix(8)))")
+    }
+
+    /// Returns changed files from the most recent finished block in a tab.
+    func lastChangedFiles(tabID: String) -> [String] {
+        guard let blocks = blocksByTab[tabID],
+              let last = blocks.last(where: { !$0.isRunning && !$0.changedFiles.isEmpty }) else { return [] }
+        return last.changedFiles
+    }
+
     // MARK: - Queries
 
     /// Returns all blocks for a given tab, ordered oldest-first.

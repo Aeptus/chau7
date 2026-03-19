@@ -754,6 +754,19 @@ private final class OverlayBlurView: NSVisualEffectView {
         ensureActiveOverlayModel()?.openTextEditorInCurrentTab()
     }
 
+    func showChangedFiles() {
+        guard let model = ensureActiveOverlayModel(),
+              let tab = model.tabs.first(where: { $0.id == model.selectedTabID }),
+              let session = tab.session else { return }
+        let tabID = session.ownerTabID?.uuidString ?? model.selectedTabID.uuidString
+        let files = CommandBlockManager.shared.lastChangedFiles(tabID: tabID)
+        if files.isEmpty {
+            Log.info("AppDelegate: showChangedFiles — no changed files for tab \(tabID.prefix(8))")
+            return
+        }
+        ChangedFilesPanel.show(files: files)
+    }
+
     func closeCurrentPane() {
         ensureActiveOverlayModel()?.closeFocusedPaneInCurrentTab()
     }
