@@ -16,26 +16,94 @@ final class TmuxControlMode: ObservableObject {
     @Published var lastError: String?
 
     private let parser = TmuxControlParser()
-    private var outputHandler: ((String) -> Void)?
+    /// Callback for pane output data (routed to the corresponding terminal view)
+    var outputHandler: ((String, String) -> Void)? // (paneID, data)
+
+    /// The tmux process and its stdin pipe for sending commands
+    private var process: Process?
+    private var stdinPipe: Pipe?
+    private var readerTask: Task<Void, Never>?
 
     func connect(sessionName: String? = nil) {
-        let cmd: String
+        guard !isConnected else { return }
+
+        let args: [String]
         if let name = sessionName {
             let sanitized = Self.sanitizeTmuxArg(name)
-            cmd = "tmux -CC attach -t \(sanitized)"
+            args = ["-CC", "attach", "-t", sanitized]
         } else {
-            cmd = "tmux -CC new"
+            args = ["-CC", "new"]
         }
-        Log.info("TmuxControlMode: connecting with '\(cmd)'")
-        // Send command to terminal...
-        isConnected = true
+
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        proc.arguments = ["tmux"] + args
+
+        let stdin = Pipe()
+        let stdout = Pipe()
+        proc.standardInput = stdin
+        proc.standardOutput = stdout
+        proc.standardError = FileHandle.nullDevice
+
+        do {
+            try proc.run()
+        } catch {
+            lastError = error.localizedDescription
+            Log.error("TmuxControlMode: failed to launch tmux: \(error)")
+            return
+        }
+
+        self.process = proc
+        self.stdinPipe = stdin
+        self.isConnected = true
+        Log.info("TmuxControlMode: connected with tmux \(args.joined(separator: " "))")
+
+        // Read stdout line-by-line on a background task
+        readerTask = Task.detached { [weak self] in
+            let handle = stdout.fileHandleForReading
+            var buffer = Data()
+            while true {
+                let chunk = handle.availableData
+                if chunk.isEmpty { break } // EOF
+                buffer.append(chunk)
+
+                // Split on newlines and process complete lines
+                while let newlineIndex = buffer.firstIndex(of: UInt8(ascii: "\n")) {
+                    let lineData = buffer[buffer.startIndex ..< newlineIndex]
+                    buffer = Data(buffer[buffer.index(after: newlineIndex)...])
+                    guard let line = String(data: lineData, encoding: .utf8) else { continue }
+                    await MainActor.run { [weak self] in
+                        self?.processLine(line)
+                    }
+                }
+            }
+
+            // Process exited
+            await MainActor.run { [weak self] in
+                self?.isConnected = false
+                self?.process = nil
+                Log.info("TmuxControlMode: process exited")
+            }
+        }
+
+        // List existing windows on connect
+        send("list-windows -F '#{window_id} #{window_name}'")
     }
 
     func disconnect() {
         send("detach")
+        cleanup()
+        Log.info("TmuxControlMode: disconnected")
+    }
+
+    private func cleanup() {
+        readerTask?.cancel()
+        readerTask = nil
+        process?.terminate()
+        process = nil
+        stdinPipe = nil
         isConnected = false
         windows.removeAll()
-        Log.info("TmuxControlMode: disconnected")
     }
 
     /// Process a line of output from the tmux control mode session
@@ -57,14 +125,14 @@ final class TmuxControlMode: ObservableObject {
             Log.info("TmuxControlMode: window closed \(windowID)")
 
         case .output(let paneID, let data):
-            outputHandler?(data)
+            outputHandler?(paneID, data)
             Log.trace("TmuxControlMode: output on pane \(paneID)")
 
         case .layoutChange(let windowID, let layout):
             updateLayout(windowID: windowID, layout: layout)
 
         case .exit(let reason):
-            isConnected = false
+            cleanup()
             Log.info("TmuxControlMode: exited, reason=\(reason ?? "none")")
 
         case .error(_, _, let msg):
@@ -76,10 +144,15 @@ final class TmuxControlMode: ObservableObject {
         }
     }
 
-    /// Send a tmux command
+    /// Send a tmux command via the control mode stdin pipe
     func send(_ command: String) {
-        Log.trace("TmuxControlMode: sending '\(command)'")
-        // Write command + newline to the tmux control mode session
+        guard let pipe = stdinPipe else {
+            Log.warn("TmuxControlMode: send() called but not connected")
+            return
+        }
+        let data = Data((command + "\n").utf8)
+        pipe.fileHandleForWriting.write(data)
+        Log.trace("TmuxControlMode: sent '\(command)'")
     }
 
     /// tmux commands
