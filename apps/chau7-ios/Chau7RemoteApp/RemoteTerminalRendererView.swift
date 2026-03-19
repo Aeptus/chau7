@@ -59,38 +59,66 @@ private struct RemoteTerminalTextFallbackView: View {
     let strippedOutputText: String
     let renderANSI: Bool
 
-    @State private var scrollTask: Task<Void, Never>?
+    var body: some View {
+        RemoteTerminalTextView(text: renderANSI ? outputText : strippedOutputText)
+    }
+}
+
+struct RemoteTerminalTextView: View {
+    let text: String
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                Text(renderANSI ? outputText : strippedOutputText)
-                    .font(.system(size: 13, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
-                    .id("bottom")
-                    .textSelection(.enabled)
-            }
+        RemoteTerminalTextViewRepresentable(text: boundedTranscript(text))
             .background(Color.black)
-            .foregroundStyle(.green)
-            .onAppear {
-                scheduleScrollToBottom(using: proxy, immediate: true)
-            }
-            .onChange(of: outputText.count) { _, _ in
-                scheduleScrollToBottom(using: proxy)
-            }
-        }
     }
 
-    private func scheduleScrollToBottom(using proxy: ScrollViewProxy, immediate: Bool = false) {
-        scrollTask?.cancel()
-        scrollTask = Task { @MainActor in
-            if !immediate {
-                try? await Task.sleep(for: .milliseconds(40))
-            }
-            guard !Task.isCancelled else { return }
-            proxy.scrollTo("bottom", anchor: .bottom)
+    private func boundedTranscript(_ text: String) -> String {
+        let maxCharacters = 250_000
+        guard text.utf8.count > maxCharacters else { return text }
+        let tail = String(text.suffix(maxCharacters))
+        if let firstNewline = tail.firstIndex(of: "\n") {
+            return String(tail[tail.index(after: firstNewline)...])
         }
+        return tail
+    }
+}
+
+private struct RemoteTerminalTextViewRepresentable: UIViewRepresentable {
+    let text: String
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.backgroundColor = .black
+        textView.textColor = .systemGreen
+        textView.font = UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.alwaysBounceVertical = true
+        textView.showsVerticalScrollIndicator = true
+        textView.textContainerInset = UIEdgeInsets(top: 8, left: 8, bottom: 8, right: 8)
+        textView.textContainer.lineFragmentPadding = 0
+        textView.smartDashesType = .no
+        textView.smartQuotesType = .no
+        textView.autocorrectionType = .no
+        return textView
+    }
+
+    func updateUIView(_ textView: UITextView, context: Context) {
+        let wasNearBottom = textView.isNearBottom
+        if textView.text != text {
+            textView.text = text
+        }
+        if wasNearBottom {
+            textView.scrollRangeToVisible(NSRange(location: max(text.utf16.count - 1, 0), length: 1))
+        }
+    }
+}
+
+private extension UITextView {
+    var isNearBottom: Bool {
+        let visibleHeight = bounds.height - adjustedContentInset.top - adjustedContentInset.bottom
+        let remaining = contentSize.height - contentOffset.y - visibleHeight
+        return remaining <= 80
     }
 }
 

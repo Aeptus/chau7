@@ -13,7 +13,6 @@ struct TerminalView: View {
     @State private var inputText = ""
     @State private var sendCount = 0
     @State private var pendingProtectedSend: ProtectedRemoteSend?
-    @State private var outputScrollTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -173,24 +172,9 @@ struct TerminalView: View {
             if experimentalTerminalRenderer {
                 RemoteTerminalRendererView(client: client)
             } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        Text(renderANSI ? client.outputText : client.strippedOutputText)
-                            .font(.system(size: 13, design: .monospaced))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(8)
-                            .id("bottom")
-                            .textSelection(.enabled)
-                    }
-                    .background(Color.black)
-                    .foregroundStyle(.green)
-                    .onAppear {
-                        scheduleScrollToBottom(using: proxy, immediate: true)
-                    }
-                    .onChange(of: client.outputText.count) { _, _ in
-                        scheduleScrollToBottom(using: proxy)
-                    }
-                }
+                RemoteTerminalTextView(
+                    text: renderANSI ? client.outputText : client.strippedOutputText
+                )
             }
         }
     }
@@ -305,17 +289,6 @@ struct TerminalView: View {
 
     private var activeBranchName: String? {
         activeTab?.branchName
-    }
-
-    private func scheduleScrollToBottom(using proxy: ScrollViewProxy, immediate: Bool = false) {
-        outputScrollTask?.cancel()
-        outputScrollTask = Task { @MainActor in
-            if !immediate {
-                try? await Task.sleep(for: .milliseconds(40))
-            }
-            guard !Task.isCancelled else { return }
-            proxy.scrollTo("bottom", anchor: .bottom)
-        }
     }
 
     @ViewBuilder
