@@ -7,6 +7,30 @@ import UserNotifications
 import os
 
 private let log = Logger(subsystem: "ch7", category: "RemoteClient")
+private let perfLog = OSLog(subsystem: "ch7", category: .pointsOfInterest)
+
+private enum RemoteProcessedFrameResult: Sendable {
+    case success(RemoteFrame, Data)
+    case decodeFailed(Int)
+    case decryptFailed(UInt8)
+}
+
+private enum RemoteFrameProcessor {
+    static func process(_ data: Data, crypto: RemoteCryptoSession?) -> RemoteProcessedFrameResult {
+        guard let frame = try? RemoteFrame.decode(from: data) else {
+            return .decodeFailed(data.count)
+        }
+
+        if frame.flags & RemoteFrame.flagEncrypted != 0 {
+            guard let crypto, let decrypted = try? crypto.decrypt(frame: frame) else {
+                return .decryptFailed(frame.type)
+            }
+            return .success(frame, decrypted)
+        }
+
+        return .success(frame, frame.payload)
+    }
+}
 
 /// Manages the encrypted WebSocket connection to a macOS Chau7 instance.
 @MainActor @Observable
@@ -145,11 +169,16 @@ final class RemoteClient {
                 connect()
             } else {
                 sendClientStateIfPossible()
+                requestActiveTabRefreshIfPossible()
             }
         case .background:
             beginBackgroundKeepalive()
             currentAppState = .background
             desiredStreamMode = .approvalsOnly
+            outputFlushTask?.cancel()
+            outputFlushTask = nil
+            strippedOutputRefreshTask?.cancel()
+            strippedOutputRefreshTask = nil
             sendClientStateIfPossible()
         case .inactive:
             break
@@ -188,7 +217,7 @@ final class RemoteClient {
         )
     }
 
-    func disconnect(autoReconnect: Bool = false) {
+    func disconnect(autoReconnect: Bool = false, preserveApprovalsAndPrompts: Bool = false) {
         shouldReconnect = false
         reconnectTask?.cancel()
         reconnectTask = nil
@@ -216,14 +245,18 @@ final class RemoteClient {
         liveActivityState = nil
         outputText = ""
         strippedOutputText = ""
-        pendingInteractivePrompts = []
+        if !preserveApprovalsAndPrompts {
+            pendingInteractivePrompts = []
+        }
         endBackgroundKeepalive()
         if #available(iOS 16.1, *) {
             RemoteLiveActivityManager.shared.update(with: nil)
         }
         if !autoReconnect {
             lastError = nil
-            pendingApprovals = []
+            if !preserveApprovalsAndPrompts {
+                pendingApprovals = []
+            }
             pendingURLActions.removeAll()
         }
     }
@@ -257,7 +290,7 @@ final class RemoteClient {
             timestamp: Date()
         ))
         if approvalHistory.count > Self.maxHistory {
-            approvalHistory.removeFirst(approvalHistory.count - Self.maxHistory)
+            approvalHistory.removeSubrange(0 ..< (approvalHistory.count - Self.maxHistory))
         }
 
         sendJSON(ApprovalResponsePayload(requestID: requestID, approved: approved), type: .approvalResponse)
@@ -306,20 +339,46 @@ final class RemoteClient {
     private func listen() {
         let generation = connectionGeneration
         webSocket?.receive { [weak self] result in
-            guard let client = self else { return }
-            Task { @MainActor [client] in
-                guard client.connectionGeneration == generation else { return }
-                switch result {
-                case .failure(let error):
+            switch result {
+            case .failure(let error):
+                Task { @MainActor [weak self] in
+                    guard let self, self.connectionGeneration == generation else { return }
                     log.error("WebSocket receive failed: \(error.localizedDescription)")
-                    client.handleDisconnect(reason: error.localizedDescription)
-                case .success(let msg):
-                    switch msg {
-                    case .data(let data): client.handleFrame(data)
-                    case .string(let text): client.handleFrame(Data(text.utf8))
-                    @unknown default: break
+                    self.handleDisconnect(reason: error.localizedDescription)
+                }
+            case .success(let msg):
+                let data: Data
+                switch msg {
+                case .data(let frameData):
+                    data = frameData
+                case .string(let text):
+                    data = Data(text.utf8)
+                @unknown default:
+                    Task { @MainActor [weak self] in
+                        guard let self, self.connectionGeneration == generation else { return }
+                        self.listen()
                     }
-                    client.listen()
+                    return
+                }
+
+                Task { @MainActor [weak self] in
+                    guard let self, self.connectionGeneration == generation else { return }
+                    let crypto = self.crypto
+                    let signpostID = OSSignpostID(log: perfLog)
+                    os_signpost(
+                        .begin,
+                        log: perfLog,
+                        name: "RemoteFrameProcess",
+                        signpostID: signpostID,
+                        "bytes=%{public}d",
+                        data.count
+                    )
+                    let processed = await Task.detached(priority: .userInitiated) {
+                        RemoteFrameProcessor.process(data, crypto: crypto)
+                    }.value
+                    guard self.connectionGeneration == generation else { return }
+                    self.applyProcessedFrame(processed, signpostID: signpostID)
+                    self.listen()
                 }
             }
         }
@@ -423,33 +482,55 @@ final class RemoteClient {
 
     // MARK: - Frame Dispatch
 
-    private func handleFrame(_ data: Data) {
-        guard let frame = try? RemoteFrame.decode(from: data) else {
-            log.warning("Failed to decode frame (\(data.count) bytes)")
+    private func applyProcessedFrame(_ processed: RemoteProcessedFrameResult, signpostID: OSSignpostID) {
+        switch processed {
+        case .decodeFailed(let byteCount):
+            os_signpost(
+                .end,
+                log: perfLog,
+                name: "RemoteFrameProcess",
+                signpostID: signpostID,
+                "decode_failed bytes=%{public}d",
+                byteCount
+            )
+            log.warning("Failed to decode frame (\(byteCount) bytes)")
             emitTelemetry(
                 type: .frameDecodeFailed,
                 status: "decode_failed",
-                metadata: ["frame_bytes": String(data.count)]
+                metadata: ["frame_bytes": String(byteCount)]
             )
             return
+        case .decryptFailed(let frameType):
+            os_signpost(
+                .end,
+                log: perfLog,
+                name: "RemoteFrameProcess",
+                signpostID: signpostID,
+                "decrypt_failed type=%{public}d",
+                Int(frameType)
+            )
+            log.warning("Decryption failed for frame type=\(frameType)")
+            emitTelemetry(
+                type: .frameDecryptFailed,
+                status: "decrypt_failed",
+                metadata: ["frame_type": String(frameType)]
+            )
+            return
+        case .success(let frame, let payload):
+            os_signpost(
+                .end,
+                log: perfLog,
+                name: "RemoteFrameProcess",
+                signpostID: signpostID,
+                "type=%{public}d payload=%{public}d",
+                Int(frame.type),
+                payload.count
+            )
+            handleProcessedFrame(frame, payload: payload)
         }
+    }
 
-        let payload: Data
-        if frame.flags & RemoteFrame.flagEncrypted != 0 {
-            guard let crypto, let decrypted = try? crypto.decrypt(frame: frame) else {
-                log.warning("Decryption failed for frame type=\(frame.type)")
-                emitTelemetry(
-                    type: .frameDecryptFailed,
-                    status: "decrypt_failed",
-                    metadata: ["frame_type": String(frame.type)]
-                )
-                return
-            }
-            payload = decrypted
-        } else {
-            payload = frame.payload
-        }
-
+    private func handleProcessedFrame(_ frame: RemoteFrame, payload: Data) {
         switch RemoteFrameType(rawValue: frame.type) {
         case .hello:           handleHello(payload)
         case .pairAccept:      handlePairAccept(payload)
@@ -529,17 +610,17 @@ final class RemoteClient {
     }
 
     private func handleError(_ data: Data) {
+        let (errorText, code): (String, String)
         if let msg = try? JSONDecoder().decode(RemoteErrorPayload.self, from: data) {
-            lastError = "\(msg.code): \(msg.message)"
-            emitTelemetry(
-                type: .errorReceived,
-                status: msg.code,
-                message: msg.message
-            )
+            (errorText, code) = ("\(msg.code): \(msg.message)", msg.code)
         } else if let text = String(data: data, encoding: .utf8), !text.isEmpty {
-            lastError = text
-            emitTelemetry(type: .errorReceived, status: "error", message: text)
+            (errorText, code) = (text, "error")
+        } else {
+            status = "Error"
+            return
         }
+        lastError = errorText
+        emitTelemetry(type: .errorReceived, status: code, message: errorText)
         status = "Error"
     }
 
@@ -556,13 +637,7 @@ final class RemoteClient {
 
     private func applyTabListPayload(_ msg: TabListPayload) {
         tabs = msg.tabs
-        if let active = msg.tabs.first(where: { $0.isActive }) {
-            activeTabID = active.tabID
-        } else if let first = msg.tabs.first {
-            activeTabID = first.tabID
-        } else {
-            activeTabID = 0
-        }
+        activeTabID = msg.tabs.first(where: \.isActive)?.tabID ?? msg.tabs.first?.tabID ?? 0
         let visibleTabIDs = Set(msg.tabs.map(\.tabID))
         outputStore.retainVisibleTabs(visibleTabIDs)
         terminalRenderer.retainVisibleTabs(visibleTabIDs)
@@ -620,6 +695,16 @@ final class RemoteClient {
     }
 
     private func appendOutput(_ data: Data, tabID: UInt32) {
+        guard currentAppState == .foreground, desiredStreamMode == .full else { return }
+        let signpostID = OSSignpostID(log: perfLog)
+        os_signpost(
+            .begin,
+            log: perfLog,
+            name: "RemoteAppendOutput",
+            signpostID: signpostID,
+            "bytes=%{public}d",
+            data.count
+        )
         let resolvedTabID = resolvedTabID(for: tabID)
         outputStore.append(data, to: resolvedTabID)
         terminalRenderer.appendOutput(data, for: resolvedTabID)
@@ -629,9 +714,19 @@ final class RemoteClient {
         } else {
             scheduleOutputFlush()
         }
+        os_signpost(
+            .end,
+            log: perfLog,
+            name: "RemoteAppendOutput",
+            signpostID: signpostID,
+            "tab=%{public}u pending=%{public}d",
+            resolvedTabID,
+            outputStore.pendingByteCount(for: resolvedTabID)
+        )
     }
 
     private func storeSnapshot(_ data: Data, tabID: UInt32) {
+        guard currentAppState == .foreground, desiredStreamMode == .full else { return }
         let resolvedTabID = resolvedTabID(for: tabID)
         outputStore.replaceSnapshot(data, for: resolvedTabID)
         terminalRenderer.replaceSnapshot(data, for: resolvedTabID)
@@ -641,6 +736,7 @@ final class RemoteClient {
     }
 
     private func storeGridSnapshot(_ data: Data, tabID: UInt32) {
+        guard currentAppState == .foreground, desiredStreamMode == .full else { return }
         let resolvedTabID = resolvedTabID(for: tabID)
         guard let renderState = RemoteTerminalRenderStateDecoder.decodeGridSnapshot(data) else {
             return
@@ -810,21 +906,14 @@ final class RemoteClient {
             guard tabs.contains(where: { $0.tabID == tabID }) else { return false }
             switchTab(tabID)
             return true
-        case .approve(let requestID, let tabID):
+        case .approve(let requestID, let tabID), .deny(let requestID, let tabID):
             if let tabID {
                 guard tabs.contains(where: { $0.tabID == tabID }) else { return false }
                 switchTab(tabID)
             }
             guard pendingApprovals.contains(where: { $0.requestID == requestID }) else { return false }
-            respondToApproval(requestID: requestID, approved: true)
-            return true
-        case .deny(let requestID, let tabID):
-            if let tabID {
-                guard tabs.contains(where: { $0.tabID == tabID }) else { return false }
-                switchTab(tabID)
-            }
-            guard pendingApprovals.contains(where: { $0.requestID == requestID }) else { return false }
-            respondToApproval(requestID: requestID, approved: false)
+            let approved = if case .approve = action { true } else { false }
+            respondToApproval(requestID: requestID, approved: approved)
             return true
         }
     }
@@ -994,7 +1083,6 @@ final class RemoteClient {
         let visibleOutput = outputStore.visibleOutput(for: activeTabID)
         let outputChanged = visibleOutput != outputText
         outputText = visibleOutput
-        terminalRenderer.updateActiveFallbackText(visibleOutput)
 
         if prioritizeStrippedOutput || outputChanged {
             scheduleStrippedOutputRefresh(immediate: prioritizeStrippedOutput)
@@ -1106,21 +1194,8 @@ final class RemoteClient {
     private func handleBackgroundTaskExpiration() {
         endBackgroundKeepalive()
         suppressLocalNotificationsUntil = Date().addingTimeInterval(Self.pushNotificationSuppressionWindow)
-        shouldReconnect = false
-        reconnectTask?.cancel()
-        reconnectTask = nil
-        cancelHandshakeTasks()
-        webSocket?.cancel(with: .goingAway, reason: nil)
-        webSocket = nil
-        isConnected = false
+        disconnect(autoReconnect: false, preserveApprovalsAndPrompts: true)
         status = "Background suspended"
-        crypto = nil
-        remoteSessionID = nil
-        hasReceivedPairAccept = false
-        nonceIOS = nil
-        nonceMac = nil
-        seqCounter = 1
-        connectionGeneration &+= 1
     }
 
     private func sendClientStateIfPossible() {
@@ -1146,6 +1221,13 @@ final class RemoteClient {
     }
 
     private func flushPendingOutput(for tabID: UInt32? = nil) {
+        guard currentAppState == .foreground, desiredStreamMode == .full else {
+            if tabID == nil {
+                outputFlushTask?.cancel()
+                outputFlushTask = nil
+            }
+            return
+        }
         if tabID == nil {
             outputFlushTask?.cancel()
             outputFlushTask = nil
@@ -1179,7 +1261,17 @@ final class RemoteClient {
         }
 
         if immediate || sourceText.utf8.count <= 4_096 {
+            let signpostID = OSSignpostID(log: perfLog)
+            os_signpost(.begin, log: perfLog, name: "ANSIStrip", signpostID: signpostID)
             strippedOutputText = ANSIStripper.strip(sourceText)
+            os_signpost(
+                .end,
+                log: perfLog,
+                name: "ANSIStrip",
+                signpostID: signpostID,
+                "bytes=%{public}d",
+                sourceText.utf8.count
+            )
             strippedOutputRefreshTask = nil
             return
         }
@@ -1187,9 +1279,19 @@ final class RemoteClient {
         strippedOutputRefreshTask = Task(priority: .utility) { [weak self, sourceText] in
             try? await Task.sleep(for: .milliseconds(120))
             guard !Task.isCancelled else { return }
+            let signpostID = OSSignpostID(log: perfLog)
+            os_signpost(.begin, log: perfLog, name: "ANSIStrip", signpostID: signpostID)
             let stripped = ANSIStripper.strip(sourceText)
             await MainActor.run {
                 guard let self, !Task.isCancelled else { return }
+                os_signpost(
+                    .end,
+                    log: perfLog,
+                    name: "ANSIStrip",
+                    signpostID: signpostID,
+                    "bytes=%{public}d",
+                    sourceText.utf8.count
+                )
                 self.strippedOutputRefreshTask = nil
                 guard self.outputText == sourceText else {
                     self.scheduleStrippedOutputRefresh(immediate: false)
@@ -1198,6 +1300,11 @@ final class RemoteClient {
                 self.strippedOutputText = stripped
             }
         }
+    }
+
+    private func requestActiveTabRefreshIfPossible() {
+        guard crypto != nil, activeTabID != 0 else { return }
+        sendJSON(TabSwitchPayload(tabID: activeTabID), type: .tabSwitch)
     }
 
     private func decodePayload<T: Decodable>(_ data: Data, as type: T.Type, context: String) -> T? {

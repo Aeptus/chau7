@@ -227,6 +227,31 @@ private enum Chau7LaunchTips {
     }
 }
 
+struct Chau7LogoImage: View {
+    var size: CGFloat = 72
+    var cornerRadius: CGFloat = 18
+    var fallbackFontSize: CGFloat = 34
+
+    var body: some View {
+        Group {
+            if UIImage(named: "Chau7Logo") != nil {
+                Image("Chau7Logo")
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+            } else {
+                Image(systemName: "terminal.fill")
+                    .font(.system(size: fallbackFontSize, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.white.opacity(0.08))
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+}
+
 private struct LaunchSplashView: View {
     let tip: String
 
@@ -243,26 +268,11 @@ private struct LaunchSplashView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 18) {
-                Group {
-                    if UIImage(named: "Chau7Logo") != nil {
-                        Image("Chau7Logo")
-                            .resizable()
-                            .interpolation(.high)
-                            .scaledToFit()
-                    } else {
-                        Image(systemName: "terminal.fill")
-                            .font(.system(size: 34, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(Color.white.opacity(0.08))
+                Chau7LogoImage()
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(Color.white.opacity(0.08), lineWidth: 1)
                     }
-                }
-                .frame(width: 72, height: 72)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
-                }
 
                 VStack(spacing: 6) {
                     Text("Chau7 Remote")

@@ -320,49 +320,6 @@ struct TerminalView: View {
 
 // MARK: - Subviews
 
-struct TabChip: View {
-    let tab: RemoteTab
-    let isSelected: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(isSelected ? Color.accentColor : Color.secondary.opacity(0.35))
-                    .frame(width: 6, height: 6)
-
-                if tab.isMCPControlled {
-                    Image(systemName: "face.dashed.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                }
-                Text(tab.title)
-                    .font(.system(.footnote, design: .rounded).weight(isSelected ? .semibold : .medium))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            .frame(maxWidth: 220, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                Capsule(style: .continuous)
-                    .fill(isSelected ? Color.accentColor.opacity(0.18) : Color(UIColor.secondarySystemBackground))
-            )
-            .overlay(
-                Capsule(style: .continuous)
-                    .stroke(
-                        isSelected ? Color.accentColor.opacity(0.4) : Color(UIColor.separator).opacity(0.2),
-                        lineWidth: 1
-                    )
-            )
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Switch to \(tab.title)")
-        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-    }
-}
-
 struct TermKey: View {
     let label: String
     let sequence: String

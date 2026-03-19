@@ -64,10 +64,6 @@ final class RemoteTerminalRendererStore {
         refreshActiveState()
     }
 
-    func updateActiveFallbackText(_ text: String) {
-        _ = text
-    }
-
     func replaceSnapshot(_ data: Data, for tabID: UInt32) {
         guard tabID == activeTabID else { return }
         refreshActiveState()
@@ -172,12 +168,12 @@ final class RemoteTerminalRendererStore {
     }
 
     private func appendReplayChunk(_ chunk: Data, to tabID: UInt32) {
-        if var replay = replayByTabID[tabID] {
-            replay.append(chunk)
-            if replay.count > Self.maxReplayBytesPerTab {
-                replay.removeFirst(replay.count - Self.maxReplayBytesPerTab)
+        if replayByTabID[tabID] != nil {
+            replayByTabID[tabID]!.append(chunk)
+            if replayByTabID[tabID]!.count > Self.maxReplayBytesPerTab {
+                let excess = replayByTabID[tabID]!.count - Self.maxReplayBytesPerTab
+                replayByTabID[tabID]!.removeFirst(excess)
             }
-            replayByTabID[tabID] = replay
         } else if chunk.count > Self.maxReplayBytesPerTab {
             replayByTabID[tabID] = Data(chunk.suffix(Self.maxReplayBytesPerTab))
         } else {

@@ -243,9 +243,9 @@ struct ApprovalRequestCard: View {
 }
 
 private struct ApprovalContextItem: Identifiable {
-    let id = UUID()
     let label: String
     let systemImage: String
+    var id: String { "\(systemImage):\(label)" }
 }
 
 private struct ApprovalContextRow: View {
