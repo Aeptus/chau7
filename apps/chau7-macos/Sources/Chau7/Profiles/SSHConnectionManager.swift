@@ -15,6 +15,12 @@ struct SSHConnection: Identifiable, Codable, Equatable, Hashable {
     var extraOptions: String // Additional SSH options
     var colorTag: String // Tab color when connecting
     var lastConnected: Date?
+    /// Organizational group (e.g. "Production", "Staging", "Personal")
+    var group: String
+    /// Freeform tags for filtering/search (e.g. ["aws", "web", "critical"])
+    var tags: [String]
+    /// User notes about this connection
+    var notes: String
 
     init(
         id: UUID = UUID(),
@@ -26,7 +32,10 @@ struct SSHConnection: Identifiable, Codable, Equatable, Hashable {
         jumpHost: String = "",
         extraOptions: String = "",
         colorTag: String = "blue",
-        lastConnected: Date? = nil
+        lastConnected: Date? = nil,
+        group: String = "",
+        tags: [String] = [],
+        notes: String = ""
     ) {
         self.id = id
         self.name = name
@@ -38,6 +47,9 @@ struct SSHConnection: Identifiable, Codable, Equatable, Hashable {
         self.extraOptions = extraOptions
         self.colorTag = colorTag
         self.lastConnected = lastConnected
+        self.group = group
+        self.tags = tags
+        self.notes = notes
     }
 
     var displayName: String {
@@ -153,6 +165,89 @@ final class SSHConnectionManager: ObservableObject {
             .filter { $0.lastConnected != nil }
             .sorted { ($0.lastConnected ?? .distantPast) > ($1.lastConnected ?? .distantPast) }
             .prefix(5))
+    }
+
+    // MARK: - Group Management
+
+    /// All unique groups across connections, sorted alphabetically.
+    var allGroups: [String] {
+        Array(Set(connections.compactMap { $0.group.isEmpty ? nil : $0.group })).sorted()
+    }
+
+    /// All unique tags across connections, sorted alphabetically.
+    var allTags: [String] {
+        Array(Set(connections.flatMap(\.tags))).sorted()
+    }
+
+    /// Filter connections by group and/or tags.
+    func connections(inGroup group: String? = nil, withTag tag: String? = nil) -> [SSHConnection] {
+        connections.filter { conn in
+            if let g = group, !g.isEmpty, conn.group != g { return false }
+            if let t = tag, !t.isEmpty, !conn.tags.contains(t) { return false }
+            return true
+        }
+    }
+
+    // MARK: - Keychain Integration
+
+    private static let keychainService = "com.chau7.ssh"
+
+    /// Store an SSH password in the Keychain for a connection.
+    func storePassword(_ password: String, for connection: SSHConnection) {
+        KeychainHelper.save(
+            service: Self.keychainService,
+            account: connection.id.uuidString,
+            value: password
+        )
+    }
+
+    /// Retrieve a stored SSH password from the Keychain.
+    func password(for connection: SSHConnection) -> String? {
+        KeychainHelper.load(
+            service: Self.keychainService,
+            account: connection.id.uuidString
+        )
+    }
+
+    /// Remove a stored SSH password from the Keychain.
+    func removePassword(for connection: SSHConnection) {
+        KeychainHelper.delete(
+            service: Self.keychainService,
+            account: connection.id.uuidString
+        )
+    }
+
+    // MARK: - JSON Export/Import
+
+    /// Export all connections to JSON data (for save-to-file workflows).
+    func exportToJSON() -> Data? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try? encoder.encode(connections)
+    }
+
+    /// Import connections from JSON data. Returns the number of connections imported.
+    @discardableResult
+    func importFromJSON(_ data: Data) -> Int {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let imported = try? decoder.decode([SSHConnection].self, from: data) else { return 0 }
+
+        var added = 0
+        for conn in imported {
+            // Skip if a connection with the same host+user already exists
+            let exists = connections.contains { $0.host == conn.host && $0.user == conn.user && $0.port == conn.port }
+            if !exists {
+                connections.append(conn)
+                added += 1
+            }
+        }
+        if added > 0 {
+            saveConnections()
+            Log.info("SSH: Imported \(added) connections from JSON")
+        }
+        return added
     }
 
     /// Import from ~/.ssh/config
