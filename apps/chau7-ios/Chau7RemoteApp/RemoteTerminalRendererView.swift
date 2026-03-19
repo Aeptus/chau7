@@ -19,21 +19,13 @@ struct RemoteTerminalRendererView: View {
                     .background(Color.black)
                 }
             } else {
-                RemoteTerminalTextFallbackView(
-                    outputText: client.outputText,
-                    strippedOutputText: client.strippedOutputText,
-                    renderANSI: renderANSI
+                RemoteTerminalTextView(
+                    text: renderANSI ? client.outputText : client.strippedOutputText
                 )
             }
         }
         .onAppear {
             client.terminalRenderer.setActiveTab(client.activeTabID, fallbackText: client.outputText)
-        }
-        .onChange(of: client.activeTabID) { _, tabID in
-            client.terminalRenderer.setActiveTab(tabID, fallbackText: client.outputText)
-        }
-        .onChange(of: client.outputText) { _, text in
-            client.terminalRenderer.updateActiveFallbackText(text)
         }
     }
 }
@@ -54,16 +46,6 @@ private struct RemoteTerminalRendererRepresentable: UIViewRepresentable {
     }
 }
 
-private struct RemoteTerminalTextFallbackView: View {
-    let outputText: String
-    let strippedOutputText: String
-    let renderANSI: Bool
-
-    var body: some View {
-        RemoteTerminalTextView(text: renderANSI ? outputText : strippedOutputText)
-    }
-}
-
 struct RemoteTerminalTextView: View {
     let text: String
 
@@ -73,9 +55,10 @@ struct RemoteTerminalTextView: View {
     }
 
     private func boundedTranscript(_ text: String) -> String {
-        let maxCharacters = 250_000
-        guard text.utf8.count > maxCharacters else { return text }
-        let tail = String(text.suffix(maxCharacters))
+        let maxBytes = 250_000
+        let utf8Bytes = Array(text.utf8)
+        guard utf8Bytes.count > maxBytes else { return text }
+        let tail = String(decoding: utf8Bytes.suffix(maxBytes), as: UTF8.self)
         if let firstNewline = tail.firstIndex(of: "\n") {
             return String(tail[tail.index(after: firstNewline)...])
         }
@@ -229,6 +212,7 @@ private final class RemoteTerminalCanvasView: UIView {
     private lazy var italicFont = italicVariant(for: regularFont) ?? regularFont
     private lazy var boldItalicFont = italicVariant(for: boldFont) ?? boldFont
     private let cellSize = RemoteTerminalFontMetrics.cellSize()
+    private var colorCache = TerminalColorCache()
 
     override func draw(_ rect: CGRect) {
         guard let renderState else {
@@ -245,26 +229,31 @@ private final class RemoteTerminalCanvasView: UIView {
         let cols = renderState.cols
         guard rows > 0, cols > 0 else { return }
 
+        let cellW = cellSize.width
+        let cellH = cellSize.height
         let lineHeight = regularFont.lineHeight
-        let baselineOffset = (cellSize.height - lineHeight) / 2
+        let baselineOffset = (cellH - lineHeight) / 2
 
+        // Background pass: batch consecutive cells with same bg color into single fills
         context.setAllowsAntialiasing(false)
         context.setShouldAntialias(false)
         for row in 0 ..< rows {
-            let y = CGFloat(row) * cellSize.height
-            for col in 0 ..< cols {
+            let rowStartIndex = row * cols
+            guard rowStartIndex < renderState.cells.count else { break }
+            let y = CGFloat(row) * cellH
+            var runStart = 0
+            var runColorKey = colorCache.backgroundKey(for: renderState.cells[rowStartIndex])
+            for col in 1 ..< cols {
                 let idx = row * cols + col
-                guard idx < renderState.cells.count else { continue }
-                let cell = renderState.cells[idx]
-                let colors = resolvedColors(for: cell)
-                colors.background.setFill()
-                UIRectFill(CGRect(
-                    x: CGFloat(col) * cellSize.width,
-                    y: y,
-                    width: cellSize.width,
-                    height: cellSize.height
-                ))
+                guard idx < renderState.cells.count else { break }
+                let key = colorCache.backgroundKey(for: renderState.cells[idx])
+                if key != runColorKey {
+                    fillBackgroundRun(context: context, row: row, startCol: runStart, endCol: col, colorKey: runColorKey, y: y, cellW: cellW, cellH: cellH)
+                    runStart = col
+                    runColorKey = key
+                }
             }
+            fillBackgroundRun(context: context, row: row, startCol: runStart, endCol: cols, colorKey: runColorKey, y: y, cellW: cellW, cellH: cellH)
         }
 
         if renderState.cursorVisible,
@@ -272,60 +261,63 @@ private final class RemoteTerminalCanvasView: UIView {
            renderState.cursorCol >= 0, renderState.cursorCol < cols {
             UIColor.white.withAlphaComponent(0.28).setFill()
             UIRectFill(CGRect(
-                x: CGFloat(renderState.cursorCol) * cellSize.width,
-                y: CGFloat(renderState.cursorRow) * cellSize.height,
-                width: cellSize.width,
-                height: cellSize.height
+                x: CGFloat(renderState.cursorCol) * cellW,
+                y: CGFloat(renderState.cursorRow) * cellH,
+                width: cellW,
+                height: cellH
             ))
         }
 
+        // Text pass
         context.setAllowsAntialiasing(true)
         context.setShouldAntialias(true)
 
         for row in 0 ..< rows {
-            let y = CGFloat(row) * cellSize.height
+            let y = CGFloat(row) * cellH
             for col in 0 ..< cols {
                 let idx = row * cols + col
                 guard idx < renderState.cells.count else { continue }
                 let cell = renderState.cells[idx]
-                if cell.flags & rustCellFlagHidden != 0 {
-                    continue
-                }
+                if cell.flags & rustCellFlagHidden != 0 { continue }
                 guard let scalar = UnicodeScalar(cell.character), scalar.value != 0, scalar != " " else { continue }
 
-                let colors = resolvedColors(for: cell)
+                let fgKey = colorCache.foregroundKey(for: cell)
+                let fg = colorCache.foreground(forKey: fgKey)
                 let font = resolvedFont(for: cell)
-                let attributes: [NSAttributedString.Key: Any] = [
-                    .font: font,
-                    .foregroundColor: colors.foreground
-                ]
-                let origin = CGPoint(
-                    x: CGFloat(col) * cellSize.width,
-                    y: y + baselineOffset
+                let str = String(scalar) as NSString
+                str.draw(
+                    at: CGPoint(x: CGFloat(col) * cellW, y: y + baselineOffset),
+                    withAttributes: colorCache.textAttributes(font: font, colorKey: fgKey, color: fg)
                 )
-                NSString(string: String(scalar)).draw(at: origin, withAttributes: attributes)
 
+                let x = CGFloat(col) * cellW
                 if cell.flags & rustCellFlagUnderline != 0 {
-                    colors.foreground.setStroke()
-                    let underlineY = y + cellSize.height - 2
-                    let path = UIBezierPath()
-                    path.lineWidth = 1
-                    path.move(to: CGPoint(x: CGFloat(col) * cellSize.width, y: underlineY))
-                    path.addLine(to: CGPoint(x: CGFloat(col + 1) * cellSize.width, y: underlineY))
-                    path.stroke()
+                    fg.setStroke()
+                    context.setLineWidth(1)
+                    context.move(to: CGPoint(x: x, y: y + cellH - 2))
+                    context.addLine(to: CGPoint(x: x + cellW, y: y + cellH - 2))
+                    context.strokePath()
                 }
-
                 if cell.flags & rustCellFlagStrikethrough != 0 {
-                    colors.foreground.setStroke()
-                    let strikeY = y + (cellSize.height / 2)
-                    let path = UIBezierPath()
-                    path.lineWidth = 1
-                    path.move(to: CGPoint(x: CGFloat(col) * cellSize.width, y: strikeY))
-                    path.addLine(to: CGPoint(x: CGFloat(col + 1) * cellSize.width, y: strikeY))
-                    path.stroke()
+                    fg.setStroke()
+                    context.setLineWidth(1)
+                    context.move(to: CGPoint(x: x, y: y + cellH / 2))
+                    context.addLine(to: CGPoint(x: x + cellW, y: y + cellH / 2))
+                    context.strokePath()
                 }
             }
         }
+    }
+
+    private func fillBackgroundRun(context: CGContext, row: Int, startCol: Int, endCol: Int, colorKey: UInt32, y: CGFloat, cellW: CGFloat, cellH: CGFloat) {
+        guard colorKey != 0 else { return } // Skip black (already cleared)
+        colorCache.background(forKey: colorKey).setFill()
+        UIRectFill(CGRect(
+            x: CGFloat(startCol) * cellW,
+            y: y,
+            width: CGFloat(endCol - startCol) * cellW,
+            height: cellH
+        ))
     }
 
     private func italicVariant(for font: UIFont) -> UIFont? {
@@ -337,33 +329,78 @@ private final class RemoteTerminalCanvasView: UIView {
         let bold = cell.flags & rustCellFlagBold != 0
         let italic = cell.flags & rustCellFlagItalic != 0
         switch (bold, italic) {
-        case (true, true):
-            return boldItalicFont
-        case (true, false):
-            return boldFont
-        case (false, true):
-            return italicFont
-        case (false, false):
-            return regularFont
+        case (true, true):   return boldItalicFont
+        case (true, false):  return boldFont
+        case (false, true):  return italicFont
+        case (false, false): return regularFont
         }
     }
+}
 
-    private func resolvedColors(for cell: RustCellData) -> (foreground: UIColor, background: UIColor) {
-        let foreground = UIColor(
-            red: CGFloat(cell.fg_r) / 255,
-            green: CGFloat(cell.fg_g) / 255,
-            blue: CGFloat(cell.fg_b) / 255,
-            alpha: cell.flags & rustCellFlagDim != 0 ? 0.7 : 1.0
+/// Caches UIColor and text attribute dictionaries to avoid per-cell allocations during draw.
+private struct TerminalColorCache {
+    private var fgCache: [UInt32: UIColor] = [:]
+    private var bgCache: [UInt32: UIColor] = [:]
+    private var attrCache: [AttrKey: [NSAttributedString.Key: Any]] = [:]
+
+    private struct AttrKey: Hashable {
+        let fontID: ObjectIdentifier
+        let colorKey: UInt32
+    }
+
+    func foregroundKey(for cell: RustCellData) -> UInt32 {
+        let inv = cell.flags & rustCellFlagInverse != 0
+        let r = inv ? cell.bg_r : cell.fg_r
+        let g = inv ? cell.bg_g : cell.fg_g
+        let b = inv ? cell.bg_b : cell.fg_b
+        let dim = cell.flags & rustCellFlagDim != 0
+        return UInt32(r) << 24 | UInt32(g) << 16 | UInt32(b) << 8 | (dim ? 1 : 0)
+    }
+
+    mutating func foreground(forKey key: UInt32) -> UIColor {
+        if let cached = fgCache[key] { return cached }
+        let r = UInt8((key >> 24) & 0xFF)
+        let g = UInt8((key >> 16) & 0xFF)
+        let b = UInt8((key >> 8) & 0xFF)
+        let dim = key & 0x1 == 1
+        let color = UIColor(
+            red: CGFloat(r) / 255,
+            green: CGFloat(g) / 255,
+            blue: CGFloat(b) / 255,
+            alpha: dim ? 0.7 : 1.0
         )
-        let background = UIColor(
-            red: CGFloat(cell.bg_r) / 255,
-            green: CGFloat(cell.bg_g) / 255,
-            blue: CGFloat(cell.bg_b) / 255,
+        fgCache[key] = color
+        return color
+    }
+
+    func backgroundKey(for cell: RustCellData) -> UInt32 {
+        let inv = cell.flags & rustCellFlagInverse != 0
+        let r = inv ? cell.fg_r : cell.bg_r
+        let g = inv ? cell.fg_g : cell.bg_g
+        let b = inv ? cell.fg_b : cell.bg_b
+        return UInt32(r) << 16 | UInt32(g) << 8 | UInt32(b)
+    }
+
+    mutating func background(forKey key: UInt32) -> UIColor {
+        if let cached = bgCache[key] { return cached }
+        let color = UIColor(
+            red: CGFloat((key >> 16) & 0xFF) / 255,
+            green: CGFloat((key >> 8) & 0xFF) / 255,
+            blue: CGFloat(key & 0xFF) / 255,
             alpha: 1.0
         )
-        if cell.flags & rustCellFlagInverse != 0 {
-            return (background, foreground)
-        }
-        return (foreground, background)
+        bgCache[key] = color
+        return color
+    }
+
+    mutating func textAttributes(font: UIFont, colorKey: UInt32, color: UIColor) -> [NSAttributedString.Key: Any] {
+        let key = AttrKey(
+            fontID: ObjectIdentifier(font),
+            colorKey: colorKey
+        )
+        if let cached = attrCache[key] { return cached }
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        attrCache[key] = attrs
+        return attrs
     }
 }

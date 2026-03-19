@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Remote iPhone Efficiency Pass**: Chau7 Remote now processes incoming frames off the main actor, adds `os_signpost` instrumentation for remote frame processing and ANSI stripping, requests a fresh active-tab snapshot on foreground resume, and preserves approvals/prompts when the background keepalive expires.
+- **Selected-Tab Remote Streaming**: The macOS remote sender now streams terminal output and snapshots only for the tab currently selected on iPhone, reducing background traffic and receive-side render work.
 - **Remote Background Approval Mode**: The Chau7 Remote iPhone app now keeps a short-lived background session alive in approvals-only mode so pending approvals and detected interactive prompts can still sync after the app backgrounds.
 - **Remote Push Approval Delivery**: The Cloudflare relay and Go remote helper now support APNs-backed push registration and push-triggered approval delivery for the Chau7 Remote iPhone app when the phone is no longer actively connected.
 - **Experimental iPhone Terminal Renderer**: Chau7 Remote can now render a real Rust-backed terminal grid on iPhone behind a toggle, while keeping the text renderer as a fallback.

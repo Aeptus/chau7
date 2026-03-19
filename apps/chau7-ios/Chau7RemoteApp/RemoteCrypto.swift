@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 import Chau7Core
 
-struct RemoteCryptoSession {
+struct RemoteCryptoSession: Sendable {
     let key: SymmetricKey
     let noncePrefix: Data
 
