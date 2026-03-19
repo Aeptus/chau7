@@ -6,6 +6,8 @@ import Foundation
 /// `changedFiles(directory:)` when it finishes. The diff between the
 /// two snapshots is the list of files the command modified.
 final class GitDiffTracker {
+    /// Serializes access to baselineFiles (snapshot and changedFiles may race on concurrent queues).
+    private let lock = NSLock()
     /// The set of dirty/untracked files at the time of the snapshot.
     private var baselineFiles: Set<String>?
     private var snapshotDirectory: String?
@@ -13,8 +15,11 @@ final class GitDiffTracker {
     /// Capture the current git dirty state as the baseline.
     /// Call this at command start (OSC 133 C).
     func snapshot(directory: String) {
+        let files = currentDirtyFiles(in: directory)
+        lock.lock()
         snapshotDirectory = directory
-        baselineFiles = currentDirtyFiles(in: directory)
+        baselineFiles = files
+        lock.unlock()
     }
 
     /// Compute which files changed since the snapshot.
@@ -22,13 +27,17 @@ final class GitDiffTracker {
     /// relative to the git root, or an empty array if not in a git repo.
     func changedFiles(directory: String) -> [String] {
         let current = currentDirtyFiles(in: directory)
-        guard let baseline = baselineFiles else { return Array(current).sorted() }
-        // Files that are dirty now but weren't at snapshot time = newly changed
-        // Also include files that were dirty but changed status (modified→deleted, etc.)
-        let newOrChanged = current.subtracting(baseline)
+        lock.lock()
+        let baseline = baselineFiles
         baselineFiles = nil
         snapshotDirectory = nil
-        return Array(newOrChanged).sorted()
+        lock.unlock()
+        guard let baseline else { return Array(current).sorted() }
+        // symmetricDifference catches both:
+        // - Files dirty now that weren't before (newly modified/created)
+        // - Files that were dirty but are now clean (committed or reverted)
+        let changed = current.symmetricDifference(baseline)
+        return Array(changed).sorted()
     }
 
     /// Returns the set of dirty + untracked file paths from `git status --porcelain`.
@@ -64,13 +73,15 @@ final class GitDiffTracker {
 
         do {
             try process.run()
-            process.waitUntilExit()
         } catch {
             return ""
         }
 
-        guard process.terminationStatus == 0 else { return "" }
+        // Read stdout BEFORE waitUntilExit to avoid deadlock when the pipe
+        // buffer fills (git blocks on write, we block on wait → both stuck).
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return "" }
         return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 }
