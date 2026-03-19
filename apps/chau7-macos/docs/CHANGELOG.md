@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Visual Bell + Rate Limiting**: Bell can flash the screen (combinable with audible), with configurable minimum interval
 - **Keybindings JSON Export/Import**: Standalone export/import methods for keybindings separate from full settings
 - **Custom API Pricing**: `~/.chau7/pricing.json` overrides the built-in model pricing table
+- **TTFT Latency Tracking**: Time-to-first-token measured via firstByteReader wrapper. Stored in SQLite, logged, and sent via IPC.
 - **Profile Auto-Switch Wired Up**: `evaluateRules()` now fires on directory change with git branch and process context
 - **API Analytics Tab**: Debug console (Cmd+Shift+L) now shows per-provider cost, per-tab tokens, and aggregate totals
 - **Hyperlink Protocols**: Clickable links now detect file://, ssh://, ftp://, sftp:// in addition to http/https
