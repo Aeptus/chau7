@@ -104,8 +104,8 @@
         <section class="feature-content" data-ui="latency-what">
             <div class="section-inner prose">
                 <h2>What is Latency Tracking in Chau7?</h2>
-                <p>Latency Tracking is a feature in the Chau7 terminal that records total request duration for every intercepted LLM API call. Total duration captures the full round-trip time from request sent to response complete.</p>
-                <p>Chau7 associates each latency measurement with the originating tab, session, and run. This lets developers identify slow calls and understand API performance per provider and model.</p>
+                <p>Latency Tracking is a feature in the Chau7 terminal that records both time-to-first-token (TTFT) and total request duration for every intercepted LLM API call. Chau7 captures TTFT by wrapping the upstream response with a firstByteReader that timestamps the exact moment the first byte arrives.</p>
+                <p>Both TTFT and total duration are stored per call in the SQLite database and associated with the originating tab, session, and run. This lets developers spot slow models, compare provider responsiveness, and understand where latency lives in their AI workflow.</p>
             </div>
         </section>
 
