@@ -15,6 +15,10 @@ public struct CommandBlock: Identifiable, Codable, Equatable, Sendable {
     public var exitCode: Int?
     public var directory: String?
 
+    /// Files changed during this command execution (populated via git diff snapshot).
+    /// Empty if not a git repo, or if the command hasn't finished yet.
+    public var changedFiles: [String] = []
+
     /// Whether the command is still executing (neither end line nor end time recorded)
     public var isRunning: Bool {
         endLine == nil && endTime == nil
