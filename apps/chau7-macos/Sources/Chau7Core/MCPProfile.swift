@@ -105,10 +105,9 @@ public extension [MCPProfile] {
     /// or nil if no profile matches.
     func bestMatch(for context: MCPTabContext) -> MCPProfile? {
         self.filter { $0.matches(context: context) }
-            .sorted { lhs, rhs in
-                if lhs.priority != rhs.priority { return lhs.priority > rhs.priority }
-                return lhs.name < rhs.name
+            .max { lhs, rhs in
+                if lhs.priority != rhs.priority { return lhs.priority < rhs.priority }
+                return lhs.name > rhs.name
             }
-            .first
     }
 }

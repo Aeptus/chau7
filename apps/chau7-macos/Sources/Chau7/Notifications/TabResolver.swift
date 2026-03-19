@@ -204,6 +204,6 @@ enum TabResolver {
 
         // 3) Deterministic fallback: most recently created tab
         Log.info("TabResolver: \(matches.count) ambiguous matches, using most recent tab")
-        return matches.sorted(by: { $0.createdAt > $1.createdAt }).first
+        return matches.max(by: { $0.createdAt < $1.createdAt })
     }
 }
