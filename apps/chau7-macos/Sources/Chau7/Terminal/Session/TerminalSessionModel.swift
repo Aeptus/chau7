@@ -1075,27 +1075,15 @@ final class TerminalSessionModel: NSObject, ObservableObject {
     }
 
     /// Handle OSC 133 shell integration events from the Rust terminal.
-    /// These provide authoritative command lifecycle markers from the shell itself.
     private func handleShellIntegrationEvent(_ event: ShellIntegrationEvent) {
         switch event {
-        case .promptStart:
-            Log.info("TerminalSession[\(ownerTabID?.uuidString.prefix(8) ?? "?")]: OSC 133 A — prompt start")
-            handlePromptDetected()
-
-        case .commandStart:
-            Log.info("TerminalSession[\(ownerTabID?.uuidString.prefix(8) ?? "?")]: OSC 133 B — command start")
-            isAtPrompt = false
-
-        case .commandExecuted:
-            Log.info("TerminalSession[\(ownerTabID?.uuidString.prefix(8) ?? "?")]: OSC 133 C — command executing")
-            shellEventDetector.commandStarted(command: pendingCommandLine, in: currentDirectory)
-
+        case .promptStart: handlePromptDetected()
+        case .commandStart: isAtPrompt = false
+        case .commandExecuted: shellEventDetector.commandStarted(command: pendingCommandLine, in: currentDirectory)
         case .commandFinished(let exitCode):
-            Log.info("TerminalSession[\(ownerTabID?.uuidString.prefix(8) ?? "?")]: OSC 133 D — command finished (exit: \(exitCode))")
-            if !commandFinishedNotified {
-                commandFinishedNotified = true
-                shellEventDetector.commandFinished(exitCode: Int(exitCode), command: pendingCommandLine)
-            }
+            guard !commandFinishedNotified else { return }
+            commandFinishedNotified = true
+            shellEventDetector.commandFinished(exitCode: Int(exitCode), command: pendingCommandLine)
         }
     }
 
