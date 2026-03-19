@@ -54,12 +54,25 @@ public final class MetalTerminalRenderer: NSObject {
         let italic: Bool
     }
 
+    /// Ligature cache key: multi-character sequence + style
+    struct LigatureKey: Hashable {
+        let sequence: String
+        let bold: Bool
+        let italic: Bool
+    }
+
     /// Glyph information in the atlas
     struct GlyphInfo {
         let textureRect: CGRect // UV coordinates in atlas
         let bearing: CGPoint // Offset from baseline
         let advance: CGFloat // Horizontal advance
         let isWide: Bool // Double-width (CJK)
+    }
+
+    /// Ligature information: a multi-cell glyph in the atlas
+    struct LigatureInfo {
+        let textureRect: CGRect // UV coordinates in atlas
+        let cellSpan: Int // Number of terminal cells this ligature spans
     }
 
     // MARK: - Shared Pipeline Cache (compiled once, reused across tabs)
@@ -88,6 +101,10 @@ public final class MetalTerminalRenderer: NSObject {
     private var atlasWidth = 2048
     private var atlasHeight = 2048
     private var glyphCache: [GlyphKey: GlyphInfo] = [:]
+    /// Cache for multi-character ligature glyphs. nil value = font doesn't form a ligature.
+    private var ligatureCache: [LigatureKey: LigatureInfo?] = [:]
+    /// Whether ligature rendering is enabled (set from FeatureSettings)
+    var ligaturesEnabled = false
 
     /// Packing cursor for the next glyph slot
     private var packX: CGFloat = 0
@@ -568,6 +585,134 @@ public final class MetalTerminalRenderer: NSObject {
         return glyphCache[GlyphKey(codePoint: 0x20, bold: false, italic: false)]
     }
 
+    // MARK: - Ligature Rendering
+
+    /// Try to form a ligature from consecutive cells. Returns nil if the font doesn't
+    /// produce a ligature for this sequence (glyph count == char count = no substitution).
+    func lookupLigature(sequence: String, bold: Bool, italic: Bool) -> LigatureInfo? {
+        let key = LigatureKey(sequence: sequence, bold: bold, italic: italic)
+        if let cached = ligatureCache[key] { return cached }
+
+        // Ask CoreText to shape the sequence. If the resulting glyph count is less
+        // than the character count, the font's GSUB table formed a ligature.
+        let font: CTFont
+        switch (bold, italic) {
+        case (true, true): font = boldItalicFont
+        case (true, false): font = boldFont
+        case (false, true): font = italicFont
+        case (false, false): font = regularFont
+        }
+
+        let attrString = NSAttributedString(
+            string: sequence,
+            attributes: [.font: font]
+        )
+        let line = CTLineCreateWithAttributedString(attrString)
+        let runs = CTLineGetGlyphRuns(line) as! [CTRun]
+        guard let run = runs.first else {
+            ligatureCache[key] = nil
+            return nil
+        }
+
+        let glyphCount = CTRunGetGlyphCount(run)
+        let charCount = sequence.count
+
+        // If glyph count equals char count, no ligature was formed
+        if glyphCount >= charCount {
+            ligatureCache[key] = nil
+            return nil
+        }
+
+        // Ligature formed! Rasterize the combined glyph into the atlas.
+        let cellSpan = charCount
+        let slotWidth = cellSize.width * CGFloat(cellSpan)
+        let slotHeight = cellSize.height
+        let padding: CGFloat = 2
+
+        // Check atlas space
+        if packX + slotWidth + padding > CGFloat(atlasWidth) {
+            packX = 0
+            packY += packRowHeight + padding
+            packRowHeight = 0
+        }
+        if packY + slotHeight > CGFloat(atlasHeight) {
+            // Atlas full — skip ligature
+            ligatureCache[key] = nil
+            return nil
+        }
+        packRowHeight = max(packRowHeight, slotHeight)
+
+        // Draw the ligature sequence into the atlas bitmap
+        guard let context = atlasContext else {
+            ligatureCache[key] = nil
+            return nil
+        }
+        let baselineY = CGFloat(atlasHeight) - packY - slotHeight + fontDescent
+        let origin = CGPoint(x: packX, y: baselineY)
+
+        context.saveGState()
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+
+        // Use CTLineDraw to render the shaped sequence with ligatures
+        context.textPosition = origin
+        CTLineDraw(line, context)
+        context.restoreGState()
+
+        let texRect = CGRect(
+            x: packX / CGFloat(atlasWidth),
+            y: packY / CGFloat(atlasHeight),
+            width: slotWidth / CGFloat(atlasWidth),
+            height: slotHeight / CGFloat(atlasHeight)
+        )
+
+        let info = LigatureInfo(textureRect: texRect, cellSpan: cellSpan)
+        ligatureCache[key] = info
+        packX += slotWidth + padding
+        atlasDirty = true
+        return info
+    }
+
+    /// Maximum lookahead for ligature detection (3-char sequences like ===, !==)
+    private static let maxLigatureLength = 3
+
+    /// Try to form a ligature from consecutive cells starting at index.
+    /// Returns nil if no ligature is formed or if the cells cross a row boundary.
+    private func tryLigature(
+        cells: UnsafeBufferPointer<TerminalCell>,
+        index: Int, count: Int, cols: Int,
+        bold: Bool, italic: Bool
+    ) -> LigatureInfo? {
+        let col = index % cols
+        let maxLen = min(Self.maxLigatureLength, cols - col, count - index)
+        guard maxLen >= 2 else { return nil }
+
+        // Try longest sequence first (3-char, then 2-char)
+        for len in stride(from: maxLen, through: 2, by: -1) {
+            // All cells in the sequence must be printable ASCII with the same style
+            var sequence = ""
+            var valid = true
+            for j in 0..<len {
+                let c = cells[index + j]
+                guard c.character >= 0x21, c.character < 0x7F,
+                      let scalar = Unicode.Scalar(c.character) else {
+                    valid = false
+                    break
+                }
+                // Check same bold/italic style
+                let cBold = (c.flags & 1) != 0
+                let cItalic = (c.flags & 2) != 0
+                if cBold != bold || cItalic != italic { valid = false; break }
+                sequence.append(Character(scalar))
+            }
+            guard valid else { continue }
+
+            if let info = lookupLigature(sequence: sequence, bold: bold, italic: italic) {
+                return info
+            }
+        }
+        return nil
+    }
+
     // MARK: - Rendering
 
     /// Renders terminal cells to the given drawable.
@@ -624,6 +769,7 @@ public final class MetalTerminalRenderer: NSObject {
         let ch = Float(cellSize.height / scaleFactor)
 
         var foundBlinkingCells = false
+        var ligatureSkip = 0 // Cells to skip (consumed by a ligature)
         var boxDrawCount = 0 // Diagnostic counter
         let traceBoxDraw = Log.isTraceEnabled && diagFrameCounter.isMultiple(of: 600)
 
@@ -654,18 +800,41 @@ public final class MetalTerminalRenderer: NSObject {
                 }
             }
 
-            let glyphInfo = lookupGlyph(codePoint: cell.character, bold: isBold, italic: isItalic)
+            // Ligature lookahead: try to form multi-char ligatures from consecutive cells.
+            // Skip if this cell was consumed by a previous ligature.
+            var texCoord: SIMD4<Float> = SIMD4(0, 0, 0, 0)
+            var cellWidth: Float = cw
 
-            let texCoord: SIMD4<Float>
-            if let info = glyphInfo {
-                texCoord = SIMD4(
-                    Float(info.textureRect.origin.x),
-                    Float(info.textureRect.origin.y),
-                    Float(info.textureRect.width),
-                    Float(info.textureRect.height)
-                )
-            } else {
-                texCoord = SIMD4(0, 0, 0, 0)
+            if ligaturesEnabled, cell.character >= 0x21, cell.character < 0x7F,
+               ligatureSkip <= 0 {
+                let ligInfo = tryLigature(cells: cells, index: i, count: count, cols: cols,
+                                          bold: isBold, italic: isItalic)
+                if let lig = ligInfo {
+                    texCoord = SIMD4(
+                        Float(lig.textureRect.origin.x),
+                        Float(lig.textureRect.origin.y),
+                        Float(lig.textureRect.width),
+                        Float(lig.textureRect.height)
+                    )
+                    cellWidth = cw * Float(lig.cellSpan)
+                    ligatureSkip = lig.cellSpan - 1 // skip subsequent cells
+                }
+            }
+
+            if ligatureSkip > 0, texCoord == SIMD4(0, 0, 0, 0) {
+                // This cell is part of a ligature — render as empty (background only)
+                ligatureSkip -= 1
+            } else if texCoord == SIMD4(0, 0, 0, 0) {
+                // Normal single-glyph path
+                let glyphInfo = lookupGlyph(codePoint: cell.character, bold: isBold, italic: isItalic)
+                if let info = glyphInfo {
+                    texCoord = SIMD4(
+                        Float(info.textureRect.origin.x),
+                        Float(info.textureRect.origin.y),
+                        Float(info.textureRect.width),
+                        Float(info.textureRect.height)
+                    )
+                }
             }
 
             instances[i] = CellInstance(
