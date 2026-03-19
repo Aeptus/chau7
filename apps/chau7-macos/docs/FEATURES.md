@@ -36,6 +36,7 @@ The AI-native terminal for macOS. GPU-accelerated, MCP-enabled, built for develo
 - Shell selection: Zsh, Bash, Fish, or custom path — Apple Silicon and Intel native.
 - Dead key and IME support with proper `NSTextInputClient` marked text handling.
 - Shell integration via OSC 7 for working directory tracking.
+- OSC 133 (FinalTerm) shell integration: prompt start (A), command start (B), output start (C), command finished with exit code (D). Parsed in Rust interceptor, feeds ShellEventDetector.
 - Default start directory and optional startup commands.
 - Copy on select, Option+click cursor positioning, paste escaping.
 
