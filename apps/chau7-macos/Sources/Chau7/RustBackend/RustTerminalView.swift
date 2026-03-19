@@ -2400,6 +2400,7 @@ final class RustTerminalView: NSView {
         // 3. Update cell dimensions based on font
         updateCellDimensions()
 
+        registerDragTypes()
         Log.info("RustTerminalView[\(viewId)]: setupViews - Views setup complete (terminal not yet started)")
     }
 
@@ -6199,5 +6200,90 @@ extension RustTerminalView: NSTextInputClient {
 
     func validAttributesForMarkedText() -> [NSAttributedString.Key] {
         return []
+    }
+}
+
+// MARK: - Drag & Drop (File Paths + Image Base64)
+
+extension RustTerminalView {
+    /// Register for file and image drag types. Called from setupViews().
+    func registerDragTypes() {
+        registerForDraggedTypes([.fileURL, .png, .tiff])
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        // Accept copy for files and images
+        if sender.draggingPasteboard.availableType(from: [.fileURL, .png, .tiff]) != nil {
+            return .copy
+        }
+        return []
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        let pboard = sender.draggingPasteboard
+        let optionHeld = NSEvent.modifierFlags.contains(.option)
+
+        // Case 1: File URL(s) dropped
+        if let urls = pboard.readObjects(forClasses: [NSURL.self], options: [
+            .urlReadingFileURLsOnly: true,
+        ]) as? [URL], !urls.isEmpty {
+            if optionHeld, urls.count == 1, isImageFile(urls[0]) {
+                // Option+drop image file → base64 encode for AI CLIs
+                return pasteImageAsBase64(fileURL: urls[0])
+            }
+            // Default: paste file path(s) as shell-escaped text
+            let paths = urls.map { shellEscape($0.path) }
+            pasteText(paths.joined(separator: " "))
+            return true
+        }
+
+        // Case 2: Raw image data dropped (e.g., from Preview, Safari)
+        if let imageData = pboard.data(forType: .png) ?? pboard.data(forType: .tiff) {
+            return pasteImageData(imageData)
+        }
+
+        return false
+    }
+
+    // MARK: - Image Helpers
+
+    private func isImageFile(_ url: URL) -> Bool {
+        let exts: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff", "tif", "svg"]
+        return exts.contains(url.pathExtension.lowercased())
+    }
+
+    private func pasteImageAsBase64(fileURL: URL) -> Bool {
+        guard let data = try? Data(contentsOf: fileURL) else { return false }
+        return pasteImageData(data, filename: fileURL.lastPathComponent)
+    }
+
+    private func pasteImageData(_ data: Data, filename: String? = nil) -> Bool {
+        let b64 = data.base64EncodedString()
+        let name = filename ?? "image.png"
+        // Format as a data URI that AI CLIs can consume.
+        // Claude Code expects: ![image](data:image/png;base64,...)
+        let ext = (name as NSString).pathExtension.lowercased()
+        let mime = imageMIME(for: ext)
+        let payload = "![" + name + "](data:" + mime + ";base64," + b64 + ")"
+        pasteText(payload)
+        Log.info("RustTerminalView[\(viewId)]: dropped image \(name) (\(data.count) bytes, \(b64.count) base64 chars)")
+        return true
+    }
+
+    private func imageMIME(for ext: String) -> String {
+        switch ext {
+        case "png": return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        case "svg": return "image/svg+xml"
+        case "bmp": return "image/bmp"
+        default: return "image/png"
+        }
+    }
+
+    private func shellEscape(_ path: String) -> String {
+        // Single-quote the path, escaping any single quotes within
+        return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
