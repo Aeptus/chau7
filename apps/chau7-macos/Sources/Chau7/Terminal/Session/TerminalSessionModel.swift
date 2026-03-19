@@ -581,6 +581,11 @@ final class TerminalSessionModel: NSObject, ObservableObject {
             }
         }
 
+        view.onShellIntegrationEvent = { [weak self] event in
+            guard let self = self else { return }
+            self.handleShellIntegrationEvent(event)
+        }
+
         // Auto-focus on attach for newly created tabs
         if shouldAutoFocusOnAttach {
             shouldAutoFocusOnAttach = false
@@ -1066,6 +1071,31 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         if !commandFinishedNotified {
             commandFinishedNotified = true
             shellEventDetector.commandFinished(exitCode: nil, command: pendingCommandLine)
+        }
+    }
+
+    /// Handle OSC 133 shell integration events from the Rust terminal.
+    /// These provide authoritative command lifecycle markers from the shell itself.
+    private func handleShellIntegrationEvent(_ event: ShellIntegrationEvent) {
+        switch event {
+        case .promptStart:
+            Log.info("TerminalSession[\(ownerTabID?.uuidString.prefix(8) ?? "?")]: OSC 133 A — prompt start")
+            handlePromptDetected()
+
+        case .commandStart:
+            Log.info("TerminalSession[\(ownerTabID?.uuidString.prefix(8) ?? "?")]: OSC 133 B — command start")
+            isAtPrompt = false
+
+        case .commandExecuted:
+            Log.info("TerminalSession[\(ownerTabID?.uuidString.prefix(8) ?? "?")]: OSC 133 C — command executing")
+            shellEventDetector.commandStarted(command: pendingCommandLine, in: currentDirectory)
+
+        case .commandFinished(let exitCode):
+            Log.info("TerminalSession[\(ownerTabID?.uuidString.prefix(8) ?? "?")]: OSC 133 D — command finished (exit: \(exitCode))")
+            if !commandFinishedNotified {
+                commandFinishedNotified = true
+                shellEventDetector.commandFinished(exitCode: Int(exitCode), command: pendingCommandLine)
+            }
         }
     }
 

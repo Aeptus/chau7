@@ -147,6 +147,12 @@ pub struct Chau7Terminal {
     /// Fast check flag — avoids locking pending_clipboard_load Mutex on every poll.
     pub(crate) has_pending_clipboard_load: AtomicBool,
 
+    // Shell integration (OSC 133)
+    /// Pending shell integration events (prompt start, command start/end, etc.)
+    pub(crate) pending_shell_events: Mutex<Vec<graphics::ShellIntegrationEvent>>,
+    /// Fast check flag — avoids locking on every poll.
+    pub(crate) has_pending_shell_events: AtomicBool,
+
     // Performance optimization structures
     /// Adaptive polling rate controller
     pub(crate) adaptive_poller: AdaptivePoller,
@@ -238,6 +244,8 @@ impl Chau7Terminal {
             has_pending_clipboard_store: AtomicBool::new(false),
             pending_clipboard_load: Mutex::new(None),
             has_pending_clipboard_load: AtomicBool::new(false),
+            pending_shell_events: Mutex::new(Vec::new()),
+            has_pending_shell_events: AtomicBool::new(false),
             adaptive_poller: AdaptivePoller::new(),
             dirty_rows: DirtyRowTracker::new(rows as usize),
             ambiguous_width: AtomicU64::new(1),
@@ -527,6 +535,9 @@ impl Chau7Terminal {
             has_pending_clipboard_store: AtomicBool::new(false),
             pending_clipboard_load: Mutex::new(None),
             has_pending_clipboard_load: AtomicBool::new(false),
+            // Shell integration (OSC 133)
+            pending_shell_events: Mutex::new(Vec::new()),
+            has_pending_shell_events: AtomicBool::new(false),
             // Performance optimizations
             adaptive_poller: AdaptivePoller::new(),
             dirty_rows: DirtyRowTracker::new(rows as usize),
@@ -955,11 +966,24 @@ impl Chau7Terminal {
             data.len()
         );
 
-        let (passthrough_owned, events) = {
+        let (passthrough_owned, events, shell_events) = {
             let mut interceptor = self.graphics_interceptor.lock();
             interceptor.feed_owned(data)
             // Lock dropped here — passthrough_owned is an owned Vec, no borrow.
         };
+
+        // Store shell integration events (OSC 133) for Swift to poll
+        if !shell_events.is_empty() {
+            debug!(
+                "[terminal-{}] OSC 133: {} shell integration events",
+                self.id,
+                shell_events.len()
+            );
+            let mut pending = self.pending_shell_events.lock();
+            pending.extend(shell_events);
+            self.has_pending_shell_events
+                .store(true, std::sync::atomic::Ordering::Release);
+        }
 
         if !passthrough_owned.is_empty() {
             let mut term = self.term.lock();

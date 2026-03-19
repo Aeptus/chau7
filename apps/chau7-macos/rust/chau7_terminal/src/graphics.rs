@@ -29,6 +29,22 @@ pub enum GraphicsEvent {
     Kitty { control: String, payload: Vec<u8> },
 }
 
+/// FinalTerm/iTerm2 shell integration events (OSC 133).
+///
+/// These mark semantic zones in the terminal output so the host can
+/// distinguish prompt, user input, and command output regions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ShellIntegrationEvent {
+    /// `A` — The shell is about to draw the prompt.
+    PromptStart,
+    /// `B` — The user pressed Enter; command line is complete.
+    CommandStart,
+    /// `C` — The command is now executing; output follows.
+    CommandExecuted,
+    /// `D` — The command finished. Carries the exit code (0 = success).
+    CommandFinished { exit_code: i32 },
+}
+
 /// A decoded image ready for display, with RGBA pixel data.
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -92,8 +108,10 @@ enum State {
     KittyPayload,
     /// Kitty: saw ESC inside payload, waiting for '\' (ST).
     KittyEsc,
-    /// Saw ESC ] — OSC sequence. Accumulating to check for "1337".
+    /// Saw ESC ] — OSC sequence. Accumulating to check for "1337" or "133".
     Osc,
+    /// Inside OSC 133 — accumulating the semantic marker (A/B/C/D and optional params).
+    Osc133,
     /// Inside OSC 1337 — accumulating iTerm2 File= args.
     ITermArgs,
     /// Inside iTerm2 base64 data (after ':').
@@ -107,7 +125,7 @@ enum State {
 /// Usage:
 /// ```ignore
 /// let mut interceptor = GraphicsInterceptor::new();
-/// let (passthrough, events) = interceptor.feed(pty_bytes);
+/// let (passthrough, events, shell) = interceptor.feed(pty_bytes);
 /// processor.advance(&mut term, passthrough); // non-graphics to VTE
 /// for event in events { handle_image(event); }
 /// ```
@@ -127,12 +145,16 @@ pub struct GraphicsInterceptor {
     kitty_control: Vec<u8>,
     /// Accumulator for Kitty base64 payload.
     kitty_payload: Vec<u8>,
-    /// Accumulator for OSC prefix (to match "1337").
+    /// Accumulator for OSC prefix (to match "1337" or "133").
     osc_prefix: Vec<u8>,
+    /// Accumulator for OSC 133 body (marker + optional params after ';').
+    osc133_buf: Vec<u8>,
     /// Accumulator for iTerm2 args (between "File=" and ":").
     iterm_args: Vec<u8>,
     /// Accumulator for iTerm2 base64 data (after ":").
     iterm_data: Vec<u8>,
+    /// Shell integration events extracted this feed cycle.
+    shell_events: Vec<ShellIntegrationEvent>,
     /// Whether each protocol is enabled.
     pub sixel_enabled: bool,
     pub kitty_enabled: bool,
@@ -156,8 +178,10 @@ impl GraphicsInterceptor {
             kitty_control: Vec::new(),
             kitty_payload: Vec::new(),
             osc_prefix: Vec::new(),
+            osc133_buf: Vec::new(),
             iterm_args: Vec::new(),
             iterm_data: Vec::new(),
+            shell_events: Vec::new(),
             sixel_enabled: true,
             kitty_enabled: true,
             iterm2_enabled: true, // iTerm2 on by default
@@ -166,10 +190,14 @@ impl GraphicsInterceptor {
 
     /// Feed raw PTY bytes through the interceptor.
     ///
-    /// Returns a slice of passthrough bytes (forward to VTE) and a vec of
-    /// extracted graphics events.
-    pub fn feed<'a>(&'a mut self, input: &[u8]) -> (&'a [u8], Vec<GraphicsEvent>) {
+    /// Returns a slice of passthrough bytes (forward to VTE), a vec of
+    /// extracted graphics events, and a vec of shell integration events (OSC 133).
+    pub fn feed<'a>(
+        &'a mut self,
+        input: &[u8],
+    ) -> (&'a [u8], Vec<GraphicsEvent>, Vec<ShellIntegrationEvent>) {
         self.passthrough.clear();
+        self.shell_events.clear();
         let mut events = Vec::new();
         let mut i = 0;
 
@@ -204,8 +232,8 @@ impl GraphicsInterceptor {
                     0x5F if self.kitty_enabled => {
                         self.state = State::Apc;
                     }
-                    // ESC ] → OSC (potential iTerm2)
-                    0x5D if self.iterm2_enabled => {
+                    // ESC ] → OSC (potential iTerm2 image or OSC 133 shell integration)
+                    0x5D => {
                         self.osc_prefix.clear();
                         self.state = State::Osc;
                     }
@@ -337,17 +365,22 @@ impl GraphicsInterceptor {
                     }
                 }
 
-                // ── OSC / iTerm2 ─────────────────────────────────────
+                // ── OSC / iTerm2 / Shell Integration ────────────────
                 State::Osc => {
                     if byte == b';' {
-                        // Check if we accumulated "1337"
-                        if self.osc_prefix == b"1337" {
+                        if self.iterm2_enabled && self.osc_prefix == b"1337" {
+                            // OSC 1337 → iTerm2 image
                             self.iterm_args.clear();
                             self.iterm_data.clear();
                             self.state = State::ITermArgs;
                             trace!("GraphicsInterceptor: iTerm2 OSC 1337 sequence started");
+                        } else if self.osc_prefix == b"133" {
+                            // OSC 133 → FinalTerm shell integration
+                            self.osc133_buf.clear();
+                            self.state = State::Osc133;
+                            trace!("GraphicsInterceptor: OSC 133 shell integration sequence");
                         } else {
-                            // Not iTerm2 — pass through the whole OSC prefix
+                            // Not a sequence we intercept — pass through
                             self.passthrough.push(0x1B);
                             self.passthrough.push(0x5D); // ]
                             self.passthrough.extend_from_slice(&self.osc_prefix);
@@ -365,7 +398,7 @@ impl GraphicsInterceptor {
                         self.state = State::Ground;
                     } else if byte == 0x1B {
                         // Potential ESC \ (ST)
-                        // For non-1337 OSC, just pass through
+                        // For non-intercepted OSC, just pass through
                         self.passthrough.push(0x1B);
                         self.passthrough.push(0x5D);
                         self.passthrough.extend_from_slice(&self.osc_prefix);
@@ -382,6 +415,35 @@ impl GraphicsInterceptor {
                             self.osc_prefix.clear();
                             self.state = State::Ground;
                         }
+                    }
+                }
+
+                // ── OSC 133 body ────────────────────────────────────
+                State::Osc133 => {
+                    if byte == 0x07 || byte == 0x9C {
+                        // BEL or 8-bit ST — sequence complete
+                        self.emit_osc133();
+                        self.state = State::Ground;
+                    } else if byte == 0x1B {
+                        // Potential ESC \ (ST) — peek at next byte
+                        // We need to handle this carefully: if the next byte
+                        // is '\', it's the ST terminator. But we can't peek
+                        // from here, so push a sentinel and check in the loop.
+                        // Actually, use the same trick as the other states:
+                        // temporarily save that we saw ESC, handle in next iteration.
+                        // For simplicity, just treat ESC as terminator here
+                        // since OSC 133 bodies are very short (1-5 bytes).
+                        self.emit_osc133();
+                        // Pass the ESC through so VTE can handle ESC \ if needed
+                        self.passthrough.push(0x1B);
+                        self.state = State::Ground;
+                    } else if self.osc133_buf.len() < 32 {
+                        self.osc133_buf.push(byte);
+                    } else {
+                        // Too long for OSC 133 — discard
+                        warn!("GraphicsInterceptor: OSC 133 body too long, discarding");
+                        self.osc133_buf.clear();
+                        self.state = State::Ground;
                     }
                 }
 
@@ -442,7 +504,8 @@ impl GraphicsInterceptor {
             i += 1;
         }
 
-        (&self.passthrough, events)
+        let shell = std::mem::take(&mut self.shell_events);
+        (&self.passthrough, events, shell)
     }
 
     /// Feed raw PTY bytes and return an **owned** passthrough vec (zero-copy).
@@ -454,13 +517,16 @@ impl GraphicsInterceptor {
     ///
     /// The spare buffer (with retained capacity) is swapped in so the next
     /// call doesn't need to allocate.
-    pub fn feed_owned(&mut self, input: &[u8]) -> (Vec<u8>, Vec<GraphicsEvent>) {
+    pub fn feed_owned(
+        &mut self,
+        input: &[u8],
+    ) -> (Vec<u8>, Vec<GraphicsEvent>, Vec<ShellIntegrationEvent>) {
         // Run feed() which populates self.passthrough and returns events.
         // We deliberately ignore the returned borrow (&[u8]) — we'll swap
         // the vec out instead.
-        let events = {
-            let (_borrow, events) = self.feed(input);
-            events
+        let (events, shell_events) = {
+            let (_borrow, events, shell) = self.feed(input);
+            (events, shell)
             // _borrow (reference to self.passthrough) is dropped here
         };
         // Now self is exclusively borrowed again — safe to swap.
@@ -469,7 +535,7 @@ impl GraphicsInterceptor {
         std::mem::swap(&mut self.passthrough, &mut self.passthrough_spare);
         // passthrough_spare now holds the data; passthrough is the old spare (empty).
         let owned = std::mem::take(&mut self.passthrough_spare);
-        (owned, events)
+        (owned, events, shell_events)
     }
 
     // ── Event Emitters ───────────────────────────────────────────────
@@ -509,6 +575,43 @@ impl GraphicsInterceptor {
             base64_data.len()
         );
         events.push(GraphicsEvent::ITerm2 { args, base64_data });
+    }
+
+    /// Parse OSC 133 body and push a ShellIntegrationEvent.
+    /// Body format: `A`, `B`, `C`, or `D;exitcode` (plus optional extra params we ignore).
+    fn emit_osc133(&mut self) {
+        let body = std::mem::take(&mut self.osc133_buf);
+        if body.is_empty() {
+            return;
+        }
+
+        let event = match body[0] {
+            b'A' => ShellIntegrationEvent::PromptStart,
+            b'B' => ShellIntegrationEvent::CommandStart,
+            b'C' => ShellIntegrationEvent::CommandExecuted,
+            b'D' => {
+                // D may be followed by ;exitcode (e.g., "D;0" or "D;1")
+                let exit_code = if body.len() > 2 && body[1] == b';' {
+                    std::str::from_utf8(&body[2..])
+                        .ok()
+                        .and_then(|s| s.parse::<i32>().ok())
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+                ShellIntegrationEvent::CommandFinished { exit_code }
+            }
+            _ => {
+                debug!(
+                    "GraphicsInterceptor: unknown OSC 133 marker: {:?}",
+                    String::from_utf8_lossy(&body)
+                );
+                return;
+            }
+        };
+
+        debug!("GraphicsInterceptor: OSC 133 {:?}", event);
+        self.shell_events.push(event);
     }
 
     /// Reset all state (e.g., on terminal reset).
@@ -1108,7 +1211,7 @@ mod tests {
     fn test_passthrough_normal_data() {
         let mut interceptor = GraphicsInterceptor::new();
         let input = b"Hello, world!\r\n";
-        let (pass, events) = interceptor.feed(input);
+        let (pass, events, _shell) = interceptor.feed(input);
         assert_eq!(pass, input.as_slice());
         assert!(events.is_empty());
     }
@@ -1118,7 +1221,7 @@ mod tests {
         let mut interceptor = GraphicsInterceptor::new();
         // CSI sequence (not graphics)
         let input = b"\x1b[31mred\x1b[0m";
-        let (pass, events) = interceptor.feed(input);
+        let (pass, events, _shell) = interceptor.feed(input);
         assert_eq!(pass, input.as_slice());
         assert!(events.is_empty());
     }
@@ -1134,7 +1237,7 @@ mod tests {
         // Add some normal text after
         input.extend_from_slice(b"more text");
 
-        let (pass, events) = interceptor.feed(&input);
+        let (pass, events, _shell) = interceptor.feed(&input);
         assert_eq!(pass, b"more text");
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1154,7 +1257,7 @@ mod tests {
         input.extend_from_slice(b"AAAA");
         input.extend_from_slice(b"\x1b\\"); // ESC \ = ST
 
-        let (pass, events) = interceptor.feed(&input);
+        let (pass, events, _shell) = interceptor.feed(&input);
         assert!(pass.is_empty());
         assert_eq!(events.len(), 1);
     }
@@ -1170,7 +1273,7 @@ mod tests {
         input.extend_from_slice(b"#0;2;100;0;0~-~"); // minimal sixel
         input.extend_from_slice(b"\x1b\\"); // ST
 
-        let (pass, events) = interceptor.feed(&input);
+        let (pass, events, _shell) = interceptor.feed(&input);
         assert!(pass.is_empty());
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1188,7 +1291,7 @@ mod tests {
         interceptor.sixel_enabled = false;
 
         let input = b"\x1bP0;1;q~\x1b\\";
-        let (pass, events) = interceptor.feed(input);
+        let (pass, events, _shell) = interceptor.feed(input);
         // Should pass through as-is when disabled
         assert!(!pass.is_empty());
         assert!(events.is_empty());
@@ -1205,7 +1308,7 @@ mod tests {
         input.extend_from_slice(b"iVBORw0KGgo=");
         input.extend_from_slice(b"\x1b\\");
 
-        let (pass, events) = interceptor.feed(&input);
+        let (pass, events, _shell) = interceptor.feed(&input);
         assert!(pass.is_empty());
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -1229,7 +1332,7 @@ mod tests {
         input.extend_from_slice(b"\x1bP;q~~\x1b\\");
         input.extend_from_slice(b"after");
 
-        let (pass, events) = interceptor.feed(&input);
+        let (pass, events, _shell) = interceptor.feed(&input);
         assert_eq!(pass, b"beforebetweenafter");
         assert_eq!(events.len(), 2);
     }
@@ -1242,11 +1345,11 @@ mod tests {
         let part1 = b"\x1b]1337;File=inline=1:AAAA";
         let part2 = b"BBBB\x07done";
 
-        let (pass1, events1) = interceptor.feed(part1);
+        let (pass1, events1, _shell1) = interceptor.feed(part1);
         assert!(pass1.is_empty()); // All buffered
         assert!(events1.is_empty()); // Not complete yet
 
-        let (pass2, events2) = interceptor.feed(part2);
+        let (pass2, events2, _shell2) = interceptor.feed(part2);
         assert_eq!(pass2, b"done");
         assert_eq!(events2.len(), 1);
         match &events2[0] {
@@ -1262,10 +1365,69 @@ mod tests {
         let mut interceptor = GraphicsInterceptor::new();
         // OSC 7 (directory) should pass through
         let input = b"\x1b]7;file:///tmp\x07rest";
-        let (pass, events) = interceptor.feed(input);
+        let (pass, events, _shell) = interceptor.feed(input);
         assert!(events.is_empty());
         // The pass-through should contain the original sequence
         assert!(!pass.is_empty());
+    }
+
+    // ── OSC 133 (shell integration) tests ─────────────────────────────
+
+    #[test]
+    fn test_osc133_prompt_start() {
+        let mut interceptor = GraphicsInterceptor::new();
+        // ESC ] 133 ; A BEL
+        let input = b"\x1b]133;A\x07";
+        let (pass, events, shell) = interceptor.feed(input);
+        assert!(events.is_empty());
+        assert!(pass.is_empty()); // OSC 133 is consumed, not passed through
+        assert_eq!(shell.len(), 1);
+        assert_eq!(shell[0], ShellIntegrationEvent::PromptStart);
+    }
+
+    #[test]
+    fn test_osc133_command_finished_with_exit_code() {
+        let mut interceptor = GraphicsInterceptor::new();
+        // ESC ] 133 ; D ; 1 BEL (exit code 1)
+        let input = b"\x1b]133;D;1\x07";
+        let (_pass, _events, shell) = interceptor.feed(input);
+        assert_eq!(shell.len(), 1);
+        assert_eq!(
+            shell[0],
+            ShellIntegrationEvent::CommandFinished { exit_code: 1 }
+        );
+    }
+
+    #[test]
+    fn test_osc133_full_lifecycle() {
+        let mut interceptor = GraphicsInterceptor::new();
+        // Simulate a full prompt → command → output → finish cycle with surrounding text
+        let input = b"some text\x1b]133;A\x07prompt$ \x1b]133;B\x07\x1b]133;C\x07output\x1b]133;D;0\x07";
+        let (pass, events, shell) = interceptor.feed(input);
+        assert!(events.is_empty());
+        assert_eq!(shell.len(), 4);
+        assert_eq!(shell[0], ShellIntegrationEvent::PromptStart);
+        assert_eq!(shell[1], ShellIntegrationEvent::CommandStart);
+        assert_eq!(shell[2], ShellIntegrationEvent::CommandExecuted);
+        assert_eq!(
+            shell[3],
+            ShellIntegrationEvent::CommandFinished { exit_code: 0 }
+        );
+        // "some text", "prompt$ ", and "output" should pass through
+        let pass_str = std::str::from_utf8(pass).unwrap();
+        assert!(pass_str.contains("some text"));
+        assert!(pass_str.contains("prompt$ "));
+        assert!(pass_str.contains("output"));
+    }
+
+    #[test]
+    fn test_osc133_with_st_terminator() {
+        let mut interceptor = GraphicsInterceptor::new();
+        // ESC ] 133 ; B ESC \ (using ST instead of BEL)
+        let input = b"\x1b]133;B\x1b\\";
+        let (_pass, _events, shell) = interceptor.feed(input);
+        assert_eq!(shell.len(), 1);
+        assert_eq!(shell[0], ShellIntegrationEvent::CommandStart);
     }
 
     // ── Sixel decoder tests ──────────────────────────────────────────
