@@ -58,6 +58,7 @@ func (n *IPCNotifier) NotifyAPICallWithTask(record *APICallRecord, taskID, tabID
 			InputTokens:  record.InputTokens,
 			OutputTokens: record.OutputTokens,
 			LatencyMs:    record.LatencyMs,
+			TTFTMs:       record.TTFTMs,
 			StatusCode:   record.StatusCode,
 			CostUSD:      record.CostUSD,
 			Timestamp:    record.Timestamp.UTC().Format(time.RFC3339),
@@ -282,6 +283,7 @@ type IPCAPICallData struct {
 	InputTokens  int     `json:"input_tokens"`
 	OutputTokens int     `json:"output_tokens"`
 	LatencyMs    int64   `json:"latency_ms"`
+	TTFTMs       int64   `json:"ttft_ms"`
 	StatusCode   int     `json:"status_code"`
 	CostUSD      float64 `json:"cost_usd"`
 	Timestamp    string  `json:"timestamp"`

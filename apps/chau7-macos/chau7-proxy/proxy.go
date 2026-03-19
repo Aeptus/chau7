@@ -125,9 +125,11 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	copyHeaders(resp.Header, w.Header())
 	w.WriteHeader(resp.StatusCode)
 
-	// Stream response while capturing for metadata extraction
+	// Stream response while capturing for metadata extraction.
+	// Wrap in firstByteReader to measure time-to-first-token (TTFT).
 	var responseBuffer bytes.Buffer
-	tee := io.TeeReader(resp.Body, &responseBuffer)
+	fbr := &firstByteReader{reader: resp.Body, start: startTime}
+	tee := io.TeeReader(fbr, &responseBuffer)
 
 	// Copy response body to client
 	bytesWritten, err := io.Copy(w, tee)
@@ -135,8 +137,9 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[WARN] Error copying response: %v", err)
 	}
 
-	// Calculate latency
+	// Calculate latencies
 	latencyMs := time.Since(startTime).Milliseconds()
+	ttftMs := fbr.ttftMs()
 
 	// Extract response metadata
 	respBody := responseBuffer.Bytes()
@@ -195,6 +198,7 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		InputTokens:  respMeta.InputTokens,
 		OutputTokens: respMeta.OutputTokens,
 		LatencyMs:    latencyMs,
+		TTFTMs:       ttftMs,
 		StatusCode:   resp.StatusCode,
 		CostUSD:      cost,
 		Timestamp:    startTime,
@@ -238,9 +242,9 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if baseline != nil {
 		savedInfo = fmt.Sprintf(" | saved:%d", baseline.TokensSaved)
 	}
-	log.Printf("[INFO] %s %s: %d | %s | in:%d out:%d | %dms | $%.4f | task:%s%s",
+	log.Printf("[INFO] %s %s: %d | %s | in:%d out:%d | %dms (ttft:%dms) | $%.4f | task:%s%s",
 		r.Method, r.URL.Path, resp.StatusCode, model,
-		respMeta.InputTokens, respMeta.OutputTokens, latencyMs, cost, actualTaskID, savedInfo)
+		respMeta.InputTokens, respMeta.OutputTokens, latencyMs, ttftMs, cost, actualTaskID, savedInfo)
 
 	_ = bytesWritten // Silence unused variable warning
 }
@@ -451,4 +455,30 @@ func (p *ProxyHandler) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		done <- struct{}{}
 	}()
 	<-done
+}
+
+// firstByteReader wraps an io.Reader and records the timestamp of the first
+// Read() call that returns data. This measures Time-to-First-Token (TTFT) —
+// the latency between sending the request and receiving the first response byte.
+type firstByteReader struct {
+	reader    io.Reader
+	start     time.Time
+	firstByte time.Time
+	gotFirst  bool
+}
+
+func (f *firstByteReader) Read(p []byte) (int, error) {
+	n, err := f.reader.Read(p)
+	if n > 0 && !f.gotFirst {
+		f.firstByte = time.Now()
+		f.gotFirst = true
+	}
+	return n, err
+}
+
+func (f *firstByteReader) ttftMs() int64 {
+	if !f.gotFirst {
+		return 0
+	}
+	return f.firstByte.Sub(f.start).Milliseconds()
 }
