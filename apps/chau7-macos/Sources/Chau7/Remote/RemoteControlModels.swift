@@ -251,7 +251,7 @@ struct ProtectedRemoteInput {
     let tabID: UInt32
     let text: String
     let flaggedCommand: String
-    let createdAt: Date = Date()
+    let createdAt = Date()
 
     static let ttl: TimeInterval = 120
 

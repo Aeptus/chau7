@@ -178,7 +178,7 @@ final class RuntimeSessionManager {
         case .permissionRequest:
             // Only create approval if session is busy (not already awaiting)
             if session.state == .busy {
-                let _ = session.requestApproval(
+                _ = session.requestApproval(
                     tool: event.toolName,
                     description: event.message
                 )

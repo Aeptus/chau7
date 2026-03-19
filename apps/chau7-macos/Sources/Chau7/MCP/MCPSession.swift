@@ -110,6 +110,7 @@ final class MCPSession {
 
     // MARK: - Tool Definitions
 
+    // swiftlint:disable:next function_body_length
     private func toolDefinitions() -> [[String: Any]] {
         [
             [

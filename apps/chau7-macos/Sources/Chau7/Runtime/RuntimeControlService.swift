@@ -16,8 +16,8 @@ final class RuntimeControlService {
     private static let backendsLock = NSLock()
     private static var backends: [String: () -> any AgentBackend] = [
         "claude": { ClaudeCodeBackend() },
-        "codex":  { CodexBackend() },
-        "shell":  { GenericShellBackend() }
+        "codex": { CodexBackend() },
+        "shell": { GenericShellBackend() }
     ]
 
     static func registerBackend(name: String, factory: @escaping () -> any AgentBackend) {
@@ -119,7 +119,7 @@ final class RuntimeControlService {
         if let prompt = initialPrompt {
             DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) { [weak self] in
                 guard let self else { return }
-                let _ = self.sendTurnInternal(session: session, prompt: prompt, context: nil)
+                _ = self.sendTurnInternal(session: session, prompt: prompt, context: nil)
             }
         }
 

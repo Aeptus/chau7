@@ -331,8 +331,8 @@ final class TerminalControlService {
             let stabilityThresholdMs = min(maxWaitMs, 500)
             let pollIntervalMs = 250
             let deadline = DispatchTime.now() + .milliseconds(maxWaitMs)
-            var previousFingerprint: (Int, Data)? = nil
-            var stableSince: DispatchTime? = nil
+            var previousFingerprint: (Int, Data)?
+            var stableSince: DispatchTime?
 
             while DispatchTime.now() < deadline {
                 let fingerprint: (Int, Data)? = onMain {
