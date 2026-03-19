@@ -388,6 +388,10 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
     private var pendingCommandLine: String?
     private var promptSeenForPendingCommand = false
     private var commandFinishedNotified = false
+    /// True once the shell sends any OSC 133 marker. When set, heuristic
+    /// command detection (echo-based start, timeout-based finish) is suppressed
+    /// in favor of the authoritative shell signals.
+    private var hasShellIntegration = false
     private let terminationStateQueue = DispatchQueue(label: "com.chau7.terminal.termination")
     private var didHandleProcessTermination = false
     private var closeSessionRequested = false
@@ -576,8 +580,11 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
             DispatchQueue.main.async {
                 self.updateCurrentDirectory(directory)
             }
-            handlePromptDetected()
-            // Use the same cooldown-aware clearing as OSC 7 prompt detection
+            // When OSC 133 is active, it provides authoritative prompt signals —
+            // don't infer "at prompt" from directory changes (keep OSC 7 for CWD only).
+            if !hasShellIntegration {
+                handlePromptDetected()
+            }
             DispatchQueue.main.async { [weak self] in
                 self?.clearActiveAppAfterPrompt()
             }
@@ -585,9 +592,16 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
 
         view.onShellIntegrationEvent = { [weak self] event in
             guard let self = self else { return }
+            hasShellIntegration = true
             switch event {
-            case .promptStart: handlePromptDetected()
-            case .commandStart: isAtPrompt = false
+            case .promptStart:
+                handlePromptDetected()
+            case .commandStart:
+                isAtPrompt = false
+                hasPendingCommand = true
+                commandStartedAt = Date()
+                commandFinishedNotified = false
+                promptSeenForPendingCommand = false
             case .commandExecuted:
                 shellEventDetector.commandStarted(command: pendingCommandLine, in: currentDirectory)
                 if isGitRepo {
@@ -598,6 +612,8 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
             case .commandFinished(let exitCode):
                 guard !commandFinishedNotified else { return }
                 commandFinishedNotified = true
+                hasPendingCommand = false
+                promptSeenForPendingCommand = true
                 shellEventDetector.commandFinished(exitCode: Int(exitCode), command: pendingCommandLine)
                 if isGitRepo {
                     let dir = currentDirectory
@@ -1497,11 +1513,15 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
 
         let persistedCommand = SensitiveInputGuard.sanitizedCommandForPersistence(trimmed)
         pendingCommandLine = persistedCommand
-        promptSeenForPendingCommand = false
-        commandFinishedNotified = false
-        isAtPrompt = false
 
-        shellEventDetector.commandStarted(command: persistedCommand, in: currentDirectory)
+        // When the shell sends OSC 133 markers, it handles the command lifecycle
+        // authoritatively — skip the heuristic echo-based detection.
+        if !hasShellIntegration {
+            promptSeenForPendingCommand = false
+            commandFinishedNotified = false
+            isAtPrompt = false
+            shellEventDetector.commandStarted(command: persistedCommand, in: currentDirectory)
+        }
         trackAIResumeMetadata(from: trimmed)
         updateActiveAppName(from: trimmed)
         // Command-based detection has had its chance — release the output detection gate.
@@ -1545,28 +1565,31 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
             let latestIdleFor = Date().timeIntervalSince(latestActivity)
             let runningFor = Date().timeIntervalSince(commandStartedAt)
 
-            // Check for "stuck" - running for too long without recent output
-            // Only applies to .running status, not waitingForInput
-            if status == .running, runningFor >= stuckSeconds {
-                let outputIdleFor = Date().timeIntervalSince(lastOutputAt)
-                if outputIdleFor >= stuckSeconds {
-                    status = .stuck
-                    Log.info("Command marked as stuck after \(Int(runningFor))s")
-                    return
-                }
-            }
-
-            // Prefer prompt-based completion, but fall back after a long idle if prompt updates are missing.
-            if !promptSeenForPendingCommand {
-                if latestIdleFor >= fallbackCompletionSeconds {
-                    promptSeenForPendingCommand = true
-                    if !commandFinishedNotified {
-                        commandFinishedNotified = true
-                        shellEventDetector.commandFinished(exitCode: nil, command: pendingCommandLine)
+            // When OSC 133 is active, the shell tells us exactly when commands
+            // finish — skip the timeout-based "stuck" and "fallback completion" heuristics.
+            if !hasShellIntegration {
+                // Check for "stuck" - running for too long without recent output
+                if status == .running, runningFor >= stuckSeconds {
+                    let outputIdleFor = Date().timeIntervalSince(lastOutputAt)
+                    if outputIdleFor >= stuckSeconds {
+                        status = .stuck
+                        Log.info("Command marked as stuck after \(Int(runningFor))s")
+                        return
                     }
-                    Log.info("Fallback completion after \(Int(latestIdleFor))s without prompt")
-                } else {
-                    return
+                }
+
+                // Fall back after a long idle if prompt updates are missing.
+                if !promptSeenForPendingCommand {
+                    if latestIdleFor >= fallbackCompletionSeconds {
+                        promptSeenForPendingCommand = true
+                        if !commandFinishedNotified {
+                            commandFinishedNotified = true
+                            shellEventDetector.commandFinished(exitCode: nil, command: pendingCommandLine)
+                        }
+                        Log.info("Fallback completion after \(Int(latestIdleFor))s without prompt")
+                    } else {
+                        return
+                    }
                 }
             }
 

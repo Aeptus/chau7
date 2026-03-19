@@ -299,6 +299,13 @@ struct Chau7App: App {
                     }
                     .keyboardShortcut("[", modifiers: [.command, .option])
                 }
+
+                Divider()
+
+                Button("Show Changed Files") {
+                    appDelegate.showChangedFiles()
+                }
+                .keyboardShortcut("g", modifiers: [.command, .shift])
             }
 
             // MARK: - Window Menu
