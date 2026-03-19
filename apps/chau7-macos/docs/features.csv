@@ -209,6 +209,7 @@ Editor,Relative/Hybrid Line Numbers,"Absolute, relative, or hybrid line numbers 
 Profiles,Context-Aware Auto-Switch,Auto-switch settings profile on directory change based on configured rules,Shipped,No
 Settings,Keybindings JSON Export/Import,Standalone export/import for keybindings separate from full settings,Shipped,No
 Networking,Custom API Pricing,~/.chau7/pricing.json overrides built-in model pricing table,Shipped,No
+Terminal,OSC 133 Shell Integration,"FinalTerm shell integration: prompt/command/output region markers with exit codes, parsed in Rust",Shipped,Yes
 Safety,Process Exit Confirmation,Cmd+Q lists running process names and confirms before quitting,Shipped,No
 Terminal,Font Ligature Rendering,"Multi-character ligature shaping via CoreText (Fira Code, JetBrains Mono, etc.). Configurable toggle.",Shipped,No
 API Analytics,TTFT Latency Tracking,"Time-to-first-token measured per API call via firstByteReader wrapper, stored in SQLite",Shipped,Yes
