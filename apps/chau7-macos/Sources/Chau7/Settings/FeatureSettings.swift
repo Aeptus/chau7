@@ -485,8 +485,6 @@ final class FeatureSettings: ObservableObject {
         var shellEventConfig: ShellEventConfig
         var appEventConfig: AppEventConfig
         var hasRequestedNotificationPermission: Bool
-        var isTmuxIntegrationEnabled: Bool
-        var isTmuxAutoAttachEnabled: Bool
         var errorExplainEnabled: Bool
         var isCTOEnabled: Bool
         var ctoPrefix: String
@@ -1885,14 +1883,6 @@ final class FeatureSettings: ObservableObject {
 
     // MARK: - Tmux Integration
 
-    @Published var isTmuxIntegrationEnabled: Bool {
-        didSet { UserDefaults.standard.set(isTmuxIntegrationEnabled, forKey: Keys.tmuxIntegrationEnabled) }
-    }
-
-    @Published var isTmuxAutoAttachEnabled: Bool {
-        didSet { UserDefaults.standard.set(isTmuxAutoAttachEnabled, forKey: Keys.tmuxAutoAttachEnabled) }
-    }
-
     // MARK: - LLM / Error Explanation
 
     @Published var errorExplainEnabled: Bool {
@@ -2089,9 +2079,6 @@ final class FeatureSettings: ObservableObject {
         static let appEventConfig = "app.eventConfig"
         /// Notification Permission (persistent tracking)
         static let hasRequestedNotificationPermission = "notifications.hasRequestedPermission"
-        // Tmux Integration
-        static let tmuxIntegrationEnabled = "feature.tmuxIntegrationEnabled"
-        static let tmuxAutoAttachEnabled = "feature.tmuxAutoAttachEnabled"
         /// LLM / Error Explanation
         static let errorExplainEnabled = "feature.errorExplainEnabled"
         // CTO Integration
@@ -2451,8 +2438,6 @@ final class FeatureSettings: ObservableObject {
         self.shellEventConfig = integration.shellEventConfig
         self.appEventConfig = integration.appEventConfig
         self.hasRequestedNotificationPermission = integration.hasRequestedNotificationPermission
-        self.isTmuxIntegrationEnabled = integration.isTmuxIntegrationEnabled
-        self.isTmuxAutoAttachEnabled = integration.isTmuxAutoAttachEnabled
         self.errorExplainEnabled = integration.errorExplainEnabled
         self.isCTOEnabled = integration.isCTOEnabled
         self.ctoPrefix = integration.ctoPrefix
@@ -2531,8 +2516,6 @@ final class FeatureSettings: ObservableObject {
             shellEventConfig: shellEventConfig,
             appEventConfig: appEventConfig,
             hasRequestedNotificationPermission: defaults.object(forKey: Keys.hasRequestedNotificationPermission) as? Bool ?? false,
-            isTmuxIntegrationEnabled: defaults.object(forKey: Keys.tmuxIntegrationEnabled) as? Bool ?? false,
-            isTmuxAutoAttachEnabled: defaults.object(forKey: Keys.tmuxAutoAttachEnabled) as? Bool ?? false,
             errorExplainEnabled: defaults.object(forKey: Keys.errorExplainEnabled) as? Bool ?? false,
             isCTOEnabled: defaults.object(forKey: Keys.ctoEnabled) as? Bool ?? false,
             ctoPrefix: defaults.string(forKey: Keys.ctoPrefix) ?? "",

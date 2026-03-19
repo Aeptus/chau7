@@ -318,7 +318,6 @@ Registration only occurs if the AI tool's config directory exists — no files a
 
 - Read-only remote terminal sharing with viewer approval flow.
 - Cloudflare Workers relay — no port forwarding required.
-- Tmux integration — map tmux windows/panes to Chau7 tabs.
 - Session recording with timestamps and timeline scrubber.
 - Remote activity projection — macOS reduces AI event streams into one authoritative activity state for remote clients.
 - iPhone Live Activity / Dynamic Island support via the Chau7 Remote app for running, waiting-input, completed, and failed states.

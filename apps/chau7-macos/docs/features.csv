@@ -154,7 +154,6 @@ SSH & Profiles,Per-Profile Customization,"Each profile gets its own color scheme
 Remote & Collaboration,Remote Terminal Viewing,Share a read-only view of your terminal — others see what you see,Experimental,Yes
 Remote & Collaboration,Viewer Approval Flow,Approve or deny viewer connections — you control access,Experimental,No
 Remote & Collaboration,Cloudflare Relay,Cloudflare Workers relay — no port forwarding required,Experimental,Yes
-Remote & Collaboration,Tmux Integration,Map tmux windows and panes to Chau7 tabs seamlessly,Experimental,Yes
 Remote & Collaboration,Remote Activity Projection,macOS reduces AI event streams into one remote activity state for clients,Shipped,Yes
 Remote & Collaboration,iPhone Live Activity Support,Chau7 Remote renders the current AI task in a native Live Activity and Dynamic Island,Shipped,Yes
 Remote & Collaboration,Interactive Remote Prompts,"Detected Claude and Codex terminal prompts appear in the iPhone Approvals tab with option buttons that reply to the correct tab. Destructive options require a second confirmation before sending.",Shipped,Yes

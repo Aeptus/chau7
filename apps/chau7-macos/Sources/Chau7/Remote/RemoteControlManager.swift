@@ -109,6 +109,7 @@ final class RemoteControlManager: ObservableObject {
     func recordOutput(_ data: Data, sessionIdentifier: String) {
         guard isIPCConnected, connectedClientStreamMode == .full else { return }
         guard let tabID = tabRegistry.tabID(forSessionIdentifier: sessionIdentifier) else { return }
+        guard tabID == selectedRemoteTabID() else { return }
         pendingOutputByTabID.append(data, to: tabID) { existing, chunk in
             existing.append(chunk)
         }
@@ -751,24 +752,6 @@ final class RemoteControlManager: ObservableObject {
 
     private func scheduleBackgroundSnapshotPrefetch() {
         cancelBackgroundSnapshotPrefetch()
-        guard connectedClientStreamMode == .full, isIPCConnected, let overlayModel else { return }
-
-        let backgroundTabIDs = tabRegistry.backgroundTabIDs(
-            for: remoteControllableTabs(from: overlayModel).map(\.id),
-            selectedTabID: overlayModel.selectedTabID
-        )
-
-        guard !backgroundTabIDs.isEmpty else { return }
-
-        backgroundSnapshotTask = Task { @MainActor [weak self] in
-            for (index, tabID) in backgroundTabIDs.enumerated() {
-                guard let self, !Task.isCancelled, isIPCConnected else { return }
-                if index > 0 {
-                    try? await Task.sleep(for: .milliseconds(75))
-                }
-                sendSnapshot(for: tabID)
-            }
-        }
     }
 
     private func cancelBackgroundSnapshotPrefetch() {
@@ -796,16 +779,20 @@ final class RemoteControlManager: ObservableObject {
         outputFlushTask = nil
         guard connectedClientStreamMode == .full, isIPCConnected, !pendingOutputByTabID.isEmpty else { return }
 
-        let selectedRemoteTabID = overlayModel.flatMap { tabRegistry.tabID(for: $0.selectedTabID) }
+        let selectedRemoteTabID = selectedRemoteTabID()
 
         for (tabID, payload) in pendingOutputByTabID.drainAll(sortedByTabID: true) {
+            guard tabID == selectedRemoteTabID else { continue }
             let token = FeatureProfiler.shared.begin(.remoteOutput, bytes: payload.count)
             sendFrame(type: .output, tabID: tabID, payload: payload)
             FeatureProfiler.shared.end(token)
-            if tabID == selectedRemoteTabID {
-                sendGridSnapshot(for: tabID)
-            }
+            sendGridSnapshot(for: tabID)
         }
+    }
+
+    private func selectedRemoteTabID() -> UInt32? {
+        guard let overlayModel else { return nil }
+        return tabRegistry.tabID(for: overlayModel.selectedTabID)
     }
 
     private func remoteControllableTabs(from overlayModel: OverlayTabsModel) -> [OverlayTab] {

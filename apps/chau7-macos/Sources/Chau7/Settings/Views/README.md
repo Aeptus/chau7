@@ -27,7 +27,6 @@ SwiftUI settings panels for each feature area, presented in the preferences wind
 | `SSHProfilesSettingsView.swift` | SSH profile list with import from ~/.ssh/config |
 | `TabsSettingsView.swift` | Tab behavior, close confirmation, and new tab position |
 | `TerminalSettingsView.swift` | Shell selection, scrollback, and terminal emulation options |
-| `TmuxSettingsView.swift` | Tmux control mode integration settings |
 | `TriggerActionsSettingsView.swift` | Notification trigger-to-action mapping editor |
 | `WindowsSettingsView.swift` | Window behavior, restore, and multi-monitor settings |
 
