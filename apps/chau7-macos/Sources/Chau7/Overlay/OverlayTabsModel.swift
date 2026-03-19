@@ -307,11 +307,10 @@ struct ClosedTabEntry {
     let closedAt: Date
 }
 
-// swiftlint:disable:next type_body_length
 /// Manages terminal tabs, search, and broadcast mode for the overlay window.
 /// - Note: Thread Safety - @Published properties must be modified on main thread.
 ///   All methods assume main thread execution.
-final class OverlayTabsModel: ObservableObject {
+final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_body_length
     @Published var tabs: [OverlayTab]
     @Published var selectedTabID: UUID
     @Published var isSearchVisible = false
