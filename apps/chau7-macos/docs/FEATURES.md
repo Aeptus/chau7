@@ -179,7 +179,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 
 - **TLS/WSS proxy** — Go-based `chau7-proxy` intercepts API calls to Claude, OpenAI (Codex), Gemini, Anthropic with TLS and WebSocket support.
 - **Token counting & cost calculation** — input/output tokens per call with aggregate cost.
-- **Latency tracking** — API response times for performance analysis.
+- **Latency tracking** — total request duration and time-to-first-token (TTFT) per API call.
 - **Task detection & assessment** — auto-detect AI task candidates with confidence scoring; approve or fail with notes.
 - **Baseline estimator** — calculate token savings from context caching.
 - **Analytics dashboard** — command stats, error rates, API usage, and timing.
