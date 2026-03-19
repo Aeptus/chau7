@@ -108,7 +108,7 @@
             <div class="section-inner prose">
                 <h2>What is Full VT100/xterm Emulation in Chau7 terminal?</h2>
                 <p>Full VT100/xterm Emulation in Chau7 means the terminal implements the complete VT100, VT220, and xterm control sequence specification. Chau7 handles CSI sequences for cursor movement, screen manipulation, and character attributes. Chau7 handles OSC sequences for window titles, color palette changes, and clipboard access. Chau7 handles DCS sequences for DECRQSS and Sixel graphics.</p>
-                <p>Chau7 also implements all standard mode settings including DECCKM, DECAWM, DECOM, and dozens more.</p>
+                <p>Chau7 also implements all standard mode settings including DECCKM, DECAWM, DECOM, and dozens more. The Rust parser is validated by 50 dedicated tests covering CSI cursor movement, erase sequences, SGR colors, OSC title setting, alternate screen, scroll regions, UTF-8 wide characters, bracketed paste, insert/delete characters, and tab stops.</p>
             </div>
         </section>
 
