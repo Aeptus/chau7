@@ -151,6 +151,19 @@ else
     log_warn "Proxy binary not found at $PROXY_BIN (run chau7-proxy/build.sh first)"
 fi
 
+# Copy or build the remote agent helper
+REMOTE_AGENT_BIN="$ROOT_DIR/build/remote-agent/chau7-remote"
+if command -v go >/dev/null 2>&1; then
+    run_cmd bash "$ROOT_DIR/Scripts/build-remote-agent.sh" --output "$REMOTE_AGENT_BIN"
+fi
+if [[ -f "$REMOTE_AGENT_BIN" ]]; then
+    run_cmd cp "$REMOTE_AGENT_BIN" "$CONTENTS/Resources/chau7-remote"
+    run_cmd chmod 755 "$CONTENTS/Resources/chau7-remote"
+    log_ok "Copied remote agent: chau7-remote"
+else
+    log_warn "Remote agent not found at $REMOTE_AGENT_BIN (run ./Scripts/build-remote-agent.sh first)"
+fi
+
 # Compile and bundle the MCP bridge (Swift → native binary)
 MCP_BRIDGE_SRC="$ROOT_DIR/../../tools/chau7-mcp-bridge/main.swift"
 MCP_BRIDGE_BIN="$CONTENTS/Resources/chau7-mcp-bridge"

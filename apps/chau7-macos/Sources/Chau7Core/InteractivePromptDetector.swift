@@ -110,7 +110,7 @@ public enum InteractivePromptDetector {
         return RemoteInteractivePromptOption(
             id: token,
             label: label,
-            response: token + "\n",
+            response: token + "\r",
             isDestructive: isDestructive
         )
     }

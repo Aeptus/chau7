@@ -3,11 +3,13 @@ import SwiftUI
 /// Shared keys and defaults for @AppStorage, preventing drift between views.
 enum AppSettings {
     static let holdToSendKey = "hold_to_send"
-    static let holdToSendDefault = true
+    static let holdToSendDefault = false
     static let appendNewlineKey = "append_newline"
     static let appendNewlineDefault = true
     static let renderANSIKey = "render_ansi"
     static let renderANSIDefault = false
+    static let experimentalTerminalRendererKey = "experimental_terminal_renderer"
+    static let experimentalTerminalRendererDefault = false
 }
 
 struct SettingsView: View {
@@ -17,10 +19,32 @@ struct SettingsView: View {
     @AppStorage(AppSettings.holdToSendKey) private var holdToSend = AppSettings.holdToSendDefault
     @AppStorage(AppSettings.appendNewlineKey) private var appendNewline = AppSettings.appendNewlineDefault
     @AppStorage(AppSettings.renderANSIKey) private var renderANSI = AppSettings.renderANSIDefault
+    @AppStorage(AppSettings.experimentalTerminalRendererKey)
+    private var experimentalTerminalRenderer = AppSettings.experimentalTerminalRendererDefault
 
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    HStack(spacing: 14) {
+                        Image("Chau7Logo")
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFit()
+                            .frame(width: 56, height: 56)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Chau7 Remote")
+                                .font(.headline)
+                            Text("Connected access to your Chau7 workspace")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
                 Section("Input") {
                     Toggle("Hold to Send", isOn: $holdToSend)
                     Toggle("Append Newline", isOn: $appendNewline)
@@ -28,6 +52,7 @@ struct SettingsView: View {
 
                 Section("Display") {
                     Toggle("Render ANSI Colors", isOn: $renderANSI)
+                    Toggle("Experimental Terminal Renderer", isOn: $experimentalTerminalRenderer)
                 }
 
                 Section("Connection") {

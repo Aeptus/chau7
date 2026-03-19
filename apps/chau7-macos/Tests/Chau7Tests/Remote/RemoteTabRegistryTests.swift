@@ -13,6 +13,8 @@ final class RemoteTabRegistryTests: XCTestCase {
                     id: firstID,
                     sessionIdentifier: "session-a",
                     title: "A",
+                    projectName: nil,
+                    branchName: nil,
                     isActive: true,
                     isMCPControlled: false
                 ),
@@ -20,6 +22,8 @@ final class RemoteTabRegistryTests: XCTestCase {
                     id: secondID,
                     sessionIdentifier: "session-b",
                     title: "B",
+                    projectName: nil,
+                    branchName: nil,
                     isActive: false,
                     isMCPControlled: true
                 )
@@ -35,6 +39,8 @@ final class RemoteTabRegistryTests: XCTestCase {
                     id: secondID,
                     sessionIdentifier: "session-b",
                     title: "B2",
+                    projectName: nil,
+                    branchName: nil,
                     isActive: true,
                     isMCPControlled: true
                 ),
@@ -42,6 +48,8 @@ final class RemoteTabRegistryTests: XCTestCase {
                     id: firstID,
                     sessionIdentifier: "session-a",
                     title: "A2",
+                    projectName: nil,
+                    branchName: nil,
                     isActive: false,
                     isMCPControlled: false
                 )
@@ -52,7 +60,7 @@ final class RemoteTabRegistryTests: XCTestCase {
         XCTAssertEqual(registry.tabID(for: secondID), secondTabID)
         XCTAssertEqual(registry.tabID(forSessionIdentifier: "session-a"), firstTabID)
         XCTAssertEqual(registry.uuid(for: secondTabID), secondID)
-        XCTAssertEqual(rebuilt.map(\.tabID), [secondTabID, firstTabID])
+        XCTAssertEqual(rebuilt.map { $0.tabID }, [secondTabID, firstTabID])
     }
 
     func testBackgroundTabIDsExcludeSelectedTab() throws {
@@ -65,6 +73,8 @@ final class RemoteTabRegistryTests: XCTestCase {
                     id: firstID,
                     sessionIdentifier: "session-a",
                     title: "A",
+                    projectName: nil,
+                    branchName: nil,
                     isActive: true,
                     isMCPControlled: false
                 ),
@@ -72,6 +82,8 @@ final class RemoteTabRegistryTests: XCTestCase {
                     id: secondID,
                     sessionIdentifier: "session-b",
                     title: "B",
+                    projectName: nil,
+                    branchName: nil,
                     isActive: false,
                     isMCPControlled: false
                 )

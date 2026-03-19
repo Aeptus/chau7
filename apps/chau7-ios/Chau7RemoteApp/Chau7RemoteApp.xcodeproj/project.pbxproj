@@ -18,6 +18,9 @@
 		4A94D78731F2A00100A1B001 /* RemoteActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D78131F2A00100A1B001 /* RemoteActivityAttributes.swift */; };
 		4A94D78E31F2A00100A1B001 /* Chau7RemoteWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 4A94D78931F2A00100A1B001 /* Chau7RemoteWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4A94D79031F2A00100A1B001 /* RemoteTerminalOutputStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D78F31F2A00100A1B001 /* RemoteTerminalOutputStore.swift */; };
+		4A94D79131F2A00100A1B001 /* RemoteRustTerminalPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79231F2A00100A1B001 /* RemoteRustTerminalPlayback.swift */; };
+		4A94D79331F2A00100A1B001 /* RemoteTerminalRendererStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79431F2A00100A1B001 /* RemoteTerminalRendererStore.swift */; };
+		4A94D79531F2A00100A1B001 /* RemoteTerminalRendererView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94D79631F2A00100A1B001 /* RemoteTerminalRendererView.swift */; };
 		84B3034D2F3107BB00A7D19E /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B303492F3107BB00A7D19E /* KeychainStore.swift */; };
 		84B3034E2F3107BB00A7D19E /* RemoteCrypto.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B3034C2F3107BB00A7D19E /* RemoteCrypto.swift */; };
 		84B3034F2F3107BB00A7D19E /* PairingSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B3034A2F3107BB00A7D19E /* PairingSheetView.swift */; };
@@ -63,6 +66,9 @@
 		4A94D78831F2A00100A1B001 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		4A94D78931F2A00100A1B001 /* Chau7RemoteWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = Chau7RemoteWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		4A94D78F31F2A00100A1B001 /* RemoteTerminalOutputStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalOutputStore.swift; sourceTree = "<group>"; };
+		4A94D79231F2A00100A1B001 /* RemoteRustTerminalPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteRustTerminalPlayback.swift; sourceTree = "<group>"; };
+		4A94D79431F2A00100A1B001 /* RemoteTerminalRendererStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalRendererStore.swift; sourceTree = "<group>"; };
+		4A94D79631F2A00100A1B001 /* RemoteTerminalRendererView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalRendererView.swift; sourceTree = "<group>"; };
 		84B3033A2F31076300A7D19E /* Chau7RemoteApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Chau7RemoteApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		84B303482F3107BB00A7D19E /* Chau7RemoteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chau7RemoteApp.swift; sourceTree = "<group>"; };
 		84B303492F3107BB00A7D19E /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
@@ -108,6 +114,9 @@
 				84B3034B2F3107BB00A7D19E /* RemoteClient.swift */,
 				84B3034C2F3107BB00A7D19E /* RemoteCrypto.swift */,
 				4A94D77131F2A00100A1B001 /* RemoteModels.swift */,
+				4A94D79231F2A00100A1B001 /* RemoteRustTerminalPlayback.swift */,
+				4A94D79431F2A00100A1B001 /* RemoteTerminalRendererStore.swift */,
+				4A94D79631F2A00100A1B001 /* RemoteTerminalRendererView.swift */,
 				4A94D78F31F2A00100A1B001 /* RemoteTerminalOutputStore.swift */,
 				4A94D77331F2A00100A1B001 /* TerminalView.swift */,
 				4A94D77531F2A00100A1B001 /* ApprovalsView.swift */,
@@ -149,6 +158,7 @@
 				84B303362F31076300A7D19E /* Sources */,
 				84B303372F31076300A7D19E /* Frameworks */,
 				84B303382F31076300A7D19E /* Resources */,
+				4A94D79731F2A00100A1B001 /* Build Rust Terminal */,
 				F1A4000731F2A00100A1B001 /* Embed App Extensions */,
 			);
 			buildRules = (
@@ -245,6 +255,28 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		4A94D79731F2A00100A1B001 /* Build Rust Terminal */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust Terminal";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "\"$PROJECT_DIR/../Scripts/build-rust-terminal-ios.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		84B303362F31076300A7D19E /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -255,6 +287,9 @@
 				4A94D78431F2A00100A1B001 /* RemoteLiveActivityManager.swift in Sources */,
 				4A94D78031F2A00100A1B001 /* RemoteActivityURLAction.swift in Sources */,
 				4A94D77231F2A00100A1B001 /* RemoteModels.swift in Sources */,
+				4A94D79131F2A00100A1B001 /* RemoteRustTerminalPlayback.swift in Sources */,
+				4A94D79331F2A00100A1B001 /* RemoteTerminalRendererStore.swift in Sources */,
+				4A94D79531F2A00100A1B001 /* RemoteTerminalRendererView.swift in Sources */,
 				4A94D79031F2A00100A1B001 /* RemoteTerminalOutputStore.swift in Sources */,
 				4A94D77831F2A00100A1B001 /* SettingsView.swift in Sources */,
 				4A94D77431F2A00100A1B001 /* TerminalView.swift in Sources */,
@@ -410,12 +445,15 @@
 		84B303462F31076400A7D19E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APS_ENVIRONMENT = development;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Chau7RemoteApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = N69N8XYVF6;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -427,7 +465,15 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../BuildArtifacts/rust/lib/$(PLATFORM_NAME)",
+				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lchau7_terminal",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.chau7.remote.Chau7RemoteApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -443,12 +489,15 @@
 		84B303472F31076400A7D19E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				APS_ENVIRONMENT = production;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Chau7RemoteApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = N69N8XYVF6;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -460,7 +509,15 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/../BuildArtifacts/rust/lib/$(PLATFORM_NAME)",
+				);
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lchau7_terminal",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.chau7.remote.Chau7RemoteApp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

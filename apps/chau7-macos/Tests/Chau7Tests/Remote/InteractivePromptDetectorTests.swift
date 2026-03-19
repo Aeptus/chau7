@@ -21,7 +21,7 @@ final class InteractivePromptDetectorTests: XCTestCase {
         XCTAssertEqual(prompt.prompt, "Do you want to proceed?")
         XCTAssertEqual(prompt.options.map(\.id), ["1", "2"])
         XCTAssertEqual(prompt.options.map(\.label), ["Yes", "No"])
-        XCTAssertEqual(prompt.options.map(\.response), ["1\n", "2\n"])
+        XCTAssertEqual(prompt.options.map(\.response), ["1\r", "2\r"])
         XCTAssertTrue(prompt.options[1].isDestructive)
     }
 

@@ -81,9 +81,7 @@ final class AITerminalLogSession {
         guard !inputBuffer.isEmpty else { return }
         let text = String(decoding: inputBuffer, as: UTF8.self)
         inputBuffer.removeAll(keepingCapacity: true)
-        let sanitized = text.replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "\r", with: " ")
-        guard !sanitized.isEmpty else { return }
+        guard let sanitized = SensitiveInputGuard.sanitizedInputLineForPersistence(text) else { return }
         let line = "[INPUT] \(sanitized)\n"
         if let payload = line.data(using: .utf8) {
             _ = appendLocked(payload)

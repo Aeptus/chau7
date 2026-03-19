@@ -636,7 +636,12 @@ final class TerminalControlService {
             requestID: requestID,
             command: command,
             flaggedCommand: flaggedCommand,
-            timestamp: ISO8601DateFormatter().string(from: Date())
+            timestamp: ISO8601DateFormatter().string(from: Date()),
+            tabTitle: nil,
+            toolName: nil,
+            projectName: nil,
+            branchName: nil,
+            sessionID: nil
         )
         if let data = try? JSONEncoder().encode(payload) {
             onMainActor {
@@ -751,12 +756,22 @@ struct ApprovalRequestPayload: Codable {
     let command: String
     let flaggedCommand: String
     let timestamp: String
+    let tabTitle: String?
+    let toolName: String?
+    let projectName: String?
+    let branchName: String?
+    let sessionID: String?
 
     enum CodingKeys: String, CodingKey {
         case requestID = "request_id"
         case command
         case flaggedCommand = "flagged_command"
         case timestamp
+        case tabTitle = "tab_title"
+        case toolName = "tool_name"
+        case projectName = "project_name"
+        case branchName = "branch_name"
+        case sessionID = "session_id"
     }
 }
 

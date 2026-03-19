@@ -77,6 +77,10 @@ protocol TerminalViewLike: NSView {
     /// Each line is newline-terminated. Trailing spaces on each line are trimmed.
     func getBufferAsData() -> Data?
 
+    /// Returns a structured visible-grid snapshot for high-fidelity remote rendering.
+    /// Implementations may return nil when no structured snapshot is available.
+    func captureRemoteGridSnapshotPayload() -> Data?
+
     /// Get the text content of a specific row in absolute buffer coordinates.
     /// Row 0 is the first line in scrollback history.
     /// Returns empty string if the row is out of range.
@@ -190,6 +194,12 @@ protocol TerminalViewLike: NSView {
     /// Returns true when the PTY has echo disabled (e.g., password prompt, passphrase entry).
     /// Commands entered while echo is disabled should NOT be recorded in history.
     var isPtyEchoDisabled: Bool { get }
+}
+
+extension TerminalViewLike {
+    func captureRemoteGridSnapshotPayload() -> Data? {
+        nil
+    }
 }
 
 // MARK: - RustTerminalView Conformance

@@ -53,6 +53,16 @@ fi
 cd "$ROOT_DIR"
 info "Go proxy built (trimpath + stripped)"
 
+# ── 1b. Go remote agent (bundled into app resources) ──
+info "Building remote agent..."
+REMOTE_AGENT_OUT="$ROOT_DIR/build/remote-agent/chau7-remote"
+REMOTE_AGENT_ARGS=(--output "$REMOTE_AGENT_OUT" --trimpath --strip)
+if $UNIVERSAL; then
+    REMOTE_AGENT_ARGS+=(--universal)
+fi
+bash "$ROOT_DIR/Scripts/build-remote-agent.sh" "${REMOTE_AGENT_ARGS[@]}"
+info "Remote agent built"
+
 # ── 2. Rust libraries and helper binaries ──
 # --remap-path-prefix replaces the home dir in panic/file!() strings
 # that survive strip (they live in .rodata, not debug sections).
@@ -78,10 +88,19 @@ info "Assembling app bundle..."
 CHAU7_LOG_SUPPRESS_HEADER=1 BUNDLE_IDENTIFIER="com.chau7.app" \
     "$ROOT_DIR/Scripts/build-app.sh" "$BUILD_DIR" "$DIST_DIR"
 
+if [[ -f "$REMOTE_AGENT_OUT" ]]; then
+    cp "$REMOTE_AGENT_OUT" "$APP_DIR/Contents/Resources/chau7-remote"
+    chmod 755 "$APP_DIR/Contents/Resources/chau7-remote"
+    info "Bundled remote agent"
+else
+    error "Remote agent missing at $REMOTE_AGENT_OUT"
+fi
+
 # ── 5. Strip debug symbols from all binaries ──
 info "Stripping debug symbols..."
 BINARIES=(
     "$APP_DIR/Contents/MacOS/$APP_NAME"
+    "$APP_DIR/Contents/Resources/chau7-remote"
     "$APP_DIR/Contents/Resources/chau7-proxy"
     "$APP_DIR/Contents/Resources/libchau7_terminal.dylib"
     "$APP_DIR/Contents/Resources/libchau7_parse.dylib"
@@ -107,6 +126,7 @@ info "All binaries stripped"
 info "Checking for personal data leaks..."
 LEAKS=$(strings "$APP_DIR/Contents/MacOS/$APP_NAME" \
              "$APP_DIR/Contents/Resources/chau7-proxy" \
+             "$APP_DIR/Contents/Resources/chau7-remote" \
              "$APP_DIR/Contents/Resources/chau7-optim" \
              "$APP_DIR/Contents/Resources/chau7-md" \
              "$APP_DIR/Contents/Resources/libchau7_terminal.dylib" \

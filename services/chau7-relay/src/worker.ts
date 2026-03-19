@@ -5,6 +5,9 @@ export { SessionDO };
 interface Env {
   SESSION: DurableObjectNamespace;
   RELAY_SECRET: string;
+  APNS_TEAM_ID?: string;
+  APNS_KEY_ID?: string;
+  APNS_PRIVATE_KEY?: string;
 }
 
 async function verifyToken(
@@ -18,7 +21,6 @@ async function verifyToken(
   const [timestamp, signature] = parts;
   const ts = parseInt(timestamp, 10);
   if (isNaN(ts)) return false;
-  // Reject tokens older than 5 minutes
   const age = Math.abs(Date.now() / 1000 - ts);
   if (age > 300) return false;
 
@@ -39,38 +41,73 @@ async function verifyToken(
   return expected === signature;
 }
 
+function extractBearerToken(request: Request): string | null {
+  const header = request.headers.get("Authorization") ?? "";
+  if (!header.startsWith("Bearer ")) {
+    return null;
+  }
+  return header.slice("Bearer ".length).trim() || null;
+}
+
+async function authenticateRequest(
+  request: Request,
+  env: Env,
+  deviceId: string,
+  role: string
+): Promise<Response | null> {
+  if (!env.RELAY_SECRET || env.RELAY_SECRET === "CHANGE_ME_IN_PRODUCTION") {
+    return null;
+  }
+  const token = extractBearerToken(request) ?? new URL(request.url).searchParams.get("token");
+  if (!token) {
+    return new Response("Missing token", { status: 401 });
+  }
+  const valid = await verifyToken(token, deviceId, role, env.RELAY_SECRET);
+  if (!valid) {
+    return new Response("Invalid token", { status: 403 });
+  }
+  return null;
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    if (!url.pathname.startsWith("/connect/")) {
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length < 2) {
       return new Response("Not Found", { status: 404 });
     }
 
-    const parts = url.pathname.split("/");
-    const deviceId = parts[2];
-    if (!deviceId) {
-      return new Response("Missing device id", { status: 400 });
-    }
+    const action = parts[0];
 
-    const role = url.searchParams.get("role");
-    if (role !== "mac" && role !== "ios") {
-      return new Response("Missing role", { status: 400 });
-    }
-
-    // Authenticate the connection
-    if (env.RELAY_SECRET && env.RELAY_SECRET !== "CHANGE_ME_IN_PRODUCTION") {
-      const token = url.searchParams.get("token");
-      if (!token) {
-        return new Response("Missing token", { status: 401 });
+    if (action === "connect") {
+      const deviceId = parts[1];
+      if (!deviceId) {
+        return new Response("Missing device id", { status: 400 });
       }
-      const valid = await verifyToken(token, deviceId, role, env.RELAY_SECRET);
-      if (!valid) {
-        return new Response("Invalid token", { status: 403 });
+      const role = url.searchParams.get("role");
+      if (role !== "mac" && role !== "ios") {
+        return new Response("Missing role", { status: 400 });
       }
+      const authFailure = await authenticateRequest(request, env, deviceId, role);
+      if (authFailure) {
+        return authFailure;
+      }
+      const id = env.SESSION.idFromName(deviceId);
+      const stub = env.SESSION.get(id);
+      return stub.fetch(request);
     }
 
-    const id = env.SESSION.idFromName(deviceId);
-    const stub = env.SESSION.get(id);
-    return stub.fetch(request);
+    if (action === "push" && parts.length === 3) {
+      const targetDeviceID = parts[2];
+      const authFailure = await authenticateRequest(request, env, targetDeviceID, "mac");
+      if (authFailure) {
+        return authFailure;
+      }
+      const id = env.SESSION.idFromName(targetDeviceID);
+      const stub = env.SESSION.get(id);
+      return stub.fetch(request);
+    }
+
+    return new Response("Not Found", { status: 404 });
   }
 };

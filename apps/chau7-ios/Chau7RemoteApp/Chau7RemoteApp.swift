@@ -7,7 +7,8 @@ private let log = Logger(subsystem: "ch7", category: "App")
 @main
 struct Chau7RemoteApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @State private var client = RemoteClient()
+    @Environment(\.scenePhase) private var scenePhase
+    private let client = RemoteClient.shared
 
     var body: some Scene {
         WindowGroup {
@@ -20,6 +21,9 @@ struct Chau7RemoteApp: App {
                         client.connect()
                     }
                 }
+                .onChange(of: scenePhase) { _, newPhase in
+                    client.handleScenePhase(newPhase)
+                }
         }
     }
 }
@@ -27,6 +31,8 @@ struct Chau7RemoteApp: App {
 // MARK: - App Delegate (Notification Handling)
 
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
+    private static let approvalCategoryID = "MCP_APPROVAL"
+    private static let interactivePromptCategoryID = "INTERACTIVE_PROMPT"
 
     func application(
         _ application: UIApplication,
@@ -40,10 +46,16 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             } else if !granted {
                 log.info("Notification permission denied by user")
             }
+            Task { @MainActor in
+                RemoteClient.shared.updateNotificationAuthorization(isGranted: granted)
+            }
+            DispatchQueue.main.async {
+                application.registerForRemoteNotifications()
+            }
         }
         center.setNotificationCategories([
             UNNotificationCategory(
-                identifier: "MCP_APPROVAL",
+                identifier: Self.approvalCategoryID,
                 actions: [
                     UNNotificationAction(
                         identifier: "APPROVE", title: "Allow",
@@ -56,9 +68,43 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 ],
                 intentIdentifiers: [],
                 options: []
+            ),
+            UNNotificationCategory(
+                identifier: Self.interactivePromptCategoryID,
+                actions: [],
+                intentIdentifiers: [],
+                options: []
             )
         ])
         return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        let token = deviceToken.map { String(format: "%02x", $0) }.joined()
+        Task { @MainActor in
+            RemoteClient.shared.updatePushToken(token)
+        }
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: any Error
+    ) {
+        log.error("APNs registration failed: \(error.localizedDescription)")
+    }
+
+    func application(
+        _ application: UIApplication,
+        didReceiveRemoteNotification userInfo: [AnyHashable: Any],
+        fetchCompletionHandler completionHandler: @escaping (UIBackgroundFetchResult) -> Void
+    ) {
+        Task { @MainActor in
+            RemoteClient.shared.handlePushWake(userInfo: userInfo)
+            completionHandler(.newData)
+        }
     }
 
     func userNotificationCenter(
@@ -73,20 +119,29 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         didReceive response: UNNotificationResponse
     ) async {
         let userInfo = response.notification.request.content.userInfo
-        guard let requestID = userInfo["request_id"] as? String,
-              !requestID.isEmpty else { return }
-        let approved = response.actionIdentifier == "APPROVE"
         await MainActor.run {
-            NotificationCenter.default.post(
-                name: .approvalNotificationResponse, object: nil,
-                userInfo: ["request_id": requestID, "approved": approved]
-            )
+            switch response.actionIdentifier {
+            case "APPROVE", "DENY":
+                guard let requestID = userInfo["request_id"] as? String,
+                      !requestID.isEmpty else { return }
+                NotificationCenter.default.post(
+                    name: .approvalNotificationResponse,
+                    object: nil,
+                    userInfo: [
+                        "request_id": requestID,
+                        "approved": response.actionIdentifier == "APPROVE"
+                    ]
+                )
+            default:
+                NotificationCenter.default.post(name: .openApprovals, object: nil)
+            }
         }
     }
 }
 
 extension Notification.Name {
     static let approvalNotificationResponse = Notification.Name("ch7.approvalResponse")
+    static let openApprovals = Notification.Name("ch7.openApprovals")
 }
 
 // MARK: - Root View
@@ -119,6 +174,9 @@ struct RemoteRootView: View {
         }
         .onChange(of: approvalsBadgeCount) { oldCount, newCount in
             if newCount > oldCount { selectedTab = .approvals }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .openApprovals)) { _ in
+            selectedTab = .approvals
         }
         .sheet(isPresented: $isPairingPresented) {
             PairingSheetView(client: client)

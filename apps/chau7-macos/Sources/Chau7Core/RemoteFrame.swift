@@ -49,7 +49,6 @@ public struct RemoteFrame: Equatable, Sendable {
         self.payload = payload
     }
 
-    /// Typed frame type accessor.
     public var frameType: RemoteFrameType? {
         RemoteFrameType(rawValue: type)
     }
@@ -123,6 +122,7 @@ public enum RemoteFrameType: UInt8, CaseIterable, Sendable {
     case pairingInfo = 0x40
     case sessionStatus = 0x41
     case remoteTelemetry = 0x42
+    case clientState = 0x43
     case tabList = 0x10
     case tabSwitch = 0x11
     case activityState = 0x12

@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Remote Background Approval Mode**: The Chau7 Remote iPhone app now keeps a short-lived background session alive in approvals-only mode so pending approvals and detected interactive prompts can still sync after the app backgrounds.
+- **Remote Push Approval Delivery**: The Cloudflare relay and Go remote helper now support APNs-backed push registration and push-triggered approval delivery for the Chau7 Remote iPhone app when the phone is no longer actively connected.
+- **Experimental iPhone Terminal Renderer**: Chau7 Remote can now render a real Rust-backed terminal grid on iPhone behind a toggle, while keeping the text renderer as a fallback.
 - **Interactive Remote Prompts**: iPhone remote clients now surface detected Claude and Codex terminal prompts in the Approvals tab and can reply with a mapped option directly to the originating tab. Destructive options require a second confirmation on iPhone.
 - **MCP `tab_output` source=pty_log**: New `source` param on `tab_output` reads the ANSI-stripped PTY output log instead of the terminal buffer. Captures full AI session output including alternate-screen content that TUI-based tools discard on exit. Works for all AI providers.
 - **MCP `wait_for_stable_ms`**: New param on `tab_output` polls the terminal buffer until content settles, fixing the race where `is_at_prompt` fires before the agent's final response finishes rendering
@@ -57,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tab Reordering Preview**: Fixed dragged tabs causing sibling tabs to slide early with a visible offset in the toolbar
 
 ### Changed
+- **Chau7 Remote Branding**: The iPhone app now uses the Chau7 dock icon and in-app branding assets so macOS and iOS share the same visual identity.
 - **Queued Terminal Input Ordering**: Terminal sessions now preserve order between queued raw text input and queued key presses when a tab is created or restored before its view attaches
 - **Runtime Path Isolation**: Chau7-owned paths and keychain service names can now be redirected through `RuntimeIsolation`, allowing safe test builds without touching the main app's storage
 - **Output Detection Patterns**: Made patterns more specific (URLs with slashes, version strings, box-drawing banners) to reduce false positives

@@ -9,6 +9,7 @@ public enum RemoteClientTelemetryEventType: String, Codable, CaseIterable, Senda
     case tabSwitched = "tab_switched"
     case approvalReceived = "approval_received"
     case approvalResponded = "approval_responded"
+    case notificationOpened = "notification_opened"
     case protectedActionPrompted = "protected_action_prompted"
     case protectedActionSubmitted = "protected_action_submitted"
     case errorReceived = "error_received"

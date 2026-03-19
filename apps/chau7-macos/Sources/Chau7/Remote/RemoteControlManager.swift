@@ -29,6 +29,8 @@ final class RemoteControlManager: ObservableObject {
     private var pendingProtectedInputs: [String: ProtectedRemoteInput] = [:]
     private var approvalContexts: [String: PendingRemoteApprovalContext] = [:]
     private var connectedPairedDeviceID: String?
+    private var connectedClientAppState: RemoteClientAppState = .foreground
+    private var connectedClientStreamMode: RemoteClientStreamMode = .full
     private var sessionStateCancellables: [String: AnyCancellable] = [:]
     private var activityRefreshWorkItem: DispatchWorkItem?
     private var backgroundSnapshotTask: Task<Void, Never>?
@@ -52,6 +54,8 @@ final class RemoteControlManager: ObservableObject {
             self?.isIPCConnected = false
             self?.sessionStatus = nil
             self?.connectedPairedDeviceID = nil
+            self?.connectedClientAppState = .foreground
+            self?.connectedClientStreamMode = .full
             self?.remoteActivity = nil
             self?.cancelBackgroundSnapshotPrefetch()
             self?.cancelPendingOutputFlush()
@@ -103,7 +107,7 @@ final class RemoteControlManager: ObservableObject {
     }
 
     func recordOutput(_ data: Data, sessionIdentifier: String) {
-        guard isIPCConnected else { return }
+        guard isIPCConnected, connectedClientStreamMode == .full else { return }
         guard let tabID = tabRegistry.tabID(forSessionIdentifier: sessionIdentifier) else { return }
         pendingOutputByTabID.append(data, to: tabID) { existing, chunk in
             existing.append(chunk)
@@ -122,6 +126,7 @@ final class RemoteControlManager: ObservableObject {
     }
 
     func sendTextSnapshot(for tabID: UInt32) {
+        guard connectedClientStreamMode == .full else { return }
         guard let overlayModel else { return }
         let targetTab: OverlayTab?
         if tabID == 0 {
@@ -310,6 +315,8 @@ final class RemoteControlManager: ObservableObject {
             handleInput(frame)
         case .remoteTelemetry:
             handleRemoteTelemetry(frame)
+        case .clientState:
+            handleClientState(frame)
         case .approvalResponse:
             handleApprovalResponse(frame)
         case .ping:
@@ -402,7 +409,31 @@ final class RemoteControlManager: ObservableObject {
         TelemetryStore.shared.insertRemoteClientEvent(event)
     }
 
+    private func handleClientState(_ frame: RemoteFrame) {
+        guard let payload: RemoteClientStatePayload = decodePayload(frame, as: RemoteClientStatePayload.self, context: "client state") else { return }
+        connectedClientAppState = payload.appState
+        let previousStreamMode = connectedClientStreamMode
+        connectedClientStreamMode = payload.streamMode
+
+        if previousStreamMode != payload.streamMode && payload.streamMode == .approvalsOnly {
+            cancelBackgroundSnapshotPrefetch()
+            cancelPendingOutputFlush()
+        }
+
+        if payload.streamMode == .full {
+            sendInitialState()
+        } else {
+            sendPendingApprovalRequests()
+            sendInteractivePrompts(force: true)
+        }
+    }
+
     private func sendInitialState() {
+        sendPendingApprovalRequests()
+        guard connectedClientStreamMode == .full else {
+            sendInteractivePrompts(force: true)
+            return
+        }
         sendTabList()
         sendSelectedTabSnapshot()
         scheduleBackgroundSnapshotPrefetch()
@@ -411,6 +442,7 @@ final class RemoteControlManager: ObservableObject {
     }
 
     private func sendSelectedTabSnapshot() {
+        guard connectedClientStreamMode == .full else { return }
         guard let overlayModel,
               let tabID = tabRegistry.tabID(for: overlayModel.selectedTabID) else {
             return
@@ -456,7 +488,7 @@ final class RemoteControlManager: ObservableObject {
             remoteActivity = nextActivity
         }
 
-        if isIPCConnected, activityChanged {
+        if connectedClientStreamMode == .full, isIPCConnected, activityChanged {
             if let nextActivity,
                let payload = try? JSONEncoder().encode(nextActivity) {
                 sendFrame(type: .activityState, tabID: nextActivity.tabID, payload: payload)
@@ -465,6 +497,27 @@ final class RemoteControlManager: ObservableObject {
             }
         }
         sendInteractivePrompts(force: force)
+    }
+
+    private func sendPendingApprovalRequests() {
+        guard isIPCConnected else { return }
+        purgeExpiredProtectedInputs()
+        let pendingContexts = approvalContexts.values.sorted { $0.requestedAt < $1.requestedAt }
+        for context in pendingContexts {
+            let payload = ApprovalRequestPayload(
+                requestID: context.requestID,
+                command: context.command,
+                flaggedCommand: context.flaggedCommand,
+                timestamp: ISO8601DateFormatter().string(from: context.requestedAt),
+                tabTitle: context.tabTitle,
+                toolName: context.toolName,
+                projectName: context.projectName,
+                branchName: context.branchName,
+                sessionID: context.sessionID
+            )
+            guard let data = try? JSONEncoder().encode(payload) else { continue }
+            sendFrame(type: .approvalRequest, tabID: 0, payload: data)
+        }
     }
 
     private func sendInteractivePrompts(force: Bool = false) {
@@ -622,6 +675,11 @@ final class RemoteControlManager: ObservableObject {
         return lastPathComponent.isEmpty ? trimmed : lastPathComponent
     }
 
+    private func activityBranchName(for session: TerminalSessionModel) -> String? {
+        let trimmed = session.gitBranch?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     private func activityUpdatedAt(
         for session: TerminalSessionModel,
         tab: OverlayTab,
@@ -663,6 +721,7 @@ final class RemoteControlManager: ObservableObject {
     }
 
     private func sendTabList() {
+        guard connectedClientStreamMode == .full else { return }
         guard let overlayModel else { return }
         let controllableTabs = remoteControllableTabs(from: overlayModel)
         let tabPayloads = tabRegistry.rebuild(
@@ -671,6 +730,8 @@ final class RemoteControlManager: ObservableObject {
                     id: tab.id,
                     sessionIdentifier: tab.session?.tabIdentifier,
                     title: tab.displayTitle,
+                    projectName: tab.displaySession.flatMap(activityProjectName(for:)) ?? tab.session.flatMap(activityProjectName(for:)),
+                    branchName: tab.displaySession.flatMap(activityBranchName(for:)) ?? tab.session.flatMap(activityBranchName(for:)),
                     isActive: tab.id == overlayModel.selectedTabID,
                     isMCPControlled: tab.isMCPControlled
                 )
@@ -690,7 +751,7 @@ final class RemoteControlManager: ObservableObject {
 
     private func scheduleBackgroundSnapshotPrefetch() {
         cancelBackgroundSnapshotPrefetch()
-        guard isIPCConnected, let overlayModel else { return }
+        guard connectedClientStreamMode == .full, isIPCConnected, let overlayModel else { return }
 
         let backgroundTabIDs = tabRegistry.backgroundTabIDs(
             for: remoteControllableTabs(from: overlayModel).map(\.id),
@@ -733,7 +794,7 @@ final class RemoteControlManager: ObservableObject {
     private func flushPendingOutput() {
         outputFlushTask?.cancel()
         outputFlushTask = nil
-        guard isIPCConnected, !pendingOutputByTabID.isEmpty else { return }
+        guard connectedClientStreamMode == .full, isIPCConnected, !pendingOutputByTabID.isEmpty else { return }
 
         let selectedRemoteTabID = overlayModel.flatMap { tabRegistry.tabID(for: $0.selectedTabID) }
 
@@ -847,10 +908,11 @@ final class RemoteControlManager: ObservableObject {
             approvalContexts[requestID] = PendingRemoteApprovalContext(
                 requestID: approval.requestID,
                 tabID: protectedInput.tabID,
-                tabTitle: activityTabTitle(for: tab),
-                toolName: activityToolName(for: session, tab: tab),
-                projectName: activityProjectName(for: session),
-                sessionID: session.effectiveAISessionId,
+                tabTitle: approval.tabTitle ?? activityTabTitle(for: tab),
+                toolName: approval.toolName ?? activityToolName(for: session, tab: tab),
+                projectName: approval.projectName ?? activityProjectName(for: session),
+                branchName: approval.branchName ?? activityBranchName(for: session),
+                sessionID: approval.sessionID ?? session.effectiveAISessionId,
                 command: approval.command,
                 flaggedCommand: approval.flaggedCommand,
                 requestedAt: Self.parseApprovalDate(approval.timestamp)
@@ -868,10 +930,11 @@ final class RemoteControlManager: ObservableObject {
         approvalContexts[requestID] = PendingRemoteApprovalContext(
             requestID: approval.requestID,
             tabID: tabID,
-            tabTitle: activityTabTitle(for: tab),
-            toolName: activityToolName(for: session, tab: tab),
-            projectName: activityProjectName(for: session),
-            sessionID: session.effectiveAISessionId,
+            tabTitle: approval.tabTitle ?? activityTabTitle(for: tab),
+            toolName: approval.toolName ?? activityToolName(for: session, tab: tab),
+            projectName: approval.projectName ?? activityProjectName(for: session),
+            branchName: approval.branchName ?? activityBranchName(for: session),
+            sessionID: approval.sessionID ?? session.effectiveAISessionId,
             command: approval.command,
             flaggedCommand: approval.flaggedCommand,
             requestedAt: Self.parseApprovalDate(approval.timestamp)
@@ -898,11 +961,38 @@ final class RemoteControlManager: ObservableObject {
             flaggedCommand: flaggedCommand
         )
 
+        let approvalContext: PendingRemoteApprovalContext?
+        if let session = session(for: tabID),
+           let uuid = tabRegistry.uuid(for: tabID),
+           let tab = overlayModel?.tabs.first(where: { $0.id == uuid }) {
+            let context = PendingRemoteApprovalContext(
+                requestID: requestID,
+                tabID: tabID,
+                tabTitle: activityTabTitle(for: tab),
+                toolName: activityToolName(for: session, tab: tab),
+                projectName: activityProjectName(for: session),
+                branchName: activityBranchName(for: session),
+                sessionID: session.effectiveAISessionId,
+                command: text.trimmingCharacters(in: .whitespacesAndNewlines),
+                flaggedCommand: flaggedCommand,
+                requestedAt: Date()
+            )
+            approvalContexts[requestID] = context
+            approvalContext = context
+        } else {
+            approvalContext = nil
+        }
+
         let payload = ApprovalRequestPayload(
             requestID: requestID,
             command: text.trimmingCharacters(in: .whitespacesAndNewlines),
             flaggedCommand: flaggedCommand,
-            timestamp: ISO8601DateFormatter().string(from: Date())
+            timestamp: ISO8601DateFormatter().string(from: Date()),
+            tabTitle: approvalContext?.tabTitle,
+            toolName: approvalContext?.toolName,
+            projectName: approvalContext?.projectName,
+            branchName: approvalContext?.branchName,
+            sessionID: approvalContext?.sessionID
         )
 
         guard let data = try? JSONEncoder().encode(payload) else {

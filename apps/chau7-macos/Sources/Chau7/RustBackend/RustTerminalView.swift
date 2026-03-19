@@ -1152,9 +1152,7 @@ private final class RustTerminalFFI {
             Log.warn("RustTerminalFFI[\(instanceId)]: sendText - Library not loaded, discarding \(text.count) chars")
             return
         }
-        let truncated = text.count > 50 ? String(text.prefix(50)) + "..." : text
-        let escaped = truncated.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
-        Log.trace("RustTerminalFFI[\(instanceId)]: sendText - Sending \(text.count) chars: '\(escaped)'")
+        Log.trace("RustTerminalFFI[\(instanceId)]: sendText - Sending \(text.count) chars")
         let terminal = terminal
         writeQueue.async {
             text.withCString { fns.sendText(terminal, $0) }
@@ -1230,8 +1228,7 @@ private final class RustTerminalFFI {
         }
         defer { fns.freeString(ptr) }
         let text = String(cString: ptr)
-        let truncated = text.count > 50 ? String(text.prefix(50)) + "..." : text
-        Log.trace("RustTerminalFFI[\(instanceId)]: getSelectionText - Got \(text.count) chars: '\(truncated)'")
+        Log.trace("RustTerminalFFI[\(instanceId)]: getSelectionText - Got selection with \(text.count) chars")
         return text
     }
 
@@ -4109,9 +4106,7 @@ final class RustTerminalView: NSView {
 
     /// Send text to the PTY
     func send(txt text: String) {
-        let truncated = text.count > 50 ? String(text.prefix(50)) + "..." : text
-        let escaped = truncated.replacingOccurrences(of: "\n", with: "\\n").replacingOccurrences(of: "\r", with: "\\r")
-        Log.trace("RustTerminalView[\(viewId)]: send(txt:) - Sending \(text.count) chars: '\(escaped)'")
+        Log.trace("RustTerminalView[\(viewId)]: send(txt:) - Sending \(text.count) chars")
         hideTipOverlay()
 
         // Smart scroll: Scroll to bottom on user input (standard terminal behavior)
@@ -4152,6 +4147,37 @@ final class RustTerminalView: NSView {
     func getBufferAsData() -> Data? {
         guard let text = rustTerminal?.fullBufferText() else { return nil }
         return text.data(using: .utf8)
+    }
+
+    func captureRemoteGridSnapshotPayload() -> Data? {
+        guard let rust = rustTerminal,
+              let gridResult = rust.getGrid() else {
+            return nil
+        }
+        defer { gridResult.free() }
+
+        let snapshot = gridResult.snapshot.pointee
+        let cellCount = Int(snapshot.cols) * Int(snapshot.rows)
+        guard cellCount > 0, let cells = snapshot.cells else {
+            return nil
+        }
+
+        let cellBytes = Data(
+            bytes: cells,
+            count: cellCount * MemoryLayout<RustCellData>.stride
+        )
+        let cursor = rust.cursorPosition
+        let payload = RemoteTerminalGridSnapshot(
+            cols: snapshot.cols,
+            rows: snapshot.rows,
+            cursorCol: cursor.col,
+            cursorRow: cursor.row,
+            cursorVisible: snapshot.cursor_visible != 0,
+            scrollbackRows: snapshot.scrollback_rows,
+            displayOffset: snapshot.display_offset,
+            cells: cellBytes
+        )
+        return payload.encode()
     }
 
     var terminalRows: Int {
@@ -5559,7 +5585,7 @@ final class RustTerminalView: NSView {
 
     /// Insert snippet with placeholder navigation support
     func insertSnippet(_ insertion: SnippetInsertion) {
-        Log.trace("RustTerminalView[\(viewId)]: insertSnippet - text='\(insertion.text.prefix(50))...'")
+        Log.trace("RustTerminalView[\(viewId)]: insertSnippet - \(insertion.text.count) chars")
         let text = insertion.text
 
         // Send the snippet text (with bracketed paste if enabled)

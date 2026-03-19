@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import CryptoKit
 import UIKit
 import Chau7Core
@@ -10,6 +11,7 @@ private let log = Logger(subsystem: "ch7", category: "RemoteClient")
 /// Manages the encrypted WebSocket connection to a macOS Chau7 instance.
 @MainActor @Observable
 final class RemoteClient {
+    static let shared = RemoteClient()
 
     // MARK: - State
 
@@ -50,9 +52,16 @@ final class RemoteClient {
     private var connectionGeneration: UInt64 = 0
     private var outputStore = RemoteTerminalOutputStore()
     private var outputFlushTask: Task<Void, Never>?
+    private var strippedOutputRefreshTask: Task<Void, Never>?
     private var remoteSessionID: String?
     private var bufferedTelemetryEvents: [RemoteClientTelemetryEvent] = []
     private var pendingURLActions: [RemoteActivityURLAction] = []
+    private var currentAppState: RemoteClientAppState = .foreground
+    private var desiredStreamMode: RemoteClientStreamMode = .full
+    private var pushToken: String?
+    private var notificationsAuthorized = false
+    private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
+    private var suppressLocalNotificationsUntil: Date?
     let terminalRenderer = RemoteTerminalRendererStore()
 
     private static let maxHistory = 50
@@ -61,6 +70,7 @@ final class RemoteClient {
     private static let handshakeRetryIntervalSeconds = 1.0
     private static let handshakeTimeoutSeconds = 12.0
     private static let repairFallbackAttempt = 3
+    private static let pushNotificationSuppressionWindow: TimeInterval = 15
     static let appVersion = "1.1.0"
 
     var canSendInput: Bool {
@@ -125,6 +135,59 @@ final class RemoteClient {
         scheduleHandshake(for: connectionGeneration)
     }
 
+    func handleScenePhase(_ scenePhase: ScenePhase) {
+        switch scenePhase {
+        case .active:
+            endBackgroundKeepalive()
+            currentAppState = .foreground
+            desiredStreamMode = .full
+            if webSocket == nil, pairingInfo != nil {
+                connect()
+            } else {
+                sendClientStateIfPossible()
+            }
+        case .background:
+            beginBackgroundKeepalive()
+            currentAppState = .background
+            desiredStreamMode = .approvalsOnly
+            sendClientStateIfPossible()
+        case .inactive:
+            break
+        @unknown default:
+            break
+        }
+    }
+
+    func updateNotificationAuthorization(isGranted: Bool) {
+        notificationsAuthorized = isGranted
+        sendClientStateIfPossible()
+    }
+
+    func updatePushToken(_ token: String) {
+        guard pushToken != token else { return }
+        pushToken = token
+        sendClientStateIfPossible()
+    }
+
+    func handlePushWake(userInfo: [AnyHashable: Any]) {
+        suppressLocalNotificationsUntil = Date().addingTimeInterval(Self.pushNotificationSuppressionWindow)
+        beginBackgroundKeepalive()
+        currentAppState = .background
+        desiredStreamMode = .approvalsOnly
+        if webSocket == nil, pairingInfo != nil {
+            connect()
+        } else {
+            sendClientStateIfPossible()
+        }
+        emitTelemetry(
+            type: .notificationOpened,
+            status: "push_wake",
+            metadata: userInfo.reduce(into: [String: String]()) { partial, entry in
+                partial[String(describing: entry.key)] = String(describing: entry.value)
+            }
+        )
+    }
+
     func disconnect(autoReconnect: Bool = false) {
         shouldReconnect = false
         reconnectTask?.cancel()
@@ -147,11 +210,14 @@ final class RemoteClient {
         terminalRenderer.reset()
         outputFlushTask?.cancel()
         outputFlushTask = nil
+        strippedOutputRefreshTask?.cancel()
+        strippedOutputRefreshTask = nil
         bufferedTelemetryEvents.removeAll(keepingCapacity: true)
         liveActivityState = nil
         outputText = ""
         strippedOutputText = ""
         pendingInteractivePrompts = []
+        endBackgroundKeepalive()
         if #available(iOS 16.1, *) {
             RemoteLiveActivityManager.shared.update(with: nil)
         }
@@ -172,7 +238,7 @@ final class RemoteClient {
     func switchTab(_ tabID: UInt32) {
         activeTabID = tabID
         flushPendingOutput(for: tabID)
-        refreshVisibleOutput()
+        refreshVisibleOutput(prioritizeStrippedOutput: true)
         terminalRenderer.setActiveTab(tabID, fallbackText: outputText)
         emitTelemetry(type: .tabSwitched, tabID: tabID, tabTitle: tabTitle(for: tabID))
         sendJSON(TabSwitchPayload(tabID: tabID), type: .tabSwitch)
@@ -214,15 +280,14 @@ final class RemoteClient {
             return false
         }
 
-        if tabs.contains(where: { $0.tabID == prompt.tabID }) {
-            switchTab(prompt.tabID)
-        }
-
-        guard sendInput(option.response, appendNewline: false, to: prompt.tabID) else {
+        guard sendInteractivePromptResponse(option.response, to: prompt.tabID) else {
             return false
         }
 
         pendingInteractivePrompts.remove(at: promptIndex)
+        UNUserNotificationCenter.current().removeDeliveredNotifications(
+            withIdentifiers: [notificationIdentifierForInteractivePrompt(prompt.id)]
+        )
         return true
     }
 
@@ -400,6 +465,8 @@ final class RemoteClient {
         case .activityState:   handleActivityState(payload)
         case .activityCleared: clearActivityState()
         case .interactivePromptList: handleInteractivePromptList(payload)
+        case .clientState:
+            break
         case .output:          appendOutput(payload, tabID: frame.tabID)
         case .snapshot:        storeSnapshot(payload, tabID: frame.tabID)
         case .terminalGridSnapshot:
@@ -500,7 +567,7 @@ final class RemoteClient {
         outputStore.retainVisibleTabs(visibleTabIDs)
         terminalRenderer.retainVisibleTabs(visibleTabIDs)
         pendingInteractivePrompts.removeAll { !visibleTabIDs.contains($0.tabID) }
-        refreshVisibleOutput()
+        refreshVisibleOutput(prioritizeStrippedOutput: true)
         terminalRenderer.setActiveTab(activeTabID, fallbackText: outputText)
     }
 
@@ -531,7 +598,25 @@ final class RemoteClient {
         ) else {
             return
         }
-        pendingInteractivePrompts = payload.prompts
+
+        let previousPromptIDs = Set(pendingInteractivePrompts.map(\.id))
+        let nextPrompts = payload.prompts
+        let nextPromptIDs = Set(nextPrompts.map(\.id))
+
+        pendingInteractivePrompts = nextPrompts
+
+        let removedNotificationIDs = previousPromptIDs
+            .subtracting(nextPromptIDs)
+            .map { notificationIdentifierForInteractivePrompt($0) }
+        if !removedNotificationIDs.isEmpty {
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: removedNotificationIDs)
+        }
+
+        for prompt in nextPrompts where !previousPromptIDs.contains(prompt.id) {
+            if !shouldSuppressLocalNotifications {
+                scheduleInteractivePromptNotification(for: prompt)
+            }
+        }
     }
 
     private func appendOutput(_ data: Data, tabID: UInt32) {
@@ -551,7 +636,7 @@ final class RemoteClient {
         outputStore.replaceSnapshot(data, for: resolvedTabID)
         terminalRenderer.replaceSnapshot(data, for: resolvedTabID)
         if resolvedTabID == activeTabID || activeTabID == 0 {
-            refreshVisibleOutput()
+            refreshVisibleOutput(prioritizeStrippedOutput: true)
         }
     }
 
@@ -565,10 +650,21 @@ final class RemoteClient {
 
     private func handleApprovalRequest(_ data: Data) {
         guard let msg: ApprovalRequestPayload = decodePayload(data, as: ApprovalRequestPayload.self, context: "handleApprovalRequest") else { return }
-        pendingApprovals.append(ApprovalRequest(
+        let approval = ApprovalRequest(
             requestID: msg.requestID, command: msg.command,
-            flaggedCommand: msg.flaggedCommand, timestamp: Date()
-        ))
+            flaggedCommand: msg.flaggedCommand,
+            tabTitle: msg.tabTitle,
+            toolName: msg.toolName,
+            projectName: msg.projectName,
+            branchName: msg.branchName,
+            sessionID: msg.sessionID,
+            timestamp: Date()
+        )
+        if let existingIndex = pendingApprovals.firstIndex(where: { $0.requestID == msg.requestID }) {
+            pendingApprovals[existingIndex] = approval
+        } else {
+            pendingApprovals.append(approval)
+        }
         emitTelemetry(
             type: .approvalReceived,
             status: "pending",
@@ -576,19 +672,24 @@ final class RemoteClient {
             metadata: ["request_id": msg.requestID]
         )
 
-        let content = UNMutableNotificationContent()
-        let isProtectedRemoteAction = msg.flaggedCommand != msg.command
-        content.title = isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval"
-        content.body = isProtectedRemoteAction ? msg.flaggedCommand : msg.command
-        content.sound = .default
-        content.categoryIdentifier = "MCP_APPROVAL"
-        content.userInfo = ["request_id": msg.requestID]
-        let req = UNNotificationRequest(
-            identifier: msg.requestID,
-            content: content,
-            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
-        )
-        UNUserNotificationCenter.current().add(req)
+        if !shouldSuppressLocalNotifications {
+            let content = UNMutableNotificationContent()
+            let isProtectedRemoteAction = msg.flaggedCommand != msg.command
+            content.title = isProtectedRemoteAction ? "Protected Remote Action" : "Command Approval"
+            content.body = approvalNotificationBody(for: msg)
+            content.sound = .default
+            content.categoryIdentifier = "MCP_APPROVAL"
+            content.userInfo = [
+                "request_id": msg.requestID,
+                "open_approvals": true
+            ]
+            let req = UNNotificationRequest(
+                identifier: msg.requestID,
+                content: content,
+                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
+            )
+            UNUserNotificationCenter.current().add(req)
+        }
     }
 
     // MARK: - Session Establishment
@@ -625,6 +726,7 @@ final class RemoteClient {
         status = "Encrypted"
         emitTelemetry(type: .sessionEncrypted, status: "encrypted")
         flushBufferedTelemetryEvents()
+        sendClientStateIfPossible()
     }
 
     // MARK: - Outgoing
@@ -746,17 +848,40 @@ final class RemoteClient {
     }
 
     private func canSendInput(to tabID: UInt32) -> Bool {
-        crypto != nil && webSocket != nil && tabID != 0 && tabs.contains(where: { $0.tabID == tabID })
+        canSendInput(to: tabID, allowUnlistedTab: false)
+    }
+
+    private func canSendInput(to tabID: UInt32, allowUnlistedTab: Bool) -> Bool {
+        guard crypto != nil, webSocket != nil, tabID != 0 else { return false }
+        return allowUnlistedTab || tabs.contains(where: { $0.tabID == tabID })
     }
 
     @discardableResult
-    private func sendInput(_ text: String, appendNewline: Bool, to tabID: UInt32) -> Bool {
+    private func sendInteractivePromptResponse(_ response: String, to tabID: UInt32) -> Bool {
+        let normalizedResponse = response
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\n", with: "\r")
+        guard !normalizedResponse.isEmpty else { return false }
+
+        if normalizedResponse.hasSuffix("\r") {
+            let body = String(normalizedResponse.dropLast())
+            if !body.isEmpty, !sendInput(body, appendNewline: false, to: tabID, allowUnlistedTab: true) {
+                return false
+            }
+            return sendInput("\r", appendNewline: false, to: tabID, allowUnlistedTab: true)
+        }
+
+        return sendInput(normalizedResponse, appendNewline: false, to: tabID, allowUnlistedTab: true)
+    }
+
+    @discardableResult
+    private func sendInput(_ text: String, appendNewline: Bool, to tabID: UInt32, allowUnlistedTab: Bool = false) -> Bool {
         guard !text.isEmpty else { return false }
         guard crypto != nil, webSocket != nil else {
             reportBlockedInput("Input not sent because the encrypted session is not ready yet.")
             return false
         }
-        guard canSendInput(to: tabID) else {
+        guard canSendInput(to: tabID, allowUnlistedTab: allowUnlistedTab) else {
             reportBlockedInput("Input not sent because the target remote tab is no longer available.")
             return false
         }
@@ -865,10 +990,15 @@ final class RemoteClient {
         tabID == 0 ? activeTabID : tabID
     }
 
-    private func refreshVisibleOutput() {
-        outputText = outputStore.visibleOutput(for: activeTabID)
-        strippedOutputText = ANSIStripper.strip(outputText)
-        terminalRenderer.updateActiveFallbackText(outputText)
+    private func refreshVisibleOutput(prioritizeStrippedOutput: Bool = false) {
+        let visibleOutput = outputStore.visibleOutput(for: activeTabID)
+        let outputChanged = visibleOutput != outputText
+        outputText = visibleOutput
+        terminalRenderer.updateActiveFallbackText(visibleOutput)
+
+        if prioritizeStrippedOutput || outputChanged {
+            scheduleStrippedOutputRefresh(immediate: prioritizeStrippedOutput)
+        }
     }
 
     private func reportBlockedInput(_ message: String) {
@@ -880,6 +1010,130 @@ final class RemoteClient {
             tabID: activeTabID,
             tabTitle: tabTitle(for: activeTabID)
         )
+    }
+
+    private func approvalNotificationBody(for request: ApprovalRequestPayload) -> String {
+        let context = approvalContextSummary(
+            tabTitle: request.tabTitle,
+            toolName: request.toolName,
+            projectName: request.projectName,
+            branchName: request.branchName
+        )
+        let headline = request.flaggedCommand != request.command ? request.flaggedCommand : request.command
+        return context.isEmpty ? headline : "\(context)\n\(headline)"
+    }
+
+    private func scheduleInteractivePromptNotification(for prompt: RemoteInteractivePrompt) {
+        let content = UNMutableNotificationContent()
+        content.title = "Interactive Prompt"
+        content.body = interactivePromptNotificationBody(for: prompt)
+        content.sound = .default
+        content.categoryIdentifier = "INTERACTIVE_PROMPT"
+        content.userInfo = [
+            "prompt_id": prompt.id,
+            "tab_id": prompt.tabID,
+            "open_approvals": true
+        ]
+        let request = UNNotificationRequest(
+            identifier: notificationIdentifierForInteractivePrompt(prompt.id),
+            content: content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false)
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
+
+    private func interactivePromptNotificationBody(for prompt: RemoteInteractivePrompt) -> String {
+        let context = [prompt.toolName, prompt.tabTitle]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+        let promptText = prompt.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let options = prompt.options.prefix(3).map(\.label).joined(separator: " / ")
+        let detail = options.isEmpty ? promptText : "\(promptText)\n\(options)"
+        return context.isEmpty ? detail : "\(context)\n\(detail)"
+    }
+
+    private func approvalContextSummary(
+        tabTitle: String?,
+        toolName: String?,
+        projectName: String?,
+        branchName: String?
+    ) -> String {
+        [toolName, tabTitle, projectName, branchName]
+            .compactMap { value in
+                let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                return trimmed.isEmpty ? nil : trimmed
+            }
+            .joined(separator: " · ")
+    }
+
+    private func notificationIdentifierForInteractivePrompt(_ promptID: String) -> String {
+        "interactive-prompt-\(promptID)"
+    }
+
+    private var shouldSuppressLocalNotifications: Bool {
+        guard let until = suppressLocalNotificationsUntil else { return false }
+        if until <= Date() {
+            suppressLocalNotificationsUntil = nil
+            return false
+        }
+        return true
+    }
+
+    private func currentPushEnvironment() -> RemotePushEnvironment? {
+        #if DEBUG
+        .development
+        #else
+        .production
+        #endif
+    }
+
+    private func beginBackgroundKeepalive() {
+        guard backgroundTaskID == .invalid else { return }
+        backgroundTaskID = UIApplication.shared.beginBackgroundTask(withName: "ch7.remote.approvals") { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.handleBackgroundTaskExpiration()
+            }
+        }
+    }
+
+    private func endBackgroundKeepalive() {
+        guard backgroundTaskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTaskID)
+        backgroundTaskID = .invalid
+    }
+
+    private func handleBackgroundTaskExpiration() {
+        endBackgroundKeepalive()
+        suppressLocalNotificationsUntil = Date().addingTimeInterval(Self.pushNotificationSuppressionWindow)
+        shouldReconnect = false
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        cancelHandshakeTasks()
+        webSocket?.cancel(with: .goingAway, reason: nil)
+        webSocket = nil
+        isConnected = false
+        status = "Background suspended"
+        crypto = nil
+        remoteSessionID = nil
+        hasReceivedPairAccept = false
+        nonceIOS = nil
+        nonceMac = nil
+        seqCounter = 1
+        connectionGeneration &+= 1
+    }
+
+    private func sendClientStateIfPossible() {
+        guard crypto != nil else { return }
+        let payload = RemoteClientStatePayload(
+            appState: currentAppState,
+            streamMode: desiredStreamMode,
+            pushToken: pushToken,
+            pushTopic: Bundle.main.bundleIdentifier,
+            pushEnvironment: currentPushEnvironment(),
+            notificationsAuthorized: notificationsAuthorized
+        )
+        sendJSON(payload, type: .clientState, encrypt: true)
     }
 
     private func scheduleOutputFlush() {
@@ -911,6 +1165,38 @@ final class RemoteClient {
 
         if tabID == activeTabID || (tabID == nil && activeTabID == 0) || updatedTabIDs.contains(activeTabID) {
             refreshVisibleOutput()
+        }
+    }
+
+    private func scheduleStrippedOutputRefresh(immediate: Bool) {
+        strippedOutputRefreshTask?.cancel()
+
+        let sourceText = outputText
+        guard !sourceText.isEmpty else {
+            strippedOutputText = ""
+            strippedOutputRefreshTask = nil
+            return
+        }
+
+        if immediate || sourceText.utf8.count <= 4_096 {
+            strippedOutputText = ANSIStripper.strip(sourceText)
+            strippedOutputRefreshTask = nil
+            return
+        }
+
+        strippedOutputRefreshTask = Task(priority: .utility) { [weak self, sourceText] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled else { return }
+            let stripped = ANSIStripper.strip(sourceText)
+            await MainActor.run {
+                guard let self, !Task.isCancelled else { return }
+                self.strippedOutputRefreshTask = nil
+                guard self.outputText == sourceText else {
+                    self.scheduleStrippedOutputRefresh(immediate: false)
+                    return
+                }
+                self.strippedOutputText = stripped
+            }
         }
     }
 

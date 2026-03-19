@@ -1,4 +1,5 @@
 import Foundation
+import Chau7Core
 
 /// Manages per-tab and global command history for arrow-key navigation.
 /// - Arrow ↑/↓: per-tab history
@@ -26,40 +27,6 @@ final class CommandHistoryManager {
 
     private init() {}
 
-    // MARK: - Sensitive Command Detection
-
-    /// Patterns that indicate a command contains inline secrets.
-    /// These commands are safe to type but should NOT be stored in history
-    /// because they contain credentials as arguments.
-    private static let sensitiveArgumentPatterns: [String] = [
-        // Inline password arguments
-        "-p ", "-p=", "--password=", "--password ",
-        "--token=", "--token ",
-        "--secret=", "--secret ",
-        "--api-key=", "--api-key ",
-        "--apikey=", "--apikey ",
-        "--auth-token=",
-        // HTTP auth headers
-        "authorization: bearer", "authorization:bearer",
-        "authorization: basic", "authorization:basic",
-        "-H 'Authorization", "-H \"Authorization",
-        // Environment variable assignment with secrets
-        "PASSWORD=", "TOKEN=", "SECRET=", "API_KEY=",
-        "AWS_SECRET_ACCESS_KEY=",
-        "GITHUB_TOKEN=", "GH_TOKEN="
-    ]
-
-    /// Returns true if the command appears to contain inline secrets.
-    static func containsInlineSecrets(_ command: String) -> Bool {
-        let lowered = command.lowercased()
-        for pattern in sensitiveArgumentPatterns {
-            if lowered.contains(pattern.lowercased()) {
-                return true
-            }
-        }
-        return false
-    }
-
     // MARK: - Recording
 
     /// Records a command in history.
@@ -82,7 +49,7 @@ final class CommandHistoryManager {
         }
 
         // Security: filter commands containing inline secrets
-        if Self.containsInlineSecrets(trimmed) {
+        if SensitiveInputGuard.containsInlineSecrets(trimmed) {
             Log.trace("CommandHistoryManager: Skipping command with inline secrets")
             tabCursors[tabID] = -1
             globalCursor = -1
