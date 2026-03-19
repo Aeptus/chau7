@@ -545,8 +545,6 @@ struct SettingsDetailView: View {
                         DangerousCommandSettingsView()
                     case .graphics:
                         GraphicsSettingsView()
-                    case .tmux:
-                        TmuxSettingsView()
                     // Input & Productivity
                     case .keyboardMouse:
                         InputSettingsView()

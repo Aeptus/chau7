@@ -53,7 +53,7 @@ enum SettingsSectionGroup: String, CaseIterable, Identifiable {
         switch self {
         case .essentials: return [.general, .profilesBackup, .about]
         case .lookAndFeel: return [.fontColors, .display, .tabs]
-        case .terminal: return [.shell, .scrollbackPerf, .dangerousCommands, .graphics, .tmux]
+        case .terminal: return [.shell, .scrollbackPerf, .dangerousCommands, .graphics]
         case .inputProductivity: return [.keyboardMouse, .snippetsTools]
         case .integrations: return [.aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy]
         case .monitoring: return [.notifications, .logsHistory]
@@ -77,7 +77,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case scrollbackPerf
     case dangerousCommands
     case graphics
-    case tmux
     // Input & Productivity
     case keyboardMouse
     case snippetsTools
@@ -107,7 +106,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .scrollbackPerf: return L("settings.scrollbackPerf", "Scrollback & Performance")
         case .dangerousCommands: return L("settings.dangerousCommands", "Dangerous Commands")
         case .graphics: return L("settings.graphics", "Graphics")
-        case .tmux: return L("settings.tmux", "Tmux")
         case .keyboardMouse: return L("settings.keyboardMouse", "Keyboard & Mouse")
         case .snippetsTools: return L("settings.snippetsTools", "Snippets & Tools")
         case .aiDetection: return L("settings.aiDetection", "AI Detection")
@@ -132,7 +130,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .scrollbackPerf: return "gauge.with.dots.needle.33percent"
         case .dangerousCommands: return "exclamationmark.triangle"
         case .graphics: return "photo"
-        case .tmux: return "rectangle.split.2x1"
         case .keyboardMouse: return "keyboard"
         case .snippetsTools: return "bolt.fill"
         case .aiDetection: return "sparkles"
@@ -157,7 +154,6 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .scrollbackPerf: return L("settings.scrollbackPerf.description", "Scrollback buffer, rendering, and backend")
         case .dangerousCommands: return L("settings.dangerousCommands.description", "Highlight and guard risky commands")
         case .graphics: return L("settings.graphics.description", "Sixel and Kitty graphics protocols")
-        case .tmux: return L("settings.tmux.description", "Tmux integration and sessions")
         case .keyboardMouse: return L("settings.keyboardMouse.description", "Keyboard shortcuts and mouse behavior")
         case .snippetsTools: return L("settings.snippetsTools.description", "Snippets, clipboard, bookmarks, and search")
         case .aiDetection: return L("settings.aiDetection.description", "AI CLI detection, theming, and LLM provider")
@@ -176,7 +172,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
             return .essentials
         case .fontColors, .display, .tabs:
             return .lookAndFeel
-        case .shell, .scrollbackPerf, .dangerousCommands, .graphics, .tmux:
+        case .shell, .scrollbackPerf, .dangerousCommands, .graphics:
             return .terminal
         case .keyboardMouse, .snippetsTools:
             return .inputProductivity
@@ -498,18 +494,6 @@ extension FeatureSettings {
                 "kitty,image,graphics,protocol"
             ),
             description: L("settings.search.kittyGraphics.description", "Kitty graphics protocol support")
-        ),
-
-        // Tmux
-        SearchableSetting(
-            id: "tmuxIntegration",
-            section: .tmux,
-            title: L("settings.search.tmuxIntegration.title", "Tmux Integration"),
-            keywords: localizedKeywords(
-                "settings.search.tmuxIntegration.keywords",
-                "tmux,multiplexer,session,attach"
-            ),
-            description: L("settings.search.tmuxIntegration.description", "Tmux session management and integration")
         ),
 
         // Keyboard & Mouse
