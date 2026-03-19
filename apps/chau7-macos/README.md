@@ -88,6 +88,8 @@ SHOW_DOCK_ICON=0 ./Scripts/build-app.sh
 macOS permission collisions with `/Applications/Chau7.app`.
 When ad-hoc signing is used, it now applies a stable designated requirement
 (`designated => identifier "<bundle-id>"`) so TCC permissions do not churn on every rebuild.
+The local build scripts also rebuild and bundle `chau7-remote` automatically so the remote
+helper stays in sync with app bundles.
 Override when needed:
 
 ```bash

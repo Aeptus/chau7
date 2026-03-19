@@ -19,6 +19,7 @@ enum CommandStatus: String {
 /// Model for a terminal session, managing shell state, search, and output capture.
 /// - Note: Thread Safety - @Published properties must be modified on main thread.
 ///   Callbacks may arrive on background threads and dispatch to main via DispatchQueue.main.async.
+// swiftlint:disable:next type_body_length
 final class TerminalSessionModel: NSObject, ObservableObject {
     private enum PendingTerminalAction {
         case text(String)
@@ -583,7 +584,15 @@ final class TerminalSessionModel: NSObject, ObservableObject {
 
         view.onShellIntegrationEvent = { [weak self] event in
             guard let self = self else { return }
-            self.handleShellIntegrationEvent(event)
+            switch event {
+            case .promptStart: self.handlePromptDetected()
+            case .commandStart: self.isAtPrompt = false
+            case .commandExecuted: self.shellEventDetector.commandStarted(command: self.pendingCommandLine, in: self.currentDirectory)
+            case .commandFinished(let exitCode):
+                guard !self.commandFinishedNotified else { return }
+                self.commandFinishedNotified = true
+                self.shellEventDetector.commandFinished(exitCode: Int(exitCode), command: self.pendingCommandLine)
+            }
         }
 
         // Auto-focus on attach for newly created tabs
@@ -1071,19 +1080,6 @@ final class TerminalSessionModel: NSObject, ObservableObject {
         if !commandFinishedNotified {
             commandFinishedNotified = true
             shellEventDetector.commandFinished(exitCode: nil, command: pendingCommandLine)
-        }
-    }
-
-    /// Handle OSC 133 shell integration events from the Rust terminal.
-    private func handleShellIntegrationEvent(_ event: ShellIntegrationEvent) {
-        switch event {
-        case .promptStart: handlePromptDetected()
-        case .commandStart: isAtPrompt = false
-        case .commandExecuted: shellEventDetector.commandStarted(command: pendingCommandLine, in: currentDirectory)
-        case .commandFinished(let exitCode):
-            guard !commandFinishedNotified else { return }
-            commandFinishedNotified = true
-            shellEventDetector.commandFinished(exitCode: Int(exitCode), command: pendingCommandLine)
         }
     }
 
