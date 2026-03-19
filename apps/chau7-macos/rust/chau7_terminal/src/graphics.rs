@@ -112,6 +112,8 @@ enum State {
     Osc,
     /// Inside OSC 133 — accumulating the semantic marker (A/B/C/D and optional params).
     Osc133,
+    /// OSC 133: saw ESC inside body, waiting for '\' (ST terminator).
+    Osc133Esc,
     /// Inside OSC 1337 — accumulating iTerm2 File= args.
     ITermArgs,
     /// Inside iTerm2 base64 data (after ':').
@@ -425,18 +427,8 @@ impl GraphicsInterceptor {
                         self.emit_osc133();
                         self.state = State::Ground;
                     } else if byte == 0x1B {
-                        // Potential ESC \ (ST) — peek at next byte
-                        // We need to handle this carefully: if the next byte
-                        // is '\', it's the ST terminator. But we can't peek
-                        // from here, so push a sentinel and check in the loop.
-                        // Actually, use the same trick as the other states:
-                        // temporarily save that we saw ESC, handle in next iteration.
-                        // For simplicity, just treat ESC as terminator here
-                        // since OSC 133 bodies are very short (1-5 bytes).
-                        self.emit_osc133();
-                        // Pass the ESC through so VTE can handle ESC \ if needed
-                        self.passthrough.push(0x1B);
-                        self.state = State::Ground;
+                        // Potential ESC \ (ST) — wait for next byte
+                        self.state = State::Osc133Esc;
                     } else if self.osc133_buf.len() < 32 {
                         self.osc133_buf.push(byte);
                     } else {
@@ -445,6 +437,20 @@ impl GraphicsInterceptor {
                         self.osc133_buf.clear();
                         self.state = State::Ground;
                     }
+                }
+
+                State::Osc133Esc => {
+                    if byte == 0x5C {
+                        // ESC \ = ST — sequence complete
+                        self.emit_osc133();
+                    } else {
+                        // ESC followed by something else — discard the OSC 133
+                        // and pass both bytes through as-is
+                        self.passthrough.push(0x1B);
+                        self.passthrough.push(byte);
+                        self.osc133_buf.clear();
+                    }
+                    self.state = State::Ground;
                 }
 
                 State::ITermArgs => {
