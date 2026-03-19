@@ -207,6 +207,7 @@ Profiles,Context-Aware Auto-Switch,Auto-switch settings profile on directory cha
 Settings,Keybindings JSON Export/Import,Standalone export/import for keybindings separate from full settings,Shipped,No
 Networking,Custom API Pricing,~/.chau7/pricing.json overrides built-in model pricing table,Shipped,No
 Safety,Process Exit Confirmation,Cmd+Q lists running process names and confirms before quitting,Shipped,No
+Terminal,Font Ligature Rendering,"Multi-character ligature shaping via CoreText (Fira Code, JetBrains Mono, etc.). Configurable toggle.",Shipped,No
 API Analytics,TTFT Latency Tracking,"Time-to-first-token measured per API call via firstByteReader wrapper, stored in SQLite",Shipped,Yes
 Safety,Unicode Homoglyph Detection,Flags Cyrillic/fullwidth lookalike characters in commands,Shipped,No
 Safety,Multiline Paste Protection,Flags pasted commands spanning multiple lines,Shipped,No
