@@ -1865,16 +1865,16 @@ impl Drop for Chau7Terminal {
         );
 
         // Close the duplicated master fd used for echo detection
-        if let Some(handle) = self.pty_handle.lock().as_ref() {
-            if handle.master_fd >= 0 {
-                unsafe {
-                    libc::close(handle.master_fd);
-                }
-                debug!(
-                    "[terminal-{}] Closed echo detection fd {}",
-                    self.id, handle.master_fd
-                );
+        if let Some(handle) = self.pty_handle.lock().as_ref()
+            && handle.master_fd >= 0
+        {
+            unsafe {
+                libc::close(handle.master_fd);
             }
+            debug!(
+                "[terminal-{}] Closed echo detection fd {}",
+                self.id, handle.master_fd
+            );
         }
 
         // Signal the reader thread to stop
@@ -2184,7 +2184,7 @@ mod tests {
         // Erase from cursor to end of display
         term.inject_output(b"\x1b[2;1H");  // Move to row 2, col 1
         term.inject_output(b"\x1b[0J");     // Erase below
-        let row2 = row_text(&term, 1);
+        let _row2 = row_text(&term, 1);
         // Row 1 (0-indexed) should still have content (cursor is ON this row)
         // Row 2+ should be cleared
         let row3 = row_text(&term, 2);

@@ -1548,7 +1548,7 @@ pub unsafe extern "C" fn chau7_terminal_free_shell_events(array_ptr: *mut FFIShe
         }
         let array = Box::from_raw(array_ptr);
         if !array.events.is_null() && array.count > 0 {
-            let _ = Box::from_raw(std::slice::from_raw_parts_mut(array.events, array.count));
+            let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(array.events, array.count));
         }
     }
 }
