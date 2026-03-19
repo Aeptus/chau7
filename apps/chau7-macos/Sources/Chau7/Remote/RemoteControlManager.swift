@@ -514,6 +514,9 @@ final class RemoteControlManager: ObservableObject {
                 toolName: context.toolName,
                 projectName: context.projectName,
                 branchName: context.branchName,
+                currentDirectory: context.currentDirectory,
+                recentCommand: context.recentCommand,
+                contextNote: context.contextNote,
                 sessionID: context.sessionID
             )
             guard let data = try? JSONEncoder().encode(payload) else { continue }
@@ -641,6 +644,9 @@ final class RemoteControlManager: ObservableObject {
                 tabID: tabID,
                 tabTitle: activityTabTitle(for: tab),
                 toolName: toolName,
+                projectName: activityProjectName(for: session),
+                branchName: activityBranchName(for: session),
+                currentDirectory: activityCurrentDirectory(for: session),
                 prompt: detected.prompt,
                 detail: detected.detail,
                 options: detected.options,
@@ -679,6 +685,29 @@ final class RemoteControlManager: ObservableObject {
     private func activityBranchName(for session: TerminalSessionModel) -> String? {
         let trimmed = session.gitBranch?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func activityCurrentDirectory(for session: TerminalSessionModel) -> String? {
+        let trimmed = session.currentDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func activityRecentCommand(for tab: OverlayTab) -> String? {
+        let trimmed = tab.lastCommand?.command.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func activityContextNote(for session: TerminalSessionModel) -> String? {
+        switch session.effectiveStatus {
+        case .waitingForInput:
+            return session.effectiveIsAtPrompt ? "Waiting at prompt" : "Waiting for input"
+        case .running:
+            return "Command is running"
+        case .stuck:
+            return "No output for a while"
+        case .idle, .exited:
+            return nil
+        }
     }
 
     private func activityUpdatedAt(
@@ -899,6 +928,9 @@ final class RemoteControlManager: ObservableObject {
                 toolName: approval.toolName ?? activityToolName(for: session, tab: tab),
                 projectName: approval.projectName ?? activityProjectName(for: session),
                 branchName: approval.branchName ?? activityBranchName(for: session),
+                currentDirectory: approval.currentDirectory ?? activityCurrentDirectory(for: session),
+                recentCommand: approval.recentCommand ?? activityRecentCommand(for: tab),
+                contextNote: approval.contextNote ?? activityContextNote(for: session),
                 sessionID: approval.sessionID ?? session.effectiveAISessionId,
                 command: approval.command,
                 flaggedCommand: approval.flaggedCommand,
@@ -921,6 +953,9 @@ final class RemoteControlManager: ObservableObject {
             toolName: approval.toolName ?? activityToolName(for: session, tab: tab),
             projectName: approval.projectName ?? activityProjectName(for: session),
             branchName: approval.branchName ?? activityBranchName(for: session),
+            currentDirectory: approval.currentDirectory ?? activityCurrentDirectory(for: session),
+            recentCommand: approval.recentCommand ?? activityRecentCommand(for: tab),
+            contextNote: approval.contextNote ?? activityContextNote(for: session),
             sessionID: approval.sessionID ?? session.effectiveAISessionId,
             command: approval.command,
             flaggedCommand: approval.flaggedCommand,
@@ -959,6 +994,9 @@ final class RemoteControlManager: ObservableObject {
                 toolName: activityToolName(for: session, tab: tab),
                 projectName: activityProjectName(for: session),
                 branchName: activityBranchName(for: session),
+                currentDirectory: activityCurrentDirectory(for: session),
+                recentCommand: activityRecentCommand(for: tab),
+                contextNote: activityContextNote(for: session),
                 sessionID: session.effectiveAISessionId,
                 command: text.trimmingCharacters(in: .whitespacesAndNewlines),
                 flaggedCommand: flaggedCommand,
@@ -979,6 +1017,9 @@ final class RemoteControlManager: ObservableObject {
             toolName: approvalContext?.toolName,
             projectName: approvalContext?.projectName,
             branchName: approvalContext?.branchName,
+            currentDirectory: approvalContext?.currentDirectory,
+            recentCommand: approvalContext?.recentCommand,
+            contextNote: approvalContext?.contextNote,
             sessionID: approvalContext?.sessionID
         )
 

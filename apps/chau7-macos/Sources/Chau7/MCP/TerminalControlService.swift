@@ -630,6 +630,9 @@ final class TerminalControlService {
     /// request to iOS. First response (Mac or iOS) wins. Must be called on main thread.
     private func requestCommandApproval(command: String, flaggedCommand: String, permissions: ResolvedPermissions) -> MCPApprovalResult {
         let requestID = UUID().uuidString
+        let sourceInfo = permissions.matchedProfile != nil
+            ? "Permissions source: profile \"\(permissions.matchedProfile!.name)\""
+            : "Permissions source: global settings"
 
         // Send approval request to iOS via RemoteControlManager
         let payload = ApprovalRequestPayload(
@@ -641,6 +644,9 @@ final class TerminalControlService {
             toolName: nil,
             projectName: nil,
             branchName: nil,
+            currentDirectory: nil,
+            recentCommand: nil,
+            contextNote: sourceInfo,
             sessionID: nil
         )
         if let data = try? JSONEncoder().encode(payload) {
@@ -652,10 +658,6 @@ final class TerminalControlService {
         // Show local alert with three options
         let alert = NSAlert()
         alert.messageText = "MCP Command Approval"
-
-        let sourceInfo = permissions.matchedProfile != nil
-            ? "Permissions source: profile \"\(permissions.matchedProfile!.name)\""
-            : "Permissions source: global settings"
         alert.informativeText = "An MCP client wants to execute:\n\n\(command)\n\n\(sourceInfo)"
         alert.alertStyle = .warning
 
@@ -746,41 +748,5 @@ final class TerminalControlService {
             return "{}"
         }
         return str
-    }
-}
-
-// MARK: - Approval Payloads
-
-struct ApprovalRequestPayload: Codable {
-    let requestID: String
-    let command: String
-    let flaggedCommand: String
-    let timestamp: String
-    let tabTitle: String?
-    let toolName: String?
-    let projectName: String?
-    let branchName: String?
-    let sessionID: String?
-
-    enum CodingKeys: String, CodingKey {
-        case requestID = "request_id"
-        case command
-        case flaggedCommand = "flagged_command"
-        case timestamp
-        case tabTitle = "tab_title"
-        case toolName = "tool_name"
-        case projectName = "project_name"
-        case branchName = "branch_name"
-        case sessionID = "session_id"
-    }
-}
-
-struct ApprovalResponsePayload: Codable {
-    let requestID: String
-    let approved: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case requestID = "request_id"
-        case approved
     }
 }

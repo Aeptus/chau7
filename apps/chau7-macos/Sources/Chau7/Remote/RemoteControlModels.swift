@@ -226,6 +226,46 @@ struct RemoteAgentPairedDeviceSnapshot: Codable, Equatable {
     }
 }
 
+struct ApprovalRequestPayload: Codable {
+    let requestID: String
+    let command: String
+    let flaggedCommand: String
+    let timestamp: String
+    let tabTitle: String?
+    let toolName: String?
+    let projectName: String?
+    let branchName: String?
+    let currentDirectory: String?
+    let recentCommand: String?
+    let contextNote: String?
+    let sessionID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case requestID = "request_id"
+        case command
+        case flaggedCommand = "flagged_command"
+        case timestamp
+        case tabTitle = "tab_title"
+        case toolName = "tool_name"
+        case projectName = "project_name"
+        case branchName = "branch_name"
+        case currentDirectory = "current_directory"
+        case recentCommand = "recent_command"
+        case contextNote = "context_note"
+        case sessionID = "session_id"
+    }
+}
+
+struct ApprovalResponsePayload: Codable {
+    let requestID: String
+    let approved: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case requestID = "request_id"
+        case approved
+    }
+}
+
 struct PendingRemoteApprovalContext {
     let requestID: String
     let tabID: UInt32
@@ -233,6 +273,9 @@ struct PendingRemoteApprovalContext {
     let toolName: String
     let projectName: String?
     let branchName: String?
+    let currentDirectory: String?
+    let recentCommand: String?
+    let contextNote: String?
     let sessionID: String?
     let command: String
     let flaggedCommand: String
