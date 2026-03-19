@@ -3,6 +3,8 @@ import UserNotifications
 import os
 
 private let log = Logger(subsystem: "ch7", category: "App")
+private let pushNotificationsEnabled =
+    (Bundle.main.object(forInfoDictionaryKey: "Chau7RemotePushNotificationsEnabled") as? Bool) ?? false
 
 @main
 struct Chau7RemoteApp: App {
@@ -49,6 +51,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
             Task { @MainActor in
                 RemoteClient.shared.updateNotificationAuthorization(isGranted: granted)
             }
+            guard pushNotificationsEnabled else {
+                log.info("Remote push notifications disabled for this build")
+                return
+            }
             DispatchQueue.main.async {
                 application.registerForRemoteNotifications()
             }
@@ -83,6 +89,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         _ application: UIApplication,
         didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
     ) {
+        guard pushNotificationsEnabled else { return }
         let token = deviceToken.map { String(format: "%02x", $0) }.joined()
         Task { @MainActor in
             RemoteClient.shared.updatePushToken(token)
@@ -93,6 +100,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         _ application: UIApplication,
         didFailToRegisterForRemoteNotificationsWithError error: any Error
     ) {
+        guard pushNotificationsEnabled else { return }
         log.error("APNs registration failed: \(error.localizedDescription)")
     }
 
@@ -150,6 +158,8 @@ struct RemoteRootView: View {
     var client: RemoteClient
     @State private var selectedTab = Tab.terminal
     @State private var isPairingPresented = false
+    @State private var showsLaunchSplash = true
+    @State private var launchTip = Chau7LaunchTips.randomTip()
 
     enum Tab { case terminal, approvals, settings }
 
@@ -172,6 +182,20 @@ struct RemoteRootView: View {
                 .tabItem { Label("Settings", systemImage: "gearshape") }
                 .tag(Tab.settings)
         }
+        .overlay {
+            if showsLaunchSplash {
+                LaunchSplashView(tip: launchTip)
+                    .transition(.opacity)
+                    .zIndex(1)
+            }
+        }
+        .task {
+            guard showsLaunchSplash else { return }
+            try? await Task.sleep(for: .milliseconds(1400))
+            withAnimation(.easeOut(duration: 0.25)) {
+                showsLaunchSplash = false
+            }
+        }
         .onChange(of: approvalsBadgeCount) { oldCount, newCount in
             if newCount > oldCount { selectedTab = .approvals }
         }
@@ -180,6 +204,97 @@ struct RemoteRootView: View {
         }
         .sheet(isPresented: $isPairingPresented) {
             PairingSheetView(client: client)
+        }
+    }
+}
+
+private enum Chau7LaunchTips {
+    static let all = [
+        "Tip: Chau7 can keep multiple AI coding sessions separated by tab, repo, and branch.",
+        "Tip: On Mac, ⌘⇧P opens the command palette for fast actions.",
+        "Tip: Chau7 tracks AI state per tab, so waiting, running, and stuck sessions stay visible.",
+        "Tip: On Mac, ⌘T opens a new tab instantly.",
+        "Tip: Remote approvals let you respond without opening the full terminal stream.",
+        "Tip: Chau7 can detect Claude and Codex activity directly from terminal sessions.",
+        "Tip: On Mac, ⌘D splits the current pane vertically.",
+        "Tip: Tab dot colors help you scan state quickly: green idle, orange running, blue waiting, red stuck.",
+        "Tip: Chau7 remote can surface interactive Claude and Codex prompts in Approvals.",
+        "Tip: On Mac, ⌘⇧O opens a new SSH connection."
+    ]
+
+    static func randomTip() -> String {
+        all.randomElement() ?? all[0]
+    }
+}
+
+private struct LaunchSplashView: View {
+    let tip: String
+
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [
+                    Color(red: 0.05, green: 0.06, blue: 0.08),
+                    Color(red: 0.08, green: 0.10, blue: 0.14)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            VStack(spacing: 18) {
+                Group {
+                    if UIImage(named: "Chau7Logo") != nil {
+                        Image("Chau7Logo")
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFit()
+                    } else {
+                        Image(systemName: "terminal.fill")
+                            .font(.system(size: 34, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(Color.white.opacity(0.08))
+                    }
+                }
+                .frame(width: 72, height: 72)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                }
+
+                VStack(spacing: 6) {
+                    Text("Chau7 Remote")
+                        .font(.system(size: 28, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+
+                    Text("Connected access to your Chau7 workspace")
+                        .font(.subheadline)
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Today’s tip")
+                        .font(.caption.weight(.semibold))
+                        .textCase(.uppercase)
+                        .foregroundStyle(Color(red: 0.56, green: 0.82, blue: 0.92))
+
+                    Text(tip)
+                        .font(.system(.body, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.92))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: 360, alignment: .leading)
+                .padding(16)
+                .background(Color.white.opacity(0.07))
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+                ProgressView()
+                    .tint(.white.opacity(0.8))
+                    .padding(.top, 6)
+            }
+            .padding(.horizontal, 28)
         }
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Shared keys and defaults for @AppStorage, preventing drift between views.
 enum AppSettings {
@@ -27,12 +28,20 @@ struct SettingsView: View {
             Form {
                 Section {
                     HStack(spacing: 14) {
-                        Image("Chau7Logo")
-                            .resizable()
-                            .interpolation(.high)
-                            .scaledToFit()
-                            .frame(width: 56, height: 56)
-                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        if UIImage(named: "Chau7Logo") != nil {
+                            Image("Chau7Logo")
+                                .resizable()
+                                .interpolation(.high)
+                                .scaledToFit()
+                                .frame(width: 56, height: 56)
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        } else {
+                            Image(systemName: "terminal.fill")
+                                .font(.system(size: 26, weight: .semibold))
+                                .frame(width: 56, height: 56)
+                                .background(Color(UIColor.tertiarySystemBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Chau7 Remote")
