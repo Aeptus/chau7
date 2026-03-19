@@ -279,6 +279,7 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Command blocks — colored left-border gutter (green success, red fail, blue running).
 - Optional line timestamps (multiple formats).
 - Optional JSON pretty-print in terminal output.
+- Font ligature rendering: CoreText-based multi-character shaping for coding fonts (Fira Code, JetBrains Mono, Cascadia Code).
 - Cursor blink rate (0.3–2.0s) and custom cursor color (hex).
 - Unicode ambiguous-width: treat East Asian ambiguous characters as 1 or 2 cells.
 - Menu bar only mode — hide from Dock and Cmd+Tab.
