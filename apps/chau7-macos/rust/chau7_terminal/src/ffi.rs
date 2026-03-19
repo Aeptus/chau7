@@ -1447,6 +1447,113 @@ pub unsafe extern "C" fn chau7_terminal_respond_clipboard(
 }
 
 // ============================================================================
+// Shell Integration (OSC 133) FFI
+// ============================================================================
+
+/// A single OSC 133 shell integration event for FFI.
+/// marker: b'A' = prompt start, b'B' = command start, b'C' = command executed,
+///         b'D' = command finished (exit_code is valid)
+#[repr(C)]
+pub struct FFIShellEvent {
+    pub marker: u8,
+    pub exit_code: i32,
+}
+
+/// Array of shell integration events returned to Swift.
+#[repr(C)]
+pub struct FFIShellEventArray {
+    pub events: *mut FFIShellEvent,
+    pub count: usize,
+}
+
+/// Get pending OSC 133 shell integration events.
+///
+/// # Safety
+/// - `term` must be a valid pointer
+/// - The returned pointer must be freed with `chau7_terminal_free_shell_events`
+/// - Returns null if no events are pending.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_get_pending_shell_events(
+    term: *mut Chau7Terminal,
+) -> *mut FFIShellEventArray {
+    unsafe {
+        if term.is_null() {
+            return std::ptr::null_mut();
+        }
+        let terminal = &*term;
+
+        // Fast path: check atomic flag before locking
+        if !terminal
+            .has_pending_shell_events
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            return std::ptr::null_mut();
+        }
+
+        let mut pending = terminal.pending_shell_events.lock();
+        if pending.is_empty() {
+            terminal
+                .has_pending_shell_events
+                .store(false, std::sync::atomic::Ordering::Release);
+            return std::ptr::null_mut();
+        }
+
+        let events: Vec<FFIShellEvent> = pending
+            .drain(..)
+            .map(|e| match e {
+                graphics::ShellIntegrationEvent::PromptStart => FFIShellEvent {
+                    marker: b'A',
+                    exit_code: 0,
+                },
+                graphics::ShellIntegrationEvent::CommandStart => FFIShellEvent {
+                    marker: b'B',
+                    exit_code: 0,
+                },
+                graphics::ShellIntegrationEvent::CommandExecuted => FFIShellEvent {
+                    marker: b'C',
+                    exit_code: 0,
+                },
+                graphics::ShellIntegrationEvent::CommandFinished { exit_code } => FFIShellEvent {
+                    marker: b'D',
+                    exit_code,
+                },
+            })
+            .collect();
+
+        terminal
+            .has_pending_shell_events
+            .store(false, std::sync::atomic::Ordering::Release);
+
+        let count = events.len();
+        let boxed = events.into_boxed_slice();
+        let event_ptr = Box::into_raw(boxed) as *mut FFIShellEvent;
+
+        let array = Box::new(FFIShellEventArray {
+            events: event_ptr,
+            count,
+        });
+        Box::into_raw(array)
+    }
+}
+
+/// Free a shell event array returned by `chau7_terminal_get_pending_shell_events`.
+///
+/// # Safety
+/// - `array_ptr` must have been returned by `chau7_terminal_get_pending_shell_events`
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn chau7_terminal_free_shell_events(array_ptr: *mut FFIShellEventArray) {
+    unsafe {
+        if array_ptr.is_null() {
+            return;
+        }
+        let array = Box::from_raw(array_ptr);
+        if !array.events.is_null() && array.count > 0 {
+            let _ = Box::from_raw(std::slice::from_raw_parts_mut(array.events, array.count));
+        }
+    }
+}
+
+// ============================================================================
 // Graphics Protocol FFI
 // ============================================================================
 

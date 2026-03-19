@@ -543,6 +543,10 @@ private final class RustTerminalFFI {
     private typealias HasClipboardRequestFn = @convention(c) (OpaquePointer?) -> Bool
     private typealias RespondClipboardFn = @convention(c) (OpaquePointer?, UnsafePointer<CChar>?) -> Void
 
+    // Shell integration (OSC 133) FFI types — opaque pointers like images API
+    private typealias GetPendingShellIntegrationEventsFn = @convention(c) (OpaquePointer?) -> UnsafeMutableRawPointer?
+    private typealias FreeShellIntegrationEventsFn = @convention(c) (UnsafeMutableRawPointer?) -> Void
+
     // Graphics protocol FFI types (Phase 4)
     private typealias GetPendingImagesFn = @convention(c) (OpaquePointer?) -> UnsafeMutableRawPointer?
     private typealias FreeImagesFn = @convention(c) (UnsafeMutableRawPointer?) -> Void
@@ -609,6 +613,9 @@ private final class RustTerminalFFI {
         let getPendingClipboard: GetPendingClipboardFn? // Optional - for OSC 52 clipboard store
         let hasClipboardRequest: HasClipboardRequestFn? // Optional - for OSC 52 clipboard load
         let respondClipboard: RespondClipboardFn? // Optional - for OSC 52 clipboard load response
+        // Shell integration (OSC 133)
+        let getPendingShellIntegrationEvents: GetPendingShellIntegrationEventsFn?
+        let freeShellIntegrationEvents: FreeShellIntegrationEventsFn?
         // Graphics protocol support (Phase 4)
         let getPendingImages: GetPendingImagesFn? // Optional - for image protocol support
         let freeImages: FreeImagesFn? // Optional - for image protocol support
@@ -905,6 +912,13 @@ private final class RustTerminalFFI {
             Log.info("RustTerminalFFI: clipboard (OSC 52) symbols not found (optional)")
         }
 
+        // Shell integration (OSC 133)
+        let getPendingShellIntegrationEventsSym = loadSymbol("chau7_terminal_get_pending_shell_events")
+        let freeShellIntegrationEventsSym = loadSymbol("chau7_terminal_free_shell_events")
+        if getPendingShellIntegrationEventsSym == nil {
+            Log.info("RustTerminalFFI: shell integration (OSC 133) symbols not found (optional)")
+        }
+
         // Graphics protocol support (Phase 4: image protocol pre-processor)
         let getPendingImagesSym = loadSymbol("chau7_terminal_get_pending_images")
         let freeImagesSym = loadSymbol("chau7_terminal_free_images")
@@ -966,6 +980,9 @@ private final class RustTerminalFFI {
             getPendingClipboard: getPendingClipboardSym.map { unsafeBitCast($0, to: GetPendingClipboardFn.self) },
             hasClipboardRequest: hasClipboardRequestSym.map { unsafeBitCast($0, to: HasClipboardRequestFn.self) },
             respondClipboard: respondClipboardSym.map { unsafeBitCast($0, to: RespondClipboardFn.self) },
+            // Shell integration (OSC 133)
+            getPendingShellIntegrationEvents: getPendingShellIntegrationEventsSym.map { unsafeBitCast($0, to: GetPendingShellIntegrationEventsFn.self) },
+            freeShellIntegrationEvents: freeShellIntegrationEventsSym.map { unsafeBitCast($0, to: FreeShellIntegrationEventsFn.self) },
             // Graphics protocol support (Phase 4)
             getPendingImages: getPendingImagesSym.map { unsafeBitCast($0, to: GetPendingImagesFn.self) },
             freeImages: freeImagesSym.map { unsafeBitCast($0, to: FreeImagesFn.self) },
@@ -1767,6 +1784,36 @@ private final class RustTerminalFFI {
         Log.info("RustTerminalFFI[\(instanceId)]: OSC 52 clipboard load response: \(text.count) chars")
     }
 
+    // MARK: - Shell Integration (OSC 133)
+
+    /// Get pending OSC 133 shell integration events from the Rust terminal.
+    func getPendingShellIntegrationEvents() -> [ShellIntegrationEvent] {
+        guard let getFn = Self.functions?.getPendingShellIntegrationEvents,
+              let freeFn = Self.functions?.freeShellIntegrationEvents else {
+            return []
+        }
+
+        guard let rawPtr = getFn(terminal) else { return [] }
+        defer { freeFn(rawPtr) }
+
+        let array = rawPtr.assumingMemoryBound(to: RustShellEventArray.self).pointee
+        guard array.count > 0, let ptr = array.events else { return [] }
+
+        var events: [ShellIntegrationEvent] = []
+        events.reserveCapacity(array.count)
+        for i in 0 ..< array.count {
+            let raw = ptr[i]
+            switch raw.marker {
+            case UInt8(ascii: "A"): events.append(.promptStart)
+            case UInt8(ascii: "B"): events.append(.commandStart)
+            case UInt8(ascii: "C"): events.append(.commandExecuted)
+            case UInt8(ascii: "D"): events.append(.commandFinished(exitCode: raw.exit_code))
+            default: break
+            }
+        }
+        return events
+    }
+
     // MARK: - Graphics Protocol Methods (Phase 4)
 
     /// C-compatible image data layout matching Rust's FFIImageData.
@@ -1913,6 +1960,9 @@ final class RustTerminalView: NSView {
 
     /// Callback when current directory changes (OSC 7)
     var onDirectoryChanged: ((String) -> Void)?
+
+    /// Callback when OSC 133 shell integration events arrive (prompt/command lifecycle)
+    var onShellIntegrationEvent: ((ShellIntegrationEvent) -> Void)?
 
     /// Callback when shell produces no PTY output within the startup timeout
     var onShellStartupSlow: (() -> Void)?
@@ -2804,6 +2854,16 @@ final class RustTerminalView: NSView {
             Log.info("RustTerminalView[\(viewId)]: OSC 52 clipboard load request")
             let clipboardContent = NSPasteboard.general.string(forType: .string) ?? ""
             rust.respondClipboard(text: clipboardContent)
+        }
+
+        // Check for OSC 133 shell integration events
+        let shellEvents = rust.getPendingShellIntegrationEvents()
+        if !shellEvents.isEmpty {
+            DispatchQueue.main.async { [weak self] in
+                for event in shellEvents {
+                    self?.onShellIntegrationEvent?(event)
+                }
+            }
         }
 
         // Check for child process exit

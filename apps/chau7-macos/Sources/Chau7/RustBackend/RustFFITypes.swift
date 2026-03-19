@@ -91,3 +91,25 @@ enum TerminalFont {
         return CGSize(width: width, height: height)
     }
 }
+
+// MARK: - Shell Integration (OSC 133) Types
+
+/// OSC 133 shell integration event — used across the terminal stack.
+enum ShellIntegrationEvent {
+    case promptStart
+    case commandStart
+    case commandExecuted
+    case commandFinished(exitCode: Int32)
+}
+
+/// Matches Rust's FFIShellEvent. marker: A=prompt, B=command, C=executed, D=finished.
+struct RustShellEvent {
+    var marker: UInt8
+    var exit_code: Int32
+}
+
+/// Matches Rust's FFIShellEventArray.
+struct RustShellEventArray {
+    var events: UnsafeMutablePointer<RustShellEvent>?
+    var count: Int
+}
