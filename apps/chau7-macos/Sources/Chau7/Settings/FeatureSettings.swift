@@ -1420,8 +1420,7 @@ final class FeatureSettings: ObservableObject {
     }
 
     /// Enable font ligature rendering (e.g., =>, ->, === in Fira Code, JetBrains Mono).
-    /// Requires a font with ligature support. Has no effect with non-ligature fonts.
-    @Published var enableLigatures: Bool {
+    @Published var enableLigatures: Bool = UserDefaults.standard.bool(forKey: "terminal.enableLigatures") {
         didSet { UserDefaults.standard.set(enableLigatures, forKey: "terminal.enableLigatures") }
     }
 
@@ -2323,7 +2322,6 @@ final class FeatureSettings: ObservableObject {
         self.isMouseReportingEnabled = defaults.object(forKey: Keys.mouseReporting) as? Bool ?? false
         // Metal renderer: enabled by default (GPU-accelerated with cursor/text blink, Retina scaling)
         self.useMetalRenderer = defaults.object(forKey: Keys.useMetalRenderer) as? Bool ?? true
-        self.enableLigatures = defaults.object(forKey: "terminal.enableLigatures") as? Bool ?? false
         // Click-to-position: enabled by default (like modern text editors)
         self.isClickToPositionEnabled = defaults.object(forKey: Keys.clickToPosition) as? Bool ?? true
         self.defaultEditor = defaults.string(forKey: Keys.defaultEditor) ?? "" // Empty = use $EDITOR or system default
