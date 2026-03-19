@@ -871,7 +871,14 @@ fn main() -> Result<()> {
             if file == Path::new("-") {
                 read::run_stdin(level, max_lines, start_line, line_numbers, cli.verbose)?;
             } else {
-                read::run(&file, level, max_lines, start_line, line_numbers, cli.verbose)?;
+                read::run(
+                    &file,
+                    level,
+                    max_lines,
+                    start_line,
+                    line_numbers,
+                    cli.verbose,
+                )?;
             }
         }
 

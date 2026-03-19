@@ -49,12 +49,7 @@ pub fn run(
 
     // Start line beyond EOF — no content in range, match sed behavior (no output).
     if sliced.is_empty() {
-        timer.track(
-            &format!("cat {}", file.display()),
-            "rtk read",
-            &sliced,
-            "",
-        );
+        timer.track(&format!("cat {}", file.display()), "rtk read", &sliced, "");
         return Ok(());
     }
 
@@ -289,14 +284,7 @@ fn main() {{
         }
 
         // Read starting from line 5 with no filter — shouldn't panic
-        run(
-            file.path(),
-            FilterLevel::None,
-            None,
-            Some(5),
-            false,
-            0,
-        )?;
+        run(file.path(), FilterLevel::None, None, Some(5), false, 0)?;
         Ok(())
     }
 
@@ -308,14 +296,7 @@ fn main() {{
         }
 
         // Read lines 5 onward, truncated to 3 lines — shouldn't panic
-        run(
-            file.path(),
-            FilterLevel::None,
-            Some(3),
-            Some(5),
-            false,
-            0,
-        )?;
+        run(file.path(), FilterLevel::None, Some(3), Some(5), false, 0)?;
         Ok(())
     }
 
@@ -344,14 +325,7 @@ fn main() {{
         }
 
         // Start line beyond EOF — should succeed with no output (not panic)
-        run(
-            file.path(),
-            FilterLevel::None,
-            None,
-            Some(100),
-            false,
-            0,
-        )?;
+        run(file.path(), FilterLevel::None, None, Some(100), false, 0)?;
         Ok(())
     }
 }
