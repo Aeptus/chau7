@@ -691,7 +691,7 @@ public final class MetalTerminalRenderer: NSObject {
             // All cells in the sequence must be printable ASCII with the same style
             var sequence = ""
             var valid = true
-            for j in 0..<len {
+            for j in 0 ..< len {
                 let c = cells[index + j]
                 guard c.character >= 0x21, c.character < 0x7F,
                       let scalar = Unicode.Scalar(c.character) else {
@@ -701,7 +701,9 @@ public final class MetalTerminalRenderer: NSObject {
                 // Check same bold/italic style
                 let cBold = (c.flags & 1) != 0
                 let cItalic = (c.flags & 2) != 0
-                if cBold != bold || cItalic != italic { valid = false; break }
+                if cBold != bold || cItalic != italic { valid = false
+                    break
+                }
                 sequence.append(Character(scalar))
             }
             guard valid else { continue }
@@ -810,8 +812,14 @@ public final class MetalTerminalRenderer: NSObject {
 
             if ligaturesEnabled, cell.character >= 0x21, cell.character < 0x7F,
                ligatureSkip <= 0 {
-                let ligInfo = tryLigature(cells: cells, index: i, count: count, cols: cols,
-                                          bold: isBold, italic: isItalic)
+                let ligInfo = tryLigature(
+                    cells: cells,
+                    index: i,
+                    count: count,
+                    cols: cols,
+                    bold: isBold,
+                    italic: isItalic
+                )
                 if let lig = ligInfo {
                     // First cell gets the left slice of the ligature texture.
                     // Subsequent cells (via ligatureSkip) get their slices below.

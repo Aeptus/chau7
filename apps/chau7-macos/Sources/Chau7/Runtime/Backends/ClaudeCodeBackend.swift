@@ -44,7 +44,9 @@ struct ClaudeCodeBackend: AgentBackend {
         return prompt + "\n"
     }
 
-    var resumeProviderKey: String? { "claude" }
+    var resumeProviderKey: String? {
+        "claude"
+    }
 
     // MARK: - State Mapping
 

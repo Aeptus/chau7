@@ -56,7 +56,7 @@ final class EventJournalTests: XCTestCase {
 
     func testLimitParameter() {
         let journal = EventJournal()
-        for i in 1...10 {
+        for i in 1 ... 10 {
             journal.append(sessionID: "s1", turnID: nil, type: "e\(i)")
         }
 
@@ -80,14 +80,14 @@ final class EventJournalTests: XCTestCase {
         let journal = EventJournal(capacity: 5)
 
         // Fill exactly to capacity
-        for i in 1...5 {
+        for i in 1 ... 5 {
             journal.append(sessionID: "s1", turnID: nil, type: "e\(i)")
         }
         XCTAssertEqual(journal.count, 5)
         XCTAssertEqual(journal.latestCursor, 5)
 
         // Add 3 more — first 3 should be evicted
-        for i in 6...8 {
+        for i in 6 ... 8 {
             journal.append(sessionID: "s1", turnID: nil, type: "e\(i)")
         }
         XCTAssertEqual(journal.count, 5)
@@ -103,7 +103,7 @@ final class EventJournalTests: XCTestCase {
     func testOldCursorGetsOldestAvailable() {
         let journal = EventJournal(capacity: 3)
 
-        for i in 1...10 {
+        for i in 1 ... 10 {
             journal.append(sessionID: "s1", turnID: nil, type: "e\(i)")
         }
 
@@ -136,12 +136,12 @@ final class EventJournalTests: XCTestCase {
     func testConcurrentAppendAndRead() {
         let journal = EventJournal(capacity: 100)
         let iterations = 500
-        let expectation = self.expectation(description: "concurrent")
+        let expectation = expectation(description: "concurrent")
         expectation.expectedFulfillmentCount = 3
 
         // Writer 1
         DispatchQueue.global().async {
-            for i in 0..<iterations {
+            for i in 0 ..< iterations {
                 journal.append(sessionID: "s1", turnID: nil, type: "w1_\(i)")
             }
             expectation.fulfill()
@@ -149,7 +149,7 @@ final class EventJournalTests: XCTestCase {
 
         // Writer 2
         DispatchQueue.global().async {
-            for i in 0..<iterations {
+            for i in 0 ..< iterations {
                 journal.append(sessionID: "s1", turnID: nil, type: "w2_\(i)")
             }
             expectation.fulfill()
@@ -159,13 +159,13 @@ final class EventJournalTests: XCTestCase {
         DispatchQueue.global().async {
             var cursor: UInt64 = 0
             var totalRead = 0
-            for _ in 0..<200 {
+            for _ in 0 ..< 200 {
                 let (events, newCursor, _) = journal.events(after: cursor, limit: 50)
                 cursor = newCursor
                 totalRead += events.count
                 // Verify monotonic sequence
                 if events.count > 1 {
-                    for i in 1..<events.count {
+                    for i in 1 ..< events.count {
                         XCTAssertGreaterThan(events[i].seq, events[i - 1].seq)
                     }
                 }

@@ -92,6 +92,6 @@ final class RemoteTabRegistryTests: XCTestCase {
 
         let background = registry.backgroundTabIDs(for: [firstID, secondID], selectedTabID: firstID)
 
-        XCTAssertEqual(background, [try XCTUnwrap(registry.tabID(for: secondID))])
+        XCTAssertEqual(background, try [XCTUnwrap(registry.tabID(for: secondID))])
     }
 }

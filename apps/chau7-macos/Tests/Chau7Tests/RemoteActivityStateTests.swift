@@ -3,7 +3,7 @@ import XCTest
 
 final class RemoteActivityStateTests: XCTestCase {
     func testWaitingInputBeatsSelectedRunningSession() {
-        let now = Date(timeIntervalSince1970: 1_000)
+        let now = Date(timeIntervalSince1970: 1000)
         let running = RemoteActivityCandidate(
             activityID: "tab-1",
             tabID: 1,
@@ -39,7 +39,7 @@ final class RemoteActivityStateTests: XCTestCase {
     }
 
     func testSelectedRunningSessionBeatsMoreRecentBackgroundRunningSession() {
-        let now = Date(timeIntervalSince1970: 2_000)
+        let now = Date(timeIntervalSince1970: 2000)
         let selected = RemoteActivityCandidate(
             activityID: "tab-1",
             tabID: 1,
@@ -69,7 +69,7 @@ final class RemoteActivityStateTests: XCTestCase {
     }
 
     func testCompletedStateUsesExplicitDetail() {
-        let now = Date(timeIntervalSince1970: 3_000)
+        let now = Date(timeIntervalSince1970: 3000)
         let completed = RemoteActivityCandidate(
             activityID: "tab-3",
             tabID: 3,

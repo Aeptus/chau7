@@ -219,11 +219,22 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     @Published var toolTerminalLines: [String: [String]] = [:]
     @Published var sessionStatuses: [SessionStatus] = []
 
-    // Backward-compat computed accessors for MainPanelView / LogsSettingsView
-    var codexHistoryEntries: [HistoryEntry] { toolHistoryEntries["codex"] ?? [] }
-    var claudeHistoryEntries: [HistoryEntry] { toolHistoryEntries["claude"] ?? [] }
-    var codexTerminalLines: [String] { toolTerminalLines["codex"] ?? [] }
-    var claudeTerminalLines: [String] { toolTerminalLines["claude"] ?? [] }
+    /// Backward-compat computed accessors for MainPanelView / LogsSettingsView
+    var codexHistoryEntries: [HistoryEntry] {
+        toolHistoryEntries["codex"] ?? []
+    }
+
+    var claudeHistoryEntries: [HistoryEntry] {
+        toolHistoryEntries["claude"] ?? []
+    }
+
+    var codexTerminalLines: [String] {
+        toolTerminalLines["codex"] ?? []
+    }
+
+    var claudeTerminalLines: [String] {
+        toolTerminalLines["claude"] ?? []
+    }
 
     func latestSessionStatus(toolName: String, sessionId: String) -> SessionStatus? {
         let trimmedTool = toolName.trimmingCharacters(in: .whitespacesAndNewlines)

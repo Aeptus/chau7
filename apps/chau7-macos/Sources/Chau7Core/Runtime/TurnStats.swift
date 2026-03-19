@@ -4,7 +4,7 @@ import Foundation
 public struct ToolTally: Codable, Sendable {
     public let name: String
     public internal(set) var count: Int
-    public internal(set) var files: [String]   // deduplicated paths
+    public internal(set) var files: [String] // deduplicated paths
 
     public init(name: String, count: Int = 0, files: [String] = []) {
         self.name = name
@@ -20,12 +20,14 @@ public struct ToolTally: Codable, Sendable {
 /// directly into `RuntimeEvent.data` for the `turn_completed` event.
 public struct TurnStats: Codable, Sendable {
     public private(set) var toolTallies: [String: ToolTally] = [:]
-    public private(set) var inputTokens: Int = 0
-    public private(set) var outputTokens: Int = 0
-    public private(set) var cacheCreationTokens: Int = 0
-    public private(set) var cacheReadTokens: Int = 0
+    public private(set) var inputTokens = 0
+    public private(set) var outputTokens = 0
+    public private(set) var cacheCreationTokens = 0
+    public private(set) var cacheReadTokens = 0
 
-    public var totalTokens: Int { inputTokens + outputTokens }
+    public var totalTokens: Int {
+        inputTokens + outputTokens
+    }
 
     public init() {}
 

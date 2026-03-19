@@ -111,7 +111,7 @@ struct ProfileSelectorBar: View {
             // Fall back to directory basename
             if let dir = overlayModel?.selectedTab?.session?.currentDirectory {
                 let basename = URL(fileURLWithPath: dir).lastPathComponent
-                if !basename.isEmpty && basename != "/" {
+                if !basename.isEmpty, basename != "/" {
                     return basename
                 }
             }
@@ -125,7 +125,7 @@ struct ProfileSelectorBar: View {
 
 struct CreateProfileSheet: View {
     @ObservedObject var settings: FeatureSettings
-    var defaultName: String = ""
+    var defaultName = ""
     let onDismiss: () -> Void
 
     @State private var profileName = ""

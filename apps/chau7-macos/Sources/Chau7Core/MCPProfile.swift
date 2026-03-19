@@ -78,9 +78,9 @@ public struct MCPProfile: Codable, Identifiable, Equatable, Sendable {
 
 // MARK: - Profile Matching
 
-extension MCPProfile {
+public extension MCPProfile {
     /// Check if this profile's trigger matches the given tab context.
-    public func matches(context: MCPTabContext) -> Bool {
+    func matches(context: MCPTabContext) -> Bool {
         guard isEnabled else { return false }
         // Reuse ProfileSwitchRule's matching logic via a temporary rule
         let rule = ProfileSwitchRule(

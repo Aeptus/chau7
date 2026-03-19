@@ -31,7 +31,9 @@ struct CodexBackend: AgentBackend {
         return prompt + "\n"
     }
 
-    var resumeProviderKey: String? { nil } // Codex doesn't support resume
+    var resumeProviderKey: String? {
+        nil
+    } // Codex doesn't support resume
 
     private func shellEscape(_ value: String) -> String {
         if value.rangeOfCharacter(from: .init(charactersIn: " \"'$\\`!#&|;(){}[]<>?*~")) != nil {

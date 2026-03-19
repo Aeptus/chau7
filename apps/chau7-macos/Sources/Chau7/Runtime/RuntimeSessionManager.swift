@@ -10,9 +10,9 @@ final class RuntimeSessionManager {
 
     // MARK: - Session Storage
 
-    private var sessions: [String: RuntimeSession] = [:]  // sessionID → session
-    private var tabToSession: [UUID: String] = [:]          // tabID → sessionID
-    private var cwdToSession: [String: String] = [:]        // cwd → sessionID (for event matching)
+    private var sessions: [String: RuntimeSession] = [:] // sessionID → session
+    private var tabToSession: [UUID: String] = [:] // tabID → sessionID
+    private var cwdToSession: [String: String] = [:] // cwd → sessionID (for event matching)
     private let lock = NSLock()
 
     /// Recently stopped sessions kept for final queries.
@@ -138,7 +138,7 @@ final class RuntimeSessionManager {
         lock.unlock()
 
         // Adopt unknown Claude Code sessions as passive
-        if session == nil && !event.cwd.isEmpty {
+        if session == nil, !event.cwd.isEmpty {
             session = tryAdoptFromEvent(event)
         }
 
@@ -345,13 +345,12 @@ final class RuntimeSessionManager {
     /// Find a tab UUID by working directory, searching all registered windows.
     private func resolveTabByCwd(_ cwd: String) -> UUID? {
         // Must run on main thread since OverlayTabsModel is main-thread-only
-        let result: UUID? = {
+        return {
             if Thread.isMainThread {
                 return _resolveTabByCwd(cwd)
             }
             return DispatchQueue.main.sync { _resolveTabByCwd(cwd) }
         }()
-        return result
     }
 
     private func _resolveTabByCwd(_ cwd: String) -> UUID? {

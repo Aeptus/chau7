@@ -33,10 +33,8 @@ extension TokenOptimizationMode {
 enum CTOFlagManager {
 
     /// Base directory for CTO flag files.
-    private static let flagDirectory: URL = {
-        RuntimeIsolation.chau7Directory()
-            .appendingPathComponent("cto_active", isDirectory: true)
-    }()
+    private static let flagDirectory: URL = RuntimeIsolation.chau7Directory()
+        .appendingPathComponent("cto_active", isDirectory: true)
 
     // MARK: - Flag File CRUD
 

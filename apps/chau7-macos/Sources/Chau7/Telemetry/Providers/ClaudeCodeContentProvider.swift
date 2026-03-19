@@ -31,13 +31,13 @@ final class ClaudeCodeContentProvider: RunContentProvider {
         let subagentsDir = sessionDir.appendingPathComponent("subagents")
         var jsonlFiles = (try? FileManager.default.contentsOfDirectory(
             at: subagentsDir, includingPropertiesForKeys: nil
-        ).filter({ $0.pathExtension == "jsonl" })) ?? []
+        ).filter { $0.pathExtension == "jsonl" }) ?? []
 
         // Fallback: check for JSONL files directly in the session directory
         if jsonlFiles.isEmpty {
             jsonlFiles = (try? FileManager.default.contentsOfDirectory(
                 at: sessionDir, includingPropertiesForKeys: nil
-            ).filter({ $0.pathExtension == "jsonl" })) ?? []
+            ).filter { $0.pathExtension == "jsonl" }) ?? []
         }
 
         if jsonlFiles.isEmpty { return nil }

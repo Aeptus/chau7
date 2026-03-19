@@ -12,11 +12,11 @@ public final class EventJournal: @unchecked Sendable {
     /// Ring buffer storage.
     private var buffer: [RuntimeEvent]
     /// Write position in the ring buffer.
-    private var writeIndex: Int = 0
+    private var writeIndex = 0
     /// Total events ever appended (monotonic). Used as the cursor space.
     private var totalAppended: UInt64 = 0
     /// Whether the buffer has wrapped around at least once.
-    private var wrapped: Bool = false
+    private var wrapped = false
 
     private let lock = NSLock()
 
@@ -24,7 +24,7 @@ public final class EventJournal: @unchecked Sendable {
         precondition(capacity > 0)
         self.capacity = capacity
         self.buffer = []
-        self.buffer.reserveCapacity(capacity)
+        buffer.reserveCapacity(capacity)
     }
 
     /// Append a new event. Returns the created event with its sequence number.
@@ -93,7 +93,7 @@ public final class EventJournal: @unchecked Sendable {
             startReadIndex = 0
         }
 
-        for i in 0..<count {
+        for i in 0 ..< count {
             let idx = (startReadIndex + i) % count
             let event = buffer[idx]
             if event.seq > effectiveStart {

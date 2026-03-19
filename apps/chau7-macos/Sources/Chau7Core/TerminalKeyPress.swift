@@ -119,7 +119,7 @@ public struct TerminalKeyPress: Equatable, Sendable {
         }
     }
 
-    private static let namedKeys: Set<String> = [
+    private static let namedKeys: Set = [
         "enter",
         "escape",
         "tab",
@@ -150,14 +150,14 @@ public struct TerminalKeyPress: Equatable, Sendable {
             guard modifiers.isEmpty else { return nil }
             return EncodedTerminalKeyPress(bytes: [0x1B], text: "\u{1B}")
         case "tab":
-            if shift && modifiers.count == 1 {
+            if shift, modifiers.count == 1 {
                 let bytes = csiSequence("Z")
                 return EncodedTerminalKeyPress(bytes: bytes, text: String(bytes: bytes, encoding: .utf8))
             }
             guard modifiers.isEmpty else { return nil }
             return EncodedTerminalKeyPress(bytes: [0x09], text: "\t")
         case "backspace":
-            if control && modifiers.count == 1 {
+            if control, modifiers.count == 1 {
                 return EncodedTerminalKeyPress(bytes: [0x08], text: "\u{8}")
             }
             guard modifiers.isEmpty else { return nil }

@@ -262,7 +262,7 @@ final class RemoteControlManager: ObservableObject {
 
     /// Terminates a process with escalating signals. Safe to call from any
     /// isolation context — the spin-wait runs off the main actor.
-    nonisolated private func terminateProcess(_ process: Process, name: String) {
+    private nonisolated func terminateProcess(_ process: Process, name: String) {
         guard process.isRunning else { return }
 
         process.terminate()
@@ -282,7 +282,7 @@ final class RemoteControlManager: ObservableObject {
         _ = waitForExit(of: process, timeout: 0.5)
     }
 
-    nonisolated private func waitForExit(of process: Process, timeout: TimeInterval) -> Bool {
+    private nonisolated func waitForExit(of process: Process, timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while process.isRunning, Date() < deadline {
             usleep(50000)
@@ -415,7 +415,7 @@ final class RemoteControlManager: ObservableObject {
         let previousStreamMode = connectedClientStreamMode
         connectedClientStreamMode = payload.streamMode
 
-        if previousStreamMode != payload.streamMode && payload.streamMode == .approvalsOnly {
+        if previousStreamMode != payload.streamMode, payload.streamMode == .approvalsOnly {
             cancelBackgroundSnapshotPrefetch()
             cancelPendingOutputFlush()
         }
@@ -569,8 +569,8 @@ final class RemoteControlManager: ObservableObject {
             let updatedAt = activityUpdatedAt(for: session, tab: tab, approval: nil)
 
             guard session.aiDisplayAppName != nil ||
-                    session.effectiveAIProvider != nil ||
-                    session.effectiveAISessionId != nil else {
+                session.effectiveAIProvider != nil ||
+                session.effectiveAISessionId != nil else {
                 return nil
             }
 
@@ -762,11 +762,11 @@ final class RemoteControlManager: ObservableObject {
 
         backgroundSnapshotTask = Task { @MainActor [weak self] in
             for (index, tabID) in backgroundTabIDs.enumerated() {
-                guard let self, !Task.isCancelled, self.isIPCConnected else { return }
+                guard let self, !Task.isCancelled, isIPCConnected else { return }
                 if index > 0 {
                     try? await Task.sleep(for: .milliseconds(75))
                 }
-                self.sendSnapshot(for: tabID)
+                sendSnapshot(for: tabID)
             }
         }
     }
@@ -781,7 +781,7 @@ final class RemoteControlManager: ObservableObject {
         outputFlushTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: RemoteOutputTuning.flushInterval)
             guard let self, !Task.isCancelled else { return }
-            self.flushPendingOutput()
+            flushPendingOutput()
         }
     }
 

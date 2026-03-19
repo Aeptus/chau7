@@ -438,7 +438,9 @@ public struct TabTokenConsumption: Identifiable, Sendable {
     public let totalCostUSD: Double
     /// Most recent provider for this tab (e.g. "claude"), for label display when the tab is closed.
     public let lastProvider: String?
-    public var id: String { tabID }
+    public var id: String {
+        tabID
+    }
 
     public init(tabID: String, runCount: Int, totalInputTokens: Int, totalOutputTokens: Int, totalCostUSD: Double, lastProvider: String? = nil) {
         self.tabID = tabID
@@ -457,7 +459,9 @@ public struct ProviderConsumptionStats: Identifiable, Sendable {
     public let totalInputTokens: Int
     public let totalOutputTokens: Int
     public let totalCostUSD: Double
-    public var id: String { provider }
+    public var id: String {
+        provider
+    }
 
     public init(provider: String, runCount: Int, totalInputTokens: Int, totalOutputTokens: Int, totalCostUSD: Double) {
         self.provider = provider
@@ -506,7 +510,7 @@ public let ctoRewriteMap: [String: String] = [
     "swift": "swift",
     "python": "python",
     "python3": "python",
-    "sed": "read"       // sed -n 'range p' file → chau7-optim read
+    "sed": "read" // sed -n 'range p' file → chau7-optim read
 ]
 
 /// Commands that are exec-only (no optimizer subcommand mapping).

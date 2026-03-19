@@ -324,7 +324,7 @@ final class TerminalControlService {
         // If wait_for_stable_ms is requested, poll the buffer on the calling (MCP background)
         // thread, only briefly grabbing main for each snapshot. This avoids blocking the UI.
         if let waitMs = waitForStableMs, waitMs > 0 {
-            let maxWaitMs = min(waitMs, 30_000)
+            let maxWaitMs = min(waitMs, 30000)
             // Content must be unchanged for this long to be considered stable.
             // The caller's wait_for_stable_ms is the total budget; we use a shorter
             // inner threshold so we return as soon as content settles.
@@ -345,7 +345,7 @@ final class TerminalControlService {
                 guard let fp = fingerprint else { break }
 
                 if let prev = previousFingerprint,
-                   fp.0 == prev.0 && fp.1 == prev.1 {
+                   fp.0 == prev.0, fp.1 == prev.1 {
                     // Content unchanged since last poll
                     if stableSince == nil { stableSince = DispatchTime.now() }
                     let stableMs = Int((DispatchTime.now().uptimeNanoseconds - stableSince!.uptimeNanoseconds) / 1_000_000)

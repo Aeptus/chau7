@@ -442,7 +442,7 @@ final class TerminalSessionModelTests: XCTestCase {
         let session = TerminalSessionModel(appModel: model)
 
         session.sendOrQueueInput("hello")
-        session.sendOrQueueKeyPress(try TerminalKeyPress(key: "enter"))
+        try session.sendOrQueueKeyPress(TerminalKeyPress(key: "enter"))
 
         let terminalView = RustTerminalView(frame: .zero)
         var capturedInputs: [String] = []

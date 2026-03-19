@@ -43,9 +43,13 @@ enum StreamSelection: Hashable, Identifiable {
 
     /// Default selections for the picker (backward-compat with known tools)
     static var defaultSelections: [StreamSelection] {
-        [.history(providerKey: "codex"), .history(providerKey: "claude"),
-         .terminal(providerKey: "codex"), .terminal(providerKey: "claude"),
-         .verbose]
+        [
+            .history(providerKey: "codex"),
+            .history(providerKey: "claude"),
+            .terminal(providerKey: "codex"),
+            .terminal(providerKey: "claude"),
+            .verbose
+        ]
     }
 }
 

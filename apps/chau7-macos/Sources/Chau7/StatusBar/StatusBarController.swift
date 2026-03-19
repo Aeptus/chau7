@@ -288,8 +288,8 @@ struct CommandCenterSessionSummary: Identifiable, Equatable {
             .flatMap { tab -> [CommandCenterSessionSummary] in
                 tab.splitController.terminalSessions.compactMap { paneID, session in
                     guard session.aiDisplayAppName != nil ||
-                            session.effectiveAIProvider != nil ||
-                            session.effectiveAISessionId != nil else {
+                        session.effectiveAIProvider != nil ||
+                        session.effectiveAISessionId != nil else {
                         return nil
                     }
                     guard let state = state(for: session.effectiveStatus) else {
@@ -368,7 +368,7 @@ final class CommandCenterViewModel: ObservableObject {
         refreshSessions()
 
         if autoRefresh {
-            refreshCancellable = Timer.publish(every: 1.0, on: .main, in: .common)
+            self.refreshCancellable = Timer.publish(every: 1.0, on: .main, in: .common)
                 .autoconnect()
                 .sink { [weak self] _ in
                     self?.refreshSessions()

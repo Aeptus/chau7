@@ -13,10 +13,10 @@ final class IncrementalTranscriptReader {
     private var fileOffsets: [URL: UInt64] = [:]
 
     /// Cumulative totals across all reads.
-    private(set) var cumulativeInput: Int = 0
-    private(set) var cumulativeOutput: Int = 0
-    private(set) var cumulativeCacheCreation: Int = 0
-    private(set) var cumulativeCacheRead: Int = 0
+    private(set) var cumulativeInput = 0
+    private(set) var cumulativeOutput = 0
+    private(set) var cumulativeCacheCreation = 0
+    private(set) var cumulativeCacheRead = 0
 
     init?(cwd: String, claudeSessionID: String?) {
         guard let sessionID = claudeSessionID, !sessionID.isEmpty else {
@@ -64,7 +64,7 @@ final class IncrementalTranscriptReader {
             let newlineByte = UInt8(ascii: "\n")
             let safeCount: Int
             if let lastNewline = data.lastIndex(of: newlineByte) {
-                safeCount = lastNewline + 1  // include the newline itself
+                safeCount = lastNewline + 1 // include the newline itself
             } else {
                 // No complete line yet — don't advance, retry next time
                 continue
@@ -72,7 +72,7 @@ final class IncrementalTranscriptReader {
             fileOffsets[file] = offset + UInt64(safeCount)
 
             // Parse new complete lines
-            guard let text = String(data: data[data.startIndex..<data.index(data.startIndex, offsetBy: safeCount)], encoding: .utf8) else { continue }
+            guard let text = String(data: data[data.startIndex ..< data.index(data.startIndex, offsetBy: safeCount)], encoding: .utf8) else { continue }
             for line in text.components(separatedBy: .newlines) where !line.isEmpty {
                 guard let lineData = line.data(using: .utf8),
                       let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],

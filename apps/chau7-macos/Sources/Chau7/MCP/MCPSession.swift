@@ -258,7 +258,10 @@ final class MCPSession {
                     "type": "object",
                     "properties": [
                         "tab_id": ["type": "string", "description": "Tab UUID"],
-                        "key": ["type": "string", "description": "Key name, e.g. enter, escape, tab, up, down, left, right, backspace, delete, home, end, page_up, page_down, insert, or a single character for ctrl/alt combos"],
+                        "key": [
+                            "type": "string",
+                            "description": "Key name, e.g. enter, escape, tab, up, down, left, right, backspace, delete, home, end, page_up, page_down, insert, or a single character for ctrl/alt combos"
+                        ],
                         "modifiers": [
                             "type": "array",
                             "items": ["type": "string"],
@@ -300,7 +303,10 @@ final class MCPSession {
                         "tab_id": ["type": "string", "description": "Tab UUID"],
                         "lines": ["type": "integer", "description": "Number of lines to return (default 50, max 10000)"],
                         "wait_for_stable_ms": ["type": "integer", "description": "Wait until buffer content is stable for this many ms before returning (max 30000). Only applies to source='buffer'."],
-                        "source": ["type": "string", "description": "Data source: 'buffer' (default, terminal scrollback) or 'pty_log' (ANSI-stripped raw PTY output — captures full AI session including alternate screen content)"]
+                        "source": [
+                            "type": "string",
+                            "description": "Data source: 'buffer' (default, terminal scrollback) or 'pty_log' (ANSI-stripped raw PTY output — captures full AI session including alternate screen content)"
+                        ]
                     ],
                     "required": ["tab_id"]
                 ]

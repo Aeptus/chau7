@@ -163,18 +163,18 @@ struct RemoteAgentStateSnapshot: Codable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        deviceID = try container.decodeIfPresent(String.self, forKey: .deviceID)
-        macPrivateKey = try container.decodeIfPresent(String.self, forKey: .macPrivateKey)
-        macPublicKey = try container.decodeIfPresent(String.self, forKey: .macPublicKey)
-        pairedDevices = try container.decodeIfPresent([RemoteAgentPairedDeviceSnapshot].self, forKey: .pairedDevices) ?? []
-        iosPublicKey = try container.decodeIfPresent(String.self, forKey: .iosPublicKey)
-        iosName = try container.decodeIfPresent(String.self, forKey: .iosName)
-        keyEncrypted = try container.decodeIfPresent(Bool.self, forKey: .keyEncrypted)
-        relaySecret = try container.decodeIfPresent(String.self, forKey: .relaySecret)
+        self.deviceID = try container.decodeIfPresent(String.self, forKey: .deviceID)
+        self.macPrivateKey = try container.decodeIfPresent(String.self, forKey: .macPrivateKey)
+        self.macPublicKey = try container.decodeIfPresent(String.self, forKey: .macPublicKey)
+        self.pairedDevices = try container.decodeIfPresent([RemoteAgentPairedDeviceSnapshot].self, forKey: .pairedDevices) ?? []
+        self.iosPublicKey = try container.decodeIfPresent(String.self, forKey: .iosPublicKey)
+        self.iosName = try container.decodeIfPresent(String.self, forKey: .iosName)
+        self.keyEncrypted = try container.decodeIfPresent(Bool.self, forKey: .keyEncrypted)
+        self.relaySecret = try container.decodeIfPresent(String.self, forKey: .relaySecret)
         if pairedDevices.isEmpty,
            let iosPublicKey,
            let rawKey = Data(base64Encoded: iosPublicKey) {
-            pairedDevices = [
+            self.pairedDevices = [
                 RemoteAgentPairedDeviceSnapshot(
                     id: Self.fingerprint(for: rawKey),
                     name: iosName ?? "",
@@ -255,5 +255,7 @@ struct ProtectedRemoteInput {
 
     static let ttl: TimeInterval = 120
 
-    var isExpired: Bool { Date().timeIntervalSince(createdAt) > Self.ttl }
+    var isExpired: Bool {
+        Date().timeIntervalSince(createdAt) > Self.ttl
+    }
 }

@@ -462,7 +462,7 @@ struct DebugConsoleView: View {
     private var ctoPerTabSection: some View {
         GroupBox("Per-Tab Stats") {
             let log = ctoFilteredLog
-            if log.isEmpty && aiPerTabStats.isEmpty {
+            if log.isEmpty, aiPerTabStats.isEmpty {
                 Text("No command data yet")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
