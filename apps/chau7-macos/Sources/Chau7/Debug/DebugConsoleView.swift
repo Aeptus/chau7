@@ -1451,7 +1451,8 @@ struct DebugConsoleView: View {
                     } else {
                         ForEach(aiPerTabStats.prefix(20), id: \.tabID) { stat in
                             HStack {
-                                Text(stat.tabID.prefix(8)).monospaced()
+                                Text(ctoTabLabel(for: stat.tabID))
+                                    .lineLimit(1)
                                 if let provider = stat.lastProvider {
                                     Text(provider)
                                         .foregroundStyle(.secondary)

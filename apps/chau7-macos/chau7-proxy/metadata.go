@@ -236,28 +236,80 @@ func ExtractModelFromPath(path string) string {
 	return rest
 }
 
-// ParseStreamingChunks parses SSE streaming response to extract final usage
-// This is called after the stream completes to extract token counts
+// ParseStreamingChunks parses SSE streaming response to extract usage metadata.
+// Providers embed usage info differently in streaming:
+//   - Anthropic: message_start has model + input_tokens; message_delta has output_tokens
+//   - OpenAI: final chunk has usage (prompt_tokens, completion_tokens) if stream_options.include_usage
+//   - Gemini: usageMetadata appears in the final chunk
 func ParseStreamingChunks(provider Provider, chunks []byte) ResponseMetadata {
-	// For streaming responses, providers typically send usage in the final chunk
-	// We need to parse all chunks and find the one with usage info
-
 	lines := strings.Split(string(chunks), "\n")
-	var lastData string
+
+	var result ResponseMetadata
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "data: ") {
-			data := strings.TrimPrefix(line, "data: ")
-			if data != "[DONE]" {
-				lastData = data
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			continue
+		}
+
+		switch provider {
+		case ProviderAnthropic:
+			// Anthropic streams as typed events:
+			//   message_start → { message: { model, usage: { input_tokens } } }
+			//   content_block_delta → { delta: { text } }  (no usage)
+			//   message_delta → { usage: { output_tokens } }
+			var envelope struct {
+				Type    string `json:"type"`
+				Message struct {
+					Model string         `json:"model"`
+					Usage anthropicUsage `json:"usage"`
+				} `json:"message"`
+				Usage anthropicUsage `json:"usage"`
+			}
+			if err := json.Unmarshal([]byte(data), &envelope); err != nil {
+				continue
+			}
+			switch envelope.Type {
+			case "message_start":
+				result.Model = envelope.Message.Model
+				result.InputTokens = envelope.Message.Usage.InputTokens
+			case "message_delta":
+				result.OutputTokens = envelope.Usage.OutputTokens
+			}
+
+		case ProviderOpenAI:
+			// OpenAI puts usage in the final chunk (when stream_options.include_usage is set),
+			// or the model in every chunk. Scan all chunks, keep the last non-zero values.
+			var chunk openAIResponse
+			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+				continue
+			}
+			if chunk.Model != "" {
+				result.Model = chunk.Model
+			}
+			if chunk.Usage.PromptTokens > 0 {
+				result.InputTokens = chunk.Usage.PromptTokens
+			}
+			if chunk.Usage.CompletionTokens > 0 {
+				result.OutputTokens = chunk.Usage.CompletionTokens
+			}
+			if len(chunk.Choices) > 0 && chunk.Choices[0].FinishReason != "" {
+				result.FinishReason = chunk.Choices[0].FinishReason
+			}
+
+		case ProviderGemini:
+			// Gemini non-streaming only (streaming detected by path, not here).
+			// If called, fall back to full-response parser on last chunk.
+			meta := extractGeminiResponse([]byte(data))
+			if meta.InputTokens > 0 || meta.OutputTokens > 0 {
+				result = meta
 			}
 		}
 	}
 
-	if lastData == "" {
-		return ResponseMetadata{}
-	}
-
-	return ExtractResponseMetadata(provider, []byte(lastData))
+	return result
 }
