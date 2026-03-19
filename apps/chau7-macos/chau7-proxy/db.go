@@ -17,6 +17,7 @@ type APICallRecord struct {
 	InputTokens  int
 	OutputTokens int
 	LatencyMs    int64
+	TTFTMs       int64 // Time-to-first-token (ms from request start to first response byte)
 	StatusCode   int
 	CostUSD      float64
 	Timestamp    time.Time
@@ -69,9 +70,9 @@ func (d *Database) InsertAPICall(record *APICallRecord) error {
 	_, err := d.db.Exec(`
 		INSERT INTO api_calls (
 			session_id, provider, model, endpoint,
-			input_tokens, output_tokens, latency_ms, status_code,
+			input_tokens, output_tokens, latency_ms, ttft_ms, status_code,
 			cost_usd, timestamp, error_message
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		record.SessionID,
 		string(record.Provider),
@@ -80,6 +81,7 @@ func (d *Database) InsertAPICall(record *APICallRecord) error {
 		record.InputTokens,
 		record.OutputTokens,
 		record.LatencyMs,
+		record.TTFTMs,
 		record.StatusCode,
 		record.CostUSD,
 		record.Timestamp.UTC().Format(time.RFC3339),
@@ -123,7 +125,7 @@ func (d *Database) GetRecentCalls(limit int) ([]APICallRecord, error) {
 	rows, err := d.db.Query(`
 		SELECT
 			session_id, provider, model, endpoint,
-			input_tokens, output_tokens, latency_ms, status_code,
+			input_tokens, output_tokens, latency_ms, ttft_ms, status_code,
 			cost_usd, timestamp, error_message
 		FROM api_calls
 		ORDER BY timestamp DESC
@@ -149,6 +151,7 @@ func (d *Database) GetRecentCalls(limit int) ([]APICallRecord, error) {
 			&r.InputTokens,
 			&r.OutputTokens,
 			&r.LatencyMs,
+			&r.TTFTMs,
 			&r.StatusCode,
 			&r.CostUSD,
 			&timestamp,
@@ -194,6 +197,7 @@ func initSchema(db *sql.DB) error {
 			input_tokens INTEGER DEFAULT 0,
 			output_tokens INTEGER DEFAULT 0,
 			latency_ms INTEGER,
+			ttft_ms INTEGER DEFAULT 0,
 			status_code INTEGER,
 			cost_usd REAL DEFAULT 0,
 			timestamp TEXT DEFAULT (datetime('now')),
@@ -521,9 +525,9 @@ func (d *Database) InsertAPICallWithTask(record *APICallRecord, taskID, tabID, p
 	result, err := d.db.Exec(`
 		INSERT INTO api_calls (
 			session_id, provider, model, endpoint,
-			input_tokens, output_tokens, latency_ms, status_code,
+			input_tokens, output_tokens, latency_ms, ttft_ms, status_code,
 			cost_usd, timestamp, error_message, task_id, tab_id, project_path
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		record.SessionID,
 		string(record.Provider),
@@ -532,6 +536,7 @@ func (d *Database) InsertAPICallWithTask(record *APICallRecord, taskID, tabID, p
 		record.InputTokens,
 		record.OutputTokens,
 		record.LatencyMs,
+		record.TTFTMs,
 		record.StatusCode,
 		record.CostUSD,
 		record.Timestamp.UTC().Format(time.RFC3339),
@@ -655,11 +660,11 @@ func (d *Database) InsertAPICallWithBaseline(record *APICallRecord, taskID, tabI
 	result, err := d.db.Exec(`
 		INSERT INTO api_calls (
 			session_id, provider, model, endpoint,
-			input_tokens, output_tokens, latency_ms, status_code,
+			input_tokens, output_tokens, latency_ms, ttft_ms, status_code,
 			cost_usd, timestamp, error_message, task_id, tab_id, project_path,
 			baseline_input_tokens, baseline_output_tokens, baseline_total_tokens,
 			baseline_method, baseline_version, tokens_saved
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		record.SessionID,
 		string(record.Provider),
@@ -668,6 +673,7 @@ func (d *Database) InsertAPICallWithBaseline(record *APICallRecord, taskID, tabI
 		record.InputTokens,
 		record.OutputTokens,
 		record.LatencyMs,
+		record.TTFTMs,
 		record.StatusCode,
 		record.CostUSD,
 		record.Timestamp.UTC().Format(time.RFC3339),
