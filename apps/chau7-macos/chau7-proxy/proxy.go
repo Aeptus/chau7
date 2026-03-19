@@ -158,6 +158,18 @@ func (p *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		model = respMeta.Model
 	}
 
+	// Warn when metadata extraction fails on successful responses
+	if resp.StatusCode == 200 {
+		if model == "" {
+			log.Printf("[WARN] %s %s: model not extracted (streaming=%v, bodyLen=%d)",
+				provider, r.URL.Path, isStreaming, len(respBody))
+		}
+		if respMeta.InputTokens == 0 && respMeta.OutputTokens == 0 {
+			log.Printf("[WARN] %s %s: no tokens extracted (streaming=%v, bodyLen=%d)",
+				provider, r.URL.Path, isStreaming, len(respBody))
+		}
+	}
+
 	// Calculate cost
 	cost := CalculateCostForCall(provider, model, respMeta.InputTokens, respMeta.OutputTokens)
 

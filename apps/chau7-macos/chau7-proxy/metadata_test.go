@@ -412,10 +412,10 @@ func TestParseStreamingChunks(t *testing.T) {
 		{
 			name:     "Anthropic streaming",
 			provider: ProviderAnthropic,
-			chunks: `data: {"type":"message_start"}
-data: {"type":"content_block_delta"}
-data: {"type":"message_delta","usage":{"output_tokens":50}}
-data: {"model":"claude-3-sonnet","usage":{"input_tokens":25,"output_tokens":75},"stop_reason":"end_turn"}
+			chunks: `data: {"type":"message_start","message":{"id":"msg_1","model":"claude-3-sonnet","usage":{"input_tokens":25}}}
+data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"Hello"}}
+data: {"type":"message_delta","usage":{"output_tokens":75}}
+data: {"type":"message_stop"}
 `,
 			expectInput:  25,
 			expectOutput: 75,
