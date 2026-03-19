@@ -477,8 +477,13 @@ fn export_csv(
         println!("total_commands,total_input,total_output,total_saved,avg_savings_pct,total_time_ms,avg_time_ms");
         println!(
             "{},{},{},{},{:.2},{},{}",
-            summary.total_commands, summary.total_input, summary.total_output,
-            summary.total_saved, summary.avg_savings_pct, summary.total_time_ms, summary.avg_time_ms
+            summary.total_commands,
+            summary.total_input,
+            summary.total_output,
+            summary.total_saved,
+            summary.avg_savings_pct,
+            summary.total_time_ms,
+            summary.avg_time_ms
         );
         println!();
     }

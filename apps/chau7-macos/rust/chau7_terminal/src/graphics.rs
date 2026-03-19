@@ -1408,7 +1408,8 @@ mod tests {
     fn test_osc133_full_lifecycle() {
         let mut interceptor = GraphicsInterceptor::new();
         // Simulate a full prompt → command → output → finish cycle with surrounding text
-        let input = b"some text\x1b]133;A\x07prompt$ \x1b]133;B\x07\x1b]133;C\x07output\x1b]133;D;0\x07";
+        let input =
+            b"some text\x1b]133;A\x07prompt$ \x1b]133;B\x07\x1b]133;C\x07output\x1b]133;D;0\x07";
         let (pass, events, shell) = interceptor.feed(input);
         assert!(events.is_empty());
         assert_eq!(shell.len(), 4);

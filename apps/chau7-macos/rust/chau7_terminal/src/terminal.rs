@@ -2146,8 +2146,8 @@ mod tests {
         let _ = env_logger::try_init();
         let term = Chau7Terminal::new_with_env(20, 10, "", &[]).expect("create");
         // Move to row 5, then cursor up 3
-        term.inject_output(b"\x1b[6;1H");  // Move to row 6, col 1
-        term.inject_output(b"\x1b[3A");     // Cursor up 3
+        term.inject_output(b"\x1b[6;1H"); // Move to row 6, col 1
+        term.inject_output(b"\x1b[3A"); // Cursor up 3
         let (_, row) = cursor_pos(&term);
         assert_eq!(row, 2, "CUU 3 from row 5 should land on row 2");
     }
@@ -2156,8 +2156,8 @@ mod tests {
     fn test_csi_cursor_down() {
         let _ = env_logger::try_init();
         let term = Chau7Terminal::new_with_env(20, 10, "", &[]).expect("create");
-        term.inject_output(b"\x1b[1;1H");  // Home
-        term.inject_output(b"\x1b[4B");     // Cursor down 4
+        term.inject_output(b"\x1b[1;1H"); // Home
+        term.inject_output(b"\x1b[4B"); // Cursor down 4
         let (_, row) = cursor_pos(&term);
         assert_eq!(row, 4, "CUD 4 from row 0 should land on row 4");
     }
@@ -2166,12 +2166,12 @@ mod tests {
     fn test_csi_cursor_forward_backward() {
         let _ = env_logger::try_init();
         let term = Chau7Terminal::new_with_env(20, 10, "", &[]).expect("create");
-        term.inject_output(b"\x1b[1;1H");  // Home
-        term.inject_output(b"\x1b[10C");    // Forward 10
+        term.inject_output(b"\x1b[1;1H"); // Home
+        term.inject_output(b"\x1b[10C"); // Forward 10
         let (col, _) = cursor_pos(&term);
         assert_eq!(col, 10, "CUF 10 from col 0 should land on col 10");
 
-        term.inject_output(b"\x1b[3D");     // Back 3
+        term.inject_output(b"\x1b[3D"); // Back 3
         let (col, _) = cursor_pos(&term);
         assert_eq!(col, 7, "CUB 3 from col 10 should land on col 7");
     }
@@ -2182,13 +2182,17 @@ mod tests {
         let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
         term.inject_output(b"AAAA\r\nBBBB\r\nCCCC");
         // Erase from cursor to end of display
-        term.inject_output(b"\x1b[2;1H");  // Move to row 2, col 1
-        term.inject_output(b"\x1b[0J");     // Erase below
+        term.inject_output(b"\x1b[2;1H"); // Move to row 2, col 1
+        term.inject_output(b"\x1b[0J"); // Erase below
         let _row2 = row_text(&term, 1);
         // Row 1 (0-indexed) should still have content (cursor is ON this row)
         // Row 2+ should be cleared
         let row3 = row_text(&term, 2);
-        assert!(row3.trim().is_empty(), "Row below cursor should be cleared after ED 0, got: {:?}", row3);
+        assert!(
+            row3.trim().is_empty(),
+            "Row below cursor should be cleared after ED 0, got: {:?}",
+            row3
+        );
     }
 
     #[test]
@@ -2196,17 +2200,20 @@ mod tests {
         let _ = env_logger::try_init();
         let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
         term.inject_output(b"Hello World");
-        term.inject_output(b"\x1b[1;6H");  // Move to col 6 (the W)
-        term.inject_output(b"\x1b[0K");     // Erase to end of line
+        term.inject_output(b"\x1b[1;6H"); // Move to col 6 (the W)
+        term.inject_output(b"\x1b[0K"); // Erase to end of line
         let text = row_text(&term, 0);
-        assert_eq!(text, "Hello", "EL 0 should erase from cursor to end of line");
+        assert_eq!(
+            text, "Hello",
+            "EL 0 should erase from cursor to end of line"
+        );
     }
 
     #[test]
     fn test_csi_absolute_position() {
         let _ = env_logger::try_init();
         let term = Chau7Terminal::new_with_env(20, 10, "", &[]).expect("create");
-        term.inject_output(b"\x1b[5;8H");  // Row 5, Col 8 (1-indexed)
+        term.inject_output(b"\x1b[5;8H"); // Row 5, Col 8 (1-indexed)
         let (col, row) = cursor_pos(&term);
         assert_eq!(row, 4, "CUP row should be 4 (0-indexed from 5)");
         assert_eq!(col, 7, "CUP col should be 7 (0-indexed from 8)");
@@ -2225,8 +2232,14 @@ mod tests {
         let r_cell = &cells[0];
         assert_eq!(r_cell.character, b'R' as u32);
         // Red in default 16-color palette is typically (205, 49, 49) or similar
-        assert!(r_cell.fg_r > 150, "Red text should have high fg_r, got {}", r_cell.fg_r);
-        unsafe { let _ = Vec::from_raw_parts(snapshot.cells, total, snapshot.capacity); }
+        assert!(
+            r_cell.fg_r > 150,
+            "Red text should have high fg_r, got {}",
+            r_cell.fg_r
+        );
+        unsafe {
+            let _ = Vec::from_raw_parts(snapshot.cells, total, snapshot.capacity);
+        }
     }
 
     #[test]
@@ -2239,7 +2252,10 @@ mod tests {
         term.inject_output(b"\x1b]0;My Custom Title\x07Visible");
         let text = term.full_buffer_text();
         assert!(text.contains("Visible"), "Text after OSC should be visible");
-        assert!(!text.contains("My Custom Title"), "OSC payload should NOT appear in grid text");
+        assert!(
+            !text.contains("My Custom Title"),
+            "OSC payload should NOT appear in grid text"
+        );
     }
 
     #[test]
@@ -2248,7 +2264,11 @@ mod tests {
         let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
         term.inject_output(b"\x1b[HMain Screen");
         let before = row_text(&term, 0);
-        assert!(before.contains("Main Screen"), "Initial content, got: {:?}", before);
+        assert!(
+            before.contains("Main Screen"),
+            "Initial content, got: {:?}",
+            before
+        );
 
         // Switch to alternate screen and write content
         term.inject_output(b"\x1b[?1049h");
@@ -2258,7 +2278,11 @@ mod tests {
         // The alternate screen content ("Alt Screen") is discarded.
         term.inject_output(b"\x1b[?1049l");
         let after = row_text(&term, 0);
-        assert!(after.contains("Main Screen"), "Restoring from alt screen should show original content, got: {:?}", after);
+        assert!(
+            after.contains("Main Screen"),
+            "Restoring from alt screen should show original content, got: {:?}",
+            after
+        );
     }
 
     #[test]
@@ -2275,7 +2299,11 @@ mod tests {
         term.inject_output(b"\x1b[7;1H\n\n");
         // Row outside scroll region (row 1) should be unchanged
         let row1 = row_text(&term, 0);
-        assert!(row1.starts_with('A'), "Row outside scroll region should be preserved, got: {:?}", row1);
+        assert!(
+            row1.starts_with('A'),
+            "Row outside scroll region should be preserved, got: {:?}",
+            row1
+        );
     }
 
     #[test]
@@ -2284,7 +2312,10 @@ mod tests {
         let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
         term.inject_output("你好世界".as_bytes());
         let text = term.full_buffer_text();
-        assert!(text.contains("你好世界"), "CJK characters should render correctly");
+        assert!(
+            text.contains("你好世界"),
+            "CJK characters should render correctly"
+        );
     }
 
     #[test]
@@ -2293,10 +2324,16 @@ mod tests {
         let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
         // Enable bracketed paste mode
         term.inject_output(b"\x1b[?2004h");
-        assert!(term.is_bracketed_paste_mode(), "Bracketed paste mode should be enabled");
+        assert!(
+            term.is_bracketed_paste_mode(),
+            "Bracketed paste mode should be enabled"
+        );
         // Disable
         term.inject_output(b"\x1b[?2004l");
-        assert!(!term.is_bracketed_paste_mode(), "Bracketed paste mode should be disabled");
+        assert!(
+            !term.is_bracketed_paste_mode(),
+            "Bracketed paste mode should be disabled"
+        );
     }
 
     #[test]
@@ -2304,18 +2341,22 @@ mod tests {
         let _ = env_logger::try_init();
         let term = Chau7Terminal::new_with_env(20, 5, "", &[]).expect("create");
         term.inject_output(b"ABCDEF");
-        term.inject_output(b"\x1b[1;3H");  // Move to col 3
-        term.inject_output(b"\x1b[2P");     // Delete 2 characters
+        term.inject_output(b"\x1b[1;3H"); // Move to col 3
+        term.inject_output(b"\x1b[2P"); // Delete 2 characters
         let text = row_text(&term, 0);
-        assert_eq!(text, "ABEF", "DCH 2 at col 2 should delete 'CD', got: {:?}", text);
+        assert_eq!(
+            text, "ABEF",
+            "DCH 2 at col 2 should delete 'CD', got: {:?}",
+            text
+        );
     }
 
     #[test]
     fn test_tab_stops() {
         let _ = env_logger::try_init();
         let term = Chau7Terminal::new_with_env(40, 5, "", &[]).expect("create");
-        term.inject_output(b"\x1b[1;1H");  // Home
-        term.inject_output(b"\t");           // Tab to first stop (col 8)
+        term.inject_output(b"\x1b[1;1H"); // Home
+        term.inject_output(b"\t"); // Tab to first stop (col 8)
         let (col, _) = cursor_pos(&term);
         assert_eq!(col, 8, "First tab stop should be at col 8, got {}", col);
     }
