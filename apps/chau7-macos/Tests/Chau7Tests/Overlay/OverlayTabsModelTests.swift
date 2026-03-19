@@ -156,6 +156,40 @@ final class OverlayTabsModelTests: XCTestCase {
         )
     }
 
+    func testLiveHierarchyKeepsDistantMCPBackgroundTabUntilTerminalBootstraps() {
+        model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
+
+        let distantIndex = 3
+        model.tabs[distantIndex].isMCPControlled = true
+
+        XCTAssertTrue(
+            model.shouldKeepTabInLiveHierarchy(tab: model.tabs[distantIndex], index: distantIndex),
+            "Fresh MCP background tabs should stay in the hierarchy so their shell can start"
+        )
+
+        let terminalView = RustTerminalView(frame: NSRect(x: 0, y: 0, width: 800, height: 600))
+        model.tabs[distantIndex].session?.attachRustTerminal(terminalView)
+
+        XCTAssertFalse(
+            model.shouldKeepTabInLiveHierarchy(tab: model.tabs[distantIndex], index: distantIndex),
+            "Once a terminal view has attached, distant MCP tabs can fall back to placeholder rendering"
+        )
+    }
+
+    func testLiveHierarchyDoesNotKeepDistantNonMCPBackgroundTab() {
+        model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
+        model.newTab(selectNewTab: false)
+
+        let distantIndex = 3
+        XCTAssertFalse(
+            model.shouldKeepTabInLiveHierarchy(tab: model.tabs[distantIndex], index: distantIndex),
+            "Distant non-MCP tabs should continue using placeholder rendering"
+        )
+    }
+
     // MARK: - Tab Close (closeTab)
 
     func testCloseTabRemovesTab() {

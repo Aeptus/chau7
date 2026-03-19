@@ -17,12 +17,16 @@ import (
 )
 
 type PairedDevice struct {
-	ID                   string `json:"id"`
-	Name                 string `json:"name,omitempty"`
-	IOSPublicKey         string `json:"ios_public_key"`
-	PublicKeyFingerprint string `json:"public_key_fingerprint"`
-	PairedAt             string `json:"paired_at,omitempty"`
-	LastConnectedAt      string `json:"last_connected_at,omitempty"`
+	ID                      string `json:"id"`
+	Name                    string `json:"name,omitempty"`
+	IOSPublicKey            string `json:"ios_public_key"`
+	PublicKeyFingerprint    string `json:"public_key_fingerprint"`
+	PairedAt                string `json:"paired_at,omitempty"`
+	LastConnectedAt         string `json:"last_connected_at,omitempty"`
+	PushToken               string `json:"push_token,omitempty"`
+	PushTopic               string `json:"push_topic,omitempty"`
+	PushEnvironment         string `json:"push_environment,omitempty"`
+	NotificationsAuthorized bool   `json:"notifications_authorized,omitempty"`
 }
 
 type State struct {
@@ -114,7 +118,6 @@ func LoadState(path string) (*State, error) {
 	if state.KeyEncrypted && state.MacPrivateKey != "" {
 		uuid, err := machineUUID()
 		if err != nil {
-			// Different machine or ioreg unavailable — clear keys, require re-pairing
 			state.MacPrivateKey = ""
 			state.MacPublicKey = ""
 			state.KeyEncrypted = false
@@ -123,14 +126,13 @@ func LoadState(path string) (*State, error) {
 		wk := deriveWrappingKey(uuid)
 		plainB64, err := unwrapKey(state.MacPrivateKey, wk)
 		if err != nil {
-			// Key was encrypted on a different machine — clear keys
 			state.MacPrivateKey = ""
 			state.MacPublicKey = ""
 			state.KeyEncrypted = false
 			return &state, nil
 		}
 		state.MacPrivateKey = string(plainB64)
-		state.KeyEncrypted = false // Mark as decrypted for in-memory use
+		state.KeyEncrypted = false
 	}
 	return &state, nil
 }
@@ -156,15 +158,12 @@ func SaveState(path string, state *State) error {
 	if err != nil {
 		return err
 	}
-	// Atomic write: write to temp file, fsync, then rename. Prevents
-	// partial/corrupt state files if the process crashes mid-write.
 	tmp, err := os.CreateTemp(dir, ".chau7-state-*.tmp")
 	if err != nil {
 		return fmt.Errorf("create temp state file: %w", err)
 	}
 	tmpPath := tmp.Name()
 	defer func() {
-		// Clean up temp file on any failure path
 		if tmpPath != "" {
 			os.Remove(tmpPath)
 		}
@@ -186,7 +185,7 @@ func SaveState(path string, state *State) error {
 	if err := os.Rename(tmpPath, path); err != nil {
 		return fmt.Errorf("rename temp state file: %w", err)
 	}
-	tmpPath = "" // Prevent deferred cleanup after successful rename
+	tmpPath = ""
 	return nil
 }
 
@@ -268,6 +267,26 @@ func (s *State) MarkPairedDeviceConnected(deviceID string, now time.Time) *Paire
 		if s.PairedDevices[i].ID == deviceID {
 			s.PairedDevices[i].LastConnectedAt = now.UTC().Format(time.RFC3339)
 			s.syncLegacyDevice(s.PairedDevices[i])
+			return &s.PairedDevices[i]
+		}
+	}
+	return nil
+}
+
+func (s *State) UpdatePushRegistration(deviceID, token, topic, environment string, authorized bool) *PairedDevice {
+	for i := range s.PairedDevices {
+		if s.PairedDevices[i].ID == deviceID {
+			if !authorized || token == "" || topic == "" {
+				s.PairedDevices[i].PushToken = ""
+				s.PairedDevices[i].PushTopic = ""
+				s.PairedDevices[i].PushEnvironment = ""
+				s.PairedDevices[i].NotificationsAuthorized = false
+			} else {
+				s.PairedDevices[i].PushToken = token
+				s.PairedDevices[i].PushTopic = topic
+				s.PairedDevices[i].PushEnvironment = environment
+				s.PairedDevices[i].NotificationsAuthorized = true
+			}
 			return &s.PairedDevices[i]
 		}
 	}

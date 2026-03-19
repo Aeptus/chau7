@@ -1,3 +1,4 @@
+import Chau7Core
 import SwiftUI
 
 struct TerminalView: View {
@@ -7,6 +8,8 @@ struct TerminalView: View {
     @AppStorage(AppSettings.holdToSendKey) private var holdToSend = AppSettings.holdToSendDefault
     @AppStorage(AppSettings.appendNewlineKey) private var appendNewline = AppSettings.appendNewlineDefault
     @AppStorage(AppSettings.renderANSIKey) private var renderANSI = AppSettings.renderANSIDefault
+    @AppStorage(AppSettings.experimentalTerminalRendererKey)
+    private var experimentalTerminalRenderer = AppSettings.experimentalTerminalRendererDefault
     @State private var inputText = ""
     @State private var sendCount = 0
     @State private var pendingProtectedSend: ProtectedRemoteSend?
@@ -45,9 +48,13 @@ struct TerminalView: View {
                     text: pendingProtectedSend.text,
                     flaggedAction: pendingProtectedSend.flaggedAction
                 )
-                client.sendInput(pendingProtectedSend.text, appendNewline: appendNewline)
-                sendCount += 1
-                self.pendingProtectedSend = nil
+                if client.sendInput(pendingProtectedSend.text, appendNewline: appendNewline) {
+                    sendCount += 1
+                    self.pendingProtectedSend = nil
+                } else {
+                    inputText = pendingProtectedSend.text
+                    self.pendingProtectedSend = nil
+                }
             }
         } message: {
             Text(pendingProtectedSend?.message ?? "")
@@ -99,72 +106,91 @@ struct TerminalView: View {
     // MARK: - Tabs
 
     private var tabsBar: some View {
-        VStack(spacing: 6) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Remote Tabs")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(activeTabSummary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer()
-                if client.tabs.count > 1 {
-                    Text("Tap to switch")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            .padding(.horizontal)
-
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(client.tabs) { tab in
-                            TabChip(tab: tab, isSelected: tab.tabID == client.activeTabID) {
-                                client.switchTab(tab.tabID)
+        HStack(spacing: 10) {
+            Menu {
+                if client.tabs.isEmpty {
+                    Text("No remote tabs available yet")
+                } else {
+                    ForEach(client.tabs) { tab in
+                        Button {
+                            client.switchTab(tab.tabID)
+                        } label: {
+                            Label {
+                                Text(tab.title)
+                                    .lineLimit(1)
+                            } icon: {
+                                if tab.tabID == client.activeTabID {
+                                    Image(systemName: "checkmark")
+                                } else if tab.isMCPControlled {
+                                    Image(systemName: "face.dashed.fill")
+                                }
                             }
-                            .id(tab.tabID)
                         }
                     }
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
                 }
-                .onAppear {
-                    scrollSelectedTab(using: proxy)
+            } label: {
+                HStack(spacing: 8) {
+                    Text(activeTabMenuLabel)
+                        .font(.system(.footnote, design: .rounded).weight(.semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
                 }
-                .onChange(of: client.activeTabID) { _, _ in
-                    scrollSelectedTab(using: proxy)
-                }
-                .onChange(of: client.tabs.map(\.tabID)) { _, _ in
-                    scrollSelectedTab(using: proxy, animated: false)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color(UIColor.secondarySystemBackground))
+                .clipShape(Capsule(style: .continuous))
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    if let projectName = activeProjectName {
+                        metadataChip(projectName, systemImage: "shippingbox")
+                    }
+                    if let branchName = activeBranchName {
+                        metadataChip(branchName, systemImage: "arrow.triangle.branch")
+                    }
+                    if let toolName = activeToolName {
+                        metadataChip(toolName, systemImage: "sparkles")
+                    }
+                    if activeTabIsMCPControlled {
+                        metadataChip("MCP", systemImage: "face.dashed.fill")
+                    }
                 }
             }
         }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
         .background(Color(UIColor.systemBackground))
     }
 
     // MARK: - Output
 
     private var outputView: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                Text(renderANSI ? client.outputText : client.strippedOutputText)
-                    .font(.system(size: 13, design: .monospaced))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(8)
-                    .id("bottom")
-                    .textSelection(.enabled)
-            }
-            .background(Color.black)
-            .foregroundStyle(.green)
-            .onAppear {
-                scheduleScrollToBottom(using: proxy, immediate: true)
-            }
-            .onChange(of: client.outputText.count) { _, _ in
-                scheduleScrollToBottom(using: proxy)
+        Group {
+            if experimentalTerminalRenderer {
+                RemoteTerminalRendererView(client: client)
+            } else {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        Text(renderANSI ? client.outputText : client.strippedOutputText)
+                            .font(.system(size: 13, design: .monospaced))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                            .id("bottom")
+                            .textSelection(.enabled)
+                    }
+                    .background(Color.black)
+                    .foregroundStyle(.green)
+                    .onAppear {
+                        scheduleScrollToBottom(using: proxy, immediate: true)
+                    }
+                    .onChange(of: client.outputText.count) { _, _ in
+                        scheduleScrollToBottom(using: proxy)
+                    }
+                }
             }
         }
     }
@@ -200,6 +226,7 @@ struct TerminalView: View {
                 .font(.system(.body, design: .monospaced))
                 .lineLimit(1...4)
                 .textFieldStyle(.roundedBorder)
+                .submitLabel(.send)
                 .onSubmit { if !holdToSend { submitInput() } }
 
             sendButton
@@ -213,7 +240,11 @@ struct TerminalView: View {
     private var sendButton: some View {
         if holdToSend {
             Button {} label: {
-                Image(systemName: "arrow.up.circle.fill").font(.title2)
+                VStack(spacing: 2) {
+                    Image(systemName: "hand.tap.fill").font(.title3)
+                    Text("Hold")
+                        .font(.caption2)
+                }
             }
             .sensoryFeedback(.impact(flexibility: .solid, intensity: 0.5), trigger: sendCount)
             .simultaneousGesture(
@@ -221,17 +252,17 @@ struct TerminalView: View {
                     submitInput()
                 }
             )
+            .disabled(inputText.isEmpty || !client.canSendInput)
         } else {
             Button(action: submitInput) {
                 Image(systemName: "arrow.up.circle.fill").font(.title2)
             }
-            .disabled(inputText.isEmpty)
+            .disabled(inputText.isEmpty || !client.canSendInput)
         }
     }
 
     private func submitInput() {
         let text = inputText
-        inputText = ""
         guard !text.isEmpty else { return }
 
         if let flaggedAction = client.flaggedProtectedAction(for: text) {
@@ -244,32 +275,36 @@ struct TerminalView: View {
             return
         }
 
+        guard client.sendInput(text, appendNewline: appendNewline) else { return }
+        inputText = ""
         sendCount += 1
-        client.sendInput(text, appendNewline: appendNewline)
     }
 
-    private var activeTabSummary: String {
-        guard !client.tabs.isEmpty else { return "No remote tabs available yet" }
-        guard let activeTab = client.tabs.first(where: { $0.tabID == client.activeTabID }) else {
-            return "\(client.tabs.count) tabs available"
-        }
-        return "Active: \(activeTab.title)"
+    private var activeTabMenuLabel: String {
+        guard let activeTab else { return "No remote tabs" }
+        return activeTab.title
     }
 
-    private func scrollSelectedTab(using proxy: ScrollViewProxy, animated: Bool = true) {
-        guard client.activeTabID != 0 else { return }
+    private var activeTab: RemoteTab? {
+        client.tabs.first(where: { $0.tabID == client.activeTabID })
+    }
 
-        let action = {
-            proxy.scrollTo(client.activeTabID, anchor: .center)
-        }
+    private var activeTabIsMCPControlled: Bool {
+        activeTab?.isMCPControlled ?? false
+    }
 
-        if animated {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                action()
-            }
-        } else {
-            action()
-        }
+    private var activeToolName: String? {
+        guard client.liveActivityState?.tabID == client.activeTabID else { return nil }
+        return client.liveActivityState?.toolName
+    }
+
+    private var activeProjectName: String? {
+        let activityProject = client.liveActivityState?.tabID == client.activeTabID ? client.liveActivityState?.projectName : nil
+        return activityProject ?? activeTab?.projectName
+    }
+
+    private var activeBranchName: String? {
+        activeTab?.branchName
     }
 
     private func scheduleScrollToBottom(using proxy: ScrollViewProxy, immediate: Bool = false) {
@@ -281,6 +316,17 @@ struct TerminalView: View {
             guard !Task.isCancelled else { return }
             proxy.scrollTo("bottom", anchor: .bottom)
         }
+    }
+
+    @ViewBuilder
+    private func metadataChip(_ text: String, systemImage: String) -> some View {
+        Label(text, systemImage: systemImage)
+            .font(.system(.caption, design: .rounded).weight(.medium))
+            .lineLimit(1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color(UIColor.tertiarySystemBackground))
+            .clipShape(Capsule(style: .continuous))
     }
 
     private var protectedSendBinding: Binding<Bool> {
@@ -370,7 +416,7 @@ struct TermKey: View {
         }
         .sensoryFeedback(.impact(flexibility: .solid, intensity: 0.3), trigger: tapCount)
         .buttonStyle(.plain)
-        .disabled(!client.isConnected)
+        .disabled(!client.canSendInput)
     }
 }
 

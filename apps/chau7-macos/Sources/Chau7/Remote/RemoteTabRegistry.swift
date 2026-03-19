@@ -4,6 +4,8 @@ struct RemoteTabRegistryEntry {
     let id: UUID
     let sessionIdentifier: String?
     let title: String
+    let projectName: String?
+    let branchName: String?
     let isActive: Bool
     let isMCPControlled: Bool
 }
@@ -36,6 +38,8 @@ struct RemoteTabRegistry {
                 RemoteTabDescriptor(
                     tabID: tabID,
                     title: entry.title,
+                    projectName: entry.projectName,
+                    branchName: entry.branchName,
                     isActive: entry.isActive,
                     isMCPControlled: entry.isMCPControlled
                 )

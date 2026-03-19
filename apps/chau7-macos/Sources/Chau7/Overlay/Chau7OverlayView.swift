@@ -809,16 +809,11 @@ struct Chau7OverlayView: View {
             // continue running via retainedRustTerminalView in TerminalSessionModel.
             ForEach(Array(overlayModel.tabs.enumerated()), id: \.element.id) { index, tab in
                 let isSelected = tab.id == overlayModel.selectedTabID
-                let selectedIndex = overlayModel.tabs.firstIndex(where: { $0.id == overlayModel.selectedTabID }) ?? 0
-                let previousIndex = overlayModel.previousTabIndex
-                // Keep tabs near both current AND previous selection to handle jumps
-                let isNearCurrent = abs(index - selectedIndex) <= 1
-                let isNearPrevious = abs(index - previousIndex) <= 1
-                let isNearby = isNearCurrent || isNearPrevious
+                let keepLiveHierarchy = overlayModel.shouldKeepTabInLiveHierarchy(tab: tab, index: index)
                 let isSuspended = overlayModel.isTabSuspended(tab.id)
                 let direction = slideDirection(for: tab, isSelected: isSelected)
 
-                if isNearby {
+                if keepLiveHierarchy {
                     // Full terminal view for selected and adjacent tabs
                     SplitPaneView(controller: tab.splitController, isSuspended: isSuspended, isActive: isSelected)
                         .opacity(isSelected && overlayModel.isTerminalReady ? 1 : 0)

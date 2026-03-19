@@ -54,12 +54,16 @@ extension RemotePairingInfo {
 struct RemoteTabDescriptor: Codable, Equatable {
     let tabID: UInt32
     let title: String
+    let projectName: String?
+    let branchName: String?
     let isActive: Bool
     let isMCPControlled: Bool
 
     enum CodingKeys: String, CodingKey {
         case tabID = "tab_id"
         case title
+        case projectName = "project_name"
+        case branchName = "branch_name"
         case isActive = "is_active"
         case isMCPControlled = "is_mcp_controlled"
     }
@@ -91,6 +95,39 @@ struct RemoteSessionStatus: Codable, Equatable {
         case status
         case pairedDeviceID = "paired_device_id"
         case pairedDeviceName = "paired_device_name"
+    }
+}
+
+enum RemoteClientAppState: String, Codable, Equatable {
+    case foreground
+    case background
+}
+
+enum RemoteClientStreamMode: String, Codable, Equatable {
+    case full
+    case approvalsOnly = "approvals_only"
+}
+
+enum RemotePushEnvironment: String, Codable, Equatable {
+    case development
+    case production
+}
+
+struct RemoteClientStatePayload: Codable, Equatable {
+    let appState: RemoteClientAppState
+    let streamMode: RemoteClientStreamMode
+    let pushToken: String?
+    let pushTopic: String?
+    let pushEnvironment: RemotePushEnvironment?
+    let notificationsAuthorized: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case appState = "app_state"
+        case streamMode = "stream_mode"
+        case pushToken = "push_token"
+        case pushTopic = "push_topic"
+        case pushEnvironment = "push_environment"
+        case notificationsAuthorized = "notifications_authorized"
     }
 }
 
@@ -195,6 +232,7 @@ struct PendingRemoteApprovalContext {
     let tabTitle: String
     let toolName: String
     let projectName: String?
+    let branchName: String?
     let sessionID: String?
     let command: String
     let flaggedCommand: String

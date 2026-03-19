@@ -2,7 +2,7 @@
 
 The AI-native terminal for macOS. GPU-accelerated, MCP-enabled, built for developers who ship with AI.
 
-> See also: [features.csv](features.csv) for the machine-readable feature inventory (197 features, 30 categories).
+> See also: [features.csv](features.csv) for the machine-readable feature inventory.
 
 ## Table of Contents
 
@@ -322,6 +322,9 @@ Registration only occurs if the AI tool's config directory exists — no files a
 - Remote activity projection — macOS reduces AI event streams into one authoritative activity state for remote clients.
 - iPhone Live Activity / Dynamic Island support via the Chau7 Remote app for running, waiting-input, completed, and failed states.
 - Interactive remote prompts — detected Claude and Codex terminal prompts appear in the iPhone Approvals tab with option buttons that reply to the correct tab. Destructive options require a second confirmation before sending.
+- Background keepalive mode — when Chau7 Remote backgrounds, the session can briefly stay alive in approvals-only mode instead of streaming full terminal traffic.
+- Push-backed remote approvals — the relay and remote helper can register an iPhone push token and wake the Chau7 Remote app when new approvals or interactive prompts appear.
+- Experimental Rust iPhone renderer — Chau7 Remote can render a true terminal grid on iPhone using the shared Rust terminal core, with a text fallback kept available.
 
 ### Isolated Testing
 

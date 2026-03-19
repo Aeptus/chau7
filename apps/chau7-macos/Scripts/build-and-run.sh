@@ -108,6 +108,14 @@ else
   log_warn "cargo not found; skipping Rust library build (Rust terminal backend will be unavailable)"
 fi
 
+LAST_STEP="Remote Agent"
+if command -v go >/dev/null 2>&1; then
+  log_info "Building remote agent..."
+  run_cmd bash "$ROOT_DIR/Scripts/build-remote-agent.sh" --output "$ROOT_DIR/build/remote-agent/chau7-remote"
+else
+  log_warn "go not found; runtime will use an existing installed remote agent if present"
+fi
+
 LAST_STEP="Swift Build"
 run_cmd swift build -c "$BUILD_MODE" --package-path "$ROOT_DIR"
 

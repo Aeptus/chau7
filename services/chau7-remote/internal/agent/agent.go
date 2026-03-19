@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/cipher"
 	"crypto/hmac"
@@ -15,6 +16,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,9 +33,10 @@ import (
 )
 
 const (
-	defaultRelayURL = "wss://relay.example.com/connect"
-	pairingTTL      = 10 * time.Minute
-	maxFrameSize    = 5 * 1024 * 1024
+	defaultRelayURL     = "wss://relay.example.com/connect"
+	pairingTTL          = 10 * time.Minute
+	maxFrameSize        = 5 * 1024 * 1024
+	relayRequestTimeout = 10 * time.Second
 )
 
 type Agent struct {
@@ -69,6 +72,12 @@ type Agent struct {
 	pairingMu         sync.Mutex
 	pairingAttempts   int
 	pairingLockoutEnd time.Time
+
+	clientStateMu           sync.Mutex
+	currentClientAppState   string
+	currentClientStreamMode string
+	notifiedApprovalIDs     map[string]time.Time
+	notifiedPromptIDs       map[string]time.Time
 }
 
 type HelloPayload struct {
@@ -106,6 +115,54 @@ type SessionStatusPayload struct {
 	PairedDeviceName string `json:"paired_device_name,omitempty"`
 }
 
+type RemoteClientStatePayload struct {
+	AppState                string `json:"app_state"`
+	StreamMode              string `json:"stream_mode"`
+	PushToken               string `json:"push_token,omitempty"`
+	PushTopic               string `json:"push_topic,omitempty"`
+	PushEnvironment         string `json:"push_environment,omitempty"`
+	NotificationsAuthorized bool   `json:"notifications_authorized"`
+}
+
+type ApprovalNotificationPayload struct {
+	RequestID      string `json:"request_id"`
+	Command        string `json:"command"`
+	FlaggedCommand string `json:"flagged_command"`
+	TabTitle       string `json:"tab_title,omitempty"`
+	ToolName       string `json:"tool_name,omitempty"`
+	ProjectName    string `json:"project_name,omitempty"`
+	BranchName     string `json:"branch_name,omitempty"`
+}
+
+type InteractivePromptNotification struct {
+	ID       string `json:"id"`
+	Prompt   string `json:"prompt"`
+	TabTitle string `json:"tab_title,omitempty"`
+	ToolName string `json:"tool_name,omitempty"`
+}
+
+type InteractivePromptListPayload struct {
+	Prompts []InteractivePromptNotification `json:"prompts"`
+}
+
+type PushRegistrationPayload struct {
+	PairedDeviceID          string `json:"paired_device_id"`
+	DeviceName              string `json:"device_name,omitempty"`
+	PushToken               string `json:"push_token,omitempty"`
+	PushTopic               string `json:"push_topic,omitempty"`
+	PushEnvironment         string `json:"push_environment,omitempty"`
+	NotificationsAuthorized bool   `json:"notifications_authorized"`
+}
+
+type PushNotifyPayload struct {
+	Kind          string `json:"kind"`
+	Title         string `json:"title"`
+	Body          string `json:"body"`
+	RequestID     string `json:"request_id,omitempty"`
+	PromptID      string `json:"prompt_id,omitempty"`
+	OpenApprovals bool   `json:"open_approvals"`
+}
+
 type TabSwitchPayload struct {
 	TabID uint32 `json:"tab_id"`
 }
@@ -141,12 +198,16 @@ func NewAgent(socketPath, relayBaseURL, macName, statePath string) (*Agent, erro
 		return nil, err
 	}
 	agent := &Agent{
-		socketPath:   socketPath,
-		relayBaseURL: relayBaseURL,
-		macName:      macName,
-		statePath:    statePath,
-		state:        state,
-		sendSeq:      1,
+		socketPath:              socketPath,
+		relayBaseURL:            relayBaseURL,
+		macName:                 macName,
+		statePath:               statePath,
+		state:                   state,
+		sendSeq:                 1,
+		currentClientAppState:   "foreground",
+		currentClientStreamMode: "full",
+		notifiedApprovalIDs:     map[string]time.Time{},
+		notifiedPromptIDs:       map[string]time.Time{},
 	}
 	if err := agent.ensureIdentity(); err != nil {
 		return nil, err
@@ -340,13 +401,23 @@ func (a *Agent) readRelay(ctx context.Context, conn *websocket.Conn) {
 
 func (a *Agent) handleIPCFrame(frame *protocol.Frame) {
 	switch frame.Type {
+	case protocol.TypeApprovalRequest:
+		a.sendEncryptedToRelay(frame)
+		a.handleApprovalRequestForPush(frame.Payload)
+	case protocol.TypeInteractivePromptList:
+		a.sendEncryptedToRelay(frame)
+		a.handleInteractivePromptListForPush(frame.Payload)
 	case protocol.TypeTabList, protocol.TypeOutput, protocol.TypeSnapshot,
 		protocol.TypeTerminalGridSnapshot,
-		protocol.TypeInteractivePromptList,
-		protocol.TypeApprovalRequest:
-		a.sendEncryptedToRelay(frame)
+		protocol.TypeActivityState,
+		protocol.TypeActivityCleared:
+		if a.shouldForwardLiveFrames() {
+			a.sendEncryptedToRelay(frame)
+		}
 	case protocol.TypeCachedTabList:
-		a.sendToRelay(frame)
+		if a.shouldForwardLiveFrames() {
+			a.sendToRelay(frame)
+		}
 	case protocol.TypePing:
 		a.sendEncryptedToRelay(&protocol.Frame{
 			Version: 1,
@@ -379,7 +450,7 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 		a.handlePairRequest(frame.Payload)
 	case protocol.TypeSessionReady:
 		if !wasEncrypted {
-			return // Reject unencrypted session-ready frames
+			return
 		}
 		a.sessionMu.Lock()
 		a.sessionReady = true
@@ -391,6 +462,12 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 			Payload: frame.Payload,
 		})
 		a.sendSessionStatus("ready")
+	case protocol.TypeClientState:
+		if !wasEncrypted {
+			return
+		}
+		a.handleClientStateFrame(frame.Payload)
+		a.sendToIPC(frame)
 	case protocol.TypeTabSwitch, protocol.TypeInput, protocol.TypeRemoteTelemetry,
 		protocol.TypeApprovalResponse:
 		a.sendToIPC(frame)
@@ -405,6 +482,51 @@ func (a *Agent) handleRelayFrame(frame *protocol.Frame) {
 	default:
 		log.Printf("relay: unhandled frame type 0x%02x (encrypted=%v)", frame.Type, wasEncrypted)
 	}
+}
+
+func (a *Agent) handleClientStateFrame(payload []byte) {
+	var statePayload RemoteClientStatePayload
+	if err := json.Unmarshal(payload, &statePayload); err != nil {
+		log.Printf("client state: unmarshal: %v", err)
+		return
+	}
+
+	a.clientStateMu.Lock()
+	a.currentClientAppState = statePayload.AppState
+	a.currentClientStreamMode = statePayload.StreamMode
+	a.clientStateMu.Unlock()
+
+	a.sessionMu.Lock()
+	pairedDeviceID := a.currentPeerID
+	deviceName := a.currentPeerName
+	a.sessionMu.Unlock()
+	if pairedDeviceID == "" {
+		return
+	}
+
+	a.stateMu.Lock()
+	device := a.state.UpdatePushRegistration(
+		pairedDeviceID,
+		statePayload.PushToken,
+		statePayload.PushTopic,
+		statePayload.PushEnvironment,
+		statePayload.NotificationsAuthorized,
+	)
+	if device != nil {
+		device.Name = deviceName
+		if err := SaveState(a.statePath, a.state); err != nil {
+			log.Printf("client state: save state: %v", err)
+		}
+	}
+	a.stateMu.Unlock()
+
+	a.registerPushToken(pairedDeviceID, deviceName, statePayload)
+}
+
+func (a *Agent) shouldForwardLiveFrames() bool {
+	a.clientStateMu.Lock()
+	defer a.clientStateMu.Unlock()
+	return a.currentClientStreamMode != "approvals_only"
 }
 
 func (a *Agent) handlePairRequest(payload []byte) {
@@ -834,6 +956,154 @@ func (a *Agent) sendPairingInfo() {
 		Seq:     a.nextSeq(),
 		Payload: data,
 	})
+}
+
+func (a *Agent) approvalContextSummary(toolName, tabTitle, projectName, branchName string) string {
+	parts := make([]string, 0, 4)
+	for _, part := range []string{toolName, tabTitle, projectName, branchName} {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+func (a *Agent) relayAPIBaseURL() string {
+	base := strings.TrimSuffix(a.relayBaseURL, "/")
+	return strings.TrimSuffix(base, "/connect")
+}
+
+func (a *Agent) relayHTTPPost(path string, payload any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	url := a.relayAPIBaseURL() + path
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if a.state.RelaySecret != "" {
+		req.Header.Set("Authorization", "Bearer "+generateRelayToken(a.state.DeviceID, "mac", a.state.RelaySecret))
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), relayRequestTimeout)
+	defer cancel()
+	req = req.WithContext(ctx)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("relay http %s: %s %s", path, resp.Status, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+func (a *Agent) registerPushToken(pairedDeviceID, deviceName string, statePayload RemoteClientStatePayload) {
+	payload := PushRegistrationPayload{
+		PairedDeviceID:          pairedDeviceID,
+		DeviceName:              deviceName,
+		PushToken:               statePayload.PushToken,
+		PushTopic:               statePayload.PushTopic,
+		PushEnvironment:         statePayload.PushEnvironment,
+		NotificationsAuthorized: statePayload.NotificationsAuthorized,
+	}
+	if err := a.relayHTTPPost("/push/register/"+a.state.DeviceID, payload); err != nil {
+		log.Printf("push register: %v", err)
+	}
+}
+
+func (a *Agent) notifyPush(payload PushNotifyPayload) {
+	if err := a.relayHTTPPost("/push/notify/"+a.state.DeviceID, payload); err != nil {
+		log.Printf("push notify: %v", err)
+	}
+}
+
+func (a *Agent) handleApprovalRequestForPush(payload []byte) {
+	var approval ApprovalNotificationPayload
+	if err := json.Unmarshal(payload, &approval); err != nil {
+		log.Printf("approval push: unmarshal: %v", err)
+		return
+	}
+	if approval.RequestID == "" {
+		return
+	}
+	a.clientStateMu.Lock()
+	if _, ok := a.notifiedApprovalIDs[approval.RequestID]; ok {
+		a.clientStateMu.Unlock()
+		return
+	}
+	a.notifiedApprovalIDs[approval.RequestID] = time.Now()
+	a.clientStateMu.Unlock()
+
+	headline := approval.FlaggedCommand
+	if strings.TrimSpace(headline) == "" {
+		headline = approval.Command
+	}
+	context := a.approvalContextSummary(approval.ToolName, approval.TabTitle, approval.ProjectName, approval.BranchName)
+	body := headline
+	if context != "" {
+		body = context + "\n" + headline
+	}
+	title := "Command Approval"
+	if approval.FlaggedCommand != "" && approval.FlaggedCommand != approval.Command {
+		title = "Protected Remote Action"
+	}
+	a.notifyPush(PushNotifyPayload{
+		Kind:          "approval",
+		Title:         title,
+		Body:          body,
+		RequestID:     approval.RequestID,
+		OpenApprovals: true,
+	})
+}
+
+func (a *Agent) handleInteractivePromptListForPush(payload []byte) {
+	var promptList InteractivePromptListPayload
+	if err := json.Unmarshal(payload, &promptList); err != nil {
+		log.Printf("interactive prompt push: unmarshal: %v", err)
+		return
+	}
+	current := map[string]struct{}{}
+	for _, prompt := range promptList.Prompts {
+		if prompt.ID == "" {
+			continue
+		}
+		current[prompt.ID] = struct{}{}
+		a.clientStateMu.Lock()
+		_, seen := a.notifiedPromptIDs[prompt.ID]
+		if !seen {
+			a.notifiedPromptIDs[prompt.ID] = time.Now()
+		}
+		a.clientStateMu.Unlock()
+		if seen {
+			continue
+		}
+		context := a.approvalContextSummary(prompt.ToolName, prompt.TabTitle, "", "")
+		body := strings.TrimSpace(prompt.Prompt)
+		if context != "" {
+			body = context + "\n" + body
+		}
+		a.notifyPush(PushNotifyPayload{
+			Kind:          "interactive_prompt",
+			Title:         "Interactive Prompt",
+			Body:          body,
+			PromptID:      prompt.ID,
+			OpenApprovals: true,
+		})
+	}
+
+	a.clientStateMu.Lock()
+	for promptID := range a.notifiedPromptIDs {
+		if _, ok := current[promptID]; !ok {
+			delete(a.notifiedPromptIDs, promptID)
+		}
+	}
+	a.clientStateMu.Unlock()
 }
 
 func (a *Agent) sendToRelay(frame *protocol.Frame) {

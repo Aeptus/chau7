@@ -188,6 +188,11 @@ struct ApprovalRequestCard: View {
                     .foregroundStyle(.orange)
             }
 
+            let contextItems = approvalContextItems(for: request)
+            if !contextItems.isEmpty {
+                ApprovalContextRow(items: contextItems)
+            }
+
             Text(request.command)
                 .font(.system(.callout, design: .monospaced))
                 .padding(8)
@@ -217,6 +222,48 @@ struct ApprovalRequestCard: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private func approvalContextItems(for request: ApprovalRequest) -> [ApprovalContextItem] {
+        var items: [ApprovalContextItem] = []
+        if let toolName = request.toolName, !toolName.isEmpty {
+            items.append(ApprovalContextItem(label: toolName, systemImage: "wand.and.stars"))
+        }
+        if let tabTitle = request.tabTitle, !tabTitle.isEmpty {
+            items.append(ApprovalContextItem(label: tabTitle, systemImage: "rectangle.on.rectangle"))
+        }
+        if let projectName = request.projectName, !projectName.isEmpty {
+            items.append(ApprovalContextItem(label: projectName, systemImage: "folder"))
+        }
+        if let branchName = request.branchName, !branchName.isEmpty {
+            items.append(ApprovalContextItem(label: branchName, systemImage: "arrow.triangle.branch"))
+        }
+        return items
+    }
+}
+
+private struct ApprovalContextItem: Identifiable {
+    let id = UUID()
+    let label: String
+    let systemImage: String
+}
+
+private struct ApprovalContextRow: View {
+    let items: [ApprovalContextItem]
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(items) { item in
+                    Label(item.label, systemImage: item.systemImage)
+                        .font(.caption)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color(UIColor.secondarySystemBackground))
+                        .clipShape(Capsule())
+                }
+            }
+        }
     }
 }
 

@@ -88,6 +88,39 @@ struct SessionReadyPayload: Codable {
     }
 }
 
+enum RemoteClientAppState: String, Codable {
+    case foreground
+    case background
+}
+
+enum RemoteClientStreamMode: String, Codable {
+    case full
+    case approvalsOnly = "approvals_only"
+}
+
+enum RemotePushEnvironment: String, Codable {
+    case development
+    case production
+}
+
+struct RemoteClientStatePayload: Codable {
+    let appState: RemoteClientAppState
+    let streamMode: RemoteClientStreamMode
+    let pushToken: String?
+    let pushTopic: String?
+    let pushEnvironment: RemotePushEnvironment?
+    let notificationsAuthorized: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case appState = "app_state"
+        case streamMode = "stream_mode"
+        case pushToken = "push_token"
+        case pushTopic = "push_topic"
+        case pushEnvironment = "push_environment"
+        case notificationsAuthorized = "notifications_authorized"
+    }
+}
+
 // MARK: - Tabs
 
 struct TabListPayload: Codable {
@@ -97,6 +130,8 @@ struct TabListPayload: Codable {
 struct RemoteTab: Codable, Identifiable {
     let tabID: UInt32
     let title: String
+    let projectName: String?
+    let branchName: String?
     let isActive: Bool
     let isMCPControlled: Bool
 
@@ -105,6 +140,8 @@ struct RemoteTab: Codable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case tabID = "tab_id"
         case title
+        case projectName = "project_name"
+        case branchName = "branch_name"
         case isActive = "is_active"
         case isMCPControlled = "is_mcp_controlled"
     }
@@ -113,6 +150,8 @@ struct RemoteTab: Codable, Identifiable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         tabID = try container.decode(UInt32.self, forKey: .tabID)
         title = try container.decode(String.self, forKey: .title)
+        projectName = try container.decodeIfPresent(String.self, forKey: .projectName)
+        branchName = try container.decodeIfPresent(String.self, forKey: .branchName)
         isActive = try container.decode(Bool.self, forKey: .isActive)
         isMCPControlled = try container.decodeIfPresent(Bool.self, forKey: .isMCPControlled) ?? false
     }
@@ -132,6 +171,11 @@ struct ApprovalRequest: Identifiable {
     let requestID: String
     let command: String
     let flaggedCommand: String
+    let tabTitle: String?
+    let toolName: String?
+    let projectName: String?
+    let branchName: String?
+    let sessionID: String?
     let timestamp: Date
 
     var id: String { requestID }
@@ -156,12 +200,22 @@ struct ApprovalRequestPayload: Codable {
     let command: String
     let flaggedCommand: String
     let timestamp: String
+    let tabTitle: String?
+    let toolName: String?
+    let projectName: String?
+    let branchName: String?
+    let sessionID: String?
 
     enum CodingKeys: String, CodingKey {
         case requestID = "request_id"
         case command
         case flaggedCommand = "flagged_command"
         case timestamp
+        case tabTitle = "tab_title"
+        case toolName = "tool_name"
+        case projectName = "project_name"
+        case branchName = "branch_name"
+        case sessionID = "session_id"
     }
 }
 

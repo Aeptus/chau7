@@ -321,6 +321,14 @@ typedef struct FFIImageArray {
 struct Chau7Terminal *chau7_terminal_create(uint16_t cols, uint16_t rows, const char *shell);
 
 /*
+ Create a new headless terminal for remote playback.
+
+ # Safety
+ - Returns null on failure
+ */
+struct Chau7Terminal *chau7_terminal_create_headless(uint16_t cols, uint16_t rows);
+
+/*
  Create a new terminal with environment variables
 
  # Safety
@@ -564,6 +572,14 @@ void chau7_terminal_set_colors(struct Chau7Terminal *term,
  - `term` must be a valid pointer
  */
 void chau7_terminal_clear_scrollback(struct Chau7Terminal *term);
+
+/*
+ Set Unicode ambiguous-width treatment (1 = single, 2 = double).
+
+ # Safety
+ - `term` must be a valid pointer
+ */
+void chau7_terminal_set_ambiguous_width(struct Chau7Terminal *term, uint8_t width);
 
 /*
  Set the scrollback buffer size (number of lines)
