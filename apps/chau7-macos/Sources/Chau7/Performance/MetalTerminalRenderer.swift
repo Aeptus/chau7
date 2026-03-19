@@ -769,7 +769,10 @@ public final class MetalTerminalRenderer: NSObject {
         let ch = Float(cellSize.height / scaleFactor)
 
         var foundBlinkingCells = false
-        var ligatureSkip = 0 // Cells to skip (consumed by a ligature)
+        var ligatureSkip = 0 // Remaining cells in current ligature
+        var ligatureRect = CGRect.zero // Atlas rect of current ligature
+        var ligatureSpan = 0 // Total cell span of current ligature
+        var ligatureSlice = 0 // Next slice index for continuation cells
         var boxDrawCount = 0 // Diagnostic counter
         let traceBoxDraw = Log.isTraceEnabled && diagFrameCounter.isMultiple(of: 600)
 
@@ -801,28 +804,41 @@ public final class MetalTerminalRenderer: NSObject {
             }
 
             // Ligature lookahead: try to form multi-char ligatures from consecutive cells.
-            // Skip if this cell was consumed by a previous ligature.
+            // When a ligature is found, its atlas texture is split across consecutive cells
+            // (each cell gets its horizontal slice) so no shader changes are needed.
             var texCoord: SIMD4<Float> = SIMD4(0, 0, 0, 0)
-            var cellWidth: Float = cw
 
             if ligaturesEnabled, cell.character >= 0x21, cell.character < 0x7F,
                ligatureSkip <= 0 {
                 let ligInfo = tryLigature(cells: cells, index: i, count: count, cols: cols,
                                           bold: isBold, italic: isItalic)
                 if let lig = ligInfo {
+                    // First cell gets the left slice of the ligature texture.
+                    // Subsequent cells (via ligatureSkip) get their slices below.
+                    let sliceWidth = Float(lig.textureRect.width) / Float(lig.cellSpan)
                     texCoord = SIMD4(
                         Float(lig.textureRect.origin.x),
                         Float(lig.textureRect.origin.y),
-                        Float(lig.textureRect.width),
+                        sliceWidth,
                         Float(lig.textureRect.height)
                     )
-                    cellWidth = cw * Float(lig.cellSpan)
-                    ligatureSkip = lig.cellSpan - 1 // skip subsequent cells
+                    ligatureSkip = lig.cellSpan - 1
+                    ligatureRect = lig.textureRect
+                    ligatureSpan = lig.cellSpan
+                    ligatureSlice = 1 // next cell gets slice index 1
                 }
             }
 
             if ligatureSkip > 0, texCoord == SIMD4(0, 0, 0, 0) {
-                // This cell is part of a ligature — render as empty (background only)
+                // This cell is a continuation of a ligature — render its slice
+                let sliceWidth = Float(ligatureRect.width) / Float(ligatureSpan)
+                texCoord = SIMD4(
+                    Float(ligatureRect.origin.x) + sliceWidth * Float(ligatureSlice),
+                    Float(ligatureRect.origin.y),
+                    sliceWidth,
+                    Float(ligatureRect.height)
+                )
+                ligatureSlice += 1
                 ligatureSkip -= 1
             } else if texCoord == SIMD4(0, 0, 0, 0) {
                 // Normal single-glyph path
