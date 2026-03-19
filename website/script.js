@@ -502,6 +502,33 @@
         panels.forEach(p => io.observe(p));
     }
 
+    /* ── Question list → section links ────────────── */
+    function initQuestionLinks() {
+        var items = document.querySelectorAll('.question-item');
+        if (!items.length) return;
+
+        var sections = document.querySelectorAll('.feature-content');
+        items.forEach(function(item, i) {
+            if (i >= sections.length) return;
+            var section = sections[i];
+            // Add id to section if missing
+            if (!section.id) {
+                section.id = section.getAttribute('data-ui') || ('q-section-' + i);
+            }
+            // Wrap text in a link
+            var link = document.createElement('a');
+            link.href = '#' + section.id;
+            link.textContent = item.textContent;
+            link.style.cssText = 'color: inherit; text-decoration: none; border-bottom: 1px dotted var(--border);';
+            item.textContent = '';
+            item.appendChild(link);
+            link.addEventListener('click', function(e) {
+                e.preventDefault();
+                section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            });
+        });
+    }
+
     /* ── Ask AI footnotes ─────────────────────────── */
     /* Note: All markup below is hardcoded (no user input), so DOM construction is safe. */
     function initAskAI() {
@@ -595,5 +622,6 @@
         initCarousel();
         initPillarCarousel();
         initAskAI();
+        initQuestionLinks();
     });
 })();

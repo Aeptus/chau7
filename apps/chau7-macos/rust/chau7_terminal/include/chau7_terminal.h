@@ -259,6 +259,24 @@ typedef struct DebugState {
 } DebugState;
 
 /*
+ A single OSC 133 shell integration event for FFI.
+ marker: b'A' = prompt start, b'B' = command start, b'C' = command executed,
+         b'D' = command finished (exit_code is valid)
+ */
+typedef struct FFIShellEvent {
+    uint8_t marker;
+    int32_t exit_code;
+} FFIShellEvent;
+
+/*
+ Array of shell integration events returned to Swift.
+ */
+typedef struct FFIShellEventArray {
+    struct FFIShellEvent *events;
+    size_t count;
+} FFIShellEventArray;
+
+/*
  C-compatible image data for FFI transfer to Swift.
  Fields ordered by descending alignment to minimize padding.
  */
@@ -782,6 +800,24 @@ bool chau7_terminal_has_clipboard_request(struct Chau7Terminal *term);
  - `text` must be a valid null-terminated C string
  */
 void chau7_terminal_respond_clipboard(struct Chau7Terminal *term, const char *text);
+
+/*
+ Get pending OSC 133 shell integration events.
+
+ # Safety
+ - `term` must be a valid pointer
+ - The returned pointer must be freed with `chau7_terminal_free_shell_events`
+ - Returns null if no events are pending.
+ */
+struct FFIShellEventArray *chau7_terminal_get_pending_shell_events(struct Chau7Terminal *term);
+
+/*
+ Free a shell event array returned by `chau7_terminal_get_pending_shell_events`.
+
+ # Safety
+ - `array_ptr` must have been returned by `chau7_terminal_get_pending_shell_events`
+ */
+void chau7_terminal_free_shell_events(struct FFIShellEventArray *array_ptr);
 
 /*
  Get pending images from the graphics interceptor

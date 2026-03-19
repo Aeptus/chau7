@@ -107,8 +107,9 @@
         <section class="feature-content" data-ui="ligatures-what">
             <div class="section-inner prose">
                 <h2>What is Ligatures in Chau7?</h2>
-                <p>Ligatures is a rendering feature in the Chau7 terminal that detects OpenType ligature substitutions in programming fonts and renders the combined glyphs across the correct number of character cells. Programming fonts like Fira Code, JetBrains Mono, Cascadia Code, and Iosevka include ligature tables that replace multi-character sequences (like <code>-></code>, <code>==</code>, <code>!=</code>, <code>|></code>) with single typographic glyphs.</p>
-                <p>Chau7 has a ligature setting that can be toggled per profile. Note that ligature support is currently in early/partial implementation: the renderer rasterizes glyphs one codepoint at a time, so multi-character ligature substitution may not render as expected with all fonts. This is an area of active development.</p>
+                <p>Ligatures is a rendering feature in the Chau7 terminal that detects and renders OpenType ligature substitutions directly in the Metal renderer. Programming fonts like Fira Code, JetBrains Mono, Cascadia Code, and Iosevka include ligature tables that replace multi-character sequences (like <code>-></code>, <code>==</code>, <code>!=</code>, <code>|></code>) with single typographic glyphs.</p>
+                <p>Chau7 uses CoreText's <code>CTLineCreateWithAttributedString</code> to shape ligature sequences. CoreText's GSUB engine handles ligature substitution automatically for any OpenType font. A <code>LigatureKey</code>/<code>LigatureInfo</code> cache stores multi-cell atlas entries so repeated sequences render from cache.</p>
+                <p>In the render loop, <code>tryLigature()</code> performs 2-3 character lookahead to detect ligature candidates. A <code>ligatureSkip</code> counter marks continuation cells as empty so the combined glyph spans the correct number of cells. Ligatures are off by default and can be enabled per profile in Settings.</p>
             </div>
         </section>
 

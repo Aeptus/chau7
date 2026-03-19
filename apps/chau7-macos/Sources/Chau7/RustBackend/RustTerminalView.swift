@@ -1797,7 +1797,8 @@ private final class RustTerminalFFI {
         defer { freeFn(rawPtr) }
 
         let array = rawPtr.assumingMemoryBound(to: RustShellEventArray.self).pointee
-        guard array.count != 0, let ptr = array.events else { return [] }
+        let eventCount = array.count
+        guard eventCount > 0, let ptr = array.events else { return [] } // swiftlint:disable:this empty_count
 
         var events: [ShellIntegrationEvent] = []
         events.reserveCapacity(array.count)
