@@ -67,7 +67,7 @@ public enum AIToolRegistry {
             outputPatterns: [
                 "╭─ claude", "╰─ claude", "powered by anthropic",
                 "claude.ai/", "claude.ai", "claude code", "anthropic's claude",
-                "claude --"  // matches command echo: claude --dangerously-skip-permissions, claude --model, etc.
+                "claude --" // matches command echo: claude --dangerously-skip-permissions, claude --model, etc.
             ],
             resumeProviderKey: "claude",
             resumeFormat: .dashFlag(command: "claude", flag: "--resume"),
@@ -274,7 +274,9 @@ public enum AIToolRegistry {
         for tool in allTools {
             guard let colorName = tool.tabColorName else { continue }
             map[tool.displayName.lowercased()] = colorName
-            for cmd in tool.commandNames { map[cmd] = colorName }
+            for cmd in tool.commandNames {
+                map[cmd] = colorName
+            }
             if let key = tool.resumeProviderKey { map[key] = colorName }
         }
         return map

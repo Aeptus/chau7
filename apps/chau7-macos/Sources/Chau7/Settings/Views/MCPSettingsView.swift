@@ -252,19 +252,19 @@ private struct MCPProfileEditorView: View {
     let onSave: (MCPProfile) -> Void
     let onCancel: () -> Void
 
-    @State private var name: String = ""
-    @State private var isEnabled: Bool = true
+    @State private var name = ""
+    @State private var isEnabled = true
     @State private var permissionMode: MCPPermissionMode = .askUnlisted
-    @State private var priority: Int = 0
+    @State private var priority = 0
     @State private var allowedCommands: [String] = []
     @State private var blockedCommands: [String] = []
-    @State private var newAllowed: String = ""
-    @State private var newBlocked: String = ""
+    @State private var newAllowed = ""
+    @State private var newBlocked = ""
 
     // Trigger state
-    @State private var triggerTypeIndex: Int = 0
-    @State private var triggerValue: String = ""
-    @State private var triggerEnvKey: String = ""
+    @State private var triggerTypeIndex = 0
+    @State private var triggerValue = ""
+    @State private var triggerEnvKey = ""
 
     private let triggerTypes = ["Directory", "Git Repository", "SSH Host", "Process", "Environment Variable"]
 
@@ -278,14 +278,14 @@ private struct MCPProfileEditorView: View {
 
             Toggle("Enabled", isOn: $isEnabled)
 
-            Stepper("Priority: \(priority)", value: $priority, in: 0...100)
+            Stepper("Priority: \(priority)", value: $priority, in: 0 ... 100)
 
             Divider()
 
             // Trigger
             Text("Trigger").font(.subheadline.weight(.medium))
             Picker("Type", selection: $triggerTypeIndex) {
-                ForEach(0..<triggerTypes.count, id: \.self) { i in
+                ForEach(0 ..< triggerTypes.count, id: \.self) { i in
                     Text(triggerTypes[i]).tag(i)
                 }
             }
@@ -361,15 +361,21 @@ private struct MCPProfileEditorView: View {
     private func loadTrigger(_ trigger: ProfileSwitchTrigger) {
         switch trigger {
         case .directory(let path):
-            triggerTypeIndex = 0; triggerValue = path
+            triggerTypeIndex = 0
+            triggerValue = path
         case .gitRepository(let name):
-            triggerTypeIndex = 1; triggerValue = name
+            triggerTypeIndex = 1
+            triggerValue = name
         case .sshHost(let hostname):
-            triggerTypeIndex = 2; triggerValue = hostname
+            triggerTypeIndex = 2
+            triggerValue = hostname
         case .processRunning(let name):
-            triggerTypeIndex = 3; triggerValue = name
+            triggerTypeIndex = 3
+            triggerValue = name
         case .environmentVariable(let key, let value):
-            triggerTypeIndex = 4; triggerEnvKey = key; triggerValue = value
+            triggerTypeIndex = 4
+            triggerEnvKey = key
+            triggerValue = value
         }
     }
 

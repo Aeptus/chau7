@@ -128,14 +128,18 @@ enum TabResolver {
         // Find the matching tool definition and pull in all its known names
         if let toolDef = AIToolRegistry.allTools.first(where: { def in
             def.displayName.lowercased() == normalized
-            || def.commandNames.contains(normalized)
-            || def.resumeProviderKey == normalized
+                || def.commandNames.contains(normalized)
+                || def.resumeProviderKey == normalized
         }) {
             append(toolDef.displayName)
             if let key = toolDef.resumeProviderKey { append(key) }
-            for cmd in toolDef.commandNames { append(cmd) }
+            for cmd in toolDef.commandNames {
+                append(cmd)
+            }
             // Include output patterns that double as display labels
-            for pattern in toolDef.outputPatterns { append(pattern) }
+            for pattern in toolDef.outputPatterns {
+                append(pattern)
+            }
         }
 
         return candidates
@@ -150,8 +154,8 @@ enum TabResolver {
         let providerKey: String? = candidates.lazy.compactMap { candidate in
             AIToolRegistry.allTools.first { def in
                 def.displayName.lowercased() == candidate
-                || def.commandNames.contains(candidate)
-                || def.resumeProviderKey == candidate
+                    || def.commandNames.contains(candidate)
+                    || def.resumeProviderKey == candidate
             }?.resumeProviderKey
         }.first
 

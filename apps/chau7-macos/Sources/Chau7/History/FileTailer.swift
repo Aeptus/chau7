@@ -151,7 +151,6 @@ final class FileTailer<T> {
         try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? UInt64
     }
 
-
     private func prefillLastLines(count: Int) {
         guard count > 0 else { return }
         guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return }

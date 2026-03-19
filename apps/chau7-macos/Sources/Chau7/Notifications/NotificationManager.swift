@@ -48,7 +48,7 @@ final class NotificationManager {
 
     private init() {
         guard !isIsolatedTestMode else {
-            useNativeNotifications = false
+            self.useNativeNotifications = false
             return
         }
         startFocusRefreshTimer()
@@ -182,7 +182,7 @@ final class NotificationManager {
 
     // MARK: - Default Tab Styling
 
-    private static let defaultTabStyleTypes: Set<String> = [
+    private static let defaultTabStyleTypes: Set = [
         "finished", "error", "permission", "idle", "context_limit", "failed"
     ]
 

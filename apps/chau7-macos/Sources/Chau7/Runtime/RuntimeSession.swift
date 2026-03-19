@@ -35,7 +35,7 @@ final class RuntimeSession: @unchecked Sendable {
     private let lock = NSLock()
 
     private var _currentTurnID: String?
-    private var _turnCount: Int = 0
+    private var _turnCount = 0
     private var _pendingApproval: PendingApproval?
     private var _currentTurnStats = TurnStats()
     private var _lastDeniedApproval = false

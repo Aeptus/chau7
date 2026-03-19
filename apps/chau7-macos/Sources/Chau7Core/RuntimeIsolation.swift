@@ -56,7 +56,7 @@ public enum RuntimeIsolation {
         }
         return fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? libraryDirectory(fileManager: fileManager, environment: environment)
-                .appendingPathComponent("Application Support", isDirectory: true)
+            .appendingPathComponent("Application Support", isDirectory: true)
     }
 
     public static func logsDirectory(

@@ -18,7 +18,9 @@ struct ResolvedPermissions {
     let matchedProfile: MCPProfile?
 
     /// The profile ID to target when "Always Allow" persists a command.
-    var profileID: UUID? { matchedProfile?.id }
+    var profileID: UUID? {
+        matchedProfile?.id
+    }
 
     /// Display name for the approval dialog ("profile: MyProfile" or "global").
     var sourceName: String {

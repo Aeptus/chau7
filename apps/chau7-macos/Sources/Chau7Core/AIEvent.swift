@@ -111,9 +111,17 @@ public struct AIEvent: Identifiable, Equatable, Sendable {
     /// Returns a copy with `tabID` filled in, if it was previously nil.
     public func resolvingTabID(_ tabID: UUID?) -> AIEvent {
         guard let tabID, self.tabID == nil else { return self }
-        return AIEvent(id: id, source: source, type: type, tool: tool,
-                       message: message, ts: ts, directory: directory, tabID: tabID,
-                       sessionID: sessionID)
+        return AIEvent(
+            id: id,
+            source: source,
+            type: type,
+            tool: tool,
+            message: message,
+            ts: ts,
+            directory: directory,
+            tabID: tabID,
+            sessionID: sessionID
+        )
     }
 
     /// Returns the routing target for tab resolution from this event's fields.

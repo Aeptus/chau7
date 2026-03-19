@@ -196,11 +196,11 @@ final class RuntimeSessionStateTests: XCTestCase {
 
     func testFullTurnCycle() {
         var sm = RuntimeSessionStateMachine()
-        sm.handle(.backendReady)        // starting → ready
-        sm.handle(.turnSubmitted)       // ready → busy
-        sm.handle(.approvalNeeded)      // busy → awaitingApproval
-        sm.handle(.approvalResolved)    // awaitingApproval → busy
-        sm.handle(.turnCompleted)       // busy → ready
+        sm.handle(.backendReady) // starting → ready
+        sm.handle(.turnSubmitted) // ready → busy
+        sm.handle(.approvalNeeded) // busy → awaitingApproval
+        sm.handle(.approvalResolved) // awaitingApproval → busy
+        sm.handle(.turnCompleted) // busy → ready
         XCTAssertEqual(sm.state, .ready)
         XCTAssertTrue(sm.canAcceptTurn)
     }
@@ -209,10 +209,10 @@ final class RuntimeSessionStateTests: XCTestCase {
         var sm = RuntimeSessionStateMachine()
         sm.handle(.backendReady)
         sm.handle(.turnSubmitted)
-        sm.handle(.interrupted)         // busy → interrupted
-        sm.handle(.backendReady)        // interrupted → ready
-        sm.handle(.turnSubmitted)       // ready → busy
-        sm.handle(.turnCompleted)       // busy → ready
+        sm.handle(.interrupted) // busy → interrupted
+        sm.handle(.backendReady) // interrupted → ready
+        sm.handle(.turnSubmitted) // ready → busy
+        sm.handle(.turnCompleted) // busy → ready
         XCTAssertEqual(sm.state, .ready)
     }
 

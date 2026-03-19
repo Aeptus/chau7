@@ -42,15 +42,17 @@ class EditorScrollView: NSScrollView {
 // MARK: - Line Number Gutter View
 
 enum LineNumberMode: String {
-    case absolute   // 1, 2, 3, 4, ...
-    case relative   // distance from cursor line
-    case hybrid     // current line absolute, others relative
+    case absolute // 1, 2, 3, 4, ...
+    case relative // distance from cursor line
+    case hybrid // current line absolute, others relative
 }
 
 /// Draws line numbers in the editor gutter as a vertical ruler view.
 class LineNumberGutterView: NSRulerView {
     private weak var textView: NSTextView?
-    var lineNumberMode: LineNumberMode = .absolute { didSet { needsDisplay = true } }
+    var lineNumberMode: LineNumberMode = .absolute {
+        didSet { needsDisplay = true }
+    }
 
     init(textView: NSTextView, scrollView: NSScrollView) {
         self.textView = textView

@@ -96,6 +96,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
     var ownerTabID: UUID? {
         didSet { shellEventDetector.ownerTabID = ownerTabID }
     }
+
     @Published var status: CommandStatus = .idle
     @Published var isGitRepo = false
     @Published var gitBranch: String?
@@ -584,13 +585,13 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
         view.onShellIntegrationEvent = { [weak self] event in
             guard let self = self else { return }
             switch event {
-            case .promptStart: self.handlePromptDetected()
-            case .commandStart: self.isAtPrompt = false
-            case .commandExecuted: self.shellEventDetector.commandStarted(command: self.pendingCommandLine, in: self.currentDirectory)
+            case .promptStart: handlePromptDetected()
+            case .commandStart: isAtPrompt = false
+            case .commandExecuted: shellEventDetector.commandStarted(command: pendingCommandLine, in: currentDirectory)
             case .commandFinished(let exitCode):
-                guard !self.commandFinishedNotified else { return }
-                self.commandFinishedNotified = true
-                self.shellEventDetector.commandFinished(exitCode: Int(exitCode), command: self.pendingCommandLine)
+                guard !commandFinishedNotified else { return }
+                commandFinishedNotified = true
+                shellEventDetector.commandFinished(exitCode: Int(exitCode), command: pendingCommandLine)
             }
         }
 

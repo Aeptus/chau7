@@ -2,8 +2,8 @@ import Foundation
 
 public enum RemoteOutputTuning {
     public static let maxRetainedBytes = 200_000
-    public static let maxIncomingFrameBytes = 65_536
-    public static let maxPendingBytesPerTab = 32_768
+    public static let maxIncomingFrameBytes = 65536
+    public static let maxPendingBytesPerTab = 32768
     public static let flushInterval = Duration.milliseconds(33)
 
     public static func trimRetainedText(_ input: String) -> String {

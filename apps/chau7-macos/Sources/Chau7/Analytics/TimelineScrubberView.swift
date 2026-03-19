@@ -198,7 +198,7 @@ struct TimelineScrubberView: View {
         for block in commandBlocks {
             let startBucket = Int(blockStartFraction(block) * Double(bucketCount))
             let endBucket = min(bucketCount - 1, Int((blockStartFraction(block) + blockWidthFraction(block)) * Double(bucketCount)))
-            for i in max(0, startBucket)...max(0, endBucket) {
+            for i in max(0, startBucket) ... max(0, endBucket) {
                 buckets[i] += 1
             }
         }
@@ -206,7 +206,7 @@ struct TimelineScrubberView: View {
         let maxDensity = max(1, buckets.max() ?? 1)
 
         return HStack(spacing: 0) {
-            ForEach(0..<bucketCount, id: \.self) { i in
+            ForEach(0 ..< bucketCount, id: \.self) { i in
                 Rectangle()
                     .fill(Color.accentColor.opacity(Double(buckets[i]) / Double(maxDensity) * 0.3))
                     .frame(width: width / CGFloat(bucketCount), height: 8)

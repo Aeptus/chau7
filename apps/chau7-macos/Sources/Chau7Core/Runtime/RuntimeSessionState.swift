@@ -72,41 +72,34 @@ public struct RuntimeSessionStateMachine: Sendable {
         switch (state, trigger) {
 
         // starting
-        case (.starting, .backendReady):       return .ready
-        case (.starting, .launchTimeout):      return .failed
-        case (.starting, .processCrashed):     return .failed
-        case (.starting, .tabClosed):          return .stopped
-
+        case (.starting, .backendReady): return .ready
+        case (.starting, .launchTimeout): return .failed
+        case (.starting, .processCrashed): return .failed
+        case (.starting, .tabClosed): return .stopped
         // ready
-        case (.ready, .turnSubmitted):         return .busy
-        case (.ready, .tabClosed):             return .stopped
-
+        case (.ready, .turnSubmitted): return .busy
+        case (.ready, .tabClosed): return .stopped
         // busy
-        case (.busy, .turnCompleted):          return .ready
-        case (.busy, .approvalNeeded):         return .awaitingApproval
-        case (.busy, .inputRequested):         return .waitingInput
-        case (.busy, .interrupted):            return .interrupted
-        case (.busy, .processCrashed):         return .failed
-        case (.busy, .tabClosed):              return .stopped
-
+        case (.busy, .turnCompleted): return .ready
+        case (.busy, .approvalNeeded): return .awaitingApproval
+        case (.busy, .inputRequested): return .waitingInput
+        case (.busy, .interrupted): return .interrupted
+        case (.busy, .processCrashed): return .failed
+        case (.busy, .tabClosed): return .stopped
         // awaitingApproval
         case (.awaitingApproval, .approvalResolved): return .busy
-        case (.awaitingApproval, .interrupted):      return .interrupted
-        case (.awaitingApproval, .tabClosed):        return .stopped
-
+        case (.awaitingApproval, .interrupted): return .interrupted
+        case (.awaitingApproval, .tabClosed): return .stopped
         // waitingInput
-        case (.waitingInput, .inputProvided):  return .busy
-        case (.waitingInput, .tabClosed):      return .stopped
-
+        case (.waitingInput, .inputProvided): return .busy
+        case (.waitingInput, .tabClosed): return .stopped
         // interrupted
-        case (.interrupted, .backendReady):    return .ready
-        case (.interrupted, .processCrashed):  return .failed
-        case (.interrupted, .tabClosed):       return .stopped
-
+        case (.interrupted, .backendReady): return .ready
+        case (.interrupted, .processCrashed): return .failed
+        case (.interrupted, .tabClosed): return .stopped
         // Terminal states accept nothing
         case (.failed, _), (.stopped, _):
             return nil
-
         default:
             return nil
         }

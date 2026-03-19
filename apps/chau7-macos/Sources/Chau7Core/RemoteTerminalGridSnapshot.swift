@@ -89,7 +89,7 @@ public struct RemoteTerminalGridSnapshot: Equatable, Sendable {
         let cursorVisible = data[13] != 0
         let scrollbackRows = try data.readUInt32LE(at: 17)
         let displayOffset = try data.readUInt32LE(at: 21)
-        let cellsByteCount = Int(try data.readUInt32LE(at: 25))
+        let cellsByteCount = try Int(data.readUInt32LE(at: 25))
         let expectedCount = Int(cols) * Int(rows) * RemoteTerminalGridSnapshotLayout.cellStride
         guard cellsByteCount == expectedCount else {
             throw RemoteTerminalGridSnapshotError.invalidLength

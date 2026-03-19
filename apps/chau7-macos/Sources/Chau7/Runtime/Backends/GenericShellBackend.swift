@@ -13,7 +13,7 @@ struct GenericShellBackend: AgentBackend {
         // For shell backend, the command is provided via args
         let envPrefix = config.environment.map { "\($0.key)=\(shellEscape($0.value))" }.joined(separator: " ")
         let cmd = config.args.joined(separator: " ")
-        if !envPrefix.isEmpty && !cmd.isEmpty {
+        if !envPrefix.isEmpty, !cmd.isEmpty {
             return envPrefix + " " + cmd
         }
         return cmd
@@ -24,7 +24,9 @@ struct GenericShellBackend: AgentBackend {
         return prompt + "\n"
     }
 
-    var resumeProviderKey: String? { nil }
+    var resumeProviderKey: String? {
+        nil
+    }
 
     private func shellEscape(_ value: String) -> String {
         if value.rangeOfCharacter(from: .init(charactersIn: " \"'$\\`!#&|;(){}[]<>?*~")) != nil {

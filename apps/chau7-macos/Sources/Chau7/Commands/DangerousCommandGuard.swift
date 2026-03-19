@@ -119,7 +119,7 @@ final class DangerousCommandGuard: ObservableObject {
         // Check per-directory allowlist
         if let dir = directory {
             for (allowedDir, commands) in directoryAllowLists {
-                if (dir == allowedDir || dir.hasPrefix(allowedDir + "/")) && commands.contains(trimmed) {
+                if dir == allowedDir || dir.hasPrefix(allowedDir + "/"), commands.contains(trimmed) {
                     Log.trace("DangerousCommandGuard: allowed (directory '\(allowedDir)') '\(trimmed)'")
                     return .allowed
                 }
@@ -153,7 +153,7 @@ final class DangerousCommandGuard: ObservableObject {
             // Common fullwidth: ！(FF01) ～(FF5E)
             let v = scalar.value
             if (v >= 0x0400 && v <= 0x04FF) || // Cyrillic block
-               (v >= 0xFF01 && v <= 0xFF5E) {   // Fullwidth forms
+                (v >= 0xFF01 && v <= 0xFF5E) { // Fullwidth forms
                 return true
             }
         }

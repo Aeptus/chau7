@@ -509,7 +509,9 @@ final class FeatureSettings: ObservableObject {
     @Published var fontWeight: Int {
         didSet {
             let clamped = max(0, min(fontWeight, 14))
-            if fontWeight != clamped { fontWeight = clamped; return }
+            if fontWeight != clamped { fontWeight = clamped
+                return
+            }
             UserDefaults.standard.set(fontWeight, forKey: "terminal.fontWeight")
         }
     }
@@ -1609,7 +1611,9 @@ final class FeatureSettings: ObservableObject {
     @Published var cursorBlinkRate: Double {
         didSet {
             let clamped = max(0.3, min(cursorBlinkRate, 2.0))
-            if cursorBlinkRate != clamped { cursorBlinkRate = clamped; return }
+            if cursorBlinkRate != clamped { cursorBlinkRate = clamped
+                return
+            }
             UserDefaults.standard.set(cursorBlinkRate, forKey: "terminal.cursorBlinkRate")
         }
     }
@@ -1624,7 +1628,9 @@ final class FeatureSettings: ObservableObject {
     @Published var unicodeAmbiguousWidth: Int {
         didSet {
             let clamped = (unicodeAmbiguousWidth == 2) ? 2 : 1
-            if unicodeAmbiguousWidth != clamped { unicodeAmbiguousWidth = clamped; return }
+            if unicodeAmbiguousWidth != clamped { unicodeAmbiguousWidth = clamped
+                return
+            }
             UserDefaults.standard.set(unicodeAmbiguousWidth, forKey: "terminal.unicodeAmbiguousWidth")
         }
     }
@@ -1670,7 +1676,9 @@ final class FeatureSettings: ObservableObject {
     @Published var bellRateLimitSeconds: Double {
         didSet {
             let clamped = max(0, min(bellRateLimitSeconds, 60))
-            if bellRateLimitSeconds != clamped { bellRateLimitSeconds = clamped; return }
+            if bellRateLimitSeconds != clamped { bellRateLimitSeconds = clamped
+                return
+            }
             UserDefaults.standard.set(bellRateLimitSeconds, forKey: "terminal.bellRateLimitSeconds")
         }
     }
@@ -3211,6 +3219,7 @@ final class FeatureSettings: ObservableObject {
         let bundleID = Bundle.main.bundleIdentifier ?? "com.chau7"
         return "\(bundleID).settings"
     }
+
     private var iCloudSyncWorkItem: DispatchWorkItem?
     private let iCloudSyncDebounceInterval: TimeInterval = 2.0 // 2 seconds debounce
 

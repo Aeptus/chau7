@@ -128,10 +128,10 @@ final class RemoteIPCServer: ObservableObject {
 
         queue.async { [weak self] in
             guard let self else { return }
-            guard self.clientFD >= 0 else { return }
-            let fd = self.clientFD
+            guard clientFD >= 0 else { return }
+            let fd = clientFD
             // Re-validate fd hasn't been closed/recycled since we captured it
-            guard self.clientFD == fd else { return }
+            guard clientFD == fd else { return }
 
             var offset = 0
             while offset < data.count {
@@ -142,7 +142,7 @@ final class RemoteIPCServer: ObservableObject {
 
                 guard written > 0 else {
                     let err = String(cString: strerror(errno))
-                    self.logger.error("IPC write failed: \(err)")
+                    logger.error("IPC write failed: \(err)")
                     Task { @MainActor [weak self] in
                         self?.disconnectClient(notify: true)
                     }
@@ -190,8 +190,8 @@ final class RemoteIPCServer: ObservableObject {
         }
         clientSource?.setCancelHandler { [weak self] in
             close(newClientFD)
-            guard let self, self.clientFD == newClientFD else { return }
-            self.clientFD = -1
+            guard let self, clientFD == newClientFD else { return }
+            clientFD = -1
         }
         clientSource?.resume()
 

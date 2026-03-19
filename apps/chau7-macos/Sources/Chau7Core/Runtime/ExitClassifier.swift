@@ -2,12 +2,12 @@ import Foundation
 
 /// Why a turn ended. Used in `turn_completed` event data.
 public enum TurnExitReason: String, Codable, Sendable {
-    case success           // Normal completion
-    case error             // Agent reported error
-    case interrupted       // Ctrl+C or external interrupt
-    case approvalDenied    = "approval_denied"  // User/orchestrator denied a tool
-    case stalled           // No activity for threshold duration
-    case contextLimit      = "context_limit"    // Context window exhausted
+    case success // Normal completion
+    case error // Agent reported error
+    case interrupted // Ctrl+C or external interrupt
+    case approvalDenied = "approval_denied" // User/orchestrator denied a tool
+    case stalled // No activity for threshold duration
+    case contextLimit = "context_limit" // Context window exhausted
 }
 
 /// Pure function that classifies turn exit reason from available signals.

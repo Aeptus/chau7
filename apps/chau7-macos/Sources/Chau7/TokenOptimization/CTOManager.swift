@@ -441,7 +441,7 @@ final class CTOManager {
     /// Without this wrapper, those reads bypass token optimization entirely.
     private func generateSedWrapperScript(realBin: String?) -> String {
         let realBinSetup: String
-        let realBinRef: String  // variable or literal used for exec fallback
+        let realBinRef: String // variable or literal used for exec fallback
 
         if let path = realBin {
             realBinSetup = """

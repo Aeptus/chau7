@@ -38,32 +38,32 @@ public struct RuntimeEventType: RawRepresentable, Equatable, Hashable, Sendable 
     }
 
     // Session lifecycle
-    public static let sessionStarting    = RuntimeEventType(rawValue: "session_starting")
-    public static let sessionReady       = RuntimeEventType(rawValue: "session_ready")
-    public static let sessionStopped     = RuntimeEventType(rawValue: "session_stopped")
-    public static let sessionError       = RuntimeEventType(rawValue: "session_error")
-    public static let stateChanged       = RuntimeEventType(rawValue: "state_changed")
+    public static let sessionStarting = RuntimeEventType(rawValue: "session_starting")
+    public static let sessionReady = RuntimeEventType(rawValue: "session_ready")
+    public static let sessionStopped = RuntimeEventType(rawValue: "session_stopped")
+    public static let sessionError = RuntimeEventType(rawValue: "session_error")
+    public static let stateChanged = RuntimeEventType(rawValue: "state_changed")
 
     // Turn lifecycle
-    public static let turnStarted        = RuntimeEventType(rawValue: "turn_started")
-    public static let turnCompleted      = RuntimeEventType(rawValue: "turn_completed")
-    public static let turnFailed         = RuntimeEventType(rawValue: "turn_failed")
+    public static let turnStarted = RuntimeEventType(rawValue: "turn_started")
+    public static let turnCompleted = RuntimeEventType(rawValue: "turn_completed")
+    public static let turnFailed = RuntimeEventType(rawValue: "turn_failed")
 
     // Agent activity
-    public static let agentResponding    = RuntimeEventType(rawValue: "agent_responding")
-    public static let toolUse            = RuntimeEventType(rawValue: "tool_use")
-    public static let toolResult         = RuntimeEventType(rawValue: "tool_result")
-    public static let outputChunk        = RuntimeEventType(rawValue: "output_chunk")
+    public static let agentResponding = RuntimeEventType(rawValue: "agent_responding")
+    public static let toolUse = RuntimeEventType(rawValue: "tool_use")
+    public static let toolResult = RuntimeEventType(rawValue: "tool_result")
+    public static let outputChunk = RuntimeEventType(rawValue: "output_chunk")
 
     // Approval
-    public static let approvalNeeded     = RuntimeEventType(rawValue: "approval_needed")
-    public static let approvalResolved   = RuntimeEventType(rawValue: "approval_resolved")
+    public static let approvalNeeded = RuntimeEventType(rawValue: "approval_needed")
+    public static let approvalResolved = RuntimeEventType(rawValue: "approval_resolved")
 
-    // Stall detection
-    public static let stallDetected      = RuntimeEventType(rawValue: "stall_detected")
+    /// Stall detection
+    public static let stallDetected = RuntimeEventType(rawValue: "stall_detected")
 
     // Turn enrichment
-    public static let tokenThreshold     = RuntimeEventType(rawValue: "token_threshold")
-    public static let costThreshold      = RuntimeEventType(rawValue: "cost_threshold")
-    public static let exitClassified     = RuntimeEventType(rawValue: "exit_classified")
+    public static let tokenThreshold = RuntimeEventType(rawValue: "token_threshold")
+    public static let costThreshold = RuntimeEventType(rawValue: "cost_threshold")
+    public static let exitClassified = RuntimeEventType(rawValue: "exit_classified")
 }

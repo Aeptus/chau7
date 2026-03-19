@@ -111,7 +111,7 @@ final class RuntimeControlService {
 
         // Launch the backend command in the tab
         let launchCmd = backend.launchCommand(config: config)
-        if !launchCmd.isEmpty && attachTabID == nil {
+        if !launchCmd.isEmpty, attachTabID == nil {
             _ = controlService.execInTab(tabID: tabID.uuidString, command: launchCmd)
         }
 
@@ -119,7 +119,7 @@ final class RuntimeControlService {
         if let prompt = initialPrompt {
             DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) { [weak self] in
                 guard let self else { return }
-                _ = self.sendTurnInternal(session: session, prompt: prompt, context: nil)
+                _ = sendTurnInternal(session: session, prompt: prompt, context: nil)
             }
         }
 
