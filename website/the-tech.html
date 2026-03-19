@@ -80,7 +80,7 @@
         </section>
 
         <!-- Privacy: the first thing you should know -->
-        <section class="mcp-section" aria-labelledby="privacy-heading" data-ui="privacy-local-first">
+        <section class="perf-section" aria-labelledby="privacy-heading" data-ui="privacy-local-first">
             <div class="section-inner">
                 <div class="section-header">
                     <h2 id="privacy-heading">Does Chau7 send data to the cloud? <span class="gradient-text">No.</span></h2>
@@ -114,7 +114,7 @@
             </div>
         </section>
 
-        <section class="perf-section" aria-labelledby="numbers-heading" data-ui="core-tech-numbers">
+        <section class="perf-section" aria-labelledby="numbers-heading" data-ui="core-tech-numbers" style="padding-top: 0;">
             <div class="section-inner">
                 <h2 id="numbers-heading" class="sr-only">Core technical choices</h2>
                 <div class="numbers-grid">
@@ -138,7 +138,7 @@
             </div>
         </section>
 
-        <section class="mcp-section" aria-labelledby="stack-heading" data-ui="technical-stack-layers">
+        <section class="perf-section" aria-labelledby="stack-heading" data-ui="technical-stack-layers">
             <div class="section-inner">
                 <div class="section-header">
                     <h2 id="stack-heading">What technology powers <span class="gradient-text">Chau7 terminal</span>?</h2>
@@ -152,17 +152,17 @@
                     </div>
                     <div class="perf-layer" style="--delay: 1">
                         <div class="perf-label">Parse</div>
-                        <div class="perf-tech">Rust + SIMD</div>
+                        <div class="perf-tech"><span class="ask-ai" data-entity="technology" data-name="rust-simd" data-definition="Rust parser processes 16-32 bytes of ANSI escape sequences simultaneously using CPU SIMD vector instructions">Rust + SIMD<button class="ask-ai-trigger" data-term="Rust SIMD parsing for terminal ANSI escape sequences" aria-label="Ask AI about Rust SIMD"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1z"/></svg></button></span></div>
                         <div class="perf-desc">Chau7 parses ANSI streams and terminal bytes in Rust, using SIMD where bulk PTY output makes it worth it. Faster parsing is the obvious win. Deterministic behavior under heavy output is the more important one.</div>
                     </div>
                     <div class="perf-layer" style="--delay: 2">
                         <div class="perf-label">Transfer</div>
-                        <div class="perf-tech">Lock-Free SPSC</div>
+                        <div class="perf-tech"><span class="ask-ai" data-entity="technology" data-name="spsc-buffer" data-definition="Single-producer single-consumer ring buffer that passes data between the PTY reader thread and the parser thread without mutex locks">Lock-Free SPSC<button class="ask-ai-trigger" data-term="Lock-free SPSC ring buffer in a terminal emulator" aria-label="Ask AI about SPSC"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1z"/></svg></button></span></div>
                         <div class="perf-desc">The Chau7 PTY reader and parser hand data across a single-producer single-consumer ring buffer. No mutex convoy, no unnecessary wakeups, no drama because one thread had opinions about another thread's timing.</div>
                     </div>
                     <div class="perf-layer" style="--delay: 3">
                         <div class="perf-label">Render</div>
-                        <div class="perf-tech">Triple Buffer + Metal</div>
+                        <div class="perf-tech"><span class="ask-ai" data-entity="technology" data-name="triple-buffer-metal" data-definition="Three-buffer swap system where terminal state is written to one buffer while the GPU reads from another, preventing torn frames via atomic pointer swap">Triple Buffer + Metal<button class="ask-ai-trigger" data-term="Triple buffering with Metal GPU rendering" aria-label="Ask AI about triple buffering"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1z"/></svg></button></span></div>
                         <div class="perf-desc">Chau7 terminal state swaps atomically, the renderer only redraws dirty regions, and Metal does the compositing. Chau7 is macOS-only, so it uses the graphics stack macOS actually wants.</div>
                     </div>
                 </div>
@@ -178,7 +178,7 @@
                 <div class=”ai-relevance”>
                     <h3>Rust is not there for branding</h3>
                     <p>Chau7 uses Rust instead of pure Swift for the performance-critical parsing layer. Swift handles macOS UI, windowing, and tab management beautifully. But the hot path, where raw PTY data becomes terminal state, where ANSI escape sequences need to be parsed quickly, and where command streams need to be inspected without introducing UI jank, needs stronger memory safety guarantees than Swift alone provides.</p>
-                    <p>Rust gives Chau7 compile-time guarantees against data races, use-after-free, and buffer overflows in the parsing layer. Swift's ARC model handles UI lifecycle well, but terminal byte parsing requires the kind of zero-cost abstraction and fearless concurrency that Rust was designed for.</p>
+                    <p>Rust gives Chau7 compile-time guarantees against <span class="ask-ai" data-entity="concept" data-name="memory-safety" data-definition="Compile-time prevention of data races, use-after-free, and buffer overflows without garbage collection overhead">data races, use-after-free, and buffer overflows<button class="ask-ai-trigger" data-term="Rust memory safety guarantees (data races, use-after-free, buffer overflows)" aria-label="Ask AI about memory safety"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 110 14A7 7 0 018 1z"/></svg></button></span> in the parsing layer. Swift's ARC model handles UI lifecycle well, but terminal byte parsing requires the kind of zero-cost abstraction and fearless concurrency that Rust was designed for.</p>
                     <p>That matters for AI-heavy workflows because AI CLIs are not polite terminal citizens. They dump huge logs, redraw frequently, stream output in bursts, and sometimes paste command text you really want to inspect before it runs. Rust gives Chau7 a safer place to do that work while still staying close to the metal.</p>
                 </div>
             </div>

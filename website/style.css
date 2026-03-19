@@ -1375,7 +1375,7 @@ h1, h2, h3 { font-family: var(--serif); }
 }
 
 /* ── Prose (long content pages) ─────────────────── */
-.prose { max-width: 720px; margin: 0 auto; }
+.prose { max-width: 860px; margin: 0 auto; }
 .prose p {
     color: var(--text-muted);
     font-size: var(--text-base);
@@ -1884,7 +1884,7 @@ h1, h2, h3 { font-family: var(--serif); }
 
 .tech-signal-list {
     list-style: none;
-    max-width: 760px;
+    max-width: 860px;
     margin: 0 auto;
     padding: 0;
     display: grid;
