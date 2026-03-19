@@ -1881,8 +1881,6 @@ final class FeatureSettings: ObservableObject {
         }
     }
 
-    // MARK: - Tmux Integration
-
     // MARK: - LLM / Error Explanation
 
     @Published var errorExplainEnabled: Bool {

@@ -305,7 +305,7 @@ struct Chau7App: App {
                 Button("Show Changed Files") {
                     appDelegate.showChangedFiles()
                 }
-                .keyboardShortcut("g", modifiers: [.command, .shift])
+                .keyboardShortcut("g", modifiers: [.command, .option])
             }
 
             // MARK: - Window Menu

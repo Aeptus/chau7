@@ -6257,7 +6257,15 @@ extension RustTerminalView {
         return pasteImageData(data, filename: fileURL.lastPathComponent)
     }
 
+    /// Max image size for base64 drop (10MB raw → ~13MB base64)
+    private static let maxImageDropSize = 10_000_000
+
     private func pasteImageData(_ data: Data, filename: String? = nil) -> Bool {
+        guard data.count < Self.maxImageDropSize else {
+            Log.warn("RustTerminalView[\(viewId)]: dropped image too large (\(data.count) bytes, limit \(Self.maxImageDropSize))")
+            NSSound.beep()
+            return false
+        }
         let b64 = data.base64EncodedString()
         let name = filename ?? "image.png"
         // Format as a data URI that AI CLIs can consume.
