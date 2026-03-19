@@ -136,6 +136,19 @@ struct InteractivePromptCard: View {
             Text(prompt.prompt)
                 .font(.body.weight(.semibold))
 
+            let contextItems = promptContextItems(for: prompt)
+            if !contextItems.isEmpty {
+                ApprovalContextRow(items: contextItems)
+            }
+
+            if let currentDirectory = prompt.currentDirectory, !currentDirectory.isEmpty {
+                ApprovalContextDetailRow(
+                    title: "Directory",
+                    value: currentDirectory,
+                    systemImage: "folder"
+                )
+            }
+
             if let detail = prompt.detail, !detail.isEmpty {
                 Text(detail)
                     .font(.caption)
@@ -160,6 +173,17 @@ struct InteractivePromptCard: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private func promptContextItems(for prompt: RemoteInteractivePrompt) -> [ApprovalContextItem] {
+        var items: [ApprovalContextItem] = []
+        if let projectName = prompt.projectName, !projectName.isEmpty {
+            items.append(ApprovalContextItem(label: projectName, systemImage: "folder"))
+        }
+        if let branchName = prompt.branchName, !branchName.isEmpty {
+            items.append(ApprovalContextItem(label: branchName, systemImage: "arrow.triangle.branch"))
+        }
+        return items
     }
 }
 
@@ -191,6 +215,32 @@ struct ApprovalRequestCard: View {
             let contextItems = approvalContextItems(for: request)
             if !contextItems.isEmpty {
                 ApprovalContextRow(items: contextItems)
+            }
+
+            if let currentDirectory = request.currentDirectory, !currentDirectory.isEmpty {
+                ApprovalContextDetailRow(
+                    title: "Directory",
+                    value: currentDirectory,
+                    systemImage: "folder"
+                )
+            }
+
+            if let contextNote = request.contextNote, !contextNote.isEmpty {
+                ApprovalContextDetailRow(
+                    title: "Context",
+                    value: contextNote,
+                    systemImage: "info.circle"
+                )
+            }
+
+            if let recentCommand = request.recentCommand,
+               !recentCommand.isEmpty,
+               recentCommand != request.command {
+                ApprovalContextDetailRow(
+                    title: "Recent Command",
+                    value: recentCommand,
+                    systemImage: "terminal"
+                )
             }
 
             Text(request.command)
@@ -263,6 +313,27 @@ private struct ApprovalContextRow: View {
                         .clipShape(Capsule())
                 }
             }
+        }
+    }
+}
+
+private struct ApprovalContextDetailRow: View {
+    let title: String
+    let value: String
+    let systemImage: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Label(title, systemImage: systemImage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(UIColor.tertiarySystemBackground))
+                .cornerRadius(8)
         }
     }
 }

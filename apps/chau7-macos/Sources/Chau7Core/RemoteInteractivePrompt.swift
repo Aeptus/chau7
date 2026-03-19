@@ -26,6 +26,9 @@ public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, I
     public let tabID: UInt32
     public let tabTitle: String
     public let toolName: String
+    public let projectName: String?
+    public let branchName: String?
+    public let currentDirectory: String?
     public let prompt: String
     public let detail: String?
     public let options: [RemoteInteractivePromptOption]
@@ -36,6 +39,9 @@ public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, I
         tabID: UInt32,
         tabTitle: String,
         toolName: String,
+        projectName: String? = nil,
+        branchName: String? = nil,
+        currentDirectory: String? = nil,
         prompt: String,
         detail: String? = nil,
         options: [RemoteInteractivePromptOption],
@@ -45,6 +51,9 @@ public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, I
         self.tabID = tabID
         self.tabTitle = tabTitle
         self.toolName = toolName
+        self.projectName = projectName
+        self.branchName = branchName
+        self.currentDirectory = currentDirectory
         self.prompt = prompt
         self.detail = detail
         self.options = options
@@ -56,6 +65,9 @@ public struct RemoteInteractivePrompt: Codable, Equatable, Sendable, Hashable, I
         case tabID = "tab_id"
         case tabTitle = "tab_title"
         case toolName = "tool_name"
+        case projectName = "project_name"
+        case branchName = "branch_name"
+        case currentDirectory = "current_directory"
         case prompt
         case detail
         case options

@@ -257,6 +257,7 @@ Initial development release
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| 0.5.1 | 2026-03-19 | Richer remote approval context on iPhone: directory, recent command, project/branch, and MCP source notes |
 | 0.5.0 | 2026-01-21 | Tab notification styling, major tab bar fixes |
 | 0.4.0 | 2026-01-20 | Smart scroll, watchdog recovery, enhanced logging |
 | 0.3.0 | 2026-01-19 | Tab reordering, notification events, selection fixes |

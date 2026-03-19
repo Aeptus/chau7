@@ -497,3 +497,11 @@ Key patterns:
 - Correlation IDs for trace logging.
 - Binary tree layout for split pane nesting.
 - MCP server with thread-safe main-thread dispatch.
+
+## Recent Remote UX
+
+- iPhone approvals and approval notifications now include richer decision context from macOS remote tabs:
+  - project and branch
+  - working directory
+  - recent command context from shell integration / OSC 133-backed command tracking
+  - MCP permission-source notes when relevant

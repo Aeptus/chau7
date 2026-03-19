@@ -229,3 +229,4 @@ Terminal,Unicode Ambiguous-Width,"Per-profile toggle: treat Unicode ambiguous-wi
 Networking,TLS/WSS Proxy Support,TLS and WebSocket proxy for Codex OpenAI API capture,Shipped,Yes
 Networking,API Proxy Interception,Transparent HTTP/HTTPS proxy for API call capture and analysis,Shipped,Yes
 Networking,Configurable Proxy Endpoints,Set custom proxy host and port for API interception,Shipped,No
+Remote,iPhone Approval Context,Remote approvals and notifications include repo/branch directory recent command and MCP source notes,Shipped,Yes

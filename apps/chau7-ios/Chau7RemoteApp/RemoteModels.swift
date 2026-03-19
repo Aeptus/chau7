@@ -175,6 +175,9 @@ struct ApprovalRequest: Identifiable {
     let toolName: String?
     let projectName: String?
     let branchName: String?
+    let currentDirectory: String?
+    let recentCommand: String?
+    let contextNote: String?
     let sessionID: String?
     let timestamp: Date
 
@@ -204,6 +207,9 @@ struct ApprovalRequestPayload: Codable {
     let toolName: String?
     let projectName: String?
     let branchName: String?
+    let currentDirectory: String?
+    let recentCommand: String?
+    let contextNote: String?
     let sessionID: String?
 
     enum CodingKeys: String, CodingKey {
@@ -215,6 +221,9 @@ struct ApprovalRequestPayload: Codable {
         case toolName = "tool_name"
         case projectName = "project_name"
         case branchName = "branch_name"
+        case currentDirectory = "current_directory"
+        case recentCommand = "recent_command"
+        case contextNote = "context_note"
         case sessionID = "session_id"
     }
 }

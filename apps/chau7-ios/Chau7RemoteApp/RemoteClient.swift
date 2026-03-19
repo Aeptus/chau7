@@ -753,6 +753,9 @@ final class RemoteClient {
             toolName: msg.toolName,
             projectName: msg.projectName,
             branchName: msg.branchName,
+            currentDirectory: msg.currentDirectory,
+            recentCommand: msg.recentCommand,
+            contextNote: msg.contextNote,
             sessionID: msg.sessionID,
             timestamp: Date()
         )
@@ -1108,7 +1111,11 @@ final class RemoteClient {
             branchName: request.branchName
         )
         let headline = request.flaggedCommand != request.command ? request.flaggedCommand : request.command
-        return context.isEmpty ? headline : "\(context)\n\(headline)"
+        let directory = abbreviatedPath(request.currentDirectory)
+        let note = trimmedNotificationText(request.contextNote)
+        let recentCommand = trimmedNotificationText(request.recentCommand)
+        let detail = note ?? recentCommand
+        return notificationBodyLines([context, directory, detail, headline])
     }
 
     private func scheduleInteractivePromptNotification(for prompt: RemoteInteractivePrompt) {
@@ -1131,14 +1138,17 @@ final class RemoteClient {
     }
 
     private func interactivePromptNotificationBody(for prompt: RemoteInteractivePrompt) -> String {
-        let context = [prompt.toolName, prompt.tabTitle]
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " · ")
+        let context = approvalContextSummary(
+            tabTitle: prompt.tabTitle,
+            toolName: prompt.toolName,
+            projectName: prompt.projectName,
+            branchName: prompt.branchName
+        )
+        let directory = abbreviatedPath(prompt.currentDirectory)
         let promptText = prompt.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let options = prompt.options.prefix(3).map(\.label).joined(separator: " / ")
         let detail = options.isEmpty ? promptText : "\(promptText)\n\(options)"
-        return context.isEmpty ? detail : "\(context)\n\(detail)"
+        return notificationBodyLines([context, directory, detail])
     }
 
     private func approvalContextSummary(
@@ -1153,6 +1163,30 @@ final class RemoteClient {
                 return trimmed.isEmpty ? nil : trimmed
             }
             .joined(separator: " · ")
+    }
+
+    private func notificationBodyLines(_ values: [String?]) -> String {
+        values
+            .compactMap(trimmedNotificationText)
+            .joined(separator: "\n")
+    }
+
+    private func trimmedNotificationText(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func abbreviatedPath(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !trimmed.isEmpty else { return nil }
+        let home = NSHomeDirectory()
+        if trimmed == home {
+            return "~"
+        }
+        if trimmed.hasPrefix(home + "/") {
+            return "~" + String(trimmed.dropFirst(home.count))
+        }
+        return trimmed
     }
 
     private func notificationIdentifierForInteractivePrompt(_ promptID: String) -> String {
