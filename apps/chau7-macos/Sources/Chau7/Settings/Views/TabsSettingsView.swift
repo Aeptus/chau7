@@ -51,6 +51,12 @@ struct TabsSettingsView: View {
                 isOn: $settings.alwaysShowTabBar
             )
 
+            SettingsToggle(
+                label: L("settings.tabs.groupIdleTabs", "Group Idle Tabs in Dropdown"),
+                help: L("settings.tabs.groupIdleTabs.help", "Collect tabs idle for 10+ minutes into a dropdown at the start of the tab bar to reduce clutter"),
+                isOn: $settings.groupIdleTabs
+            )
+
             Divider()
                 .padding(.vertical, 8)
 

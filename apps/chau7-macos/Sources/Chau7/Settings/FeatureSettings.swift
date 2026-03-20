@@ -1243,6 +1243,11 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(alwaysWarnOnTabClose, forKey: Keys.alwaysWarnOnTabClose) }
     }
 
+    /// Collect tabs idle for 10+ minutes into a dropdown at the start of the tab bar
+    @Published var groupIdleTabs: Bool = UserDefaults.standard.object(forKey: "tabs.groupIdleTabs") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(groupIdleTabs, forKey: "tabs.groupIdleTabs") }
+    }
+
     // MARK: - Menu Bar Only Mode
 
     @Published var menuBarOnlyMode: Bool {
