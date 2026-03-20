@@ -767,6 +767,61 @@ private final class OverlayBlurView: NSVisualEffectView {
         ChangedFilesPanel.show(files: files)
     }
 
+    // MARK: - URL Scheme Handler (chau7://)
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            handleChau7URL(url)
+        }
+    }
+
+    private func handleChau7URL(_ url: URL) {
+        guard url.scheme == "chau7" else { return }
+        let host = url.host ?? ""
+        let path = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+
+        Log.info("AppDelegate: URL handler: \(url)")
+
+        switch host {
+        case "run":
+            // chau7://run/<base64-encoded-command>
+            guard !path.isEmpty,
+                  let data = Data(base64Encoded: path),
+                  let command = String(data: data, encoding: .utf8) else {
+                Log.warn("AppDelegate: chau7://run — invalid base64 command")
+                return
+            }
+            openNewTabWithCommand(command)
+
+        case "ssh":
+            // chau7://ssh/user@host or chau7://ssh/user@host:port
+            guard !path.isEmpty else { return }
+            openNewTabWithCommand("ssh \(path)")
+
+        case "cd":
+            // chau7://cd/path/to/directory
+            let dir = "/" + path // URL path is already absolute minus leading /
+            openNewTabWithCommand("cd '\(dir.replacingOccurrences(of: "'", with: "'\\''"))' && clear")
+
+        case "open":
+            // chau7://open/path/to/file.md — open file in editor pane
+            let filePath = "/" + path
+            ensureActiveOverlayModel()?.openTextEditorInCurrentTab(filePath: filePath)
+
+        default:
+            Log.warn("AppDelegate: unknown chau7:// host: \(host)")
+        }
+    }
+
+    private func openNewTabWithCommand(_ command: String) {
+        guard let model = ensureActiveOverlayModel() else { return }
+        model.newTab()
+        // Delay slightly to let the terminal initialize
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            model.selectedTab?.session?.sendInput(command + "\n")
+        }
+    }
+
     func closeCurrentPane() {
         ensureActiveOverlayModel()?.closeFocusedPaneInCurrentTab()
     }
