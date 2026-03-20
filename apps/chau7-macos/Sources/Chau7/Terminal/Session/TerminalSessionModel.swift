@@ -208,6 +208,11 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
         lastOutputAt
     }
 
+    /// The most recent input or output activity timestamp.
+    var lastActivityDate: Date {
+        max(lastInputAt, lastOutputAt)
+    }
+
     private(set) var lastAIProvider: String?
     private(set) var lastAISessionId: String?
     /// The last app name set by live detection (command or output).

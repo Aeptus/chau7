@@ -332,13 +332,34 @@ private struct ToolbarTabBarView: View {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            // Use refresh token in ForEach id to force complete re-render on recovery
-                            ForEach(overlayModel.tabs) { tab in
-                                tabView(for: tab)
-                                    // Each rendered tab reports itself for auto-recovery detection
-                                    .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
-                                    // Hardening: prevent individual tabs from being sized to zero
-                                    .fixedSize(horizontal: false, vertical: true)
+                            // Idle tabs dropdown (when enabled and there are idle tabs)
+                            if FeatureSettings.shared.groupIdleTabs {
+                                let idleThreshold: TimeInterval = 600 // 10 minutes
+                                let now = Date()
+                                let idle = overlayModel.tabs.filter { tab in
+                                    guard let session = tab.displaySession ?? tab.session,
+                                          tab.id != overlayModel.selectedTabID else { return false }
+                                    return now.timeIntervalSince(session.lastActivityDate) > idleThreshold
+                                }
+                                let active = overlayModel.tabs.filter { tab in
+                                    !idle.contains(where: { $0.id == tab.id })
+                                }
+
+                                if !idle.isEmpty {
+                                    idleTabsDropdown(tabs: idle)
+                                }
+
+                                ForEach(active) { tab in
+                                    tabView(for: tab)
+                                        .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            } else {
+                                ForEach(overlayModel.tabs) { tab in
+                                    tabView(for: tab)
+                                        .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
                             }
 
                             Button {
@@ -460,6 +481,49 @@ private struct ToolbarTabBarView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: task)
             }
         }
+    }
+
+    @ViewBuilder
+    private func idleTabsDropdown(tabs: [OverlayTab]) -> some View {
+        Menu {
+            ForEach(tabs) { tab in
+                Button {
+                    overlayModel.selectTab(id: tab.id)
+                } label: {
+                    let title = tab.customTitle ?? tab.displaySession?.activeAppName ?? "Tab"
+                    let idle = idleDuration(for: tab)
+                    Label("\(title) — idle \(idle)", systemImage: "moon.zzz")
+                }
+            }
+            Divider()
+            Button("Close All Idle Tabs") {
+                for tab in tabs {
+                    overlayModel.closeTab(id: tab.id)
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "tray.full")
+                    .font(.system(size: 10))
+                Text("\(tabs.count)")
+                    .font(.system(size: 11, weight: .medium, design: .rounded))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 3)
+            .frame(height: OverlayLayout.tabChipHeight, alignment: .center)
+            .background(Color.white.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Idle tabs (\(tabs.count))")
+    }
+
+    private func idleDuration(for tab: OverlayTab) -> String {
+        guard let session = tab.displaySession ?? tab.session else { return "" }
+        let seconds = Int(Date().timeIntervalSince(session.lastActivityDate))
+        if seconds < 3600 { return "\(seconds / 60)m" }
+        return "\(seconds / 3600)h \((seconds % 3600) / 60)m"
     }
 
     @ViewBuilder
