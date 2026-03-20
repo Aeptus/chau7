@@ -142,7 +142,9 @@ func parseMarkdown(_ input: String) -> [MarkdownSection] {
         if line.hasPrefix("#") {
             flushText()
             var level = 0
-            for ch in line { if ch == "#" { level += 1 } else { break } }
+            for ch in line {
+                if ch == "#" { level += 1 } else { break }
+            }
             let text = String(line.dropFirst(level)).trimmingCharacters(in: .whitespaces)
             sections.append(MarkdownSection(kind: .heading(level: min(level, 4), text: text)))
             i += 1

@@ -326,7 +326,7 @@ struct TextEditorPaneView: View {
             if editor.isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if isMarkdownFile && isMarkdownMode {
+            } else if isMarkdownFile, isMarkdownMode {
                 MarkdownRunbookView(
                     content: editor.content,
                     fileName: editor.fileName,
