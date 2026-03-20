@@ -1,0 +1,1514 @@
+[
+  {
+    "rule_id": "LNK002",
+    "message": "orphan page: /chau7-fr",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/chau7-fr/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": "add an internal link from an indexable page"
+  },
+  {
+    "rule_id": "LNK002",
+    "message": "orphan page: /features/padding-margins",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/features/padding-margins/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": "add an internal link from an indexable page"
+  },
+  {
+    "rule_id": "LNK002",
+    "message": "orphan page: /golden-ratio",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/golden-ratio/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": "add an internal link from an indexable page"
+  },
+  {
+    "rule_id": "LNK002",
+    "message": "orphan page: /llm",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llm/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": "add an internal link from an indexable page"
+  },
+  {
+    "rule_id": "LNK002",
+    "message": "orphan page: /typography",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/typography/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": "add an internal link from an indexable page"
+  },
+  {
+    "rule_id": "ROB001",
+    "message": "missing robots.txt",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/robots.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/ai-cognitive-load/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/ai-cost-optimization/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/ai-visibility-control/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/compare/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/compare/vs-alacritty/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/compare/vs-chau7/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/compare/vs-iterm2/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/compare/vs-kitty/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/compare/vs-terminal-app/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/compare/vs-vscode/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/compare/vs-warp/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/features/ai-process-monitoring/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/features/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llm/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mcp/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/remote/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "SCH005",
+    "message": "JSON-LD name/headline values do not align with the visible page title or H1",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/the-tech/index.html",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: the-tech.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: compare.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/auto-ai-cli-detection.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/ai-tab-branding.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/ai-process-monitoring.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/custom-detection-rules.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/detection-status-indicator.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/multi-agent-awareness.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/context-token-optimization.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/llm-error-explanation.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/cto-per-tab-override.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/ai-session-tracking.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/tls-wss-proxy.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/token-counting.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/cost-tracking.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/latency-tracking.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/analytics-dashboard.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/mcp-tools.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/unix-socket-server.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/auto-registration.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/mcp-resources.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/tab-limits.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/mcp-tab-indicator.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/multi-tab.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/split-panes.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/tab-drag-drop.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/tab-profiles.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/background-suspension.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/tab-watchdog.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/session-recording.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/timeline-scrubber.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/session-restore.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/metal-rendering.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/simd-parsing.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/triple-buffering.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/lock-free-spsc-buffer.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/vt100-xterm-emulation.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/unicode-emoji-support.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/shell-integration.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/scrollback-buffer.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/hyperlinks.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/image-protocol.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/ligatures.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/bell-notification.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/dangerous-command-guard.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/process-exit-confirmation.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/mcp-approval-gate.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/clipboard-history.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/paste-confirmation.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/snippets.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/ssh-connection-manager.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/auto-import-ssh-config.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/jump-host-support.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/context-aware-switching.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/command-palette.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/terminal-search.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/command-history-search.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/fonts.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/themes.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/custom-keybindings.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/cursor-styles.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/transparency-blur.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/overlay-mode.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/fullscreen-mode.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/menu-bar-only.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/syntax-highlighting.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/bracket-matching.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/find-replace.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/line-numbers.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/localization.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/json-rpc-api.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM005",
+    "message": "llms.txt references noncanonical internal path: features/shell-hooks.html",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "LLM006",
+    "message": "llms.txt feature/category claim drift: expected 77 features across 17 categories",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llms.txt",
+    "line": 1,
+    "column": 1,
+    "severity": "error",
+    "suggestion": "regenerate llms.txt from site inventory"
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/404.html",
+    "line": 81,
+    "column": 5,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/golden-ratio/index.html",
+    "line": 142,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO004",
+    "message": "<section> is missing a heading",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/index.html",
+    "line": 226,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/legal/index.html",
+    "line": 224,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/legal/index.html",
+    "line": 242,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO004",
+    "message": "<section> is missing a heading",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/legal/index.html",
+    "line": 242,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/legal/index.html",
+    "line": 249,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/legal/index.html",
+    "line": 257,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/legal/index.html",
+    "line": 279,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/legal/index.html",
+    "line": 297,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/legal/index.html",
+    "line": 302,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/legal/index.html",
+    "line": 308,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/legal/index.html",
+    "line": 314,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/legal/index.html",
+    "line": 322,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/legal/index.html",
+    "line": 328,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/legal/index.html",
+    "line": 233,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO004",
+    "message": "<section> is missing a heading",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/legal/index.html",
+    "line": 233,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO004",
+    "message": "<section> is missing a heading",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/llm/index.html",
+    "line": 61,
+    "column": 5,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mcp/index.html",
+    "line": 62,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mcp/index.html",
+    "line": 78,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mcp/index.html",
+    "line": 105,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mcp/index.html",
+    "line": 217,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mcp/index.html",
+    "line": 246,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mcp/index.html",
+    "line": 293,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mentions-legales/index.html",
+    "line": 224,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mentions-legales/index.html",
+    "line": 242,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO004",
+    "message": "<section> is missing a heading",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mentions-legales/index.html",
+    "line": 242,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mentions-legales/index.html",
+    "line": 249,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mentions-legales/index.html",
+    "line": 257,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mentions-legales/index.html",
+    "line": 279,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mentions-legales/index.html",
+    "line": 297,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mentions-legales/index.html",
+    "line": 302,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mentions-legales/index.html",
+    "line": 308,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mentions-legales/index.html",
+    "line": 314,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mentions-legales/index.html",
+    "line": 322,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mentions-legales/index.html",
+    "line": 328,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mentions-legales/index.html",
+    "line": 233,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO004",
+    "message": "<section> is missing a heading",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/mentions-legales/index.html",
+    "line": 233,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/politique-de-confidentialite/index.html",
+    "line": 309,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/politique-de-confidentialite/index.html",
+    "line": 327,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO004",
+    "message": "<section> is missing a heading",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/politique-de-confidentialite/index.html",
+    "line": 327,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/politique-de-confidentialite/index.html",
+    "line": 332,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/politique-de-confidentialite/index.html",
+    "line": 339,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/politique-de-confidentialite/index.html",
+    "line": 353,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/politique-de-confidentialite/index.html",
+    "line": 367,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/politique-de-confidentialite/index.html",
+    "line": 402,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/politique-de-confidentialite/index.html",
+    "line": 408,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/politique-de-confidentialite/index.html",
+    "line": 413,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/politique-de-confidentialite/index.html",
+    "line": 463,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/politique-de-confidentialite/index.html",
+    "line": 469,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/politique-de-confidentialite/index.html",
+    "line": 318,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO004",
+    "message": "<section> is missing a heading",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/politique-de-confidentialite/index.html",
+    "line": 318,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/privacy/index.html",
+    "line": 309,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/privacy/index.html",
+    "line": 327,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO004",
+    "message": "<section> is missing a heading",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/privacy/index.html",
+    "line": 327,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/privacy/index.html",
+    "line": 332,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/privacy/index.html",
+    "line": 339,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/privacy/index.html",
+    "line": 353,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/privacy/index.html",
+    "line": 367,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/privacy/index.html",
+    "line": 402,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/privacy/index.html",
+    "line": 408,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/privacy/index.html",
+    "line": 413,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/privacy/index.html",
+    "line": 463,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/privacy/index.html",
+    "line": 469,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/privacy/index.html",
+    "line": 318,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO004",
+    "message": "<section> is missing a heading",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/privacy/index.html",
+    "line": 318,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO004",
+    "message": "<section> is missing a heading",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/pronunciation/index.html",
+    "line": 435,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO004",
+    "message": "<section> is missing a heading",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/remote/index.html",
+    "line": 90,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO006",
+    "message": "<pre> is missing nested <code>",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/remote/index.html",
+    "line": 249,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO006",
+    "message": "<pre> is missing nested <code>",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/the-tech/index.html",
+    "line": 217,
+    "column": 21,
+    "severity": "warning",
+    "suggestion": null
+  },
+  {
+    "rule_id": "GEO001",
+    "message": "<section> is missing data-ui",
+    "path": "/Users/christophehenner/Downloads/Repositories/Chau7/website/typography/index.html",
+    "line": 152,
+    "column": 9,
+    "severity": "warning",
+    "suggestion": null
+  }
+]

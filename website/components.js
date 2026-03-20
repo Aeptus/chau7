@@ -67,6 +67,7 @@ class SiteFooter extends HTMLElement {
                     <a href="https://github.com/nicmusic/chau7" target="_blank" rel="noopener">GitHub</a>
                     <a href="https://github.com/nicmusic/chau7/releases" target="_blank" rel="noopener">Releases</a>
                     <a href="/llms.txt">llms.txt</a>
+                    <a href="/llm">LLM Context</a>
                 </div>
                 <div class="footer-nav-col">
                     <h4>Colophon</h4>

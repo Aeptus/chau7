@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://chau7.sh/sitemap.xml

@@ -33,113 +33,113 @@
 - Display: IOSurface direct (bypasses macOS compositor)
 
 ## Pages
-- [Home](index.html): Overview and download
-- [MCP Tools](mcp.html): 26 MCP tools, auto-registration, safety controls
-- [The Tech](the-tech.html): Rust parsing, dangerous-command guardrails, and the Metal rendering pipeline
-- [Features](features/): Full 178-feature catalog
-- [Compare](compare.html): vs iTerm2, Warp, Alacritty, Kitty, Apple Terminal, VSCode
+- [Home](/): Overview and download
+- [MCP Tools](/mcp): 26 MCP tools, auto-registration, safety controls
+- [The Tech](/the-tech): Rust parsing, dangerous-command guardrails, and the Metal rendering pipeline
+- [Features](/features): Full 178-feature catalog
+- [Compare](/compare): vs iTerm2, Warp, Alacritty, Kitty, Apple Terminal, VSCode
 
 ## Feature Pages (77 individual feature deep-dives)
 ### AI Detection
-- [Auto AI CLI Detection](features/auto-ai-cli-detection.html): Detects Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they launch in any tab. (differentiator)
-- [AI Tab Branding](features/ai-tab-branding.html): Tabs automatically adopt the brand color and logo of the active AI agent. (differentiator)
-- [AI Process Monitoring](features/ai-process-monitoring.html): Track CPU, memory, and PID of AI agent processes per tab. (differentiator)
-- [Custom Detection Rules](features/custom-detection-rules.html): Define custom process name patterns for AI tools not yet in the built-in list.
-- [Detection Status Indicator](features/detection-status-indicator.html): Visual indicator in the tab bar showing whether an AI agent is active, idle, or completed.
-- [Multi-Agent Awareness](features/multi-agent-awareness.html): Handles multiple AI agents running in different tabs simultaneously with independent tracking.
+- [Auto AI CLI Detection](/features/auto-ai-cli-detection): Detects Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, and Cursor the moment they launch in any tab. (differentiator)
+- [AI Tab Branding](/features/ai-tab-branding): Tabs automatically adopt the brand color and logo of the active AI agent. (differentiator)
+- [AI Process Monitoring](/features/ai-process-monitoring): Track CPU, memory, and PID of AI agent processes per tab. (differentiator)
+- [Custom Detection Rules](/features/custom-detection-rules): Define custom process name patterns for AI tools not yet in the built-in list.
+- [Detection Status Indicator](/features/detection-status-indicator): Visual indicator in the tab bar showing whether an AI agent is active, idle, or completed.
+- [Multi-Agent Awareness](/features/multi-agent-awareness): Handles multiple AI agents running in different tabs simultaneously with independent tracking.
 
 ### AI Integration
-- [Context Token Optimization](features/context-token-optimization.html): Monitor and optimize LLM API token usage in real-time, per tab or globally. (differentiator)
-- [LLM Error Explanation](features/llm-error-explanation.html): One-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoints.
-- [CTO Per-Tab Override](features/cto-per-tab-override.html): Enable or disable Context Token Optimization on individual tabs independent of global setting.
-- [AI Session Tracking](features/ai-session-tracking.html): Group related AI interactions into sessions with run counts and duration tracking.
+- [Context Token Optimization](/features/context-token-optimization): Monitor and optimize LLM API token usage in real-time, per tab or globally. (differentiator)
+- [LLM Error Explanation](/features/llm-error-explanation): One-click error analysis via OpenAI, Anthropic, Ollama, or custom endpoints.
+- [CTO Per-Tab Override](/features/cto-per-tab-override): Enable or disable Context Token Optimization on individual tabs independent of global setting.
+- [AI Session Tracking](/features/ai-session-tracking): Group related AI interactions into sessions with run counts and duration tracking.
 
 ### API Analytics
-- [TLS/WSS Proxy](features/tls-wss-proxy.html): Transparent proxy captures API calls to OpenAI, Anthropic, and other LLM providers for analysis. (differentiator)
-- [Token Counting](features/token-counting.html): Track input and output tokens per API call with provider-specific tokenization.
-- [Cost Tracking](features/cost-tracking.html): Calculate cost per API call based on provider pricing. View per-session and cumulative costs. (differentiator)
-- [Latency Tracking](features/latency-tracking.html): Measure time-to-first-token and total request duration for every API call.
-- [Analytics Dashboard](features/analytics-dashboard.html): Visual dashboard showing token usage, costs, and latency trends over time.
+- [TLS/WSS Proxy](/features/tls-wss-proxy): Transparent proxy captures API calls to OpenAI, Anthropic, and other LLM providers for analysis. (differentiator)
+- [Token Counting](/features/token-counting): Track input and output tokens per API call with provider-specific tokenization.
+- [Cost Tracking](/features/cost-tracking): Calculate cost per API call based on provider pricing. View per-session and cumulative costs. (differentiator)
+- [Latency Tracking](/features/latency-tracking): Measure time-to-first-token and total request duration for every API call.
+- [Analytics Dashboard](/features/analytics-dashboard): Visual dashboard showing token usage, costs, and latency trends over time.
 
 ### MCP Server
-- [26 MCP Tools](features/mcp-tools.html): Full terminal control via Model Context Protocol: tab lifecycle, command execution, output capture, telemetry. (differentiator)
-- [Unix Socket Server](features/unix-socket-server.html): MCP server runs over a local Unix socket — no network exposure, no authentication needed.
-- [Auto-Registration](features/auto-registration.html): Registers in Claude Code, Cursor, Windsurf, and Codex config files on every launch. (differentiator)
-- [MCP Resources](features/mcp-resources.html): 4 resource endpoints (tab://list, session://list, run://latest, config://mcp) for read-only data access.
-- [Tab Limits](features/tab-limits.html): Configurable maximum MCP-created tabs to prevent runaway agent behavior.
-- [MCP Tab Indicator](features/mcp-tab-indicator.html): Visual indicator distinguishing MCP-created tabs from user-created tabs.
+- [26 MCP Tools](/features/mcp-tools): Full terminal control via Model Context Protocol: tab lifecycle, command execution, output capture, telemetry. (differentiator)
+- [Unix Socket Server](/features/unix-socket-server): MCP server runs over a local Unix socket — no network exposure, no authentication needed.
+- [Auto-Registration](/features/auto-registration): Registers in Claude Code, Cursor, Windsurf, and Codex config files on every launch. (differentiator)
+- [MCP Resources](/features/mcp-resources): 4 resource endpoints (tab://list, session://list, run://latest, config://mcp) for read-only data access.
+- [Tab Limits](/features/tab-limits): Configurable maximum MCP-created tabs to prevent runaway agent behavior.
+- [MCP Tab Indicator](/features/mcp-tab-indicator): Visual indicator distinguishing MCP-created tabs from user-created tabs.
 
 ### Tab Management
-- [Multi-Tab](features/multi-tab.html): Unlimited tabs with drag-to-reorder, tab pinning, and tab-specific titles.
-- [Split Panes](features/split-panes.html): Horizontal and vertical splits within any tab. Resize with drag handles or keyboard shortcuts.
-- [Tab Drag & Drop](features/tab-drag-drop.html): Drag tabs between windows or within the tab bar. Snap positioning with smooth animations.
-- [Tab Profiles](features/tab-profiles.html): Per-tab shell, working directory, and environment variable configuration.
-- [Background Suspension](features/background-suspension.html): Inactive tabs consume no render cycles. Instant resume on tab switch.
-- [Tab Watchdog](features/tab-watchdog.html): Monitors tab health and auto-refreshes stale state. Resets after timeout rather than giving up.
+- [Multi-Tab](/features/multi-tab): Unlimited tabs with drag-to-reorder, tab pinning, and tab-specific titles.
+- [Split Panes](/features/split-panes): Horizontal and vertical splits within any tab. Resize with drag handles or keyboard shortcuts.
+- [Tab Drag & Drop](/features/tab-drag-drop): Drag tabs between windows or within the tab bar. Snap positioning with smooth animations.
+- [Tab Profiles](/features/tab-profiles): Per-tab shell, working directory, and environment variable configuration.
+- [Background Suspension](/features/background-suspension): Inactive tabs consume no render cycles. Instant resume on tab switch.
+- [Tab Watchdog](/features/tab-watchdog): Monitors tab health and auto-refreshes stale state. Resets after timeout rather than giving up.
 
 ### Session
-- [Session Recording](features/session-recording.html): Record terminal sessions with precise timestamps for every output event. (differentiator)
-- [Timeline Scrubber](features/timeline-scrubber.html): Visual timeline for recorded sessions. Scrub to any point and replay terminal state.
-- [Session Restore](features/session-restore.html): Restore tabs, working directories, and terminal state after app restart.
+- [Session Recording](/features/session-recording): Record terminal sessions with precise timestamps for every output event. (differentiator)
+- [Timeline Scrubber](/features/timeline-scrubber): Visual timeline for recorded sessions. Scrub to any point and replay terminal state.
+- [Session Restore](/features/session-restore): Restore tabs, working directories, and terminal state after app restart.
 
 ### GPU Rendering
-- [Metal Rendering](features/metal-rendering.html): Hardware-accelerated rendering via Apple Metal API with glyph atlas and dirty region tracking. (differentiator)
-- [SIMD Parsing](features/simd-parsing.html): 16-32 byte SIMD-accelerated ANSI escape parsing in Rust for cache-line-speed throughput. (differentiator)
-- [Triple Buffering](features/triple-buffering.html): Atomic-swap triple buffer ensures no tearing and no render blocking between parser and GPU.
-- [Lock-Free SPSC Buffer](features/lock-free-spsc-buffer.html): Zero-contention PTY data pipeline between reader and parser threads.
+- [Metal Rendering](/features/metal-rendering): Hardware-accelerated rendering via Apple Metal API with glyph atlas and dirty region tracking. (differentiator)
+- [SIMD Parsing](/features/simd-parsing): 16-32 byte SIMD-accelerated ANSI escape parsing in Rust for cache-line-speed throughput. (differentiator)
+- [Triple Buffering](/features/triple-buffering): Atomic-swap triple buffer ensures no tearing and no render blocking between parser and GPU.
+- [Lock-Free SPSC Buffer](/features/lock-free-spsc-buffer): Zero-contention PTY data pipeline between reader and parser threads.
 
 ### Terminal Core
-- [Full VT100/xterm Emulation](features/vt100-xterm-emulation.html): Complete terminal emulation with 256-color, true color (24-bit), and all standard escape sequences.
-- [Unicode & Emoji Support](features/unicode-emoji-support.html): Full Unicode rendering including CJK, RTL, combining characters, and color emoji.
-- [Shell Integration](features/shell-integration.html): Deep integration with zsh, bash, and fish for command detection, working directory tracking, and exit codes.
-- [Scrollback Buffer](features/scrollback-buffer.html): Configurable scrollback with efficient memory usage. Search within scrollback with regex support.
-- [Hyperlinks](features/hyperlinks.html): Clickable URLs detected automatically. OSC 8 hyperlink protocol support for rich links.
-- [Image Protocol](features/image-protocol.html): Inline image display via iTerm2 image protocol and Sixel graphics.
-- [Ligatures](features/ligatures.html): Font ligature rendering for programming fonts like Fira Code, JetBrains Mono, and Cascadia Code.
-- [Bell Notification](features/bell-notification.html): Visual bell, sound bell, and Dock bounce on terminal bell character. Configurable per-profile.
+- [Full VT100/xterm Emulation](/features/vt100-xterm-emulation): Complete terminal emulation with 256-color, true color (24-bit), and all standard escape sequences.
+- [Unicode & Emoji Support](/features/unicode-emoji-support): Full Unicode rendering including CJK, RTL, combining characters, and color emoji.
+- [Shell Integration](/features/shell-integration): Deep integration with zsh, bash, and fish for command detection, working directory tracking, and exit codes.
+- [Scrollback Buffer](/features/scrollback-buffer): Configurable scrollback with efficient memory usage. Search within scrollback with regex support.
+- [Hyperlinks](/features/hyperlinks): Clickable URLs detected automatically. OSC 8 hyperlink protocol support for rich links.
+- [Image Protocol](/features/image-protocol): Inline image display via iTerm2 image protocol and Sixel graphics.
+- [Ligatures](/features/ligatures): Font ligature rendering for programming fonts like Fira Code, JetBrains Mono, and Cascadia Code.
+- [Bell Notification](/features/bell-notification): Visual bell, sound bell, and Dock bounce on terminal bell character. Configurable per-profile.
 
 ### Safety
-- [Dangerous Command Guard](features/dangerous-command-guard.html): Intercepts rm -rf, dd, mkfs and other dangerous commands with a confirmation dialog before execution. (differentiator)
-- [Process Exit Confirmation](features/process-exit-confirmation.html): Warns before closing tabs with running processes. Configurable per-process rules.
-- [MCP Approval Gate](features/mcp-approval-gate.html): Optional per-tool approval for MCP actions before they execute.
+- [Dangerous Command Guard](/features/dangerous-command-guard): Intercepts rm -rf, dd, mkfs and other dangerous commands with a confirmation dialog before execution. (differentiator)
+- [Process Exit Confirmation](/features/process-exit-confirmation): Warns before closing tabs with running processes. Configurable per-process rules.
+- [MCP Approval Gate](/features/mcp-approval-gate): Optional per-tool approval for MCP actions before they execute.
 
 ### Clipboard
-- [Clipboard History](features/clipboard-history.html): Searchable clipboard history with pinning. Persists across sessions.
-- [Paste Safety](features/paste-confirmation.html): Automatically escapes dangerous shell characters in pasted text to prevent accidental command execution.
-- [Snippets](features/snippets.html): Reusable code snippets with placeholder variables. Insert via command palette or keyboard shortcut.
+- [Clipboard History](/features/clipboard-history): Searchable clipboard history with pinning. Persists across sessions.
+- [Paste Safety](/features/paste-confirmation): Automatically escapes dangerous shell characters in pasted text to prevent accidental command execution.
+- [Snippets](/features/snippets): Reusable code snippets with placeholder variables. Insert via command palette or keyboard shortcut.
 
 ### SSH & Remote
-- [SSH Connection Manager](features/ssh-connection-manager.html): Visual SSH profile manager with host, port, identity file, and jump host configuration.
-- [Auto-Import SSH Config](features/auto-import-ssh-config.html): Imports hosts from ~/.ssh/config automatically. Stays in sync with config file changes.
-- [Jump Host Support](features/jump-host-support.html): Multi-hop SSH connections through bastion/jump hosts with ProxyJump support.
-- [Context-Aware Switching](features/context-aware-switching.html): Tabs detect SSH connections and auto-switch profiles, colors, and settings based on remote host.
+- [SSH Connection Manager](/features/ssh-connection-manager): Visual SSH profile manager with host, port, identity file, and jump host configuration.
+- [Auto-Import SSH Config](/features/auto-import-ssh-config): Imports hosts from ~/.ssh/config automatically. Stays in sync with config file changes.
+- [Jump Host Support](/features/jump-host-support): Multi-hop SSH connections through bastion/jump hosts with ProxyJump support.
+- [Context-Aware Switching](/features/context-aware-switching): Tabs detect SSH connections and auto-switch profiles, colors, and settings based on remote host.
 
 ### Search
-- [Command Palette](features/command-palette.html): Cmd+Shift+P for fuzzy-searchable commands. Find any action across all features.
-- [Terminal Search](features/terminal-search.html): Search within terminal output with regex support, case sensitivity, and match navigation.
-- [Command History Search](features/command-history-search.html): Fuzzy search through command history with frecency ranking.
+- [Command Palette](/features/command-palette): Cmd+Shift+P for fuzzy-searchable commands. Find any action across all features.
+- [Terminal Search](/features/terminal-search): Search within terminal output with regex support, case sensitivity, and match navigation.
+- [Command History Search](/features/command-history-search): Fuzzy search through command history with frecency ranking.
 
 ### Customization
-- [Font Selection](features/fonts.html): 5 built-in system monospace fonts plus custom font support. Any installed monospace font works.
-- [Themes](features/themes.html): Built-in themes with full 256-color and true color customization. Import iTerm2 color schemes.
-- [Custom Keybindings](features/custom-keybindings.html): Fully remappable keyboard shortcuts with Vim keybinding presets available.
-- [Cursor Styles](features/cursor-styles.html): Block, beam, and underline cursors with configurable blink rate and color.
-- [Window Opacity](features/transparency-blur.html): Adjustable window transparency from 30% to 100%.
+- [Font Selection](/features/fonts): 5 built-in system monospace fonts plus custom font support. Any installed monospace font works.
+- [Themes](/features/themes): Built-in themes with full 256-color and true color customization. Import iTerm2 color schemes.
+- [Custom Keybindings](/features/custom-keybindings): Fully remappable keyboard shortcuts with Vim keybinding presets available.
+- [Cursor Styles](/features/cursor-styles): Block, beam, and underline cursors with configurable blink rate and color.
+- [Window Opacity](/features/transparency-blur): Adjustable window transparency from 30% to 100%.
 
 ### Window Modes
-- [Overlay Mode](features/overlay-mode.html): Floating terminal window above all other apps. Toggle with a global hotkey.
-- [Fullscreen Mode](features/fullscreen-mode.html): Native macOS fullscreen with menu bar hiding and Space integration.
-- [Menu Bar Only](features/menu-bar-only.html): Run Chau7 as a menu bar app with no Dock icon. Access via menu bar icon or hotkey.
+- [Overlay Mode](/features/overlay-mode): Floating terminal window above all other apps. Toggle with a global hotkey.
+- [Fullscreen Mode](/features/fullscreen-mode): Native macOS fullscreen with menu bar hiding and Space integration.
+- [Menu Bar Only](/features/menu-bar-only): Run Chau7 as a menu bar app with no Dock icon. Access via menu bar icon or hotkey.
 
 ### Built-in Editor
-- [Syntax Highlighting](features/syntax-highlighting.html): Language-aware syntax highlighting for 50+ languages in the built-in editor.
-- [Bracket Matching](features/bracket-matching.html): Automatic bracket, brace, and parenthesis matching with jump-to-match.
-- [Find & Replace](features/find-replace.html): In-editor find and replace with regex support and match highlighting.
-- [Line Numbers](features/line-numbers.html): Configurable line number gutter with relative line numbers option.
+- [Syntax Highlighting](/features/syntax-highlighting): Language-aware syntax highlighting for 50+ languages in the built-in editor.
+- [Bracket Matching](/features/bracket-matching): Automatic bracket, brace, and parenthesis matching with jump-to-match.
+- [Find & Replace](/features/find-replace): In-editor find and replace with regex support and match highlighting.
+- [Line Numbers](/features/line-numbers): Configurable line number gutter with relative line numbers option.
 
 ### Accessibility
-- [Localization (4 Languages)](features/localization.html): Full localization with RTL support. Runtime language switching without restart.
+- [Localization (4 Languages)](/features/localization): Full localization with RTL support. Runtime language switching without restart.
 
 ### Scripting API
-- [JSON-RPC API](features/json-rpc-api.html): Unix socket JSON-RPC API for automating tabs, commands, history, snippets, and settings.
-- [Shell Hooks](features/shell-hooks.html): Pre/post command hooks for custom automation. Trigger actions on command entry or exit.
+- [JSON-RPC API](/features/json-rpc-api): Unix socket JSON-RPC API for automating tabs, commands, history, snippets, and settings.
+- [Shell Hooks](/features/shell-hooks): Pre/post command hooks for custom automation. Trigger actions on command entry or exit.
