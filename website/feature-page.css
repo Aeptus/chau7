@@ -16,7 +16,7 @@
 
 /* ── Feature Hero (smaller than landing heroes) ──── */
 .hero-feature {
-    padding: var(--space-4xl) var(--space-2xl) var(--space-3xl);
+    padding: var(--space-4xl) var(--space-2xl) var(--space-2xl);
     text-align: center;
 }
 .hero-feature .hero-content { max-width: 720px; }
@@ -77,9 +77,86 @@
     background: radial-gradient(ellipse, rgba(251, 191, 36, 0.08) 0%, transparent 70%);
 }
 
-/* ── Questions Section ───────────────────────────── */
+/* ── Feature Showcase (screenshot + problem/solution overlay) ── */
+.feature-showcase {
+    position: relative;
+    max-width: var(--max-w);
+    margin: 0 auto var(--space-4xl);
+    padding: 0 clamp(1.5rem, 5vw, 4rem);
+}
+
+.feature-showcase-inner {
+    position: relative;
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow-lifted);
+}
+
+.feature-showcase-bg {
+    display: block;
+    width: 100%;
+    height: auto;
+    min-height: 320px;
+    object-fit: cover;
+    filter: brightness(0.35);
+}
+
+.feature-showcase-overlay {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-2xl);
+    padding: var(--space-3xl) var(--space-3xl);
+    align-content: center;
+}
+
+.feature-showcase-overlay .feature-pain,
+.feature-showcase-overlay .feature-subfeatures {
+    background: none;
+    border: none;
+    border-radius: 0;
+    margin: 0;
+    padding: 0;
+}
+
+.feature-showcase-overlay h2 {
+    font-size: var(--text-md);
+    font-weight: 700;
+    margin-bottom: var(--space-md);
+    letter-spacing: -0.01em;
+}
+
+.feature-showcase-overlay .feature-pain h2 {
+    color: #f87171;
+}
+.feature-showcase-overlay .feature-subfeatures h2 {
+    color: #34d399;
+}
+
+.feature-showcase-overlay .feature-checklist {
+    gap: var(--space-sm);
+}
+
+.feature-showcase-overlay .feature-checklist li {
+    color: rgba(255, 255, 255, 0.85);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    padding: var(--space-2xs) 0 var(--space-2xs) var(--space-xl);
+}
+
+.feature-showcase-overlay .feature-pain .feature-checklist li::before {
+    color: #f87171;
+}
+
+.feature-showcase-overlay .feature-subfeatures .feature-checklist li::before {
+    color: #34d399;
+}
+
+/* ── Questions Section (lower on page) ───────────── */
 .questions-section {
-    padding: var(--space-2xl) 0 var(--space-3xl);
+    padding: var(--space-3xl) 0;
+    border-top: 1px solid color-mix(in srgb, var(--border) 40%, transparent);
 }
 .questions-section h2 {
     font-size: var(--text-sm);
@@ -142,7 +219,7 @@
     letter-spacing: -0.01em;
 }
 
-/* ── Enrichment sections (pain / subfeatures) ────── */
+/* ── Standalone enrichment (fallback when no showcase wrapper) ── */
 .feature-pain,
 .feature-subfeatures {
     background: var(--bg-card);
@@ -254,10 +331,22 @@
 /* ── Responsive ──────────────────────────────────── */
 @media (max-width: 900px) {
     .related-features-grid { grid-template-columns: 1fr; }
+    .feature-showcase-overlay {
+        grid-template-columns: 1fr;
+        gap: var(--space-xl);
+        padding: var(--space-2xl);
+    }
 }
 @media (max-width: 600px) {
     .breadcrumb { padding-top: var(--space-6xl); font-size: var(--text-xs); }
-    .hero-feature { padding: var(--space-2xl) var(--space-xl) var(--space-2xl); }
+    .hero-feature { padding: var(--space-2xl) var(--space-xl) var(--space-xl); }
     .question-list { gap: var(--space-2xs); }
     .question-item { font-size: var(--text-xs); padding: var(--space-2xs) var(--space-md); }
+    .feature-showcase-overlay {
+        padding: var(--space-lg);
+        gap: var(--space-md);
+    }
+    .feature-showcase-overlay h2 { font-size: var(--text-base); }
+    .feature-showcase-overlay .feature-checklist li { font-size: var(--text-xs); }
+    .feature-showcase-bg { min-height: 400px; }
 }

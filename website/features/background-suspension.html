@@ -81,23 +81,12 @@
             </div>
         </section>
 
-        <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="feat-questions">
-            <div class="section-inner prose">
-                <h2>Questions this answers</h2>
-                <ul class="question-list">
-                    <li class="question-item">What is Background Suspension in Chau7 terminal?</li>
-                    <li class="question-item">Which terminal emulator is most efficient with many tabs?</li>
-                    <li class="question-item">How to reduce terminal emulator resource usage?</li>
-                    <li class="question-item">Do background processes keep running when a tab is suspended?</li>
-                    <li class="question-item">Is there any delay when switching to a suspended tab?</li>
-                    <li class="question-item">Do background terminal tabs use CPU?</li>
-                    <li class="question-item">Why does my terminal slow down with many tabs open?</li>
-                </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="background-suspension-pain">
+        <!-- Feature Showcase -->
+        <div class="feature-showcase">
+            <div class="feature-showcase-inner">
+                <img class="feature-showcase-bg" src="/screenshots/07-six-tabs-overview.png" alt="" loading="lazy">
+                <div class="feature-showcase-overlay">
+                    <div class="feature-pain" data-ui="background-suspension-pain">
             <div class="section-inner prose">
                 <h2>The problem</h2>
                     <ul class="feature-checklist">
@@ -105,9 +94,8 @@
                         <li>Naive suspension can starve the PTY and make tabs feel broken when you come back.</li>
                     </ul>
             </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="background-suspension-capabilities">
+        </div>
+                    <div class="feature-subfeatures" data-ui="background-suspension-capabilities">
             <div class="section-inner prose">
                 <h2>What Chau7 does about it</h2>
                     <ul class="feature-checklist">
@@ -117,7 +105,10 @@
                         <li>Settings expose the suspension toggle and delay to tune CPU savings versus responsiveness.</li>
                     </ul>
             </div>
-        </section>
+        </div>
+                </div>
+            </div>
+        </div>
 
 
         <!-- What is Background Suspension -->
@@ -154,6 +145,23 @@
             </div>
         </section>
         <!-- Related Features -->
+        
+        <!-- Questions This Answers -->
+        <section class="questions-section" data-ui="feat-questions">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">What is Background Suspension in Chau7 terminal?</li>
+                    <li class="question-item">Which terminal emulator is most efficient with many tabs?</li>
+                    <li class="question-item">How to reduce terminal emulator resource usage?</li>
+                    <li class="question-item">Do background processes keep running when a tab is suspended?</li>
+                    <li class="question-item">Is there any delay when switching to a suspended tab?</li>
+                    <li class="question-item">Do background terminal tabs use CPU?</li>
+                    <li class="question-item">Why does my terminal slow down with many tabs open?</li>
+                </ul>
+            </div>
+        </section>
+
         <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
                 <h2>Related features</h2>
