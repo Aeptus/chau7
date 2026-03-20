@@ -44,6 +44,7 @@ struct IdleTabsChip: View {
             Divider()
 
             Button {
+                overlayModel.dismissHoverCard()
                 for tab in tabs {
                     overlayModel.closeTab(id: tab.id)
                 }
@@ -66,6 +67,7 @@ struct IdleTabsChip: View {
         let idle = idleDuration(tab)
 
         return Button {
+            overlayModel.dismissHoverCard()
             overlayModel.selectTab(id: tab.id)
             isExpanded = false
         } label: {
