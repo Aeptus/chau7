@@ -144,6 +144,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="paste-confirmation-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Multi-line pastes into shells are risky when the receiving app cannot distinguish pasted text from typing.</li>
+                        <li>Paste safety depends on protocol support, and most users do not know when they have it.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="paste-confirmation-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Sends bracketed paste sequences when the running application requests them.</li>
+                        <li>Falls back to raw paste when the app does not support the protocol.</li>
+                        <li>Preserves direct paste semantics instead of inserting a fake preview layer.</li>
+                        <li>Makes supporting shells and editors treat pasted newlines more safely.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="paste-related">
             <div class="section-inner">

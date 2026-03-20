@@ -1,0 +1,926 @@
+{
+  "auto-ai-cli-detection": {
+    "pain": [
+      "You should not have to inspect process trees or tab titles just to know whether a shell is running Claude Code, Codex, or plain bash.",
+      "Wrapper scripts, npx launches, and nested child processes make agent detection brittle in normal terminals."
+    ],
+    "subfeatures": [
+      "Built-in registry for Claude Code, Codex, Gemini CLI, ChatGPT, Copilot, Aider, Cursor, Windsurf, Cline, Cody, Amazon Q, Devin, Continue, Goose, Mentat, and Amp.",
+      "Command-line and banner matching catch agents even when they are launched through wrappers or deeper descendants.",
+      "Detection updates the tab model immediately, so branding, status badges, MCP tools, and telemetry all see the same agent identity.",
+      "No shell aliases, prompt hacks, or dotfile edits are required."
+    ]
+  },
+  "ai-tab-branding": {
+    "pain": [
+      "When several AI sessions are open, identical tabs force you to click around just to find the right agent.",
+      "Colorless tab bars hide context that should be obvious at a glance."
+    ],
+    "subfeatures": [
+      "Each supported agent gets a curated logo and brand color from the shared AI tool registry.",
+      "Tabs update live when an agent starts, changes, or exits in the same shell.",
+      "Non-AI tabs fall back to the default appearance automatically.",
+      "The same identity metadata is reused across the overlay and status views for consistent recognition."
+    ]
+  },
+  "ai-process-monitoring": {
+    "pain": [
+      "Activity Monitor shows generic node and python processes, not which AI session owns the load.",
+      "Without per-tab resource data, it is hard to kill the right runaway agent."
+    ],
+    "subfeatures": [
+      "Captures the detected agent PID, CPU usage, and resident memory for each tab.",
+      "Samples are kept per tab so Claude in one session never pollutes Codex metrics in another.",
+      "Resource snapshots are exposed to tab status views and MCP tooling.",
+      "Metrics can be correlated with telemetry runs and agent activity over time."
+    ]
+  },
+  "custom-detection-rules": {
+    "pain": [
+      "Internal CLIs and niche agents are invisible until the terminal knows how to label them.",
+      "Teams should not have to wait for an upstream release to detect their own tooling."
+    ],
+    "subfeatures": [
+      "Add custom substring rules in settings for process names or launch commands.",
+      "Custom rules run alongside built-in detection instead of replacing it.",
+      "Built-in matches still win for known tools, preserving stable branding and analytics labels.",
+      "Rules live in Chau7 settings, so they can be exported or shared across a team."
+    ]
+  },
+  "detection-status-indicator": {
+    "pain": [
+      "Checking whether an agent is still working normally costs a tab switch and a visual scan every time.",
+      "Background AI sessions are easy to forget until they finish or stall silently."
+    ],
+    "subfeatures": [
+      "Shows active, idle, and completed states directly in the tab strip.",
+      "State comes from live process monitoring rather than fragile output parsing.",
+      "The badge updates without focusing the tab, so long-running sessions stay visible from the side.",
+      "Background descendants are tracked as long as they remain attached to the tab's shell tree."
+    ]
+  },
+  "multi-agent-awareness": {
+    "pain": [
+      "Running several agents at once usually turns cost, status, and ownership into a blur.",
+      "Shared state across tabs makes side-by-side AI workflows unreliable."
+    ],
+    "subfeatures": [
+      "Every tab keeps its own detected agent, metrics, telemetry run, and session state.",
+      "Session listing APIs can return one tab or all active AI tabs at once.",
+      "Token, latency, and cost data remain scoped to the tab that produced them.",
+      "Detection and branding changes in one tab never leak into another."
+    ]
+  },
+  "context-token-optimization": {
+    "pain": [
+      "AI agents waste tokens on ANSI junk, spinner frames, and noisy command output that humans ignore instantly.",
+      "Without visibility into output hygiene, teams keep paying for context bloat they cannot see."
+    ],
+    "subfeatures": [
+      "Wraps shell output with a token-optimization layer that strips escape codes, progress churn, and other terminal-only noise.",
+      "Tracks savings and runtime behavior so you can see the impact of optimization instead of guessing.",
+      "Works alongside per-tab and global control, so noisy sessions can be optimized without changing everything.",
+      "Feeds cleaner command output to AI tools while keeping the local terminal experience intact."
+    ]
+  },
+  "llm-error-explanation": {
+    "pain": [
+      "Copying terminal errors into a browser is slow and breaks concentration.",
+      "Error text without surrounding terminal context produces worse explanations and repeated guessing."
+    ],
+    "subfeatures": [
+      "One-click capture of the error plus nearby context from inside the terminal.",
+      "Provider-agnostic explanation flow supporting OpenAI, Anthropic, Ollama, and compatible endpoints.",
+      "Explanations render inside Chau7 instead of forcing a browser detour.",
+      "User-triggered sending only, so nothing is shipped to a provider unless you ask."
+    ]
+  },
+  "cto-per-tab-override": {
+    "pain": [
+      "A global CTO toggle is too blunt for mixed workflows.",
+      "Some tabs need clean AI-ready output while others need raw terminal fidelity."
+    ],
+    "subfeatures": [
+      "Three modes per tab: default, forceOn, and forceOff.",
+      "Override is checked before the global CTO flag on every tab.",
+      "Control is available from the UI and over MCP via `tab_set_cto`.",
+      "Different tabs can run optimized and raw output side by side."
+    ]
+  },
+  "ai-session-tracking": {
+    "pain": [
+      "Long AI runs disappear into anonymous terminal time unless the app tracks them explicitly.",
+      "It is hard to answer basic questions like how many runs happened in a tab or how long a session has been active."
+    ],
+    "subfeatures": [
+      "Groups AI activity into tab-scoped sessions instead of flattening everything into one global log.",
+      "Tracks run counts, start times, and duration so live sessions are measurable.",
+      "Surfaces active session state through runtime and telemetry services.",
+      "Keeps agent identity attached to the session so downstream analytics stay attributable."
+    ]
+  },
+  "tls-wss-proxy": {
+    "pain": [
+      "AI CLIs hide API traffic behind provider SDKs, so you cannot attribute requests to a tab.",
+      "External proxies are tedious to configure and disconnected from terminal context."
+    ],
+    "subfeatures": [
+      "Local proxy reroutes provider base URLs to localhost for OpenAI, Anthropic, and Gemini traffic.",
+      "Handles HTTPS and WebSocket flows with a local certificate and owner-only local routing.",
+      "Parses calls into structured events tied to the originating tab and session.",
+      "Feeds token, cost, and latency analytics without storing API keys in Chau7."
+    ]
+  },
+  "token-counting": {
+    "pain": [
+      "AI bills arrive in tokens, but most terminals expose zero token visibility.",
+      "Without per-call counts, prompt tuning is just superstition."
+    ],
+    "subfeatures": [
+      "Extracts input and output token counts from intercepted provider responses.",
+      "Keeps per-call, per-tab, and rolled-up totals.",
+      "Normalizes counts into a shared event model across providers.",
+      "Powers downstream cost and dashboard views."
+    ]
+  },
+  "cost-tracking": {
+    "pain": [
+      "It is easy to overspend when multiple agents call different models in parallel.",
+      "Provider dashboards do not tell you which terminal tab burned the money."
+    ],
+    "subfeatures": [
+      "Calculates per-call cost from provider, model, and token metadata.",
+      "Aggregates spend by tab, session, and total usage.",
+      "Stores cost alongside the underlying API event for auditing.",
+      "Lets you compare expensive sessions before they become habits."
+    ]
+  },
+  "latency-tracking": {
+    "pain": [
+      "When AI feels slow, you usually cannot tell whether the bottleneck is the model, network, or workflow.",
+      "Provider dashboards are too coarse to explain one sluggish coding session."
+    ],
+    "subfeatures": [
+      "Records request latency in milliseconds on every captured API call.",
+      "Keeps structured latency fields in the shared API event model.",
+      "Makes slow calls visible per tab and per provider, not just globally.",
+      "Surfaces latency alongside tokens and cost so tradeoffs are obvious."
+    ]
+  },
+  "analytics-dashboard": {
+    "pain": [
+      "Terminal usage, AI usage, and session history usually live in separate tools if they exist at all.",
+      "Without a single dashboard, you cannot reason about command volume, success rate, and API spend together."
+    ],
+    "subfeatures": [
+      "Aggregates command history, session data, and API events into one view.",
+      "Includes daily statistics and error-rate calculations from persistent history.",
+      "Surfaces totals for commands, success rate, token usage, cost, and latency trends.",
+      "Reuses the same analytics store that powers session playback and telemetry summaries."
+    ]
+  },
+  "mcp-tools": {
+    "pain": [
+      "AI agents can operate terminals better when they can query and control the terminal directly.",
+      "Glue scripts around terminals are usually incomplete and brittle."
+    ],
+    "subfeatures": [
+      "Exposes tab listing, status, input, execution, and session inspection as MCP tools.",
+      "Routes tool calls through TerminalControlService and related runtime services.",
+      "Returns structured results for tabs, sessions, and command output instead of screen scraping.",
+      "Shares the same per-tab model as the app UI, so agents and humans see the same state."
+    ]
+  },
+  "unix-socket-server": {
+    "pain": [
+      "Local automation should not require network ports or cloud services just to reach your terminal.",
+      "Stdio-only integrations make it harder to share a stable control surface across tools."
+    ],
+    "subfeatures": [
+      "MCP server listens on a local Unix domain socket under the user's home directory.",
+      "Socket permissions are restricted to the same user account.",
+      "Bridge processes can pipe stdio to the socket without exposing a public port.",
+      "Each client connection gets its own MCP session handler."
+    ]
+  },
+  "auto-registration": {
+    "pain": [
+      "Local MCP servers are annoying when every tool requires hand-written config before it can connect.",
+      "Path drift across machines makes manual setup fragile."
+    ],
+    "subfeatures": [
+      "Chau7 can generate or update MCP registration files automatically for supported clients.",
+      "Registration uses the local bridge and socket path so clients connect to the correct server.",
+      "The app keeps setup close to the terminal instead of asking users to maintain separate glue.",
+      "Reduces time-to-first-tool-call for Codex, Claude, and similar MCP clients."
+    ]
+  },
+  "mcp-resources": {
+    "pain": [
+      "Sometimes agents need context, not just actions, and terminals rarely expose it in a structured way.",
+      "Screen scraping terminal output is a poor substitute for named resources."
+    ],
+    "subfeatures": [
+      "Supports MCP resources/list and resources/read over the same local session.",
+      "Publishes named resources backed by telemetry and current terminal state.",
+      "Resource reads return structured payloads instead of raw UI text.",
+      "Resources live beside tools, so clients can discover capabilities from one server."
+    ]
+  },
+  "tab-limits": {
+    "pain": [
+      "Runaway agents can create tabs faster than you notice them.",
+      "A guardrail is only useful if it constrains automation without blocking normal human use."
+    ],
+    "subfeatures": [
+      "Sets a configurable ceiling on tabs created through the MCP server.",
+      "Manual tabs are excluded, so your own workflow is never throttled.",
+      "Closed MCP-created tabs immediately free capacity for new ones.",
+      "Returns a clear error to the agent instead of silently failing."
+    ]
+  },
+  "mcp-tab-indicator": {
+    "pain": [
+      "When some tabs are controllable by AI and others are just shells, ambiguity is a safety problem.",
+      "Users and agents both need a quick visual hint about which tabs are in the MCP control path."
+    ],
+    "subfeatures": [
+      "Adds an MCP status marker directly to the tab UI.",
+      "Updates with live tab state instead of static configuration text.",
+      "Makes controllable contexts easy to spot inside dense multi-tab workflows.",
+      "Pairs naturally with MCP tools, limits, and approval gating."
+    ]
+  },
+  "multi-tab": {
+    "pain": [
+      "Modern terminal work spans many repos, environments, and agents; one session per window is useless.",
+      "Opening separate windows for everything destroys navigation speed."
+    ],
+    "subfeatures": [
+      "Native tab model with independent shell and session state per tab.",
+      "Quick create, close, and selection flows integrated across UI and MCP tools.",
+      "Tabs cooperate with AI detection, analytics, and session tracking automatically.",
+      "Selected versus background tab behavior is explicit, enabling suspension and recovery features."
+    ]
+  },
+  "split-panes": {
+    "pain": [
+      "Side-by-side work normally requires multiple windows or tmux complexity.",
+      "Comparing logs, editors, and shells is clumsy when one tab can show only one session."
+    ],
+    "subfeatures": [
+      "Multiple panes can coexist in one workspace with independent terminal sessions.",
+      "Layout is managed by a dedicated split-pane controller for predictable resizing and focus.",
+      "Pane interactions are covered by dedicated tests, reducing layout regressions.",
+      "Lets you pair AI work, shells, and inspection panes without leaving Chau7."
+    ]
+  },
+  "tab-drag-drop": {
+    "pain": [
+      "Static tab ordering makes active workflows harder to group or reprioritize.",
+      "Close-and-reopen is the wrong answer for simple tab organization."
+    ],
+    "subfeatures": [
+      "Drag gestures reorder tabs directly in the strip.",
+      "Layout logic accounts for destination slots rather than naive swaps.",
+      "Visual movement tracks actual tab widths for smoother placement.",
+      "Reordering keeps the rest of the tab model intact, including tab identity and session state."
+    ]
+  },
+  "tab-profiles": {
+    "pain": [
+      "Debugging, presentations, and remote work need different terminal settings.",
+      "Re-tuning fonts, colors, and behavior by hand for each context is wasted time."
+    ],
+    "subfeatures": [
+      "Saved profiles capture appearance and behavior settings as reusable presets.",
+      "Profiles integrate with automatic switching rules for directories, SSH hosts, and other context.",
+      "Settings persist through config parsing and profile storage instead of transient UI state.",
+      "Lets teams standardize common terminal setups without rebuilding them from scratch."
+    ]
+  },
+  "background-suspension": {
+    "pain": [
+      "Inactive tabs should not keep rendering at full speed when you are not looking at them.",
+      "Naive suspension can starve the PTY and make tabs feel broken when you come back."
+    ],
+    "subfeatures": [
+      "Background tabs pause expensive rendering work after a configurable delay.",
+      "The PTY still drains while suspended, so output keeps flowing even when UI updates are paused.",
+      "Tabs unsuspend immediately when selected or when AI activity makes them important.",
+      "Settings expose the suspension toggle and delay to tune CPU savings versus responsiveness."
+    ]
+  },
+  "tab-watchdog": {
+    "pain": [
+      "When tab rendering glitches, users should not be the recovery mechanism.",
+      "UI desync bugs are especially painful in multi-tab, AI-heavy workflows."
+    ],
+    "subfeatures": [
+      "A model-owned watchdog timer checks tab bar health continuously.",
+      "It compares expected and rendered state to detect missing or stale tab UI.",
+      "Recovery uses bounded retries, cooldowns, and logging instead of infinite refresh loops.",
+      "Summary counters make watchdog interventions visible for debugging."
+    ]
+  },
+  "session-recording": {
+    "pain": [
+      "Terminal work disappears once the scrollback moves on.",
+      "Reproducing how a bug, command, or AI run unfolded is hard without a timeline."
+    ],
+    "subfeatures": [
+      "Records command and output activity into a structured session timeline.",
+      "Works with persistent history and telemetry so recordings tie back to real runs.",
+      "Provides the data model used by playback and scrubber UI.",
+      "Makes postmortems and demos possible without manual note-taking."
+    ]
+  },
+  "timeline-scrubber": {
+    "pain": [
+      "Huge recordings are painful to scrub through using raw scroll alone.",
+      "Developers need a fast way to jump to the moment a command or failure happened."
+    ],
+    "subfeatures": [
+      "Displays a visual horizontal timeline for recorded sessions.",
+      "Marks command segments so navigation is tied to meaningful activity, not just line count.",
+      "Supports scrub-style replay and quick jumping across the session.",
+      "Shares analytics and session-recording data rather than duplicating its own store."
+    ]
+  },
+  "session-restore": {
+    "pain": [
+      "Reopening a terminal should not mean rebuilding all tabs and context from memory.",
+      "Crashes, restarts, and updates are much less costly when the workspace can come back."
+    ],
+    "subfeatures": [
+      "Restores saved tab and session state after relaunch instead of starting from an empty shell set.",
+      "Preserves the multi-tab workflow context that other features build on.",
+      "Works with recorded session data and persistent history rather than transient UI only.",
+      "Reduces the cost of quitting or recovering from interruptions."
+    ]
+  },
+  "metal-rendering": {
+    "pain": [
+      "CPU-bound text rendering falls apart under high-output workloads.",
+      "AI-heavy terminal sessions need smooth scrolling and low-latency redraws."
+    ],
+    "subfeatures": [
+      "Uses a dedicated Metal renderer for the terminal display path.",
+      "Integrates frame pacing and low-latency view configuration for responsive updates.",
+      "Offloads heavy drawing work from the main CPU path.",
+      "Serves as the base for advanced display optimizations like triple buffering and shared surfaces."
+    ]
+  },
+  "iosurface-display": {
+    "pain": [
+      "Moving rendered frames around inefficiently wastes the gains from GPU rendering.",
+      "Advanced compositing features need a better surface handoff than repeated copies."
+    ],
+    "subfeatures": [
+      "Uses IOSurface-backed display coordination for frame sharing.",
+      "Keeps rendered output in a form macOS can composite efficiently.",
+      "Fits into the Metal display coordinator rather than bolting on a separate path.",
+      "Helps high-refresh terminal output remain smooth during resize and composition changes."
+    ]
+  },
+  "simd-parsing": {
+    "pain": [
+      "Escape-sequence-heavy output can bottleneck before it ever reaches the renderer.",
+      "Scalar parsing wastes CPU on workloads that are embarrassingly parallel."
+    ],
+    "subfeatures": [
+      "Uses SIMD-aware parsing for fast terminal byte and escape handling.",
+      "Improves throughput during bursty output such as builds, logs, and AI tool chatter.",
+      "Lives in the hot path between PTY bytes and rendered cells, where speed matters most.",
+      "Is backed by dedicated parser tests to keep correctness aligned with the speedups."
+    ]
+  },
+  "iokit-hid-input": {
+    "pain": [
+      "Terminal responsiveness starts with input, not just rendering.",
+      "High-level input paths can add jitter or lose fidelity for advanced key handling."
+    ],
+    "subfeatures": [
+      "Integrates low-level HID input plumbing for fast keyboard event handling.",
+      "Helps keep input-to-display latency low in the native macOS app.",
+      "Works alongside protocol-aware key encoding rather than replacing terminal semantics.",
+      "Supports the broader low-latency pipeline that Chau7 builds around native input and rendering."
+    ]
+  },
+  "triple-buffering": {
+    "pain": [
+      "Producer and renderer contention causes stutter when output spikes.",
+      "Double-buffer style pipelines can force components to wait on each other unnecessarily."
+    ],
+    "subfeatures": [
+      "Separates renderable state across three buffers to reduce pipeline stalls.",
+      "Lets parsing, preparation, and display proceed with less contention.",
+      "Smooths out bursty terminal workloads where frames arrive faster than they can be shown.",
+      "Has dedicated tests covering buffer handoff behavior."
+    ]
+  },
+  "lock-free-spsc-buffer": {
+    "pain": [
+      "Locks in a hot single-producer or single-consumer path add latency for no good reason.",
+      "Contention inside the render pipeline shows up as dropped responsiveness."
+    ],
+    "subfeatures": [
+      "Uses a lock-free single-producer or single-consumer queue for hot-path communication.",
+      "Avoids mutex overhead where one producer and one consumer are enough.",
+      "Improves predictability under sustained output.",
+      "Complements the triple-buffered rendering architecture rather than duplicating it."
+    ]
+  },
+  "vt100-xterm-emulation": {
+    "pain": [
+      "Terminal apps assume real escape-sequence compatibility and break on half-implemented emulators.",
+      "Developers should not have to debug the terminal instead of their tool."
+    ],
+    "subfeatures": [
+      "Emulates core VT100 and xterm behavior expected by modern CLI tools.",
+      "Sets a standard xterm-256color environment for broad compatibility.",
+      "Encodes keyboard modifiers and special keys in terminal-appropriate sequences.",
+      "Keeps shell apps, TUIs, and remote sessions behaving like they expect."
+    ]
+  },
+  "unicode-emoji-support": {
+    "pain": [
+      "Broken wide-character handling turns modern CLI output into misaligned garbage.",
+      "AI and developer tools increasingly use Unicode, icons, and emoji in normal output."
+    ],
+    "subfeatures": [
+      "Handles Unicode and wide glyph rendering in the terminal grid.",
+      "Preserves alignment for emoji and other multi-cell characters.",
+      "Lets modern CLI output render as intended instead of collapsing spacing.",
+      "Works with font customization so supported glyphs remain readable."
+    ]
+  },
+  "shell-integration": {
+    "pain": [
+      "Without shell hooks, a terminal cannot reliably know cwd, exit status, or prompt boundaries.",
+      "Features like context-aware titles and automation depend on real shell lifecycle data."
+    ],
+    "subfeatures": [
+      "Creates integration scripts for Bash, Zsh, and Fish automatically.",
+      "Emits OSC 7 directory updates and exit-status signals back to Chau7.",
+      "Supplies CHAU7_SESSION_ID and CHAU7_TAB_ID so hooks know terminal context.",
+      "Runs at startup rather than as visible commands in shell history."
+    ]
+  },
+  "scrollback-buffer": {
+    "pain": [
+      "Losing output history makes debugging, replay, and AI review much harder than it should be.",
+      "Fixed shallow buffers force you to choose between performance and remembering what happened."
+    ],
+    "subfeatures": [
+      "Configurable scrollback line limits let you tune retention versus memory use.",
+      "Supports deep history tracking instead of only the visible screen.",
+      "Connects to line timestamp tracking and session capture features.",
+      "Can be cleared or exported through terminal APIs and UI flows."
+    ]
+  },
+  "hyperlinks": {
+    "pain": [
+      "URLs and file references in terminal output should be actionable, not dead text.",
+      "Copy-paste from logs is slower and more error-prone than clicking."
+    ],
+    "subfeatures": [
+      "Detects clickable links in terminal output so navigation is direct.",
+      "Supports terminal-native hyperlink semantics instead of only plain-text heuristics.",
+      "Keeps link handling inside the native terminal view rather than external overlays.",
+      "Makes build logs, docs links, and local paths faster to act on."
+    ]
+  },
+  "image-protocol": {
+    "pain": [
+      "Modern CLI tools output charts, screenshots, and previews that plain text cannot express.",
+      "Without graphics protocols, rich terminal tools fall back to worse UX."
+    ],
+    "subfeatures": [
+      "Supports inline graphics protocols such as Sixel and Kitty graphics.",
+      "Provides settings-level control for image protocol behavior.",
+      "Renders images inside the terminal view instead of forcing an external preview.",
+      "Lets rich CLI tools stay rich inside Chau7."
+    ]
+  },
+  "ligatures": {
+    "pain": [
+      "Developers who choose coding fonts expect their symbols to render properly.",
+      "Text appearance should be configurable per workflow, not fixed."
+    ],
+    "subfeatures": [
+      "Optional ligature rendering for compatible fonts like Fira Code.",
+      "Integrated into appearance settings rather than requiring font hacks.",
+      "Lives beside font family and size controls so typography is coherent.",
+      "Persists through config and profile settings."
+    ]
+  },
+  "bell-notification": {
+    "pain": [
+      "Background commands, remote tasks, and long-running AI jobs finish silently if the bell is ignored.",
+      "One-size-fits-all bell behavior is either noisy or easy to miss."
+    ],
+    "subfeatures": [
+      "Configurable bell enablement and selectable bell sounds.",
+      "Supports a visual bell alternative when sound is not desired.",
+      "Applies bell preferences directly to the terminal view layer.",
+      "Includes rate-limiting settings so noisy programs do not spam alerts."
+    ]
+  },
+  "dangerous-command-guard": {
+    "pain": [
+      "AI agents, pastes, and sleepy humans occasionally hit Enter on the wrong command.",
+      "Shells do not reliably warn before obviously destructive operations."
+    ],
+    "subfeatures": [
+      "Detects risky command patterns before they are sent to the shell.",
+      "Presents a confirmation dialog instead of executing immediately.",
+      "Settings let you control guard behavior and highlight scope.",
+      "Uses the same terminal-aware command parsing path that avoids naive string matching."
+    ]
+  },
+  "process-exit-confirmation": {
+    "pain": [
+      "Closing the wrong tab can kill a deploy, SSH tunnel, or AI run instantly.",
+      "Generic tab close behavior is too aggressive for long-lived processes."
+    ],
+    "subfeatures": [
+      "Warns before closing tabs with running processes.",
+      "Can be configured to warn only for active processes or for every close.",
+      "Uses native confirmation dialogs with context-aware messaging.",
+      "Covers close-tab, replace-tab, and close-window flows."
+    ]
+  },
+  "mcp-approval-gate": {
+    "pain": [
+      "Giving AI tools raw terminal control without review is fast right up until it is catastrophic.",
+      "Approval systems that do not understand context or agent identity create either noise or false trust."
+    ],
+    "subfeatures": [
+      "Intercepts MCP tool calls before execution and shows the tool name plus parameters.",
+      "Supports Accept, Deny, Always Allow, and Audit Only outcomes.",
+      "Profiles can scope approvals by context and by allowed agent names.",
+      "Persisted allowlists let trusted commands stop prompting while new ones still pause."
+    ]
+  },
+  "clipboard-history": {
+    "pain": [
+      "The system clipboard remembers only the last thing, not the five things you actually need.",
+      "Re-copying previous commands or snippets breaks flow."
+    ],
+    "subfeatures": [
+      "Stores a rolling history of clipboard items inside Chau7.",
+      "Shows previews and metadata so you can pick the right item quickly.",
+      "Integrates with overlay controls for fast selection and paste-back.",
+      "Has dedicated tests covering storage and preview behavior."
+    ]
+  },
+  "paste-confirmation": {
+    "pain": [
+      "Multi-line pastes into shells are risky when the receiving app cannot distinguish pasted text from typing.",
+      "Paste safety depends on protocol support, and most users do not know when they have it."
+    ],
+    "subfeatures": [
+      "Sends bracketed paste sequences when the running application requests them.",
+      "Falls back to raw paste when the app does not support the protocol.",
+      "Preserves direct paste semantics instead of inserting a fake preview layer.",
+      "Makes supporting shells and editors treat pasted newlines more safely."
+    ]
+  },
+  "snippets": {
+    "pain": [
+      "Repeated commands, bootstrap steps, and template blocks should not live in text files or memory.",
+      "Global aliases are too blunt when commands vary by repo or profile."
+    ],
+    "subfeatures": [
+      "Snippets support user, profile, and repo scopes.",
+      "Placeholder and environment token parsing lets snippets stay dynamic.",
+      "Snippets are accessible from the overlay and command palette, not just a settings screen.",
+      "File monitoring and reload flows keep snippet sources current."
+    ]
+  },
+  "ssh-connection-manager": {
+    "pain": [
+      "Remembering hostnames, ports, usernames, keys, and bastions by hand is busywork.",
+      "Reconnecting to the same environments should be one action, not a mini-form every time."
+    ],
+    "subfeatures": [
+      "Saved SSH connections capture host, port, username, identity file, and jump-host details.",
+      "Connection profiles are managed in a dedicated observable store instead of ad hoc shell aliases.",
+      "Launching uses proper shell escaping so saved settings survive odd values.",
+      "The manager backs both direct SSH workflows and imported SSH config entries."
+    ]
+  },
+  "auto-import-ssh-config": {
+    "pain": [
+      "Existing ~/.ssh/config files should be assets, not migration projects.",
+      "Re-entering years of SSH host aliases into a terminal UI is needless friction."
+    ],
+    "subfeatures": [
+      "Parses standard SSH config host entries into Chau7 connection data.",
+      "Supports serialization back from structured entries when needed.",
+      "Handles common fields like hostnames, users, ports, identities, and ProxyJump.",
+      "Keeps shared SSH profiles in sync with real config content instead of manual duplication."
+    ]
+  },
+  "jump-host-support": {
+    "pain": [
+      "Bastion and ProxyJump flows are easy to mistype and annoying to remember.",
+      "Multi-hop SSH should not require rebuilding the full command every time."
+    ],
+    "subfeatures": [
+      "Saved connections include a dedicated jump-host or ProxyJump field.",
+      "Parsing support preserves ProxyJump entries imported from SSH config.",
+      "Launch commands are shell-escaped correctly so jump hosts are reliable.",
+      "Works inside both hand-made connection profiles and imported config entries."
+    ]
+  },
+  "context-aware-switching": {
+    "pain": [
+      "A local project tab and a remote prod tab should not look or behave the same.",
+      "Manual profile switching is too easy to forget in context-heavy workflows."
+    ],
+    "subfeatures": [
+      "Rules can match on directory, SSH host, and other session context.",
+      "Matching rules switch to the right saved profile automatically.",
+      "Chau7 remembers the previous profile and restores it when the context no longer matches.",
+      "Priority and named rules keep automated switching predictable instead of magical."
+    ]
+  },
+  "command-palette": {
+    "pain": [
+      "Mouse-hunting for commands and settings wastes the benefit of a keyboard-first terminal.",
+      "Power features are useless if users cannot discover them quickly."
+    ],
+    "subfeatures": [
+      "Fuzzy-searchable command palette similar to editor launchers.",
+      "Keyboard-first action execution keeps common operations one shortcut away.",
+      "Search state, clearing, and selection are handled inside the palette itself.",
+      "Palette actions can trigger operational commands like snippet reloads and other advanced flows."
+    ]
+  },
+  "terminal-search": {
+    "pain": [
+      "Searching long terminal output with scroll alone is primitive.",
+      "Losing the current match count or location makes output review slower than it should be."
+    ],
+    "subfeatures": [
+      "Opens a dedicated search overlay on top of the active terminal.",
+      "Tracks query state, result lists, and match counts in the tab model.",
+      "Search highlights are rendered in the terminal overlay instead of mutating buffer text.",
+      "Closing search resets query and results cleanly."
+    ]
+  },
+  "command-history-search": {
+    "pain": [
+      "The commands you want are usually the ones you typed days ago and forgot.",
+      "Raw shell history is messy without filtering and structure."
+    ],
+    "subfeatures": [
+      "Searches the persistent command history store instead of only the current buffer.",
+      "Returns commands with metadata such as timestamps for better recall.",
+      "Supports query and limit flows reused by scripting APIs.",
+      "Makes previously successful commands reusable without retyping."
+    ]
+  },
+  "fonts": {
+    "pain": [
+      "Readability and density vary wildly across developers and displays.",
+      "A terminal that locks you into one font setup slows you down every day."
+    ],
+    "subfeatures": [
+      "Lets you choose font family and size instead of relying on a fixed stack.",
+      "Configuration is persisted through settings and config-file parsing.",
+      "Typography changes apply across the native app rather than through CSS-like hacks.",
+      "Plays well with ligatures, cursor styling, and editor settings."
+    ]
+  },
+  "themes": {
+    "pain": [
+      "Color schemes affect legibility, focus, and error recognition constantly.",
+      "One default theme cannot suit day, night, presentations, and remote work equally well."
+    ],
+    "subfeatures": [
+      "Supports multiple terminal color schemes and appearance presets.",
+      "Theme choices can live inside saved profiles for context-specific setups.",
+      "Integrates with tab colors and other appearance settings for a coherent look.",
+      "Settings infrastructure persists theme changes cleanly."
+    ]
+  },
+  "custom-keybindings": {
+    "pain": [
+      "Fixed shortcuts fight years of muscle memory from other terminals and editors.",
+      "Power users need the terminal to adapt to their workflow, not the reverse."
+    ],
+    "subfeatures": [
+      "Keybindings map terminal and overlay actions to custom shortcuts.",
+      "The keybinding manager centralizes action names instead of scattering shortcuts in the UI.",
+      "Custom bindings can cover navigation, snippets, search, and window behaviors.",
+      "Shortcut labels stay human-readable through the same mapping layer."
+    ]
+  },
+  "cursor-styles": {
+    "pain": [
+      "Cursor visibility and shape matter more than people admit, especially across editing modes.",
+      "A one-size cursor can feel wrong on high-density displays or mixed workflows."
+    ],
+    "subfeatures": [
+      "Supports configurable cursor styles such as block, beam, or underline.",
+      "Cursor blink behavior is configurable alongside shape.",
+      "Cursor settings persist through config and saved preferences.",
+      "Changes integrate with the native renderer rather than a text-only workaround."
+    ]
+  },
+  "transparency-blur": {
+    "pain": [
+      "Floating terminals should feel native on macOS, not like opaque rectangles pasted over your desktop.",
+      "Transparency without blur often hurts readability instead of helping it."
+    ],
+    "subfeatures": [
+      "Overlay appearance supports adjustable opacity for the terminal window.",
+      "Blur and material-style compositing keep content readable over busy backgrounds.",
+      "Works naturally with the dedicated overlay window mode.",
+      "Appearance settings let you tune atmosphere without sacrificing text contrast."
+    ]
+  },
+  "padding-margins": {
+    "pain": [
+      "Text jammed against the terminal edge is harder to scan and uglier than it needs to be.",
+      "Different workflows need different density and whitespace tradeoffs."
+    ],
+    "subfeatures": [
+      "Lets you control terminal padding and visual breathing room.",
+      "Layout changes apply within the native terminal view, not by hacking prompt text.",
+      "Spacing can be combined with fonts and themes inside profiles.",
+      "Helps presentation-style and daily-driver setups coexist."
+    ]
+  },
+  "overlay-mode": {
+    "pain": [
+      "Some workflows need a terminal that floats over everything without behaving like a normal app window.",
+      "Switching desktops or rearranging windows to reach a shell is needless overhead."
+    ],
+    "subfeatures": [
+      "Runs Chau7 in a dedicated floating overlay window.",
+      "Supports transparency and blur as first-class overlay behaviors.",
+      "Remembers position and visual state for workspace-oriented use.",
+      "Keeps the full tab model inside the overlay rather than reducing it to a scratch console."
+    ]
+  },
+  "dropdown-quake-style": {
+    "pain": [
+      "The fastest terminal is the one you can summon and dismiss instantly.",
+      "Traditional window activation is slower than a global hotkey for quick terminal checks."
+    ],
+    "subfeatures": [
+      "Supports a Quake-style dropdown terminal from the top of the screen.",
+      "Global hotkey toggles visibility without manual window management.",
+      "Height and animation behavior are configurable.",
+      "Can coexist with the menu bar status item and other window modes."
+    ]
+  },
+  "fullscreen-mode": {
+    "pain": [
+      "Focused sessions sometimes need all available space and fewer distractions.",
+      "Pseudo-fullscreen workarounds do not integrate cleanly with macOS Spaces."
+    ],
+    "subfeatures": [
+      "Uses native macOS fullscreen behavior instead of a fake maximized window.",
+      "Integrates with menu bar hiding and standard Space transitions.",
+      "Fullscreen behavior is wired into the app's native window controllers.",
+      "Can be toggled like a normal window mode without losing terminal state."
+    ]
+  },
+  "menu-bar-only": {
+    "pain": [
+      "Some users want Chau7 always available but never cluttering the Dock or app switcher.",
+      "A resident terminal utility needs a proper background access point, not a hidden window gamble."
+    ],
+    "subfeatures": [
+      "Keeps a persistent NSStatusItem in the macOS menu bar.",
+      "Uses a long-lived NSPopover command center instead of recreating panel state on every open.",
+      "Switching to accessory activation hides Chau7 from the Dock and Cmd+Tab.",
+      "Terminal sessions continue running even when the main window is hidden."
+    ]
+  },
+  "syntax-highlighting": {
+    "pain": [
+      "Editing scripts or config without syntax cues is an easy way to miss mistakes.",
+      "Terminals that embed editing but skip highlighting stop being useful the moment code appears."
+    ],
+    "subfeatures": [
+      "Uses a dedicated syntax highlighter inside Chau7 editor views.",
+      "Language metadata helps colorize different file types appropriately.",
+      "Highlighting is integrated with the editor instead of bolted on as static rich text.",
+      "Works alongside find, brackets, and line numbers for a fuller editing experience."
+    ]
+  },
+  "bracket-matching": {
+    "pain": [
+      "Nested shells, configs, and code blocks are hard to read when delimiters are visually anonymous.",
+      "Missing one bracket can waste more time than this feature costs to implement."
+    ],
+    "subfeatures": [
+      "Editor logic recognizes matching pairs for common bracket characters.",
+      "Matching can be highlighted as you move the cursor.",
+      "The behavior is configurable through editor settings.",
+      "It complements syntax highlighting rather than competing with it."
+    ]
+  },
+  "find-replace": {
+    "pain": [
+      "Inline editing without search and replace forces repetitive manual fixes.",
+      "A terminal editor should not stop at cursor movement and raw text entry."
+    ],
+    "subfeatures": [
+      "Built-in find and replace tools reduce repetitive editing work.",
+      "Search integrates with the editor view rather than external dialogs only.",
+      "Complements syntax highlighting and line numbers for real editing workflows.",
+      "Keeps quick config and script edits inside Chau7 instead of bouncing to another editor."
+    ]
+  },
+  "line-numbers": {
+    "pain": [
+      "Code, stack traces, and review comments depend on stable line references.",
+      "Editing without line numbers makes navigation and communication needlessly vague."
+    ],
+    "subfeatures": [
+      "Displays line numbers alongside editor content.",
+      "Stays aligned with the scrolling editor view.",
+      "Works with search and bracket matching for faster navigation.",
+      "Makes quick terminal-side edits easier to discuss and verify."
+    ]
+  },
+  "voiceover-support": {
+    "pain": [
+      "Accessibility fails fast when controls are unlabeled or focus order is inconsistent.",
+      "A terminal UI with overlays, tabs, and agent states needs explicit screen-reader support."
+    ],
+    "subfeatures": [
+      "Adds accessibility labels and semantic descriptions across key UI elements.",
+      "Keeps interactive overlays navigable for assistive technologies.",
+      "Applies accessibility work to AI-specific chrome, not just generic buttons.",
+      "The codebase includes dedicated accessibility testing around these flows."
+    ]
+  },
+  "high-contrast-mode": {
+    "pain": [
+      "Low-contrast terminal chrome and overlays are hard to use in bright or visually demanding environments.",
+      "Accessibility is not solved by a theme if critical states are still visually subtle."
+    ],
+    "subfeatures": [
+      "Emphasizes stronger text, borders, and state contrast for readability.",
+      "Makes overlays, badges, and controls easier to distinguish at a glance.",
+      "Lives within the native appearance system rather than a separate web-style skin.",
+      "Supports accessibility-minded setups alongside fonts, themes, and reduced motion."
+    ]
+  },
+  "reduced-motion": {
+    "pain": [
+      "Motion-heavy UI can be distracting or inaccessible, especially in transient overlays.",
+      "Window and tab animations should respect system accessibility preferences."
+    ],
+    "subfeatures": [
+      "Checks reduce-motion preferences before running nonessential animations.",
+      "Tones down overlay and transition effects when motion should be minimized.",
+      "Keeps the interface readable and predictable without flashy movement.",
+      "Applies across UI flows where Chau7 would otherwise animate state changes."
+    ]
+  },
+  "localization": {
+    "pain": [
+      "Developer tools are too often English-only, which turns simple settings into friction for global teams.",
+      "Localization is hard to retrofit unless strings and resources are structured from the start."
+    ],
+    "subfeatures": [
+      "Uses localized string bundles and a dedicated localization layer.",
+      "Ships multiple lproj resources instead of hardcoding copy in views.",
+      "Includes tests for the localization infrastructure.",
+      "Makes UI, settings, and feature labels translatable across the app."
+    ]
+  },
+  "json-rpc-api": {
+    "pain": [
+      "AppleScript, UI scripting, and simulated keypresses are the wrong abstraction for terminal automation.",
+      "A real local API should work from any language without vendor lock-in."
+    ],
+    "subfeatures": [
+      "Exposes a Unix-socket JSON-RPC interface at ~/Library/Application Support/Chau7/scripting.sock.",
+      "Supports methods for history, settings, tabs, command execution, and snippets.",
+      "Uses structured request routing and standard error handling instead of fragile text commands.",
+      "Is backed by dedicated scripting API tests."
+    ]
+  },
+  "shell-hooks": {
+    "pain": [
+      "Automation and context awareness break down when the terminal cannot observe command completion or directory changes.",
+      "Manual hook plumbing across shells is tedious unless the terminal owns the integration."
+    ],
+    "subfeatures": [
+      "Provides post-command hooks for exit-code reporting and directory-change hooks for cwd tracking.",
+      "Supports Bash, Zsh, and Fish with generated integration scripts.",
+      "Exposes CHAU7_SESSION_ID and CHAU7_TAB_ID so hooks know where they are reporting.",
+      "Uses escape-sequence signaling so the terminal can react without parsing prompts."
+    ]
+  }
+}

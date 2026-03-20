@@ -149,6 +149,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="json-rpc-api-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>AppleScript, UI scripting, and simulated keypresses are the wrong abstraction for terminal automation.</li>
+                        <li>A real local API should work from any language without vendor lock-in.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="json-rpc-api-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Exposes a Unix-socket JSON-RPC interface at ~/Library/Application Support/Chau7/scripting.sock.</li>
+                        <li>Supports methods for history, settings, tabs, command execution, and snippets.</li>
+                        <li>Uses structured request routing and standard error handling instead of fragile text commands.</li>
+                        <li>Is backed by dedicated scripting API tests.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="json-rpc-related">
             <div class="section-inner">

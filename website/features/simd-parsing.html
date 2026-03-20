@@ -165,6 +165,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="simd-parsing-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Escape-sequence-heavy output can bottleneck before it ever reaches the renderer.</li>
+                        <li>Scalar parsing wastes CPU on workloads that are embarrassingly parallel.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="simd-parsing-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Uses SIMD-aware parsing for fast terminal byte and escape handling.</li>
+                        <li>Improves throughput during bursty output such as builds, logs, and AI tool chatter.</li>
+                        <li>Lives in the hot path between PTY bytes and rendered cells, where speed matters most.</li>
+                        <li>Is backed by dedicated parser tests to keep correctness aligned with the speedups.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="simd-related">
             <div class="section-inner">

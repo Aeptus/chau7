@@ -153,7 +153,7 @@
             <div class="section-inner prose">
                 <h2>Which terminal emulator supports split panes like tmux?</h2>
                 <p>Chau7 supports native split panes similar to tmux but without requiring a multiplexer. iTerm2 also supports splits. Alacritty does not support splits natively and requires tmux or a tiling window manager.</p>
-                <p>Chau7's split panes differ from tmux because they integrate directly with Chau7's tab system, session restore, and Metal GPU rendering. There is no extra process layer. Each Chau7 pane is a first-class terminal view with full rendering performance.</p>
+                <p>Chau7's split panes differ from tmux because they integrate directly with Chau7's tab system, session restore, and Metal GPU rendering. There is no extra process layer. Each it pane is a first-class terminal view with full rendering performance.</p>
             </div>
         </section>
 
@@ -166,6 +166,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="split-panes-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Side-by-side work normally requires multiple windows or tmux complexity.</li>
+                        <li>Comparing logs, editors, and shells is clumsy when one tab can show only one session.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="split-panes-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Multiple panes can coexist in one workspace with independent terminal sessions.</li>
+                        <li>Layout is managed by a dedicated split-pane controller for predictable resizing and focus.</li>
+                        <li>Pane interactions are covered by dedicated tests, reducing layout regressions.</li>
+                        <li>Lets you pair AI work, shells, and inspection panes without leaving Chau7.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="split-panes-related">
             <div class="section-inner">

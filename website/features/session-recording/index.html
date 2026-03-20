@@ -135,7 +135,7 @@
             <div class="section-inner prose">
                 <h2>How does Chau7's session recording compare to other terminals?</h2>
                 <p>Most terminals have no built-in session recording. iTerm2, Warp, Alacritty, and Kitty require external tools like asciinema or the <code>script</code> command for recording. These tools require setup, generate separate files, and live outside the terminal's awareness.</p>
-                <p>Chau7 records sessions natively with millisecond-precision timestamps. Chau7 stores recordings as compact timestamped event streams and provides a built-in timeline scrubber for replay. Chau7's recording is integrated with the telemetry system and accessible through the MCP server.</p>
+                <p>Chau7 records sessions natively with millisecond-precision timestamps. Chau7 stores recordings as compact timestamped event streams and provides a built-in timeline scrubber for replay. its recording is integrated with the telemetry system and accessible through the MCP server.</p>
             </div>
         </section>
 
@@ -157,6 +157,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="session-recording-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Terminal work disappears once the scrollback moves on.</li>
+                        <li>Reproducing how a bug, command, or AI run unfolded is hard without a timeline.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="session-recording-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Records command and output activity into a structured session timeline.</li>
+                        <li>Works with persistent history and telemetry so recordings tie back to real runs.</li>
+                        <li>Provides the data model used by playback and scrubber UI.</li>
+                        <li>Makes postmortems and demos possible without manual note-taking.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="session-recording-related">
             <div class="section-inner">

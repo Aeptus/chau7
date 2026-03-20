@@ -121,7 +121,7 @@
             <div class="section-inner prose">
                 <h2>How to fix broken Unicode rendering in your terminal</h2>
                 <p>Broken Unicode rendering in terminals typically comes from two problems: incorrect character width calculation and missing grapheme cluster grouping. Characters display at the wrong width, causing misalignment. Combining marks appear as separate characters instead of attaching to their base.</p>
-                <p>Chau7 solves both problems. Chau7 implements Unicode 15.1 East Asian Width properties for correct cell assignment and Extended Grapheme Cluster boundaries for combining mark grouping. A base character followed by any number of combining marks (accents, diacritics, enclosing marks) occupies a single terminal cell in Chau7.</p>
+                <p>Chau7 solves both problems. Chau7 implements Unicode 15.1 East Asian Width properties for correct cell assignment and Extended Grapheme Cluster boundaries for combining mark grouping. A base character followed by any number of combining marks (accents, diacritics, enclosing marks) occupies a single terminal cell in it.</p>
             </div>
         </section>
 
@@ -152,6 +152,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="unicode-emoji-support-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Broken wide-character handling turns modern CLI output into misaligned garbage.</li>
+                        <li>AI and developer tools increasingly use Unicode, icons, and emoji in normal output.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="unicode-emoji-support-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Handles Unicode and wide glyph rendering in the terminal grid.</li>
+                        <li>Preserves alignment for emoji and other multi-cell characters.</li>
+                        <li>Lets modern CLI output render as intended instead of collapsing spacing.</li>
+                        <li>Works with font customization so supported glyphs remain readable.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="unicode-related">
             <div class="section-inner">

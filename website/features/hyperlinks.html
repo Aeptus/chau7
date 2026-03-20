@@ -105,7 +105,7 @@
         <section class="feature-content" data-ui="hyperlinks-what">
             <div class="section-inner prose">
                 <h2>What is Hyperlinks in Chau7?</h2>
-                <p>Hyperlinks in Chau7 combines two features. First, Chau7 runs a URL detection regex over terminal output in real time, identifying http, https, file, ssh, ftp, and sftp URLs and making them clickable. Second, Chau7 supports the OSC 8 hyperlink protocol, which lets CLI tools emit escape sequences that associate a URL with custom display text.</p>
+                <p>Hyperlinks in Chau7 combines two features. First, Chau7 runs a URL detection regex over terminal output in real time, identifying http, https, file, ssh, ftp, and sftp URLs and making them clickable. Second, it supports the OSC 8 hyperlink protocol, which lets CLI tools emit escape sequences that associate a URL with custom display text.</p>
                 <p>Chau7 renders both auto-detected URLs and OSC 8 hyperlinks with a subtle underline. Cmd+click opens the URL natively via NSWorkspace, which handles all six schemes without requiring a browser for non-web protocols.</p>
             </div>
         </section>
@@ -146,6 +146,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="hyperlinks-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>URLs and file references in terminal output should be actionable, not dead text.</li>
+                        <li>Copy-paste from logs is slower and more error-prone than clicking.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="hyperlinks-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Detects clickable links in terminal output so navigation is direct.</li>
+                        <li>Supports terminal-native hyperlink semantics instead of only plain-text heuristics.</li>
+                        <li>Keeps link handling inside the native terminal view rather than external overlays.</li>
+                        <li>Makes build logs, docs links, and local paths faster to act on.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="hyperlinks-related">
             <div class="section-inner">

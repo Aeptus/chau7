@@ -101,7 +101,7 @@
         <section class="feature-content" data-ui="background-suspension-definition">
             <div class="section-inner prose">
                 <h2>What is Background Suspension in Chau7?</h2>
-                <p>Background Suspension is a Chau7 feature that stops all rendering for terminal tabs you are not looking at. Chau7 suspends GPU and CPU work for every inactive tab while keeping shell processes and I/O running normally. The result is that 30 background tabs in Chau7 consume the same GPU resources as zero background tabs.</p>
+                <p>Background Suspension is a Chau7 feature that stops all rendering for terminal tabs you are not looking at. Chau7 suspends GPU and CPU work for every inactive tab while keeping shell processes and I/O running normally. The result is that 30 background tabs in it consume the same GPU resources as zero background tabs.</p>
             </div>
         </section>
 
@@ -131,6 +131,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="background-suspension-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Inactive tabs should not keep rendering at full speed when you are not looking at them.</li>
+                        <li>Naive suspension can starve the PTY and make tabs feel broken when you come back.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="background-suspension-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Background tabs pause expensive rendering work after a configurable delay.</li>
+                        <li>The PTY still drains while suspended, so output keeps flowing even when UI updates are paused.</li>
+                        <li>Tabs unsuspend immediately when selected or when AI activity makes them important.</li>
+                        <li>Settings expose the suspension toggle and delay to tune CPU savings versus responsiveness.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
@@ -162,7 +183,7 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is Background Suspension in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>Background Suspension is a Chau7 feature that stops all rendering for inactive terminal tabs. Chau7 suspends GPU and CPU work for tabs you are not looking at, while keeping shell processes and I/O running normally. When you switch back, Chau7 replays the terminal state from the scrollback buffer in a single frame.</p></div>
+                        <div class="faq-answer"><p>Background Suspension is a Chau7 feature that stops all rendering for inactive terminal tabs. Chau7 suspends GPU and CPU work for tabs you are not looking at, while keeping shell processes and I/O running normally. When you switch back, it replays the terminal state from the scrollback buffer in a single frame.</p></div>
                     </details>
                     <details>
                         <summary>Do background processes keep running when a tab is suspended?</summary>

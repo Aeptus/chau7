@@ -148,6 +148,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="tab-limits-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Runaway agents can create tabs faster than you notice them.</li>
+                        <li>A guardrail is only useful if it constrains automation without blocking normal human use.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="tab-limits-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Sets a configurable ceiling on tabs created through the MCP server.</li>
+                        <li>Manual tabs are excluded, so your own workflow is never throttled.</li>
+                        <li>Closed MCP-created tabs immediately free capacity for new ones.</li>
+                        <li>Returns a clear error to the agent instead of silently failing.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="tab-limits-related">
             <div class="section-inner">
@@ -187,7 +208,7 @@
                     </details>
                     <details>
                         <summary>How do I prevent AI agents from creating too many terminal tabs?</summary>
-                        <div class="faq-answer"><p>In Chau7, set a tab limit in the settings. The limit applies exclusively to tabs created through Chau7's MCP server by AI agents. When the limit is reached, Chau7 returns an error to the agent explaining the constraint. Tabs you create manually are never affected by the limit.</p></div>
+                        <div class="faq-answer"><p>In Chau7, set a tab limit in the settings. The limit applies exclusively to tabs created through Chau7's MCP server by AI agents. When the limit is reached, it returns an error to the agent explaining the constraint. Tabs you create manually are never affected by the limit.</p></div>
                     </details>
                     <details>
                         <summary>What is the default tab limit?</summary>

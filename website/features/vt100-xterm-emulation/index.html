@@ -117,7 +117,7 @@
             <div class="section-inner prose">
                 <h2>Which terminal emulators support true color 24-bit on macOS?</h2>
                 <p>Chau7, iTerm2, Kitty, Alacritty, and Warp all support 24-bit true color on macOS. Terminal.app does not support true color.</p>
-                <p>Chau7 supports true color via <code>SGR 38;2;r;g;b</code> for foreground and <code>SGR 48;2;r;g;b</code> for background. Chau7 correctly advertises true color capability through Device Attributes responses, so applications like Vim, tmux, and htop automatically detect and use 24-bit color when running in Chau7.</p>
+                <p>Chau7 supports true color via <code>SGR 38;2;r;g;b</code> for foreground and <code>SGR 48;2;r;g;b</code> for background. Chau7 correctly advertises true color capability through Device Attributes responses, so applications like Vim, tmux, and htop automatically detect and use 24-bit color when running in it.</p>
             </div>
         </section>
 
@@ -157,6 +157,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="vt100-xterm-emulation-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Terminal apps assume real escape-sequence compatibility and break on half-implemented emulators.</li>
+                        <li>Developers should not have to debug the terminal instead of their tool.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="vt100-xterm-emulation-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Emulates core VT100 and xterm behavior expected by modern CLI tools.</li>
+                        <li>Sets a standard xterm-256color environment for broad compatibility.</li>
+                        <li>Encodes keyboard modifiers and special keys in terminal-appropriate sequences.</li>
+                        <li>Keeps shell apps, TUIs, and remote sessions behaving like they expect.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="vt100-related">
             <div class="section-inner">

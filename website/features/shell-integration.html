@@ -143,7 +143,7 @@
         <section class="feature-content" data-ui="shell-integration-unsupported-shells">
             <div class="section-inner prose">
                 <h2>What happens if you use a shell that is not zsh, bash, or fish?</h2>
-                <p>Chau7 still functions as a standard terminal emulator. Features that depend on Chau7's shell integration, like command detection and directory tracking, will be unavailable. All other Chau7 functionality works normally.</p>
+                <p>Chau7 still functions as a standard terminal emulator. Features that depend on Chau7's shell integration, like command detection and directory tracking, will be unavailable. All other it functionality works normally.</p>
                 <p>You can manually emit OSC 7 and the proprietary OSC 9 sequences from any shell to enable Chau7's shell integration features. This makes Chau7's integration extensible to shells like nushell, elvish, or custom interpreters.</p>
             </div>
         </section>
@@ -166,6 +166,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="shell-integration-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Without shell hooks, a terminal cannot reliably know cwd, exit status, or prompt boundaries.</li>
+                        <li>Features like context-aware titles and automation depend on real shell lifecycle data.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="shell-integration-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Creates integration scripts for Bash, Zsh, and Fish automatically.</li>
+                        <li>Emits OSC 7 directory updates and exit-status signals back to Chau7.</li>
+                        <li>Supplies CHAU7_SESSION_ID and CHAU7_TAB_ID so hooks know terminal context.</li>
+                        <li>Runs at startup rather than as visible commands in shell history.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="shell-integration-related">
             <div class="section-inner">
@@ -209,7 +230,7 @@
                     </details>
                     <details>
                         <summary>What happens if I use a shell that is not zsh, bash, or fish?</summary>
-                        <div class="faq-answer"><p>Chau7 still functions as a standard terminal emulator. Features that depend on Chau7's shell integration like command detection and directory tracking will be unavailable, but all other Chau7 functionality works normally. You can manually emit OSC 7 and the proprietary OSC 9 sequences from any shell to enable integration.</p></div>
+                        <div class="faq-answer"><p>Chau7 still functions as a standard terminal emulator. Features that depend on Chau7's shell integration like command detection and directory tracking will be unavailable, but all other it functionality works normally. You can manually emit OSC 7 and the proprietary OSC 9 sequences from any shell to enable integration.</p></div>
                     </details>
                     <details>
                         <summary>Can I disable Chau7's shell integration?</summary>

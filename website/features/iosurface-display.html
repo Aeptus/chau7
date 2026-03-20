@@ -157,6 +157,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="iosurface-display-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Moving rendered frames around inefficiently wastes the gains from GPU rendering.</li>
+                        <li>Advanced compositing features need a better surface handoff than repeated copies.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="iosurface-display-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Uses IOSurface-backed display coordination for frame sharing.</li>
+                        <li>Keeps rendered output in a form macOS can composite efficiently.</li>
+                        <li>Fits into the Metal display coordinator rather than bolting on a separate path.</li>
+                        <li>Helps high-refresh terminal output remain smooth during resize and composition changes.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="iosurface-related">
             <div class="section-inner">

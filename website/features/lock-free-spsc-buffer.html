@@ -147,6 +147,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="lock-free-spsc-buffer-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Locks in a hot single-producer or single-consumer path add latency for no good reason.</li>
+                        <li>Contention inside the render pipeline shows up as dropped responsiveness.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="lock-free-spsc-buffer-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Uses a lock-free single-producer or single-consumer queue for hot-path communication.</li>
+                        <li>Avoids mutex overhead where one producer and one consumer are enough.</li>
+                        <li>Improves predictability under sustained output.</li>
+                        <li>Complements the triple-buffered rendering architecture rather than duplicating it.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="spsc-buffer-related">
             <div class="section-inner">

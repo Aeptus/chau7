@@ -90,16 +90,7 @@
             </div>
         </section>
 
-        <!-- What is Command History -->
-        <section class="feature-content" data-ui="command-history-search-overview">
-            <div class="section-inner prose">
-                <h2>What is Command History in Chau7?</h2>
-                <p>Command History in Chau7 provides arrow-key-based navigation through previously executed commands, similar to shell up/down arrow behavior. Chau7's CommandHistoryManager maintains both per-tab history and global history across all tabs.</p>
-                <p>Commands are recorded from terminal session activity and stored persistently in a SQLite database via PersistentHistoryStore. Duplicate entries are automatically skipped to keep history clean.</p>
-            </div>
-        </section>
-
-        <!-- Questions This Answers -->
+<!-- Questions This Answers -->
         <section class="questions-section" data-ui="command-history-search-questions">
             <div class="section-inner prose">
                 <h2>Questions this answers</h2>
@@ -110,6 +101,15 @@
                     <li class="question-item">How does command history search work in Chau7?</li>
                     <li class="question-item">Does Chau7 command history persist across restarts?</li>
                 </ul>
+            </div>
+        </section>
+
+        <!-- What is Command History -->
+        <section class="feature-content" data-ui="command-history-search-overview">
+            <div class="section-inner prose">
+                <h2>What is Command History in Chau7?</h2>
+                <p>Command History in Chau7 provides arrow-key-based navigation through previously executed commands, similar to shell up/down arrow behavior. Chau7's CommandHistoryManager maintains both per-tab history and global history across all tabs.</p>
+                <p>Commands are recorded from terminal session activity and stored persistently in a SQLite database via PersistentHistoryStore. Duplicate entries are automatically skipped to keep history clean.</p>
             </div>
         </section>
 
@@ -149,6 +149,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="command-history-search-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>The commands you want are usually the ones you typed days ago and forgot.</li>
+                        <li>Raw shell history is messy without filtering and structure.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="command-history-search-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Searches the persistent command history store instead of only the current buffer.</li>
+                        <li>Returns commands with metadata such as timestamps for better recall.</li>
+                        <li>Supports query and limit flows reused by scripting APIs.</li>
+                        <li>Makes previously successful commands reusable without retyping.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="command-history-search-related">
             <div class="section-inner">

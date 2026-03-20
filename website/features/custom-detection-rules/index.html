@@ -170,6 +170,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="custom-detection-rules-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Internal CLIs and niche agents are invisible until the terminal knows how to label them.</li>
+                        <li>Teams should not have to wait for an upstream release to detect their own tooling.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="custom-detection-rules-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Add custom substring rules in settings for process names or launch commands.</li>
+                        <li>Custom rules run alongside built-in detection instead of replacing it.</li>
+                        <li>Built-in matches still win for known tools, preserving stable branding and analytics labels.</li>
+                        <li>Rules live in Chau7 settings, so they can be exported or shared across a team.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="custom-detection-rules-related">
             <div class="section-inner">
@@ -209,7 +230,7 @@
                     </details>
                     <details>
                         <summary>What pattern format do Chau7 custom detection rules use?</summary>
-                        <div class="faq-answer"><p>Chau7 custom detection rules use substring matching against process names and arguments. You enter the pattern string in Chau7 Settings, and Chau7 checks whether that string appears anywhere in the process name or argument list for each tab.</p></div>
+                        <div class="faq-answer"><p>Chau7 custom detection rules use substring matching against process names and arguments. You enter the pattern string in Chau7 Settings, and it checks whether that string appears anywhere in the process name or argument list for each tab.</p></div>
                     </details>
                     <details>
                         <summary>Do I need to restart Chau7 after adding a custom detection rule?</summary>

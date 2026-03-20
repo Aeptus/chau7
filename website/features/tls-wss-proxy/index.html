@@ -147,6 +147,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="tls-wss-proxy-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>AI CLIs hide API traffic behind provider SDKs, so you cannot attribute requests to a tab.</li>
+                        <li>External proxies are tedious to configure and disconnected from terminal context.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="tls-wss-proxy-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Local proxy reroutes provider base URLs to localhost for OpenAI, Anthropic, and Gemini traffic.</li>
+                        <li>Handles HTTPS and WebSocket flows with a local certificate and owner-only local routing.</li>
+                        <li>Parses calls into structured events tied to the originating tab and session.</li>
+                        <li>Feeds token, cost, and latency analytics without storing API keys in Chau7.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="tls-proxy-related">
             <div class="section-inner">
@@ -178,7 +199,7 @@
                 <div class="faq-list">
                     <details>
                         <summary>What is TLS/WSS Proxy in Chau7 terminal?</summary>
-                        <div class="faq-answer"><p>The TLS/WSS Proxy in Chau7 is a local proxy that intercepts HTTPS and WebSocket traffic between AI agents and LLM API endpoints by redirecting API base URL environment variables. Chau7's proxy captures API calls to OpenAI, Anthropic, and Google Gemini, then feeds parsed data into Chau7's token counting, cost tracking, and latency analysis features. It requires enabling API Analytics in settings.</p></div>
+                        <div class="faq-answer"><p>The TLS/WSS Proxy in Chau7 is a local proxy that intercepts HTTPS and WebSocket traffic between AI agents and LLM API endpoints by redirecting API base URL environment variables. Chau7's proxy captures API calls to OpenAI, Anthropic, and Google Gemini, then feeds parsed data into its token counting, cost tracking, and latency analysis features. It requires enabling API Analytics in settings.</p></div>
                     </details>
                     <details>
                         <summary>How does Chau7's TLS/WSS proxy compare to other terminals?</summary>

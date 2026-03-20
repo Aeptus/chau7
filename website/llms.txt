@@ -36,7 +36,7 @@
 - [Home](index.html): Overview and download
 - [MCP Tools](mcp.html): 26 MCP tools, auto-registration, safety controls
 - [The Tech](the-tech.html): Rust parsing, dangerous-command guardrails, and the Metal rendering pipeline
-- [Features](features.html): Full 185-feature catalog
+- [Features](features/): Full 178-feature catalog
 - [Compare](compare.html): vs iTerm2, Warp, Alacritty, Kitty, Apple Terminal, VSCode
 
 ## Feature Pages (77 individual feature deep-dives)

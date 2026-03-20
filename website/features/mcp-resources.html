@@ -144,10 +144,31 @@
             <div class="section-inner prose">
                 <h2>Can I add custom resources to Chau7?</h2>
                 <p>Chau7's three built-in MCP resources cover the primary use cases for telemetry state inspection. Custom resource support is not currently available in Chau7.</p>
-                <p>For data that Chau7's built-in resources do not cover, Chau7's 26 MCP tool endpoints provide equivalent data access. Agents can combine Chau7's resources for state inspection with Chau7's tools for actions that require more specific queries.</p>
+                <p>For data that Chau7's built-in resources do not cover, Chau7's 26 MCP tool endpoints provide equivalent data access. Agents can combine its resources for state inspection with its tools for actions that require more specific queries.</p>
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="mcp-resources-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Sometimes agents need context, not just actions, and terminals rarely expose it in a structured way.</li>
+                        <li>Screen scraping terminal output is a poor substitute for named resources.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="mcp-resources-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Supports MCP resources/list and resources/read over the same local session.</li>
+                        <li>Publishes named resources backed by telemetry and current terminal state.</li>
+                        <li>Resource reads return structured payloads instead of raw UI text.</li>
+                        <li>Resources live beside tools, so clients can discover capabilities from one server.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="mcp-resources-related">
             <div class="section-inner">

@@ -2378,7 +2378,7 @@ a.catalog-card:hover::after { opacity: 1; }
     text-decoration-color: var(--accent);
 }
 
-/* ── Pillar Carousel (features.html) ─────────────── */
+/* ── Pillar Carousel (features catalog) ─────────── */
 .pillar-carousel {
     overflow-x: auto;
     overflow-y: hidden;

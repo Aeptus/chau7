@@ -165,6 +165,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="shell-hooks-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Automation and context awareness break down when the terminal cannot observe command completion or directory changes.</li>
+                        <li>Manual hook plumbing across shells is tedious unless the terminal owns the integration.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="shell-hooks-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Provides post-command hooks for exit-code reporting and directory-change hooks for cwd tracking.</li>
+                        <li>Supports Bash, Zsh, and Fish with generated integration scripts.</li>
+                        <li>Exposes CHAU7_SESSION_ID and CHAU7_TAB_ID so hooks know where they are reporting.</li>
+                        <li>Uses escape-sequence signaling so the terminal can react without parsing prompts.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="shell-hooks-related">
             <div class="section-inner">

@@ -122,6 +122,22 @@
             </div>
         </section>
 
+<!-- Questions This Answers -->
+        <section class="questions-section" data-ui="cto-override-questions">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">What is CTO Per-Tab Override in Chau7 terminal?</li>
+                    <li class="question-item">How does Chau7's CTO per-tab override compare to other terminals?</li>
+                    <li class="question-item">Can I enable token tracking for just one terminal tab?</li>
+                    <li class="question-item">What are the three override modes?</li>
+                    <li class="question-item">Can I set the override programmatically?</li>
+                    <li class="question-item">How to disable CTO for a specific AI session?</li>
+                    <li class="question-item">Per-tab token optimization settings in terminal</li>
+                </ul>
+            </div>
+        </section>
+
         <!-- What is CTO Per-Tab Override -->
         <section class="feature-content" data-ui="cto-override-what-is">
             <div class="section-inner prose">
@@ -163,7 +179,7 @@
         <section class="feature-content" data-ui="cto-override-how-it-works">
             <div class="section-inner prose">
                 <h2>How CTO Per-Tab Override works in Chau7</h2>
-                <p>Each tab in Chau7 stores its own CTO override value. When Chau7 processes terminal output for a tab, it checks the tab-level override first. If the override is Default, Chau7 falls back to the global CTO setting. If the override is Force On or Force Off, Chau7 uses that value directly.</p>
+                <p>Each tab in Chau7 stores its own CTO override value. When Chau7 processes terminal output for a tab, it checks the tab-level override first. If the override is Default, it falls back to the global CTO setting. If the override is Force On or Force Off, it uses that value directly.</p>
                 <p>This means you can run multiple terminal sessions in Chau7 with different CTO behaviors at the same time. One tab can have CTO optimizing command output for Claude Code while another tab shows full output for debugging.</p>
             </div>
         </section>
@@ -197,22 +213,27 @@ args: { "tab_id": "C1C4AB49-...", "override": "forceOn" }</code></pre>
             </div>
         </section>
 
-        <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="cto-override-questions">
+        <section class="feature-content feature-pain" data-ui="cto-per-tab-override-pain">
             <div class="section-inner prose">
-                <h2>Questions this answers</h2>
-                <ul class="question-list">
-                    <li class="question-item">What is CTO Per-Tab Override in Chau7 terminal?</li>
-                    <li class="question-item">How does Chau7's CTO per-tab override compare to other terminals?</li>
-                    <li class="question-item">Can I enable token tracking for just one terminal tab?</li>
-                    <li class="question-item">What are the three override modes?</li>
-                    <li class="question-item">Can I set the override programmatically?</li>
-                    <li class="question-item">How to disable CTO for a specific AI session?</li>
-                    <li class="question-item">Per-tab token optimization settings in terminal</li>
-                </ul>
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>A global CTO toggle is too blunt for mixed workflows.</li>
+                        <li>Some tabs need clean AI-ready output while others need raw terminal fidelity.</li>
+                    </ul>
             </div>
         </section>
 
+        <section class="feature-content feature-subfeatures" data-ui="cto-per-tab-override-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Three modes per tab: default, forceOn, and forceOff.</li>
+                        <li>Override is checked before the global CTO flag on every tab.</li>
+                        <li>Control is available from the UI and over MCP via <code>tab_set_cto</code>.</li>
+                        <li>Different tabs can run optimized and raw output side by side.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="cto-override-related">
             <div class="section-inner">

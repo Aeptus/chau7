@@ -144,6 +144,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="process-exit-confirmation-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Closing the wrong tab can kill a deploy, SSH tunnel, or AI run instantly.</li>
+                        <li>Generic tab close behavior is too aggressive for long-lived processes.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="process-exit-confirmation-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Warns before closing tabs with running processes.</li>
+                        <li>Can be configured to warn only for active processes or for every close.</li>
+                        <li>Uses native confirmation dialogs with context-aware messaging.</li>
+                        <li>Covers close-tab, replace-tab, and close-window flows.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="process-exit-related">
             <div class="section-inner">
@@ -179,7 +200,7 @@
                     </details>
                     <details>
                         <summary>How do I prevent accidentally closing a terminal tab with a running process?</summary>
-                        <div class="faq-answer"><p>In Chau7, process exit confirmation is enabled by default. When you close a tab (Cmd+W) or quit the app (Cmd+Q), Chau7 inspects the process tree across all tabs. If processes are still running, Chau7 shows a dialog listing the unique process names so you can cancel.</p></div>
+                        <div class="faq-answer"><p>In Chau7, process exit confirmation is enabled by default. When you close a tab (Cmd+W) or quit the app (Cmd+Q), Chau7 inspects the process tree across all tabs. If processes are still running, it shows a dialog listing the unique process names so you can cancel.</p></div>
                     </details>
                     <details>
                         <summary>How do I configure the confirmation behavior?</summary>

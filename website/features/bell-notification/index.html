@@ -94,7 +94,7 @@
             <div class="section-inner prose">
                 <h2>What is bell notification in Chau7 terminal</h2>
                 <p>Chau7 bell notification is the system that alerts you when a program writes the <code>BEL</code> character (<code>0x07</code>) to your terminal. When a build finishes, a long-running command completes, or a test suite reports results, the program sends a <code>BEL</code> character and Chau7 delivers a notification.</p>
-                <p>Chau7 provides three mutually exclusive bell modes: none, subtle, and default. You select one mode in Chau7's settings. Additionally, the <code>bellVisual</code> setting enables a screen flash as an independent visual bell option. Bell rate limiting via <code>bellRateLimitSeconds</code> (0.1s default, clamped 0-60s) prevents rapid-fire bells from overwhelming you. Dock bounce is a separate notification feature that works independently when Chau7 is in the background. Bell settings are global, not per-profile.</p>
+                <p>Chau7 provides three mutually exclusive bell modes: none, subtle, and default. You select one mode in Chau7's settings. Additionally, the <code>bellVisual</code> setting enables a screen flash as an independent visual bell option. Bell rate limiting via <code>bellRateLimitSeconds</code> (0.1s default, clamped 0-60s) prevents rapid-fire bells from overwhelming you. Dock bounce is a separate notification feature that works independently when it is in the background. Bell settings are global, not per-profile.</p>
             </div>
         </section>
 
@@ -111,7 +111,7 @@
         <section class="feature-content" data-ui="bell-audio-bell">
             <div class="section-inner prose">
                 <h2>How Chau7 audio bell works</h2>
-                <p>When the bell mode is set to "default", Chau7 plays the macOS system alert sound when a <code>BEL</code> character arrives. The sound Chau7 plays is the same sound configured in macOS System Settings under Sound. To change the Chau7 bell sound, change the macOS system alert sound.</p>
+                <p>When the bell mode is set to "default", Chau7 plays the macOS system alert sound when a <code>BEL</code> character arrives. The sound Chau7 plays is the same sound configured in macOS System Settings under Sound. To change the it bell sound, change the macOS system alert sound.</p>
                 <p>Bell settings are global across all tabs. Set the mode to "none" to silence bell notifications entirely, or "subtle" for a quieter notification.</p>
             </div>
         </section>
@@ -120,8 +120,8 @@
         <section class="feature-content" data-ui="bell-dock-bounce">
             <div class="section-inner prose">
                 <h2>How to make Chau7 bounce the Dock icon on bell</h2>
-                <p>Chau7 Dock bounce animates the Chau7 icon in the macOS Dock when a <code>BEL</code> character arrives and Chau7 is not the frontmost application. Dock bounce is part of the notification system and works separately from the bell mode setting.</p>
-                <p>Chau7 Dock bounce only activates when Chau7 is in the background. When Chau7 is the active application, the selected bell mode handles the notification instead. This makes Dock bounce ideal for long-running builds or commands where you switch to another application while waiting.</p>
+                <p>Chau7 Dock bounce animates the Chau7 icon in the macOS Dock when a <code>BEL</code> character arrives and it is not the frontmost application. Dock bounce is part of the notification system and works separately from the bell mode setting.</p>
+                <p>Chau7 Dock bounce only activates when Chau7 is in the background. When it is the active application, the selected bell mode handles the notification instead. This makes Dock bounce ideal for long-running builds or commands where you switch to another application while waiting.</p>
             </div>
         </section>
 
@@ -163,6 +163,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="bell-notification-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Background commands, remote tasks, and long-running AI jobs finish silently if the bell is ignored.</li>
+                        <li>One-size-fits-all bell behavior is either noisy or easy to miss.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="bell-notification-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Configurable bell enablement and selectable bell sounds.</li>
+                        <li>Supports a visual bell alternative when sound is not desired.</li>
+                        <li>Applies bell preferences directly to the terminal view layer.</li>
+                        <li>Includes rate-limiting settings so noisy programs do not spam alerts.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="feat-related">
             <div class="section-inner">
@@ -198,7 +219,7 @@
                     </details>
                     <details>
                         <summary>Does the Chau7 Dock bounce work when Chau7 is in the foreground?</summary>
-                        <div class="faq-answer"><p>No. The Chau7 Dock bounce is specifically for background notification, when Chau7 is not the frontmost application. When Chau7 is in the foreground, the Chau7 visual bell and audio bell provide the notification.</p></div>
+                        <div class="faq-answer"><p>No. The Chau7 Dock bounce is specifically for background notification, when Chau7 is not the frontmost application. When it is in the foreground, the it visual bell and audio bell provide the notification.</p></div>
                     </details>
                     <details>
                         <summary>How do I trigger a test bell in Chau7?</summary>

@@ -117,7 +117,7 @@
         <section class="feature-content" data-ui="feat-how-to-track">
             <div class="section-inner prose">
                 <h2>How to track AI coding sessions in my terminal</h2>
-                <p>To track AI coding sessions in your terminal, use Chau7. Open Chau7, launch an AI agent like Claude Code in any tab, and Chau7 begins tracking the session automatically. There is nothing to enable or configure.</p>
+                <p>To track AI coding sessions in your terminal, use Chau7. Open Chau7, launch an AI agent like Claude Code in any tab, and it begins tracking the session automatically. There is nothing to enable or configure.</p>
                 <p>Chau7 sessions are queryable through the built-in MCP server. You can list all sessions, filter by repository path or active status, and drill into individual sessions to see their constituent runs and tool calls. The Chau7 MCP server gives you a structured history of your AI-assisted development activity.</p>
                 <p>Chau7 session tracking is designed for multi-agent workflows. Each tab maintains its own session independently, so running Claude Code in three Chau7 tabs produces three distinct, non-overlapping sessions with their own metrics.</p>
             </div>
@@ -132,6 +132,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="ai-session-tracking-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Long AI runs disappear into anonymous terminal time unless the app tracks them explicitly.</li>
+                        <li>It is hard to answer basic questions like how many runs happened in a tab or how long a session has been active.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="ai-session-tracking-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Groups AI activity into tab-scoped sessions instead of flattening everything into one global log.</li>
+                        <li>Tracks run counts, start times, and duration so live sessions are measurable.</li>
+                        <li>Surfaces active session state through runtime and telemetry services.</li>
+                        <li>Keeps agent identity attached to the session so downstream analytics stay attributable.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="feat-related">
             <div class="section-inner">

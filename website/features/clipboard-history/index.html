@@ -121,6 +121,21 @@
             </div>
         </section>
 
+<!-- Questions This Answers -->
+        <section class="questions-section" data-ui="clipboard-history-questions">
+            <div class="section-inner prose">
+                <h2>Questions this answers</h2>
+                <ul class="question-list">
+                    <li class="question-item">What is Clipboard History in Chau7 terminal?</li>
+                    <li class="question-item">Is there a clipboard manager built into a terminal emulator?</li>
+                    <li class="question-item">How does Chau7's clipboard history compare to other terminals?</li>
+                    <li class="question-item">How many entries does Chau7 clipboard history store?</li>
+                    <li class="question-item">Why does Ctrl+C kill my process instead of copying in the terminal?</li>
+                    <li class="question-item">How do I access clipboard history in the terminal?</li>
+                </ul>
+            </div>
+        </section>
+
         <!-- What is Clipboard History -->
         <section class="feature-content" data-ui="clipboard-history-what-is">
             <div class="section-inner prose">
@@ -167,21 +182,27 @@
             </div>
         </section>
 
-        <!-- Questions This Answers -->
-        <section class="questions-section" data-ui="clipboard-history-questions">
+        <section class="feature-content feature-pain" data-ui="clipboard-history-pain">
             <div class="section-inner prose">
-                <h2>Questions this answers</h2>
-                <ul class="question-list">
-                    <li class="question-item">What is Clipboard History in Chau7 terminal?</li>
-                    <li class="question-item">Is there a clipboard manager built into a terminal emulator?</li>
-                    <li class="question-item">How does Chau7's clipboard history compare to other terminals?</li>
-                    <li class="question-item">How many entries does Chau7 clipboard history store?</li>
-                    <li class="question-item">Why does Ctrl+C kill my process instead of copying in the terminal?</li>
-                    <li class="question-item">How do I access clipboard history in the terminal?</li>
-                </ul>
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>The system clipboard remembers only the last thing, not the five things you actually need.</li>
+                        <li>Re-copying previous commands or snippets breaks flow.</li>
+                    </ul>
             </div>
         </section>
 
+        <section class="feature-content feature-subfeatures" data-ui="clipboard-history-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Stores a rolling history of clipboard items inside Chau7.</li>
+                        <li>Shows previews and metadata so you can pick the right item quickly.</li>
+                        <li>Integrates with overlay controls for fast selection and paste-back.</li>
+                        <li>Has dedicated tests covering storage and preview behavior.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="clipboard-history-related">
             <div class="section-inner">
@@ -213,7 +234,7 @@
                     </details>
                     <details>
                         <summary>Does Chau7 clipboard history sync with the system clipboard?</summary>
-                        <div class="faq-answer"><p>Chau7 clipboard history captures copies from within Chau7. System clipboard contents pasted into Chau7 are recorded as paste events. The two histories are separate but complementary. Chau7 never overwrites your system clipboard unless you explicitly paste from history.</p></div>
+                        <div class="faq-answer"><p>Chau7 clipboard history captures copies from within Chau7. System clipboard contents pasted into it are recorded as paste events. The two histories are separate but complementary. Chau7 never overwrites your system clipboard unless you explicitly paste from history.</p></div>
                     </details>
                 </div>
             </div>

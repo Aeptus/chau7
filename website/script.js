@@ -201,7 +201,7 @@
         });
     }
 
-    /* ── Feature filtering (features.html) ──────── */
+    /* ── Feature filtering (features catalog) ───── */
     function initFeatureFilter() {
         const filterBar = document.querySelector('.filter-bar');
         if (!filterBar) return;

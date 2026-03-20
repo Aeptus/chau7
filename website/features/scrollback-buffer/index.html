@@ -147,6 +147,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="scrollback-buffer-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Losing output history makes debugging, replay, and AI review much harder than it should be.</li>
+                        <li>Fixed shallow buffers force you to choose between performance and remembering what happened.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="scrollback-buffer-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Configurable scrollback line limits let you tune retention versus memory use.</li>
+                        <li>Supports deep history tracking instead of only the visible screen.</li>
+                        <li>Connects to line timestamp tracking and session capture features.</li>
+                        <li>Can be cleared or exported through terminal APIs and UI flows.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="scrollback-related">
             <div class="section-inner">
@@ -194,7 +215,7 @@
                     </details>
                     <details>
                         <summary>Does scrollback persist after quitting and reopening Chau7?</summary>
-                        <div class="faq-answer"><p>Scrollback is preserved across app restarts when session restoration is enabled in Chau7. Chau7 serializes scrollback content to disk as part of its session state, so reopening Chau7 restores your full terminal history.</p></div>
+                        <div class="faq-answer"><p>Scrollback is preserved across app restarts when session restoration is enabled in Chau7. Chau7 serializes scrollback content to disk as part of its session state, so reopening it restores your full terminal history.</p></div>
                     </details>
                 </div>
             </div>

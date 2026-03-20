@@ -88,7 +88,7 @@
         <section class="feature-content" data-ui="feat-definition">
             <div class="section-inner prose">
                 <h2>What is auto-registration in Chau7 terminal?</h2>
-                <p>Auto-registration is a Chau7 feature that automatically writes the correct MCP server configuration into every supported AI client on your Mac. When you launch Chau7, Chau7 registers itself with Claude Code, Cursor, Windsurf, and Codex without any manual setup.</p>
+                <p>Auto-registration is a Chau7 feature that automatically writes the correct MCP server configuration into every supported AI client on your Mac. When you launch Chau7, it registers itself with Claude Code, Cursor, Windsurf, and Codex without any manual setup.</p>
                 <p>Other terminal emulators that offer MCP servers require you to edit JSON config files by hand for each AI client. Chau7's auto-registration eliminates that step entirely. You never open a config file, copy a socket path, or look up the right JSON schema. Chau7 handles the registration for every supported client on every launch.</p>
             </div>
         </section>
@@ -97,8 +97,8 @@
         <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
                 <h2>How does Chau7's auto-registration work?</h2>
-                <p>Every time Chau7 launches, Chau7 scans for supported AI client configuration directories: Claude Code's <code>~/.claude.json</code>, Cursor's MCP settings, Windsurf's config, and Codex's server list. For each client whose config directory already exists (indicating the tool is installed), Chau7 writes or updates its MCP server entry with the correct socket path and tool definitions. Chau7 only registers if the tool is already installed and does not create config directories from scratch.</p>
-                <p>Chau7's auto-registration is idempotent: running it multiple times produces the same result. If you reinstall an AI client or its config gets reset, the next Chau7 launch restores the MCP entry automatically. Chau7's registration also updates when the socket path changes, ensuring clients always point to the active server instance.</p>
+                <p>Every time Chau7 launches, Chau7 scans for supported AI client configuration directories: Claude Code's <code>~/.claude.json</code>, Cursor's MCP settings, Windsurf's config, and Codex's server list. For each client whose config directory already exists (indicating the tool is installed), it writes or updates its MCP server entry with the correct socket path and tool definitions. Chau7 only registers if the tool is already installed and does not create config directories from scratch.</p>
+                <p>Chau7's auto-registration is idempotent: running it multiple times produces the same result. If you reinstall an AI client or its config gets reset, the next Chau7 launch restores the MCP entry automatically. its registration also updates when the socket path changes, ensuring clients always point to the active server instance.</p>
                 <p>Chau7 performs auto-registration in the background during app startup with no user interaction required. There are no setup wizards, no terminal commands to run, no documentation to follow. Open Chau7, open your AI client, and the MCP connection is live.</p>
             </div>
         </section>
@@ -131,6 +131,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="auto-registration-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Local MCP servers are annoying when every tool requires hand-written config before it can connect.</li>
+                        <li>Path drift across machines makes manual setup fragile.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="auto-registration-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Chau7 can generate or update MCP registration files automatically for supported clients.</li>
+                        <li>Registration uses the local bridge and socket path so clients connect to the correct server.</li>
+                        <li>The app keeps setup close to the terminal instead of asking users to maintain separate glue.</li>
+                        <li>Reduces time-to-first-tool-call for Codex, Claude, and similar MCP clients.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="feat-related">
             <div class="section-inner">

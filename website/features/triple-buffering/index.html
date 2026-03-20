@@ -149,6 +149,27 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="triple-buffering-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Producer and renderer contention causes stutter when output spikes.</li>
+                        <li>Double-buffer style pipelines can force components to wait on each other unnecessarily.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="triple-buffering-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Separates renderable state across three buffers to reduce pipeline stalls.</li>
+                        <li>Lets parsing, preparation, and display proceed with less contention.</li>
+                        <li>Smooths out bursty terminal workloads where frames arrive faster than they can be shown.</li>
+                        <li>Has dedicated tests covering buffer handoff behavior.</li>
+                    </ul>
+            </div>
+        </section>
         <!-- Related Features -->
         <section class="related-features" data-ui="triple-buffer-related">
             <div class="section-inner">
