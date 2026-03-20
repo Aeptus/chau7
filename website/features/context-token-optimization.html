@@ -105,6 +105,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="context-token-optimization-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>AI agents waste tokens on ANSI junk, spinner frames, and noisy command output that humans ignore instantly.</li>
+                        <li>Without visibility into output hygiene, teams keep paying for context bloat they cannot see.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="context-token-optimization-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Wraps shell output with a token-optimization layer that strips escape codes, progress churn, and other terminal-only noise.</li>
+                        <li>Tracks savings and runtime behavior so you can see the impact of optimization instead of guessing.</li>
+                        <li>Works alongside per-tab and global control, so noisy sessions can be optimized without changing everything.</li>
+                        <li>Feeds cleaner command output to AI tools while keeping the local terminal experience intact.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is CTO -->
         <section class="feature-content" data-ui="cto-definition">
             <div class="section-inner prose">
@@ -139,28 +162,6 @@
                 <p>Most macOS terminals pass raw command output directly to AI agents with no optimization. iTerm2, Alacritty, Kitty, and Ghostty do not optimize shell command output before an AI reads it. Every ANSI code and progress bar redraw gets sent to the model as-is.</p>
                 <p>Warp includes AI features but does not optimize the output of shell commands before the agent reads it. Warp's AI reads the same raw output as any other terminal.</p>
                 <p>Chau7 is the only macOS terminal that optimizes shell command output via wrapper scripts before the AI reads it. Chau7 Context Token Optimization saves 30-50% on context tokens compared to running the same AI agent in a terminal without CTO.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="context-token-optimization-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>AI agents waste tokens on ANSI junk, spinner frames, and noisy command output that humans ignore instantly.</li>
-                        <li>Without visibility into output hygiene, teams keep paying for context bloat they cannot see.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="context-token-optimization-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Wraps shell output with a token-optimization layer that strips escape codes, progress churn, and other terminal-only noise.</li>
-                        <li>Tracks savings and runtime behavior so you can see the impact of optimization instead of guessing.</li>
-                        <li>Works alongside per-tab and global control, so noisy sessions can be optimized without changing everything.</li>
-                        <li>Feeds cleaner command output to AI tools while keeping the local terminal experience intact.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

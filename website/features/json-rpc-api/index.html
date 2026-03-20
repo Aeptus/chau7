@@ -104,6 +104,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="json-rpc-api-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>AppleScript, UI scripting, and simulated keypresses are the wrong abstraction for terminal automation.</li>
+                        <li>A real local API should work from any language without vendor lock-in.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="json-rpc-api-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Exposes a Unix-socket JSON-RPC interface at ~/Library/Application Support/Chau7/scripting.sock.</li>
+                        <li>Supports methods for history, settings, tabs, command execution, and snippets.</li>
+                        <li>Uses structured request routing and standard error handling instead of fragile text commands.</li>
+                        <li>Is backed by dedicated scripting API tests.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is JSON-RPC API -->
         <section class="feature-content" data-ui="json-rpc-what">
             <div class="section-inner prose">
@@ -146,28 +169,6 @@
                 <h2>Why Chau7's JSON-RPC API matters</h2>
                 <p>Most terminal emulators provide no automation API. Developers are forced to use AppleScript, osascript hacks, or fragile keybinding simulation to automate terminal workflows on macOS.</p>
                 <p>Chau7 provides a fully working JSON-RPC 2.0 API over a Unix domain socket with 12 methods covering history, settings, tab management, command execution, and snippet operations. The framework includes method routing, error handling, and typed results. For teams building custom developer tooling, the API socket and protocol are stable and production-ready.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="json-rpc-api-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>AppleScript, UI scripting, and simulated keypresses are the wrong abstraction for terminal automation.</li>
-                        <li>A real local API should work from any language without vendor lock-in.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="json-rpc-api-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Exposes a Unix-socket JSON-RPC interface at ~/Library/Application Support/Chau7/scripting.sock.</li>
-                        <li>Supports methods for history, settings, tabs, command execution, and snippets.</li>
-                        <li>Uses structured request routing and standard error handling instead of fragile text commands.</li>
-                        <li>Is backed by dedicated scripting API tests.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

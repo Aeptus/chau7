@@ -84,6 +84,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="auto-registration-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Local MCP servers are annoying when every tool requires hand-written config before it can connect.</li>
+                        <li>Path drift across machines makes manual setup fragile.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="auto-registration-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Chau7 can generate or update MCP registration files automatically for supported clients.</li>
+                        <li>Registration uses the local bridge and socket path so clients connect to the correct server.</li>
+                        <li>The app keeps setup close to the terminal instead of asking users to maintain separate glue.</li>
+                        <li>Reduces time-to-first-tool-call for Codex, Claude, and similar MCP clients.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Auto-Registration -->
         <section class="feature-content" data-ui="feat-definition">
             <div class="section-inner prose">
@@ -128,28 +151,6 @@
                 <h2>How do I configure MCP servers in Claude Code?</h2>
                 <p>If you use Chau7, you do not need to configure MCP servers in Claude Code manually. Chau7's auto-registration writes the correct entry into Claude Code's <code>~/.claude.json</code> file automatically on every launch.</p>
                 <p>Without Chau7, configuring MCP servers in Claude Code requires opening <code>~/.claude.json</code>, adding a server entry with the correct transport type and socket path, and restarting Claude Code. Each MCP server has its own JSON schema and socket location. Chau7 eliminates this manual step for its own MCP server by writing and maintaining the config entry automatically.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="auto-registration-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>Local MCP servers are annoying when every tool requires hand-written config before it can connect.</li>
-                        <li>Path drift across machines makes manual setup fragile.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="auto-registration-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Chau7 can generate or update MCP registration files automatically for supported clients.</li>
-                        <li>Registration uses the local bridge and socket path so clients connect to the correct server.</li>
-                        <li>The app keeps setup close to the terminal instead of asking users to maintain separate glue.</li>
-                        <li>Reduces time-to-first-tool-call for Codex, Claude, and similar MCP clients.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

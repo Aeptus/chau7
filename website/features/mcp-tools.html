@@ -102,6 +102,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="mcp-tools-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>AI agents can operate terminals better when they can query and control the terminal directly.</li>
+                        <li>Glue scripts around terminals are usually incomplete and brittle.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="mcp-tools-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Exposes tab listing, status, input, execution, and session inspection as MCP tools.</li>
+                        <li>Routes tool calls through TerminalControlService and related runtime services.</li>
+                        <li>Returns structured results for tabs, sessions, and command output instead of screen scraping.</li>
+                        <li>Shares the same per-tab model as the app UI, so agents and humans see the same state.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is 26 MCP Tools -->
         <section class="feature-content" data-ui="mcp-tools-what">
             <div class="section-inner prose">
@@ -144,28 +167,6 @@
                 <h2>Do Chau7's MCP tools require network access?</h2>
                 <p>No. Chau7's MCP server communicates over a local Unix socket with no network exposure. All tool calls stay on your machine.</p>
                 <p>No authentication is needed for Chau7's MCP tools because the Unix socket is only accessible to your user account. This design means Chau7's MCP server cannot be reached from other machines or other user accounts on the same machine.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="mcp-tools-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>AI agents can operate terminals better when they can query and control the terminal directly.</li>
-                        <li>Glue scripts around terminals are usually incomplete and brittle.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="mcp-tools-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Exposes tab listing, status, input, execution, and session inspection as MCP tools.</li>
-                        <li>Routes tool calls through TerminalControlService and related runtime services.</li>
-                        <li>Returns structured results for tabs, sessions, and command output instead of screen scraping.</li>
-                        <li>Shares the same per-tab model as the app UI, so agents and humans see the same state.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

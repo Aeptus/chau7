@@ -104,6 +104,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="command-history-search-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>The commands you want are usually the ones you typed days ago and forgot.</li>
+                        <li>Raw shell history is messy without filtering and structure.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="command-history-search-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Searches the persistent command history store instead of only the current buffer.</li>
+                        <li>Returns commands with metadata such as timestamps for better recall.</li>
+                        <li>Supports query and limit flows reused by scripting APIs.</li>
+                        <li>Makes previously successful commands reusable without retyping.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Command History -->
         <section class="feature-content" data-ui="command-history-search-overview">
             <div class="section-inner prose">
@@ -146,28 +169,6 @@
                 <h2>Does Chau7 command history persist across restarts?</h2>
                 <p>Yes. Chau7 stores command history in a SQLite database that persists across app restarts. Commands recorded from terminal session activity are available in future sessions.</p>
                 <p>This persistent storage is independent of your shell's history mechanism. Even if you clear your shell history, Chau7's history remains intact.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="command-history-search-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>The commands you want are usually the ones you typed days ago and forgot.</li>
-                        <li>Raw shell history is messy without filtering and structure.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="command-history-search-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Searches the persistent command history store instead of only the current buffer.</li>
-                        <li>Returns commands with metadata such as timestamps for better recall.</li>
-                        <li>Supports query and limit flows reused by scripting APIs.</li>
-                        <li>Makes previously successful commands reusable without retyping.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

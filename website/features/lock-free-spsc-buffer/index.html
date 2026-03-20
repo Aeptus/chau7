@@ -102,6 +102,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="lock-free-spsc-buffer-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Locks in a hot single-producer or single-consumer path add latency for no good reason.</li>
+                        <li>Contention inside the render pipeline shows up as dropped responsiveness.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="lock-free-spsc-buffer-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Uses a lock-free single-producer or single-consumer queue for hot-path communication.</li>
+                        <li>Avoids mutex overhead where one producer and one consumer are enough.</li>
+                        <li>Improves predictability under sustained output.</li>
+                        <li>Complements the triple-buffered rendering architecture rather than duplicating it.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Bounded Channel PTY Pipeline -->
         <section class="feature-content" data-ui="spsc-buffer-what">
             <div class="section-inner prose">
@@ -144,28 +167,6 @@
                 <h2>How does Chau7's PTY pipeline compare to other terminals?</h2>
                 <p>Most terminal emulators use mutex-protected queues or pipe-based communication between their PTY reader and parser. These approaches can introduce contention or kernel transitions on every I/O cycle.</p>
                 <p>Chau7 uses a crossbeam bounded channel that handles synchronization internally with atomics. This provides efficient thread communication without the overhead of manual lock management, and the bounded capacity provides natural backpressure when the parser cannot keep up with incoming data.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="lock-free-spsc-buffer-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>Locks in a hot single-producer or single-consumer path add latency for no good reason.</li>
-                        <li>Contention inside the render pipeline shows up as dropped responsiveness.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="lock-free-spsc-buffer-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Uses a lock-free single-producer or single-consumer queue for hot-path communication.</li>
-                        <li>Avoids mutex overhead where one producer and one consumer are enough.</li>
-                        <li>Improves predictability under sustained output.</li>
-                        <li>Complements the triple-buffered rendering architecture rather than duplicating it.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

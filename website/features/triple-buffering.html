@@ -103,6 +103,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="triple-buffering-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Producer and renderer contention causes stutter when output spikes.</li>
+                        <li>Double-buffer style pipelines can force components to wait on each other unnecessarily.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="triple-buffering-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Separates renderable state across three buffers to reduce pipeline stalls.</li>
+                        <li>Lets parsing, preparation, and display proceed with less contention.</li>
+                        <li>Smooths out bursty terminal workloads where frames arrive faster than they can be shown.</li>
+                        <li>Has dedicated tests covering buffer handoff behavior.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Triple Buffering -->
         <section class="feature-content" data-ui="triple-buffer-what">
             <div class="section-inner prose">
@@ -146,28 +169,6 @@
                 <h2>How does Chau7's triple buffering interact with ProMotion 120Hz displays?</h2>
                 <p>Chau7's triple buffering is refresh-rate independent. On a 120Hz ProMotion display, the Metal renderer picks up the latest completed buffer 120 times per second. The parser continues writing at PTY speed regardless of the display refresh rate.</p>
                 <p>The extra buffer ensures Chau7's renderer always has a complete frame even at twice the standard swap rate. On 60Hz displays, Chau7's triple buffering works identically, just with fewer pickups per second.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="triple-buffering-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>Producer and renderer contention causes stutter when output spikes.</li>
-                        <li>Double-buffer style pipelines can force components to wait on each other unnecessarily.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="triple-buffering-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Separates renderable state across three buffers to reduce pipeline stalls.</li>
-                        <li>Lets parsing, preparation, and display proceed with less contention.</li>
-                        <li>Smooths out bursty terminal workloads where frames arrive faster than they can be shown.</li>
-                        <li>Has dedicated tests covering buffer handoff behavior.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

@@ -99,6 +99,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="process-exit-confirmation-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Closing the wrong tab can kill a deploy, SSH tunnel, or AI run instantly.</li>
+                        <li>Generic tab close behavior is too aggressive for long-lived processes.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="process-exit-confirmation-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Warns before closing tabs with running processes.</li>
+                        <li>Can be configured to warn only for active processes or for every close.</li>
+                        <li>Uses native confirmation dialogs with context-aware messaging.</li>
+                        <li>Covers close-tab, replace-tab, and close-window flows.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Process Exit Confirmation -->
         <section class="feature-content" data-ui="process-exit-what">
             <div class="section-inner prose">
@@ -141,28 +164,6 @@
                 <h2>Why process exit confirmation matters</h2>
                 <p>Losing a running process to an accidental Cmd+W or Cmd+Q is one of the most common terminal frustrations. A half-finished database migration, a running dev server, an SSH session to production: gone in a single keystroke.</p>
                 <p>Chau7 warns before closing a tab or quitting the app with active processes. The confirmation dialog lists the unique process names so you know exactly what you would be terminating.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="process-exit-confirmation-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>Closing the wrong tab can kill a deploy, SSH tunnel, or AI run instantly.</li>
-                        <li>Generic tab close behavior is too aggressive for long-lived processes.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="process-exit-confirmation-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Warns before closing tabs with running processes.</li>
-                        <li>Can be configured to warn only for active processes or for every close.</li>
-                        <li>Uses native confirmation dialogs with context-aware messaging.</li>
-                        <li>Covers close-tab, replace-tab, and close-window flows.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

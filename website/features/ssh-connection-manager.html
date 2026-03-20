@@ -103,6 +103,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="ssh-connection-manager-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Remembering hostnames, ports, usernames, keys, and bastions by hand is busywork.</li>
+                        <li>Reconnecting to the same environments should be one action, not a mini-form every time.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="ssh-connection-manager-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Saved SSH connections capture host, port, username, identity file, and jump-host details.</li>
+                        <li>Connection profiles are managed in a dedicated observable store instead of ad hoc shell aliases.</li>
+                        <li>Launching uses proper shell escaping so saved settings survive odd values.</li>
+                        <li>The manager backs both direct SSH workflows and imported SSH config entries.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is SSH Connection Manager -->
         <section class="feature-content" data-ui="ssh-manager-what">
             <div class="section-inner prose">
@@ -146,28 +169,6 @@
                 <h2>Can I share SSH profiles with my team?</h2>
                 <p>Chau7 SSH profiles are stored locally. You can export your profiles to your SSH config file and share that through your team's standard configuration management workflow.</p>
                 <p>Profiles include hostname, port, username, identity file, and jump host configuration. Your SSH config remains the standard format for sharing connection details across machines and team members.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="ssh-connection-manager-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>Remembering hostnames, ports, usernames, keys, and bastions by hand is busywork.</li>
-                        <li>Reconnecting to the same environments should be one action, not a mini-form every time.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="ssh-connection-manager-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Saved SSH connections capture host, port, username, identity file, and jump-host details.</li>
-                        <li>Connection profiles are managed in a dedicated observable store instead of ad hoc shell aliases.</li>
-                        <li>Launching uses proper shell escaping so saved settings survive odd values.</li>
-                        <li>The manager backs both direct SSH workflows and imported SSH config entries.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

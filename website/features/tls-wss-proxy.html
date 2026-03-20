@@ -102,6 +102,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="tls-wss-proxy-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>AI CLIs hide API traffic behind provider SDKs, so you cannot attribute requests to a tab.</li>
+                        <li>External proxies are tedious to configure and disconnected from terminal context.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="tls-wss-proxy-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Local proxy reroutes provider base URLs to localhost for OpenAI, Anthropic, and Gemini traffic.</li>
+                        <li>Handles HTTPS and WebSocket flows with a local certificate and owner-only local routing.</li>
+                        <li>Parses calls into structured events tied to the originating tab and session.</li>
+                        <li>Feeds token, cost, and latency analytics without storing API keys in Chau7.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is TLS/WSS Proxy -->
         <section class="feature-content" data-ui="tls-proxy-what">
             <div class="section-inner prose">
@@ -144,28 +167,6 @@
                 <h2>Does the Chau7 proxy add latency to API calls?</h2>
                 <p>Chau7's proxy adds some latency because it buffers the full response body synchronously for inspection and analytics. The overhead is generally small relative to LLM API response times, which typically take seconds.</p>
                 <p>Only API traffic redirected via the base URL environment variables passes through the proxy. All other network traffic is unaffected.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="tls-wss-proxy-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>AI CLIs hide API traffic behind provider SDKs, so you cannot attribute requests to a tab.</li>
-                        <li>External proxies are tedious to configure and disconnected from terminal context.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="tls-wss-proxy-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Local proxy reroutes provider base URLs to localhost for OpenAI, Anthropic, and Gemini traffic.</li>
-                        <li>Handles HTTPS and WebSocket flows with a local certificate and owner-only local routing.</li>
-                        <li>Parses calls into structured events tied to the originating tab and session.</li>
-                        <li>Feeds token, cost, and latency analytics without storing API keys in Chau7.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

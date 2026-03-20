@@ -92,6 +92,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="context-aware-switching-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>A local project tab and a remote prod tab should not look or behave the same.</li>
+                        <li>Manual profile switching is too easy to forget in context-heavy workflows.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="context-aware-switching-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Rules can match on directory, SSH host, and other session context.</li>
+                        <li>Matching rules switch to the right saved profile automatically.</li>
+                        <li>Chau7 remembers the previous profile and restores it when the context no longer matches.</li>
+                        <li>Priority and named rules keep automated switching predictable instead of magical.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Context-Aware Switching -->
         <section class="feature-content" data-ui="context-switching-definition">
             <div class="section-inner prose">
@@ -134,28 +157,6 @@
                 <h2>Why does Context-Aware Switching matter?</h2>
                 <p>Running a destructive command on the wrong server is one of the most expensive mistakes in operations. Automatic profile switching based on context makes each environment visually distinct, reducing the risk of mistakes.</p>
                 <p>Chau7's <code>ProfileAutoSwitcher</code> evaluates rules on every directory change, using the current directory, git branch, and running processes as context. When a rule matches, Chau7 switches to the target profile automatically, giving you instant visual feedback about your current environment.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="context-aware-switching-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>A local project tab and a remote prod tab should not look or behave the same.</li>
-                        <li>Manual profile switching is too easy to forget in context-heavy workflows.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="context-aware-switching-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Rules can match on directory, SSH host, and other session context.</li>
-                        <li>Matching rules switch to the right saved profile automatically.</li>
-                        <li>Chau7 remembers the previous profile and restores it when the context no longer matches.</li>
-                        <li>Priority and named rules keep automated switching predictable instead of magical.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

@@ -106,6 +106,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="unicode-emoji-support-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Broken wide-character handling turns modern CLI output into misaligned garbage.</li>
+                        <li>AI and developer tools increasingly use Unicode, icons, and emoji in normal output.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="unicode-emoji-support-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Handles Unicode and wide glyph rendering in the terminal grid.</li>
+                        <li>Preserves alignment for emoji and other multi-cell characters.</li>
+                        <li>Lets modern CLI output render as intended instead of collapsing spacing.</li>
+                        <li>Works with font customization so supported glyphs remain readable.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Unicode & Emoji Support -->
         <section class="feature-content" data-ui="unicode-what">
             <div class="section-inner prose">
@@ -149,28 +172,6 @@
                 <h2>How does Chau7 handle emoji that are wider than two cells?</h2>
                 <p>No standard emoji exceeds two terminal cells. Chau7 renders ZWJ sequences (like family emoji composed of multiple people) as a single glyph within two cells.</p>
                 <p>If the font does not support a particular ZWJ sequence, Chau7 falls back to rendering the component emoji sequentially. Skin tone modifiers and flag sequences also render as single glyphs in Chau7 when the font supports them.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="unicode-emoji-support-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>Broken wide-character handling turns modern CLI output into misaligned garbage.</li>
-                        <li>AI and developer tools increasingly use Unicode, icons, and emoji in normal output.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="unicode-emoji-support-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Handles Unicode and wide glyph rendering in the terminal grid.</li>
-                        <li>Preserves alignment for emoji and other multi-cell characters.</li>
-                        <li>Lets modern CLI output render as intended instead of collapsing spacing.</li>
-                        <li>Works with font customization so supported glyphs remain readable.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

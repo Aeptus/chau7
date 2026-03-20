@@ -100,6 +100,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="tab-drag-drop-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Static tab ordering makes active workflows harder to group or reprioritize.</li>
+                        <li>Close-and-reopen is the wrong answer for simple tab organization.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="tab-drag-drop-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Drag gestures reorder tabs directly in the strip.</li>
+                        <li>Layout logic accounts for destination slots rather than naive swaps.</li>
+                        <li>Visual movement tracks actual tab widths for smoother placement.</li>
+                        <li>Reordering keeps the rest of the tab model intact, including tab identity and session state.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Tab Drag & Drop -->
         <section class="feature-content" data-ui="tab-drag-what">
             <div class="section-inner prose">
@@ -133,28 +156,6 @@
                 <h2>How does Chau7's snap-based drag work?</h2>
                 <p>Chau7 snaps the accumulated drag offset directly rather than interpolating toward a target position. This means the tab stays exactly under your cursor at all times during the drag, with no lag or overshoot.</p>
                 <p>The snap approach avoids a common bug in lerp-based drag systems: because the home shift plus a delayed offset never equals zero, the tab drifts away from the cursor over time. Chau7's accumulated offset snapping eliminates this entirely.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="tab-drag-drop-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>Static tab ordering makes active workflows harder to group or reprioritize.</li>
-                        <li>Close-and-reopen is the wrong answer for simple tab organization.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="tab-drag-drop-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Drag gestures reorder tabs directly in the strip.</li>
-                        <li>Layout logic accounts for destination slots rather than naive swaps.</li>
-                        <li>Visual movement tracks actual tab widths for smoother placement.</li>
-                        <li>Reordering keeps the rest of the tab model intact, including tab identity and session state.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

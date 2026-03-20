@@ -88,6 +88,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="ai-process-monitoring-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Activity Monitor shows generic node and python processes, not which AI session owns the load.</li>
+                        <li>Without per-tab resource data, it is hard to kill the right runaway agent.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="ai-process-monitoring-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Captures the detected agent PID, CPU usage, and resident memory for each tab.</li>
+                        <li>Samples are kept per tab so Claude in one session never pollutes Codex metrics in another.</li>
+                        <li>Resource snapshots are exposed to tab status views and MCP tooling.</li>
+                        <li>Metrics can be correlated with telemetry runs and agent activity over time.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- How It Works -->
         <section class="feature-content" data-ui="feat-how">
             <div class="section-inner prose">
@@ -113,28 +136,6 @@
                 <div class="why-matters">
                     <p>AI coding agents are quietly hungry. They consume CPU during tool calls, gobble memory during long sessions, and Activity Monitor shows you a wall of node and python processes with no indication of which tab or agent owns them. Chau7 gives you per-tab, per-agent resource visibility so you can spot the runaway session before your fans hit jet-engine mode.</p>
                 </div>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="ai-process-monitoring-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>Activity Monitor shows generic node and python processes, not which AI session owns the load.</li>
-                        <li>Without per-tab resource data, it is hard to kill the right runaway agent.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="ai-process-monitoring-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Captures the detected agent PID, CPU usage, and resident memory for each tab.</li>
-                        <li>Samples are kept per tab so Claude in one session never pollutes Codex metrics in another.</li>
-                        <li>Resource snapshots are exposed to tab status views and MCP tooling.</li>
-                        <li>Metrics can be correlated with telemetry runs and agent activity over time.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

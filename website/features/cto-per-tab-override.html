@@ -138,6 +138,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="cto-per-tab-override-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>A global CTO toggle is too blunt for mixed workflows.</li>
+                        <li>Some tabs need clean AI-ready output while others need raw terminal fidelity.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="cto-per-tab-override-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Three modes per tab: default, forceOn, and forceOff.</li>
+                        <li>Override is checked before the global CTO flag on every tab.</li>
+                        <li>Control is available from the UI and over MCP via <code>tab_set_cto</code>.</li>
+                        <li>Different tabs can run optimized and raw output side by side.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is CTO Per-Tab Override -->
         <section class="feature-content" data-ui="cto-override-what-is">
             <div class="section-inner prose">
@@ -210,28 +233,6 @@
                 <pre><code>tool: tab_set_cto
 args: { "tab_id": "C1C4AB49-...", "override": "forceOn" }</code></pre>
                 <p>The accepted override values are <code>default</code>, <code>forceOn</code>, and <code>forceOff</code>. This makes it straightforward to integrate Chau7's CTO control into automated workflows, CI pipelines, or AI agent scripts.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="cto-per-tab-override-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>A global CTO toggle is too blunt for mixed workflows.</li>
-                        <li>Some tabs need clean AI-ready output while others need raw terminal fidelity.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="cto-per-tab-override-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Three modes per tab: default, forceOn, and forceOff.</li>
-                        <li>Override is checked before the global CTO flag on every tab.</li>
-                        <li>Control is available from the UI and over MCP via <code>tab_set_cto</code>.</li>
-                        <li>Different tabs can run optimized and raw output side by side.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

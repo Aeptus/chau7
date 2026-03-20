@@ -102,6 +102,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="metal-rendering-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>CPU-bound text rendering falls apart under high-output workloads.</li>
+                        <li>AI-heavy terminal sessions need smooth scrolling and low-latency redraws.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="metal-rendering-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Uses a dedicated Metal renderer for the terminal display path.</li>
+                        <li>Integrates frame pacing and low-latency view configuration for responsive updates.</li>
+                        <li>Offloads heavy drawing work from the main CPU path.</li>
+                        <li>Serves as the base for advanced display optimizations like triple buffering and shared surfaces.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Metal Rendering -->
         <section class="feature-content" data-ui="metal-rendering-what">
             <div class="section-inner prose">
@@ -144,28 +167,6 @@
                 <h2>How much GPU memory does Chau7's glyph atlas use?</h2>
                 <p>Chau7's glyph atlas uses a 2048x2048 pixel texture (16 MB for RGBA). When the atlas fills up, it resets and rebuilds from the ASCII baseline rather than growing unboundedly.</p>
                 <p>CJK or emoji glyphs are cached incrementally in Chau7 as they appear. The reset-and-rebuild approach keeps GPU memory usage predictable while ensuring commonly used characters are always available.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="metal-rendering-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>CPU-bound text rendering falls apart under high-output workloads.</li>
-                        <li>AI-heavy terminal sessions need smooth scrolling and low-latency redraws.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="metal-rendering-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Uses a dedicated Metal renderer for the terminal display path.</li>
-                        <li>Integrates frame pacing and low-latency view configuration for responsive updates.</li>
-                        <li>Offloads heavy drawing work from the main CPU path.</li>
-                        <li>Serves as the base for advanced display optimizations like triple buffering and shared surfaces.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

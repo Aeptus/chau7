@@ -103,6 +103,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="iokit-hid-input-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Terminal responsiveness starts with input, not just rendering.</li>
+                        <li>High-level input paths can add jitter or lose fidelity for advanced key handling.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="iokit-hid-input-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Integrates low-level HID input plumbing for fast keyboard event handling.</li>
+                        <li>Helps keep input-to-display latency low in the native macOS app.</li>
+                        <li>Works alongside protocol-aware key encoding rather than replacing terminal semantics.</li>
+                        <li>Supports the broader low-latency pipeline that Chau7 builds around native input and rendering.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is IOKit HID Input in Chau7 -->
         <section class="feature-content" data-ui="iokit-hid-what">
             <div class="section-inner prose">
@@ -145,28 +168,6 @@
                 <h2>How does Chau7's IOKit HID input compare to other terminals?</h2>
                 <p>Most macOS terminals rely on NSEvent for keyboard input, which adds 2-8ms of latency per keystroke due to WindowServer processing and run loop batching. This overhead is invisible for casual use but noticeable for fast typists and latency-sensitive workflows like Vim or interactive REPLs.</p>
                 <p>Chau7 is the only macOS terminal that registers a direct IOKit HID callback for keyboard input. This gives Chau7 sub-millisecond input latency, eliminating the perceptible lag between keypress and screen update that affects NSEvent-based terminals.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="iokit-hid-input-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>Terminal responsiveness starts with input, not just rendering.</li>
-                        <li>High-level input paths can add jitter or lose fidelity for advanced key handling.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="iokit-hid-input-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Integrates low-level HID input plumbing for fast keyboard event handling.</li>
-                        <li>Helps keep input-to-display latency low in the native macOS app.</li>
-                        <li>Works alongside protocol-aware key encoding rather than replacing terminal semantics.</li>
-                        <li>Supports the broader low-latency pipeline that Chau7 builds around native input and rendering.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

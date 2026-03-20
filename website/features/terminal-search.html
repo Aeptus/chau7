@@ -103,6 +103,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="terminal-search-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Searching long terminal output with scroll alone is primitive.</li>
+                        <li>Losing the current match count or location makes output review slower than it should be.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="terminal-search-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Opens a dedicated search overlay on top of the active terminal.</li>
+                        <li>Tracks query state, result lists, and match counts in the tab model.</li>
+                        <li>Search highlights are rendered in the terminal overlay instead of mutating buffer text.</li>
+                        <li>Closing search resets query and results cleanly.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Terminal Search -->
         <section class="feature-content" data-ui="terminal-search-what">
             <div class="section-inner prose">
@@ -145,28 +168,6 @@
             <div class="section-inner prose">
                 <h2>Can I copy search results in Chau7?</h2>
                 <p>Yes. In Chau7, when a search match is highlighted, <code>Cmd+C</code> copies the matched text. Developers can also select and copy a range of matches or the lines containing them.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="terminal-search-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>Searching long terminal output with scroll alone is primitive.</li>
-                        <li>Losing the current match count or location makes output review slower than it should be.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="terminal-search-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Opens a dedicated search overlay on top of the active terminal.</li>
-                        <li>Tracks query state, result lists, and match counts in the tab model.</li>
-                        <li>Search highlights are rendered in the terminal overlay instead of mutating buffer text.</li>
-                        <li>Closing search resets query and results cleanly.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

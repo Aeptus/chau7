@@ -101,6 +101,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="token-counting-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>AI bills arrive in tokens, but most terminals expose zero token visibility.</li>
+                        <li>Without per-call counts, prompt tuning is just superstition.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="token-counting-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Extracts input and output token counts from intercepted provider responses.</li>
+                        <li>Keeps per-call, per-tab, and rolled-up totals.</li>
+                        <li>Normalizes counts into a shared event model across providers.</li>
+                        <li>Powers downstream cost and dashboard views.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Token Counting -->
         <section class="feature-content" data-ui="token-counting-what">
             <div class="section-inner prose">
@@ -142,28 +165,6 @@
                 <h2>Can I see token counts for individual tool calls within a run?</h2>
                 <p>Yes. Chau7 tracks each API call individually with its own input and output token counts. Each tool call that triggers an API request gets its own entry in Chau7's token log.</p>
                 <p>Developers can review run telemetry through Chau7's MCP server to see per-call breakdowns. This granularity helps identify which tool calls consume the most tokens within a single agent invocation.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="token-counting-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>AI bills arrive in tokens, but most terminals expose zero token visibility.</li>
-                        <li>Without per-call counts, prompt tuning is just superstition.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="token-counting-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Extracts input and output token counts from intercepted provider responses.</li>
-                        <li>Keeps per-call, per-tab, and rolled-up totals.</li>
-                        <li>Normalizes counts into a shared event model across providers.</li>
-                        <li>Powers downstream cost and dashboard views.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

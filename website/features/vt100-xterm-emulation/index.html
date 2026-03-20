@@ -103,6 +103,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="vt100-xterm-emulation-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Terminal apps assume real escape-sequence compatibility and break on half-implemented emulators.</li>
+                        <li>Developers should not have to debug the terminal instead of their tool.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="vt100-xterm-emulation-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Emulates core VT100 and xterm behavior expected by modern CLI tools.</li>
+                        <li>Sets a standard xterm-256color environment for broad compatibility.</li>
+                        <li>Encodes keyboard modifiers and special keys in terminal-appropriate sequences.</li>
+                        <li>Keeps shell apps, TUIs, and remote sessions behaving like they expect.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is VT100/xterm Emulation in Chau7 -->
         <section class="feature-content" data-ui="vt100-what">
             <div class="section-inner prose">
@@ -154,28 +177,6 @@
                 <h2>Why complete terminal emulation matters</h2>
                 <p>Terminal emulation bugs manifest as garbled output, broken TUI layouts, and applications that refuse to run. Incomplete escape sequence handling causes Vim to render incorrectly, tmux to lose color information, and ncurses applications to break.</p>
                 <p>Chau7 implements VT100 and xterm escape sequences comprehensively, including edge cases like origin mode interaction with scroll regions, character set switching (G0/G1/G2/G3), and protected area support. If an application works in xterm, that application works in Chau7.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="vt100-xterm-emulation-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>Terminal apps assume real escape-sequence compatibility and break on half-implemented emulators.</li>
-                        <li>Developers should not have to debug the terminal instead of their tool.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="vt100-xterm-emulation-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Emulates core VT100 and xterm behavior expected by modern CLI tools.</li>
-                        <li>Sets a standard xterm-256color environment for broad compatibility.</li>
-                        <li>Encodes keyboard modifiers and special keys in terminal-appropriate sequences.</li>
-                        <li>Keeps shell apps, TUIs, and remote sessions behaving like they expect.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

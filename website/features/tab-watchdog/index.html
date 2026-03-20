@@ -103,6 +103,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="tab-watchdog-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>When tab rendering glitches, users should not be the recovery mechanism.</li>
+                        <li>UI desync bugs are especially painful in multi-tab, AI-heavy workflows.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="tab-watchdog-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>A model-owned watchdog timer checks tab bar health continuously.</li>
+                        <li>It compares expected and rendered state to detect missing or stale tab UI.</li>
+                        <li>Recovery uses bounded retries, cooldowns, and logging instead of infinite refresh loops.</li>
+                        <li>Summary counters make watchdog interventions visible for debugging.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Tab Watchdog -->
         <section class="feature-content" data-ui="tab-watchdog-what">
             <div class="section-inner prose">
@@ -145,28 +168,6 @@
                 <h2>What does the Chau7 tab watchdog check?</h2>
                 <p>The watchdog checks three things: whether the SwiftUI tab bar rendered the expected number of tab chips, whether the tab bar has acceptable width dimensions, and whether the tab bar view has received preference updates within a staleness threshold.</p>
                 <p>The watchdog does not monitor shell process state, terminal output activity, or session health. It is focused entirely on the tab bar UI rendering layer, ensuring the visual tab bar stays in sync with the underlying tab model managed by <code>OverlayTabsModel</code>.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="tab-watchdog-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>When tab rendering glitches, users should not be the recovery mechanism.</li>
-                        <li>UI desync bugs are especially painful in multi-tab, AI-heavy workflows.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="tab-watchdog-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>A model-owned watchdog timer checks tab bar health continuously.</li>
-                        <li>It compares expected and rendered state to detect missing or stale tab UI.</li>
-                        <li>Recovery uses bounded retries, cooldowns, and logging instead of infinite refresh loops.</li>
-                        <li>Summary counters make watchdog interventions visible for debugging.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

@@ -103,6 +103,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="shell-integration-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Without shell hooks, a terminal cannot reliably know cwd, exit status, or prompt boundaries.</li>
+                        <li>Features like context-aware titles and automation depend on real shell lifecycle data.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="shell-integration-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Creates integration scripts for Bash, Zsh, and Fish automatically.</li>
+                        <li>Emits OSC 7 directory updates and exit-status signals back to Chau7.</li>
+                        <li>Supplies CHAU7_SESSION_ID and CHAU7_TAB_ID so hooks know terminal context.</li>
+                        <li>Runs at startup rather than as visible commands in shell history.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Shell Integration -->
         <section class="feature-content" data-ui="shell-integration-what">
             <div class="section-inner prose">
@@ -163,28 +186,6 @@
                 <h2>Why Chau7's shell integration matters</h2>
                 <p>Without shell integration, a terminal sees only a stream of characters with no structure. The terminal cannot tell where one command ends and another begins, what the current directory is, or whether the last command succeeded.</p>
                 <p>Chau7's shell integration hooks into zsh, bash, and fish to report all of this automatically. This enables per-command timing, directory-aware tab titles, and command-level navigation in Chau7 with zero manual setup.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="shell-integration-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>Without shell hooks, a terminal cannot reliably know cwd, exit status, or prompt boundaries.</li>
-                        <li>Features like context-aware titles and automation depend on real shell lifecycle data.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="shell-integration-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Creates integration scripts for Bash, Zsh, and Fish automatically.</li>
-                        <li>Emits OSC 7 directory updates and exit-status signals back to Chau7.</li>
-                        <li>Supplies CHAU7_SESSION_ID and CHAU7_TAB_ID so hooks know terminal context.</li>
-                        <li>Runs at startup rather than as visible commands in shell history.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

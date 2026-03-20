@@ -103,6 +103,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="unix-socket-server-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Local automation should not require network ports or cloud services just to reach your terminal.</li>
+                        <li>Stdio-only integrations make it harder to share a stable control surface across tools.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="unix-socket-server-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>MCP server listens on a local Unix domain socket under the user&#x27;s home directory.</li>
+                        <li>Socket permissions are restricted to the same user account.</li>
+                        <li>Bridge processes can pipe stdio to the socket without exposing a public port.</li>
+                        <li>Each client connection gets its own MCP session handler.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Unix Socket Server -->
         <section class="feature-content" data-ui="unix-socket-what">
             <div class="section-inner prose">
@@ -145,28 +168,6 @@
                 <h2>What happens if Chau7's socket file is not cleaned up?</h2>
                 <p>Chau7 detects stale socket files on launch and removes them before creating a new one. If Chau7 crashes, the next launch will clean up the stale socket automatically.</p>
                 <p>The socket is created on Chau7's launch and cleaned up on Chau7's exit. No lingering listeners, no zombie processes, and no manual intervention needed.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="unix-socket-server-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>Local automation should not require network ports or cloud services just to reach your terminal.</li>
-                        <li>Stdio-only integrations make it harder to share a stable control surface across tools.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="unix-socket-server-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>MCP server listens on a local Unix domain socket under the user&#x27;s home directory.</li>
-                        <li>Socket permissions are restricted to the same user account.</li>
-                        <li>Bridge processes can pipe stdio to the socket without exposing a public port.</li>
-                        <li>Each client connection gets its own MCP session handler.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

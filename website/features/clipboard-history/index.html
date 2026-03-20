@@ -136,6 +136,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="clipboard-history-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>The system clipboard remembers only the last thing, not the five things you actually need.</li>
+                        <li>Re-copying previous commands or snippets breaks flow.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="clipboard-history-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Stores a rolling history of clipboard items inside Chau7.</li>
+                        <li>Shows previews and metadata so you can pick the right item quickly.</li>
+                        <li>Integrates with overlay controls for fast selection and paste-back.</li>
+                        <li>Has dedicated tests covering storage and preview behavior.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Clipboard History -->
         <section class="feature-content" data-ui="clipboard-history-what-is">
             <div class="section-inner prose">
@@ -179,28 +202,6 @@
                 <h2>Why terminal clipboard has been broken until Chau7</h2>
                 <p>The terminal clipboard experience has been broken for decades. <code>Ctrl+C</code> sends SIGINT instead of copying. Selections vanish when you click elsewhere. There is no history.</p>
                 <p>Chau7 provides a proper clipboard with history, search, and pinned items. Use the search function to filter clipboard history with case-insensitive substring matching. Chau7 handles the <code>Ctrl+C</code> ambiguity correctly and remembers everything you copy. Clipboard history is persisted via UserDefaults JSON and survives app restarts, so nothing is lost.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="clipboard-history-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>The system clipboard remembers only the last thing, not the five things you actually need.</li>
-                        <li>Re-copying previous commands or snippets breaks flow.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="clipboard-history-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Stores a rolling history of clipboard items inside Chau7.</li>
-                        <li>Shows previews and metadata so you can pick the right item quickly.</li>
-                        <li>Integrates with overlay controls for fast selection and paste-back.</li>
-                        <li>Has dedicated tests covering storage and preview behavior.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

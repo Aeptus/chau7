@@ -99,6 +99,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="paste-confirmation-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Multi-line pastes into shells are risky when the receiving app cannot distinguish pasted text from typing.</li>
+                        <li>Paste safety depends on protocol support, and most users do not know when they have it.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="paste-confirmation-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Sends bracketed paste sequences when the running application requests them.</li>
+                        <li>Falls back to raw paste when the app does not support the protocol.</li>
+                        <li>Preserves direct paste semantics instead of inserting a fake preview layer.</li>
+                        <li>Makes supporting shells and editors treat pasted newlines more safely.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Bracketed Paste Mode -->
         <section class="feature-content" data-ui="paste-what">
             <div class="section-inner prose">
@@ -141,28 +164,6 @@
                 <h2>Does bracketed paste mode prevent accidental command execution?</h2>
                 <p>Bracketed paste mode helps, but protection depends entirely on the running application handling the escape sequences correctly. Many programs ignore bracketed paste sequences, in which case pasted text with newlines can execute commands immediately.</p>
                 <p>For applications that do support bracketed paste mode, the protection is effective. Zsh, for example, will not execute pasted content until you press Enter, giving you a chance to review what was pasted.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="paste-confirmation-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>Multi-line pastes into shells are risky when the receiving app cannot distinguish pasted text from typing.</li>
-                        <li>Paste safety depends on protocol support, and most users do not know when they have it.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="paste-confirmation-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Sends bracketed paste sequences when the running application requests them.</li>
-                        <li>Falls back to raw paste when the app does not support the protocol.</li>
-                        <li>Preserves direct paste semantics instead of inserting a fake preview layer.</li>
-                        <li>Makes supporting shells and editors treat pasted newlines more safely.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

@@ -103,6 +103,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="tab-limits-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Runaway agents can create tabs faster than you notice them.</li>
+                        <li>A guardrail is only useful if it constrains automation without blocking normal human use.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="tab-limits-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Sets a configurable ceiling on tabs created through the MCP server.</li>
+                        <li>Manual tabs are excluded, so your own workflow is never throttled.</li>
+                        <li>Closed MCP-created tabs immediately free capacity for new ones.</li>
+                        <li>Returns a clear error to the agent instead of silently failing.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Tab Limits -->
         <section class="feature-content" data-ui="tab-limits-what">
             <div class="section-inner prose">
@@ -145,28 +168,6 @@
                 <h2>Does Chau7's limit count tabs that have been closed?</h2>
                 <p>No. Chau7's tab limit counts only currently open MCP-created tabs. Once an agent closes a tab, that slot is freed for a new one.</p>
                 <p>This design in Chau7 encourages AI agents to clean up after themselves and reuse tab slots. An agent that closes finished tabs can continue creating new ones without hitting the limit.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="tab-limits-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>Runaway agents can create tabs faster than you notice them.</li>
-                        <li>A guardrail is only useful if it constrains automation without blocking normal human use.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="tab-limits-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Sets a configurable ceiling on tabs created through the MCP server.</li>
-                        <li>Manual tabs are excluded, so your own workflow is never throttled.</li>
-                        <li>Closed MCP-created tabs immediately free capacity for new ones.</li>
-                        <li>Returns a clear error to the agent instead of silently failing.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->

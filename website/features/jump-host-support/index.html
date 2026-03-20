@@ -101,6 +101,29 @@
             </div>
         </section>
 
+        <section class="feature-content feature-pain" data-ui="jump-host-support-pain">
+            <div class="section-inner prose">
+                <h2>The problem</h2>
+                    <ul class="feature-checklist">
+                        <li>Bastion and ProxyJump flows are easy to mistype and annoying to remember.</li>
+                        <li>Multi-hop SSH should not require rebuilding the full command every time.</li>
+                    </ul>
+            </div>
+        </section>
+
+        <section class="feature-content feature-subfeatures" data-ui="jump-host-support-capabilities">
+            <div class="section-inner prose">
+                <h2>What Chau7 does about it</h2>
+                    <ul class="feature-checklist">
+                        <li>Saved connections include a dedicated jump-host or ProxyJump field.</li>
+                        <li>Parsing support preserves ProxyJump entries imported from SSH config.</li>
+                        <li>Launch commands are shell-escaped correctly so jump hosts are reliable.</li>
+                        <li>Works inside both hand-made connection profiles and imported config entries.</li>
+                    </ul>
+            </div>
+        </section>
+
+
         <!-- What is Jump Host Support -->
         <section class="feature-content" data-ui="jump-host-what">
             <div class="section-inner prose">
@@ -152,28 +175,6 @@
                 <h2>Why jump host support matters</h2>
                 <p>Production infrastructure sits behind bastion hosts, requiring SSH connections with <code>-J</code> flags that are tedious to type and easy to misconfigure. Chau7 lets you save the jump host in a profile field and connect with a single click.</p>
                 <p>The complexity lives in Chau7's configuration, not in your daily workflow. Chau7's jump host field turns a manual <code>ssh -J bastion user@target</code> command into a one-click connection.</p>
-            </div>
-        </section>
-
-        <section class="feature-content feature-pain" data-ui="jump-host-support-pain">
-            <div class="section-inner prose">
-                <h2>The problem</h2>
-                    <ul class="feature-checklist">
-                        <li>Bastion and ProxyJump flows are easy to mistype and annoying to remember.</li>
-                        <li>Multi-hop SSH should not require rebuilding the full command every time.</li>
-                    </ul>
-            </div>
-        </section>
-
-        <section class="feature-content feature-subfeatures" data-ui="jump-host-support-capabilities">
-            <div class="section-inner prose">
-                <h2>What Chau7 does about it</h2>
-                    <ul class="feature-checklist">
-                        <li>Saved connections include a dedicated jump-host or ProxyJump field.</li>
-                        <li>Parsing support preserves ProxyJump entries imported from SSH config.</li>
-                        <li>Launch commands are shell-escaped correctly so jump hosts are reliable.</li>
-                        <li>Works inside both hand-made connection profiles and imported config entries.</li>
-                    </ul>
             </div>
         </section>
         <!-- Related Features -->
