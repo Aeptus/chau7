@@ -221,7 +221,7 @@
     <site-nav></site-nav>
 
 <main class="legal-page">
-        <section class="legal-hero hero">
+        <section class="legal-hero hero" data-ui="legal-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">Mentions L&eacute;gales</div>
@@ -230,8 +230,9 @@
             </div>
         </section>
 
-        <section class="legal-shell">
+        <section class="legal-shell" data-ui="legal-body">
             <div class="section-inner">
+                <h2 class="sr-only">D&eacute;tails l&eacute;gaux</h2>
                 <div class="legal-utility-bar">
                     <a href="/" class="legal-utility-link">&larr; chau7.sh</a>
                     <span class="legal-version">v2026.03.11</span>
@@ -239,14 +240,15 @@
                 </div>
 
                 <div class="legal-lead-grid">
-                    <section class="legal-summary-card" aria-label="Version courte">
+                    <section class="legal-summary-card" aria-label="Version courte" data-ui="legal-summary">
+                        <h2 class="sr-only">Version courte</h2>
                         <span class="legal-kicker">La version courte</span>
                         <p>Chau7 est pr&eacute;sent&eacute; sur <strong>chau7.sh</strong>, site &eacute;dit&eacute; par <strong>Aeptus SAS</strong>, dirig&eacute; par <strong>Christophe Henner</strong> et h&eacute;berg&eacute; sur <strong>Cloudflare Pages</strong>.</p>
                         <p>Les textes, visuels, captures, marque et contenus &eacute;ditoriaux du site restent prot&eacute;g&eacute;s. Le logiciel Chau7 et les &eacute;l&eacute;ments explicitement publi&eacute;s en open source restent r&eacute;gis par leur licence propre sur GitHub.</p>
                         <p>En cas de litige relatif au site, le droit fran&ccedil;ais s&apos;applique. Le reste de cette page est la version longue, parce que la loi aime les d&eacute;tails.</p>
                     </section>
 
-                    <section class="legal-side-card">
+                    <section class="legal-side-card" data-ui="legal-scope">
                         <h2>P&eacute;rim&egrave;tre</h2>
                         <p>Cette page couvre le site public <strong>chau7.sh</strong>, ses pages de pr&eacute;sentation produit, ses comparatifs, ses pages fonctionnalit&eacute;s, ses notes de colophon, ainsi que les liens vers GitHub et les versions publi&eacute;es &agrave; ce jour.</p>
                         <p>Il s&apos;agit d&apos;un site vitrine statique. Pas de compte, pas de paiement, pas de zone client. Juste un site tr&egrave;s appliqu&eacute; sur un terminal tr&egrave;s appliqu&eacute;.</p>
@@ -254,7 +256,7 @@
                 </div>
 
                 <div class="legal-info-grid">
-                    <section class="legal-info-card">
+                    <section class="legal-info-card" data-ui="legal-publisher">
                         <h2>Qui &eacute;dite ce site&nbsp;?</h2>
                         <dl>
                             <dt>Raison sociale</dt>
@@ -276,7 +278,7 @@
                         </dl>
                     </section>
 
-                    <section class="legal-info-card">
+                    <section class="legal-info-card" data-ui="legal-host">
                         <h2>Qui h&eacute;berge le site&nbsp;?</h2>
                         <dl>
                             <dt>Infrastructure</dt>
@@ -294,24 +296,24 @@
                 </div>
 
                 <div class="legal-sections">
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="legal-director">
                         <h2>Direction de la publication</h2>
                         <p>Le directeur de la publication est <strong>Christophe Henner</strong>, pr&eacute;sident d&apos;Aeptus SAS. C&apos;est aussi la personne qui a consid&eacute;r&eacute; qu&apos;un terminal appel&eacute; Chau7 &eacute;tait une excellente id&eacute;e, et l&apos;historique du site tend &agrave; lui donner raison.</p>
                     </section>
 
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="legal-nature">
                         <h2>Nature du site</h2>
                         <p>Le site <strong>chau7.sh</strong> est un site public de pr&eacute;sentation, de comparaison et de documentation marketing autour du terminal Chau7. Il renvoie notamment vers le d&eacute;p&ocirc;t GitHub du projet, les notes de version, les pages fonctionnalit&eacute;s, les pages de performance et les informations l&eacute;gales associ&eacute;es.</p>
                         <p>Le site ne propose pas de cr&eacute;ation de compte, de tunnel de paiement, d&apos;espace client ni de messagerie utilisateur. Il s&apos;agit d&apos;un site vitrine statique, publi&eacute; sur l&apos;infrastructure Cloudflare.</p>
                     </section>
 
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="legal-ip">
                         <h2>Propri&eacute;t&eacute; intellectuelle</h2>
                         <p>Les textes &eacute;ditoriaux, la structure du site, les visuels, les graphismes, le logo Chau7, les captures d&apos;&eacute;cran, la marque et les &eacute;l&eacute;ments d&apos;identit&eacute; pr&eacute;sents sur ce site sont, sauf mention contraire, la propri&eacute;t&eacute; d&apos;Aeptus SAS ou font l&apos;objet d&apos;un droit d&apos;usage. Ils restent prot&eacute;g&eacute;s par le droit d&apos;auteur, le droit des marques et, plus largement, par les r&egrave;gles fran&ccedil;aises et internationales relatives &agrave; la propri&eacute;t&eacute; intellectuelle.</p>
                         <p>Le logiciel Chau7 lui-m&ecirc;me, ainsi que les portions de code et de documentation explicitement publi&eacute;es sur le d&eacute;p&ocirc;t GitHub, rel&egrave;vent de leur licence open source applicable. Cette page ne remplace pas cette licence&nbsp;: elle encadre le site <strong>chau7.sh</strong> et ses contenus &eacute;ditoriaux.</p>
                     </section>
 
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="legal-data-cookies">
                         <h2>Donn&eacute;es, cookies et journaux techniques</h2>
                         <p>Le site ne comporte pas de formulaire de cr&eacute;ation de compte ni de formulaire de paiement. En pratique, l&apos;usage du site se limite &agrave; la consultation de pages statiques et &agrave; l&apos;activation de liens externes, notamment vers GitHub et les pages de t&eacute;l&eacute;chargement.</p>
                         <p>L&apos;h&eacute;bergement, la s&eacute;curit&eacute; du trafic, la mise en cache, la pr&eacute;vention des abus et, le cas &eacute;ch&eacute;ant, la mesure agr&eacute;g&eacute;e d&apos;audience peuvent entra&icirc;ner le traitement de journaux techniques ou de donn&eacute;es de connexion par les services Cloudflare et les outils techniques n&eacute;cessaires au fonctionnement du site.
@@ -319,13 +321,13 @@
                         </p>
                     </section>
 
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="legal-liability">
                         <h2>Responsabilit&eacute;</h2>
                         <p>Aeptus SAS fait de son mieux pour maintenir un site exact, accessible et &agrave; jour. Pour autant, le contenu publi&eacute; sur <strong>chau7.sh</strong> reste fourni &agrave; titre informatif. Nous ne garantissons ni l&apos;absence totale d&apos;erreurs, ni la disponibilit&eacute; continue du site, ni l&apos;ad&eacute;quation du contenu &agrave; un usage particulier.</p>
                         <p>En cons&eacute;quence, Aeptus SAS ne pourra pas &ecirc;tre tenue responsable des dommages directs ou indirects r&eacute;sultant de l&apos;acc&egrave;s au site, de son indisponibilit&eacute;, d&apos;un lien externe ou de l&apos;usage des informations qui y figurent. Internet reste internet.</p>
                     </section>
 
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="legal-applicable-law">
                         <h2>Droit applicable</h2>
                         <p>Les pr&eacute;sentes mentions l&eacute;gales sont r&eacute;gies par le droit fran&ccedil;ais. En cas de litige relatif au site ou &agrave; son contenu, les juridictions fran&ccedil;aises comp&eacute;tentes seront seules saisies, sauf disposition imp&eacute;rative contraire.</p>
                     </section>

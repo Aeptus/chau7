@@ -21,7 +21,7 @@
     [{
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
-        "name": "Chau7 Remote",
+        "name": "Your terminal. Your pocket. | Chau7",
         "operatingSystem": "iOS",
         "applicationCategory": "DeveloperApplication",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
@@ -88,6 +88,7 @@
 
         <!-- Hero Screenshot -->
         <section class="showcase-section" aria-label="iOS app screenshot" data-ui="remote-hero-screenshot">
+            <h2 class="sr-only">iOS app screenshot</h2>
             <div class="section-inner">
                 <div class="hero-screenshot reveal">
                     <figure class="screenshot-frame elevated">
@@ -246,7 +247,7 @@
                     <p>The Chau7 Remote architecture has three pieces. One encrypted channel. The relay is intentionally stupid.</p>
                 </div>
                 <div class="arch-diagram">
-                    <pre>
+                    <pre><code>
   <span class="arch-highlight">iPhone</span>                    <span class="arch-green">Relay</span>                    <span class="arch-highlight">Mac</span>
 
   Chau7 Remote              Cloudflare Workers         chau7-remote agent
@@ -260,7 +261,7 @@
        │     relay sees:          │                          │
        │     opaque blobs         │                          │
        │     sequence numbers     │                          │
-       │     nothing else         │                          │</pre>
+       │     nothing else         │                          │</code></pre>
                 </div>
             </div>
         </section>

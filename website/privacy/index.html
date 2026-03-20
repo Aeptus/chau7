@@ -306,7 +306,7 @@
     <site-nav></site-nav>
 
 <main class="legal-page">
-        <section class="legal-hero hero">
+        <section class="legal-hero hero" data-ui="privacy-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">Privacy</div>
@@ -315,8 +315,9 @@
             </div>
         </section>
 
-        <section class="legal-shell">
+        <section class="legal-shell" data-ui="privacy-body">
             <div class="section-inner">
+                <h2 class="sr-only">Privacy policy details</h2>
                 <div class="legal-utility-bar">
                     <a href="/" class="legal-utility-link">&larr; chau7.sh</a>
                     <span class="legal-version">v2026.03.11</span>
@@ -324,19 +325,20 @@
                 </div>
 
                 <div class="legal-lead-grid">
-                    <section class="legal-summary-card" aria-label="Short version">
+                    <section class="legal-summary-card" aria-label="Short version" data-ui="privacy-summary">
+                        <h2 class="sr-only">Short version</h2>
                         <span class="legal-kicker">Short version</span>
                         <p><strong>Zero cookies. Zero trackers. Zero forms.</strong> The only data in transit are Cloudflare&apos;s technical logs (your IP address, to prevent attacks), retained for 72&nbsp;hours at most. You have rights. You can exercise them. That&apos;s it.</p>
                     </section>
 
-                    <section class="legal-side-card">
+                    <section class="legal-side-card" data-ui="privacy-scope">
                         <h2>Scope</h2>
                         <p>This policy covers the public <strong>chau7.sh</strong> website, a static showcase site with no user accounts, no payments, and no forms. Just pages to read and links to GitHub.</p>
                     </section>
                 </div>
 
                 <div class="legal-info-grid">
-                    <section class="legal-info-card">
+                    <section class="legal-info-card" data-ui="privacy-controller">
                         <h2>Who is the data controller?</h2>
                         <dl>
                             <dt>Data controller</dt>
@@ -350,7 +352,7 @@
                         </dl>
                     </section>
 
-                    <section class="legal-info-card">
+                    <section class="legal-info-card" data-ui="privacy-data-location">
                         <h2>Where does the data go?</h2>
                         <dl>
                             <dt>Sub-processor</dt>
@@ -364,7 +366,7 @@
                 </div>
 
                 <div class="legal-sections">
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="privacy-collection">
                         <h2>What we collect (and what we don&apos;t)</h2>
                         <div class="privacy-highlight">
                             The chau7.sh website sets <strong>no cookies</strong>, uses <strong>no tracking tools</strong>, and collects <strong>no data through forms</strong>. No Google Analytics. No Facebook pixel. No &ldquo;subscribe to our newsletter&rdquo; popup. Nothing.
@@ -399,18 +401,18 @@
                         <p>Legal basis: legitimate interest (Article 6(1)(f) GDPR). Protecting a website against attacks is legitimate. No consent is required for that.</p>
                     </section>
 
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="privacy-cookies">
                         <h2>What about cookies?</h2>
                         <p>We don&apos;t use any. Cloudflare may set a strictly necessary technical cookie (<code>__cf_bm</code>) for bot detection. This cookie is exempt from consent under Article 82 of the French Data Protection Act (<em>loi Informatique et Libert&eacute;s</em>).</p>
                         <p>No banner. No popup. No giant &ldquo;Accept All&rdquo; next to a microscopic &ldquo;Decline&rdquo;. You&apos;re welcome.</p>
                     </section>
 
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="privacy-third-parties">
                         <h2>Personal data and third parties</h2>
                         <p>No personal data is shared with anyone else. Not sold, not traded, not whispered to an algorithm.</p>
                     </section>
 
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="privacy-rights">
                         <h2>Your rights</h2>
                         <p>The GDPR gives you superpowers. Here they are:</p>
                         <div class="privacy-rights-grid">
@@ -460,13 +462,13 @@
                         <p>To exercise any of these rights: <a href="mailto:privacy@aeptus.com">privacy@aeptus.com</a>. We&apos;ll respond within 30&nbsp;days.</p>
                     </section>
 
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="privacy-complaints">
                         <h2>What if we don&apos;t respond?</h2>
                         <p>You can file a complaint with the CNIL. That&apos;s what they&apos;re there for, and they&apos;re good at it.</p>
                         <span class="legal-note">CNIL &mdash; Commission Nationale de l&apos;Informatique et des Libert&eacute;s, 3 place de Fontenoy, TSA 80715, 75334 Paris Cedex 07 &mdash; <a href="https://www.cnil.fr" rel="noopener">cnil.fr</a></span>
                     </section>
 
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="privacy-changes">
                         <h2>Changes</h2>
                         <p>This policy may be updated. The date at the top of the page is authoritative. If anything significant changes, we&apos;ll flag it on the site.</p>
                     </section>

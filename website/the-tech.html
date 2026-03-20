@@ -21,7 +21,7 @@
     [{
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
-        "name": "Chau7",
+        "name": "The guts of the terminal, without the hand-waving. | Chau7",
         "operatingSystem": "macOS",
         "applicationCategory": "DeveloperApplication",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
@@ -214,7 +214,7 @@
                     <p>Chau7 detects dangerous commands before execution by inspecting the command stream at the terminal input layer, before the shell runs anything. If you want to flag <code>rm -rf</code>, suspicious <code>dd</code>, hidden Unicode junk, or pasted multi-line nonsense, you need to inspect the command stream before the shell gets clever.</p>
                 </div>
                 <div class="arch-diagram">
-                    <pre>
+                    <pre><code>
   <span class="arch-highlight">Keyboard / Paste</span>
       │
       ▼
@@ -225,7 +225,7 @@
       │
       ├── <span class="arch-highlight">safe command</span> ───────────────▶ pass through
       │
-      └── <span class="arch-highlight">dangerous pattern</span> ─────────▶ warn, confirm, or block</pre>
+      └── <span class="arch-highlight">dangerous pattern</span> ─────────▶ warn, confirm, or block</code></pre>
                 </div>
                 <div class=”prose”>
                     <p>The Chau7 command analyzer is where Chau7 terminal can reason about things shells normally leave to aliases, wrappers, or hope. Chau7 normalizes whitespace, spots recursive-destructive flags, detects hidden control characters, catches suspicious line breaks, and treats “this command looks dangerous” as a terminal concern instead of an afterthought in dotfiles.</p>

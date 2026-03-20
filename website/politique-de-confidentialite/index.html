@@ -306,7 +306,7 @@
     <site-nav></site-nav>
 
 <main class="legal-page">
-        <section class="legal-hero hero">
+        <section class="legal-hero hero" data-ui="privacy-hero">
             <div class="hero-glow"></div>
             <div class="hero-content">
                 <div class="section-badge">Vie priv&eacute;e</div>
@@ -315,8 +315,9 @@
             </div>
         </section>
 
-        <section class="legal-shell">
+        <section class="legal-shell" data-ui="privacy-body">
             <div class="section-inner">
+                <h2 class="sr-only">D&eacute;tails de la politique de confidentialit&eacute;</h2>
                 <div class="legal-utility-bar">
                     <a href="/" class="legal-utility-link">&larr; chau7.sh</a>
                     <span class="legal-version">v2026.03.11</span>
@@ -324,19 +325,20 @@
                 </div>
 
                 <div class="legal-lead-grid">
-                    <section class="legal-summary-card" aria-label="Version courte">
+                    <section class="legal-summary-card" aria-label="Version courte" data-ui="privacy-summary">
+                        <h2 class="sr-only">Version courte</h2>
                         <span class="legal-kicker">La version courte</span>
                         <p><strong>Z&eacute;ro cookie. Z&eacute;ro tracker. Z&eacute;ro formulaire.</strong> Les seules donn&eacute;es qui transitent sont les logs techniques de Cloudflare (votre IP, pour &eacute;viter les attaques), conserv&eacute;s 72&nbsp;heures maximum. Vous avez des droits. Vous pouvez les exercer. C&apos;est tout.</p>
                     </section>
 
-                    <section class="legal-side-card">
+                    <section class="legal-side-card" data-ui="privacy-scope">
                         <h2>P&eacute;rim&egrave;tre</h2>
                         <p>Cette politique couvre le site public <strong>chau7.sh</strong>, un site vitrine statique sans compte utilisateur, sans paiement et sans formulaire. Uniquement des pages &agrave; lire et des liens vers GitHub.</p>
                     </section>
                 </div>
 
                 <div class="legal-info-grid">
-                    <section class="legal-info-card">
+                    <section class="legal-info-card" data-ui="privacy-controller">
                         <h2>Qui est responsable&nbsp;?</h2>
                         <dl>
                             <dt>Responsable du traitement</dt>
@@ -350,7 +352,7 @@
                         </dl>
                     </section>
 
-                    <section class="legal-info-card">
+                    <section class="legal-info-card" data-ui="privacy-data-location">
                         <h2>O&ugrave; vont les donn&eacute;es&nbsp;?</h2>
                         <dl>
                             <dt>Sous-traitant</dt>
@@ -364,7 +366,7 @@
                 </div>
 
                 <div class="legal-sections">
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="privacy-collection">
                         <h2>Ce qu&apos;on collecte (et ce qu&apos;on ne collecte pas)</h2>
                         <div class="privacy-highlight">
                             Le site chau7.sh ne d&eacute;pose <strong>aucun cookie</strong>, n&apos;utilise <strong>aucun outil de suivi</strong> et ne collecte <strong>aucune donn&eacute;e via des formulaires</strong>. Pas de Google Analytics. Pas de pixel Facebook. Pas de &laquo;&thinsp;newsletter, tapez votre e-mail&thinsp;&raquo;. Rien.
@@ -399,18 +401,18 @@
                         <p>Base l&eacute;gale&nbsp;: int&eacute;r&ecirc;t l&eacute;gitime (article 6.1.f du RGPD). Prot&eacute;ger un site web contre les attaques, c&apos;est l&eacute;gitime. Pas besoin de consentement pour &ccedil;a.</p>
                     </section>
 
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="privacy-cookies">
                         <h2>Et les cookies&nbsp;?</h2>
                         <p>On n&apos;en utilise pas. Cloudflare peut d&eacute;poser un cookie technique (<code>__cf_bm</code>) strictement n&eacute;cessaire &agrave; la d&eacute;tection des bots. Ce cookie est exempt de consentement au titre de l&apos;article 82 de la loi Informatique et Libert&eacute;s.</p>
                         <p>Pas de banni&egrave;re. Pas de popup. Pas de &laquo;&thinsp;Accepter tout&thinsp;&raquo; en gros et &laquo;&thinsp;Refuser&thinsp;&raquo; en micro. Vous &ecirc;tes les bienvenus.</p>
                     </section>
 
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="privacy-third-parties">
                         <h2>Donn&eacute;es personnelles et tiers</h2>
                         <p>Aucune donn&eacute;e personnelle n&apos;est transmise &agrave; qui que ce soit d&apos;autre. Ni vendue, ni &eacute;chang&eacute;e, ni murmur&eacute;e &agrave; un algorithme.</p>
                     </section>
 
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="privacy-rights">
                         <h2>Vos droits</h2>
                         <p>Le RGPD vous donne des super-pouvoirs. Les voici&nbsp;:</p>
                         <div class="privacy-rights-grid">
@@ -460,13 +462,13 @@
                         <p>Pour exercer l&apos;un de ces droits&nbsp;: <a href="mailto:privacy@aeptus.com">privacy@aeptus.com</a>. R&eacute;ponse sous 30&nbsp;jours.</p>
                     </section>
 
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="privacy-complaints">
                         <h2>Et si on ne r&eacute;pond pas&nbsp;?</h2>
                         <p>Vous pouvez saisir la CNIL. C&apos;est leur travail, et elles le font bien.</p>
                         <span class="legal-note">CNIL &mdash; Commission Nationale de l&apos;Informatique et des Libert&eacute;s, 3 place de Fontenoy, TSA 80715, 75334 Paris Cedex 07 &mdash; <a href="https://www.cnil.fr" rel="noopener">cnil.fr</a></span>
                     </section>
 
-                    <section class="legal-section-card">
+                    <section class="legal-section-card" data-ui="privacy-changes">
                         <h2>Modifications</h2>
                         <p>Cette politique peut &eacute;voluer. La date en haut de page fait foi. Si on change quelque chose de significatif, on le signalera sur le site.</p>
                     </section>
