@@ -6225,7 +6225,7 @@ extension RustTerminalView {
 
         // Case 1: File URL(s) dropped
         if let urls = pboard.readObjects(forClasses: [NSURL.self], options: [
-            .urlReadingFileURLsOnly: true,
+            .urlReadingFileURLsOnly: true
         ]) as? [URL], !urls.isEmpty {
             if optionHeld, urls.count == 1, isImageFile(urls[0]) {
                 // Option+drop image file → base64 encode for AI CLIs
@@ -6248,7 +6248,7 @@ extension RustTerminalView {
     // MARK: - Image Helpers
 
     private func isImageFile(_ url: URL) -> Bool {
-        let exts: Set<String> = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff", "tif", "svg"]
+        let exts: Set = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "tiff", "tif", "svg"]
         return exts.contains(url.pathExtension.lowercased())
     }
 

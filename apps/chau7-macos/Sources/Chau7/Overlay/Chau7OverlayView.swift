@@ -483,7 +483,6 @@ private struct ToolbarTabBarView: View {
         }
     }
 
-    @ViewBuilder
     private func idleTabsDropdown(tabs: [OverlayTab]) -> some View {
         IdleTabsChip(
             tabs: tabs,

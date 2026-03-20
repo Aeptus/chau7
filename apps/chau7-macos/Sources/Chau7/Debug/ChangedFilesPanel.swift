@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Floating panel that displays files changed by the last AI command.
 /// Shown via Cmd+Shift+G (showChangedFiles keybinding).
-final class ChangedFilesPanel {
+enum ChangedFilesPanel {
     private static var panel: NSPanel?
 
     @MainActor
@@ -62,7 +62,9 @@ private struct ChangedFilesView: View {
                     Spacer()
                 }
                 .contextMenu {
-                    Button("Copy Path") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(file, forType: .string) }
+                    Button("Copy Path") { NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(file, forType: .string)
+                    }
                     Button("Copy All Paths") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(files.joined(separator: "\n"), forType: .string)
