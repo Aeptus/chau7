@@ -210,7 +210,14 @@ Editor,Relative/Hybrid Line Numbers,"Absolute, relative, or hybrid line numbers 
 Profiles,Context-Aware Auto-Switch,Auto-switch settings profile on directory change based on configured rules,Shipped,No
 Settings,Keybindings JSON Export/Import,Standalone export/import for keybindings separate from full settings,Shipped,No
 Networking,Custom API Pricing,~/.chau7/pricing.json overrides built-in model pricing table,Shipped,No
-Terminal,OSC 133 Shell Integration,"FinalTerm shell integration: prompt/command/output region markers with exit codes, parsed in Rust",Shipped,Yes
+Terminal,OSC 133 Shell Integration,"FinalTerm shell integration: prompt/command/output region markers with exit codes, parsed in Rust. Suppresses heuristic fallbacks when present.",Shipped,Yes
+Terminal,File Drag & Drop,"Drop files to paste paths; Option+drop images for base64 data URIs for AI CLIs",Shipped,Yes
+Terminal,Markdown Runbooks,"Open .md in editor pane with executable code blocks and Run All button",Shipped,Yes
+Terminal,Show Changed Files,"Git diff snapshot per command (OSC 133) shows files modified by AI sessions (Cmd+Option+G)",Shipped,Yes
+Terminal,Idle Tabs Dropdown,"Tabs idle 10+ min grouped into a dropdown chip in the tab bar with hover card support",Shipped,Yes
+Terminal,chau7:// URL Scheme,"Open SSH sessions, run commands, change directory, or open files from external apps",Shipped,Yes
+Terminal,Keyboard Shortcut Standardization,"All Chau7-specific shortcuts use Cmd+Option; tab selection internationalized (Cmd+1-9)",Shipped,No
+API Analytics,Streaming Metadata Fix,"Anthropic/OpenAI streaming responses correctly parsed for model, tokens, and cost",Shipped,No
 Safety,Process Exit Confirmation,Cmd+Q lists running process names and confirms before quitting,Shipped,No
 Terminal,Font Ligature Rendering,"Multi-character ligature shaping via CoreText (Fira Code, JetBrains Mono, etc.). Configurable toggle.",Shipped,No
 API Analytics,TTFT Latency Tracking,"Time-to-first-token measured per API call via firstByteReader wrapper, stored in SQLite",Shipped,Yes
