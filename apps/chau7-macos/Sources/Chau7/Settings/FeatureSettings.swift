@@ -43,19 +43,19 @@ struct KeyboardShortcut: Codable, Identifiable, Equatable {
         // Extended shortcuts
         KeyboardShortcut(action: "nextTab", key: "]", modifiers: ["cmd", "shift"]),
         KeyboardShortcut(action: "previousTab", key: "[", modifiers: ["cmd", "shift"]),
-        KeyboardShortcut(action: "findPrevious", key: "g", modifiers: ["cmd", "opt"]),
+        KeyboardShortcut(action: "findPrevious", key: "g", modifiers: ["cmd", "shift"]),
         KeyboardShortcut(action: "clear", key: "k", modifiers: ["cmd", "opt"]),
         KeyboardShortcut(action: "snippets", key: "s", modifiers: ["cmd", "opt"]),
         KeyboardShortcut(action: "renameTab", key: "r", modifiers: ["cmd", "opt"]),
         KeyboardShortcut(action: "debugConsole", key: "l", modifiers: ["cmd", "opt"]),
-        KeyboardShortcut(action: "splitHorizontal", key: "h", modifiers: ["cmd", "opt"]),
-        KeyboardShortcut(action: "splitVertical", key: "v", modifiers: ["cmd", "opt"]),
+        KeyboardShortcut(action: "splitHorizontal", key: "d", modifiers: ["cmd"]),
+        KeyboardShortcut(action: "splitVertical", key: "d", modifiers: ["cmd", "opt"]),
         KeyboardShortcut(action: "openTextEditor", key: "e", modifiers: ["cmd", "opt"]),
         // Navigation
         KeyboardShortcut(action: "previousInputLine", key: "up", modifiers: ["cmd"]),
         KeyboardShortcut(action: "nextInputLine", key: "down", modifiers: ["cmd"]),
         // Recovery shortcut
-        KeyboardShortcut(action: "refreshTabBar", key: "r", modifiers: ["cmd", "shift"])
+        KeyboardShortcut(action: "refreshTabBar", key: "r", modifiers: ["cmd", "opt", "shift"])
     ]
 
     static func shortcuts(for preset: String) -> [KeyboardShortcut] {

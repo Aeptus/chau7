@@ -201,7 +201,7 @@ struct Chau7App: App {
                 Button(L("Command Palette...", "Command Palette...")) {
                     appDelegate.toggleCommandPalette()
                 }
-                .keyboardShortcut("p", modifiers: [.command, .shift])
+                .keyboardShortcut("p", modifiers: [.command, .option])
             }
 
             // MARK: - View Menu
@@ -239,7 +239,7 @@ struct Chau7App: App {
                 Button(L("Clear Scrollback", "Clear Scrollback")) {
                     appDelegate.clearScrollback()
                 }
-                .keyboardShortcut("k", modifiers: [.command, .shift])
+                .keyboardShortcut("k", modifiers: [.command, .option])
 
                 Divider()
 
@@ -266,7 +266,7 @@ struct Chau7App: App {
                     Button(L("Split Vertically", "Split Vertically")) {
                         appDelegate.splitVertically()
                     }
-                    .keyboardShortcut("d", modifiers: [.command, .shift])
+                    .keyboardShortcut("d", modifiers: [.command, .option])
 
                     Divider()
 
@@ -278,7 +278,7 @@ struct Chau7App: App {
                     Button(L("Append Selection to Editor", "Append Selection to Editor")) {
                         appDelegate.appendSelectionToEditor()
                     }
-                    .keyboardShortcut("e", modifiers: [.command, .shift])
+                    .keyboardShortcut("e", modifiers: [.command, .option, .shift])
 
                     Divider()
 
@@ -316,7 +316,7 @@ struct Chau7App: App {
                 Button(L("Rename Tab...", "Rename Tab...")) {
                     appDelegate.beginRenameTab()
                 }
-                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .keyboardShortcut("r", modifiers: [.command, .option])
 
                 Divider()
 
@@ -344,26 +344,26 @@ struct Chau7App: App {
 
                 Group {
                     Button(L("Select Tab 1", "Select Tab 1")) { appDelegate.selectTab(number: 1) }
-                        .keyboardShortcut("&")
+                        .keyboardShortcut("1")
                     Button(L("Select Tab 2", "Select Tab 2")) { appDelegate.selectTab(number: 2) }
-                        .keyboardShortcut("é")
+                        .keyboardShortcut("2")
                     Button(L("Select Tab 3", "Select Tab 3")) { appDelegate.selectTab(number: 3) }
-                        .keyboardShortcut("\"")
+                        .keyboardShortcut("3")
                     Button(L("Select Tab 4", "Select Tab 4")) { appDelegate.selectTab(number: 4) }
-                        .keyboardShortcut("'")
+                        .keyboardShortcut("4")
                     Button(L("Select Tab 5", "Select Tab 5")) { appDelegate.selectTab(number: 5) }
-                        .keyboardShortcut("(")
+                        .keyboardShortcut("5")
                 }
 
                 Group {
                     Button(L("Select Tab 6", "Select Tab 6")) { appDelegate.selectTab(number: 6) }
-                        .keyboardShortcut("§")
+                        .keyboardShortcut("6")
                     Button(L("Select Tab 7", "Select Tab 7")) { appDelegate.selectTab(number: 7) }
-                        .keyboardShortcut("è")
+                        .keyboardShortcut("7")
                     Button(L("Select Tab 8", "Select Tab 8")) { appDelegate.selectTab(number: 8) }
-                        .keyboardShortcut("!")
+                        .keyboardShortcut("8")
                     Button(L("Select Tab 9", "Select Tab 9")) { appDelegate.selectTab(number: 9) }
-                        .keyboardShortcut("ç")
+                        .keyboardShortcut("9")
                 }
 
                 Divider()
@@ -371,7 +371,7 @@ struct Chau7App: App {
                 Button(L("Refresh Tab Bar", "Refresh Tab Bar")) {
                     appDelegate.refreshTabBar()
                 }
-                .keyboardShortcut("r", modifiers: [.command, .option])
+                .keyboardShortcut("r", modifiers: [.command, .option, .shift])
             }
 
             CommandGroup(replacing: .help) {
@@ -389,7 +389,7 @@ struct Chau7App: App {
                 Button(L("Debug Console", "Debug Console")) {
                     DebugConsoleController.shared.toggle()
                 }
-                .keyboardShortcut("l", modifiers: [.command, .shift])
+                .keyboardShortcut("l", modifiers: [.command, .option])
             }
         }
     }
