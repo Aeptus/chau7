@@ -108,7 +108,7 @@
     grid-template-columns: 1fr 1fr;
     gap: var(--space-2xl);
     padding: var(--space-3xl) var(--space-3xl);
-    align-content: center;
+    align-items: start;
 }
 
 .feature-showcase-overlay .feature-pain,
