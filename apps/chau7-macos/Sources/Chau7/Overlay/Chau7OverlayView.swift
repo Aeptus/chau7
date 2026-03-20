@@ -485,38 +485,11 @@ private struct ToolbarTabBarView: View {
 
     @ViewBuilder
     private func idleTabsDropdown(tabs: [OverlayTab]) -> some View {
-        Menu {
-            ForEach(tabs) { tab in
-                Button {
-                    overlayModel.selectTab(id: tab.id)
-                } label: {
-                    let title = tab.customTitle ?? tab.displaySession?.activeAppName ?? "Tab"
-                    let idle = idleDuration(for: tab)
-                    Label("\(title) — idle \(idle)", systemImage: "moon.zzz")
-                }
-            }
-            Divider()
-            Button("Close All Idle Tabs") {
-                for tab in tabs {
-                    overlayModel.closeTab(id: tab.id)
-                }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "tray.full")
-                    .font(.system(size: 10))
-                Text("\(tabs.count)")
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 3)
-            .frame(height: OverlayLayout.tabChipHeight, alignment: .center)
-            .background(Color.white.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .help("Idle tabs (\(tabs.count))")
+        IdleTabsChip(
+            tabs: tabs,
+            overlayModel: overlayModel,
+            idleDuration: idleDuration
+        )
     }
 
     private func idleDuration(for tab: OverlayTab) -> String {
