@@ -422,6 +422,19 @@ final class SplitPaneController: ObservableObject {
     /// carry a deterministic tabID for the TabResolver fast-path.
     var ownerTabID: UUID?
 
+    /// Send a command to the first terminal session in this split tree (for markdown runbooks).
+    func sendCommandToTerminal(_ command: String) {
+        func findSession(_ node: SplitNode) -> TerminalSessionModel? {
+            switch node {
+            case .terminal(_, let session): return session
+            case .textEditor: return nil
+            case .split(_, _, let first, let second, _):
+                return findSession(first) ?? findSession(second)
+            }
+        }
+        findSession(root)?.sendInput(command)
+    }
+
     /// F03: Callback for terminal Cmd+Click on file paths - opens in internal editor
     lazy var onFilePathClicked: (String, Int?, Int?) -> Void = { [weak self] path, line, _ in
         self?.openFileInEditor(path: path, line: line)

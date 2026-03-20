@@ -24,7 +24,10 @@ struct SplitPaneView: View {
             onClosePane: { id in
                 controller.closePane(id: id)
             },
-            onFilePathClicked: controller.onFilePathClicked
+            onFilePathClicked: controller.onFilePathClicked,
+            onRunCommand: { [weak controller] command in
+                controller?.sendCommandToTerminal(command)
+            }
         )
     }
 }
@@ -38,6 +41,7 @@ struct SplitNodeView: View {
     let onUpdateRatio: (UUID, CGFloat) -> Void
     let onClosePane: (UUID) -> Void
     var onFilePathClicked: ((String, Int?, Int?) -> Void)? // F03: Internal editor callback
+    var onRunCommand: ((String) -> Void)? // Markdown runbook: send command to terminal
 
     var body: some View {
         switch node {
@@ -56,7 +60,8 @@ struct SplitNodeView: View {
                 id: id,
                 editor: editor,
                 onFocus: { onFocus(id) },
-                onClose: { onClosePane(id) }
+                onClose: { onClosePane(id) },
+                onRunCommand: onRunCommand
             )
 
         case .split(let splitID, let direction, let first, let second, let ratio):
@@ -92,6 +97,7 @@ struct SplitContainerView: View {
     let onUpdateRatio: (UUID, CGFloat) -> Void
     let onClosePane: (UUID) -> Void
     var onFilePathClicked: ((String, Int?, Int?) -> Void)? // F03: Internal editor callback
+    var onRunCommand: ((String) -> Void)? // Markdown runbook
 
     @State private var liveRatio: CGFloat = 0.5
 
@@ -111,7 +117,8 @@ struct SplitContainerView: View {
                         onFocus: onFocus,
                         onUpdateRatio: onUpdateRatio,
                         onClosePane: onClosePane,
-                        onFilePathClicked: onFilePathClicked
+                        onFilePathClicked: onFilePathClicked,
+                        onRunCommand: onRunCommand
                     )
                     .frame(width: (totalSize - dividerSize) * effectiveRatio)
                     SplitDivider(
@@ -131,7 +138,8 @@ struct SplitContainerView: View {
                         onFocus: onFocus,
                         onUpdateRatio: onUpdateRatio,
                         onClosePane: onClosePane,
-                        onFilePathClicked: onFilePathClicked
+                        onFilePathClicked: onFilePathClicked,
+                        onRunCommand: onRunCommand
                     )
                 }
             } else {
@@ -144,7 +152,8 @@ struct SplitContainerView: View {
                         onFocus: onFocus,
                         onUpdateRatio: onUpdateRatio,
                         onClosePane: onClosePane,
-                        onFilePathClicked: onFilePathClicked
+                        onFilePathClicked: onFilePathClicked,
+                        onRunCommand: onRunCommand
                     )
                     .frame(height: (totalSize - dividerSize) * effectiveRatio)
                     SplitDivider(
@@ -164,7 +173,8 @@ struct SplitContainerView: View {
                         onFocus: onFocus,
                         onUpdateRatio: onUpdateRatio,
                         onClosePane: onClosePane,
-                        onFilePathClicked: onFilePathClicked
+                        onFilePathClicked: onFilePathClicked,
+                        onRunCommand: onRunCommand
                     )
                 }
             }
@@ -208,8 +218,15 @@ struct TextEditorPaneView: View {
     @ObservedObject var editor: TextEditorModel
     let onFocus: () -> Void
     let onClose: () -> Void
+    /// Callback to run a command in the terminal (for markdown runbooks)
+    var onRunCommand: ((String) -> Void)?
 
     @State private var showFilePicker = false
+    @State private var isMarkdownMode = false
+
+    private var isMarkdownFile: Bool {
+        editor.filePath?.hasSuffix(".md") == true
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -256,6 +273,34 @@ struct TextEditorPaneView: View {
                 .disabled(!editor.isDirty && editor.filePath != nil)
                 .help(L("Save", "Save"))
 
+                // Markdown toggle (only shown for .md files)
+                if isMarkdownFile {
+                    Button {
+                        isMarkdownMode.toggle()
+                    } label: {
+                        Image(systemName: isMarkdownMode ? "doc.plaintext" : "doc.richtext")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .help(isMarkdownMode ? "Show Source" : "Show Runbook")
+
+                    if isMarkdownMode, onRunCommand != nil {
+                        Button {
+                            let blocks = parseMarkdown(editor.content)
+                                .compactMap { s -> String? in
+                                    if case .codeBlock(_, let code) = s.kind { return code }
+                                    return nil
+                                }
+                            for block in blocks { onRunCommand?(block + "\n") }
+                        } label: {
+                            Label("Run All", systemImage: "play.fill")
+                                .font(.system(size: 10))
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.mini)
+                    }
+                }
+
                 // Close button
                 Button {
                     attemptClose()
@@ -272,10 +317,24 @@ struct TextEditorPaneView: View {
 
             Divider()
 
-            // Editor content
+            // Editor content — markdown runbook or raw text
             if editor.isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if isMarkdownFile && isMarkdownMode {
+                MarkdownRunbookView(
+                    content: editor.content,
+                    fileName: editor.fileName,
+                    onRunBlock: { code in onRunCommand?(code + "\n") },
+                    onRunAll: {
+                        let blocks = parseMarkdown(editor.content)
+                            .compactMap { section -> String? in
+                                if case .codeBlock(_, let code) = section.kind { return code }
+                                return nil
+                            }
+                        for block in blocks { onRunCommand?(block + "\n") }
+                    }
+                )
             } else {
                 TextEditorContent(
                     text: Binding(
@@ -290,6 +349,9 @@ struct TextEditorPaneView: View {
         .contentShape(Rectangle())
         .onTapGesture {
             onFocus()
+        }
+        .onChange(of: editor.filePath) { newPath in
+            isMarkdownMode = newPath?.hasSuffix(".md") == true
         }
         .fileImporter(
             isPresented: $showFilePicker,

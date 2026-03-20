@@ -77,6 +77,17 @@ cat <<PLIST > "$CONTENTS/Info.plist"
   <true/>
   <key>NSHumanReadableCopyright</key>
   <string>Local build</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>com.chau7.terminal</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>chau7</string>
+      </array>
+    </dict>
+  </array>
 </dict>
 </plist>
 PLIST
