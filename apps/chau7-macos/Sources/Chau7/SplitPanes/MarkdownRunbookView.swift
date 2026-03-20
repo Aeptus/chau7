@@ -134,7 +134,7 @@ func parseMarkdown(_ input: String) -> [MarkdownSection] {
             if !code.isEmpty {
                 sections.append(MarkdownSection(kind: .codeBlock(language: lang.isEmpty ? nil : lang, code: code)))
             }
-            i += 1 // skip closing ```
+            if i < lines.count { i += 1 } // skip closing ``` (guard unclosed block)
             continue
         }
 

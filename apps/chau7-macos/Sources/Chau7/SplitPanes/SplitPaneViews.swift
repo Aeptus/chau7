@@ -291,7 +291,12 @@ struct TextEditorPaneView: View {
                                     if case .codeBlock(_, let code) = s.kind { return code }
                                     return nil
                                 }
-                            for block in blocks { onRunCommand?(block + "\n") }
+                            // Stagger block execution so the shell processes each sequentially
+                            for (i, block) in blocks.enumerated() {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.5) { [onRunCommand] in
+                                    onRunCommand?(block + "\n")
+                                }
+                            }
                         } label: {
                             Label("Run All", systemImage: "play.fill")
                                 .font(.system(size: 10))
@@ -326,13 +331,17 @@ struct TextEditorPaneView: View {
                     content: editor.content,
                     fileName: editor.fileName,
                     onRunBlock: { code in onRunCommand?(code + "\n") },
-                    onRunAll: {
+                    onRunAll: { [onRunCommand] in
                         let blocks = parseMarkdown(editor.content)
                             .compactMap { section -> String? in
                                 if case .codeBlock(_, let code) = section.kind { return code }
                                 return nil
                             }
-                        for block in blocks { onRunCommand?(block + "\n") }
+                        for (i, block) in blocks.enumerated() {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.5) {
+                                onRunCommand?(block + "\n")
+                            }
+                        }
                     }
                 )
             } else {

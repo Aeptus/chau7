@@ -791,12 +791,13 @@ private final class OverlayBlurView: NSVisualEffectView {
                 Log.warn("AppDelegate: chau7://run — invalid base64 command")
                 return
             }
-            openNewTabWithCommand(command)
+            confirmAndRun(command: command, source: url.absoluteString)
 
         case "ssh":
             // chau7://ssh/user@host or chau7://ssh/user@host:port
             guard !path.isEmpty else { return }
-            openNewTabWithCommand("ssh \(path)")
+            let sanitized = path.replacingOccurrences(of: "'", with: "'\\''")
+            openNewTabWithCommand("ssh '\(sanitized)'")
 
         case "cd":
             // chau7://cd/path/to/directory
@@ -811,6 +812,17 @@ private final class OverlayBlurView: NSVisualEffectView {
         default:
             Log.warn("AppDelegate: unknown chau7:// host: \(host)")
         }
+    }
+
+    private func confirmAndRun(command: String, source: String) {
+        let alert = NSAlert()
+        alert.messageText = "Run command from URL?"
+        alert.informativeText = "A URL is requesting to run:\n\n\(command.prefix(500))\n\nSource: \(source)"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Run")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        openNewTabWithCommand(command)
     }
 
     private func openNewTabWithCommand(_ command: String) {
