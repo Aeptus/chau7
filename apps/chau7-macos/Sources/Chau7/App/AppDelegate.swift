@@ -348,6 +348,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
         overlayHosts.append(OverlayHost(window: window, model: tabsModel))
         activeOverlayModel = tabsModel
+        wireTabMoveCallbacks()
         showOverlayWindow(overlayHosts.last!, reason: "newWindow")
     }
 
@@ -790,6 +791,36 @@ private final class OverlayBlurView: NSVisualEffectView {
         ChangedFilesPanel.show(files: files, directory: session.currentDirectory)
     }
 
+    // MARK: - Tab Move Between Windows
+
+    /// Wire tab-move callbacks on all overlay models and update their window lists.
+    private func wireTabMoveCallbacks() {
+        for (i, host) in overlayHosts.enumerated() {
+            // Set the "move to window" callback
+            host.model.onMoveTabToWindow = { [weak self] tabID, targetWindowIndex in
+                self?.moveTab(tabID, fromWindowIndex: i, toWindowIndex: targetWindowIndex)
+            }
+            // Update the list of other windows for the context menu
+            host.model.otherWindowTitles = overlayHosts.enumerated().compactMap { j, other in
+                guard j != i else { return nil }
+                return OverlayTabsModel.WindowMenuItem(id: j, title: other.window.title)
+            }
+        }
+    }
+
+    /// Move a tab from one window to another.
+    private func moveTab(_ tabID: UUID, fromWindowIndex: Int, toWindowIndex: Int) {
+        guard fromWindowIndex < overlayHosts.count, toWindowIndex < overlayHosts.count else { return }
+        let source = overlayHosts[fromWindowIndex].model
+        let target = overlayHosts[toWindowIndex].model
+
+        guard let tab = source.detachTab(id: tabID) else { return }
+        target.tabs.append(tab)
+        target.selectTab(id: tab.id)
+        wireTabMoveCallbacks() // Refresh window lists
+        Log.info("Moved tab \(tabID) from window \(fromWindowIndex) to \(toWindowIndex)")
+    }
+
     // MARK: - Multi-Window Restoration
 
     /// Restore additional windows saved in the multi-window state.
@@ -1000,6 +1031,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         let window = createOverlayWindow(tabsModel: overlayModel, windowNumber: windowNumber)
         overlayHosts.append(OverlayHost(window: window, model: overlayModel))
         activeOverlayModel = overlayModel
+        wireTabMoveCallbacks()
         logOverlayDiagnostics(reason: "setup", window: window)
     }
 

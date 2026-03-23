@@ -216,6 +216,12 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
         max(lastInputAt, lastOutputAt)
     }
 
+    /// Reset activity timestamps to force the tab into the idle dropdown.
+    func resetActivityForIdleGrouping() {
+        lastInputAt = Date.distantPast
+        lastOutputAt = Date.distantPast
+    }
+
     private(set) var lastAIProvider: String?
     private(set) var lastAISessionId: String?
     /// The last app name set by live detection (command or output).

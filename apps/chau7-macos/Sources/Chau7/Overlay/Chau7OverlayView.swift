@@ -525,7 +525,10 @@ private struct ToolbarTabBarView: View {
                     overlayModel.cancelPrewarm(id: tab.id)
                     overlayModel.tabHoverEnded(id: tab.id)
                 }
-            }
+            },
+            onMoveToIdle: { overlayModel.forceTabIdle(id: tab.id) },
+            otherWindows: overlayModel.otherWindowTitles,
+            onMoveToWindow: { overlayModel.onMoveTabToWindow?(tab.id, $0) }
         )
         // Explicit stable identity based on tab UUID
         .id(tab.id)
@@ -1163,6 +1166,12 @@ struct UnifiedTabButton: View {
     let onRename: () -> Void
     let onClose: () -> Void
     var onHover: ((Bool) -> Void)?
+    /// Context menu: move tab to idle dropdown
+    var onMoveToIdle: () -> Void = {}
+    /// Context menu: available windows to move tab to
+    var otherWindows: [OverlayTabsModel.WindowMenuItem] = []
+    /// Context menu: move tab to another window
+    var onMoveToWindow: ((Int) -> Void)?
 
     /// Pulse animation state
     @State private var isPulsing = false
@@ -1215,7 +1224,29 @@ struct UnifiedTabButton: View {
             && !tab.customTitle!.isEmpty
     }
 
+    @ViewBuilder
+    private var tabContextMenu: some View {
+        Button("Rename Tab...") { onRename() }
+        Divider()
+        Button("Move to Idle Tabs") { onMoveToIdle() }
+        if !otherWindows.isEmpty {
+            Menu("Move to Window") {
+                ForEach(otherWindows) { window in
+                    Button(window.title) { onMoveToWindow?(window.id) }
+                }
+            }
+        }
+        Divider()
+        Button("Close Tab") { onClose() }
+    }
+
     var body: some View {
+        tabContent
+            .contextMenu { tabContextMenu }
+    }
+
+    @ViewBuilder
+    private var tabContent: some View {
         HStack(spacing: 8) {
             // Session-dependent content (icon, title, path, git) in an observing subview
             if let session = tab.displaySession {
