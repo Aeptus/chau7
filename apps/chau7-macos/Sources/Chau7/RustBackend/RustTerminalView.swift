@@ -2128,7 +2128,6 @@ final class RustTerminalView: NSView {
     /// Auto-scroll during selection drag
     private var autoScrollTimer: Timer?
     private var autoScrollDirection = 0 // -1 = up, 0 = none, 1 = down
-    private var autoScrollMouseX: CGFloat = 0 // Last mouse X for selection during auto-scroll
     private var autoScrollDistance: CGFloat = 0 // Distance outside bounds (for speed scaling)
 
     /// Event monitors
@@ -4520,7 +4519,7 @@ final class RustTerminalView: NSView {
             scrollDown(lines: speed)
         }
 
-        // Extend selection to the edge of the visible area, using actual mouse X
+        // Extend selection to the edge of the visible area (full line: col 0 up, last col down)
         guard let rust = rustTerminal else { return }
         let edgeRow: Int
         if autoScrollDirection < 0 {
@@ -5009,7 +5008,6 @@ final class RustTerminalView: NSView {
 
             // Auto-scroll when dragging outside bounds during selection
             if didDragSinceMouseDown, isSelecting {
-                autoScrollMouseX = location.x
                 if location.y < 0 {
                     // Dragging below view - scroll down (content moves up)
                     autoScrollDirection = 1
