@@ -56,6 +56,9 @@ private final class OverlayBlurView: NSVisualEffectView {
         // but this catches any unprotected write paths (proxies, IPC, MCP bridges).
         signal(SIGPIPE, SIG_IGN)
 
+        // Purge oversized PTY logs on startup to prevent disk bloat
+        purgeLargePTYLogs()
+
         // Strip env vars from parent process that would confuse nested CLI tools.
         // When Chau7 is launched from within a Claude Code session (e.g. via
         // build-and-run.sh), CLAUDECODE=1 leaks into every terminal child process,
@@ -765,6 +768,29 @@ private final class OverlayBlurView: NSVisualEffectView {
             return
         }
         ChangedFilesPanel.show(files: files, directory: session.currentDirectory)
+    }
+
+    // MARK: - PTY Log Maintenance
+
+    /// Truncate PTY logs over 10MB on startup to prevent disk bloat.
+    private func purgeLargePTYLogs() {
+        let logDir = RuntimeIsolation.expandTilde(in: "~/Library/Logs/Chau7")
+        let maxBytes: UInt64 = 10 * 1024 * 1024
+        DispatchQueue.global(qos: .utility).async {
+            guard let files = try? FileManager.default.contentsOfDirectory(atPath: logDir) else { return }
+            for file in files where file.hasSuffix("-pty.log") {
+                let path = (logDir as NSString).appendingPathComponent(file)
+                guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+                      let size = attrs[.size] as? UInt64, size > maxBytes else { continue }
+                // Keep the last 5MB (tail)
+                let keepBytes = 5 * 1024 * 1024
+                if let data = FileManager.default.contents(atPath: path), data.count > keepBytes {
+                    let tail = data.suffix(keepBytes)
+                    try? tail.write(to: URL(fileURLWithPath: path), options: .atomic)
+                    Log.info("Purged PTY log \(file): \(size / 1024 / 1024)MB → \(keepBytes / 1024 / 1024)MB")
+                }
+            }
+        }
     }
 
     // MARK: - URL Scheme Handler (chau7://)
