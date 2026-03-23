@@ -764,7 +764,7 @@ private final class OverlayBlurView: NSVisualEffectView {
             Log.info("AppDelegate: showChangedFiles — no changed files for tab \(tabID.prefix(8))")
             return
         }
-        ChangedFilesPanel.show(files: files)
+        ChangedFilesPanel.show(files: files, directory: session.currentDirectory)
     }
 
     // MARK: - URL Scheme Handler (chau7://)
