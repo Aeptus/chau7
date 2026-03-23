@@ -167,9 +167,11 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
     /// Whether the AI logo should appear at full opacity.
     /// Grey (false) only for restored sessions that haven't been re-detected live.
     /// True when an AI tool is actively detected as running (colored icon).
-    /// False when the tool has finished and the shell prompt returned (grey icon).
+    /// False when the tool has finished / shell prompt returned (grey icon),
+    /// or when the session was restored from disk but not yet re-detected live.
     var isAIRunning: Bool {
-        activeAppName != nil
+        guard activeAppName != nil else { return false }
+        return !aiDetection.isRestored
     }
 
     var shouldKeepLiveRenderingInBackground: Bool {
