@@ -609,6 +609,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
                 promptSeenForPendingCommand = false
             case .commandExecuted:
                 shellEventDetector.commandStarted(command: pendingCommandLine, in: currentDirectory)
+                notifyCommandBlockStarted()
                 if isGitRepo {
                     let dir = currentDirectory
                     let tracker = gitDiffTracker
@@ -620,6 +621,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
                 hasPendingCommand = false
                 promptSeenForPendingCommand = true
                 shellEventDetector.commandFinished(exitCode: Int(exitCode), command: pendingCommandLine)
+                notifyCommandBlockFinished(exitCode: Int(exitCode))
                 if isGitRepo {
                     let dir = currentDirectory
                     let tabID = ownerTabID?.uuidString
@@ -1099,6 +1101,24 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
             }
         }
         return true
+    }
+
+    private func notifyCommandBlockStarted() {
+        let tabID = ownerTabID?.uuidString
+        let cmd = pendingCommandLine ?? ""
+        let dir = currentDirectory
+        DispatchQueue.main.async {
+            guard let tabID else { return }
+            CommandBlockManager.shared.commandStarted(tabID: tabID, command: cmd, line: 0, directory: dir)
+        }
+    }
+
+    private func notifyCommandBlockFinished(exitCode: Int) {
+        let tabID = ownerTabID?.uuidString
+        DispatchQueue.main.async {
+            guard let tabID else { return }
+            CommandBlockManager.shared.commandFinished(tabID: tabID, line: 0, exitCode: exitCode)
+        }
     }
 
     private func clearActiveAppAfterPrompt() {
