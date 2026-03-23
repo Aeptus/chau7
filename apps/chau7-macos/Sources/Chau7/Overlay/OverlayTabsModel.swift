@@ -438,9 +438,11 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         let rawStates: [SavedTabState]
     }
 
-    init(appModel: AppModel) {
+    /// When `restoreState` is false, the model starts with a single fresh tab
+    /// instead of loading saved state from disk. Used for Cmd+N new windows.
+    init(appModel: AppModel, restoreState: Bool = true) {
         self.appModel = appModel
-        let restoredPayload = Self.restoreSavedTabs(appModel: appModel)
+        let restoredPayload = restoreState ? Self.restoreSavedTabs(appModel: appModel) : nil
 
         if let restoredPayload {
             self.tabs = restoredPayload.tabs

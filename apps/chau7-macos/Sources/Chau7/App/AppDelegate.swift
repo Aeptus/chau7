@@ -322,7 +322,7 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     func newOverlayWindow() {
         guard let model else { return }
-        let tabsModel = OverlayTabsModel(appModel: model)
+        let tabsModel = OverlayTabsModel(appModel: model, restoreState: false)
         TerminalControlService.shared.register(tabsModel)
         let windowNumber = allocateOverlayWindowNumber()
         let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
