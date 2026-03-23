@@ -502,6 +502,16 @@ public enum NotificationTriggerCatalog {
     private static let historyMonitorTriggers: [NotificationTrigger] = [
         NotificationTrigger(
             source: .historyMonitor,
+            type: "finished",
+            labelKey: "notifications.trigger.historyMonitor.finished.label",
+            labelFallback: "Session completed (history)",
+            descriptionKey: "notifications.trigger.historyMonitor.finished.description",
+            descriptionFallback: "AI session completed as detected by history file monitoring.",
+            defaultEnabled: true,
+            displayContexts: [.settings, .activity]
+        ),
+        NotificationTrigger(
+            source: .historyMonitor,
             type: "idle",
             labelKey: "notifications.trigger.historyMonitor.idle.label",
             labelFallback: "History idle",
@@ -509,7 +519,7 @@ public enum NotificationTriggerCatalog {
             descriptionFallback: "No new history entries for the idle timeout.",
             defaultEnabled: false,
             displayContexts: [.settings, .activity]
-        )
+        ),
     ]
 
     private static let shellTriggers: [NotificationTrigger] = [
