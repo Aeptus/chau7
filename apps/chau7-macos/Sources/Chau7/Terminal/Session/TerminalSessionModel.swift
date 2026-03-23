@@ -216,10 +216,14 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
         max(lastInputAt, lastOutputAt)
     }
 
-    /// Reset activity timestamps to force the tab into the idle dropdown.
+    /// Backdate activity timestamps to force the tab into the idle dropdown.
+    /// Uses 11 minutes ago (just over the 10-minute threshold) rather than
+    /// distantPast, which would trigger the fallback completion timer and
+    /// corrupt the command-tracking state for running commands.
     func resetActivityForIdleGrouping() {
-        lastInputAt = Date.distantPast
-        lastOutputAt = Date.distantPast
+        let backdated = Date(timeIntervalSinceNow: -660) // 11 minutes ago
+        lastInputAt = backdated
+        lastOutputAt = backdated
     }
 
     private(set) var lastAIProvider: String?
