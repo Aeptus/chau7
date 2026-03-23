@@ -312,14 +312,14 @@ private struct TabBarSizeKey: PreferenceKey {
 /// SwiftUI view for the tab bar that goes in the unified toolbar
 private struct ToolbarTabBarView: View {
     @ObservedObject var overlayModel: OverlayTabsModel
-    @ObservedObject private var settings = FeatureSettings.shared
     @State private var draggingTabID: UUID?
     @State private var tabWidths: [UUID: CGFloat] = [:]
     @State private var recoveryDebounce: DispatchWorkItem?
 
-    /// Tabs idle for 10+ minutes (empty when feature is off or no tabs are idle)
+    /// Tabs idle for 10+ minutes (empty when feature is off or no tabs are idle).
+    /// Reads the setting directly to avoid subscribing to all FeatureSettings changes.
     private var idleTabs: [OverlayTab] {
-        guard settings.groupIdleTabs else { return [] }
+        guard FeatureSettings.shared.groupIdleTabs else { return [] }
         let threshold: TimeInterval = 600
         let now = Date()
         return overlayModel.tabs.filter { tab in
