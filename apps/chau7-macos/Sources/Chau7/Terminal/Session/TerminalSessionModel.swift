@@ -197,6 +197,10 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
     /// Whether the shell is at a prompt (not running a command). Used by history key monitor.
     @Published var isAtPrompt = true
 
+    /// Called when a permission/question is answered (user submits input after waiting).
+    /// Used to clear the persistent red border on the tab.
+    var onPermissionResolved: (() -> Void)?
+
     /// Whether the shell is still loading (no prompt yet). Cleared on first OSC 7.
     @Published var isShellLoading = true
 
@@ -620,6 +624,8 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
                 commandStartedAt = Date()
                 commandFinishedNotified = false
                 promptSeenForPendingCommand = false
+                // Clear persistent permission border — user answered the prompt
+                onPermissionResolved?()
             case .commandExecuted:
                 shellEventDetector.commandStarted(command: pendingCommandLine, in: currentDirectory)
                 notifyCommandBlockStarted()
@@ -1563,6 +1569,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
             commandFinishedNotified = false
             isAtPrompt = false
             shellEventDetector.commandStarted(command: persistedCommand, in: currentDirectory)
+            onPermissionResolved?()
         }
         trackAIResumeMetadata(from: trimmed)
         updateActiveAppName(from: trimmed)

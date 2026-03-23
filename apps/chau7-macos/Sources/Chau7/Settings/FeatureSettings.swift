@@ -178,9 +178,10 @@ struct NotificationSettings: Equatable {
             NotificationActionConfig(actionType: .showNotification, enabled: true),
             NotificationActionConfig(actionType: .styleTab, enabled: true, config: [
                 "style": "custom",
-                "customColor": "orange",
+                "customColor": "red",
                 "borderWidth": "2",
-                "borderStyle": "dotted"
+                "borderStyle": "solid",
+                "persistent": "true"
             ])
         ],
         "ai_coding.idle": [

@@ -42,6 +42,10 @@ struct TabNotificationStyle: Equatable {
     /// Badge color (defaults to red)
     var badgeColor: Color = .red
 
+    /// When true, the style persists even when the tab is selected.
+    /// Used for permission requests that need attention until resolved.
+    var persistent = false
+
     /// Predefined styles for common states
     static let waiting = TabNotificationStyle(
         titleColor: .orange,
@@ -232,8 +236,18 @@ struct OverlayTab: Identifiable, Equatable {
     /// Must be called after the tab's `id` is finalized (i.e. after init or restore).
     mutating func stampOwnerTabID() {
         splitController.ownerTabID = id
+        let tabID = id
         for (_, session) in splitController.terminalSessions {
-            session.ownerTabID = id
+            session.ownerTabID = tabID
+            // Wire permission-resolved callback to clear persistent tab border
+            session.onPermissionResolved = {
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(
+                        name: Notification.Name("com.chau7.clearPersistentTabStyle"),
+                        object: tabID
+                    )
+                }
+            }
         }
     }
 }
@@ -478,6 +492,15 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
             for (index, state) in restoredPayload.rawStates.enumerated() where index < tabs.count {
                 restoreTabState(for: tabs[index], state: state)
             }
+        }
+
+        // Observe permission-resolved to clear persistent red borders
+        NotificationCenter.default.addObserver(
+            forName: Notification.Name("com.chau7.clearPersistentTabStyle"),
+            object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let tabID = notification.object as? UUID else { return }
+            self?.clearPersistentStyle(for: tabID)
         }
 
         // Setup task lifecycle observers (v1.1)
@@ -1856,8 +1879,10 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         previousTabIndex = oldIndex
         selectedTabID = id
 
-        // Clear notification style when switching to a tab (user acknowledged it)
-        if let index = tabs.firstIndex(where: { $0.id == id }), tabs[index].notificationStyle != nil {
+        // Clear notification style when switching to a tab (user acknowledged it),
+        // unless the style is persistent (e.g., permission requests stay until resolved).
+        if let index = tabs.firstIndex(where: { $0.id == id }),
+           let style = tabs[index].notificationStyle, !style.persistent {
             tabs[index].notificationStyle = nil
         }
 
@@ -2800,6 +2825,15 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         setNotificationStyle(style, for: tab.id)
     }
 
+    /// Clears persistent notification style (e.g., permission red border) when
+    /// the session resumes after a permission answer.
+    func clearPersistentStyle(for tabID: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == tabID }),
+              tabs[index].notificationStyle?.persistent == true else { return }
+        tabs[index].notificationStyle = nil
+        Log.info("Persistent tab style cleared for tab \(tabID) (permission resolved)")
+    }
+
     /// Clears notification style from a tab
     func clearNotificationStyle(for tabID: UUID? = nil) {
         setNotificationStyle(nil, for: tabID)
@@ -2884,6 +2918,10 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
             default:
                 break // solid — nil dash
             }
+        }
+
+        if let persistentStr = config["persistent"]?.lowercased() {
+            style.persistent = (persistentStr == "true" || persistentStr == "1")
         }
 
         return style
