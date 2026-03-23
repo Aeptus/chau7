@@ -396,7 +396,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
     /// True once the shell sends any OSC 133 marker. When set, heuristic
     /// command detection (echo-based start, timeout-based finish) is suppressed
     /// in favor of the authoritative shell signals.
-    private var hasShellIntegration = false
+    private(set) var hasShellIntegration = false
     private let terminationStateQueue = DispatchQueue(label: "com.chau7.terminal.termination")
     private var didHandleProcessTermination = false
     private var closeSessionRequested = false

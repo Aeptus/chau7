@@ -107,6 +107,7 @@ private struct TabHoverCardContent: View {
             VStack(alignment: .leading, spacing: 8) {
                 directoryRow
                 gitRow
+                shellIntegrationRow
                 devServerRow
                 processInfoSection
                 lastCommandRow
@@ -196,6 +197,19 @@ private struct TabHoverCardContent: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var shellIntegrationRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: session.hasShellIntegration ? "checkmark.seal.fill" : "exclamationmark.triangle")
+                .font(.system(size: 11))
+                .foregroundStyle(session.hasShellIntegration ? .green : .orange)
+                .frame(width: 16)
+            Text(session.hasShellIntegration ? "Shell integration active" : "Heuristic detection")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
         }
     }
 
