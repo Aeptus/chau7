@@ -1051,6 +1051,13 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         monitor.onSessionIdle = { [weak self] session in
             Log.info("Claude Code session idle: \(session.projectName) (\(session.id.prefix(8)))")
             self?.syncClaudeCodeSessions()
+            // Route idle notification through the unified pipeline (was previously
+            // handled by ClaudeCodeMonitor.notifySessionIdle directly)
+            self?.recordEvent(
+                source: .claudeCode, type: "idle", tool: "Claude",
+                message: "Waiting for input in \(session.projectName)",
+                notify: true
+            )
         }
 
         monitor.onResponseComplete = { [weak self] event in
