@@ -175,7 +175,11 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
     }
 
     var shouldKeepLiveRenderingInBackground: Bool {
-        guard hasBackgroundRenderingAIContext else { return false }
+        // Only keep live rendering when an AI tool is actively running (activeAppName
+        // is set). Previously used hasBackgroundRenderingAIContext which included
+        // persisted provider/sessionId — making every tab that EVER ran an AI tool
+        // permanently exempt from suspension.
+        guard activeAppName != nil else { return false }
         return effectiveStatus != .exited
     }
 
