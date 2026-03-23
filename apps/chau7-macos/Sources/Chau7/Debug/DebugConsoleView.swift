@@ -60,6 +60,7 @@ struct DebugConsoleView: View {
                 Text(L("Logs", "Logs")).tag(5)
                 Text(L("Report", "Report")).tag(6)
                 Text("API Analytics").tag(7)
+                Text("Health").tag(8)
             }
             .pickerStyle(.segmented)
             .padding(8)
@@ -77,6 +78,7 @@ struct DebugConsoleView: View {
                 case 5: logsView
                 case 6: reportView
                 case 7: apiAnalyticsView
+                case 8: healthDashboardView
                 default: stateView
                 }
             }
@@ -1511,6 +1513,59 @@ struct DebugConsoleView: View {
             aiPerTabStats = TelemetryStore.shared.tokenUsagePerTab()
             providerStats = TelemetryStore.shared.consumptionPerProvider()
             dailyCostTrend = TelemetryStore.shared.dailyCostTrend()
+        }
+    }
+
+    private var healthDashboardView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                GroupBox("Session Overview") {
+                    let tabCount = overlayModel.tabs.count
+                    let idleCount = overlayModel.tabs.filter { tab in
+                        guard let session = tab.displaySession ?? tab.session,
+                              tab.id != overlayModel.selectedTabID else { return false }
+                        return Date().timeIntervalSince(session.lastActivityDate) > 600
+                    }.count
+                    let osc133Count = overlayModel.tabs.filter { ($0.session?.hasShellIntegration) == true }.count
+                    VStack(alignment: .leading, spacing: 4) {
+                        healthRow("Tabs", value: "\(tabCount) total, \(idleCount) idle, \(tabCount - idleCount) active")
+                        healthRow("Shell integration (OSC 133)", value: "\(osc133Count)/\(tabCount) tabs")
+                        healthRow("Suspended tabs", value: "\(overlayModel.suspendedTabIDs.count)")
+                    }
+                }
+
+                GroupBox("PTY Logs") {
+                    VStack(alignment: .leading, spacing: 4) {
+                        let logDir = RuntimeIsolation.expandTilde(in: "~/Library/Logs/Chau7")
+                        let logFiles = (try? FileManager.default.contentsOfDirectory(atPath: logDir).filter { $0.hasSuffix(".log") }) ?? []
+                        ForEach(logFiles, id: \.self) { file in
+                            let path = (logDir as NSString).appendingPathComponent(file)
+                            let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? UInt64) ?? 0
+                            let sizeStr = size > 1024 * 1024 ? String(format: "%.1fMB", Double(size) / 1_048_576) : "\(size / 1024)KB"
+                            healthRow(file, value: sizeStr, warn: size > 10 * 1024 * 1024)
+                        }
+                    }
+                }
+
+                GroupBox("Metal Rendering") {
+                    let atlasCount = MetalTerminalRenderer.sharedAtlases.count
+                    VStack(alignment: .leading, spacing: 4) {
+                        healthRow("Shared atlases", value: "\(atlasCount)")
+                        healthRow("Ligatures enabled", value: FeatureSettings.shared.enableLigatures ? "Yes" : "No")
+                    }
+                }
+            }
+            .padding()
+        }
+    }
+
+    private func healthRow(_ label: String, value: String, warn: Bool = false) -> some View {
+        HStack {
+            Text(label).foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .monospaced()
+                .foregroundStyle(warn ? .red : .primary)
         }
     }
 
