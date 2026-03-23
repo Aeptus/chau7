@@ -2236,9 +2236,30 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         let runningProcessCount = countRunningProcesses(in: tab)
         let hasRunningProcess = runningProcessCount > 0
         let isLastTab = tabs.count == 1
-        let willCloseWindow = isLastTab && settings.lastTabCloseBehavior == .closeWindow
 
-        // Check if we need to show a warning dialog
+        // For the last tab, show a single combined prompt (skip separate process warning)
+        if isLastTab, !skipWarning {
+            let closeWindow = confirmCloseLastTab()
+            // Re-validate
+            guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
+            let dir = inheritedStartDirectory()
+            tabs[idx].splitController.root.closeAllSessions()
+            if closeWindow {
+                Log.info("closeTab: last tab - user chose to close window")
+                tabs[idx] = makeFreshTab(inheritedDirectory: dir)
+                selectedTabID = tabs[idx].id
+                needsFreshTabOnShow = false
+                onCloseLastTab?()
+            } else {
+                Log.info("closeTab: last tab - keeping window with fresh tab")
+                let newTab = makeFreshTab(inheritedDirectory: dir)
+                tabs[idx] = newTab
+                selectedTabID = newTab.id
+            }
+            return
+        }
+
+        // Non-last tabs: check if we need a warning dialog
         let warnForProcess = settings.warnOnCloseWithRunningProcess && hasRunningProcess
         let warnAlways = settings.alwaysWarnOnTabClose
         let shouldWarn = !skipWarning && (warnForProcess || warnAlways)
@@ -2246,8 +2267,8 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         if shouldWarn {
             let confirmed = confirmTabClose(
                 runningProcessCount: runningProcessCount,
-                isLastTab: isLastTab,
-                willCloseWindow: willCloseWindow,
+                isLastTab: false,
+                willCloseWindow: false,
                 isAlwaysWarnMode: warnAlways && !warnForProcess
             )
             guard confirmed else {
@@ -2263,7 +2284,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
         let isLastTabNow = tabs.count == 1
 
-        let inheritedDirectory = isLastTabNow ? inheritedStartDirectory() : nil
+        // inheritedDirectory not needed — last tab is handled in the early-return block above
         Log.info("closeTab: found tab at index=\(index)")
         if isRenameVisible {
             clearRenameState(shouldFocus: false)
@@ -2304,22 +2325,9 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         tabs[index].splitController.root.closeAllSessions()
 
         if isLastTabNow {
-            // Prompt user: close the window or keep it with a fresh tab?
-            let closeWindow = confirmCloseLastTab()
-            if closeWindow {
-                Log.info("closeTab: last tab - user chose to close window")
-                tabs[index] = makeFreshTab(inheritedDirectory: inheritedDirectory)
-                selectedTabID = tabs[index].id
-                needsFreshTabOnShow = false
-                onCloseLastTab?()
-                return
-            }
-            // Keep window open with a fresh tab
-            Log.info("closeTab: last tab - keeping window with fresh tab")
-            let newTab = makeFreshTab(inheritedDirectory: inheritedDirectory)
-            tabs[index] = newTab
-            selectedTabID = newTab.id
-            Log.info("closeTab: new tab created with id=\(newTab.id)")
+            // Last tab was already handled above (early return with prompt)
+            Log.warn("closeTab: unexpected last-tab fallthrough")
+            return
         } else {
             // Multiple tabs - just remove this one
             Log.info("closeTab: removing tab at index=\(index), tabs.count before=\(tabs.count)")
@@ -3112,8 +3120,10 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         guard let index = tabs.firstIndex(where: { $0.id == id }), tabs.count > 1 else { return nil }
         let tab = tabs[index]
         tabs.remove(at: index)
-        if selectedTabID == id, let next = tabs.first {
-            selectedTabID = next.id
+        suspendedTabIDs.remove(id)
+        if selectedTabID == id {
+            let newIndex = min(max(0, index - 1), tabs.count - 1)
+            selectedTabID = tabs[newIndex].id
         }
         return tab
     }
