@@ -90,7 +90,7 @@ final class RustMetalDisplayCoordinator: NSObject {
         // Initialize bridge with current color scheme
         bridge.colorSchemeChanged()
 
-        Log.info("RustMetalDisplayCoordinator: Initialized (\(cols)x\(rows))")
+        Log.trace("RustMetalDisplayCoordinator: Initialized (\(cols)x\(rows))")
 
         // Start blink timer (500ms interval, matching standard terminal blink rate)
         startBlinkTimer()

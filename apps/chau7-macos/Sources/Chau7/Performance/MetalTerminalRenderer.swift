@@ -339,7 +339,7 @@ public final class MetalTerminalRenderer: NSObject {
         let ulFrac = baselineFrac - ulOffset / pointCellSize.height // e.g. 0.82 + 1.5/17 ≈ 0.91
         underlinePosition = Float(min(max(ulFrac, 0.7), 0.95))
 
-        Log.info("MetalRenderer: Font configured — \(CTFontCopyFullName(regularFont)), scaledSize=\(scaledSize), cellSize=\(cellSize), ascent=\(ascent), descent=\(descent)")
+        Log.trace("MetalRenderer: Font configured — \(CTFontCopyFullName(regularFont)), scaledSize=\(scaledSize), cellSize=\(cellSize), ascent=\(ascent), descent=\(descent)")
 
         // Guard against zero cell size (would make nothing visible)
         guard cellSize.width > 0, cellSize.height > 0 else {
@@ -351,7 +351,7 @@ public final class MetalTerminalRenderer: NSObject {
         resetAtlas()
         prerasterizeASCII()
         uploadAtlasTexture()
-        Log.info("MetalRenderer: Atlas populated with \(glyphCache.count) glyphs")
+        Log.trace("MetalRenderer: Atlas populated with \(glyphCache.count) glyphs")
     }
 
     /// Clears glyph atlas and cache, resetting the packing cursor.

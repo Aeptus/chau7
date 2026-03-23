@@ -12,7 +12,7 @@ final class AITerminalLogSession {
            let value = Int(raw), value > 0 {
             return value
         }
-        return 50 * 1024 * 1024 // 50 MB
+        return 10 * 1024 * 1024 // 10 MB
     }()
 
     init(toolName: String, logPath: String) {
@@ -24,10 +24,10 @@ final class AITerminalLogSession {
         guard !data.isEmpty else { return }
         queue.async { [weak self] in
             guard let self else { return }
-            if appendLocked(data) {
-                writeCount += 1
-            }
-            if writeCount > 0, writeCount.isMultiple(of: 200) {
+            let ok = appendLocked(data)
+            writeCount += 1
+            // Trim every 200 writes, or immediately on write failure (disk full)
+            if !ok || writeCount.isMultiple(of: 200) {
                 trimLogIfNeeded()
             }
         }

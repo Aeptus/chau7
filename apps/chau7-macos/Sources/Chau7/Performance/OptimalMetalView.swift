@@ -134,7 +134,7 @@ public final class OptimalMetalView: MTKView {
         // Depth/stencil (disabled for 2D terminal)
         depthStencilPixelFormat = .invalid
 
-        Log.info("OptimalMetalView: Configured for low-latency rendering")
+        Log.trace("OptimalMetalView: Configured for low-latency rendering")
     }
 
     // MARK: - Timing Mode
