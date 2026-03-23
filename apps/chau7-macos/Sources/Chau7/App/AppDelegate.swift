@@ -233,9 +233,14 @@ private final class OverlayBlurView: NSVisualEffectView {
         for host in overlayHosts {
             let states = host.model.exportTabStates()
             if !states.isEmpty { allWindows.append(states) }
-            // Also save single-window state for backward compatibility
-            host.model.saveTabState(reason: .termination)
             host.model.closeAllSessionsForTermination()
+        }
+        // Save window 0's state to the legacy key (read by Chau7App.init on launch).
+        // Additional windows are saved to the multi-window key.
+        // Save window 0 to the legacy key (Chau7App.init reads this on launch)
+        if let firstWindowStates = allWindows.first,
+           let data = try? JSONEncoder().encode(firstWindowStates) {
+            UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
         }
         if allWindows.count > 1 {
             let multiState = SavedMultiWindowState(windows: allWindows)
@@ -243,7 +248,6 @@ private final class OverlayBlurView: NSVisualEffectView {
                 UserDefaults.standard.set(data, forKey: SavedMultiWindowState.userDefaultsKey)
             }
         } else {
-            // Single window — clear multi-window key to avoid stale restore
             UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
         }
         Log.info("Saved \(allWindows.count) window(s) tab state for restoration")
