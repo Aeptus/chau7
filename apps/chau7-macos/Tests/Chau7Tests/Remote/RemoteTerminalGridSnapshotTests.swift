@@ -3,7 +3,8 @@ import XCTest
 
 final class RemoteTerminalGridSnapshotTests: XCTestCase {
     func testRoundTripPreservesMetadataAndCells() throws {
-        let cells = Data((0 ..< 24).map(UInt8.init))
+        // 2 cols × 1 row × 16 bytes/cell = 32 bytes
+        let cells = Data((0 ..< 32).map(UInt8.init))
         let snapshot = RemoteTerminalGridSnapshot(
             cols: 2,
             rows: 1,
