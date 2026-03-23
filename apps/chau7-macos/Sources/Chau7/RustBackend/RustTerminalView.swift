@@ -5298,17 +5298,21 @@ final class RustTerminalView: NSView {
         let clickedRow = max(0, min(Int((bounds.height - point.y) / cellHeight), rows - 1))
         let clickedCol = max(0, min(Int(point.x / cellWidth), cols - 1))
         let cursor = rust.cursorPosition
-        guard clickedRow == Int(cursor.row) else { return false }
+        let rowDiff = clickedRow - Int(cursor.row)
         let colDiff = clickedCol - Int(cursor.col)
+
+        // Limit vertical movement to nearby rows (within 5) to avoid jumping
+        // deep into scrollback when the user intended to select text.
+        guard abs(rowDiff) <= 5 else { return false }
+
         var sequences = ""
-        if colDiff > 0 {
-            sequences = String(repeating: "\u{1b}[C", count: colDiff)
-        } else if colDiff < 0 {
-            sequences = String(repeating: "\u{1b}[D", count: -colDiff)
-        }
+        if rowDiff > 0 { sequences += String(repeating: "\u{1b}[B", count: rowDiff) }
+        else if rowDiff < 0 { sequences += String(repeating: "\u{1b}[A", count: -rowDiff) }
+        if colDiff > 0 { sequences += String(repeating: "\u{1b}[C", count: colDiff) }
+        else if colDiff < 0 { sequences += String(repeating: "\u{1b}[D", count: -colDiff) }
         if !sequences.isEmpty {
             send(txt: sequences)
-            Log.trace("RustTerminalView[\(viewId)]: Click-to-position - moved cursor by col=\(colDiff)")
+            Log.trace("RustTerminalView[\(viewId)]: Click-to-position - moved cursor by row=\(rowDiff), col=\(colDiff)")
             return true
         }
         return false
