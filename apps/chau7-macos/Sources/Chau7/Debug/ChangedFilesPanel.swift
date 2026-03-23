@@ -7,11 +7,11 @@ enum ChangedFilesPanel {
     private static var panel: NSPanel?
 
     @MainActor
-    static func show(files: [String]) {
+    static func show(files: [String], directory: String? = nil) {
         // Dismiss existing panel
         panel?.close()
 
-        let view = ChangedFilesView(files: files)
+        let view = ChangedFilesView(files: files, directory: directory)
         let hosting = NSHostingController(rootView: view)
 
         let p = NSPanel(
@@ -33,7 +33,9 @@ enum ChangedFilesPanel {
 
 private struct ChangedFilesView: View {
     let files: [String]
+    let directory: String?
     @State private var searchText = ""
+    @State private var diffStats: [String: String] = [:]
 
     private var filtered: [String] {
         if searchText.isEmpty { return files }
@@ -60,9 +62,15 @@ private struct ChangedFilesView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer()
+                    if let stat = diffStats[file], !stat.isEmpty {
+                        Text(stat)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .contextMenu {
-                    Button("Copy Path") { NSPasteboard.general.clearContents()
+                    Button("Copy Path") {
+                        NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(file, forType: .string)
                     }
                     Button("Copy All Paths") {
@@ -91,6 +99,21 @@ private struct ChangedFilesView: View {
             .padding(8)
         }
         .frame(minWidth: 300, minHeight: 200)
+        .onAppear { loadDiffStats() }
+    }
+
+    private func loadDiffStats() {
+        guard let dir = directory else { return }
+        let tracker = GitDiffTracker()
+        let filesToCheck = files
+        DispatchQueue.global(qos: .utility).async {
+            var stats: [String: String] = [:]
+            for file in filesToCheck {
+                let stat = tracker.diffStat(file: file, in: dir)
+                if !stat.isEmpty { stats[file] = stat }
+            }
+            DispatchQueue.main.async { diffStats = stats }
+        }
     }
 
     private func iconForFile(_ path: String) -> String {
