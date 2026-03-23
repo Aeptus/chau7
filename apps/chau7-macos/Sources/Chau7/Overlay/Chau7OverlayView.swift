@@ -314,6 +314,26 @@ private struct ToolbarTabBarView: View {
     @State private var draggingTabID: UUID?
     @State private var tabWidths: [UUID: CGFloat] = [:]
     @State private var recoveryDebounce: DispatchWorkItem?
+
+    /// Tabs idle for 10+ minutes (empty when feature is off or no tabs are idle)
+    private var idleTabs: [OverlayTab] {
+        guard settings.groupIdleTabs else { return [] }
+        let threshold: TimeInterval = 600
+        let now = Date()
+        return overlayModel.tabs.filter { tab in
+            guard let session = tab.displaySession ?? tab.session,
+                  tab.id != overlayModel.selectedTabID else { return false }
+            return now.timeIntervalSince(session.lastActivityDate) > threshold
+        }
+    }
+
+    /// Tabs to show in the tab bar (all tabs minus idle ones)
+    private var visibleTabs: [OverlayTab] {
+        let idle = idleTabs
+        if idle.isEmpty { return overlayModel.tabs }
+        let idleIDs = Set(idle.map(\.id))
+        return overlayModel.tabs.filter { !idleIDs.contains($0.id) }
+    }
     // Gesture-based drag state for tab reordering (Chrome/Safari style deferred reorder)
     @State private var dragOffset: CGFloat = 0
     @State private var dragHomeIndex = 0 // Original index when drag started
@@ -332,34 +352,16 @@ private struct ToolbarTabBarView: View {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
-                            // Idle tabs dropdown (when enabled and there are idle tabs)
-                            if FeatureSettings.shared.groupIdleTabs {
-                                let idleThreshold: TimeInterval = 600 // 10 minutes
-                                let now = Date()
-                                let idle = overlayModel.tabs.filter { tab in
-                                    guard let session = tab.displaySession ?? tab.session,
-                                          tab.id != overlayModel.selectedTabID else { return false }
-                                    return now.timeIntervalSince(session.lastActivityDate) > idleThreshold
-                                }
-                                let active = overlayModel.tabs.filter { tab in
-                                    !idle.contains(where: { $0.id == tab.id })
-                                }
+                            // Idle tabs dropdown chip (only visible when there are idle tabs)
+                            if !idleTabs.isEmpty {
+                                idleTabsDropdown(tabs: idleTabs)
+                            }
 
-                                if !idle.isEmpty {
-                                    idleTabsDropdown(tabs: idle)
-                                }
-
-                                ForEach(active) { tab in
-                                    tabView(for: tab)
-                                        .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            } else {
-                                ForEach(overlayModel.tabs) { tab in
-                                    tabView(for: tab)
-                                        .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
+                            // Active tabs (always use the same ForEach to preserve SwiftUI view identity)
+                            ForEach(visibleTabs) { tab in
+                                tabView(for: tab)
+                                    .background(Color.clear.preference(key: RenderedTabCountKey.self, value: 1))
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
 
                             Button {
