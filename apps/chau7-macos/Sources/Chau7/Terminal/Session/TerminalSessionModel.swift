@@ -316,8 +316,8 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
     var lastRenderedSnapshot: NSImage?
     private var settingsObservers: [NSObjectProtocol] = []
     private var idleTimer: DispatchSourceTimer?
-    private var lastInputAt = Date.distantPast
-    private var lastOutputAt = Date.distantPast
+    private var lastInputAt = Date()
+    private var lastOutputAt = Date()
     private var commandStartedAt = Date.distantPast // Track when command started for "stuck" detection
     private var hasPendingCommand = false
     private var inputBuffer = ""
