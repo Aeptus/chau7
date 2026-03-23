@@ -1434,7 +1434,10 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
             status = .running
             commandStartedAt = Date()
         }
-        hasPendingCommand = true
+        // Note: hasPendingCommand is set by OSC 133 B (commandStart) or
+        // handleInputLine() — NOT here. Setting it on every newline caused
+        // the fallback completion timer to re-arm after idle, producing
+        // repeated false "finished" notifications.
     }
 
     private func sanitizeInputForBuffer(_ text: String) -> String {

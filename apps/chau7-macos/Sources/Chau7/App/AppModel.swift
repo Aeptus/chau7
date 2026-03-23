@@ -218,6 +218,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     @Published var toolHistoryEntries: [String: [HistoryEntry]] = [:]
     @Published var toolTerminalLines: [String: [String]] = [:]
     @Published var sessionStatuses: [SessionStatus] = []
+    /// Tracks which sessions have already emitted a "finished" notification
+    /// via the active→idle bridge, preventing repeated firings.
+    private var sessionFinishedNotified: Set<String> = []
 
     /// Backward-compat computed accessors for MainPanelView / LogsSettingsView
     var codexHistoryEntries: [HistoryEntry] {
@@ -1195,13 +1198,16 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             }
 
             // When a session transitions from active → idle/closed, emit a "finished"
-            // notification. This bridges tools that don't emit OSC 133 (e.g., Codex)
-            // with the notification pipeline — the session resolver knows they're done
-            // but ShellEventDetector.commandFinished() may not have fired yet.
+            // notification ONCE. Track emitted sessions to avoid re-firing when the
+            // history monitor cycles the same session through active→idle repeatedly.
             let sessionEnded = state == .idle || state == .closed
-            if previousState == .active, sessionEnded {
+            if previousState == .active, sessionEnded, !sessionFinishedNotified.contains(statusId) {
+                sessionFinishedNotified.insert(statusId)
                 recordEvent(source: .historyMonitor, type: "finished", tool: toolName,
                             message: "\(toolName) session completed", notify: true)
+            } else if state == .active {
+                // Clear the guard when the session genuinely becomes active again
+                sessionFinishedNotified.remove(statusId)
             }
         }
     }
