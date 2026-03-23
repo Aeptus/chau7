@@ -148,7 +148,7 @@ final class NotificationManager {
             Log.trace("Notification dropped: \(reason) (type=\(event.type) tool=\(event.tool))")
 
         case .fireDefault(let triggerId):
-            let rateLimitKey = triggerId ?? "unmatched.\(event.source.rawValue)"
+            let rateLimitKey = triggerId ?? "unmatched.\(event.source.rawValue).\(event.tool.lowercased())"
             guard rateLimiter.checkAndConsume(triggerId: rateLimitKey) else {
                 Log.info("Rate limited: \(rateLimitKey) for tool=\(event.tool)")
                 history.record(event: event, triggerId: rateLimitKey, actionsExecuted: [], wasRateLimited: true)
