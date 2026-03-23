@@ -4530,8 +4530,9 @@ final class RustTerminalView: NSView {
         }
         let displayOffset = Int(rust.displayOffset)
         let absoluteRow = edgeRow - displayOffset
-        // Use actual mouse X position (not middle column)
-        let col = max(0, min(Int(autoScrollMouseX / cellWidth), cols - 1))
+        // Scrolling up → select from start of line (col 0)
+        // Scrolling down → select to end of line (last col)
+        let col = autoScrollDirection < 0 ? 0 : cols - 1
         rust.updateSelection(col: Int32(col), row: Int32(absoluteRow))
         needsGridSync = true
     }
