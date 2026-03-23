@@ -1548,6 +1548,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
         // When the shell sends OSC 133 markers, it handles the command lifecycle
         // authoritatively — skip the heuristic echo-based detection.
         if !hasShellIntegration {
+            hasPendingCommand = true
             promptSeenForPendingCommand = false
             commandFinishedNotified = false
             isAtPrompt = false

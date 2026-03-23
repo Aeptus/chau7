@@ -547,6 +547,10 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             }
             let sessionsRemoved = sessionsBefore - sessionStatuses.count
 
+            // Prune finished-notification guard to match surviving sessions
+            let activeStatusIds = Set(sessionStatuses.map(\.id))
+            sessionFinishedNotified = sessionFinishedNotified.intersection(activeStatusIds)
+
             // Clean old events (ts is ISO8601 string)
             let eventsBefore = recentEvents.count
             recentEvents.removeAll { event in
