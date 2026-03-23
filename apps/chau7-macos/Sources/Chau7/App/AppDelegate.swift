@@ -157,6 +157,9 @@ private final class OverlayBlurView: NSVisualEffectView {
         // Create overlay window (initially hidden behind splash) - this starts the shell
         setupOverlayWindow()
 
+        // Restore additional windows from multi-window save state
+        restoreAdditionalWindows()
+
         // Initialize debug console controller
         DebugConsoleController.shared.configure(appModel: model, overlayModel: overlayModel)
 
@@ -180,9 +183,11 @@ private final class OverlayBlurView: NSVisualEffectView {
         // Dismiss splash and show overlay (terminal only, no settings window)
         splashController?.dismiss { [weak self] in
             self?.splashController = nil
-            // Now show the overlay window
-            if let host = self?.overlayHosts.first {
-                self?.showOverlayWindow(host, reason: "finishLaunching")
+            // Show all restored overlay windows
+            if let hosts = self?.overlayHosts {
+                for host in hosts {
+                    self?.showOverlayWindow(host, reason: "finishLaunching")
+                }
             }
             // Ensure menu bar is anchored after splash dismissal.
             // During the splash phase no window is key/main, so macOS may
@@ -223,12 +228,25 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Save tab state for restoration on next launch
+        // Save ALL windows' tab states for multi-window restoration
+        var allWindows: [[SavedTabState]] = []
         for host in overlayHosts {
+            let states = host.model.exportTabStates()
+            if !states.isEmpty { allWindows.append(states) }
+            // Also save single-window state for backward compatibility
             host.model.saveTabState(reason: .termination)
             host.model.closeAllSessionsForTermination()
         }
-        Log.info("Saved tab state for restoration")
+        if allWindows.count > 1 {
+            let multiState = SavedMultiWindowState(windows: allWindows)
+            if let data = try? JSONEncoder().encode(multiState) {
+                UserDefaults.standard.set(data, forKey: SavedMultiWindowState.userDefaultsKey)
+            }
+        } else {
+            // Single window — clear multi-window key to avoid stale restore
+            UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+        }
+        Log.info("Saved \(allWindows.count) window(s) tab state for restoration")
 
         // Stop MCP telemetry server
         MCPServerManager.shared.stop()
@@ -768,6 +786,46 @@ private final class OverlayBlurView: NSVisualEffectView {
             return
         }
         ChangedFilesPanel.show(files: files, directory: session.currentDirectory)
+    }
+
+    // MARK: - Multi-Window Restoration
+
+    /// Restore additional windows saved in the multi-window state.
+    /// Window 0 is already restored by the primary OverlayTabsModel init.
+    /// Windows 1..N are created here with their saved tab states.
+    private func restoreAdditionalWindows() {
+        guard let model else { return }
+        guard let data = UserDefaults.standard.data(forKey: SavedMultiWindowState.userDefaultsKey),
+              let multiState = try? JSONDecoder().decode(SavedMultiWindowState.self, from: data),
+              multiState.windows.count > 1 else { return }
+
+        // Clear the key so we don't restore stale windows on crash recovery
+        UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+
+        // Skip window 0 (already restored by the primary overlayModel)
+        for windowIndex in 1 ..< multiState.windows.count {
+            let windowStates = multiState.windows[windowIndex]
+            guard !windowStates.isEmpty else { continue }
+
+            // Encode this window's tab states and save them to UserDefaults
+            // so OverlayTabsModel.init(restoreState: true) picks them up
+            if let stateData = try? JSONEncoder().encode(windowStates) {
+                UserDefaults.standard.set(stateData, forKey: SavedTabState.userDefaultsKey)
+            }
+
+            // Create the window — init will restore from the key we just set
+            let tabsModel = OverlayTabsModel(appModel: model, restoreState: true)
+            TerminalControlService.shared.register(tabsModel)
+            let windowNumber = allocateOverlayWindowNumber()
+            let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
+            overlayHosts.append(OverlayHost(window: window, model: tabsModel))
+
+            Log.info("Restored additional window \(windowIndex) with \(windowStates.count) tab(s)")
+        }
+
+        // Clean up the temporary key so the next single-window init doesn't
+        // accidentally load a stale state
+        UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
     }
 
     // MARK: - PTY Log Maintenance
