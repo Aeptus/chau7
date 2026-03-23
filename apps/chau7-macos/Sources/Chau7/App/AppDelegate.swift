@@ -1215,7 +1215,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         let title = window.title.isEmpty ? "unnamed" : window.title
         let occlusionVisible = window.occlusionState.contains(.visible)
         Log
-            .info(
+            .trace(
                 "Overlay window lifecycle (\(reason)): overlay=\(isOverlayHost) title=\(title) tabs=\(tabCount) windowNumber=\(window.windowNumber) style=\(window.styleMask.rawValue) toolbar=\(toolbarState) key=\(window.isKeyWindow) main=\(window.isMainWindow) visible=\(window.isVisible) onActiveSpace=\(window.isOnActiveSpace) mini=\(window.isMiniaturized) occlusionVisible=\(occlusionVisible) occlusion=\(window.occlusionState) frame=\(window.frame) content=\(window.contentLayoutRect) titlebarHeight=\(titlebarHeight) alpha=\(window.alphaValue)"
             )
     }

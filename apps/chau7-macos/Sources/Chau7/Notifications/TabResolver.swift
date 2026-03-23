@@ -206,7 +206,25 @@ enum TabResolver {
             }
         }
 
-        // 3) Deterministic fallback: most recently created tab
+        // 3) Tool + directory combination: if only one tab matches both tool and CWD
+        let tool = target.tool.lowercased()
+        if let dir = target.directory {
+            let normalized = URL(fileURLWithPath: dir).standardized.path
+            let combo = matches.filter { tab in
+                tab.splitController.terminalSessions.contains { _, session in
+                    let cwd = URL(fileURLWithPath: session.currentDirectory).standardized.path
+                    let matchesDir = cwd == normalized || cwd.hasPrefix(normalized + "/") || normalized.hasPrefix(cwd + "/")
+                    let matchesTool = session.activeAppName?.lowercased().contains(tool) == true
+                    return matchesDir && matchesTool
+                }
+            }
+            if combo.count == 1 {
+                Log.info("TabResolver: disambiguated via tool+dir (\(tool), \(normalized.suffix(20))) → tab=\(combo[0].id)")
+                return combo[0]
+            }
+        }
+
+        // 4) Deterministic fallback: most recently created tab
         Log.info("TabResolver: \(matches.count) ambiguous matches, using most recent tab")
         return matches.max(by: { $0.createdAt < $1.createdAt })
     }

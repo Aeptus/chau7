@@ -2512,7 +2512,7 @@ final class RustTerminalView: NSView {
         // DEBUG: Log layout dimensions
         if let window = window {
             let contentRect = window.contentLayoutRect
-            Log.info("RustTerminalView[\(viewId)]: DEBUG layout - bounds=\(bounds) frame=\(frame) contentLayoutRect=\(contentRect) window.frame=\(window.frame)")
+            Log.trace("RustTerminalView[\(viewId)]: layout - bounds=\(bounds) frame=\(frame) contentLayoutRect=\(contentRect) window.frame=\(window.frame)")
         }
 
         // Update dimensions and resize Rust terminal
@@ -5840,7 +5840,7 @@ extension RustTerminalView {
             Log.trace("RustTerminalView[\(viewId)]: installHistoryKeyMonitor - Already installed")
             return
         }
-        Log.info("RustTerminalView[\(viewId)]: installHistoryKeyMonitor - Installing history key monitor")
+        Log.trace("RustTerminalView[\(viewId)]: installHistoryKeyMonitor - Installing history key monitor")
         historyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
             guard event.window === window else { return event }

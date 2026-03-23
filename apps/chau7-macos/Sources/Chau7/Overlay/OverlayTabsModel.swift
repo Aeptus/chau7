@@ -3052,13 +3052,27 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         tabBarWatchdogTimer = nil
     }
 
+    /// Count tabs currently idle for 10+ minutes (excluding the selected tab).
+    private func idleTabCount() -> Int {
+        let threshold: TimeInterval = 600
+        let now = Date()
+        return tabs.filter { tab in
+            guard let session = tab.displaySession ?? tab.session,
+                  tab.id != selectedTabID else { return false }
+            return now.timeIntervalSince(session.lastActivityDate) > threshold
+        }.count
+    }
+
     private func checkTabBarHealth() {
         dispatchPrecondition(condition: .onQueue(.main))
         guard shouldCheckTabBarHealth() else {
             watchdogRefreshAttempts = 0
             return
         }
-        let expected = tabs.count
+        // When idle tabs are grouped in the dropdown, fewer tabs render in the bar.
+        // Use visible count (total minus idle) to avoid false watchdog triggers.
+        let idleCount = FeatureSettings.shared.groupIdleTabs ? idleTabCount() : 0
+        let expected = tabs.count - idleCount
         let rendered = lastReportedRenderedCount
         let size = lastReportedTabBarSize
         let now = Date()
@@ -3435,7 +3449,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         if shouldKeepLiveRenderingInBackground(for: tab) {
             let inserted = liveRenderExemptTabIDs.insert(id).inserted
             if inserted {
-                Log.info("renderSuspension: skipped scheduling for tab \(id) (\(tabRenderSuspensionSummary(tab)))")
+                Log.trace("renderSuspension: skipped scheduling for tab \(id) (\(tabRenderSuspensionSummary(tab)))")
             }
             return
         }
@@ -3712,7 +3726,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         let selectedSuspended = suspendedTabIDs.contains(selectedTabID)
         let overlayFlags = "search=\(isSearchVisible) rename=\(isRenameVisible) clipboard=\(isClipboardHistoryVisible) bookmarks=\(isBookmarkListVisible) snippets=\(isSnippetManagerVisible) candidate=\(currentCandidate != nil) task=\(currentTask != nil) assessment=\(isTaskAssessmentVisible)"
         Log
-            .info(
+            .trace(
                 "Overlay visual state (\(reason)): tabs=\(tabs.count) selectedIndex=\(selectedIndex) selectedID=\(selectedTabID) activeApp=\(activeApp) path=\(displayPath) terminalReady=\(isTerminalReady) suspended=\(suspendedTabIDs.count) selectedSuspended=\(selectedSuspended) renderSuspension=\(isRenderSuspensionEnabled) delay=\(renderSuspensionDelay) overlays[\(overlayFlags)]"
             )
     }

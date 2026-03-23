@@ -101,7 +101,7 @@ final class RustTerminalContainerView: NSView {
         // trigger a draw now, the user sees nothing until the next pollAndSync().
         coordinator.setNeedsSync()
 
-        Log.info("RustTerminalContainerView: Metal rendering enabled")
+        Log.trace("RustTerminalContainerView: Metal rendering enabled")
     }
 
     /// Re-chains the Metal sync wrapper onto the current onBufferChanged callback.
