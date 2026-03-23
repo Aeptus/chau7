@@ -10,7 +10,8 @@ public enum RemoteTerminalGridSnapshotLayout {
     public static let magic = "CHG1".data(using: .utf8)!
     public static let version: UInt8 = 1
     public static let headerSize = 29
-    public static let cellStride = 12
+    /// Must match MemoryLayout<RustCellData>.stride (UInt32 + 6×UInt8 + UInt8 + UInt8 + UInt16 = 14 → padded to 16)
+    public static let cellStride = 16
 }
 
 public struct RemoteTerminalGridSnapshot: Equatable, Sendable {
