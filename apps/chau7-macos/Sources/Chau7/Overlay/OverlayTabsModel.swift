@@ -446,6 +446,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     private var ctoModeObserver: NSObjectProtocol?
     private var ctoFlagObserver: NSObjectProtocol?
     private var renderSuspensionObserver: NSObjectProtocol?
+    private var persistentStyleObserver: NSObjectProtocol?
     private var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
 
     weak var overlayWindow: NSWindow?
@@ -495,7 +496,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
 
         // Observe permission-resolved to clear persistent red borders
-        NotificationCenter.default.addObserver(
+        persistentStyleObserver = NotificationCenter.default.addObserver(
             forName: Notification.Name("com.chau7.clearPersistentTabStyle"),
             object: nil, queue: .main
         ) { [weak self] notification in
@@ -580,6 +581,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         if let ctoModeObserver { NotificationCenter.default.removeObserver(ctoModeObserver) }
         if let ctoFlagObserver { NotificationCenter.default.removeObserver(ctoFlagObserver) }
         if let renderSuspensionObserver { NotificationCenter.default.removeObserver(renderSuspensionObserver) }
+        if let persistentStyleObserver { NotificationCenter.default.removeObserver(persistentStyleObserver) }
     }
 
     // MARK: - Tab State Persistence
@@ -2262,11 +2264,18 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         let hasRunningProcess = runningProcessCount > 0
         let isLastTab = tabs.count == 1
 
-        // For the last tab, show a single combined prompt (skip separate process warning)
-        if isLastTab, !skipWarning {
-            let closeWindow = confirmCloseLastTab()
-            // Re-validate
+        // Handle last tab: prompt user or silently replace (skipWarning)
+        if isLastTab {
+            let closeWindow = skipWarning ? false : confirmCloseLastTab()
             guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
+
+            // Clean up per-tab state before replacing
+            if let sessionID = tabs[idx].session?.tabIdentifier {
+                CommandHistoryManager.shared.removeTab(sessionID)
+                CTOFlagManager.removeFlag(sessionID: sessionID)
+                CTORuntimeMonitor.shared.untrackSession(sessionID)
+            }
+
             let dir = inheritedStartDirectory()
             tabs[idx].splitController.root.closeAllSessions()
             if closeWindow {
@@ -2276,7 +2285,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
                 needsFreshTabOnShow = false
                 onCloseLastTab?()
             } else {
-                Log.info("closeTab: last tab - keeping window with fresh tab")
+                Log.info("closeTab: last tab - replacing with fresh tab")
                 let newTab = makeFreshTab(inheritedDirectory: dir)
                 tabs[idx] = newTab
                 selectedTabID = newTab.id
