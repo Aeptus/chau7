@@ -362,23 +362,31 @@ public final class MetalTerminalRenderer: NSObject {
             return
         }
 
-        // Check for a shared atlas with the same font config
+        // Check for a shared atlas with the same font config.
+        // The shared atlas is a read-only snapshot of ASCII pre-rasterized glyphs.
+        // Each renderer gets its own CGContext for runtime cache misses (non-ASCII)
+        // to avoid CGContext thread-safety issues between concurrent draw calls.
         let atlasKey = "\(CTFontCopyFullName(regularFont))-\(scaledSize)"
         if let shared = Self.sharedAtlases[atlasKey] {
+            // Copy the glyph cache (COW) and packing cursor position
             glyphCache = shared.glyphCache
             ligatureCache = shared.ligatureCache
             packX = shared.packX
             packY = shared.packY
             packRowHeight = shared.packRowHeight
-            atlasContext = shared.context
-            glyphAtlas = shared.texture
-            atlasDirty = false
-            Log.trace("MetalRenderer: Reusing shared atlas (\(glyphCache.count) glyphs)")
+            // Create our own CGContext with a copy of the shared bitmap data
+            resetAtlas()
+            if let sharedData = shared.context.data {
+                let byteCount = atlasWidth * atlasHeight * 4
+                atlasContext.data?.copyMemory(from: sharedData, byteCount: byteCount)
+            }
+            uploadAtlasTexture()
+            Log.trace("MetalRenderer: Cloned shared atlas (\(glyphCache.count) glyphs)")
         } else {
             resetAtlas()
             prerasterizeASCII()
             uploadAtlasTexture()
-            // Store for other renderers using the same font
+            // Store snapshot for other renderers using the same font
             Self.sharedAtlases[atlasKey] = SharedGlyphAtlas(
                 texture: glyphAtlas,
                 context: atlasContext,

@@ -782,12 +782,17 @@ private final class OverlayBlurView: NSVisualEffectView {
                 let path = (logDir as NSString).appendingPathComponent(file)
                 guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
                       let size = attrs[.size] as? UInt64, size > maxBytes else { continue }
-                // Keep the last 5MB (tail)
-                let keepBytes = 5 * 1024 * 1024
-                if let data = FileManager.default.contents(atPath: path), data.count > keepBytes {
-                    let tail = data.suffix(keepBytes)
-                    try? tail.write(to: URL(fileURLWithPath: path), options: .atomic)
+                // Keep the last 5MB — seek to tail instead of reading entire file
+                let keepBytes: UInt64 = 5 * 1024 * 1024
+                do {
+                    let handle = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
+                    handle.seek(toFileOffset: size - keepBytes)
+                    let tail = handle.readDataToEndOfFile()
+                    handle.closeFile()
+                    try tail.write(to: URL(fileURLWithPath: path), options: .atomic)
                     Log.info("Purged PTY log \(file): \(size / 1024 / 1024)MB → \(keepBytes / 1024 / 1024)MB")
+                } catch {
+                    Log.warn("Failed to purge PTY log \(file): \(error)")
                 }
             }
         }
