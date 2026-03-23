@@ -3052,6 +3052,21 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         tabBarWatchdogTimer = nil
     }
 
+    /// Suspend rendering for tabs idle 10+ minutes, resume tabs that become active.
+    private func suspendIdleTabs() {
+        let threshold: TimeInterval = 600
+        let now = Date()
+        for tab in tabs where tab.id != selectedTabID {
+            guard let session = tab.displaySession ?? tab.session else { continue }
+            let isIdle = now.timeIntervalSince(session.lastActivityDate) > threshold
+            if isIdle, !suspendedTabIDs.contains(tab.id) {
+                suspendedTabIDs.insert(tab.id)
+            } else if !isIdle, suspendedTabIDs.contains(tab.id) {
+                suspendedTabIDs.remove(tab.id)
+            }
+        }
+    }
+
     /// Count tabs currently idle for 10+ minutes (excluding the selected tab).
     private func idleTabCount() -> Int {
         let threshold: TimeInterval = 600
@@ -3065,6 +3080,13 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
     private func checkTabBarHealth() {
         dispatchPrecondition(condition: .onQueue(.main))
+
+        // Suspend rendering for idle tabs in the dropdown (saves GPU/CPU).
+        // Resume happens in selectTab() when a tab is selected.
+        if FeatureSettings.shared.groupIdleTabs {
+            suspendIdleTabs()
+        }
+
         guard shouldCheckTabBarHealth() else {
             watchdogRefreshAttempts = 0
             return
