@@ -1191,7 +1191,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             // notification. This bridges tools that don't emit OSC 133 (e.g., Codex)
             // with the notification pipeline — the session resolver knows they're done
             // but ShellEventDetector.commandFinished() may not have fired yet.
-            if previousState == .active, (state == .idle || state == .closed) {
+            let sessionEnded = state == .idle || state == .closed
+            if previousState == .active, sessionEnded {
                 recordEvent(source: .historyMonitor, type: "finished", tool: toolName,
                             message: "\(toolName) session completed", notify: true)
             }

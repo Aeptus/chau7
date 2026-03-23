@@ -28,6 +28,7 @@ struct DebugConsoleView: View {
     @State private var aiPerTabStats: [TabTokenConsumption] = []
     @State private var providerStats: [ProviderConsumptionStats] = []
     @State private var dailyCostTrend: [(date: String, cost: Double, tokens: Int)] = []
+    @State private var ptyLogInfo: [(name: String, size: UInt64)] = []
     @State private var ctoPerSessionGain: [String: CTOGainStats] = [:]
     // Category & level filtering
     @State private var enabledCategories: Set<LogCategory> = Set(LogCategory.allCases)
@@ -1536,26 +1537,40 @@ struct DebugConsoleView: View {
 
                 GroupBox("PTY Logs") {
                     VStack(alignment: .leading, spacing: 4) {
-                        let logDir = RuntimeIsolation.expandTilde(in: "~/Library/Logs/Chau7")
-                        let logFiles = (try? FileManager.default.contentsOfDirectory(atPath: logDir).filter { $0.hasSuffix(".log") }) ?? []
-                        ForEach(logFiles, id: \.self) { file in
-                            let path = (logDir as NSString).appendingPathComponent(file)
-                            let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? UInt64) ?? 0
-                            let sizeStr = size > 1024 * 1024 ? String(format: "%.1fMB", Double(size) / 1_048_576) : "\(size / 1024)KB"
-                            healthRow(file, value: sizeStr, warn: size > 10 * 1024 * 1024)
+                        ForEach(ptyLogInfo, id: \.name) { log in
+                            let sizeStr = log.size > 1024 * 1024
+                                ? String(format: "%.1fMB", Double(log.size) / 1_048_576)
+                                : "\(log.size / 1024)KB"
+                            healthRow(log.name, value: sizeStr, warn: log.size > 10 * 1024 * 1024)
+                        }
+                        if ptyLogInfo.isEmpty {
+                            Text("No PTY logs").foregroundStyle(.secondary)
                         }
                     }
                 }
 
                 GroupBox("Metal Rendering") {
-                    let atlasCount = MetalTerminalRenderer.sharedAtlases.count
                     VStack(alignment: .leading, spacing: 4) {
-                        healthRow("Shared atlases", value: "\(atlasCount)")
+                        healthRow("Shared atlases", value: "\(MetalTerminalRenderer.sharedAtlases.count)")
                         healthRow("Ligatures enabled", value: FeatureSettings.shared.enableLigatures ? "Yes" : "No")
                     }
                 }
             }
             .padding()
+        }
+        .onAppear { loadHealthData() }
+    }
+
+    private func loadHealthData() {
+        DispatchQueue.global(qos: .utility).async {
+            let logDir = RuntimeIsolation.expandTilde(in: "~/Library/Logs/Chau7")
+            let files = (try? FileManager.default.contentsOfDirectory(atPath: logDir).filter { $0.hasSuffix(".log") }) ?? []
+            let info = files.map { file -> (name: String, size: UInt64) in
+                let path = (logDir as NSString).appendingPathComponent(file)
+                let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? UInt64) ?? 0
+                return (file, size)
+            }.sorted { $0.size > $1.size }
+            DispatchQueue.main.async { ptyLogInfo = info }
         }
     }
 
