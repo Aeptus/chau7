@@ -620,6 +620,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
                 handlePromptDetected()
             case .commandStart:
                 isAtPrompt = false
+                status = .running
                 hasPendingCommand = true
                 commandStartedAt = Date()
                 commandFinishedNotified = false
@@ -1151,6 +1152,12 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
     private func handlePromptDetected() {
         if isShellLoading { isShellLoading = false }
         isAtPrompt = true
+        // Transition status to idle when the prompt returns — the command cycle
+        // is complete. Without this, status stays .running forever when OSC 133
+        // clears hasPendingCommand (blocking the idle timer from transitioning).
+        if status == .running || status == .stuck {
+            status = .idle
+        }
         createDeferredCTOFlag()
         devServerMonitor.commandDidFinish()
         flushPendingPrefillInputIfReady()
@@ -1446,6 +1453,10 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
     }
 
     private func markRunning() {
+        // When OSC 133 is active, the shell's command lifecycle signals (B/C/D)
+        // handle status transitions authoritatively. Don't re-arm .running from
+        // input echoes — it would override the .idle set by handlePromptDetected().
+        guard !hasShellIntegration else { return }
         if status != .running, status != .stuck {
             status = .running
             commandStartedAt = Date()
