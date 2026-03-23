@@ -4512,14 +4512,16 @@ final class RustTerminalView: NSView {
         // Scale scroll speed by distance outside bounds (accelerate further out)
         let speed = max(1, min(Int(autoScrollDistance / 20) + 1, 10))
 
-        // Scroll the terminal
+        // Scroll the terminal (no-op if already at the edge of scrollback)
         if autoScrollDirection < 0 {
             scrollUp(lines: speed)
         } else {
             scrollDown(lines: speed)
         }
 
-        // Extend selection to the edge of the visible area (full line: col 0 up, last col down)
+        // Always extend selection to the edge row, even when scroll is a no-op
+        // (e.g., at the bottom of the buffer). This ensures the selection
+        // visually covers the full visible area in the drag direction.
         guard let rust = rustTerminal else { return }
         let edgeRow: Int
         if autoScrollDirection < 0 {
@@ -5006,17 +5008,19 @@ final class RustTerminalView: NSView {
                 }
             }
 
-            // Auto-scroll when dragging outside bounds during selection
+            // Auto-scroll when dragging near or outside view edges during selection.
+            // Use a 10px inset so the user doesn't have to leave the view entirely.
             if didDragSinceMouseDown, isSelecting {
-                if location.y < 0 {
-                    // Dragging below view - scroll down (content moves up)
+                let edgeInset: CGFloat = 10
+                if location.y < edgeInset {
+                    // Near/below bottom edge - scroll down (show later content)
                     autoScrollDirection = 1
-                    autoScrollDistance = -location.y
+                    autoScrollDistance = max(0, edgeInset - location.y)
                     startAutoScrollTimer()
-                } else if location.y > bounds.height {
-                    // Dragging above view - scroll up (content moves down)
+                } else if location.y > bounds.height - edgeInset {
+                    // Near/above top edge - scroll up (show earlier content)
                     autoScrollDirection = -1
-                    autoScrollDistance = location.y - bounds.height
+                    autoScrollDistance = max(0, location.y - (bounds.height - edgeInset))
                     startAutoScrollTimer()
                 } else {
                     // Inside bounds - stop auto-scroll
