@@ -96,6 +96,14 @@ public final class MetalTerminalRenderer: NSObject {
         var packRowHeight: CGFloat
     }
 
+    struct AtlasCacheState {
+        let glyphCount: Int
+        let ligatureCount: Int
+        let packX: CGFloat
+        let packY: CGFloat
+        let packRowHeight: CGFloat
+    }
+
     // MARK: - Metal Resources
 
     private let device: MTLDevice
@@ -208,6 +216,20 @@ public final class MetalTerminalRenderer: NSObject {
             Log.error("MetalRenderer: Setup failed: \(error)")
             return nil
         }
+    }
+
+    static func resetSharedAtlasesForTesting() {
+        sharedAtlases.removeAll()
+    }
+
+    func atlasCacheStateForTesting() -> AtlasCacheState {
+        AtlasCacheState(
+            glyphCount: glyphCache.count,
+            ligatureCount: ligatureCache.count,
+            packX: packX,
+            packY: packY,
+            packRowHeight: packRowHeight
+        )
     }
 
     // MARK: - Setup
@@ -368,18 +390,18 @@ public final class MetalTerminalRenderer: NSObject {
         // to avoid CGContext thread-safety issues between concurrent draw calls.
         let atlasKey = "\(CTFontCopyFullName(regularFont))-\(scaledSize)"
         if let shared = Self.sharedAtlases[atlasKey] {
-            // Copy the glyph cache (COW) and packing cursor position
-            glyphCache = shared.glyphCache
-            ligatureCache = shared.ligatureCache
-            packX = shared.packX
-            packY = shared.packY
-            packRowHeight = shared.packRowHeight
             // Create our own CGContext with a copy of the shared bitmap data
             resetAtlas()
             if let sharedData = shared.context.data {
                 let byteCount = atlasWidth * atlasHeight * 4
                 atlasContext.data?.copyMemory(from: sharedData, byteCount: byteCount)
             }
+            // Restore the shared atlas metadata after resetting the local bitmap.
+            glyphCache = shared.glyphCache
+            ligatureCache = shared.ligatureCache
+            packX = shared.packX
+            packY = shared.packY
+            packRowHeight = shared.packRowHeight
             uploadAtlasTexture()
             Log.trace("MetalRenderer: Cloned shared atlas (\(glyphCache.count) glyphs)")
         } else {
