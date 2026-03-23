@@ -342,28 +342,21 @@ struct Chau7App: App {
 
                 Divider()
 
-                Group {
-                    Button(L("Select Tab 1", "Select Tab 1")) { appDelegate.selectTab(number: 1) }
-                        .keyboardShortcut("1")
-                    Button(L("Select Tab 2", "Select Tab 2")) { appDelegate.selectTab(number: 2) }
-                        .keyboardShortcut("2")
-                    Button(L("Select Tab 3", "Select Tab 3")) { appDelegate.selectTab(number: 3) }
-                        .keyboardShortcut("3")
-                    Button(L("Select Tab 4", "Select Tab 4")) { appDelegate.selectTab(number: 4) }
-                        .keyboardShortcut("4")
-                    Button(L("Select Tab 5", "Select Tab 5")) { appDelegate.selectTab(number: 5) }
-                        .keyboardShortcut("5")
-                }
-
-                Group {
-                    Button(L("Select Tab 6", "Select Tab 6")) { appDelegate.selectTab(number: 6) }
-                        .keyboardShortcut("6")
-                    Button(L("Select Tab 7", "Select Tab 7")) { appDelegate.selectTab(number: 7) }
-                        .keyboardShortcut("7")
-                    Button(L("Select Tab 8", "Select Tab 8")) { appDelegate.selectTab(number: 8) }
-                        .keyboardShortcut("8")
-                    Button(L("Select Tab 9", "Select Tab 9")) { appDelegate.selectTab(number: 9) }
-                        .keyboardShortcut("9")
+                Menu("Select Tab") {
+                    // Tabs 1-9 with keyboard shortcuts
+                    ForEach(Array(overlayModel.tabs.prefix(9).enumerated()), id: \.element.id) { index, tab in
+                        let name = tab.customTitle ?? tab.displaySession?.activeAppName ?? "Tab \(index + 1)"
+                        Button(name) { appDelegate.selectTab(number: index + 1) }
+                            .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")))
+                    }
+                    // Tabs 10+ without shortcuts
+                    if overlayModel.tabs.count > 9 {
+                        Divider()
+                        ForEach(Array(overlayModel.tabs.dropFirst(9).enumerated()), id: \.element.id) { index, tab in
+                            let name = tab.customTitle ?? tab.displaySession?.activeAppName ?? "Tab \(index + 10)"
+                            Button(name) { appDelegate.selectTab(number: index + 10) }
+                        }
+                    }
                 }
 
                 Divider()

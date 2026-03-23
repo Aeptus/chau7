@@ -2111,6 +2111,18 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     ///   - isLastTab: Whether this is the last tab (will be replaced, not closed)
     ///   - willCloseWindow: Whether closing will close the window entirely
     ///   - isAlwaysWarnMode: Whether we're warning due to "always warn" setting (shows suppression option)
+    /// Ask the user whether to also close the window when closing the last tab.
+    /// Returns true if the user wants to close the window.
+    private func confirmCloseLastTab() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = L("alert.closeLastTab.title", "This is the last tab")
+        alert.informativeText = L("alert.closeLastTab.message", "Do you want to close the window, or keep it open with a new tab?")
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: L("alert.closeLastTab.closeWindow", "Close Window"))
+        alert.addButton(withTitle: L("alert.closeLastTab.newTab", "New Tab"))
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
     private func confirmTabClose(
         runningProcessCount: Int,
         isLastTab: Bool,
@@ -2292,17 +2304,18 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         tabs[index].splitController.root.closeAllSessions()
 
         if isLastTabNow {
-            let behavior = FeatureSettings.shared.lastTabCloseBehavior
-            if behavior == .closeWindow {
-                Log.info("closeTab: last tab - closing window per settings")
+            // Prompt user: close the window or keep it with a fresh tab?
+            let closeWindow = confirmCloseLastTab()
+            if closeWindow {
+                Log.info("closeTab: last tab - user chose to close window")
                 tabs[index] = makeFreshTab(inheritedDirectory: inheritedDirectory)
                 selectedTabID = tabs[index].id
                 needsFreshTabOnShow = false
                 onCloseLastTab?()
                 return
             }
-            // Last tab - create a fresh one instead of closing window
-            Log.info("closeTab: last tab - creating fresh tab")
+            // Keep window open with a fresh tab
+            Log.info("closeTab: last tab - keeping window with fresh tab")
             let newTab = makeFreshTab(inheritedDirectory: inheritedDirectory)
             tabs[index] = newTab
             selectedTabID = newTab.id
