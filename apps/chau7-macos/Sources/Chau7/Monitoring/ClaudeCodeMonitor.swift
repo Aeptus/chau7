@@ -148,11 +148,10 @@ final class ClaudeCodeMonitor: ObservableObject {
             switch event.type {
             case .responseComplete:
                 self.onResponseComplete?(event)
-                self.notifyResponseComplete(event)
+                // Notification is handled by AppModel.onEvent → unified pipeline
             case .permissionRequest:
-                if self.shouldNotifyPermissionRequest(event) {
-                    self.notifyPermissionRequest(event)
-                }
+                // Permission dedup is handled by the pipeline's rate limiter
+                break
             case .sessionEnd:
                 self.markSessionClosed(event.sessionId)
             default:
@@ -268,7 +267,7 @@ final class ClaudeCodeMonitor: ObservableObject {
                 updated.state = .idle
                 activeSessions[sessionId] = updated
                 onSessionIdle?(updated)
-                notifySessionIdle(updated, idleFor: idleFor)
+                // Idle notification routed through AppModel.onSessionIdle → unified pipeline
                 continue
             }
         }
