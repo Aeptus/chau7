@@ -111,8 +111,10 @@ final class NotificationTriggerCatalogTests: XCTestCase {
 
     func testTriggersForSourceHistoryMonitor() {
         let triggers = NotificationTriggerCatalog.triggers(for: .historyMonitor)
-        XCTAssertEqual(triggers.count, 1) // Only "idle"
-        XCTAssertEqual(triggers.first?.type, "idle")
+        XCTAssertEqual(triggers.count, 2) // "finished" and "idle"
+        let types = Set(triggers.map(\.type))
+        XCTAssertTrue(types.contains("finished"))
+        XCTAssertTrue(types.contains("idle"))
     }
 
     func testTriggersForSourceEventsLog() {
@@ -479,5 +481,17 @@ final class NotificationTriggerCatalogTests: XCTestCase {
         )
         // Should use catalog default (true for command_finished)
         XCTAssertEqual(state.isEnabled(for: shellTrigger), shellTrigger.defaultEnabled)
+    }
+
+    // MARK: - History Monitor Trigger Coverage
+
+    func testHistoryMonitorFinishedTriggerExists() {
+        let trigger = NotificationTriggerCatalog.trigger(source: .historyMonitor, type: "finished")
+        XCTAssertNotNil(trigger, "historyMonitor.finished must exist so Codex/Cursor/Aider completions route through the pipeline")
+    }
+
+    func testHistoryMonitorFinishedIsEnabledByDefault() {
+        let trigger = NotificationTriggerCatalog.trigger(source: .historyMonitor, type: "finished")!
+        XCTAssertTrue(trigger.defaultEnabled, "historyMonitor.finished should be enabled by default for all AI tools")
     }
 }
