@@ -388,7 +388,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         } else {
             self.isTerminalAnsi = defaults.object(forKey: Keys.isTerminalAnsi) as? Bool ?? true
         }
-        self.isSuspendBackgroundRendering = defaults.object(forKey: Keys.isSuspendBackgroundRendering) as? Bool ?? false
+        self.isSuspendBackgroundRendering = defaults.object(forKey: Keys.isSuspendBackgroundRendering) as? Bool ?? true
         self.suspendRenderDelayText = defaults.string(forKey: Keys.suspendRenderDelaySeconds) ?? "5"
         self.codexHistoryPath = envCodexHistoryPath
             ?? defaults.string(forKey: Keys.codexHistoryPath)
