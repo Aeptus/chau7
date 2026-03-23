@@ -3086,6 +3086,38 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         tabBarWatchdogTimer = nil
     }
 
+    /// Manually force a tab into the idle dropdown by resetting its activity time.
+    func forceTabIdle(id: UUID) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }), id != selectedTabID else { return }
+        // Reset the session's last activity to distant past so it appears idle
+        tabs[index].session?.resetActivityForIdleGrouping()
+        suspendedTabIDs.insert(id)
+        Log.info("Tab \(id) manually moved to idle")
+    }
+
+    /// Callback for moving a tab to another window. Wired by AppDelegate.
+    var onMoveTabToWindow: ((UUID, Int) -> Void)?
+
+    /// List of other windows for the "Move to Window" context menu.
+    /// Populated by AppDelegate.
+    var otherWindowTitles: [WindowMenuItem] = []
+
+    struct WindowMenuItem: Identifiable {
+        let id: Int // window index
+        let title: String
+    }
+
+    /// Remove a tab from this model and return it (for transfer to another window).
+    func detachTab(id: UUID) -> OverlayTab? {
+        guard let index = tabs.firstIndex(where: { $0.id == id }), tabs.count > 1 else { return nil }
+        let tab = tabs[index]
+        tabs.remove(at: index)
+        if selectedTabID == id, let next = tabs.first {
+            selectedTabID = next.id
+        }
+        return tab
+    }
+
     /// Suspend rendering for tabs idle 10+ minutes, resume tabs that become active.
     private func suspendIdleTabs() {
         let threshold: TimeInterval = 600
