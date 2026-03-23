@@ -75,11 +75,26 @@ public final class MetalTerminalRenderer: NSObject {
         let cellSpan: Int // Number of terminal cells this ligature spans
     }
 
-    // MARK: - Shared Pipeline Cache (compiled once, reused across tabs)
+    // MARK: - Shared Caches (compiled once, reused across all renderer instances)
 
     private static var cachedLibrary: MTLLibrary?
     private static var cachedPipeline: MTLRenderPipelineState?
     private static var cachedBgPipeline: MTLRenderPipelineState?
+
+    /// Shared glyph atlas cache keyed by "fontName-fontSize". All renderers using
+    /// the same font share one atlas texture and glyph cache, saving ~48MB of
+    /// duplicate GPU textures across 12 tabs.
+    private static var sharedAtlases: [String: SharedGlyphAtlas] = [:]
+
+    struct SharedGlyphAtlas {
+        var texture: MTLTexture
+        var context: CGContext
+        var glyphCache: [GlyphKey: GlyphInfo]
+        var ligatureCache: [LigatureKey: LigatureInfo?]
+        var packX: CGFloat
+        var packY: CGFloat
+        var packRowHeight: CGFloat
+    }
 
     // MARK: - Metal Resources
 
@@ -347,11 +362,34 @@ public final class MetalTerminalRenderer: NSObject {
             return
         }
 
-        // Reset atlas and rebuild for ASCII baseline
-        resetAtlas()
-        prerasterizeASCII()
-        uploadAtlasTexture()
-        Log.trace("MetalRenderer: Atlas populated with \(glyphCache.count) glyphs")
+        // Check for a shared atlas with the same font config
+        let atlasKey = "\(CTFontCopyFullName(regularFont))-\(scaledSize)"
+        if let shared = Self.sharedAtlases[atlasKey] {
+            glyphCache = shared.glyphCache
+            ligatureCache = shared.ligatureCache
+            packX = shared.packX
+            packY = shared.packY
+            packRowHeight = shared.packRowHeight
+            atlasContext = shared.context
+            glyphAtlas = shared.texture
+            atlasDirty = false
+            Log.trace("MetalRenderer: Reusing shared atlas (\(glyphCache.count) glyphs)")
+        } else {
+            resetAtlas()
+            prerasterizeASCII()
+            uploadAtlasTexture()
+            // Store for other renderers using the same font
+            Self.sharedAtlases[atlasKey] = SharedGlyphAtlas(
+                texture: glyphAtlas,
+                context: atlasContext,
+                glyphCache: glyphCache,
+                ligatureCache: ligatureCache,
+                packX: packX,
+                packY: packY,
+                packRowHeight: packRowHeight
+            )
+            Log.trace("MetalRenderer: Created shared atlas (\(glyphCache.count) glyphs)")
+        }
     }
 
     /// Clears glyph atlas and cache, resetting the packing cursor.
