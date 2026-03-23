@@ -1551,7 +1551,7 @@ struct DebugConsoleView: View {
 
                 GroupBox("Metal Rendering") {
                     VStack(alignment: .leading, spacing: 4) {
-                        healthRow("Shared atlases", value: "\(MetalTerminalRenderer.sharedAtlases.count)")
+                        healthRow("Atlas mode", value: "Per-renderer")
                         healthRow("Ligatures enabled", value: FeatureSettings.shared.enableLigatures ? "Yes" : "No")
                     }
                 }

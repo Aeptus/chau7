@@ -81,28 +81,9 @@ public final class MetalTerminalRenderer: NSObject {
     private static var cachedPipeline: MTLRenderPipelineState?
     private static var cachedBgPipeline: MTLRenderPipelineState?
 
-    /// Shared glyph atlas cache keyed by "fontName-fontSize". All renderers using
-    /// the same font share one atlas texture and glyph cache, saving ~48MB of
-    /// duplicate GPU textures across 12 tabs.
-    static private(set) var sharedAtlases: [String: SharedGlyphAtlas] = [:]
-
-    struct SharedGlyphAtlas {
-        var texture: MTLTexture
-        var context: CGContext
-        var glyphCache: [GlyphKey: GlyphInfo]
-        var ligatureCache: [LigatureKey: LigatureInfo?]
-        var packX: CGFloat
-        var packY: CGFloat
-        var packRowHeight: CGFloat
-    }
-
-    struct AtlasCacheState {
-        let glyphCount: Int
-        let ligatureCount: Int
-        let packX: CGFloat
-        let packY: CGFloat
-        let packRowHeight: CGFloat
-    }
+    // Note: shared atlas was removed — the CGContext sharing caused thread-safety
+    // issues and bitmap corruption. Per-renderer atlases cost ~5ms each for ASCII
+    // pre-rasterization, which is acceptable.
 
     // MARK: - Metal Resources
 
@@ -216,20 +197,6 @@ public final class MetalTerminalRenderer: NSObject {
             Log.error("MetalRenderer: Setup failed: \(error)")
             return nil
         }
-    }
-
-    static func resetSharedAtlasesForTesting() {
-        sharedAtlases.removeAll()
-    }
-
-    func atlasCacheStateForTesting() -> AtlasCacheState {
-        AtlasCacheState(
-            glyphCount: glyphCache.count,
-            ligatureCount: ligatureCache.count,
-            packX: packX,
-            packY: packY,
-            packRowHeight: packRowHeight
-        )
     }
 
     // MARK: - Setup
@@ -384,42 +351,14 @@ public final class MetalTerminalRenderer: NSObject {
             return
         }
 
-        // Check for a shared atlas with the same font config.
-        // The shared atlas is a read-only snapshot of ASCII pre-rasterized glyphs.
-        // Each renderer gets its own CGContext for runtime cache misses (non-ASCII)
-        // to avoid CGContext thread-safety issues between concurrent draw calls.
-        let atlasKey = "\(CTFontCopyFullName(regularFont))-\(scaledSize)"
-        if let shared = Self.sharedAtlases[atlasKey] {
-            // Create our own CGContext with a copy of the shared bitmap data
-            resetAtlas()
-            if let sharedData = shared.context.data {
-                let byteCount = atlasWidth * atlasHeight * 4
-                atlasContext.data?.copyMemory(from: sharedData, byteCount: byteCount)
-            }
-            // Restore the shared atlas metadata after resetting the local bitmap.
-            glyphCache = shared.glyphCache
-            ligatureCache = shared.ligatureCache
-            packX = shared.packX
-            packY = shared.packY
-            packRowHeight = shared.packRowHeight
-            uploadAtlasTexture()
-            Log.trace("MetalRenderer: Cloned shared atlas (\(glyphCache.count) glyphs)")
-        } else {
-            resetAtlas()
-            prerasterizeASCII()
-            uploadAtlasTexture()
-            // Store snapshot for other renderers using the same font
-            Self.sharedAtlases[atlasKey] = SharedGlyphAtlas(
-                texture: glyphAtlas,
-                context: atlasContext,
-                glyphCache: glyphCache,
-                ligatureCache: ligatureCache,
-                packX: packX,
-                packY: packY,
-                packRowHeight: packRowHeight
-            )
-            Log.trace("MetalRenderer: Created shared atlas (\(glyphCache.count) glyphs)")
-        }
+        // Each renderer gets its own atlas — the ASCII pre-rasterization takes
+        // ~5ms which is acceptable. Sharing the CGContext across renderers caused
+        // thread-safety issues (concurrent draws) and bitmap corruption (stale data
+        // from the originating renderer leaking into clones).
+        resetAtlas()
+        prerasterizeASCII()
+        uploadAtlasTexture()
+        Log.trace("MetalRenderer: Atlas populated with \(glyphCache.count) glyphs")
     }
 
     /// Clears glyph atlas and cache, resetting the packing cursor.
