@@ -354,9 +354,14 @@ struct TerminalViewRepresentable: NSViewRepresentable {
             }
         }
 
-        // Suspend/resume Metal view alongside the terminal
+        // Suspend/resume Metal view and blink timer alongside the terminal
         if metalActive {
             container.rustMetalCoordinator?.metalView.isHidden = isSuspended
+            if isSuspended {
+                container.rustMetalCoordinator?.pauseBlinkTimer()
+            } else {
+                container.rustMetalCoordinator?.resumeBlinkTimer()
+            }
         }
         if nsView.notifyUpdateChanges == isSuspended {
             nsView.notifyUpdateChanges = !isSuspended

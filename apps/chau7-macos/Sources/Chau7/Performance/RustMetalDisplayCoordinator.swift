@@ -171,6 +171,18 @@ final class RustMetalDisplayCoordinator: NSObject {
 
     // MARK: - Blink
 
+    /// Pause the blink timer when the tab is suspended (saves CPU).
+    func pauseBlinkTimer() {
+        blinkTimer?.invalidate()
+        blinkTimer = nil
+    }
+
+    /// Resume the blink timer when the tab is unsuspended.
+    func resumeBlinkTimer() {
+        guard blinkTimer == nil else { return }
+        startBlinkTimer()
+    }
+
     /// Starts the blink timer (cursor and text blink on 500ms cycle).
     private func startBlinkTimer() {
         blinkTimer?.invalidate()
