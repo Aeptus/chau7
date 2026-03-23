@@ -2128,6 +2128,8 @@ final class RustTerminalView: NSView {
     /// Auto-scroll during selection drag
     private var autoScrollTimer: Timer?
     private var autoScrollDirection = 0 // -1 = up, 0 = none, 1 = down
+    private var autoScrollMouseX: CGFloat = 0 // Last mouse X for selection during auto-scroll
+    private var autoScrollDistance: CGFloat = 0 // Distance outside bounds (for speed scaling)
 
     /// Event monitors
     private var mouseDownMonitor: Any?
@@ -4508,35 +4510,30 @@ final class RustTerminalView: NSView {
             return
         }
 
+        // Scale scroll speed by distance outside bounds (accelerate further out)
+        let speed = max(1, min(Int(autoScrollDistance / 20) + 1, 10))
+
         // Scroll the terminal
         if autoScrollDirection < 0 {
-            // Scroll up (show earlier content)
-            scrollUp(lines: 2)
+            scrollUp(lines: speed)
         } else {
-            // Scroll down (show later content)
-            scrollDown(lines: 2)
+            scrollDown(lines: speed)
         }
 
-        // Extend selection to the edge of the visible area
+        // Extend selection to the edge of the visible area, using actual mouse X
         guard let rust = rustTerminal else { return }
         let edgeRow: Int
         if autoScrollDirection < 0 {
-            // Scrolling up - extend selection to top row
             edgeRow = 0
         } else {
-            // Scrolling down - extend selection to bottom row
             edgeRow = rows - 1
         }
-        // Convert to absolute row (accounting for scrollback offset)
-        // Matches pointToCellAbsolute: visibleRow - displayOffset
         let displayOffset = Int(rust.displayOffset)
         let absoluteRow = edgeRow - displayOffset
-        // Use middle column for horizontal position
-        let col = cols / 2
+        // Use actual mouse X position (not middle column)
+        let col = max(0, min(Int(autoScrollMouseX / cellWidth), cols - 1))
         rust.updateSelection(col: Int32(col), row: Int32(absoluteRow))
         needsGridSync = true
-
-        Log.trace("RustTerminalView[\(viewId)]: performAutoScroll - Scrolled \(autoScrollDirection < 0 ? "up" : "down"), selection to row \(absoluteRow)")
     }
 
     // MARK: - Scrolling
@@ -5011,13 +5008,16 @@ final class RustTerminalView: NSView {
 
             // Auto-scroll when dragging outside bounds during selection
             if didDragSinceMouseDown, isSelecting {
+                autoScrollMouseX = location.x
                 if location.y < 0 {
                     // Dragging below view - scroll down (content moves up)
                     autoScrollDirection = 1
+                    autoScrollDistance = -location.y
                     startAutoScrollTimer()
                 } else if location.y > bounds.height {
                     // Dragging above view - scroll up (content moves down)
                     autoScrollDirection = -1
+                    autoScrollDistance = location.y - bounds.height
                     startAutoScrollTimer()
                 } else {
                     // Inside bounds - stop auto-scroll
@@ -5121,14 +5121,22 @@ final class RustTerminalView: NSView {
             // would just pass through unhandled. We handle them here directly.
             let deltaY = event.scrollingDeltaY
             if abs(deltaY) > 0.5 {
-                // Convert continuous scroll delta to discrete line count.
-                // Positive deltaY = scroll up (show earlier content).
                 let lines = max(1, Int(abs(deltaY) / 3.0))
                 if deltaY > 0 {
                     scrollUp(lines: lines)
                 } else {
                     scrollDown(lines: lines)
                 }
+
+                // If actively selecting, extend the selection to track the scroll.
+                // This lets users scroll-wheel to extend selection beyond the viewport.
+                if isSelecting, let rust = rustTerminal {
+                    let mouseLocation = convert(event.locationInWindow, from: nil)
+                    let cell = pointToCellAbsolute(mouseLocation)
+                    rust.updateSelection(col: cell.col, row: cell.row)
+                    needsGridSync = true
+                }
+
                 return nil // Consume the event
             }
             return event
