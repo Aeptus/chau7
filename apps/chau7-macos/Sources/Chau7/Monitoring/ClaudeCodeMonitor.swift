@@ -44,19 +44,12 @@ final class ClaudeCodeMonitor: ObservableObject {
     /// Must be long enough to avoid false positives during normal Claude
     /// thinking/generation pauses between tool calls (typically 5–30s).
     private let idleThreshold: TimeInterval = 60.0
-    private let permissionRequestCooldown: TimeInterval = 20.0
 
     // MARK: - Internal State
 
     private var eventTailer: FileTailer<ClaudeCodeEvent>?
     private var idleTimer: DispatchSourceTimer?
-    private var lastPermissionRequestBySession: [String: PermissionRequestState] = [:]
     private let minimumIdleCheckInterval: TimeInterval = 1.0
-
-    private struct PermissionRequestState {
-        let tool: String
-        let timestamp: Date
-    }
 
     // MARK: - Callbacks
 
@@ -273,79 +266,6 @@ final class ClaudeCodeMonitor: ObservableObject {
         }
 
         scheduleNextIdleCheck()
-    }
-
-    // MARK: - Notifications
-
-    /// Suppression window after a permission request — if Claude finishes within
-    /// this window, the user was actively engaged (just granted permission) and
-    /// doesn't need a "finished" notification.
-    private let postPermissionSuppression: TimeInterval = 30.0
-
-    private func notifyResponseComplete(_ event: ClaudeCodeEvent) {
-        // Suppress "finished" notification if the user recently granted permission
-        // for this session. They're already watching — the notification is noise.
-        if let lastPerm = lastPermissionRequestBySession[event.sessionId],
-           event.timestamp.timeIntervalSince(lastPerm.timestamp) < postPermissionSuppression {
-            Log.trace("Suppressing finished notification: session=\(event.shortSessionId) " +
-                "completed \(Int(event.timestamp.timeIntervalSince(lastPerm.timestamp)))s after permission request")
-            return
-        }
-
-        let aiEvent = AIEvent(
-            source: .claudeCode,
-            type: "finished",
-            tool: "Claude",
-            message: "Response complete in \(event.projectName)",
-            ts: DateFormatters.nowISO8601(),
-            directory: event.cwd,
-            sessionID: event.sessionId
-        )
-        Task { @MainActor in NotificationManager.shared.notify(for: aiEvent) }
-    }
-
-    private func notifyPermissionRequest(_ event: ClaudeCodeEvent) {
-        let toolDesc = event.toolName.isEmpty ? "action" : event.toolName
-        let aiEvent = AIEvent(
-            source: .claudeCode,
-            type: "permission",
-            tool: "Claude",
-            message: "Needs permission for \(toolDesc) in \(event.projectName)",
-            ts: DateFormatters.nowISO8601(),
-            directory: event.cwd,
-            sessionID: event.sessionId
-        )
-        Task { @MainActor in NotificationManager.shared.notify(for: aiEvent) }
-    }
-
-    private func shouldNotifyPermissionRequest(_ event: ClaudeCodeEvent) -> Bool {
-        let sessionId = event.sessionId
-        guard !sessionId.isEmpty else { return true }
-        let tool = event.toolName
-        let now = event.timestamp
-
-        if let last = lastPermissionRequestBySession[sessionId],
-           last.tool == tool,
-           now.timeIntervalSince(last.timestamp) < permissionRequestCooldown {
-            Log.trace("Skipping duplicate permission request: session=\(event.shortSessionId) tool=\(tool)")
-            return false
-        }
-
-        lastPermissionRequestBySession[sessionId] = PermissionRequestState(tool: tool, timestamp: now)
-        return true
-    }
-
-    private func notifySessionIdle(_ session: ClaudeSessionInfo, idleFor: TimeInterval) {
-        let aiEvent = AIEvent(
-            source: .claudeCode,
-            type: "idle",
-            tool: "Claude",
-            message: "Waiting for input in \(session.projectName) (\(Int(idleFor))s idle)",
-            ts: DateFormatters.nowISO8601(),
-            directory: session.cwd,
-            sessionID: session.id
-        )
-        Task { @MainActor in NotificationManager.shared.notify(for: aiEvent) }
     }
 
     // MARK: - Transcript Access
