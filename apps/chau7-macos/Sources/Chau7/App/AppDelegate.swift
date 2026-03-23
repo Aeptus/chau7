@@ -235,9 +235,7 @@ private final class OverlayBlurView: NSVisualEffectView {
             if !states.isEmpty { allWindows.append(states) }
             host.model.closeAllSessionsForTermination()
         }
-        // Save window 0's state to the legacy key (read by Chau7App.init on launch).
-        // Additional windows are saved to the multi-window key.
-        // Save window 0 to the legacy key (Chau7App.init reads this on launch)
+        // Save window 0 to the legacy key (read by Chau7App.init on launch)
         if let firstWindowStates = allWindows.first,
            let data = try? JSONEncoder().encode(firstWindowStates) {
             UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
@@ -811,14 +809,8 @@ private final class OverlayBlurView: NSVisualEffectView {
             let windowStates = multiState.windows[windowIndex]
             guard !windowStates.isEmpty else { continue }
 
-            // Encode this window's tab states and save them to UserDefaults
-            // so OverlayTabsModel.init(restoreState: true) picks them up
-            if let stateData = try? JSONEncoder().encode(windowStates) {
-                UserDefaults.standard.set(stateData, forKey: SavedTabState.userDefaultsKey)
-            }
-
-            // Create the window — init will restore from the key we just set
-            let tabsModel = OverlayTabsModel(appModel: model, restoreState: true)
+            // Pass pre-decoded states directly — no UserDefaults round-trip
+            let tabsModel = OverlayTabsModel(appModel: model, restoringStates: windowStates)
             TerminalControlService.shared.register(tabsModel)
             let windowNumber = allocateOverlayWindowNumber()
             let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
@@ -826,10 +818,6 @@ private final class OverlayBlurView: NSVisualEffectView {
 
             Log.info("Restored additional window \(windowIndex) with \(windowStates.count) tab(s)")
         }
-
-        // Clean up the temporary key so the next single-window init doesn't
-        // accidentally load a stale state
-        UserDefaults.standard.removeObject(forKey: SavedTabState.userDefaultsKey)
     }
 
     // MARK: - PTY Log Maintenance

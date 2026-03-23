@@ -446,9 +446,16 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
     /// When `restoreState` is false, the model starts with a single fresh tab
     /// instead of loading saved state from disk. Used for Cmd+N new windows.
-    init(appModel: AppModel, restoreState: Bool = true) {
+    /// When `restoringStates` is provided, those pre-decoded states are used
+    /// directly instead of reading from UserDefaults (for multi-window restore).
+    init(appModel: AppModel, restoreState: Bool = true, restoringStates: [SavedTabState]? = nil) {
         self.appModel = appModel
-        let restoredPayload = restoreState ? Self.restoreSavedTabs(appModel: appModel) : nil
+        let restoredPayload: RestorableTabsPayload?
+        if let states = restoringStates {
+            restoredPayload = Self.decodeRestorableTabs(fromStates: states, appModel: appModel)
+        } else {
+            restoredPayload = restoreState ? Self.restoreSavedTabs(appModel: appModel) : nil
+        }
 
         if let restoredPayload {
             self.tabs = restoredPayload.tabs
@@ -557,71 +564,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     /// Saves current tab state to UserDefaults. Call from applicationWillTerminate
     /// and periodically during normal operation.
     func saveTabState(reason: TabStateSaveReason = .manual) {
-        let selectedID = selectedTabID
-        let maxLines = FeatureSettings.shared.restoredScrollbackLines
-        var states: [SavedTabState] = []
-        var claimedSessionIds = Set<String>()
-
-        for (i, tab) in tabs.enumerated() {
-            let terminalSessions = tab.splitController.terminalSessions
-            let isSelected = tab.id == selectedID
-            let overrideRaw: String? = tab.tokenOptOverride == .default ? nil : tab.tokenOptOverride.rawValue
-
-            var paneStates: [SavedTerminalPaneState] = []
-            for (paneID, session) in terminalSessions {
-                let dir = session.currentDirectory
-                let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
-                let resumeMetadata = resolveResumeMetadata(
-                    for: session,
-                    directory: dir,
-                    outputHint: scrollback,
-                    claimedSessionIds: claimedSessionIds
-                )
-                let resumeCommand = Self.buildAIResumeCommand(
-                    provider: resumeMetadata?.provider,
-                    sessionId: resumeMetadata?.sessionId
-                )
-
-                if let sessionId = resumeMetadata?.sessionId {
-                    claimedSessionIds.insert(sessionId)
-                }
-
-                paneStates.append(SavedTerminalPaneState(
-                    paneID: paneID.uuidString,
-                    directory: dir,
-                    scrollbackContent: scrollback,
-                    aiResumeCommand: resumeCommand,
-                    aiProvider: resumeMetadata?.provider,
-                    aiSessionId: resumeMetadata?.sessionId,
-                    lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate)
-                ))
-            }
-
-            let primaryDirectory = terminalSessions.first?.1.currentDirectory
-                ?? tab.session?.currentDirectory
-                ?? TerminalSessionModel.defaultStartDirectory()
-            let primaryScrollback = paneStates.first?.scrollbackContent
-            let primaryResumeCommand = paneStates.first?.aiResumeCommand
-
-            states.append(SavedTabState(
-                tabID: tab.id.uuidString,
-                selectedTabID: isSelected ? tab.id.uuidString : nil,
-                customTitle: tab.customTitle,
-                color: tab.color.rawValue,
-                directory: primaryDirectory,
-                selectedIndex: isSelected ? i : nil,
-                tokenOptOverride: overrideRaw,
-                scrollbackContent: primaryScrollback,
-                aiResumeCommand: primaryResumeCommand,
-                aiProvider: paneStates.first?.aiProvider,
-                aiSessionId: paneStates.first?.aiSessionId,
-                splitLayout: tab.splitController.exportLayout(),
-                focusedPaneID: tab.splitController.focusedTerminalSessionID()?.uuidString,
-                paneStates: paneStates.isEmpty ? nil : paneStates,
-                createdAt: DateFormatters.iso8601.string(from: tab.createdAt)
-            ))
-        }
-
+        let states = exportTabStates()
         guard !states.isEmpty else { return }
         do {
             let data = try JSONEncoder().encode(states)
@@ -665,7 +608,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
                     aiResumeCommand: resumeCommand,
                     aiProvider: resumeMetadata?.provider,
                     aiSessionId: resumeMetadata?.sessionId,
-                    lastOutputAt: session.lastOutputDate
+                    lastOutputAt: Self.normalizedResumeReferenceDate(session.lastOutputDate)
                 ))
             }
 
@@ -1333,6 +1276,15 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
             return payload
         }
         return restoreSavedTabsFromBackups(appModel: appModel)
+    }
+
+    /// Decode from pre-decoded states (multi-window restore — avoids UserDefaults round-trip).
+    private static func decodeRestorableTabs(fromStates states: [SavedTabState], appModel: AppModel) -> RestorableTabsPayload? {
+        guard !states.isEmpty else { return nil }
+        // Re-encode to reuse the existing decode path (the processing after
+        // JSON decode is non-trivial and not worth duplicating).
+        guard let data = try? JSONEncoder().encode(states) else { return nil }
+        return decodeRestorableTabs(from: data, appModel: appModel)
     }
 
     private static func decodeRestorableTabs(from data: Data, appModel: AppModel) -> RestorableTabsPayload? {
