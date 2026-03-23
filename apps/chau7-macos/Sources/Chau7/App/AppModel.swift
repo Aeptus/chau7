@@ -1202,16 +1202,15 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             }
 
             // When a session transitions from active → idle/closed, emit a "finished"
-            // notification ONCE. Track emitted sessions to avoid re-firing when the
-            // history monitor cycles the same session through active→idle repeatedly.
+            // notification ONCE per session ID. The guard is never cleared — sessions
+            // that genuinely restart get a new session ID from the AI tool. This
+            // prevents the history monitor's read-cycle (closed→active→idle) from
+            // producing repeated false notifications for the same session.
             let sessionEnded = state == .idle || state == .closed
             if previousState == .active, sessionEnded, !sessionFinishedNotified.contains(statusId) {
                 sessionFinishedNotified.insert(statusId)
                 recordEvent(source: .historyMonitor, type: "finished", tool: toolName,
                             message: "\(toolName) session completed", notify: true)
-            } else if state == .active {
-                // Clear the guard when the session genuinely becomes active again
-                sessionFinishedNotified.remove(statusId)
             }
         }
     }

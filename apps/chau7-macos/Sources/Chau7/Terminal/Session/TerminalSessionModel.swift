@@ -1633,13 +1633,15 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
             promptSeenForPendingCommand = false
             pendingCommandLine = nil
 
-            let message = "Command idle for \(Int(latestIdleFor))s"
+            // The 3-second idle transition is a UI state change, not a command
+            // completion signal. Don't send a user-visible notification — actual
+            // "finished" notifications come from OSC 133 D or the 60s fallback.
             appModel?.recordEvent(
                 source: .terminalSession,
                 type: "finished",
                 tool: notificationTabName,
-                message: message,
-                notify: true,
+                message: "Command idle for \(Int(latestIdleFor))s",
+                notify: false,
                 directory: currentDirectory,
                 tabID: ownerTabID
             )
