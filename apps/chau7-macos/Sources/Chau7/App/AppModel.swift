@@ -1171,10 +1171,13 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             let statusId = "\(toolName)-\(sessionId)"
+            let previousState: HistorySessionState?
             if let index = sessionStatuses.firstIndex(where: { $0.id == statusId }) {
+                previousState = sessionStatuses[index].state
                 sessionStatuses[index].state = state
                 sessionStatuses[index].lastSeen = lastSeen
             } else {
+                previousState = nil
                 sessionStatuses.append(SessionStatus(
                     id: statusId,
                     sessionId: sessionId,
@@ -1182,6 +1185,15 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                     state: state,
                     lastSeen: lastSeen
                 ))
+            }
+
+            // When a session transitions from active → idle/closed, emit a "finished"
+            // notification. This bridges tools that don't emit OSC 133 (e.g., Codex)
+            // with the notification pipeline — the session resolver knows they're done
+            // but ShellEventDetector.commandFinished() may not have fired yet.
+            if previousState == .active, (state == .idle || state == .closed) {
+                recordEvent(source: .historyMonitor, type: "finished", tool: toolName,
+                            message: "\(toolName) session completed", notify: true)
             }
         }
     }
