@@ -291,6 +291,12 @@ struct SavedTabState: Codable {
     static let userDefaultsKey = "com.chau7.savedTabState"
 }
 
+/// Multi-window save format: each entry is one window's tab states.
+struct SavedMultiWindowState: Codable {
+    static let userDefaultsKey = "com.chau7.savedMultiWindowState"
+    let windows: [[SavedTabState]]
+}
+
 enum TabStateSaveReason: String {
     case autosave
     case termination
@@ -625,6 +631,67 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         } catch {
             Log.warn("Failed to save tab state: \(error)")
         }
+    }
+
+    /// Exports current tab states without persisting to disk.
+    /// Used by AppDelegate to collect all windows' states for multi-window save.
+    func exportTabStates() -> [SavedTabState] {
+        let selectedID = selectedTabID
+        let maxLines = FeatureSettings.shared.restoredScrollbackLines
+        var states: [SavedTabState] = []
+        var claimedSessionIds = Set<String>()
+
+        for (i, tab) in tabs.enumerated() {
+            let terminalSessions = tab.splitController.terminalSessions
+            let isSelected = tab.id == selectedID
+            let overrideRaw: String? = tab.tokenOptOverride == .default ? nil : tab.tokenOptOverride.rawValue
+
+            var paneStates: [SavedTerminalPaneState] = []
+            for (paneID, session) in terminalSessions {
+                let dir = session.currentDirectory
+                let scrollback = Self.captureScrollback(from: session, maxLines: maxLines)
+                let resumeMetadata = resolveResumeMetadata(
+                    for: session, directory: dir, outputHint: scrollback, claimedSessionIds: claimedSessionIds
+                )
+                let resumeCommand = Self.buildAIResumeCommand(
+                    provider: resumeMetadata?.provider, sessionId: resumeMetadata?.sessionId
+                )
+                if let sessionId = resumeMetadata?.sessionId { claimedSessionIds.insert(sessionId) }
+
+                paneStates.append(SavedTerminalPaneState(
+                    paneID: paneID.uuidString,
+                    directory: dir,
+                    scrollbackContent: scrollback,
+                    aiResumeCommand: resumeCommand,
+                    aiProvider: resumeMetadata?.provider,
+                    aiSessionId: resumeMetadata?.sessionId,
+                    lastOutputAt: session.lastOutputDate
+                ))
+            }
+
+            let primaryDirectory = terminalSessions.first?.1.currentDirectory
+                ?? tab.session?.currentDirectory
+                ?? TerminalSessionModel.defaultStartDirectory()
+
+            states.append(SavedTabState(
+                tabID: tab.id.uuidString,
+                selectedTabID: isSelected ? tab.id.uuidString : nil,
+                customTitle: tab.customTitle,
+                color: tab.color.rawValue,
+                directory: primaryDirectory,
+                selectedIndex: isSelected ? i : nil,
+                tokenOptOverride: overrideRaw,
+                scrollbackContent: paneStates.first?.scrollbackContent,
+                aiResumeCommand: paneStates.first?.aiResumeCommand,
+                aiProvider: paneStates.first?.aiProvider,
+                aiSessionId: paneStates.first?.aiSessionId,
+                splitLayout: tab.splitController.exportLayout(),
+                focusedPaneID: tab.splitController.focusedTerminalSessionID()?.uuidString,
+                paneStates: paneStates.isEmpty ? nil : paneStates,
+                createdAt: DateFormatters.iso8601.string(from: tab.createdAt)
+            ))
+        }
+        return states
     }
 
     /// Captures a snapshot of a tab about to be closed and pushes it onto the
