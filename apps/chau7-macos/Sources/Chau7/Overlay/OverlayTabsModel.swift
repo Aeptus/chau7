@@ -447,6 +447,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     private var ctoFlagObserver: NSObjectProtocol?
     private var renderSuspensionObserver: NSObjectProtocol?
     private var persistentStyleObserver: NSObjectProtocol?
+    private var suspensionDebounceItem: DispatchWorkItem?
     private var lastObservedTokenOptimizationMode: TokenOptimizationMode = FeatureSettings.shared.tokenOptimizationMode
 
     weak var overlayWindow: NSWindow?
@@ -567,9 +568,17 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
                 tab.splitController.terminalSessions.contains { _, candidate in candidate === session }
             }) else { return }
 
-            Log.info("renderSuspension: session state changed tabSession=\(session.tabIdentifier) \(session.renderSuspensionDebugSummary)")
-            updateSuspensionState()
-            objectWillChange.send()
+            // Debounce: coalesce rapid state changes (e.g., spinner animations
+            // updating activeAppName at ~1/sec) into a single evaluation.
+            suspensionDebounceItem?.cancel()
+            let item = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                Log.trace("renderSuspension: session state changed tabSession=\(session.tabIdentifier)")
+                updateSuspensionState()
+                objectWillChange.send()
+            }
+            suspensionDebounceItem = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: item)
         }
     }
 
