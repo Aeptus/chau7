@@ -27,6 +27,7 @@ struct DebugConsoleView: View {
     @State private var ctoTimePeriod: CTOTimePeriod = .session
     @State private var aiPerTabStats: [TabTokenConsumption] = []
     @State private var providerStats: [ProviderConsumptionStats] = []
+    @State private var dailyCostTrend: [(date: String, cost: Double, tokens: Int)] = []
     @State private var ctoPerSessionGain: [String: CTOGainStats] = [:]
     // Category & level filtering
     @State private var enabledCategories: Set<LogCategory> = Set(LogCategory.allCases)
@@ -1470,6 +1471,26 @@ struct DebugConsoleView: View {
                     }
                 }
 
+                // Daily cost trend
+                GroupBox("Daily Cost (Last 7 Days)") {
+                    if dailyCostTrend.isEmpty {
+                        Text("No daily data yet.").foregroundStyle(.secondary)
+                    } else {
+                        ForEach(dailyCostTrend, id: \.date) { day in
+                            HStack {
+                                Text(day.date).monospaced().font(.caption)
+                                Spacer()
+                                Text("\(day.tokens) tokens")
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption)
+                                Text(String(format: "$%.4f", day.cost))
+                                    .monospaced()
+                                    .bold()
+                            }
+                        }
+                    }
+                }
+
                 // Total runs count
                 GroupBox("Summary") {
                     let totalRuns = TelemetryStore.shared.runCount()
@@ -1489,6 +1510,7 @@ struct DebugConsoleView: View {
         .onAppear {
             aiPerTabStats = TelemetryStore.shared.tokenUsagePerTab()
             providerStats = TelemetryStore.shared.consumptionPerProvider()
+            dailyCostTrend = TelemetryStore.shared.dailyCostTrend()
         }
     }
 

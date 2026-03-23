@@ -674,6 +674,33 @@ final class TelemetryStore {
         }
     }
 
+    /// Daily cost trend for the last N days.
+    func dailyCostTrend(days: Int = 7) -> [(date: String, cost: Double, tokens: Int)] {
+        queue.sync {
+            guard let db else { return [] }
+            let sql = """
+            SELECT date(started_at) as day,
+                   COALESCE(SUM(cost_usd), 0),
+                   COALESCE(SUM(total_input_tokens), 0) + COALESCE(SUM(total_output_tokens), 0)
+            FROM runs
+            WHERE started_at >= date('now', '-\(max(1, min(days, 90))) days')
+            GROUP BY day ORDER BY day
+            """
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
+            defer { sqlite3_finalize(stmt) }
+
+            var results: [(String, Double, Int)] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                guard let day = colText(stmt, 0) else { continue }
+                let cost = sqlite3_column_double(stmt, 1)
+                let tokens = Int(sqlite3_column_int64(stmt, 2))
+                results.append((day, cost, tokens))
+            }
+            return results
+        }
+    }
+
     // MARK: - Row Parsing
 
     private func parseRun(_ stmt: OpaquePointer?) -> TelemetryRun? {
