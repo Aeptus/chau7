@@ -3184,8 +3184,11 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         return tab
     }
 
-    /// Suspend rendering for tabs idle 10+ minutes, resume tabs that become active.
+    /// Suspend rendering for tabs idle 10+ minutes, but only if render suspension
+    /// is enabled. The idle dropdown (visual grouping) works independently — tabs
+    /// appear in the dropdown based on lastActivityDate, without stopping rendering.
     private func suspendIdleTabs() {
+        guard isRenderSuspensionEnabled else { return }
         let threshold: TimeInterval = 600
         let now = Date()
         for tab in tabs where tab.id != selectedTabID {
