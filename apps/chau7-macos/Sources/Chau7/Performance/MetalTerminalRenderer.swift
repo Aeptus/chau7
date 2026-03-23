@@ -84,7 +84,7 @@ public final class MetalTerminalRenderer: NSObject {
     /// Shared glyph atlas cache keyed by "fontName-fontSize". All renderers using
     /// the same font share one atlas texture and glyph cache, saving ~48MB of
     /// duplicate GPU textures across 12 tabs.
-    private static var sharedAtlases: [String: SharedGlyphAtlas] = [:]
+    static private(set) var sharedAtlases: [String: SharedGlyphAtlas] = [:]
 
     struct SharedGlyphAtlas {
         var texture: MTLTexture
