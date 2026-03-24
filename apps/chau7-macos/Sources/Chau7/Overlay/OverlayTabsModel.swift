@@ -433,7 +433,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     private var isRenderSuspensionEnabled = false
     // Reduced from 5.0s to 2.0s — combined with CVDisplayLink pausing, this
     // means background tabs stop rendering 3 seconds sooner, saving significant CPU.
-    private var renderSuspensionDelay: TimeInterval = 2.0
+    private var renderSuspensionDelay: TimeInterval = 5.0
     private var needsFreshTabOnShow = false
     private var isDiagnosticsLoggingEnabled = false
     /// Periodic auto-save timer so tab state survives crashes (SIGABRT etc.)
@@ -575,7 +575,9 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
                 guard let self else { return }
                 Log.trace("renderSuspension: session state changed tabSession=\(session.tabIdentifier)")
                 updateSuspensionState()
-                objectWillChange.send()
+                // Note: don't call objectWillChange.send() here — @Published
+                // properties in updateSuspensionState already trigger it when
+                // suspendedTabIDs changes. Extra sends cause redundant rebuilds.
             }
             suspensionDebounceItem = item
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: item)
@@ -3161,6 +3163,8 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
     /// Callback for moving a tab to another window. Wired by AppDelegate.
     var onMoveTabToWindow: ((UUID, Int) -> Void)?
+    /// Callback to refresh window titles on demand (for context menu). Wired by AppDelegate.
+    var onRefreshWindowTitles: (() -> Void)?
 
     /// List of other windows for the "Move to Window" context menu.
     /// Populated by AppDelegate.

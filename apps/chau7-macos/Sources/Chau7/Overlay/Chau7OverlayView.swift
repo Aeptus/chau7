@@ -108,6 +108,11 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         let tabBarView = ToolbarTabBarView(overlayModel: tabsModel)
         let hostingView = TabBarHostingView(rootView: tabBarView)
         hostingView.tabsModel = tabsModel
+        hostingView.refreshWindowTitles = { [weak tabsModel] in
+            // Refresh window titles lazily from AppDelegate
+            guard let model = tabsModel else { return }
+            model.onRefreshWindowTitles?()
+        }
         hostingView.installRightClickMonitor()
 
         // Cache for future requests
@@ -270,6 +275,8 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
 
     /// Reference to the overlay model for context menu actions.
     weak var tabsModel: OverlayTabsModel?
+    /// Refresh window titles lazily on right-click (avoids expensive rebuild on every focus)
+    var refreshWindowTitles: (() -> Void)?
 
     private var rightClickMonitor: Any?
 
@@ -283,6 +290,9 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
             guard let model = self.tabsModel else { return event }
 
             guard let hitTab = self.hitTestTab(at: location, in: model) else { return event }
+
+            // Refresh window titles lazily — only when the menu is actually shown
+            self.refreshWindowTitles?()
 
             let menu = self.buildTabContextMenu(for: hitTab, model: model)
             NSMenu.popUpContextMenu(menu, with: event, for: self)

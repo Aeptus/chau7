@@ -804,6 +804,10 @@ private final class OverlayBlurView: NSVisualEffectView {
                       let currentIndex = self.overlayHosts.firstIndex(where: { $0.model === model }) else { return }
                 self.moveTab(tabID, fromWindowIndex: currentIndex, toWindowIndex: targetWindowIndex)
             }
+            // Wire the lazy refresh callback for context menu
+            model.onRefreshWindowTitles = { [weak self] in
+                self?.wireTabMoveCallbacks()
+            }
             // Build window titles: "Window N (M tabs)" for each OTHER window
             model.otherWindowTitles = overlayHosts.enumerated().compactMap { j, other in
                 guard j != i else { return nil }
@@ -1115,8 +1119,6 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
         logOverlayWindowLifecycle(reason: "didBecomeKey", window: window)
         logOverlayDiagnostics(reason: "didBecomeKey", window: window)
-        // Refresh window lists for the "Move to Window" context menu
-        wireTabMoveCallbacks()
     }
 
     func windowDidResignKey(_ notification: Notification) {
