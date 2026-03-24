@@ -3026,6 +3026,7 @@ final class FeatureSettings: ObservableObject {
         fontSize = 11
         customFontFamily = ""
         defaultZoomPercent = 100
+        enableLigatures = false
 
         // Colors
         colorSchemeName = "Default"
@@ -3202,12 +3203,15 @@ final class FeatureSettings: ObservableObject {
         cmdClickOpensInternalEditor = true
         defaultEditor = ""
         urlHandler = .system
+        isOptionClickCursorEnabled = true
+        isMouseReportingEnabled = false
+        isClickToPositionEnabled = true
         isBroadcastEnabled = false
     }
 
     func resetTabsToDefaults() {
         newTabPosition = "end"
-        newTabsUseCurrentDirectory = false
+        newTabsUseCurrentDirectory = true
         lastTabCloseBehavior = .keepWindow
         warnOnCloseWithRunningProcess = true
         alwaysWarnOnTabClose = false
@@ -3218,6 +3222,7 @@ final class FeatureSettings: ObservableObject {
         showTabIcons = true
         showTabPath = true
         showTabGitIndicator = true
+        showTabCTOIndicator = true
         allowTabCTOToggle = true
         showTabBroadcastIndicator = true
         isLastCommandBadgeEnabled = true
