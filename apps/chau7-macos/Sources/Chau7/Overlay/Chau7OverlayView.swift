@@ -107,6 +107,7 @@ final class TabBarToolbarDelegate: NSObject, NSToolbarDelegate {
         Log.info("TabBarToolbarDelegate: creating new hosting view for \(toolbar.identifier)")
         let tabBarView = ToolbarTabBarView(overlayModel: tabsModel)
         let hostingView = TabBarHostingView(rootView: tabBarView)
+        hostingView.tabsModel = tabsModel
 
         // Cache for future requests
         cachedHostingViews[toolbar.identifier] = hostingView
@@ -265,6 +266,108 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
     }
+
+    /// Handle right-click to show tab context menu.
+    /// SwiftUI's .contextMenu doesn't work inside NSToolbarItem hosting views.
+    override func rightMouseDown(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+
+        // Find which tab was clicked by checking stored positions
+        guard let model = tabsModel,
+              let hitTab = hitTestTab(at: location, in: model) else {
+            super.rightMouseDown(with: event)
+            return
+        }
+
+        let menu = NSMenu()
+
+        let renameItem = NSMenuItem(title: "Rename Tab...", action: nil, keyEquivalent: "")
+        renameItem.target = self
+        renameItem.representedObject = hitTab.id
+        renameItem.action = #selector(contextRenameTab(_:))
+        menu.addItem(renameItem)
+
+        menu.addItem(.separator())
+
+        let idleItem = NSMenuItem(title: "Move to Idle Tabs", action: nil, keyEquivalent: "")
+        idleItem.target = self
+        idleItem.representedObject = hitTab.id
+        idleItem.action = #selector(contextMoveToIdle(_:))
+        menu.addItem(idleItem)
+
+        // "Move to Window" submenu if multiple windows exist
+        if !model.otherWindowTitles.isEmpty {
+            let windowSubmenu = NSMenu()
+            for window in model.otherWindowTitles {
+                let windowItem = NSMenuItem(title: window.title, action: #selector(contextMoveToWindow(_:)), keyEquivalent: "")
+                windowItem.target = self
+                windowItem.tag = window.id
+                windowItem.representedObject = hitTab.id
+                windowSubmenu.addItem(windowItem)
+            }
+            let windowMenuItem = NSMenuItem(title: "Move to Window", action: nil, keyEquivalent: "")
+            windowMenuItem.submenu = windowSubmenu
+            menu.addItem(windowMenuItem)
+        }
+
+        menu.addItem(.separator())
+
+        let closeItem = NSMenuItem(title: "Close Tab", action: nil, keyEquivalent: "")
+        closeItem.target = self
+        closeItem.representedObject = hitTab.id
+        closeItem.action = #selector(contextCloseTab(_:))
+        menu.addItem(closeItem)
+
+        NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    /// Hit-test: find which tab the click landed on using stored mid-X positions.
+    private func hitTestTab(at point: NSPoint, in model: OverlayTabsModel) -> OverlayTab? {
+        // The tabs are laid out horizontally. Use the tab's position in the array
+        // and the view width to estimate boundaries. This is approximate but works
+        // because tabs have relatively uniform widths.
+        let visibleTabs: [OverlayTab]
+        if FeatureSettings.shared.groupIdleTabs {
+            let now = Date()
+            let idleIDs = Set(model.tabs.filter { tab in
+                guard let session = tab.displaySession ?? tab.session,
+                      tab.id != model.selectedTabID else { return false }
+                return now.timeIntervalSince(session.lastActivityDate) > 600
+            }.map(\.id))
+            visibleTabs = model.tabs.filter { !idleIDs.contains($0.id) }
+        } else {
+            visibleTabs = model.tabs
+        }
+
+        guard !visibleTabs.isEmpty else { return nil }
+        let tabWidth = bounds.width / CGFloat(visibleTabs.count + 1) // +1 for "+" button
+        let index = Int(point.x / tabWidth)
+        guard index >= 0, index < visibleTabs.count else { return nil }
+        return visibleTabs[index]
+    }
+
+    @objc private func contextRenameTab(_ sender: NSMenuItem) {
+        guard let tabID = sender.representedObject as? UUID else { return }
+        tabsModel?.beginRename(tabID: tabID)
+    }
+
+    @objc private func contextMoveToIdle(_ sender: NSMenuItem) {
+        guard let tabID = sender.representedObject as? UUID else { return }
+        tabsModel?.forceTabIdle(id: tabID)
+    }
+
+    @objc private func contextMoveToWindow(_ sender: NSMenuItem) {
+        guard let tabID = sender.representedObject as? UUID else { return }
+        tabsModel?.onMoveTabToWindow?(tabID, sender.tag)
+    }
+
+    @objc private func contextCloseTab(_ sender: NSMenuItem) {
+        guard let tabID = sender.representedObject as? UUID else { return }
+        tabsModel?.closeTab(id: tabID)
+    }
+
+    /// Reference to the overlay model for context menu actions.
+    weak var tabsModel: OverlayTabsModel?
 }
 
 private struct TabDropIndicator: Equatable {
@@ -1242,7 +1345,8 @@ struct UnifiedTabButton: View {
 
     var body: some View {
         tabChip
-            .contextMenu { tabContextMenu }
+            // Context menu is handled natively via TabBarHostingView.rightMouseDown
+            // because SwiftUI's .contextMenu doesn't work inside NSToolbarItem hosts.
             .onHover { isHovering in
                 onHover?(isHovering)
             }
