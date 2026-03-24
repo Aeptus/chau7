@@ -12,26 +12,7 @@ struct AIIntegrationSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Detection
-            SettingsSectionHeader(L("settings.ai.cliDetection", "AI CLI Detection"), icon: "sparkle.magnifyingglass")
-
-            Text(L("settings.ai.detectionDescription", "Chau7 automatically detects these AI CLIs and applies appropriate theming:"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.bottom, 4)
-
-            SettingsDetectionRow(name: "Claude Code", commands: "claude, claude-code", color: TabColor.purple.color)
-            SettingsDetectionRow(name: "OpenAI Codex", commands: "codex, codex-cli", color: TabColor.green.color)
-            SettingsDetectionRow(name: "Gemini", commands: "gemini", color: TabColor.blue.color)
-            SettingsDetectionRow(name: "ChatGPT", commands: "chatgpt, gpt", color: TabColor.green.color)
-            SettingsDetectionRow(name: "GitHub Copilot", commands: "gh copilot, copilot", color: TabColor.orange.color)
-            SettingsDetectionRow(name: "Aider", commands: "aider, aider-chat", color: TabColor.pink.color)
-            SettingsDetectionRow(name: "Cursor", commands: "cursor", color: TabColor.teal.color)
-
-            Divider()
-                .padding(.vertical, 8)
-
-            // Custom Rules
+            // Custom Rules (actionable — first)
             SettingsSectionHeader(L("settings.ai.customDetectionRules", "Custom Detection Rules"), icon: "slider.horizontal.3")
 
             Text(L("settings.ai.customRulesDescription", "Add command or output patterns to tag custom AI CLIs."))
@@ -85,8 +66,27 @@ struct AIIntegrationSettingsView: View {
             Divider()
                 .padding(.vertical, 8)
 
-            // LLM Provider (embedded)
+            // LLM Provider (actionable — second)
             LLMSettingsView(settings: settings)
+
+            Divider()
+                .padding(.vertical, 8)
+
+            // Built-in Detection (read-only reference — last)
+            SettingsSectionHeader(L("settings.ai.cliDetection", "Built-in AI CLI Detection"), icon: "sparkle.magnifyingglass")
+
+            Text(L("settings.ai.detectionDescription", "Chau7 automatically detects these AI CLIs and applies appropriate theming:"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 4)
+
+            SettingsDetectionRow(name: "Claude Code", commands: "claude, claude-code", color: TabColor.purple.color)
+            SettingsDetectionRow(name: "OpenAI Codex", commands: "codex, codex-cli", color: TabColor.green.color)
+            SettingsDetectionRow(name: "Gemini", commands: "gemini", color: TabColor.blue.color)
+            SettingsDetectionRow(name: "ChatGPT", commands: "chatgpt, gpt", color: TabColor.green.color)
+            SettingsDetectionRow(name: "GitHub Copilot", commands: "gh copilot, copilot", color: TabColor.orange.color)
+            SettingsDetectionRow(name: "Aider", commands: "aider, aider-chat", color: TabColor.pink.color)
+            SettingsDetectionRow(name: "Cursor", commands: "cursor", color: TabColor.teal.color)
         }
     }
 

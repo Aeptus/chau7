@@ -3210,7 +3210,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     /// appear in the dropdown based on lastActivityDate, without stopping rendering.
     private func suspendIdleTabs() {
         guard isRenderSuspensionEnabled else { return }
-        let threshold: TimeInterval = 600
+        let threshold = FeatureSettings.shared.idleTabThresholdSeconds
         let now = Date()
         for tab in tabs where tab.id != selectedTabID {
             guard let session = tab.displaySession ?? tab.session else { continue }
@@ -3223,9 +3223,9 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
     }
 
-    /// Count tabs currently idle for 10+ minutes (excluding the selected tab).
+    /// Count tabs currently idle beyond the configured threshold (excluding the selected tab).
     private func idleTabCount() -> Int {
-        let threshold: TimeInterval = 600
+        let threshold = FeatureSettings.shared.idleTabThresholdSeconds
         let now = Date()
         return tabs.filter { tab in
             guard let session = tab.displaySession ?? tab.session,

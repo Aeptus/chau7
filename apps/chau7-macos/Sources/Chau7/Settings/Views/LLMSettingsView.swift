@@ -16,50 +16,70 @@ struct LLMSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SettingsSectionHeader(L("LLM Provider"))
+            SettingsSectionHeader(L("LLM Provider"), icon: "brain")
 
-            // Provider picker
-            Picker(L("Provider", "Provider"), selection: $selectedProvider) {
-                ForEach(LLMProviderType.allCases) { provider in
-                    Text(provider.displayName).tag(provider)
+            SettingsRow(
+                L("settings.llm.provider", "Provider"),
+                help: L("settings.llm.provider.help", "Choose the LLM backend for error explanation and AI features")
+            ) {
+                Picker("", selection: $selectedProvider) {
+                    ForEach(LLMProviderType.allCases) { provider in
+                        Text(provider.displayName).tag(provider)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
-            .pickerStyle(.segmented)
             .onChange(of: selectedProvider) { _ in loadProviderSettings() }
 
             // API Key
             if selectedProvider.requiresAPIKey {
-                HStack {
-                    SecureField(L("API Key", "API Key"), text: $apiKeyInput)
-                        .textFieldStyle(.roundedBorder)
-                    Button(L("Save", "Save")) {
-                        saveAPIKey()
+                SettingsRow(
+                    L("settings.llm.apiKey", "API Key"),
+                    help: L("settings.llm.apiKey.help", "Stored securely in the macOS Keychain")
+                ) {
+                    HStack {
+                        SecureField("", text: $apiKeyInput)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 240)
+                        Button(L("Save", "Save")) {
+                            saveAPIKey()
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    .buttonStyle(.bordered)
                 }
-                SettingsDescription(text: L("Stored securely in the macOS Keychain"))
             }
 
-            // Endpoint
-            TextField(L("Endpoint URL", "Endpoint URL"), text: $endpointInput)
-                .textFieldStyle(.roundedBorder)
-            SettingsDescription(L("Default: \(selectedProvider.defaultEndpoint)"))
+            SettingsTextField(
+                label: L("settings.llm.endpoint", "Endpoint URL"),
+                help: L("settings.llm.endpoint.help", "API endpoint URL (leave empty for provider default)"),
+                placeholder: selectedProvider.defaultEndpoint,
+                text: $endpointInput,
+                width: 300,
+                monospaced: true
+            )
 
-            // Model
-            TextField(L("Model", "Model"), text: $modelInput)
-                .textFieldStyle(.roundedBorder)
+            SettingsTextField(
+                label: L("settings.llm.model", "Model"),
+                help: L("settings.llm.model.help", "Model identifier (e.g. gpt-4o, claude-sonnet-4-20250514)"),
+                placeholder: selectedProvider.defaultModel,
+                text: $modelInput,
+                width: 200,
+                monospaced: true
+            )
 
-            // Max tokens
-            HStack {
-                Text(L("Max Tokens:", "Max Tokens:"))
-                TextField(L("1024", "1024"), text: $maxTokensInput)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 80)
-            }
+            SettingsTextField(
+                label: L("settings.llm.maxTokens", "Max Tokens"),
+                help: L("settings.llm.maxTokens.help", "Maximum tokens per response"),
+                placeholder: "1024",
+                text: $maxTokensInput,
+                width: 80,
+                monospaced: true
+            )
 
             // Test connection
             HStack {
-                Button(isTesting ? "Testing..." : "Test Connection") {
+                Button(isTesting ? L("Testing...", "Testing...") : L("Test Connection", "Test Connection")) {
                     testConnection()
                 }
                 .buttonStyle(.bordered)
@@ -73,19 +93,19 @@ struct LLMSettingsView: View {
             }
 
             Divider()
+                .padding(.vertical, 8)
 
-            SettingsSectionHeader(L("Error Explanation"))
+            SettingsSectionHeader(L("Error Explanation"), icon: "exclamationmark.bubble")
 
             SettingsToggle(
                 label: L("Enable \"Explain This Error\""),
-                help: L("Show an explain button when commands fail"),
+                help: L("Show an explain button when commands fail, using the configured LLM provider"),
                 isOn: Binding(
                     get: { settings.errorExplainEnabled },
                     set: { settings.errorExplainEnabled = $0 }
                 )
             )
         }
-        .padding()
         .onAppear { loadProviderSettings() }
     }
 

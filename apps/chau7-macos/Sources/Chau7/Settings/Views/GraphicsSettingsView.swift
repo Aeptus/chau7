@@ -8,6 +8,7 @@ struct GraphicsSettingsView: View {
 
     /// Tracks the slider value as Double for smooth interaction
     @State private var cacheSliderValue: Double = 256
+    @State private var renderTestFeedback: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -108,11 +109,20 @@ struct GraphicsSettingsView: View {
                 .padding(.vertical, 8)
 
             // Test Button
-            SettingsButtonRow(buttons: [
-                .init(title: L("graphics.button.renderTestImage", "Render Test Image"), icon: "photo.badge.checkmark", style: .bordered) {
-                    renderTestImage()
+            HStack(spacing: 12) {
+                SettingsButtonRow(buttons: [
+                    .init(title: L("graphics.button.renderTestImage", "Render Test Image"), icon: "photo.badge.checkmark", style: .bordered) {
+                        renderTestImage()
+                    }
+                ], alignment: .leading)
+
+                if let feedback = renderTestFeedback {
+                    Text(feedback)
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                        .transition(.opacity)
                 }
-            ], alignment: .leading)
+            }
         }
         .onAppear {
             cacheSliderValue = Double(bridge.kittyCacheLimitMB)
@@ -173,5 +183,12 @@ struct GraphicsSettingsView: View {
         }
 
         Log.info("Graphics test image rendered and copied to clipboard")
+
+        withAnimation {
+            renderTestFeedback = L("graphics.testImage.copied", "Test image copied to clipboard")
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            withAnimation { renderTestFeedback = nil }
+        }
     }
 }

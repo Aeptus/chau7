@@ -88,6 +88,16 @@ struct MCPSettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            // MARK: - Appearance
+
+            SettingsSectionHeader(L("settings.mcp.appearance", "Appearance"), icon: "paintpalette")
+
+            SettingsToggle(
+                label: L("settings.mcp.indicator", "Show Tab Indicator"),
+                help: L("settings.mcp.indicator.help", "Display a purple icon and background on MCP-created tabs"),
+                isOn: $settings.mcpShowTabIndicator
+            )
+
             // MARK: - MCP Profiles
 
             SettingsSectionHeader(L("settings.mcp.profiles", "MCP Profiles"), icon: "person.crop.rectangle.stack")
@@ -109,16 +119,6 @@ struct MCPSettingsView: View {
             }
             .buttonStyle(.plain)
             .foregroundColor(.accentColor)
-
-            // MARK: - Appearance
-
-            SettingsSectionHeader(L("settings.mcp.appearance", "Appearance"), icon: "paintpalette")
-
-            SettingsToggle(
-                label: L("settings.mcp.indicator", "Show Tab Indicator"),
-                help: L("settings.mcp.indicator.help", "Display a purple icon and background on MCP-created tabs"),
-                isOn: $settings.mcpShowTabIndicator
-            )
         }
         .sheet(isPresented: $isAddingProfile) {
             MCPProfileEditorView(profile: nil) { newProfile in

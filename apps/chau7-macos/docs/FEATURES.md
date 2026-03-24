@@ -40,7 +40,7 @@ The AI-native terminal for macOS. GPU-accelerated, MCP-enabled, built for develo
 - File drag-and-drop: drop files to paste shell-escaped paths; Option+drop images for base64 data URIs.
 - Markdown runbooks: open .md files in the editor pane with executable code blocks.
 - Show Changed Files (Cmd+Option+G): git diff snapshot per command shows which files were modified.
-- Idle tabs dropdown: tabs idle 10+ minutes are grouped into a compact chip in the tab bar.
+- Idle tabs dropdown: tabs idle beyond a configurable threshold (default 10 min) are grouped into a compact chip in the tab bar.
 - `chau7://` URL scheme: ssh, run, cd, and open actions from external apps (with confirmation).
 - Default start directory and optional startup commands.
 - Copy on select, Option+click cursor positioning, paste escaping.

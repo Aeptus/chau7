@@ -36,41 +36,7 @@ struct InputSettingsView: View {
             Divider()
                 .padding(.vertical, 8)
 
-            // Keyboard Shortcuts Editor (NEW)
-            SettingsSectionHeader(L("settings.input.keyboardShortcuts", "Keyboard Shortcuts"), icon: "command")
-
-            Text(L("settings.input.shortcutsHelp", "Click on a shortcut to customize it. Conflicts will be highlighted."))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .padding(.bottom, 4)
-
-            ForEach(settings.customShortcuts) { shortcut in
-                KeyboardShortcutRow(
-                    shortcut: shortcut,
-                    hasConflict: !settings.shortcutConflicts(for: shortcut).isEmpty,
-                    onEdit: {
-                        editingShortcut = shortcut
-                        showShortcutEditor = true
-                    }
-                )
-            }
-
-            SettingsToggle(
-                label: L("settings.input.shortcutHelperHint", "Shortcut Helper Hint"),
-                help: L("settings.input.shortcutHelperHint.help", "Show the shortcut helper hint in the bottom-right corner of the terminal"),
-                isOn: $settings.isShortcutHelperHintEnabled
-            )
-
-            SettingsButtonRow(buttons: [
-                .init(title: L("settings.input.resetShortcuts", "Reset Shortcuts to Defaults"), style: .plain) {
-                    settings.resetShortcutsToDefaults()
-                }
-            ])
-
-            Divider()
-                .padding(.vertical, 8)
-
-            // Mouse
+            // Mouse (before shortcuts table for better flow)
             SettingsSectionHeader(L("settings.input.mouse", "Mouse"), icon: "computermouse")
 
             SettingsToggle(
@@ -140,6 +106,34 @@ struct InputSettingsView: View {
                 label: L("settings.input.broadcastInput", "Broadcast Input"),
                 help: L("settings.input.broadcastInput.help", "Send keyboard input to all open tabs simultaneously (useful for multi-server commands)"),
                 isOn: $settings.isBroadcastEnabled
+            )
+
+            Divider()
+                .padding(.vertical, 8)
+
+            // Keyboard Shortcuts Editor
+            SettingsSectionHeader(L("settings.input.keyboardShortcuts", "Keyboard Shortcuts"), icon: "command")
+
+            Text(L("settings.input.shortcutsHelp", "Click on a shortcut to customize it. Conflicts will be highlighted."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 4)
+
+            ForEach(settings.customShortcuts) { shortcut in
+                KeyboardShortcutRow(
+                    shortcut: shortcut,
+                    hasConflict: !settings.shortcutConflicts(for: shortcut).isEmpty,
+                    onEdit: {
+                        editingShortcut = shortcut
+                        showShortcutEditor = true
+                    }
+                )
+            }
+
+            SettingsToggle(
+                label: L("settings.input.shortcutHelperHint", "Shortcut Helper Hint"),
+                help: L("settings.input.shortcutHelperHint.help", "Show the shortcut helper hint in the bottom-right corner of the terminal"),
+                isOn: $settings.isShortcutHelperHintEnabled
             )
 
             Divider()

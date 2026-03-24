@@ -8,6 +8,13 @@ struct RemoteSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            // SSH Profiles first — most commonly used section
+            SSHProfilesSettingsView()
+
+            Divider()
+                .padding(.vertical, 8)
+
+            // Remote Control
             SettingsSectionHeader(L("settings.remote.status", "Status"), icon: "antenna.radiowaves.left.and.right")
             statusRow
 
@@ -30,12 +37,6 @@ struct RemoteSettingsView: View {
 
             SettingsSectionHeader(L("settings.remote.devices", "Paired Devices"), icon: "iphone")
             pairedDevicesView
-
-            Divider()
-                .padding(.vertical, 8)
-
-            // SSH Profiles (embedded)
-            SSHProfilesSettingsView()
         }
         .confirmationDialog(
             L("settings.remote.revoke.confirm.title", "Revoke Pairing?"),

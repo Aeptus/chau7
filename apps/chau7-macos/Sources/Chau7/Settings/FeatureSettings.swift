@@ -1249,6 +1249,15 @@ final class FeatureSettings: ObservableObject {
         didSet { UserDefaults.standard.set(groupIdleTabs, forKey: "tabs.groupIdleTabs") }
     }
 
+    @Published var idleTabThresholdMinutes: Int = UserDefaults.standard.object(forKey: "tabs.idleTabThresholdMinutes") as? Int ?? 10 {
+        didSet { UserDefaults.standard.set(idleTabThresholdMinutes, forKey: "tabs.idleTabThresholdMinutes") }
+    }
+
+    /// Idle tab threshold in seconds (derived from minutes setting)
+    var idleTabThresholdSeconds: TimeInterval {
+        TimeInterval(max(1, idleTabThresholdMinutes) * 60)
+    }
+
     // MARK: - Menu Bar Only Mode
 
     @Published var menuBarOnlyMode: Bool {
@@ -3133,6 +3142,11 @@ final class FeatureSettings: ObservableObject {
     }
 
     func resetAppearanceToDefaults() {
+        resetFontColorsToDefaults()
+        resetDisplayToDefaults()
+    }
+
+    func resetFontColorsToDefaults() {
         fontFamily = "SF Mono"
         fontWeight = 5
         fontSize = 11
@@ -3140,11 +3154,19 @@ final class FeatureSettings: ObservableObject {
         defaultZoomPercent = 100
         colorSchemeName = "Default"
         customColorScheme = nil
-        menuBarOnlyMode = false
-        windowFloating = false
         windowOpacity = 1.0
         appTheme = .system
-        isAutoTabThemeEnabled = true
+        enableLigatures = false
+    }
+
+    func resetDisplayToDefaults() {
+        isSyntaxHighlightEnabled = true
+        isClickableURLsEnabled = true
+        isInlineImagesEnabled = true
+        isJSONPrettyPrintEnabled = false
+        isLineTimestampsEnabled = false
+        timestampFormat = "HH:mm:ss"
+        isSplitPanesEnabled = true
     }
 
     func resetTerminalToDefaults() {
@@ -3181,6 +3203,25 @@ final class FeatureSettings: ObservableObject {
         defaultEditor = ""
         urlHandler = .system
         isBroadcastEnabled = false
+    }
+
+    func resetTabsToDefaults() {
+        newTabPosition = "end"
+        newTabsUseCurrentDirectory = false
+        lastTabCloseBehavior = .keepWindow
+        warnOnCloseWithRunningProcess = true
+        alwaysWarnOnTabClose = false
+        alwaysShowTabBar = true
+        groupIdleTabs = true
+        idleTabThresholdMinutes = 10
+        customTitleOnly = false
+        showTabIcons = true
+        showTabPath = true
+        showTabGitIndicator = true
+        allowTabCTOToggle = true
+        showTabBroadcastIndicator = true
+        isLastCommandBadgeEnabled = true
+        isAutoTabThemeEnabled = true
     }
 
     func resetProductivityToDefaults() {
