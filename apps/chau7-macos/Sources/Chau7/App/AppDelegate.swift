@@ -228,9 +228,12 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Save only VISIBLE windows (not hidden/closed ones) for multi-window restoration
+        // Save only windows the user had open — exclude those hidden via orderOut
+        // (hiddenWindowNumbers is populated by closeWindow/windowShouldClose/onCloseLastTab)
         var allWindows: [[SavedTabState]] = []
-        for host in overlayHosts where host.window.isVisible {
+        for host in overlayHosts {
+            let isHidden = hiddenWindowNumbers.contains(host.window.windowNumber)
+            guard !isHidden, host.window.isVisible else { continue }
             let states = host.model.exportTabStates()
             if !states.isEmpty { allWindows.append(states) }
         }
@@ -1321,6 +1324,7 @@ private final class OverlayBlurView: NSVisualEffectView {
         // to [.fullScreenPrimary, .managed] — don't overwrite it here.
         window.isMovableByWindowBackground = false
         window.isReleasedWhenClosed = false
+        window.isRestorable = false // Chau7 manages its own window restoration
         window.delegate = self
         window.contentView = blur
 
