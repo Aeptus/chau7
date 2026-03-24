@@ -6,6 +6,8 @@ import AppKit
 enum SavedSplitNodeKind: String, Codable {
     case terminal
     case textEditor
+    case filePreview
+    case diffViewer
     case split
 }
 
@@ -17,6 +19,10 @@ final class SavedSplitNode: Codable, Equatable {
     let first: SavedSplitNode?
     let second: SavedSplitNode?
     let textEditorPath: String?
+    let previewFilePath: String?
+    let diffFilePath: String?
+    let diffDirectory: String?
+    let diffMode: String?
 
     init(
         kind: SavedSplitNodeKind,
@@ -25,7 +31,11 @@ final class SavedSplitNode: Codable, Equatable {
         ratio: Double?,
         first: SavedSplitNode?,
         second: SavedSplitNode?,
-        textEditorPath: String?
+        textEditorPath: String?,
+        previewFilePath: String? = nil,
+        diffFilePath: String? = nil,
+        diffDirectory: String? = nil,
+        diffMode: String? = nil
     ) {
         self.kind = kind
         self.id = id
@@ -34,6 +44,10 @@ final class SavedSplitNode: Codable, Equatable {
         self.first = first
         self.second = second
         self.textEditorPath = textEditorPath
+        self.previewFilePath = previewFilePath
+        self.diffFilePath = diffFilePath
+        self.diffDirectory = diffDirectory
+        self.diffMode = diffMode
     }
 
     static func == (lhs: SavedSplitNode, rhs: SavedSplitNode) -> Bool {
@@ -42,6 +56,10 @@ final class SavedSplitNode: Codable, Equatable {
             lhs.direction == rhs.direction &&
             lhs.ratio == rhs.ratio &&
             lhs.textEditorPath == rhs.textEditorPath &&
+            lhs.previewFilePath == rhs.previewFilePath &&
+            lhs.diffFilePath == rhs.diffFilePath &&
+            lhs.diffDirectory == rhs.diffDirectory &&
+            lhs.diffMode == rhs.diffMode &&
             lhs.first == rhs.first &&
             lhs.second == rhs.second
     }
@@ -57,19 +75,24 @@ enum SplitDirection: String, Codable {
 enum PaneType: String, Codable {
     case terminal
     case textEditor
+    case filePreview
+    case diffViewer
 }
 
 /// Represents a node in the split pane tree
 indirect enum SplitNode: Identifiable {
     case terminal(id: UUID, session: TerminalSessionModel)
     case textEditor(id: UUID, editor: TextEditorModel)
+    case filePreview(id: UUID, preview: FilePreviewModel)
+    case diffViewer(id: UUID, diff: DiffViewerModel)
     case split(id: UUID, direction: SplitDirection, first: SplitNode, second: SplitNode, ratio: CGFloat)
 
     var id: UUID {
         switch self {
-        case .terminal(let id, _):
-            return id
-        case .textEditor(let id, _):
+        case .terminal(let id, _),
+             .textEditor(let id, _),
+             .filePreview(let id, _),
+             .diffViewer(let id, _):
             return id
         case .split(let id, _, _, _, _):
             return id
@@ -79,9 +102,10 @@ indirect enum SplitNode: Identifiable {
     /// Gets all pane IDs in this subtree
     var allPaneIDs: [UUID] {
         switch self {
-        case .terminal(let id, _):
-            return [id]
-        case .textEditor(let id, _):
+        case .terminal(let id, _),
+             .textEditor(let id, _),
+             .filePreview(let id, _),
+             .diffViewer(let id, _):
             return [id]
         case .split(_, _, let first, let second, _):
             return first.allPaneIDs + second.allPaneIDs
@@ -93,7 +117,7 @@ indirect enum SplitNode: Identifiable {
         switch self {
         case .terminal(let id, _):
             return [id]
-        case .textEditor:
+        case .textEditor, .filePreview, .diffViewer:
             return []
         case .split(_, _, let first, let second, _):
             return first.allTerminalIDs + second.allTerminalIDs
@@ -105,7 +129,7 @@ indirect enum SplitNode: Identifiable {
         switch self {
         case .terminal(_, let session):
             return [session]
-        case .textEditor:
+        case .textEditor, .filePreview, .diffViewer:
             return []
         case .split(_, _, let first, let second, _):
             return first.allSessions + second.allSessions
@@ -117,7 +141,7 @@ indirect enum SplitNode: Identifiable {
         switch self {
         case .terminal(let id, let session):
             return [(id: id, session: session)]
-        case .textEditor:
+        case .textEditor, .filePreview, .diffViewer:
             return []
         case .split(_, _, let first, let second, _):
             return first.terminalSessionPairs + second.terminalSessionPairs
@@ -146,6 +170,30 @@ indirect enum SplitNode: Identifiable {
                 first: nil,
                 second: nil,
                 textEditorPath: editor.filePath
+            )
+        case .filePreview(let id, let preview):
+            return SavedSplitNode(
+                kind: .filePreview,
+                id: id.uuidString,
+                direction: nil,
+                ratio: nil,
+                first: nil,
+                second: nil,
+                textEditorPath: nil,
+                previewFilePath: preview.filePath
+            )
+        case .diffViewer(let id, let diff):
+            return SavedSplitNode(
+                kind: .diffViewer,
+                id: id.uuidString,
+                direction: nil,
+                ratio: nil,
+                first: nil,
+                second: nil,
+                textEditorPath: nil,
+                diffFilePath: diff.filePath,
+                diffDirectory: diff.directory,
+                diffMode: diff.diffMode.rawValue
             )
         case .split(let id, let direction, let first, let second, let ratio):
             return SavedSplitNode(
@@ -192,6 +240,21 @@ extension SplitNode {
                 editor.loadFile(at: path)
             }
             return .textEditor(id: resolvedID, editor: editor)
+        case .filePreview:
+            let preview = FilePreviewModel()
+            if let path = node.previewFilePath,
+               !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                preview.loadFile(at: path)
+            }
+            return .filePreview(id: resolvedID, preview: preview)
+        case .diffViewer:
+            let diff = DiffViewerModel()
+            if let file = node.diffFilePath, let dir = node.diffDirectory,
+               !file.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let mode = node.diffMode.flatMap(DiffMode.init(rawValue:)) ?? .workingTree
+                diff.loadDiff(file: file, in: dir, mode: mode)
+            }
+            return .diffViewer(id: resolvedID, diff: diff)
         case .split:
             guard let firstSaved = node.first, let secondSaved = node.second else {
                 return .terminal(id: resolvedID, session: TerminalSessionModel(appModel: appModel))
@@ -217,7 +280,7 @@ extension SplitNode {
         switch self {
         case .terminal(_, let session):
             session.closeSession()
-        case .textEditor:
+        case .textEditor, .filePreview, .diffViewer:
             break
         case .split(_, _, let first, let second, _):
             first.closeAllSessions()
@@ -230,7 +293,7 @@ extension SplitNode {
         switch self {
         case .terminal(let termId, let session):
             return termId == id ? session : nil
-        case .textEditor:
+        case .textEditor, .filePreview, .diffViewer:
             return nil
         case .split(_, _, let first, let second, _):
             return first.findSession(id: id) ?? second.findSession(id: id)
@@ -240,7 +303,7 @@ extension SplitNode {
     /// Finds a text editor model by ID
     func findEditor(id: UUID) -> TextEditorModel? {
         switch self {
-        case .terminal:
+        case .terminal, .filePreview, .diffViewer:
             return nil
         case .textEditor(let editorId, let editor):
             return editorId == id ? editor : nil
@@ -252,12 +315,60 @@ extension SplitNode {
     /// Finds the first text editor in the tree
     func findFirstEditor() -> TextEditorModel? {
         switch self {
-        case .terminal:
+        case .terminal, .filePreview, .diffViewer:
             return nil
         case .textEditor(_, let editor):
             return editor
         case .split(_, _, let first, let second, _):
             return first.findFirstEditor() ?? second.findFirstEditor()
+        }
+    }
+
+    /// Finds a file preview model by ID
+    func findFilePreview(id: UUID) -> FilePreviewModel? {
+        switch self {
+        case .terminal, .textEditor, .diffViewer:
+            return nil
+        case .filePreview(let paneId, let preview):
+            return paneId == id ? preview : nil
+        case .split(_, _, let first, let second, _):
+            return first.findFilePreview(id: id) ?? second.findFilePreview(id: id)
+        }
+    }
+
+    /// Finds the first file preview in the tree
+    func findFirstFilePreview() -> FilePreviewModel? {
+        switch self {
+        case .terminal, .textEditor, .diffViewer:
+            return nil
+        case .filePreview(_, let preview):
+            return preview
+        case .split(_, _, let first, let second, _):
+            return first.findFirstFilePreview() ?? second.findFirstFilePreview()
+        }
+    }
+
+    /// Finds a diff viewer model by ID
+    func findDiffViewer(id: UUID) -> DiffViewerModel? {
+        switch self {
+        case .terminal, .textEditor, .filePreview:
+            return nil
+        case .diffViewer(let paneId, let diff):
+            return paneId == id ? diff : nil
+        case .split(_, _, let first, let second, _):
+            return first.findDiffViewer(id: id) ?? second.findDiffViewer(id: id)
+        }
+    }
+
+    /// Finds the first diff viewer in the tree
+    func findFirstDiffViewer() -> DiffViewerModel? {
+        switch self {
+        case .terminal, .textEditor, .filePreview:
+            return nil
+        case .diffViewer(_, let diff):
+            return diff
+        case .split(_, _, let first, let second, _):
+            return first.findFirstDiffViewer() ?? second.findFirstDiffViewer()
         }
     }
 
@@ -268,6 +379,10 @@ extension SplitNode {
             return paneId == id ? .terminal : nil
         case .textEditor(let paneId, _):
             return paneId == id ? .textEditor : nil
+        case .filePreview(let paneId, _):
+            return paneId == id ? .filePreview : nil
+        case .diffViewer(let paneId, _):
+            return paneId == id ? .diffViewer : nil
         case .split(_, _, let first, let second, _):
             return first.paneType(for: id) ?? second.paneType(for: id)
         }
@@ -276,7 +391,7 @@ extension SplitNode {
     /// Checks if tree has any text editors
     var hasTextEditor: Bool {
         switch self {
-        case .terminal:
+        case .terminal, .filePreview, .diffViewer:
             return false
         case .textEditor:
             return true
@@ -409,6 +524,290 @@ final class TextEditorModel: ObservableObject, Identifiable {
     }
 }
 
+// MARK: - File Preview Model
+
+/// Read-only file viewer model — lighter than TextEditorModel (no editing, no dirty tracking).
+/// Supports both text files (with syntax highlighting) and image files.
+final class FilePreviewModel: ObservableObject, Identifiable {
+    let id = UUID()
+
+    @Published var content = ""
+    @Published var filePath: String?
+    @Published var isLoading = false
+    @Published var lastError: String?
+    @Published var imageData: Data?
+    @Published var isImageFile = false
+    @Published var scrollToLine: Int?
+
+    private var pendingScrollToLine: Int?
+    private var loadingToken: UUID?
+
+    static let imageExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "svg", "webp", "ico", "bmp", "tiff", "tif"
+    ]
+
+    var fileName: String {
+        if let path = filePath {
+            return (path as NSString).lastPathComponent
+        }
+        return "No File"
+    }
+
+    var fileExtension: String {
+        guard let path = filePath else { return "" }
+        return (path as NSString).pathExtension.lowercased()
+    }
+
+    func loadFile(at path: String, scrollToLine line: Int? = nil) {
+        let token = UUID()
+        loadingToken = token
+        isLoading = true
+        lastError = nil
+        pendingScrollToLine = line
+
+        let ext = (path as NSString).pathExtension.lowercased()
+        let isImage = Self.imageExtensions.contains(ext)
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            if isImage {
+                do {
+                    let data = try Data(contentsOf: URL(fileURLWithPath: path))
+                    DispatchQueue.main.async {
+                        guard self?.loadingToken == token else { return }
+                        self?.imageData = data
+                        self?.isImageFile = true
+                        self?.content = ""
+                        self?.filePath = path
+                        self?.isLoading = false
+                        Log.info("Loaded image preview: \(path)")
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        guard self?.loadingToken == token else { return }
+                        self?.isLoading = false
+                        self?.lastError = "Failed to load image: \(error.localizedDescription)"
+                    }
+                }
+            } else {
+                do {
+                    let contents = try String(contentsOfFile: path, encoding: .utf8)
+                    DispatchQueue.main.async {
+                        guard self?.loadingToken == token else { return }
+                        self?.content = contents
+                        self?.isImageFile = false
+                        self?.imageData = nil
+                        self?.filePath = path
+                        self?.isLoading = false
+                        if let pending = self?.pendingScrollToLine {
+                            self?.scrollToLine = pending
+                            self?.pendingScrollToLine = nil
+                        }
+                        Log.info("Loaded file preview: \(path)")
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        guard self?.loadingToken == token else { return }
+                        self?.isLoading = false
+                        self?.pendingScrollToLine = nil
+                        self?.lastError = "Failed to load file: \(error.localizedDescription)"
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Diff Viewer Model
+
+/// Mode for diff comparison
+enum DiffMode: String, Codable {
+    case workingTree  // git diff (unstaged changes)
+    case staged       // git diff --cached
+}
+
+/// A single line in a diff hunk
+enum DiffLineType {
+    case context(String)
+    case addition(String)
+    case deletion(String)
+    case hunkHeader(String)
+}
+
+/// A parsed hunk from unified diff output
+struct DiffHunk: Identifiable {
+    let id = UUID()
+    let header: String
+    let oldStart: Int
+    let oldCount: Int
+    let newStart: Int
+    let newCount: Int
+    let lines: [DiffLineType]
+}
+
+/// Model for a git diff viewer pane.
+/// Loads unified diff output via `git diff` and parses it into structured hunks.
+final class DiffViewerModel: ObservableObject, Identifiable {
+    let id = UUID()
+
+    @Published var filePath: String?
+    @Published var directory: String?
+    @Published var isLoading = false
+    @Published var lastError: String?
+    @Published var hunks: [DiffHunk] = []
+    @Published var diffMode: DiffMode = .workingTree
+    @Published var rawDiff: String = ""
+    @Published var additions: Int = 0
+    @Published var deletions: Int = 0
+
+    var fileName: String {
+        if let path = filePath {
+            return (path as NSString).lastPathComponent
+        }
+        return "No File"
+    }
+
+    func loadDiff(file: String, in directory: String, mode: DiffMode = .workingTree) {
+        self.filePath = file
+        self.directory = directory
+        self.diffMode = mode
+        isLoading = true
+        lastError = nil
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var args = ["diff"]
+            if mode == .staged { args.append("--cached") }
+            args += ["--", file]
+
+            let output = GitDiffTracker.runGit(args: args, in: directory)
+            let parsed = Self.parseUnifiedDiff(output)
+
+            DispatchQueue.main.async {
+                self?.rawDiff = output
+                self?.hunks = parsed.hunks
+                self?.additions = parsed.additions
+                self?.deletions = parsed.deletions
+                self?.isLoading = false
+
+                if output.isEmpty && parsed.hunks.isEmpty {
+                    // Try staged if working tree was empty
+                    if mode == .workingTree {
+                        let stagedOutput = GitDiffTracker.runGit(args: ["diff", "--cached", "--", file], in: directory)
+                        if !stagedOutput.isEmpty {
+                            self?.diffMode = .staged
+                            let stagedParsed = Self.parseUnifiedDiff(stagedOutput)
+                            self?.rawDiff = stagedOutput
+                            self?.hunks = stagedParsed.hunks
+                            self?.additions = stagedParsed.additions
+                            self?.deletions = stagedParsed.deletions
+                        }
+                    }
+                }
+
+                Log.info("Loaded diff: \(file) (\(parsed.hunks.count) hunks, +\(parsed.additions)/-\(parsed.deletions))")
+            }
+        }
+    }
+
+    func refresh() {
+        guard let path = filePath, let dir = directory else { return }
+        loadDiff(file: path, in: dir, mode: diffMode)
+    }
+
+    func toggleDiffMode() {
+        diffMode = diffMode == .workingTree ? .staged : .workingTree
+        refresh()
+    }
+
+    // MARK: - Unified Diff Parser
+
+    struct ParseResult {
+        let hunks: [DiffHunk]
+        let additions: Int
+        let deletions: Int
+    }
+
+    static func parseUnifiedDiff(_ raw: String) -> ParseResult {
+        guard !raw.isEmpty else { return ParseResult(hunks: [], additions: 0, deletions: 0) }
+
+        var hunks: [DiffHunk] = []
+        var currentLines: [DiffLineType] = []
+        var currentHeader = ""
+        var oldStart = 0, oldCount = 0, newStart = 0, newCount = 0
+        var totalAdditions = 0, totalDeletions = 0
+        var inHunk = false
+
+        for line in raw.components(separatedBy: "\n") {
+            if line.hasPrefix("@@") {
+                // Flush previous hunk
+                if inHunk {
+                    hunks.append(DiffHunk(
+                        header: currentHeader,
+                        oldStart: oldStart, oldCount: oldCount,
+                        newStart: newStart, newCount: newCount,
+                        lines: currentLines
+                    ))
+                    currentLines = []
+                }
+
+                // Parse hunk header: @@ -oldStart,oldCount +newStart,newCount @@
+                currentHeader = line
+                let numbers = parseHunkHeader(line)
+                oldStart = numbers.oldStart
+                oldCount = numbers.oldCount
+                newStart = numbers.newStart
+                newCount = numbers.newCount
+                currentLines.append(.hunkHeader(line))
+                inHunk = true
+
+            } else if inHunk {
+                if line.hasPrefix("+") {
+                    currentLines.append(.addition(String(line.dropFirst())))
+                    totalAdditions += 1
+                } else if line.hasPrefix("-") {
+                    currentLines.append(.deletion(String(line.dropFirst())))
+                    totalDeletions += 1
+                } else if line.hasPrefix(" ") {
+                    currentLines.append(.context(String(line.dropFirst())))
+                } else if line.hasPrefix("\\") {
+                    // "\ No newline at end of file" — skip
+                }
+            }
+            // Skip diff header lines (diff --git, index, ---, +++)
+        }
+
+        // Flush last hunk
+        if inHunk {
+            hunks.append(DiffHunk(
+                header: currentHeader,
+                oldStart: oldStart, oldCount: oldCount,
+                newStart: newStart, newCount: newCount,
+                lines: currentLines
+            ))
+        }
+
+        return ParseResult(hunks: hunks, additions: totalAdditions, deletions: totalDeletions)
+    }
+
+    private static func parseHunkHeader(_ header: String) -> (oldStart: Int, oldCount: Int, newStart: Int, newCount: Int) {
+        // Format: @@ -oldStart[,oldCount] +newStart[,newCount] @@
+        let scanner = Scanner(string: header)
+        scanner.scanString("@@")
+        scanner.scanString("-")
+        let oStart = scanner.scanInt() ?? 0
+        var oCount = 1
+        if scanner.scanString(",") != nil {
+            oCount = scanner.scanInt() ?? 1
+        }
+        scanner.scanString("+")
+        let nStart = scanner.scanInt() ?? 0
+        var nCount = 1
+        if scanner.scanString(",") != nil {
+            nCount = scanner.scanInt() ?? 1
+        }
+        return (oStart, oCount, nStart, nCount)
+    }
+}
+
 // MARK: - Split Pane Controller
 
 /// Manages split pane layout for a tab
@@ -427,7 +826,7 @@ final class SplitPaneController: ObservableObject {
         func findSession(_ node: SplitNode) -> TerminalSessionModel? {
             switch node {
             case .terminal(_, let session): return session
-            case .textEditor: return nil
+            case .textEditor, .filePreview, .diffViewer: return nil
             case .split(_, _, let first, let second, _):
                 return findSession(first) ?? findSession(second)
             }
@@ -523,9 +922,6 @@ final class SplitPaneController: ObservableObject {
     }
 
     /// Opens a file in the existing text editor, or creates a new split if none exists
-    /// - Parameters:
-    ///   - path: Absolute path to the file
-    ///   - line: Optional line number to scroll to after loading
     func openFileInEditor(path: String, line: Int? = nil) {
         if let editor = root.findFirstEditor() {
             editor.loadFile(at: path, scrollToLine: line)
@@ -534,28 +930,63 @@ final class SplitPaneController: ObservableObject {
         }
     }
 
+    // MARK: - File Preview
+
+    /// Splits the focused pane with a read-only file preview
+    func splitWithFilePreview(direction: SplitDirection, filePath: String? = nil, scrollToLine: Int? = nil) {
+        let preview = FilePreviewModel()
+        if let path = filePath {
+            preview.loadFile(at: path, scrollToLine: scrollToLine)
+        }
+        let newID = UUID()
+        let newNode = SplitNode.filePreview(id: newID, preview: preview)
+
+        root = splitNode(root, targetID: focusedPaneID, direction: direction, newNode: newNode)
+        focusedPaneID = newID
+    }
+
+    /// Opens a file in the existing preview pane, or creates a new split if none exists
+    func openFilePreview(path: String, line: Int? = nil) {
+        if let preview = root.findFirstFilePreview() {
+            preview.loadFile(at: path, scrollToLine: line)
+        } else {
+            splitWithFilePreview(direction: .horizontal, filePath: path, scrollToLine: line)
+        }
+    }
+
+    // MARK: - Diff Viewer
+
+    /// Splits the focused pane with a diff viewer
+    func splitWithDiffViewer(direction: SplitDirection, filePath: String, directory: String, mode: DiffMode = .workingTree) {
+        let diff = DiffViewerModel()
+        diff.loadDiff(file: filePath, in: directory, mode: mode)
+        let newID = UUID()
+        let newNode = SplitNode.diffViewer(id: newID, diff: diff)
+
+        root = splitNode(root, targetID: focusedPaneID, direction: direction, newNode: newNode)
+        focusedPaneID = newID
+    }
+
+    /// Opens a diff in the existing diff viewer, or creates a new split if none exists
+    func openDiffViewer(filePath: String, directory: String, mode: DiffMode = .workingTree) {
+        if let diff = root.findFirstDiffViewer() {
+            diff.loadDiff(file: filePath, in: directory, mode: mode)
+        } else {
+            splitWithDiffViewer(direction: .horizontal, filePath: filePath, directory: directory, mode: mode)
+        }
+    }
+
     private func splitNode(_ node: SplitNode, targetID: UUID, direction: SplitDirection, newNode: SplitNode) -> SplitNode {
         switch node {
-        case .terminal(let id, let session):
+        case .terminal(let id, _),
+             .textEditor(let id, _),
+             .filePreview(let id, _),
+             .diffViewer(let id, _):
             if id == targetID {
-                let oldTerminal = SplitNode.terminal(id: id, session: session)
                 return .split(
                     id: UUID(),
                     direction: direction,
-                    first: oldTerminal,
-                    second: newNode,
-                    ratio: 0.5
-                )
-            }
-            return node
-
-        case .textEditor(let id, let editor):
-            if id == targetID {
-                let oldEditor = SplitNode.textEditor(id: id, editor: editor)
-                return .split(
-                    id: UUID(),
-                    direction: direction,
-                    first: oldEditor,
+                    first: node,
                     second: newNode,
                     ratio: 0.5
                 )
@@ -604,7 +1035,9 @@ final class SplitPaneController: ObservableObject {
             }
             return (node, nil)
 
-        case .textEditor(let id, _):
+        case .textEditor(let id, _),
+             .filePreview(let id, _),
+             .diffViewer(let id, _):
             if id == targetID {
                 return (nil, nil)
             }
@@ -671,7 +1104,7 @@ final class SplitPaneController: ObservableObject {
             switch node {
             case .terminal(_, let session):
                 return session
-            case .textEditor:
+            case .textEditor, .filePreview, .diffViewer:
                 return nil
             case .split(_, _, let first, let second, _):
                 return findFirst(first) ?? findFirst(second)
@@ -689,7 +1122,7 @@ final class SplitPaneController: ObservableObject {
 
     private func adjustRatioInNode(_ node: SplitNode, targetID: UUID, delta: CGFloat) -> SplitNode {
         switch node {
-        case .terminal, .textEditor:
+        case .terminal, .textEditor, .filePreview, .diffViewer:
             return node
 
         case .split(let id, let dir, let first, let second, var ratio):
@@ -719,7 +1152,7 @@ final class SplitPaneController: ObservableObject {
 
     private func updateRatioInNode(_ node: SplitNode, splitID: UUID, newRatio: CGFloat) -> SplitNode {
         switch node {
-        case .terminal, .textEditor:
+        case .terminal, .textEditor, .filePreview, .diffViewer:
             return node
 
         case .split(let id, let dir, let first, let second, let ratio):

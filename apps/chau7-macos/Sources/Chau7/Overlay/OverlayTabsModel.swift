@@ -225,6 +225,18 @@ struct OverlayTab: Identifiable, Equatable {
         splitController.appendSelectionToEditor(text)
     }
 
+    func openFilePreview(filePath: String? = nil) {
+        if let path = filePath {
+            splitController.openFilePreview(path: path)
+        } else {
+            splitController.splitWithFilePreview(direction: .horizontal)
+        }
+    }
+
+    func openDiffViewer(filePath: String, directory: String, mode: DiffMode = .workingTree) {
+        splitController.openDiffViewer(filePath: filePath, directory: directory, mode: mode)
+    }
+
     init(appModel: AppModel, splitController: SplitPaneController, id: UUID = UUID(), createdAt: Date = Date()) {
         self.id = id
         self.splitController = splitController
@@ -3985,6 +3997,14 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
     func openTextEditorInCurrentTab(filePath: String? = nil) {
         selectedTab?.openTextEditor(filePath: filePath)
+    }
+
+    func openFilePreviewInCurrentTab(filePath: String? = nil) {
+        selectedTab?.openFilePreview(filePath: filePath)
+    }
+
+    func openDiffViewerInCurrentTab(filePath: String, directory: String, mode: DiffMode = .workingTree) {
+        selectedTab?.openDiffViewer(filePath: filePath, directory: directory, mode: mode)
     }
 
     func closeFocusedPaneInCurrentTab() {
