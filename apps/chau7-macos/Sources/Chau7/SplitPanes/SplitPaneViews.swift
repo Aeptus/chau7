@@ -64,6 +64,22 @@ struct SplitNodeView: View {
                 onRunCommand: onRunCommand
             )
 
+        case .filePreview(let id, let preview):
+            FilePreviewPaneView(
+                id: id,
+                preview: preview,
+                onFocus: { onFocus(id) },
+                onClose: { onClosePane(id) }
+            )
+
+        case .diffViewer(let id, let diff):
+            DiffViewerPaneView(
+                id: id,
+                diff: diff,
+                onFocus: { onFocus(id) },
+                onClose: { onClosePane(id) }
+            )
+
         case .split(let splitID, let direction, let first, let second, let ratio):
             SplitContainerView(
                 splitID: splitID,

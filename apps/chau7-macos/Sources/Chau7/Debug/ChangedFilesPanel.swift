@@ -69,6 +69,22 @@ private struct ChangedFilesView: View {
                     }
                 }
                 .contextMenu {
+                    Button("Open Diff") {
+                        guard let dir = directory else { return }
+                        if let appDelegate = NSApp.delegate as? AppDelegate,
+                           let model = appDelegate.activeOverlayModel {
+                            model.openDiffViewerInCurrentTab(filePath: file, directory: dir)
+                        }
+                    }
+                    Button("Preview File") {
+                        guard let dir = directory else { return }
+                        let fullPath = (dir as NSString).appendingPathComponent(file)
+                        if let appDelegate = NSApp.delegate as? AppDelegate,
+                           let model = appDelegate.activeOverlayModel {
+                            model.openFilePreviewInCurrentTab(filePath: fullPath)
+                        }
+                    }
+                    Divider()
                     Button("Copy Path") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(file, forType: .string)

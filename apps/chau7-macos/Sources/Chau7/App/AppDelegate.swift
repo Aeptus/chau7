@@ -23,7 +23,7 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     private var overlayHosts: [OverlayHost] = []
-    private weak var activeOverlayModel: OverlayTabsModel?
+    private(set) weak var activeOverlayModel: OverlayTabsModel?
     private var lastOverlayDiagLogAt: CFAbsoluteTime = 0
     private var lastOverlayDiagReason = ""
     private var keyMonitor: Any?
@@ -781,6 +781,21 @@ private final class OverlayBlurView: NSVisualEffectView {
 
     func openTextEditorPane() {
         ensureActiveOverlayModel()?.openTextEditorInCurrentTab()
+    }
+
+    func openFilePreviewPane() {
+        ensureActiveOverlayModel()?.openFilePreviewInCurrentTab()
+    }
+
+    func openDiffViewerPane() {
+        guard let model = ensureActiveOverlayModel(),
+              let tab = model.tabs.first(where: { $0.id == model.selectedTabID }),
+              let session = tab.session else { return }
+        let tabID = session.ownerTabID?.uuidString ?? model.selectedTabID.uuidString
+        let files = CommandBlockManager.shared.lastChangedFiles(tabID: tabID)
+        if let firstFile = files.first {
+            model.openDiffViewerInCurrentTab(filePath: firstFile, directory: session.currentDirectory)
+        }
     }
 
     func showChangedFiles() {

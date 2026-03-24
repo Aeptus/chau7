@@ -42,11 +42,11 @@ final class GitDiffTracker {
 
     /// Returns `git diff --stat` summary for a specific file (e.g., "3 insertions(+), 1 deletion(-)").
     func diffStat(file: String, in directory: String) -> String {
-        let output = runGit(args: ["diff", "--stat", "--", file], in: directory)
+        let output = Self.runGit(args: ["diff", "--stat", "--", file], in: directory)
         // Last line of --stat is the summary: " 1 file changed, 3 insertions(+), 1 deletion(-)"
         guard let lastLine = output.components(separatedBy: "\n").last(where: { $0.contains("changed") }) else {
             // Try staged diff
-            let staged = runGit(args: ["diff", "--cached", "--stat", "--", file], in: directory)
+            let staged = Self.runGit(args: ["diff", "--cached", "--stat", "--", file], in: directory)
             return staged.components(separatedBy: "\n").last(where: { $0.contains("changed") })?.trimmingCharacters(in: .whitespaces) ?? ""
         }
         return lastLine.trimmingCharacters(in: .whitespaces)
@@ -55,7 +55,7 @@ final class GitDiffTracker {
     /// Returns the set of dirty + untracked file paths from `git status --porcelain`.
     /// Each entry is a relative path like "src/main.swift".
     private func currentDirtyFiles(in directory: String) -> Set<String> {
-        let output = runGit(args: ["status", "--porcelain"], in: directory)
+        let output = Self.runGit(args: ["status", "--porcelain"], in: directory)
         guard !output.isEmpty else { return [] }
 
         var files = Set<String>()
@@ -73,7 +73,7 @@ final class GitDiffTracker {
         return files
     }
 
-    private func runGit(args: [String], in directory: String) -> String {
+    static func runGit(args: [String], in directory: String) -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["-C", directory] + args

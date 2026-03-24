@@ -858,6 +858,238 @@ final class SplitEnumTests: XCTestCase {
     func testPaneTypeRawValues() {
         XCTAssertEqual(PaneType.terminal.rawValue, "terminal")
         XCTAssertEqual(PaneType.textEditor.rawValue, "textEditor")
+        XCTAssertEqual(PaneType.filePreview.rawValue, "filePreview")
+        XCTAssertEqual(PaneType.diffViewer.rawValue, "diffViewer")
+    }
+
+    // MARK: - FilePreview Node
+
+    func testFilePreviewNodeID() {
+        let id = UUID()
+        let preview = FilePreviewModel()
+        let node = SplitNode.filePreview(id: id, preview: preview)
+        XCTAssertEqual(node.id, id)
+    }
+
+    func testFilePreviewAllPaneIDs() {
+        let id = UUID()
+        let preview = FilePreviewModel()
+        let node = SplitNode.filePreview(id: id, preview: preview)
+        XCTAssertEqual(node.allPaneIDs, [id])
+    }
+
+    func testFilePreviewAllTerminalIDsIsEmpty() {
+        let preview = FilePreviewModel()
+        let node = SplitNode.filePreview(id: UUID(), preview: preview)
+        XCTAssertTrue(node.allTerminalIDs.isEmpty)
+    }
+
+    func testFilePreviewAllSessionsIsEmpty() {
+        let preview = FilePreviewModel()
+        let node = SplitNode.filePreview(id: UUID(), preview: preview)
+        XCTAssertTrue(node.allSessions.isEmpty)
+    }
+
+    func testFilePreviewHasNoTextEditor() {
+        let preview = FilePreviewModel()
+        let node = SplitNode.filePreview(id: UUID(), preview: preview)
+        XCTAssertFalse(node.hasTextEditor)
+    }
+
+    func testFilePreviewPaneType() {
+        let id = UUID()
+        let preview = FilePreviewModel()
+        let node = SplitNode.filePreview(id: id, preview: preview)
+        XCTAssertEqual(node.paneType(for: id), .filePreview)
+    }
+
+    func testFindFilePreviewByID() {
+        let id = UUID()
+        let preview = FilePreviewModel()
+        let node = SplitNode.filePreview(id: id, preview: preview)
+        XCTAssertNotNil(node.findFilePreview(id: id))
+        XCTAssertNil(node.findFilePreview(id: UUID()))
+    }
+
+    func testFindFirstFilePreview() {
+        let appModel = AppModel()
+        let preview = FilePreviewModel()
+        let term = makeTerminalNode(appModel: appModel)
+        let previewNode = SplitNode.filePreview(id: UUID(), preview: preview)
+        let root = SplitNode.split(id: UUID(), direction: .horizontal, first: term, second: previewNode, ratio: 0.5)
+        XCTAssertNotNil(root.findFirstFilePreview())
+    }
+
+    func testFindFirstFilePreviewReturnsNilForTerminalOnly() {
+        let appModel = AppModel()
+        let node = makeTerminalNode(appModel: appModel)
+        XCTAssertNil(node.findFirstFilePreview())
+    }
+
+    // MARK: - DiffViewer Node
+
+    func testDiffViewerNodeID() {
+        let id = UUID()
+        let diff = DiffViewerModel()
+        let node = SplitNode.diffViewer(id: id, diff: diff)
+        XCTAssertEqual(node.id, id)
+    }
+
+    func testDiffViewerAllPaneIDs() {
+        let id = UUID()
+        let diff = DiffViewerModel()
+        let node = SplitNode.diffViewer(id: id, diff: diff)
+        XCTAssertEqual(node.allPaneIDs, [id])
+    }
+
+    func testDiffViewerAllTerminalIDsIsEmpty() {
+        let diff = DiffViewerModel()
+        let node = SplitNode.diffViewer(id: UUID(), diff: diff)
+        XCTAssertTrue(node.allTerminalIDs.isEmpty)
+    }
+
+    func testDiffViewerHasNoTextEditor() {
+        let diff = DiffViewerModel()
+        let node = SplitNode.diffViewer(id: UUID(), diff: diff)
+        XCTAssertFalse(node.hasTextEditor)
+    }
+
+    func testDiffViewerPaneType() {
+        let id = UUID()
+        let diff = DiffViewerModel()
+        let node = SplitNode.diffViewer(id: id, diff: diff)
+        XCTAssertEqual(node.paneType(for: id), .diffViewer)
+    }
+
+    func testFindDiffViewerByID() {
+        let id = UUID()
+        let diff = DiffViewerModel()
+        let node = SplitNode.diffViewer(id: id, diff: diff)
+        XCTAssertNotNil(node.findDiffViewer(id: id))
+        XCTAssertNil(node.findDiffViewer(id: UUID()))
+    }
+
+    func testFindFirstDiffViewer() {
+        let appModel = AppModel()
+        let diff = DiffViewerModel()
+        let term = makeTerminalNode(appModel: appModel)
+        let diffNode = SplitNode.diffViewer(id: UUID(), diff: diff)
+        let root = SplitNode.split(id: UUID(), direction: .horizontal, first: term, second: diffNode, ratio: 0.5)
+        XCTAssertNotNil(root.findFirstDiffViewer())
+    }
+
+    // MARK: - FilePreviewModel
+
+    func testFilePreviewModelFileName() {
+        let model = FilePreviewModel()
+        XCTAssertEqual(model.fileName, "No File")
+        model.filePath = "/Users/test/hello.swift"
+        XCTAssertEqual(model.fileName, "hello.swift")
+    }
+
+    func testFilePreviewModelImageDetection() {
+        XCTAssertTrue(FilePreviewModel.imageExtensions.contains("png"))
+        XCTAssertTrue(FilePreviewModel.imageExtensions.contains("jpg"))
+        XCTAssertTrue(FilePreviewModel.imageExtensions.contains("svg"))
+        XCTAssertFalse(FilePreviewModel.imageExtensions.contains("swift"))
+        XCTAssertFalse(FilePreviewModel.imageExtensions.contains("txt"))
+    }
+
+    // MARK: - DiffViewerModel Parser
+
+    func testParseEmptyDiff() {
+        let result = DiffViewerModel.parseUnifiedDiff("")
+        XCTAssertTrue(result.hunks.isEmpty)
+        XCTAssertEqual(result.additions, 0)
+        XCTAssertEqual(result.deletions, 0)
+    }
+
+    func testParseSimpleDiff() {
+        let diff = """
+        diff --git a/file.swift b/file.swift
+        index abc..def 100644
+        --- a/file.swift
+        +++ b/file.swift
+        @@ -1,3 +1,4 @@
+         unchanged line
+        -removed line
+        +added line
+        +another added line
+         context line
+        """
+        let result = DiffViewerModel.parseUnifiedDiff(diff)
+        XCTAssertEqual(result.hunks.count, 1)
+        XCTAssertEqual(result.additions, 2)
+        XCTAssertEqual(result.deletions, 1)
+
+        let hunk = result.hunks[0]
+        XCTAssertEqual(hunk.oldStart, 1)
+        XCTAssertEqual(hunk.oldCount, 3)
+        XCTAssertEqual(hunk.newStart, 1)
+        XCTAssertEqual(hunk.newCount, 4)
+        // Lines: hunkHeader + context + deletion + 2 additions + context = 6
+        XCTAssertEqual(hunk.lines.count, 6)
+    }
+
+    func testParseMultiHunkDiff() {
+        let diff = """
+        @@ -10,3 +10,4 @@
+         context
+        +addition
+         context
+        @@ -30,2 +31,3 @@
+        -deleted
+        +replaced
+        +extra
+        """
+        let result = DiffViewerModel.parseUnifiedDiff(diff)
+        XCTAssertEqual(result.hunks.count, 2)
+        XCTAssertEqual(result.additions, 3)
+        XCTAssertEqual(result.deletions, 1)
+    }
+
+    // MARK: - Persistence Backwards Compatibility
+
+    func testSavedSplitNodeKindNewCases() {
+        XCTAssertEqual(SavedSplitNodeKind.filePreview.rawValue, "filePreview")
+        XCTAssertEqual(SavedSplitNodeKind.diffViewer.rawValue, "diffViewer")
+    }
+
+    func testSavedSplitNodeDecodeOldFormatWithoutNewFields() throws {
+        // Simulate old persisted data without previewFilePath/diffFilePath
+        let json = """
+        {"kind":"textEditor","id":"AABBCCDD-1234-5678-9012-AABBCCDDEEFF","textEditorPath":"/test.swift"}
+        """
+        let data = json.data(using: .utf8)!
+        let decoded = try JSONDecoder().decode(SavedSplitNode.self, from: data)
+        XCTAssertEqual(decoded.kind, .textEditor)
+        XCTAssertEqual(decoded.textEditorPath, "/test.swift")
+        XCTAssertNil(decoded.previewFilePath)
+        XCTAssertNil(decoded.diffFilePath)
+        XCTAssertNil(decoded.diffDirectory)
+        XCTAssertNil(decoded.diffMode)
+    }
+
+    func testSavedSplitNodeFilePreviewRoundTrip() {
+        let preview = FilePreviewModel()
+        preview.filePath = "/test/image.png"
+        let node = SplitNode.filePreview(id: UUID(), preview: preview)
+        let saved = node.savedRepresentation
+        XCTAssertEqual(saved.kind, .filePreview)
+        XCTAssertEqual(saved.previewFilePath, "/test/image.png")
+    }
+
+    func testSavedSplitNodeDiffViewerRoundTrip() {
+        let diff = DiffViewerModel()
+        diff.filePath = "src/main.swift"
+        diff.directory = "/Users/test/project"
+        diff.diffMode = .staged
+        let node = SplitNode.diffViewer(id: UUID(), diff: diff)
+        let saved = node.savedRepresentation
+        XCTAssertEqual(saved.kind, .diffViewer)
+        XCTAssertEqual(saved.diffFilePath, "src/main.swift")
+        XCTAssertEqual(saved.diffDirectory, "/Users/test/project")
+        XCTAssertEqual(saved.diffMode, "staged")
     }
 }
 #endif
