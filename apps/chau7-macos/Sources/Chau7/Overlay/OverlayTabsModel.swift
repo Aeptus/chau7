@@ -3270,8 +3270,10 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
             }
         }
 
-        // Check 3: Rendered count mismatch after a quiet period (stale view without updates).
-        if !needsRecovery, expected > 0, rendered > 0, rendered != expected {
+        // Check 3: Rendered count significantly mismatched after a quiet period.
+        // Allow ±2 tolerance to avoid false triggers during tab add/remove transitions
+        // and idle tab grouping changes.
+        if !needsRecovery, expected > 0, rendered > 0, abs(rendered - expected) > 2 {
             let timeSinceLastUpdate = now.timeIntervalSince(lastPreferenceUpdateTime)
             if timeSinceLastUpdate > stalenessThreshold {
                 needsRecovery = true
