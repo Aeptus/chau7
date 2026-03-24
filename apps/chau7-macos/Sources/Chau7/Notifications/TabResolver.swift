@@ -190,42 +190,43 @@ enum TabResolver {
             }
         }
 
-        // 2) Try directory-based disambiguation when a hint is available
+        // 2) Directory-based disambiguation: find tabs matching the event's directory.
+        //    If multiple match, prefer the most recently active one.
         if let dir = target.directory?.trimmingCharacters(in: .whitespacesAndNewlines),
            !dir.isEmpty {
             let normalized = URL(fileURLWithPath: dir).standardized.path
-            if let dirMatch = matches.first(where: { tab in
+            let dirMatches = matches.filter { tab in
                 tab.splitController.terminalSessions.contains { _, session in
                     let cwd = URL(fileURLWithPath: session.currentDirectory).standardized.path
                     return cwd == normalized
                         || cwd.hasPrefix(normalized + "/")
                         || normalized.hasPrefix(cwd + "/")
                 }
-            }) {
-                return dirMatch
             }
-        }
-
-        // 3) Tool + directory combination: if only one tab matches both tool and CWD
-        let tool = target.tool.lowercased()
-        if let dir = target.directory {
-            let normalized = URL(fileURLWithPath: dir).standardized.path
-            let combo = matches.filter { tab in
-                tab.splitController.terminalSessions.contains { _, session in
-                    let cwd = URL(fileURLWithPath: session.currentDirectory).standardized.path
-                    let matchesDir = cwd == normalized || cwd.hasPrefix(normalized + "/") || normalized.hasPrefix(cwd + "/")
-                    let matchesTool = session.activeAppName?.lowercased().contains(tool) == true
-                    return matchesDir && matchesTool
+            if dirMatches.count == 1 {
+                return dirMatches[0]
+            }
+            if dirMatches.count > 1 {
+                // Multiple tabs in the same directory — prefer most recently active
+                let best = dirMatches.max(by: { a, b in
+                    let aDate = a.session?.lastActivityDate ?? .distantPast
+                    let bDate = b.session?.lastActivityDate ?? .distantPast
+                    return aDate < bDate
+                })
+                if let best {
+                    Log.info("TabResolver: disambiguated via dir+activity (\(normalized.suffix(20))) → tab=\(best.id)")
+                    return best
                 }
             }
-            if combo.count == 1 {
-                Log.info("TabResolver: disambiguated via tool+dir (\(tool), \(normalized.suffix(20))) → tab=\(combo[0].id)")
-                return combo[0]
-            }
         }
 
-        // 4) Deterministic fallback: most recently created tab
-        Log.info("TabResolver: \(matches.count) ambiguous matches, using most recent tab")
-        return matches.max(by: { $0.createdAt < $1.createdAt })
+        // 3) Deterministic fallback: most recently active tab
+        let best = matches.max(by: { a, b in
+            let aDate = a.session?.lastActivityDate ?? .distantPast
+            let bDate = b.session?.lastActivityDate ?? .distantPast
+            return aDate < bDate
+        })
+        Log.info("TabResolver: \(matches.count) ambiguous matches, using most recently active tab")
+        return best
     }
 }
