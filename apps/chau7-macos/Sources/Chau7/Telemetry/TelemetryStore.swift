@@ -39,7 +39,34 @@ final class TelemetryStore {
         }
         sqlite3_exec(db, "PRAGMA journal_mode=WAL", nil, nil, nil)
         sqlite3_exec(db, "PRAGMA foreign_keys=ON", nil, nil, nil)
+        verifyIntegrity()
         createTables()
+    }
+
+    /// Quick integrity check on startup. If the database is corrupt, log and
+    /// recreate it rather than silently failing every insert.
+    private func verifyIntegrity() {
+        guard let db else { return }
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "PRAGMA quick_check", -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        if sqlite3_step(stmt) == SQLITE_ROW,
+           let result = sqlite3_column_text(stmt, 0) {
+            let check = String(cString: result)
+            if check != "ok" {
+                Log.error("TelemetryStore: database integrity check failed: \(check)")
+                // Close and delete the corrupt database; createTables will recreate it
+                sqlite3_close(self.db)
+                self.db = nil
+                let path = Self.dbPath
+                try? FileManager.default.removeItem(atPath: path)
+                if sqlite3_open(path, &self.db) == SQLITE_OK {
+                    sqlite3_exec(self.db, "PRAGMA journal_mode=WAL", nil, nil, nil)
+                    sqlite3_exec(self.db, "PRAGMA foreign_keys=ON", nil, nil, nil)
+                    Log.info("TelemetryStore: recreated database after corruption")
+                }
+            }
+        }
     }
 
     private func createTables() {
@@ -192,7 +219,8 @@ final class TelemetryStore {
         bindText(stmt, 20, run.errorMessage)
 
         if sqlite3_step(stmt) != SQLITE_DONE {
-            Log.warn("TelemetryStore: insert run failed for \(run.id)")
+            let err = String(cString: sqlite3_errmsg(db))
+            Log.warn("TelemetryStore: insert run failed for \(run.id): \(err)")
         }
     }
 
@@ -279,7 +307,8 @@ final class TelemetryStore {
         bindInt(stmt, 10, turn.durationMs)
 
         if sqlite3_step(stmt) != SQLITE_DONE {
-            Log.warn("TelemetryStore: insert turn failed for \(turn.id)")
+            let err = String(cString: sqlite3_errmsg(db))
+            Log.warn("TelemetryStore: insert turn failed for \(turn.id): \(err)")
         }
     }
 
@@ -315,7 +344,8 @@ final class TelemetryStore {
         bindInt(stmt, 9, call.callIndex)
 
         if sqlite3_step(stmt) != SQLITE_DONE {
-            Log.warn("TelemetryStore: insert tool_call failed for \(call.id)")
+            let err = String(cString: sqlite3_errmsg(db))
+            Log.warn("TelemetryStore: insert tool_call failed for \(call.id): \(err)")
         }
     }
 
@@ -383,7 +413,8 @@ final class TelemetryStore {
         bindText(stmt, 13, Self.isoString(from: event.timestamp))
 
         if sqlite3_step(stmt) != SQLITE_DONE {
-            Log.warn("TelemetryStore: insert remote client event failed for \(event.id)")
+            let err = String(cString: sqlite3_errmsg(db))
+            Log.warn("TelemetryStore: insert remote client event failed for \(event.id): \(err)")
         }
     }
 
