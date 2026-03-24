@@ -733,8 +733,8 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
         }
         inputBuffer.append(sanitizedText)
         if SensitiveInputGuard.shouldPersistInput(sanitizedText, echoDisabled: echoDisabled) {
-            aiLogQueue.sync {
-                aiLogSession?.recordInput(sanitizedText)
+            aiLogQueue.async { [weak self] in
+                self?.aiLogSession?.recordInput(sanitizedText)
             }
         }
         if sanitizedText.contains("\n") || sanitizedText.contains("\r") {
@@ -796,14 +796,14 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
                 }
             }
 
-            // AI log processing (synchronized to prevent race with finishAILogging)
-            var aiExitCode: Int?
-            aiLogQueue.sync {
-                let aiLogResult = self.processAILogOutput(data)
-                if let logData = aiLogResult.loggable, !logData.isEmpty {
-                    self.aiLogSession?.recordOutput(logData)
+            // AI log processing: extract metadata synchronously (fast, in-memory),
+            // write to disk asynchronously to avoid blocking the output path.
+            let aiLogResult = self.processAILogOutput(data)
+            let aiExitCode = aiLogResult.exitCode
+            if let logData = aiLogResult.loggable, !logData.isEmpty {
+                aiLogQueue.async { [weak self] in
+                    self?.aiLogSession?.recordOutput(logData)
                 }
-                aiExitCode = aiLogResult.exitCode
             }
 
             // UI-related updates need main thread
