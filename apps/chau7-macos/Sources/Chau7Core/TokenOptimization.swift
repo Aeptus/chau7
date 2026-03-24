@@ -327,26 +327,40 @@ public extension CTORuntimeSnapshot {
         decisionIntervalsSeconds.max()
     }
 
+    /// Whether the system has converged to a stable state (all sessions settled,
+    /// no recent changes). Steady-state systems should not be penalized for
+    /// inactivity — low change rates and stale decisions are expected.
+    private var isStableState: Bool {
+        // Settled: enough recalcs happened AND most were unchanged
+        recalcCount >= 10 && unchangedCount > recalcCount / 2
+    }
+
     var assessment: CTORuntimeAssessment {
         var score = 100
         var issues: [CTORuntimeAssessmentIssue] = []
 
-        if recalcCount > 0 && decisionsChangeRatePercent < 30.0 {
+        // Low change rate only matters while the system is still settling.
+        // Once stable, a low change rate means convergence — that's healthy.
+        if recalcCount > 0 && decisionsChangeRatePercent < 30.0 && !isStableState {
             score -= 30
             issues.append(.lowChangeRate)
         }
 
-        if deferredSetCount > 0 && deferredSkipRatePercent > 35.0 {
+        // Need enough samples before percentages are meaningful (>= 5 deferred).
+        if deferredSetCount >= 5 && deferredSkipRatePercent > 35.0 {
             score -= 30
             issues.append(.highDeferredSkips)
         }
 
-        if deferredSetCount > 0 && deferredFlushRatePercent < 80.0 {
+        if deferredSetCount >= 5 && deferredFlushRatePercent < 80.0 {
             score -= 20
             issues.append(.lowDeferredFlushRate)
         }
 
-        if let age = ageSinceLastDecisionSeconds, age > 300 {
+        // Stale decisions only matter if sessions are actively running.
+        // In steady state with all tabs idle/settled, no decisions is correct.
+        if let age = ageSinceLastDecisionSeconds, age > 300,
+           activeSessionCount > 0, !isStableState {
             score -= 15
             issues.append(.staleDecisions)
         }
