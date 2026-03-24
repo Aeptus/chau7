@@ -45,15 +45,15 @@ struct ScrollbackPerfSettingsView: View {
 
             SettingsToggle(
                 label: L("settings.terminal.suspendBackgroundRendering", "Suspend Background Rendering"),
-                help: L("settings.terminal.suspendBackgroundRendering.help", "Pause rendering for inactive tabs to reduce CPU usage"),
+                help: L("settings.terminal.suspendBackgroundRendering.help", "Pause rendering for inactive tabs to reduce CPU/GPU usage. Tabs resume instantly when selected. Disabled by default for the fastest experience."),
                 isOn: $model.isSuspendBackgroundRendering
             )
 
             if model.isSuspendBackgroundRendering {
                 SettingsTextField(
-                    label: L("settings.terminal.suspendDelay", "Suspend Delay"),
-                    help: L("settings.terminal.suspendDelay.help", "Seconds of inactivity before suspending background tabs"),
-                    placeholder: "30",
+                    label: L("settings.terminal.suspendDelay", "Suspend Delay (seconds)"),
+                    help: L("settings.terminal.suspendDelay.help", "Seconds after leaving a tab before rendering is paused. Higher values keep tabs responsive longer."),
+                    placeholder: "5",
                     text: $model.suspendRenderDelayText,
                     width: 80
                 )
