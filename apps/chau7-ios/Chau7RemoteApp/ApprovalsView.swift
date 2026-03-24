@@ -256,12 +256,19 @@ struct ApprovalRequestCard: View {
                     .foregroundStyle(.orange)
             }
 
+            if let actionLabel = request.responseState.actionLabel {
+                Label(actionLabel, systemImage: "arrow.triangle.2.circlepath")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             HStack(spacing: 12) {
                 Button(role: .destructive) { onRespond(false) } label: {
                     Label("Deny", systemImage: "xmark")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
+                .disabled(request.responseState.isBusy)
 
                 Button { onRespond(true) } label: {
                     Label("Allow", systemImage: "checkmark")
@@ -269,6 +276,7 @@ struct ApprovalRequestCard: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.green)
+                .disabled(request.responseState.isBusy)
             }
         }
         .padding(.vertical, 4)

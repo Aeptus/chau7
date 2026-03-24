@@ -86,6 +86,8 @@ final class RemoteClient {
     private var notificationsAuthorized = false
     private var backgroundTaskID: UIBackgroundTaskIdentifier = .invalid
     private var suppressLocalNotificationsUntil: Date?
+    private var pendingApprovalResponses: [String: Bool] = [:]
+    private var approvalResponsesInFlight: Set<String> = []
     let terminalRenderer = RemoteTerminalRendererStore()
 
     private static let maxHistory = 50
@@ -124,8 +126,8 @@ final class RemoteClient {
         connect(pairing: pairing)
     }
 
-    func connect(pairing: PairingInfo) {
-        disconnect(autoReconnect: false)
+    func connect(pairing: PairingInfo, preserveApprovalsAndPrompts: Bool = false) {
+        disconnect(autoReconnect: false, preserveApprovalsAndPrompts: preserveApprovalsAndPrompts)
         pairingInfo = pairing
         lastError = nil
         shouldReconnect = true
@@ -247,6 +249,8 @@ final class RemoteClient {
         strippedOutputText = ""
         if !preserveApprovalsAndPrompts {
             pendingInteractivePrompts = []
+            pendingApprovalResponses.removeAll(keepingCapacity: true)
+            approvalResponsesInFlight.removeAll(keepingCapacity: true)
         }
         endBackgroundKeepalive()
         if #available(iOS 16.1, *) {
@@ -281,26 +285,12 @@ final class RemoteClient {
 
     func respondToApproval(requestID: String, approved: Bool) {
         guard let idx = pendingApprovals.firstIndex(where: { $0.requestID == requestID }) else { return }
-        let request = pendingApprovals.remove(at: idx)
+        guard !pendingApprovals[idx].responseState.isBusy else { return }
 
-        approvalHistory.append(ApprovalHistoryEntry(
-            command: request.command,
-            flaggedCommand: request.flaggedCommand,
-            approved: approved,
-            timestamp: Date()
-        ))
-        if approvalHistory.count > Self.maxHistory {
-            approvalHistory.removeSubrange(0 ..< (approvalHistory.count - Self.maxHistory))
-        }
-
-        sendJSON(ApprovalResponsePayload(requestID: requestID, approved: approved), type: .approvalResponse)
-        emitTelemetry(
-            type: .approvalResponded,
-            status: approved ? "approved" : "denied",
-            message: request.flaggedCommand,
-            metadata: ["request_id": requestID]
-        )
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [requestID])
+        pendingApprovals[idx].responseState = .queued(approved)
+        pendingApprovalResponses[requestID] = approved
+        beginBackgroundKeepalive()
+        flushPendingApprovalResponses()
     }
 
     @discardableResult
@@ -757,7 +747,8 @@ final class RemoteClient {
             recentCommand: msg.recentCommand,
             contextNote: msg.contextNote,
             sessionID: msg.sessionID,
-            timestamp: Date()
+            timestamp: Date(),
+            responseState: pendingApprovals.first(where: { $0.requestID == msg.requestID })?.responseState ?? .idle
         )
         if let existingIndex = pendingApprovals.firstIndex(where: { $0.requestID == msg.requestID }) {
             pendingApprovals[existingIndex] = approval
@@ -826,6 +817,7 @@ final class RemoteClient {
         emitTelemetry(type: .sessionEncrypted, status: "encrypted")
         flushBufferedTelemetryEvents()
         sendClientStateIfPossible()
+        flushPendingApprovalResponses()
     }
 
     // MARK: - Outgoing
@@ -865,25 +857,55 @@ final class RemoteClient {
         }
     }
 
+    private func sendApprovalResponse(
+        requestID: String,
+        approved: Bool,
+        completion: @escaping @MainActor (Bool) -> Void
+    ) {
+        let payload = ApprovalResponsePayload(requestID: requestID, approved: approved)
+        guard let data = try? JSONEncoder().encode(payload) else {
+            log.error("Failed to encode ApprovalResponsePayload for request \(requestID)")
+            completion(false)
+            return
+        }
+        guard sendEncrypted(type: .approvalResponse, tabID: 0, payload: data, completion: completion) else {
+            completion(false)
+            return
+        }
+    }
+
     @discardableResult
-    private func sendEncrypted(type: RemoteFrameType, tabID: UInt32, payload: Data) -> Bool {
+    private func sendEncrypted(
+        type: RemoteFrameType,
+        tabID: UInt32,
+        payload: Data,
+        completion: (@MainActor (Bool) -> Void)? = nil
+    ) -> Bool {
         guard let crypto else { return false }
         let frame = RemoteFrame(type: type.rawValue, tabID: tabID, seq: nextSeq(), payload: payload)
         guard let encrypted = try? crypto.encrypt(frame: frame) else {
             log.error("Encryption failed for frame type \(type.rawValue)")
             return false
         }
-        return send(encrypted)
+        return send(encrypted, completion: completion)
     }
 
     @discardableResult
-    private func send(_ frame: RemoteFrame) -> Bool {
+    private func send(
+        _ frame: RemoteFrame,
+        completion: (@MainActor (Bool) -> Void)? = nil
+    ) -> Bool {
         guard webSocket != nil else { return false }
         webSocket?.send(.data(frame.encode())) { error in
             if let error {
                 log.error("WebSocket send failed: \(error.localizedDescription)")
                 Task { @MainActor [weak self] in
                     self?.emitTelemetry(type: .sendFailed, status: "send_failed", message: error.localizedDescription)
+                    completion?(false)
+                }
+            } else if let completion {
+                Task { @MainActor in
+                    completion(true)
                 }
             }
         }
@@ -930,6 +952,86 @@ final class RemoteClient {
         for action in queued where !performURLAction(action) {
             pendingURLActions.append(action)
         }
+    }
+
+    private func approvalRequest(for requestID: String) -> ApprovalRequest? {
+        pendingApprovals.first(where: { $0.requestID == requestID })
+    }
+
+    private func updateApprovalResponseState(
+        requestID: String,
+        transform: (ApprovalResponseState) -> ApprovalResponseState
+    ) {
+        guard let idx = pendingApprovals.firstIndex(where: { $0.requestID == requestID }) else { return }
+        pendingApprovals[idx].responseState = transform(pendingApprovals[idx].responseState)
+    }
+
+    private func flushPendingApprovalResponses() {
+        guard !pendingApprovalResponses.isEmpty else { return }
+
+        guard crypto != nil, webSocket != nil else {
+            status = "Reconnecting to send approval..."
+            if let pairing = pairingInfo, webSocket == nil {
+                connect(pairing: pairing, preserveApprovalsAndPrompts: true)
+            }
+            return
+        }
+
+        let queued = pendingApprovalResponses
+        for (requestID, approved) in queued {
+            guard approvalResponsesInFlight.contains(requestID) == false else { continue }
+            guard approvalRequest(for: requestID) != nil else {
+                pendingApprovalResponses.removeValue(forKey: requestID)
+                continue
+            }
+
+            approvalResponsesInFlight.insert(requestID)
+            updateApprovalResponseState(requestID: requestID) { _ in .sending(approved) }
+
+            sendApprovalResponse(requestID: requestID, approved: approved) { [weak self] success in
+                guard let self else { return }
+                self.approvalResponsesInFlight.remove(requestID)
+                guard self.pendingApprovalResponses[requestID] == approved else { return }
+
+                if success {
+                    self.pendingApprovalResponses.removeValue(forKey: requestID)
+                    self.completeApprovalResponse(requestID: requestID, approved: approved)
+                    if self.pendingApprovalResponses.isEmpty, self.currentAppState == .foreground {
+                        self.endBackgroundKeepalive()
+                    }
+                } else {
+                    self.updateApprovalResponseState(requestID: requestID) { _ in .queued(approved) }
+                    self.lastError = "Approval response was not delivered. Chau7 will retry when the connection is ready."
+                    self.status = "Approval queued"
+                    if let pairing = self.pairingInfo, self.webSocket == nil {
+                        self.connect(pairing: pairing, preserveApprovalsAndPrompts: true)
+                    }
+                }
+            }
+        }
+    }
+
+    private func completeApprovalResponse(requestID: String, approved: Bool) {
+        guard let idx = pendingApprovals.firstIndex(where: { $0.requestID == requestID }) else { return }
+        let request = pendingApprovals.remove(at: idx)
+
+        approvalHistory.append(ApprovalHistoryEntry(
+            command: request.command,
+            flaggedCommand: request.flaggedCommand,
+            approved: approved,
+            timestamp: Date()
+        ))
+        if approvalHistory.count > Self.maxHistory {
+            approvalHistory.removeSubrange(0 ..< (approvalHistory.count - Self.maxHistory))
+        }
+
+        emitTelemetry(
+            type: .approvalResponded,
+            status: approved ? "approved" : "denied",
+            message: request.flaggedCommand,
+            metadata: ["request_id": requestID]
+        )
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [requestID])
     }
 
     // MARK: - Key Management

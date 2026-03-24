@@ -167,6 +167,36 @@ struct TabSwitchPayload: Codable {
 
 // MARK: - Approvals
 
+enum ApprovalResponseState: Equatable {
+    case idle
+    case queued(Bool)
+    case sending(Bool)
+
+    var isBusy: Bool {
+        switch self {
+        case .idle:
+            false
+        case .queued, .sending:
+            true
+        }
+    }
+
+    var actionLabel: String? {
+        switch self {
+        case .idle:
+            nil
+        case .queued(true):
+            "Queued Allow"
+        case .queued(false):
+            "Queued Deny"
+        case .sending(true):
+            "Sending Allow"
+        case .sending(false):
+            "Sending Deny"
+        }
+    }
+}
+
 struct ApprovalRequest: Identifiable {
     let requestID: String
     let command: String
@@ -180,6 +210,7 @@ struct ApprovalRequest: Identifiable {
     let contextNote: String?
     let sessionID: String?
     let timestamp: Date
+    var responseState: ApprovalResponseState = .idle
 
     var id: String { requestID }
     var isProtectedRemoteAction: Bool { flaggedCommand != command }
