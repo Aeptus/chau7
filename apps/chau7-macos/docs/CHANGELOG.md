@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **TTFT Latency Tracking**: Time-to-first-token measured via firstByteReader wrapper. Stored in SQLite, logged, and sent via IPC.
 - **Font Ligature Rendering**: Metal renderer now shapes multi-character sequences via CoreText. Fonts with OpenType ligature tables (Fira Code, JetBrains Mono, Cascadia Code) automatically display ligatures. Configurable via `enableLigatures` setting.
 - **OSC 133 Shell Integration**: FinalTerm/iTerm2 shell integration markers parsed in Rust interceptor. Provides authoritative prompt/command/output region tracking with exit codes. Feeds ShellEventDetector for accurate command lifecycle. When present, heuristic detection (echo-based start, timeout-based finish, OSC 7 prompt inference) is suppressed.
+- **TelemetryStore Resilience**: SQLite insert failures now log the actual error message (was logging only the record ID). Database integrity check on startup with automatic recreation on corruption.
+- **TabResolver Accuracy**: Directory disambiguation now prefers the most recently active tab instead of the first match. Fallback uses most recently active tab instead of most recently created. Eliminates most ambiguous matches.
+- **Watchdog Tolerance**: Tab bar health check now allows ±2 tolerance in rendered count to prevent false recovery triggers during transitions.
+- **Log Noise Reduction**: Toolbar lifecycle events (appeared/disappeared/visibility) downgraded from WARN/INFO to TRACE.
 - **Show Changed Files**: Git diff snapshot at command start (OSC 133 C) and finish (OSC 133 D) identifies files modified by each command. View > Show Changed Files (Cmd+Option+G) or via keybinding.
 - **File Drag & Drop**: Drop files onto terminal to paste shell-escaped paths. Option+drop images for base64 data URI (for AI CLIs). 10MB size cap.
 - **chau7:// URL Handler**: `chau7://ssh/user@host`, `chau7://run/<base64>`, `chau7://cd/path`, `chau7://open/path` open tabs or files from external apps. Run commands require user confirmation.
