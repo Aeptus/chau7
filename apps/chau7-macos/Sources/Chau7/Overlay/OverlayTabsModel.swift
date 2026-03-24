@@ -3008,12 +3008,12 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
     /// Returns true if the given target matches the currently selected tab.
     func isToolInSelectedTab(_ target: TabTarget) -> Bool {
-        // Fast-path: if we have a tab ID, just compare directly
-        if let tabID = target.tabID {
-            return tabID == selectedTabID
-        }
-        guard let matched = TabResolver.resolve(target, in: tabs) else { return false }
-        return matched.id == selectedTabID
+        // Only suppress notifications when we CONFIDENTLY know the event's tab
+        // is the selected tab. Without a tabID, the resolver's best guess could
+        // match the selected tab simply because it's the most active — which would
+        // suppress ALL notifications when Chau7 is focused.
+        guard let tabID = target.tabID else { return false }
+        return tabID == selectedTabID
     }
 
     // MARK: - Tab Bar Recovery
