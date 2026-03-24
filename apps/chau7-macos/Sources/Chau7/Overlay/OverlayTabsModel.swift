@@ -2872,7 +2872,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     func applyNotificationStyle(for target: TabTarget, stylePreset: String, config: [String: String]) -> UUID? {
         dispatchPrecondition(condition: .onQueue(.main))
 
-        guard let tab = TabResolver.resolve(target, in: tabs) else {
+        guard let tab = resolveTab(for: target) else {
             Log.info("applyNotificationStyle: No tab found matching tool '\(target.tool)'")
             return nil
         }
@@ -2971,9 +2971,18 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
     // MARK: - Notification Action Handlers
 
+    /// Resolve a tab from a target, preferring the pre-resolved tabID to avoid
+    /// redundant TabResolver calls. Falls back to full resolution if no tabID.
+    private func resolveTab(for target: TabTarget) -> OverlayTab? {
+        if let tabID = target.tabID {
+            return tabs.first(where: { $0.id == tabID })
+        }
+        return TabResolver.resolve(target, in: tabs)
+    }
+
     /// Finds the tab matching the target and selects it.
     func focusTab(for target: TabTarget) {
-        guard let tab = TabResolver.resolve(target, in: tabs) else {
+        guard let tab = resolveTab(for: target) else {
             Log.info("focusTab: No tab found for '\(target.tool)'")
             return
         }
@@ -2982,7 +2991,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
     /// Sets a badge on the tab matching the target via the unified TabNotificationStyle.
     func setBadge(for target: TabTarget, text: String, color: String) {
-        guard let tab = TabResolver.resolve(target, in: tabs) else {
+        guard let tab = resolveTab(for: target) else {
             Log.info("setBadge: No tab found for '\(target.tool)'")
             return
         }
@@ -2999,7 +3008,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
             Log.warn("insertSnippet: Snippet '\(snippetId)' not found")
             return
         }
-        if let tab = TabResolver.resolve(target, in: tabs) {
+        if let tab = resolveTab(for: target) {
             selectTab(id: tab.id)
         }
         insertSnippet(entry)
