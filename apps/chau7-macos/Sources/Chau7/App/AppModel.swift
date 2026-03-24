@@ -218,9 +218,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     @Published var toolHistoryEntries: [String: [HistoryEntry]] = [:]
     @Published var toolTerminalLines: [String: [String]] = [:]
     @Published var sessionStatuses: [SessionStatus] = []
-    /// Tracks which sessions have already emitted a "finished" notification
-    /// via the active→idle bridge, preventing repeated firings.
-    private var sessionFinishedNotified: Set<String> = []
+    /// Tracks when each session last emitted a "finished" notification
+    /// via the active→idle bridge. 30-second cooldown prevents rapid re-firing.
+    private var sessionFinishedTimestamps: [String: Date] = [:]
 
     /// Backward-compat computed accessors for MainPanelView / LogsSettingsView
     var codexHistoryEntries: [HistoryEntry] {
@@ -547,9 +547,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             }
             let sessionsRemoved = sessionsBefore - sessionStatuses.count
 
-            // Prune finished-notification guard to match surviving sessions
+            // Prune finished-notification timestamps to match surviving sessions
             let activeStatusIds = Set(sessionStatuses.map(\.id))
-            sessionFinishedNotified = sessionFinishedNotified.intersection(activeStatusIds)
+            sessionFinishedTimestamps = sessionFinishedTimestamps.filter { activeStatusIds.contains($0.key) }
 
             // Clean old events (ts is ISO8601 string)
             let eventsBefore = recentEvents.count
@@ -1202,15 +1202,19 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             }
 
             // When a session transitions from active → idle/closed, emit a "finished"
-            // notification ONCE per session ID. The guard is never cleared — sessions
-            // that genuinely restart get a new session ID from the AI tool. This
-            // prevents the history monitor's read-cycle (closed→active→idle) from
-            // producing repeated false notifications for the same session.
+            // notification. Guard with a minimum interval (30s) per session to prevent
+            // the history monitor's rapid read-cycle (closed→active→idle) from
+            // producing repeated notifications for the same session.
             let sessionEnded = state == .idle || state == .closed
-            if previousState == .active, sessionEnded, !sessionFinishedNotified.contains(statusId) {
-                sessionFinishedNotified.insert(statusId)
-                recordEvent(source: .historyMonitor, type: "finished", tool: toolName,
-                            message: "\(toolName) session completed", notify: true)
+            if previousState == .active, sessionEnded {
+                let now = Date()
+                let lastFired = sessionFinishedTimestamps[statusId]
+                let cooldown: TimeInterval = 30
+                if lastFired == nil || now.timeIntervalSince(lastFired!) > cooldown {
+                    sessionFinishedTimestamps[statusId] = now
+                    recordEvent(source: .historyMonitor, type: "finished", tool: toolName,
+                                message: "\(toolName) session completed", notify: true)
+                }
             }
         }
     }
