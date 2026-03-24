@@ -808,17 +808,37 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
     }
 
-    /// Move a tab from one window to another.
+    /// Move a tab from one window to another. Pass toWindowIndex = -1 to create a new window.
     private func moveTab(_ tabID: UUID, fromWindowIndex: Int, toWindowIndex: Int) {
-        guard fromWindowIndex < overlayHosts.count, toWindowIndex < overlayHosts.count else { return }
+        guard fromWindowIndex < overlayHosts.count else { return }
         let source = overlayHosts[fromWindowIndex].model
-        let target = overlayHosts[toWindowIndex].model
-
         guard let tab = source.detachTab(id: tabID) else { return }
-        target.tabs.append(tab)
-        target.selectTab(id: tab.id)
-        wireTabMoveCallbacks() // Refresh window lists
-        Log.info("Moved tab \(tabID) from window \(fromWindowIndex) to \(toWindowIndex)")
+
+        if toWindowIndex == -1 {
+            // Create a new window and move the tab into it
+            guard let model else { return }
+            let tabsModel = OverlayTabsModel(appModel: model, restoreState: false)
+            // Replace the default fresh tab with the moved tab
+            var movedTab = tab
+            tabsModel.tabs = [movedTab]
+            tabsModel.selectedTabID = movedTab.id
+            movedTab.stampOwnerTabID()
+            tabsModel.tabs[0] = movedTab
+            TerminalControlService.shared.register(tabsModel)
+            let windowNumber = allocateOverlayWindowNumber()
+            let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
+            overlayHosts.append(OverlayHost(window: window, model: tabsModel))
+            wireTabMoveCallbacks()
+            showOverlayWindow(overlayHosts.last!, reason: "moveToNewWindow")
+            Log.info("Moved tab \(tabID) to new window \(windowNumber)")
+        } else {
+            guard toWindowIndex < overlayHosts.count else { return }
+            let target = overlayHosts[toWindowIndex].model
+            target.tabs.append(tab)
+            target.selectTab(id: tab.id)
+            wireTabMoveCallbacks()
+            Log.info("Moved tab \(tabID) from window \(fromWindowIndex) to \(toWindowIndex)")
+        }
     }
 
     // MARK: - Multi-Window Restoration

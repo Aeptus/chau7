@@ -316,8 +316,14 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         idleItem.representedObject = tab.id
         menu.addItem(idleItem)
 
+        // "Move to Window" submenu — always shows "New Window", plus existing windows
+        let windowSubmenu = NSMenu()
+        let newWindowItem = NSMenuItem(title: "New Window", action: #selector(contextMoveToNewWindow(_:)), keyEquivalent: "")
+        newWindowItem.target = self
+        newWindowItem.representedObject = tab.id
+        windowSubmenu.addItem(newWindowItem)
         if !model.otherWindowTitles.isEmpty {
-            let windowSubmenu = NSMenu()
+            windowSubmenu.addItem(.separator())
             for window in model.otherWindowTitles {
                 let item = NSMenuItem(title: window.title, action: #selector(contextMoveToWindow(_:)), keyEquivalent: "")
                 item.target = self
@@ -325,10 +331,10 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
                 item.representedObject = tab.id
                 windowSubmenu.addItem(item)
             }
-            let windowMenuItem = NSMenuItem(title: "Move to Window", action: nil, keyEquivalent: "")
-            windowMenuItem.submenu = windowSubmenu
-            menu.addItem(windowMenuItem)
         }
+        let windowMenuItem = NSMenuItem(title: "Move to Window", action: nil, keyEquivalent: "")
+        windowMenuItem.submenu = windowSubmenu
+        menu.addItem(windowMenuItem)
 
         menu.addItem(.separator())
 
@@ -360,22 +366,34 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
         return visibleTabs[index]
     }
 
-    @objc private func contextRenameTab(_ sender: NSMenuItem) {
+    // NSMenu validates items by checking if target responds to the action.
+    // Implement NSMenuItemValidation to always enable our context menu items.
+    @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        true
+    }
+
+    @objc func contextRenameTab(_ sender: NSMenuItem) {
         guard let tabID = sender.representedObject as? UUID else { return }
         tabsModel?.beginRename(tabID: tabID)
     }
 
-    @objc private func contextMoveToIdle(_ sender: NSMenuItem) {
+    @objc func contextMoveToIdle(_ sender: NSMenuItem) {
         guard let tabID = sender.representedObject as? UUID else { return }
         tabsModel?.forceTabIdle(id: tabID)
     }
 
-    @objc private func contextMoveToWindow(_ sender: NSMenuItem) {
+    @objc func contextMoveToWindow(_ sender: NSMenuItem) {
         guard let tabID = sender.representedObject as? UUID else { return }
         tabsModel?.onMoveTabToWindow?(tabID, sender.tag)
     }
 
-    @objc private func contextCloseTab(_ sender: NSMenuItem) {
+    @objc func contextMoveToNewWindow(_ sender: NSMenuItem) {
+        guard let tabID = sender.representedObject as? UUID else { return }
+        // Use tag -1 to signal "create new window" to AppDelegate
+        tabsModel?.onMoveTabToWindow?(tabID, -1)
+    }
+
+    @objc func contextCloseTab(_ sender: NSMenuItem) {
         guard let tabID = sender.representedObject as? UUID else { return }
         tabsModel?.closeTab(id: tabID)
     }
