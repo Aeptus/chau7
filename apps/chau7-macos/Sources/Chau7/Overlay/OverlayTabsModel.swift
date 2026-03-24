@@ -1877,12 +1877,13 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         // 1. Record previous tab index for directional animation
         let oldIndex = tabs.firstIndex(where: { $0.id == selectedTabID }) ?? 0
 
-        // 2. Capture snapshot of current terminal for instant visual feedback
-        captureCurrentTabSnapshot()
-
-        // 3. Signal that terminal needs time to render (for snapshot swap)
-        isTerminalReady = false
-        logVisualState(reason: "selectTab: terminalReady=false")
+        // 2. Capture snapshot only when render suspension is enabled (tabs may
+        //    have stale content). When suspension is off, tabs render continuously
+        //    so the incoming view is already up-to-date — skip the expensive GPU readback.
+        if isRenderSuspensionEnabled {
+            captureCurrentTabSnapshot()
+            isTerminalReady = false
+        }
 
         // 4. Batch all state changes to minimize SwiftUI diff passes
         // Using direct assignment is faster than withTransaction for simple cases
@@ -1906,28 +1907,35 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         }
 
         focusSelected()
-        updateSuspensionState()
         updateSnippetContextForSelection()
         if isSearchVisible {
             refreshSearch()
         }
 
-        // Update task state for new tab (v1.1)
-        MainActor.assumeIsolated {
-            updateCurrentCandidate(from: ProxyIPCServer.shared.pendingCandidates)
-            updateCurrentTask(from: ProxyIPCServer.shared.activeTasks)
-            ConfigFileWatcher.shared.updateActiveDirectory(selectedTab?.session?.currentDirectory)
+        // Defer non-critical work to after the tab switch completes.
+        // These iterate collections or hit the file system — not needed for the
+        // initial visual switch which should be as fast as possible.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.updateSuspensionState()
+            MainActor.assumeIsolated {
+                self.updateCurrentCandidate(from: ProxyIPCServer.shared.pendingCandidates)
+                self.updateCurrentTask(from: ProxyIPCServer.shared.activeTasks)
+                ConfigFileWatcher.shared.updateActiveDirectory(self.selectedTab?.session?.currentDirectory)
+            }
         }
 
-        // 6. Mark terminal as ready after a brief delay (allows snapshot to display first)
-        //    Use a generation counter so stale callbacks (from rapid tab switching)
-        //    don't clobber a newer false → true cycle.
-        terminalReadyGeneration &+= 1
-        let expectedGeneration = terminalReadyGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
-            guard let self, terminalReadyGeneration == expectedGeneration else { return }
+        // 6. Mark terminal as ready. When suspension is off, set immediately (no
+        //    snapshot to display). When on, use a brief delay for the snapshot swap.
+        if isRenderSuspensionEnabled {
+            terminalReadyGeneration &+= 1
+            let expectedGeneration = terminalReadyGeneration
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.016) { [weak self] in
+                guard let self, terminalReadyGeneration == expectedGeneration else { return }
+                isTerminalReady = true
+            }
+        } else {
             isTerminalReady = true
-            logVisualState(reason: "selectTab: terminalReady=true")
         }
     }
 
