@@ -796,11 +796,18 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
                 }
             }
 
-            // AI log processing: extract metadata synchronously (fast, in-memory),
-            // write to disk asynchronously to avoid blocking the output path.
-            let aiLogResult = self.processAILogOutput(data)
-            let aiExitCode = aiLogResult.exitCode
-            if let logData = aiLogResult.loggable, !logData.isEmpty {
+            // AI log processing: parse metadata under aiLogQueue.sync (fast, in-memory,
+            // but must be serialized with startAILogging/finishAILogging which access
+            // the same aiLogSession and aiLogPrefixBuffer state).
+            // Disk write (recordOutput) is deferred to async to avoid blocking output.
+            var aiExitCode: Int?
+            var logData: Data?
+            aiLogQueue.sync {
+                let aiLogResult = self.processAILogOutput(data)
+                aiExitCode = aiLogResult.exitCode
+                logData = aiLogResult.loggable
+            }
+            if let logData, !logData.isEmpty {
                 aiLogQueue.async { [weak self] in
                     self?.aiLogSession?.recordOutput(logData)
                 }
