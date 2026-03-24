@@ -228,11 +228,13 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Save ALL windows' tab states for multi-window restoration
+        // Save only VISIBLE windows (not hidden/closed ones) for multi-window restoration
         var allWindows: [[SavedTabState]] = []
-        for host in overlayHosts {
+        for host in overlayHosts where host.window.isVisible {
             let states = host.model.exportTabStates()
             if !states.isEmpty { allWindows.append(states) }
+        }
+        for host in overlayHosts {
             host.model.closeAllSessionsForTermination()
         }
         // Save window 0 to the legacy key (read by Chau7App.init on launch)
