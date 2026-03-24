@@ -8,113 +8,109 @@ struct ProxySettingsView: View {
     @State private var showingClearConfirmation = false
 
     var body: some View {
-        Form {
-            // Note: Uses Form/Section layout (differs from VStack/SettingsSectionHeader used elsewhere).
-            // Main Toggle Section
-            Section {
-                Toggle(L("Enable API Analytics", "Enable API Analytics"), isOn: $settings.isAPIAnalyticsEnabled)
+        VStack(alignment: .leading, spacing: 16) {
+            // API Call Tracking
+            SettingsSectionHeader(L("settings.proxy.tracking", "API Call Tracking"), icon: "chart.bar.xaxis")
 
-                HStack {
-                    Text(L("Status:", "Status:"))
-                    statusIndicator
-                }
-            } header: {
-                Text(L("API Call Tracking", "API Call Tracking"))
-            } footer: {
-                Text(L(
-                    "Routes LLM API calls through a local proxy to capture token usage, costs, and latency metrics. Authentication is handled by CLI tools — no API keys are stored by Chau7.",
-                    "Routes LLM API calls through a local proxy to capture token usage, costs, and latency metrics. Authentication is handled by CLI tools — no API keys are stored by Chau7."
-                ))
+            SettingsToggle(
+                label: L("settings.proxy.enable", "Enable API Analytics"),
+                help: L(
+                    "settings.proxy.enable.help",
+                    "Route LLM API calls through a local proxy to capture token usage, costs, and latency metrics. Authentication is handled by CLI tools — no API keys are stored by Chau7."
+                ),
+                isOn: $settings.isAPIAnalyticsEnabled
+            )
+
+            SettingsRow(L("settings.proxy.status", "Status")) {
+                statusIndicator
             }
 
-            // Privacy Section
-            Section {
-                Toggle(L("Log prompt previews", "Log prompt previews"), isOn: $settings.apiAnalyticsLogPrompts)
-            } header: {
-                Text(L("Privacy", "Privacy"))
-            } footer: {
-                Text(L(
-                    "When enabled, stores the first 500 characters of prompts and responses for debugging. Disable for maximum privacy.",
-                    "When enabled, stores the first 500 characters of prompts and responses for debugging. Disable for maximum privacy."
-                ))
+            Divider()
+                .padding(.vertical, 8)
+
+            // Privacy
+            SettingsSectionHeader(L("settings.proxy.privacy", "Privacy"), icon: "lock.shield")
+
+            SettingsToggle(
+                label: L("settings.proxy.logPrompts", "Log Prompt Previews"),
+                help: L(
+                    "settings.proxy.logPrompts.help",
+                    "Store the first 500 characters of prompts and responses for debugging. Disable for maximum privacy."
+                ),
+                isOn: $settings.apiAnalyticsLogPrompts
+            )
+
+            Divider()
+                .padding(.vertical, 8)
+
+            // Advanced
+            SettingsSectionHeader(L("settings.proxy.advanced", "Advanced"), icon: "gearshape.2")
+
+            SettingsRow(L("settings.proxy.port", "Port"), help: L("settings.proxy.port.help", "Local proxy port for intercepting API calls")) {
+                TextField("", value: $settings.apiAnalyticsPort, format: .number)
+                    .frame(width: 80)
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
             }
 
-            // Advanced Section
-            Section {
-                HStack {
-                    Text(L("Port", "Port"))
-                    Spacer()
-                    TextField("", value: $settings.apiAnalyticsPort, format: .number)
-                        .frame(width: 80)
-                        .textFieldStyle(.roundedBorder)
-                        .multilineTextAlignment(.trailing)
+            SettingsButtonRow(buttons: [
+                .init(title: L("settings.proxy.openFolder", "Open Database Folder"), icon: "folder", style: .bordered) {
+                    openDatabaseFolder()
+                },
+                .init(title: L("settings.proxy.clearData", "Clear All Data"), icon: "trash", style: .bordered) {
+                    showingClearConfirmation = true
                 }
+            ])
 
-                HStack {
-                    Button(L("Open Database Folder", "Open Database Folder")) {
-                        openDatabaseFolder()
-                    }
-                    .buttonStyle(.borderless)
+            Divider()
+                .padding(.vertical, 8)
 
-                    Spacer()
+            // Supported Tools
+            SettingsSectionHeader(L("settings.proxy.tools", "Supported Tools"), icon: "wrench.and.screwdriver")
 
-                    Button(L("Clear All Data", "Clear All Data"), role: .destructive) {
-                        showingClearConfirmation = true
-                    }
-                    .buttonStyle(.borderless)
-                }
-            } header: {
-                Text(L("Advanced", "Advanced"))
-            }
+            VStack(alignment: .leading, spacing: 8) {
+                supportedToolRow(name: "Claude Code", supported: .full)
+                supportedToolRow(name: "Codex CLI", supported: .full)
+                supportedToolRow(name: "Gemini CLI", supported: .partial)
+                supportedToolRow(name: "Aider", supported: .full)
+                supportedToolRow(name: "Cursor", supported: .full)
 
-            // Supported Tools Section
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    supportedToolRow(name: "Claude Code", supported: .full)
-                    supportedToolRow(name: "Codex CLI", supported: .full)
-                    supportedToolRow(name: "Gemini CLI", supported: .partial)
-                    supportedToolRow(name: "Aider", supported: .full)
-                    supportedToolRow(name: "Cursor", supported: .full)
-
-                    Text(L("Gemini CLI support is partial — may not work when Google OAuth session is cached.", "Gemini CLI support is partial — may not work when Google OAuth session is cached."))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .padding(.top, 4)
-                }
-            } header: {
-                Text(L("Supported Tools", "Supported Tools"))
-            }
-
-            // How It Works Section
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(L("When enabled, Chau7 sets environment variables to route API calls:", "When enabled, Chau7 sets environment variables to route API calls:"))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        codeRow("ANTHROPIC_BASE_URL")
-                        codeRow("OPENAI_BASE_URL")
-                        codeRow("GOOGLE_GEMINI_BASE_URL")
-                    }
-                    .padding(.vertical, 4)
-
-                    Text(L("OpenAI SDKs expect OPENAI_BASE_URL to include /v1. Chau7 sets this automatically.", "OpenAI SDKs expect OPENAI_BASE_URL to include /v1. Chau7 sets this automatically."))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    Text(L(
-                        "The proxy logs metadata (model, tokens, latency) then forwards requests to the real APIs. Auth headers pass through unchanged.",
-                        "The proxy logs metadata (model, tokens, latency) then forwards requests to the real APIs. Auth headers pass through unchanged."
-                    ))
+                Text(L("settings.proxy.geminiNote", "Gemini CLI support is partial — may not work when Google OAuth session is cached."))
                     .font(.caption)
                     .foregroundColor(.secondary)
+                    .padding(.top, 4)
+            }
+
+            Divider()
+                .padding(.vertical, 8)
+
+            // How It Works
+            SettingsSectionHeader(L("settings.proxy.howItWorks", "How It Works"), icon: "questionmark.circle")
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(L("settings.proxy.envVarsDescription", "When enabled, Chau7 sets environment variables to route API calls:"))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    codeRow("ANTHROPIC_BASE_URL")
+                    codeRow("OPENAI_BASE_URL")
+                    codeRow("GOOGLE_GEMINI_BASE_URL")
                 }
-            } header: {
-                Text(L("How It Works", "How It Works"))
+                .padding(.vertical, 4)
+
+                Text(L("settings.proxy.openaiNote", "OpenAI SDKs expect OPENAI_BASE_URL to include /v1. Chau7 sets this automatically."))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Text(L(
+                    "settings.proxy.forwardingNote",
+                    "The proxy logs metadata (model, tokens, latency) then forwards requests to the real APIs. Auth headers pass through unchanged."
+                ))
+                .font(.caption)
+                .foregroundColor(.secondary)
             }
         }
-        .formStyle(.grouped)
         .onAppear {
             updateStatus()
         }
@@ -124,13 +120,13 @@ struct ProxySettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: .apiAnalyticsSettingsChanged)) { _ in
             updateStatus()
         }
-        .alert("Clear Analytics Data", isPresented: $showingClearConfirmation) {
+        .alert(L("settings.proxy.clearConfirm.title", "Clear Analytics Data"), isPresented: $showingClearConfirmation) {
             Button(L("Cancel", "Cancel"), role: .cancel) {}
-            Button(L("Clear All", "Clear All"), role: .destructive) {
+            Button(L("settings.proxy.clearConfirm.action", "Clear All"), role: .destructive) {
                 clearAnalyticsData()
             }
         } message: {
-            Text(L("This will delete all captured API call data. This action cannot be undone.", "This will delete all captured API call data. This action cannot be undone."))
+            Text(L("settings.proxy.clearConfirm.message", "This will delete all captured API call data. This action cannot be undone."))
         }
     }
 
@@ -144,14 +140,14 @@ struct ProxySettingsView: View {
                 Circle()
                     .fill(Color.secondary)
                     .frame(width: 8, height: 8)
-                Text(L("Disabled", "Disabled"))
+                Text(L("status.disabled", "Disabled"))
                     .foregroundColor(.secondary)
             }
         case .starting:
             HStack(spacing: 4) {
                 ProgressView()
                     .scaleEffect(0.6)
-                Text(L("Starting...", "Starting..."))
+                Text(L("status.starting", "Starting..."))
                     .foregroundColor(.orange)
             }
         case .running(let port):
@@ -255,14 +251,3 @@ private enum ProxyStatus {
     case running(port: Int)
     case error(String)
 }
-
-// MARK: - Preview
-
-#if DEBUG
-struct ProxySettingsView_Previews: PreviewProvider {
-    static var previews: some View {
-        ProxySettingsView()
-            .frame(width: 500, height: 600)
-    }
-}
-#endif
