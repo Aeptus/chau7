@@ -1672,17 +1672,10 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
             promptSeenForPendingCommand = false
             pendingCommandLine = nil
 
-            // The 3-second idle transition is a UI state change, not a command
-            // completion signal. Don't send a user-visible notification — actual
-            // "finished" notifications come from OSC 133 D or the 60s fallback.
-            appModel?.recordEvent(
-                source: .terminalSession,
-                type: "finished",
-                tool: notificationTabName,
-                message: "Command idle for \(Int(latestIdleFor))s",
-                notify: false,
-                directory: currentDirectory,
-                tabID: ownerTabID
+            // The 3-second idle transition is a UI state change, not a meaningful
+            // event. Don't record or notify — actual "finished" events come from
+            // OSC 133 D, the 60s fallback, or the session resolver's active→idle bridge.
+            Log.trace("Command idle for \(Int(latestIdleFor))s in \(notificationTabName)"
             )
         }
     }
