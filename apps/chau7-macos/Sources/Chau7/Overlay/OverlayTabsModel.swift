@@ -3125,7 +3125,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
             let window = overlayWindow
             let frameText = window.map { "windowFrame=\($0.frame.width)x\($0.frame.height) visible=\($0.isVisible) occluded=\(!($0.occlusionState.contains(.visible)))" } ?? "window=none"
             let visibility = isVisible ? "visible" : "hidden"
-            Log.warn("Tab bar visibility changed: \(visibility), tabs=\(tabs.count), refreshToken=\(tabBarRefreshToken), \(frameText)")
+            Log.trace("Tab bar visibility changed: \(visibility), tabs=\(tabs.count), refreshToken=\(tabBarRefreshToken), \(frameText)")
         }
         isTabBarVisible = isVisible
         watchdogRefreshAttempts = 0

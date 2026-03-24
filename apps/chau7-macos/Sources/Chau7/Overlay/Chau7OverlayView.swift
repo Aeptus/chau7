@@ -582,25 +582,20 @@ private struct ToolbarTabBarView: View {
             }
         }
         .onChange(of: overlayModel.tabs.count) { newCount in
-            Log.info("ToolbarTabBarView: tabs.count changed to \(newCount)")
+            Log.trace("ToolbarTabBarView: tabs.count changed to \(newCount)")
         }
         .onAppear {
             let now = Date()
-            if now.timeIntervalSince(lastVisibilityLogAt) > 0.5 {
+            if now.timeIntervalSince(lastVisibilityLogAt) > 2.0 {
                 lastVisibilityLogAt = now
-                let windowFrame = overlayModel.overlayWindow.map { "\($0.frame.width)x\($0.frame.height)" } ?? "none"
-                Log.warn("ToolbarTabBarView: appeared, tabs=\(overlayModel.tabs.count), windowFrame=\(windowFrame), refreshToken=\(overlayModel.tabBarRefreshToken)")
+                Log.trace("ToolbarTabBarView: appeared, tabs=\(overlayModel.tabs.count)")
             }
-            Log.info("ToolbarTabBarView: appeared with \(overlayModel.tabs.count) tabs")
-            // Note: Watchdog is now started by the model, not by view lifecycle
-            // This ensures consistent operation regardless of view recreation
         }
         .onDisappear {
             let now = Date()
-            if now.timeIntervalSince(lastVisibilityLogAt) > 0.5 {
+            if now.timeIntervalSince(lastVisibilityLogAt) > 2.0 {
                 lastVisibilityLogAt = now
-                let windowFrame = overlayModel.overlayWindow.map { "\($0.frame.width)x\($0.frame.height)" } ?? "none"
-                Log.warn("ToolbarTabBarView: disappeared, tabs=\(overlayModel.tabs.count), windowFrame=\(windowFrame), refreshToken=\(overlayModel.tabBarRefreshToken)")
+                Log.trace("ToolbarTabBarView: disappeared, tabs=\(overlayModel.tabs.count)")
             }
         }
         // Auto-recovery: detect when rendered tab count doesn't match model
