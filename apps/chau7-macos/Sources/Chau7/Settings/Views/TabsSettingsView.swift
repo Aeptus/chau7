@@ -53,9 +53,19 @@ struct TabsSettingsView: View {
 
             SettingsToggle(
                 label: L("settings.tabs.groupIdleTabs", "Group Idle Tabs in Dropdown"),
-                help: L("settings.tabs.groupIdleTabs.help", "Collect tabs idle for 10+ minutes into a dropdown at the start of the tab bar to reduce clutter"),
+                help: L("settings.tabs.groupIdleTabs.help", "Collect idle tabs into a dropdown at the start of the tab bar to reduce clutter"),
                 isOn: $settings.groupIdleTabs
             )
+
+            if settings.groupIdleTabs {
+                SettingsStepper(
+                    label: L("settings.tabs.idleThreshold", "Idle Threshold"),
+                    help: L("settings.tabs.idleThreshold.help", "Minutes of inactivity before a tab is considered idle (1-60)"),
+                    value: $settings.idleTabThresholdMinutes,
+                    range: 1 ... 60,
+                    suffix: " min"
+                )
+            }
 
             Divider()
                 .padding(.vertical, 8)
@@ -137,6 +147,16 @@ struct TabsSettingsView: View {
             SettingsShortcutRow(label: L("settings.tabs.previousTab", "Previous Tab"), shortcut: "⇧⌘[ or ⌃⇧Tab or ⌥⌘←")
             SettingsShortcutRow(label: L("settings.tabs.switchToTab", "Switch to Tab 1-9"), shortcut: "⌘1-9")
             SettingsShortcutRow(label: L("settings.tabs.renameTab", "Rename Tab"), shortcut: "⌘⌥R")
+
+            Divider()
+                .padding(.vertical, 8)
+
+            // Reset Button
+            SettingsButtonRow(buttons: [
+                .init(title: L("settings.tabs.resetToDefaults", "Reset Tabs to Defaults"), style: .plain) {
+                    settings.resetTabsToDefaults()
+                }
+            ], alignment: .trailing)
         }
     }
 }

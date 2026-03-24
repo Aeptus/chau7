@@ -79,7 +79,7 @@ struct DisplaySettingsView: View {
             // Reset Button
             SettingsButtonRow(buttons: [
                 .init(title: L("settings.display.resetToDefaults", "Reset Display to Defaults"), style: .plain) {
-                    settings.resetAppearanceToDefaults()
+                    settings.resetDisplayToDefaults()
                 }
             ], alignment: .trailing)
         }

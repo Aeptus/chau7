@@ -157,6 +157,19 @@ struct TokenOptimizationSettingsView: View {
 
                 howItWorksView
             }
+
+            if settings.tokenOptimizationMode == .off {
+                Divider()
+                    .padding(.vertical, 8)
+
+                // How It Works (visible even when off, so users can understand the feature)
+                SettingsSectionHeader(
+                    L("cto.settings.howItWorks", "How It Works"),
+                    icon: "questionmark.circle"
+                )
+
+                howItWorksView
+            }
         }
         .onAppear {
             refreshAll()

@@ -363,7 +363,7 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
             let idleIDs = Set(model.tabs.filter { tab in
                 guard let session = tab.displaySession ?? tab.session,
                       tab.id != model.selectedTabID else { return false }
-                return now.timeIntervalSince(session.lastActivityDate) > 600
+                return now.timeIntervalSince(session.lastActivityDate) > FeatureSettings.shared.idleTabThresholdSeconds
             }.map(\.id))
             visibleTabs = model.tabs.filter { !idleIDs.contains($0.id) }
         } else {
@@ -462,7 +462,7 @@ private struct ToolbarTabBarView: View {
     /// Reads the setting directly to avoid subscribing to all FeatureSettings changes.
     private var idleTabs: [OverlayTab] {
         guard FeatureSettings.shared.groupIdleTabs else { return [] }
-        let threshold: TimeInterval = 600
+        let threshold = FeatureSettings.shared.idleTabThresholdSeconds
         let now = Date()
         return overlayModel.tabs.filter { tab in
             guard let session = tab.displaySession ?? tab.session,

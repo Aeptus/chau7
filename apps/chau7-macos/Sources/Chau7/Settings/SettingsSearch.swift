@@ -837,8 +837,8 @@ extension FeatureSettings {
             id: "groupIdleTabs",
             section: .tabs,
             title: L("settings.search.groupIdleTabs.title", "Group Idle Tabs"),
-            keywords: localizedKeywords("settings.search.groupIdleTabs.keywords", "idle,tabs,group,dropdown,declutter"),
-            description: L("settings.search.groupIdleTabs.description", "Collect idle tabs in a dropdown chip")
+            keywords: localizedKeywords("settings.search.groupIdleTabs.keywords", "idle,tabs,group,dropdown,declutter,threshold,minutes"),
+            description: L("settings.search.groupIdleTabs.description", "Collect idle tabs in a dropdown chip (configurable threshold)")
         ),
         SearchableSetting(
             id: "clickToPosition",

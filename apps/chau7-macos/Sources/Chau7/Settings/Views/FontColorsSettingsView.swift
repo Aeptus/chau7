@@ -90,6 +90,12 @@ struct FontColorsSettingsView: View {
                 suffix: "%"
             )
 
+            SettingsToggle(
+                label: L("settings.appearance.ligatures", "Font Ligatures"),
+                help: L("settings.appearance.ligatures.help", "Render multi-character ligatures (=>, ->, === etc.) for fonts that support them (Fira Code, JetBrains Mono, Cascadia Code). Disable for monospace fonts without ligature tables."),
+                isOn: $settings.enableLigatures
+            )
+
             // Font Preview — use NSFont bridge for SF Mono (SwiftUI .custom() can't resolve it)
             Text(L("settings.appearance.fontPreview", "The quick brown fox jumps over the lazy dog"))
                 .font(Font(TerminalFont.resolveFont(family: settings.fontFamily, size: CGFloat(settings.fontSize))))
@@ -148,22 +154,10 @@ struct FontColorsSettingsView: View {
             Divider()
                 .padding(.vertical, 8)
 
-            // Font Rendering
-            SettingsSectionHeader(L("settings.appearance.fontRendering", "Font Rendering"), icon: "textformat")
-
-            SettingsToggle(
-                label: L("settings.appearance.ligatures", "Font Ligatures"),
-                help: L("settings.appearance.ligatures.help", "Render multi-character ligatures (=>, ->, === etc.) for fonts that support them (Fira Code, JetBrains Mono, Cascadia Code). Disable for monospace fonts without ligature tables."),
-                isOn: $settings.enableLigatures
-            )
-
-            Divider()
-                .padding(.vertical, 8)
-
             // Reset Button
             SettingsButtonRow(buttons: [
-                .init(title: L("settings.appearance.resetToDefaults", "Reset Appearance to Defaults"), style: .plain) {
-                    settings.resetAppearanceToDefaults()
+                .init(title: L("settings.fontColors.resetToDefaults", "Reset Font & Colors to Defaults"), style: .plain) {
+                    settings.resetFontColorsToDefaults()
                 }
             ], alignment: .trailing)
         }

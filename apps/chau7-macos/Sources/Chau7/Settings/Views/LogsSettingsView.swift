@@ -7,6 +7,12 @@ struct LogsSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            // Persistent History (most important — at top)
+            HistorySettingsView()
+
+            Divider()
+                .padding(.vertical, 8)
+
             // History Logs
             SettingsSectionHeader(L("settings.logs.historyLogs", "History Logs"), icon: "clock.arrow.circlepath")
 
@@ -160,11 +166,6 @@ struct LogsSettingsView: View {
                 }
             }
 
-            Divider()
-                .padding(.vertical, 8)
-
-            // Persistent History (embedded)
-            HistorySettingsView()
         }
     }
 }

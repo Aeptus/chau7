@@ -16,7 +16,7 @@ struct HistorySettingsView: View {
     @State private var importError: String?
     @State private var maxRecordsValue: Double = 50000
     @State private var statusMessage: String?
-    @State private var persistentHistoryEnabled: Bool = UserDefaults.standard.bool(forKey: "feature.persistentHistory")
+    @State private var persistentHistoryEnabled: Bool = UserDefaults.standard.object(forKey: "feature.persistentHistory") as? Bool ?? true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
