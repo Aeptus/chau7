@@ -545,11 +545,15 @@ struct SettingsDetailView: View {
                         DangerousCommandSettingsView()
                     case .graphics:
                         GraphicsSettingsView()
+                    case .minimalMode:
+                        MinimalModeSettingsView()
                     // Input & Productivity
                     case .keyboardMouse:
                         InputSettingsView()
                     case .snippetsTools:
                         ProductivitySettingsView()
+                    case .editor:
+                        EditorSettingsView()
                     // Integrations
                     case .aiDetection:
                         AIIntegrationSettingsView()

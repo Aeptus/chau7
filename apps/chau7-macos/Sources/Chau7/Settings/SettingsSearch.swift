@@ -52,9 +52,9 @@ enum SettingsSectionGroup: String, CaseIterable, Identifiable {
     var sections: [SettingsSection] {
         switch self {
         case .essentials: return [.general, .profilesBackup, .about]
-        case .lookAndFeel: return [.fontColors, .display, .tabs]
+        case .lookAndFeel: return [.fontColors, .display, .tabs, .minimalMode]
         case .terminal: return [.shell, .scrollbackPerf, .dangerousCommands, .graphics]
-        case .inputProductivity: return [.keyboardMouse, .snippetsTools]
+        case .inputProductivity: return [.keyboardMouse, .snippetsTools, .editor]
         case .integrations: return [.aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy]
         case .monitoring: return [.notifications, .logsHistory]
         }
@@ -80,6 +80,9 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     // Input & Productivity
     case keyboardMouse
     case snippetsTools
+    case editor
+    // Look & Feel (additional)
+    case minimalMode
     // Integrations
     case aiDetection
     case tokenOptimization
@@ -108,6 +111,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .graphics: return L("settings.graphics", "Graphics")
         case .keyboardMouse: return L("settings.keyboardMouse", "Keyboard & Mouse")
         case .snippetsTools: return L("settings.snippetsTools", "Snippets & Tools")
+        case .editor: return L("settings.editor", "Text Editor")
+        case .minimalMode: return L("settings.minimalMode", "Minimal Mode")
         case .aiDetection: return L("settings.aiDetection", "AI Detection")
         case .tokenOptimization: return L("settings.tokenOptimization", "Token Optimization (CTO)")
         case .mcpControl: return L("settings.mcpControl", "MCP Control")
@@ -132,6 +137,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .graphics: return "photo"
         case .keyboardMouse: return "keyboard"
         case .snippetsTools: return "bolt.fill"
+        case .editor: return "doc.text"
+        case .minimalMode: return "rectangle.compress.vertical"
         case .aiDetection: return "sparkles"
         case .tokenOptimization: return "bolt.horizontal.circle"
         case .mcpControl: return "face.dashed"
@@ -147,8 +154,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .general: return L("settings.general.description", "Startup, language, and config file")
         case .profilesBackup: return L("settings.profilesBackup.description", "Profile auto-switch, iCloud sync, and settings backup")
         case .about: return L("settings.about.description", "Version information and links")
-        case .fontColors: return L("settings.fontColors.description", "Font, color scheme, opacity, and theme")
-        case .display: return L("settings.display.description", "Syntax highlighting, URLs, images, and layout")
+        case .fontColors: return L("settings.fontColors.description", "Font, color scheme, opacity, and ligatures")
+        case .display: return L("settings.display.description", "Syntax highlighting, URLs, images, and window layout")
         case .tabs: return L("settings.tabs.description", "Tab behavior and appearance")
         case .shell: return L("settings.shell.description", "Shell, cursor, and bell")
         case .scrollbackPerf: return L("settings.scrollbackPerf.description", "Scrollback buffer, rendering, and backend")
@@ -156,6 +163,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .graphics: return L("settings.graphics.description", "Sixel and Kitty graphics protocols")
         case .keyboardMouse: return L("settings.keyboardMouse.description", "Keyboard shortcuts and mouse behavior")
         case .snippetsTools: return L("settings.snippetsTools.description", "Snippets, clipboard, bookmarks, and search")
+        case .editor: return L("settings.editor.description", "Built-in text editor font, indentation, and display")
+        case .minimalMode: return L("settings.minimalMode.description", "Hide tab bar, title bar, and status elements")
         case .aiDetection: return L("settings.aiDetection.description", "AI CLI detection, theming, and LLM provider")
         case .tokenOptimization: return L("settings.tokenOptimization.description", "CTO wrapper scripts, per-tab control, and prefix")
         case .mcpControl: return L("settings.mcpControl.description", "MCP agent tab creation, limits, and approval")
@@ -170,11 +179,11 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .general, .profilesBackup, .about:
             return .essentials
-        case .fontColors, .display, .tabs:
+        case .fontColors, .display, .tabs, .minimalMode:
             return .lookAndFeel
         case .shell, .scrollbackPerf, .dangerousCommands, .graphics:
             return .terminal
-        case .keyboardMouse, .snippetsTools:
+        case .keyboardMouse, .snippetsTools, .editor:
             return .inputProductivity
         case .aiDetection, .tokenOptimization, .mcpControl, .remoteControl, .apiProxy:
             return .integrations
@@ -800,7 +809,65 @@ extension FeatureSettings {
                 "history,database,commands,persistent,storage"
             ),
             description: L("settings.search.persistentHistory.description", "Save command history across sessions")
-        )
+        ),
+
+        // New sections and missing settings
+        SearchableSetting(
+            id: "ligatures",
+            section: .fontColors,
+            title: L("settings.search.ligatures.title", "Font Ligatures"),
+            keywords: localizedKeywords("settings.search.ligatures.keywords", "ligature,fira code,jetbrains,cascadia,coding font"),
+            description: L("settings.search.ligatures.description", "Multi-character ligature rendering for coding fonts")
+        ),
+        SearchableSetting(
+            id: "suspendRendering",
+            section: .scrollbackPerf,
+            title: L("settings.search.suspendRendering.title", "Suspend Background Rendering"),
+            keywords: localizedKeywords("settings.search.suspendRendering.keywords", "suspend,background,render,gpu,cpu,performance"),
+            description: L("settings.search.suspendRendering.description", "Pause rendering for inactive tabs")
+        ),
+        SearchableSetting(
+            id: "metalRenderer",
+            section: .scrollbackPerf,
+            title: L("settings.search.metalRenderer.title", "Metal Renderer"),
+            keywords: localizedKeywords("settings.search.metalRenderer.keywords", "metal,gpu,renderer,hardware,acceleration"),
+            description: L("settings.search.metalRenderer.description", "GPU-accelerated terminal rendering")
+        ),
+        SearchableSetting(
+            id: "groupIdleTabs",
+            section: .tabs,
+            title: L("settings.search.groupIdleTabs.title", "Group Idle Tabs"),
+            keywords: localizedKeywords("settings.search.groupIdleTabs.keywords", "idle,tabs,group,dropdown,declutter"),
+            description: L("settings.search.groupIdleTabs.description", "Collect idle tabs in a dropdown chip")
+        ),
+        SearchableSetting(
+            id: "clickToPosition",
+            section: .keyboardMouse,
+            title: L("settings.search.clickToPosition.title", "Click to Position Cursor"),
+            keywords: localizedKeywords("settings.search.clickToPosition.keywords", "click,cursor,position,input"),
+            description: L("settings.search.clickToPosition.description", "Click on input line to move cursor")
+        ),
+        SearchableSetting(
+            id: "mouseReporting",
+            section: .keyboardMouse,
+            title: L("settings.search.mouseReporting.title", "Mouse Reporting"),
+            keywords: localizedKeywords("settings.search.mouseReporting.keywords", "mouse,reporting,vim,tmux,click"),
+            description: L("settings.search.mouseReporting.description", "Forward mouse events to terminal apps")
+        ),
+        SearchableSetting(
+            id: "textEditor",
+            section: .editor,
+            title: L("settings.search.textEditor.title", "Text Editor"),
+            keywords: localizedKeywords("settings.search.textEditor.keywords", "editor,text,font,indentation,line numbers,word wrap"),
+            description: L("settings.search.textEditor.description", "Built-in text editor settings")
+        ),
+        SearchableSetting(
+            id: "minimalMode",
+            section: .minimalMode,
+            title: L("settings.search.minimalMode.title", "Minimal Mode"),
+            keywords: localizedKeywords("settings.search.minimalMode.keywords", "minimal,hide,tab bar,title bar,distraction free"),
+            description: L("settings.search.minimalMode.description", "Hide UI elements for distraction-free mode")
+        ),
     ]
 
     static func searchSettings(query: String) -> [(section: SettingsSection, settings: [SearchableSetting])] {

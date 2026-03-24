@@ -55,22 +55,8 @@ struct DisplaySettingsView: View {
             Divider()
                 .padding(.vertical, 8)
 
-            // Overlay Window
-            SettingsSectionHeader(L("settings.windows.overlayWindow", "Overlay Window"), icon: "macwindow")
-
-            SettingsButtonRow(buttons: [
-                .init(title: L("settings.windows.showOverlay", "Show Overlay"), icon: "rectangle.inset.filled") {
-                    (NSApp.delegate as? AppDelegate)?.showOverlay()
-                },
-                .init(title: L("settings.windows.resetPosition", "Reset Position"), icon: "arrow.counterclockwise") {
-                    FeatureSettings.shared.resetOverlayOffsets()
-                }
-            ])
-
-            SettingsDescription(text: L("settings.windows.overlayDescription", "The overlay window remembers its position per workspace and restores it automatically."))
-
-            Divider()
-                .padding(.vertical, 8)
+            // Window & Layout
+            SettingsSectionHeader(L("settings.display.windowLayout", "Window & Layout"), icon: "macwindow")
 
             // Split Panes
             SettingsSectionHeader(L("settings.windows.splitPanes", "Split Panes"), icon: "rectangle.split.2x1")

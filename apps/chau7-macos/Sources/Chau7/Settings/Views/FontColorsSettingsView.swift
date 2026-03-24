@@ -148,13 +148,13 @@ struct FontColorsSettingsView: View {
             Divider()
                 .padding(.vertical, 8)
 
-            // AI Theming
-            SettingsSectionHeader(L("settings.appearance.aiTabTheming", "AI Tab Theming"), icon: "sparkles")
+            // Font Rendering
+            SettingsSectionHeader(L("settings.appearance.fontRendering", "Font Rendering"), icon: "textformat")
 
             SettingsToggle(
-                label: L("settings.appearance.autoTabThemes", "Auto Tab Themes"),
-                help: L("settings.appearance.autoTabThemes.help", "Automatically color tabs based on the detected AI CLI (Claude = purple, Codex = green, etc.)"),
-                isOn: $settings.isAutoTabThemeEnabled
+                label: L("settings.appearance.ligatures", "Font Ligatures"),
+                help: L("settings.appearance.ligatures.help", "Render multi-character ligatures (=>, ->, === etc.) for fonts that support them (Fira Code, JetBrains Mono, Cascadia Code). Disable for monospace fonts without ligature tables."),
+                isOn: $settings.enableLigatures
             )
 
             Divider()
