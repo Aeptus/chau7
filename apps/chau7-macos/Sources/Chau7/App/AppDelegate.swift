@@ -794,16 +794,24 @@ private final class OverlayBlurView: NSVisualEffectView {
     // MARK: - Tab Move Between Windows
 
     /// Wire tab-move callbacks on all overlay models and update their window lists.
+    /// Called after window creation, tab moves, and window activation.
     private func wireTabMoveCallbacks() {
         for (i, host) in overlayHosts.enumerated() {
-            // Set the "move to window" callback
-            host.model.onMoveTabToWindow = { [weak self] tabID, targetWindowIndex in
-                self?.moveTab(tabID, fromWindowIndex: i, toWindowIndex: targetWindowIndex)
+            // Use weak self + resolve index at call time to handle array mutations
+            let model = host.model
+            model.onMoveTabToWindow = { [weak self, weak model] tabID, targetWindowIndex in
+                guard let self, let model,
+                      let currentIndex = self.overlayHosts.firstIndex(where: { $0.model === model }) else { return }
+                self.moveTab(tabID, fromWindowIndex: currentIndex, toWindowIndex: targetWindowIndex)
             }
-            // Update the list of other windows for the context menu
-            host.model.otherWindowTitles = overlayHosts.enumerated().compactMap { j, other in
+            // Build window titles: "Window N (M tabs)" for each OTHER window
+            model.otherWindowTitles = overlayHosts.enumerated().compactMap { j, other in
                 guard j != i else { return nil }
-                return OverlayTabsModel.WindowMenuItem(id: j, title: other.window.title)
+                let tabCount = other.model.tabs.count
+                let title = other.window.title.isEmpty
+                    ? "Window \(j + 1) (\(tabCount) tab\(tabCount == 1 ? "" : "s"))"
+                    : "\(other.window.title) (\(tabCount) tab\(tabCount == 1 ? "" : "s"))"
+                return OverlayTabsModel.WindowMenuItem(id: j, title: title)
             }
         }
     }
@@ -1107,6 +1115,8 @@ private final class OverlayBlurView: NSVisualEffectView {
         }
         logOverlayWindowLifecycle(reason: "didBecomeKey", window: window)
         logOverlayDiagnostics(reason: "didBecomeKey", window: window)
+        // Refresh window lists for the "Move to Window" context menu
+        wireTabMoveCallbacks()
     }
 
     func windowDidResignKey(_ notification: Notification) {
