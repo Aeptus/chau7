@@ -90,9 +90,9 @@ struct MCPSettingsView: View {
 
             // MARK: - MCP Profiles
 
-            SettingsSectionHeader("MCP Profiles", icon: "person.crop.rectangle.stack")
+            SettingsSectionHeader(L("settings.mcp.profiles", "MCP Profiles"), icon: "person.crop.rectangle.stack")
 
-            Text("Profiles override global permissions when their trigger matches the current tab context.")
+            Text(L("settings.mcp.profiles.help", "Profiles override global permissions when their trigger matches the current tab context."))
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -105,7 +105,7 @@ struct MCPSettingsView: View {
             }
 
             Button(action: { isAddingProfile = true }) {
-                Label("Add Profile", systemImage: "plus")
+                Label(L("settings.mcp.addProfile", "Add Profile"), systemImage: "plus")
             }
             .buttonStyle(.plain)
             .foregroundColor(.accentColor)

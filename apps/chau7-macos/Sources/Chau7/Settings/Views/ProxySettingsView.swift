@@ -9,6 +9,7 @@ struct ProxySettingsView: View {
 
     var body: some View {
         Form {
+            // Note: Uses Form/Section layout (differs from VStack/SettingsSectionHeader used elsewhere).
             // Main Toggle Section
             Section {
                 Toggle(L("Enable API Analytics", "Enable API Analytics"), isOn: $settings.isAPIAnalyticsEnabled)
