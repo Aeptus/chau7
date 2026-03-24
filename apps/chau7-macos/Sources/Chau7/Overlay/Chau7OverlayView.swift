@@ -1241,12 +1241,31 @@ struct UnifiedTabButton: View {
     }
 
     var body: some View {
-        tabContent
+        tabChip
             .contextMenu { tabContextMenu }
+            .onHover { isHovering in
+                onHover?(isHovering)
+            }
+            .opacity(isPulsing ? 0.6 : 1.0)
+            .animation(
+                isPulsing
+                    ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
+                    : .default,
+                value: isPulsing
+            )
+            .onChange(of: notificationStyle?.shouldPulse) { shouldPulse in
+                isPulsing = shouldPulse == true
+            }
+            .onChange(of: tab.notificationStyle) { newStyle in
+                if newStyle == nil { isPulsing = false }
+            }
+            .onAppear {
+                isPulsing = notificationStyle?.shouldPulse == true
+            }
     }
 
     @ViewBuilder
-    private var tabContent: some View {
+    private var tabChip: some View {
         HStack(spacing: 8) {
             // Session-dependent content (icon, title, path, git) in an observing subview
             if let session = tab.displaySession {
@@ -1343,30 +1362,7 @@ struct UnifiedTabButton: View {
                 onSelect()
             }
         )
-        .onHover { isHovering in
-            onHover?(isHovering)
-        }
-        // Pulse animation for attention states
-        .opacity(isPulsing ? 0.6 : 1.0)
-        .animation(
-            isPulsing
-                ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true)
-                : .default,
-            value: isPulsing
-        )
-        .onChange(of: notificationStyle?.shouldPulse) { shouldPulse in
-            // Explicitly handle nil (style cleared) as false
-            isPulsing = shouldPulse == true
-        }
-        .onChange(of: tab.notificationStyle) { newStyle in
-            // When style is cleared entirely, stop pulsing
-            if newStyle == nil {
-                isPulsing = false
-            }
-        }
-        .onAppear {
-            isPulsing = notificationStyle?.shouldPulse == true
-        }
+        // onHover, contextMenu, pulse animation, and onChange are in body
     }
 }
 
