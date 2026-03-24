@@ -63,18 +63,16 @@ struct ScrollbackPerfSettingsView: View {
                 .padding(.vertical, 8)
 
             // Rendering
-            SettingsSectionHeader("Rendering", icon: "cpu")
+            SettingsSectionHeader(L("settings.terminal.rendering", "Rendering"), icon: "cpu")
 
             SettingsToggle(
-                label: "Metal Renderer",
-                help: "Use GPU-accelerated Metal rendering for the terminal. " +
-                    "Falls back to standard rendering if Metal is unavailable. " +
-                    "Changes take effect for new tabs only.",
+                label: L("settings.terminal.metalRenderer", "Metal Renderer"),
+                help: L("settings.terminal.metalRenderer.help", "Use GPU-accelerated Metal rendering for the terminal. Falls back to standard rendering if Metal is unavailable. Changes take effect for new tabs only."),
                 isOn: $settings.useMetalRenderer
             )
 
             if settings.useMetalRenderer {
-                Text("New tabs will use Metal GPU rendering for display.")
+                Text(L("settings.terminal.metalRenderer.info", "New tabs will use Metal GPU rendering for display."))
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.leading, 20)
