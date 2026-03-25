@@ -41,6 +41,8 @@ private final class OverlayBlurView: NSVisualEffectView {
     private var didPerformInitialSetup = false
     private var lastOverlayLifecycleLogAt: CFAbsoluteTime = 0
     private var lastOverlayLifecycleReason = ""
+    /// Centralized autosave timer — saves all windows atomically every 30s
+    private var multiWindowAutoSaveTimer: DispatchSourceTimer?
 
     // MARK: - App Nap Prevention
 
@@ -160,6 +162,9 @@ private final class OverlayBlurView: NSVisualEffectView {
         // Restore additional windows from multi-window save state
         restoreAdditionalWindows()
 
+        // Start centralized autosave timer (replaces per-window timers)
+        startMultiWindowAutoSaveTimer()
+
         // Initialize debug console controller
         DebugConsoleController.shared.configure(appModel: model, overlayModel: overlayModel)
 
@@ -228,32 +233,12 @@ private final class OverlayBlurView: NSVisualEffectView {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Save only windows the user had open — exclude those hidden via orderOut
-        // (hiddenWindowNumbers is populated by closeWindow/windowShouldClose/onCloseLastTab)
-        var allWindows: [[SavedTabState]] = []
-        for host in overlayHosts {
-            let isHidden = hiddenWindowNumbers.contains(host.window.windowNumber)
-            guard !isHidden, host.window.isVisible else { continue }
-            let states = host.model.exportTabStates()
-            if !states.isEmpty { allWindows.append(states) }
-        }
+        multiWindowAutoSaveTimer?.cancel()
+        multiWindowAutoSaveTimer = nil
+        saveAllWindowStates(reason: .termination)
         for host in overlayHosts {
             host.model.closeAllSessionsForTermination()
         }
-        // Save window 0 to the legacy key (read by Chau7App.init on launch)
-        if let firstWindowStates = allWindows.first,
-           let data = try? JSONEncoder().encode(firstWindowStates) {
-            UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
-        }
-        if allWindows.count > 1 {
-            let multiState = SavedMultiWindowState(windows: allWindows)
-            if let data = try? JSONEncoder().encode(multiState) {
-                UserDefaults.standard.set(data, forKey: SavedMultiWindowState.userDefaultsKey)
-            }
-        } else {
-            UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
-        }
-        Log.info("Saved \(allWindows.count) window(s) tab state for restoration")
 
         // Stop MCP telemetry server
         MCPServerManager.shared.stop()
@@ -824,6 +809,57 @@ private final class OverlayBlurView: NSVisualEffectView {
         ChangedFilesPanel.show(files: files, directory: session.currentDirectory)
     }
 
+    // MARK: - Multi-Window Autosave
+
+    /// Start a centralized 30-second autosave timer that atomically saves ALL windows.
+    /// Replaces the per-window autosave that caused race conditions on the same UserDefaults key.
+    private func startMultiWindowAutoSaveTimer() {
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 30, repeating: 30)
+        timer.setEventHandler { [weak self] in
+            self?.saveAllWindowStates(reason: .autosave)
+        }
+        timer.resume()
+        multiWindowAutoSaveTimer = timer
+    }
+
+    /// Save all visible windows' tab states atomically to UserDefaults.
+    /// Window 0 → legacy key, windows 1..N → multi-window key.
+    /// Also triggers per-window disk backups.
+    private func saveAllWindowStates(reason: TabStateSaveReason) {
+        var allWindows: [[SavedTabState]] = []
+        for host in overlayHosts {
+            let isHidden = hiddenWindowNumbers.contains(host.window.windowNumber)
+            guard !isHidden, host.window.isVisible else { continue }
+            let states = host.model.exportTabStates()
+            if !states.isEmpty { allWindows.append(states) }
+        }
+        guard !allWindows.isEmpty else { return }
+
+        // Write window 0 to legacy key
+        if let firstWindowStates = allWindows.first,
+           let data = try? JSONEncoder().encode(firstWindowStates) {
+            UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
+        }
+        // Write all windows to multi-window key
+        if allWindows.count > 1 {
+            let multiState = SavedMultiWindowState(windows: allWindows)
+            if let data = try? JSONEncoder().encode(multiState) {
+                UserDefaults.standard.set(data, forKey: SavedMultiWindowState.userDefaultsKey)
+            }
+        } else {
+            UserDefaults.standard.removeObject(forKey: SavedMultiWindowState.userDefaultsKey)
+        }
+        Log.trace("Saved \(allWindows.count) window(s) tab state [\(reason.rawValue)]")
+
+        // Trigger per-window disk backups
+        for host in overlayHosts {
+            let isHidden = hiddenWindowNumbers.contains(host.window.windowNumber)
+            guard !isHidden, host.window.isVisible else { continue }
+            host.model.saveTabState(reason: reason)
+        }
+    }
+
     // MARK: - Tab Move Between Windows
 
     /// Wire tab-move callbacks on all overlay models and update their window lists.
@@ -836,6 +872,11 @@ private final class OverlayBlurView: NSVisualEffectView {
                 guard let self, let model,
                       let currentIndex = self.overlayHosts.firstIndex(where: { $0.model === model }) else { return }
                 self.moveTab(tabID, fromWindowIndex: currentIndex, toWindowIndex: targetWindowIndex)
+            }
+            model.onMoveGroupToWindow = { [weak self, weak model] groupID, targetWindowIndex in
+                guard let self, let model,
+                      let currentIndex = self.overlayHosts.firstIndex(where: { $0.model === model }) else { return }
+                self.moveGroup(groupID, fromWindowIndex: currentIndex, toWindowIndex: targetWindowIndex)
             }
             // Wire the lazy refresh callback for context menu
             model.onRefreshWindowTitles = { [weak self] in
@@ -883,6 +924,35 @@ private final class OverlayBlurView: NSVisualEffectView {
             target.selectTab(id: tab.id)
             wireTabMoveCallbacks()
             Log.info("Moved tab \(tabID) from window \(fromWindowIndex) to \(toWindowIndex)")
+        }
+    }
+
+    /// Move all tabs in a repo group from one window to another.
+    private func moveGroup(_ repoGroupID: String, fromWindowIndex: Int, toWindowIndex: Int) {
+        guard fromWindowIndex < overlayHosts.count else { return }
+        let source = overlayHosts[fromWindowIndex].model
+        let groupTabs = source.detachGroup(repoGroupID: repoGroupID)
+        guard !groupTabs.isEmpty else { return }
+
+        if toWindowIndex == -1 {
+            guard let model else { return }
+            let tabsModel = OverlayTabsModel(appModel: model, restoreState: false)
+            tabsModel.tabs = groupTabs.map { var t = $0; t.stampOwnerTabID(); return t }
+            tabsModel.selectedTabID = groupTabs[0].id
+            TerminalControlService.shared.register(tabsModel)
+            let windowNumber = allocateOverlayWindowNumber()
+            let window = createOverlayWindow(tabsModel: tabsModel, windowNumber: windowNumber)
+            overlayHosts.append(OverlayHost(window: window, model: tabsModel))
+            wireTabMoveCallbacks()
+            showOverlayWindow(overlayHosts.last!, reason: "moveGroupToNewWindow")
+            Log.info("Moved group \(repoGroupID) (\(groupTabs.count) tabs) to new window \(windowNumber)")
+        } else {
+            guard toWindowIndex < overlayHosts.count else { return }
+            let target = overlayHosts[toWindowIndex].model
+            target.tabs.append(contentsOf: groupTabs)
+            target.selectTab(id: groupTabs[0].id)
+            wireTabMoveCallbacks()
+            Log.info("Moved group \(repoGroupID) (\(groupTabs.count) tabs) from window \(fromWindowIndex) to \(toWindowIndex)")
         }
     }
 

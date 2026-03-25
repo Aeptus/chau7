@@ -386,6 +386,10 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
     // MARK: - Tab Bar Recovery
 
+    /// Tab hit-test ranges for right-click context menu (populated by SwiftUI preference changes).
+    /// Each entry maps a tab UUID to its global x-range (minX, maxX) in the window.
+    var tabHitTestFrames: [(tabID: UUID, minX: CGFloat, maxX: CGFloat)] = []
+
     /// Token to force SwiftUI to re-render the tab bar when incremented
     @Published var tabBarRefreshToken = 0
     /// Last reported rendered tab count from the view (for watchdog)
@@ -464,8 +468,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     private var renderSuspensionDelay: TimeInterval = 5.0
     private var needsFreshTabOnShow = false
     private var isDiagnosticsLoggingEnabled = false
-    /// Periodic auto-save timer so tab state survives crashes (SIGABRT etc.)
-    private var autoSaveTimer: DispatchSourceTimer?
+    // Auto-save timer moved to AppDelegate for coordinated multi-window saves.
     /// Last archived snapshot fingerprint to avoid writing duplicate archive files.
     private var lastArchivedTabStateFingerprint: Int?
     /// Minimum time between archived snapshots unless we're terminating.
@@ -550,14 +553,8 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
             self?.logVisualState(reason: "init")
         }
 
-        // Auto-save tab state every 30 seconds so it survives crashes
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + 30, repeating: 30)
-        timer.setEventHandler { [weak self] in
-            self?.saveTabState(reason: .autosave)
-        }
-        timer.resume()
-        self.autoSaveTimer = timer
+        // Per-window autosave removed — AppDelegate now coordinates multi-window saves
+        // to avoid race conditions where each window overwrites the same UserDefaults key.
 
         // CTO: listen for global mode changes and recalculate all tab flags
         self.ctoModeObserver = NotificationCenter.default.addObserver(
@@ -618,8 +615,6 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
     deinit {
         Log.warn("OverlayTabsModel deinit — tabs=\(tabs.count) pid=\(ProcessInfo.processInfo.processIdentifier)")
         stopTabBarWatchdog()
-        autoSaveTimer?.cancel()
-        autoSaveTimer = nil
         if let ctoModeObserver { NotificationCenter.default.removeObserver(ctoModeObserver) }
         if let ctoFlagObserver { NotificationCenter.default.removeObserver(ctoFlagObserver) }
         if let renderSuspensionObserver { NotificationCenter.default.removeObserver(renderSuspensionObserver) }
@@ -628,16 +623,16 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
     // MARK: - Tab State Persistence
 
-    /// Saves current tab state to UserDefaults. Call from applicationWillTerminate
-    /// and periodically during normal operation.
+    /// Saves current tab state to disk backups. Does NOT write to UserDefaults —
+    /// that is handled centrally by AppDelegate.saveAllWindowStates() to avoid
+    /// multi-window race conditions.
     func saveTabState(reason: TabStateSaveReason = .manual) {
         let states = exportTabStates()
         guard !states.isEmpty else { return }
         do {
             let data = try JSONEncoder().encode(states)
-            UserDefaults.standard.set(data, forKey: SavedTabState.userDefaultsKey)
             persistTabStateBackups(data: data, reason: reason)
-            Log.trace("Saved \(states.count) tab state(s) with split layout [\(reason.rawValue)]")
+            Log.trace("Saved \(states.count) tab state(s) to disk backup [\(reason.rawValue)]")
         } catch {
             Log.warn("Failed to save tab state: \(error)")
         }
@@ -1456,7 +1451,7 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
         return nil
     }
 
-    private func persistTabStateBackups(data: Data, reason: TabStateSaveReason) {
+    func persistTabStateBackups(data: Data, reason: TabStateSaveReason) {
         do {
             try Self.writeLatestTabStateBackup(data)
             if shouldArchiveTabStateBackup(data: data, reason: reason) {
@@ -3220,6 +3215,8 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
 
     /// Callback for moving a tab to another window. Wired by AppDelegate.
     var onMoveTabToWindow: ((UUID, Int) -> Void)?
+    /// Callback for moving a repo group to another window. Wired by AppDelegate.
+    var onMoveGroupToWindow: ((String, Int) -> Void)? // (repoGroupID, targetWindowIndex)
     /// Callback to refresh window titles on demand (for context menu). Wired by AppDelegate.
     var onRefreshWindowTitles: (() -> Void)?
 
@@ -3243,6 +3240,20 @@ final class OverlayTabsModel: ObservableObject { // swiftlint:disable:this type_
             selectedTabID = tabs[newIndex].id
         }
         return tab
+    }
+
+    /// Remove all tabs in a repo group and return them (for transfer to another window).
+    /// Returns empty if the group is not found or would leave the model with no tabs.
+    func detachGroup(repoGroupID: String) -> [OverlayTab] {
+        let groupTabs = tabs.filter { $0.repoGroupID == repoGroupID }
+        guard !groupTabs.isEmpty, groupTabs.count < tabs.count else { return [] }
+        let groupIDs = Set(groupTabs.map(\.id))
+        tabs.removeAll { groupIDs.contains($0.id) }
+        for id in groupIDs { suspendedTabIDs.remove(id) }
+        if groupIDs.contains(selectedTabID) {
+            selectedTabID = tabs.first?.id ?? UUID()
+        }
+        return groupTabs
     }
 
     /// Suspend rendering for tabs idle 10+ minutes, but only if render suspension
