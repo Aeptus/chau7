@@ -25,21 +25,24 @@ final class RepositoryModel: ObservableObject, Identifiable {
     }
 
     /// Refresh the branch name from git. Coalesces rapid calls via work item cancellation.
-    /// Safe to call from any thread — result delivered on main.
+    /// Safe to call from any thread — all state mutations happen on gitQueue.
     func refreshBranch() {
-        refreshWorkItem?.cancel()
         let root = rootPath
-        let work = DispatchWorkItem { [weak self] in
-            let output = GitDiffTracker.runGit(args: ["rev-parse", "--abbrev-ref", "HEAD"], in: root)
-            let newBranch = output.isEmpty ? nil : output
-            DispatchQueue.main.async {
-                guard let self else { return }
-                if self.branch != newBranch {
-                    self.branch = newBranch
+        Self.gitQueue.async { [weak self] in
+            guard let self else { return }
+            self.refreshWorkItem?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                let output = GitDiffTracker.runGit(args: ["rev-parse", "--abbrev-ref", "HEAD"], in: root)
+                let newBranch = output.isEmpty ? nil : output
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if self.branch != newBranch {
+                        self.branch = newBranch
+                    }
                 }
             }
+            self.refreshWorkItem = work
+            work.perform()
         }
-        refreshWorkItem = work
-        Self.gitQueue.async(execute: work)
     }
 }

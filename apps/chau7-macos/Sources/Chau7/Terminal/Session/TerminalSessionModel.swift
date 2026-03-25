@@ -343,8 +343,6 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
     private var commandStartedAt = Date.distantPast // Track when command started for "stuck" detection
     private var hasPendingCommand = false
     private var inputBuffer = ""
-    private var gitCheckWorkItem: DispatchWorkItem?
-    private let gitQueue = DispatchQueue(label: "com.chau7.git", qos: .utility)
     /// Shared repository model for this session's current git repo (nil if not in a repo)
     @Published var repositoryModel: RepositoryModel?
     private var repoBranchCancellable: AnyCancellable?
@@ -532,7 +530,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
             NotificationCenter.default.removeObserver(observer)
         }
         stopIdleTimer()
-        gitCheckWorkItem?.cancel()
+        repoBranchCancellable?.cancel()
         searchUpdateWorkItem?.cancel()
         aiLogSession?.close()
         devServerMonitor.stop()
@@ -2355,7 +2353,7 @@ final class TerminalSessionModel: NSObject, ObservableObject { // swiftlint:disa
 
         // Stop all background work
         stopIdleTimer()
-        gitCheckWorkItem?.cancel()
+        repoBranchCancellable?.cancel()
         searchUpdateWorkItem?.cancel()
 
         // Send exit to the shell (works with both backends)
