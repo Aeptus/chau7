@@ -613,5 +613,15 @@ final class TokenOptimizationIntegrationTests: XCTestCase {
         XCTAssertNil(snapshot.lastDecision)
         XCTAssertNil(snapshot.lastDecisionAt)
     }
+
+    func testCTORuntimeSetupCapturesCurrentMode() {
+        CTORuntimeMonitor.shared.reset()
+
+        CTORuntimeMonitor.shared.recordManagerSetup(mode: .allTabs)
+
+        let snapshot = CTORuntimeMonitor.shared.snapshot()
+        XCTAssertEqual(snapshot.mode, TokenOptimizationMode.allTabs.rawValue)
+        XCTAssertFalse(snapshot.assessment.issues.contains(.modeOffWithTrackedSessions))
+    }
 }
 #endif

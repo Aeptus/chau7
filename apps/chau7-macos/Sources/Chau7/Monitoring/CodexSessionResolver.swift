@@ -88,7 +88,7 @@ enum CodexSessionResolver {
             fileManager: fm
         )
 
-        var results: [(sessionId: String, lastActivity: Date)] = []
+        var results: [(sessionId: String, lastActivity: Date, rank: Int)] = []
         var seenSessionIds = Set<String>()
 
         for dayDir in dayDirs.prefix(3) {
@@ -99,16 +99,20 @@ enum CodexSessionResolver {
                       let metadata = parseSessionMeta(firstLine) else { continue }
 
                 guard seenSessionIds.insert(metadata.sessionId).inserted else { continue }
-                guard isSameSessionDirectory(directory, as: metadata.cwd) else { continue }
+                guard let rank = directoryMatchRank(forDirectory: directory, sessionDirectory: metadata.cwd) else { continue }
 
                 let touchedAt = (
                     try? fm.attributesOfItem(atPath: fileURL.path)[.modificationDate] as? Date
                 ) ?? Date.distantPast
-                results.append((sessionId: metadata.sessionId, lastActivity: touchedAt))
+                results.append((sessionId: metadata.sessionId, lastActivity: touchedAt, rank: rank))
             }
         }
 
-        return results.sorted { $0.lastActivity > $1.lastActivity }
+        guard let bestRank = results.map(\.rank).min() else { return [] }
+        return results
+            .filter { $0.rank == bestRank }
+            .map { (sessionId: $0.sessionId, lastActivity: $0.lastActivity) }
+            .sorted { $0.lastActivity > $1.lastActivity }
     }
 
     static func bestMatchingSessionID(
@@ -116,11 +120,28 @@ enum CodexSessionResolver {
         referenceDate: Date? = nil,
         candidates: [Candidate]
     ) -> String? {
-        let matches = deduplicatedCandidates(candidates).compactMap { candidate -> (String, Date)? in
-            guard isSameSessionDirectory(directory, as: candidate.cwd) else { return nil }
-            return (candidate.sessionId, candidate.touchedAt)
+        let matches = deduplicatedCandidates(candidates).compactMap { candidate -> (String, Date, Int)? in
+            guard let rank = directoryMatchRank(forDirectory: directory, sessionDirectory: candidate.cwd) else { return nil }
+            return (candidate.sessionId, candidate.touchedAt, rank)
         }
-        return AIResumeParser.bestSessionMatch(candidates: matches, referenceDate: referenceDate)
+        guard let bestRank = matches.map({ $0.2 }).min() else { return nil }
+        let rankedCandidates = matches
+            .filter { $0.2 == bestRank }
+            .map { (sessionId: $0.0, touchedAt: $0.1) }
+        return AIResumeParser.bestSessionMatch(candidates: rankedCandidates, referenceDate: referenceDate)
+    }
+
+    static func directoryMatchRank(forDirectory directory: String, sessionDirectory: String) -> Int? {
+        let target = normalizedSessionDirectory(directory)
+        let session = normalizedSessionDirectory(sessionDirectory)
+        guard !target.isEmpty, !session.isEmpty else { return nil }
+        if target == session {
+            return 0
+        }
+        if target.hasPrefix(session + "/") || session.hasPrefix(target + "/") {
+            return 1
+        }
+        return nil
     }
 
     private static func deduplicatedCandidates(_ candidates: [Candidate]) -> [Candidate] {
@@ -266,10 +287,4 @@ enum CodexSessionResolver {
         return URL(fileURLWithPath: expanded).standardized.path
     }
 
-    private static func isSameSessionDirectory(_ lhs: String, as rhs: String) -> Bool {
-        let left = normalizedSessionDirectory(lhs)
-        let right = normalizedSessionDirectory(rhs)
-        guard !left.isEmpty, !right.isEmpty else { return false }
-        return left == right || left.hasPrefix(right + "/") || right.hasPrefix(left + "/")
-    }
 }

@@ -3,7 +3,7 @@ import XCTest
 @testable import Chau7
 
 final class CodexSessionResolverTests: XCTestCase {
-    func testBestMatchingSessionIDChoosesClosestObservedCandidate() {
+    func testBestMatchingSessionIDPrefersExactDirectoryBeforeUsingActivityHint() {
         let referenceDate = Date(timeIntervalSince1970: 1000)
         let candidates = [
             CodexSessionResolver.Candidate(
@@ -29,7 +29,7 @@ final class CodexSessionResolverTests: XCTestCase {
                 referenceDate: referenceDate,
                 candidates: candidates
             ),
-            "session-b"
+            "session-a"
         )
     }
 
@@ -53,6 +53,31 @@ final class CodexSessionResolverTests: XCTestCase {
                 referenceDate: nil,
                 candidates: candidates
             )
+        )
+    }
+
+    func testBestMatchingSessionIDPrefersExactDirectoryOverRelatedMatches() {
+        let referenceDate = Date(timeIntervalSince1970: 1000)
+        let candidates = [
+            CodexSessionResolver.Candidate(
+                sessionId: "session-root",
+                cwd: "/tmp/project",
+                touchedAt: referenceDate.addingTimeInterval(-30)
+            ),
+            CodexSessionResolver.Candidate(
+                sessionId: "session-child",
+                cwd: "/tmp/project/app",
+                touchedAt: referenceDate.addingTimeInterval(-1)
+            )
+        ]
+
+        XCTAssertEqual(
+            CodexSessionResolver.bestMatchingSessionID(
+                forDirectory: "/tmp/project",
+                referenceDate: referenceDate,
+                candidates: candidates
+            ),
+            "session-root"
         )
     }
 }
