@@ -553,6 +553,20 @@ final class TerminalControlService {
 
     // MARK: - Helpers
 
+    /// Returns true if any tab running the named tool is currently at prompt (waiting for input).
+    func isToolAtPrompt(toolName: String) -> Bool {
+        let lowered = toolName.lowercased()
+        for (_, model) in allModels {
+            for tab in model.tabs {
+                guard let session = tab.session else { continue }
+                let matches = session.aiDisplayAppName?.lowercased() == lowered
+                    || session.activeAppName?.lowercased() == lowered
+                if matches, session.isAtPrompt { return true }
+            }
+        }
+        return false
+    }
+
     /// Find the OverlayTabsModel that owns a given tab UUID.
     private func modelForTab(_ uuid: UUID) -> OverlayTabsModel? {
         allModels.first(where: { $0.model.tabs.contains(where: { $0.id == uuid }) })?.model
