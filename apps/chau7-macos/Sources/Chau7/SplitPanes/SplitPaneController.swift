@@ -678,31 +678,27 @@ final class DiffViewerModel: ObservableObject, Identifiable {
             if mode == .staged { args.append("--cached") }
             args += ["--", file]
 
-            let output = GitDiffTracker.runGit(args: args, in: directory)
-            let parsed = Self.parseUnifiedDiff(output)
+            var output = GitDiffTracker.runGit(args: args, in: directory)
+            var parsed = Self.parseUnifiedDiff(output)
+            var effectiveMode = mode
+
+            // Fallback: try staged diff if working tree was empty (runs on background thread)
+            if output.isEmpty && parsed.hunks.isEmpty && mode == .workingTree {
+                let stagedOutput = GitDiffTracker.runGit(args: ["diff", "--cached", "--", file], in: directory)
+                if !stagedOutput.isEmpty {
+                    output = stagedOutput
+                    parsed = Self.parseUnifiedDiff(stagedOutput)
+                    effectiveMode = .staged
+                }
+            }
 
             DispatchQueue.main.async {
                 self?.rawDiff = output
                 self?.hunks = parsed.hunks
                 self?.additions = parsed.additions
                 self?.deletions = parsed.deletions
+                self?.diffMode = effectiveMode
                 self?.isLoading = false
-
-                if output.isEmpty && parsed.hunks.isEmpty {
-                    // Try staged if working tree was empty
-                    if mode == .workingTree {
-                        let stagedOutput = GitDiffTracker.runGit(args: ["diff", "--cached", "--", file], in: directory)
-                        if !stagedOutput.isEmpty {
-                            self?.diffMode = .staged
-                            let stagedParsed = Self.parseUnifiedDiff(stagedOutput)
-                            self?.rawDiff = stagedOutput
-                            self?.hunks = stagedParsed.hunks
-                            self?.additions = stagedParsed.additions
-                            self?.deletions = stagedParsed.deletions
-                        }
-                    }
-                }
-
                 Log.info("Loaded diff: \(file) (\(parsed.hunks.count) hunks, +\(parsed.additions)/-\(parsed.deletions))")
             }
         }
