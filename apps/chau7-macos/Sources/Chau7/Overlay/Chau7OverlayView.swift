@@ -408,10 +408,36 @@ private final class TabBarHostingView: NSHostingView<ToolbarTabBarView> {
             visibleTabs = model.tabs
         }
         guard !visibleTabs.isEmpty else { return nil }
-        let tabWidth = bounds.width / CGFloat(visibleTabs.count + 1)
-        let index = Int(point.x / tabWidth)
-        guard index >= 0, index < visibleTabs.count else { return nil }
-        return visibleTabs[index]
+
+        // Count total items in the tab bar (tabs + repo tag chips for groups)
+        var repoGroupsSeen = Set<String>()
+        var repoTagCount = 0
+        for tab in visibleTabs {
+            if let gid = tab.repoGroupID, !repoGroupsSeen.contains(gid) {
+                repoGroupsSeen.insert(gid)
+                repoTagCount += 1
+            }
+        }
+        let totalItems = visibleTabs.count + repoTagCount + 1 // +1 for new-tab button
+        let itemWidth = bounds.width / CGFloat(totalItems)
+        let rawIndex = Int(point.x / itemWidth)
+
+        // Map rawIndex to tab index, skipping repo tag chip slots
+        var tabIndex = 0
+        var slot = 0
+        var lastGroupID: String?
+        for tab in visibleTabs {
+            if let gid = tab.repoGroupID, gid != lastGroupID {
+                // Repo tag chip occupies this slot
+                if slot == rawIndex { return tab } // Click on tag → return first tab in group
+                slot += 1
+                lastGroupID = gid
+            }
+            if slot == rawIndex { return tab }
+            slot += 1
+            tabIndex += 1
+        }
+        return nil
     }
 
     // NSMenu validates items by checking if target responds to the action.
